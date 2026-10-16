@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 3370c0559f35f8781a10b50965704050ad622ba4d76c05954cfcb6b09c63c208
+// source-hash: 4dd04931c1189858a076eb34dff5d0ac7c294ad18fa5b2c6b71a2b3fe53f7d49
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/todo_peer.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: todo_peer.scxml:91 :: _machine
+// SCE-MAP: todo_peer.scxml:99 :: _machine
 @file:OptIn(ExperimentalUnsignedTypes::class)
 
 package com.sce.integration.todo_peer
@@ -55,6 +55,7 @@ sealed interface TodoPeerEvent : Event {
         data object Node : Todo
         data object Propose : Todo
         data object Resync : Todo
+        data object Room : Todo
         data object Settle : Todo
         data object Share : Todo
         data object Supersede : Todo
@@ -115,6 +116,11 @@ data class TodoPeerTodoNodePayload(val sender: ULong, val to: ULong, val depth: 
 // payload for `todo.propose`. Consumers inject it via the `raiseTodoPropose` seam
 // on the machine — they never name this class directly.
 data class TodoPeerTodoProposePayload(val before: Long)
+
+// TodoPeerTodoRoomPayload is the NL→IR Item C1 Path A typed `_event.data`
+// payload for `todo.room`. Consumers inject it via the `raiseTodoRoom` seam
+// on the machine — they never name this class directly.
+data class TodoPeerTodoRoomPayload(val values: UInt, val history: UInt, val digest: UInt)
 
 // TodoPeerTodoSettlePayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `todo.settle`. Consumers inject it via the `raiseTodoSettle` seam
@@ -436,6 +442,21 @@ class TodoPeerStateMachine(
     private var vAnswer: TodoPeerAnswerRecord = TodoPeerAnswerRecord(sender = 0.toULong(), hash = 0.toUInt())
     /** W3C SCXML 5.2: the `agreed` datamodel variable, the machine's own. */
     private var vAgreed: UInt = 0.toUInt()
+    /** W3C SCXML 5.2: the `roomValues` datamodel variable, the machine's own. */
+    private var vRoomValues: UInt = 0.toUInt()
+    /** W3C SCXML 5.2: the `roomHistory` datamodel variable, the machine's own. */
+    private var vRoomHistory: UInt = 0.toUInt()
+    /** W3C SCXML 5.2: the `roomDigest` datamodel variable, the machine's own. */
+    private var vRoomDigest: UInt = 0.toUInt()
+    /** W3C SCXML 5.2: the `full` datamodel variable, published (`sce:direction="out"`). */
+    private var vFull: UInt = 0.toUInt()
+
+    /** What the published `full` holds. */
+    val full: UInt get() = vFull
+    /** W3C SCXML 5.2: the `fresh` datamodel variable, the machine's own. */
+    private var vFresh: Boolean = false
+    /** W3C SCXML 5.2: the `blocked` datamodel variable, the machine's own. */
+    private var vBlocked: Boolean = false
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -468,6 +489,12 @@ class TodoPeerStateMachine(
         var members: UInt? = null
         var agreeing: UInt? = null
         var agreed: UInt? = null
+        var roomValues: UInt? = null
+        var roomHistory: UInt? = null
+        var roomDigest: UInt? = null
+        var full: UInt? = null
+        var fresh: Boolean? = null
+        var blocked: Boolean? = null
     }
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
@@ -497,6 +524,12 @@ class TodoPeerStateMachine(
         params.members?.let { vMembers = it }
         params.agreeing?.let { vAgreeing = it }
         params.agreed?.let { vAgreed = it }
+        params.roomValues?.let { vRoomValues = it }
+        params.roomHistory?.let { vRoomHistory = it }
+        params.roomDigest?.let { vRoomDigest = it }
+        params.full?.let { vFull = it }
+        params.fresh?.let { vFresh = it }
+        params.blocked?.let { vBlocked = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -514,6 +547,7 @@ class TodoPeerStateMachine(
         val floor: Long,
         val stale: Boolean,
         val late: UInt,
+        val full: UInt,
     )
 
     /**
@@ -543,6 +577,7 @@ class TodoPeerStateMachine(
         floor = vFloor,
         stale = vStale,
         late = vLate,
+        full = vFull,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -569,7 +604,7 @@ class TodoPeerStateMachine(
      * from a document that renamed, re-typed or moved a state or a variable is
      * refused, one saved before a guard or an action changed is not.
      */
-    val savedShape: String = "d6c8f53610a3872a968ce4af07b5375a5ac85144d8d2ac0e123ff319ee9db267"
+    val savedShape: String = "cd7bd037562af94211f6c70bf336da9fa7044d940a33153b9127d66288f901a9"
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -636,6 +671,12 @@ class TodoPeerStateMachine(
             "answers" to SavedValues.list(vAnswers) { it.toSaved() },
             "answer" to vAnswer.toSaved(),
             "agreed" to SavedValues.of(vAgreed),
+            "roomValues" to SavedValues.of(vRoomValues),
+            "roomHistory" to SavedValues.of(vRoomHistory),
+            "roomDigest" to SavedValues.of(vRoomDigest),
+            "full" to SavedValues.of(vFull),
+            "fresh" to SavedValues.of(vFresh),
+            "blocked" to SavedValues.of(vBlocked),
         ),
         wallNowMs,
     )
@@ -712,6 +753,12 @@ class TodoPeerStateMachine(
         val saved49 = SavedValues.list(saved.variable("answers"), "answers", 512) { e, w -> TodoPeerAnswerRecord.fromSaved(e, w) }
         val saved50 = TodoPeerAnswerRecord.fromSaved(saved.variable("answer"), "answer")
         val saved51 = SavedValues.uint32(saved.variable("agreed"), "agreed")
+        val saved52 = SavedValues.uint32(saved.variable("roomValues"), "roomValues")
+        val saved53 = SavedValues.uint32(saved.variable("roomHistory"), "roomHistory")
+        val saved54 = SavedValues.uint32(saved.variable("roomDigest"), "roomDigest")
+        val saved55 = SavedValues.uint32(saved.variable("full"), "full")
+        val saved56 = SavedValues.bool(saved.variable("fresh"), "fresh")
+        val saved57 = SavedValues.bool(saved.variable("blocked"), "blocked")
         vNode = saved1
         vHub = saved2
         vClock = saved3
@@ -763,6 +810,12 @@ class TodoPeerStateMachine(
         vAnswers = saved49
         vAnswer = saved50
         vAgreed = saved51
+        vRoomValues = saved52
+        vRoomHistory = saved53
+        vRoomDigest = saved54
+        vFull = saved55
+        vFresh = saved56
+        vBlocked = saved57
         enterSaved(saved, wallNowMs)
     }
 
@@ -781,6 +834,7 @@ class TodoPeerStateMachine(
     private var pendingTodoKeepPayload: TodoPeerTodoKeepPayload? = null
     private var pendingTodoNodePayload: TodoPeerTodoNodePayload? = null
     private var pendingTodoProposePayload: TodoPeerTodoProposePayload? = null
+    private var pendingTodoRoomPayload: TodoPeerTodoRoomPayload? = null
     private var pendingTodoSettlePayload: TodoPeerTodoSettlePayload? = null
     private var pendingTodoSharePayload: TodoPeerTodoSharePayload? = null
     private var pendingTodoSupersedePayload: TodoPeerTodoSupersedePayload? = null
@@ -806,6 +860,7 @@ class TodoPeerStateMachine(
         pendingTodoKeepPayload = null
         pendingTodoNodePayload = null
         pendingTodoProposePayload = null
+        pendingTodoRoomPayload = null
         pendingTodoSettlePayload = null
         pendingTodoSharePayload = null
         pendingTodoSupersedePayload = null
@@ -822,6 +877,7 @@ class TodoPeerStateMachine(
             is TodoPeerTodoKeepPayload -> pendingTodoKeepPayload = tp
             is TodoPeerTodoNodePayload -> pendingTodoNodePayload = tp
             is TodoPeerTodoProposePayload -> pendingTodoProposePayload = tp
+            is TodoPeerTodoRoomPayload -> pendingTodoRoomPayload = tp
             is TodoPeerTodoSettlePayload -> pendingTodoSettlePayload = tp
             is TodoPeerTodoSharePayload -> pendingTodoSharePayload = tp
             is TodoPeerTodoSupersedePayload -> pendingTodoSupersedePayload = tp
@@ -858,6 +914,9 @@ class TodoPeerStateMachine(
                 } else if (event == TodoPeerEvent.Todo.Propose) {
                     val fields = EventPayload.decode(metadata.data)
                     pendingTodoProposePayload = TodoPeerTodoProposePayload(fields.int64("before"))
+                } else if (event == TodoPeerEvent.Todo.Room) {
+                    val fields = EventPayload.decode(metadata.data)
+                    pendingTodoRoomPayload = TodoPeerTodoRoomPayload(fields.uint32("values"), fields.uint32("history"), fields.uint32("digest"))
                 } else if (event == TodoPeerEvent.Todo.Settle) {
                     val fields = EventPayload.decode(metadata.data)
                     pendingTodoSettlePayload = TodoPeerTodoSettlePayload(fields.int64("before"), fields.uint32("members"))
@@ -1023,6 +1082,22 @@ class TodoPeerStateMachine(
                 // Filling only the first left an `<assign expr="_event.data.x">` on
                 // this event reading nothing, on every backend alike.
                 data = EventPayload.encode(mapOf("before" to before))
+            )
+        )
+    }
+    // NL→IR Item C1 Path A typed `_event.data` inject seam for
+    // `todo.room` — binds the event name and the payload field values in one call.
+    fun raiseTodoRoom(values: UInt, history: UInt, digest: UInt) {
+        send(
+            TodoPeerEvent.Todo.Room,
+            EventMetadata(
+                type = "external",
+                typedPayload = TodoPeerTodoRoomPayload(values, history, digest),
+                // Both carriers are filled: the typed one a native guard reads, and
+                // `data`, which is what the script engine binds `_event.data` from.
+                // Filling only the first left an `<assign expr="_event.data.x">` on
+                // this event reading nothing, on every backend alike.
+                data = EventPayload.encode(mapOf("values" to values, "history" to history, "digest" to digest))
             )
         )
     }
@@ -1320,6 +1395,15 @@ class TodoPeerStateMachine(
             hasActions = true,
             isInternal = true,
         )
+
+        // W3C SCXML 3.13: open's transition 19, as the microstep reads it.
+        val transitionOpenAt19 = EnabledTransition<TodoPeerState, HistoryId>(
+            TodoPeerState.Open,
+            emptyList(),
+            19,
+            hasActions = true,
+            isInternal = true,
+        )
     }
 
     // W3C SCXML: Resolve state ID string to State object
@@ -1351,6 +1435,7 @@ class TodoPeerStateMachine(
         "todo.node" -> TodoPeerEvent.Todo.Node
         "todo.propose" -> TodoPeerEvent.Todo.Propose
         "todo.resync" -> TodoPeerEvent.Todo.Resync
+        "todo.room" -> TodoPeerEvent.Todo.Room
         "todo.settle" -> TodoPeerEvent.Todo.Settle
         "todo.share" -> TodoPeerEvent.Todo.Share
         "todo.supersede" -> TodoPeerEvent.Todo.Supersede
@@ -1374,6 +1459,7 @@ class TodoPeerStateMachine(
         is TodoPeerEvent.Todo.Node -> "todo.node"
         is TodoPeerEvent.Todo.Propose -> "todo.propose"
         is TodoPeerEvent.Todo.Resync -> "todo.resync"
+        is TodoPeerEvent.Todo.Room -> "todo.room"
         is TodoPeerEvent.Todo.Settle -> "todo.settle"
         is TodoPeerEvent.Todo.Share -> "todo.share"
         is TodoPeerEvent.Todo.Supersede -> "todo.supersede"
@@ -1398,57 +1484,58 @@ class TodoPeerStateMachine(
     ): EnabledTransition<TodoPeerState, HistoryId>? = when (state) {
         is TodoPeerState.Open -> when {
             event is TodoPeerEvent.Todo.Join -> transitionOpenAt0
-            event is TodoPeerEvent.Todo.Edit -> transitionOpenAt1
-            event is TodoPeerEvent.Todo.Write && pendingTodoWritePayload != null && (vFloor > 0 && pendingTodoWritePayload!!.wallTime <= vFloor) -> transitionOpenAt2
-            event is TodoPeerEvent.Todo.Write -> transitionOpenAt3
-            event is TodoPeerEvent.Todo.Supersede -> transitionOpenAt4
-            event is TodoPeerEvent.Todo.Keep -> transitionOpenAt5
-            event is TodoPeerEvent.Todo.Compact -> transitionOpenAt6
-            event is TodoPeerEvent.Todo.Settle -> transitionOpenAt7
-            event is TodoPeerEvent.Todo.Propose -> transitionOpenAt8
-            event is TodoPeerEvent.Todo.Ack -> transitionOpenAt9
-            event is TodoPeerEvent.Todo.Floor -> transitionOpenAt10
-            event is TodoPeerEvent.Todo.Resync -> transitionOpenAt11
-            event is TodoPeerEvent.Todo.Visit -> transitionOpenAt12
-            event is TodoPeerEvent.Todo.Node -> transitionOpenAt13
-            event is TodoPeerEvent.Todo.Share -> transitionOpenAt14
-            event is TodoPeerEvent.Todo.Agenda -> transitionOpenAt15
-            event is TodoPeerEvent.Todo.Zone -> transitionOpenAt16
-            event is TodoPeerEvent.Todo.ZoneClear -> transitionOpenAt17
-            event is TodoPeerEvent.Error.Execution -> transitionOpenAt18
+            event is TodoPeerEvent.Todo.Room -> transitionOpenAt1
+            event is TodoPeerEvent.Todo.Edit -> transitionOpenAt2
+            event is TodoPeerEvent.Todo.Write && pendingTodoWritePayload != null && (vFloor > 0 && pendingTodoWritePayload!!.wallTime <= vFloor) -> transitionOpenAt3
+            event is TodoPeerEvent.Todo.Write -> transitionOpenAt4
+            event is TodoPeerEvent.Todo.Supersede -> transitionOpenAt5
+            event is TodoPeerEvent.Todo.Keep -> transitionOpenAt6
+            event is TodoPeerEvent.Todo.Compact -> transitionOpenAt7
+            event is TodoPeerEvent.Todo.Settle -> transitionOpenAt8
+            event is TodoPeerEvent.Todo.Propose -> transitionOpenAt9
+            event is TodoPeerEvent.Todo.Ack -> transitionOpenAt10
+            event is TodoPeerEvent.Todo.Floor -> transitionOpenAt11
+            event is TodoPeerEvent.Todo.Resync -> transitionOpenAt12
+            event is TodoPeerEvent.Todo.Visit -> transitionOpenAt13
+            event is TodoPeerEvent.Todo.Node -> transitionOpenAt14
+            event is TodoPeerEvent.Todo.Share -> transitionOpenAt15
+            event is TodoPeerEvent.Todo.Agenda -> transitionOpenAt16
+            event is TodoPeerEvent.Todo.Zone -> transitionOpenAt17
+            event is TodoPeerEvent.Todo.ZoneClear -> transitionOpenAt18
+            event is TodoPeerEvent.Error.Execution -> transitionOpenAt19
             else -> null
         }
     }
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: todo_peer.scxml:91 :: _machine
+    // SCE-MAP: todo_peer.scxml:99 :: _machine
     override fun onEntry(state: TodoPeerState, isDefaultEntry: Boolean) {
         when (state) {
             is TodoPeerState.Open -> {
-                // SCE-MAP: todo_peer.scxml:267 :: open :: _state_body
+                // SCE-MAP: todo_peer.scxml:290 :: open :: _state_body
             }
         }
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: todo_peer.scxml:91 :: _machine
+    // SCE-MAP: todo_peer.scxml:99 :: _machine
     override fun onExit(state: TodoPeerState) {
         when (state) {
             is TodoPeerState.Open -> {
-                // SCE-MAP: todo_peer.scxml:267 :: open :: _state_body
+                // SCE-MAP: todo_peer.scxml:290 :: open :: _state_body
             }
         }
     }
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: todo_peer.scxml:91 :: _machine
+    // SCE-MAP: todo_peer.scxml:99 :: _machine
     override fun executeTransitionContent(source: TodoPeerState, transitionIndex: Int) {
         when (source) {
         is TodoPeerState.Open -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: todo_peer.scxml:268 :: open :: _transition_0
+                // SCE-MAP: todo_peer.scxml:291 :: open :: _transition_0
                 if (pendingTodoJoinPayload == null) {
                     return
                 }
@@ -1458,7 +1545,19 @@ class TodoPeerStateMachine(
             vHub = pendingTodoJoinPayload!!.hub
             }
             1 -> {
-                // SCE-MAP: todo_peer.scxml:276 :: open :: _transition_1
+                // SCE-MAP: todo_peer.scxml:298 :: open :: _transition_1
+                if (pendingTodoRoomPayload == null) {
+                    return
+                }
+
+            vRoomValues = pendingTodoRoomPayload!!.values
+
+            vRoomHistory = pendingTodoRoomPayload!!.history
+
+            vRoomDigest = pendingTodoRoomPayload!!.digest
+            }
+            2 -> {
+                // SCE-MAP: todo_peer.scxml:315 :: open :: _transition_2
                 if (pendingTodoEditPayload == null) {
                     return
                 }
@@ -1467,13 +1566,38 @@ class TodoPeerStateMachine(
                 return
             }
 
-            if (try { vClock = com.sce.forge.runtime.SceChecked.take(call_HlcSend__v(vClock, pendingTodoEditPayload!!.now, vNode)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='clock'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
-
             vEntry = vEntry.copy(element = pendingTodoEditPayload!!.id.toULong())
 
             if (try { vEntry = vEntry.copy(element = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(vEntry.element, 65536.toULong()), pendingTodoEditPayload!!.field.toULong())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='entry.element'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+
+            vFresh = true
+
+
+            for (o in vAdds) {
+
+
+            if (o.element == vEntry.element) {
+
+            vFresh = false
+            }
+            }
+
+            vBlocked = vRoomValues > 0.toUInt() && vFresh && (vValues).size.toUInt() >= vRoomValues || vRoomHistory > 0.toUInt() && (vTombstones).size.toUInt() >= vRoomHistory || vRoomDigest > 0.toUInt() && (vDigest).size.toUInt() >= vRoomDigest
+
+
+            if (vBlocked) {
+
+            if (try { vFull = com.sce.forge.runtime.SceChecked.add(vFull, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='full'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+            }
+
+
+            if (!vBlocked) {
+
+            if (try { vClock = com.sce.forge.runtime.SceChecked.take(call_HlcSend__v(vClock, pendingTodoEditPayload!!.now, vNode)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='clock'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -1651,8 +1775,9 @@ class TodoPeerStateMachine(
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
-            2 -> {
-                // SCE-MAP: todo_peer.scxml:330 :: open :: _transition_2
+            }
+            3 -> {
+                // SCE-MAP: todo_peer.scxml:381 :: open :: _transition_3
                 if (pendingTodoWritePayload == null) {
                     return
                 }
@@ -1677,8 +1802,8 @@ class TodoPeerStateMachine(
             }
             }
             }
-            3 -> {
-                // SCE-MAP: todo_peer.scxml:346 :: open :: _transition_3
+            4 -> {
+                // SCE-MAP: todo_peer.scxml:397 :: open :: _transition_4
                 if (pendingTodoWritePayload == null) {
                     return
                 }
@@ -1915,8 +2040,8 @@ class TodoPeerStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             }
-            4 -> {
-                // SCE-MAP: todo_peer.scxml:428 :: open :: _transition_4
+            5 -> {
+                // SCE-MAP: todo_peer.scxml:479 :: open :: _transition_5
                 if (pendingTodoSupersedePayload == null) {
                     return
                 }
@@ -2149,8 +2274,8 @@ class TodoPeerStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             }
-            5 -> {
-                // SCE-MAP: todo_peer.scxml:502 :: open :: _transition_5
+            6 -> {
+                // SCE-MAP: todo_peer.scxml:553 :: open :: _transition_6
                 if (pendingTodoKeepPayload == null) {
                     return
                 }
@@ -2171,8 +2296,8 @@ class TodoPeerStateMachine(
                 return
             }
             }
-            6 -> {
-                // SCE-MAP: todo_peer.scxml:519 :: open :: _transition_6
+            7 -> {
+                // SCE-MAP: todo_peer.scxml:570 :: open :: _transition_7
                 if (pendingTodoCompactPayload == null) {
                     return
                 }
@@ -2211,8 +2336,8 @@ class TodoPeerStateMachine(
             vFloor = pendingTodoCompactPayload!!.before
             }
             }
-            7 -> {
-                // SCE-MAP: todo_peer.scxml:540 :: open :: _transition_7
+            8 -> {
+                // SCE-MAP: todo_peer.scxml:591 :: open :: _transition_8
                 if (pendingTodoSettlePayload == null) {
                     return
                 }
@@ -2327,8 +2452,8 @@ class TodoPeerStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             }
-            8 -> {
-                // SCE-MAP: todo_peer.scxml:564 :: open :: _transition_8
+            9 -> {
+                // SCE-MAP: todo_peer.scxml:615 :: open :: _transition_9
                 if (pendingTodoProposePayload == null) {
                     return
                 }
@@ -2416,8 +2541,8 @@ class TodoPeerStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             }
-            9 -> {
-                // SCE-MAP: todo_peer.scxml:594 :: open :: _transition_9
+            10 -> {
+                // SCE-MAP: todo_peer.scxml:645 :: open :: _transition_10
                 if (pendingTodoAckPayload == null) {
                     return
                 }
@@ -2702,8 +2827,8 @@ class TodoPeerStateMachine(
             }
             }
             }
-            10 -> {
-                // SCE-MAP: todo_peer.scxml:663 :: open :: _transition_10
+            11 -> {
+                // SCE-MAP: todo_peer.scxml:714 :: open :: _transition_11
                 if (pendingTodoFloorPayload == null) {
                     return
                 }
@@ -2780,8 +2905,8 @@ class TodoPeerStateMachine(
             }
             }
             }
-            11 -> {
-                // SCE-MAP: todo_peer.scxml:699 :: open :: _transition_11
+            12 -> {
+                // SCE-MAP: todo_peer.scxml:750 :: open :: _transition_12
 
 
             if (run send@{
@@ -2805,8 +2930,8 @@ class TodoPeerStateMachine(
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
-            12 -> {
-                // SCE-MAP: todo_peer.scxml:710 :: open :: _transition_12
+            13 -> {
+                // SCE-MAP: todo_peer.scxml:761 :: open :: _transition_13
                 if (pendingTodoVisitPayload == null) {
                     return
                 }
@@ -3000,8 +3125,8 @@ class TodoPeerStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             }
-            13 -> {
-                // SCE-MAP: todo_peer.scxml:759 :: open :: _transition_13
+            14 -> {
+                // SCE-MAP: todo_peer.scxml:810 :: open :: _transition_14
                 if (pendingTodoNodePayload == null) {
                     return
                 }
@@ -3173,8 +3298,8 @@ class TodoPeerStateMachine(
             }
             }
             }
-            14 -> {
-                // SCE-MAP: todo_peer.scxml:808 :: open :: _transition_14
+            15 -> {
+                // SCE-MAP: todo_peer.scxml:859 :: open :: _transition_15
                 if (pendingTodoSharePayload == null) {
                     return
                 }
@@ -3183,8 +3308,8 @@ class TodoPeerStateMachine(
             for (v in vValues) {
 
 
-            var ifCondFailed44 = false
-            if ((try { com.sce.forge.runtime.SceChecked.div(v.wallTime, 60000) == pendingTodoSharePayload!!.minute.toLong() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<if cond='v.wallTime / 60000 === _event.data.minute'>: an integer operation overflowed or failed"); ifCondFailed44 = true; false })) {
+            var ifCondFailed47 = false
+            if ((try { com.sce.forge.runtime.SceChecked.div(v.wallTime, 60000) == pendingTodoSharePayload!!.minute.toLong() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<if cond='v.wallTime / 60000 === _event.data.minute'>: an integer operation overflowed or failed"); ifCondFailed47 = true; false })) {
 
             if (try { vShareId = com.sce.forge.runtime.SceChecked.narrowToUInt(v.id); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='shareId'>: an integer operation overflowed or failed"); true }) {
                 return
@@ -3377,7 +3502,7 @@ class TodoPeerStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             }
-            if (ifCondFailed44) {
+            if (ifCondFailed47) {
                 return
             }
             }
@@ -3386,8 +3511,8 @@ class TodoPeerStateMachine(
             for (t in vTombstones) {
 
 
-            var ifCondFailed48 = false
-            if ((try { com.sce.forge.runtime.SceChecked.div(t.wallTime, 60000) == pendingTodoSharePayload!!.minute.toLong() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<if cond='t.wallTime / 60000 === _event.data.minute'>: an integer operation overflowed or failed"); ifCondFailed48 = true; false })) {
+            var ifCondFailed51 = false
+            if ((try { com.sce.forge.runtime.SceChecked.div(t.wallTime, 60000) == pendingTodoSharePayload!!.minute.toLong() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<if cond='t.wallTime / 60000 === _event.data.minute'>: an integer operation overflowed or failed"); ifCondFailed51 = true; false })) {
 
             if (try { vShareId = com.sce.forge.runtime.SceChecked.narrowToUInt(com.sce.forge.runtime.SceChecked.div(t.element, 65536.toULong())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='shareId'>: an integer operation overflowed or failed"); true }) {
                 return
@@ -3574,13 +3699,13 @@ class TodoPeerStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             }
-            if (ifCondFailed48) {
+            if (ifCondFailed51) {
                 return
             }
             }
             }
-            15 -> {
-                // SCE-MAP: todo_peer.scxml:890 :: open :: _transition_15
+            16 -> {
+                // SCE-MAP: todo_peer.scxml:941 :: open :: _transition_16
                 if (pendingTodoAgendaPayload == null) {
                     return
                 }
@@ -3863,8 +3988,8 @@ class TodoPeerStateMachine(
             }
             }
             }
-            16 -> {
-                // SCE-MAP: todo_peer.scxml:1010 :: open :: _transition_16
+            17 -> {
+                // SCE-MAP: todo_peer.scxml:1061 :: open :: _transition_17
                 if (pendingTodoZonePayload == null) {
                     return
                 }
@@ -3917,8 +4042,8 @@ class TodoPeerStateMachine(
             }
             }
             }
-            17 -> {
-                // SCE-MAP: todo_peer.scxml:1029 :: open :: _transition_17
+            18 -> {
+                // SCE-MAP: todo_peer.scxml:1080 :: open :: _transition_18
 
             vZoneStarts1 = emptyList()
 
@@ -3936,8 +4061,8 @@ class TodoPeerStateMachine(
 
             vZoneOffsets4 = emptyList()
             }
-            18 -> {
-                // SCE-MAP: todo_peer.scxml:1040 :: open :: _transition_18
+            19 -> {
+                // SCE-MAP: todo_peer.scxml:1091 :: open :: _transition_19
 
             if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return

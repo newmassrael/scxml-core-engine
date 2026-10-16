@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 3370c0559f35f8781a10b50965704050ad622ba4d76c05954cfcb6b09c63c208
+// source-hash: 4dd04931c1189858a076eb34dff5d0ac7c294ad18fa5b2c6b71a2b3fe53f7d49
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -72,8 +72,8 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-#![doc = "SCE-MAP: todo_peer.scxml:91 :: _machine"]
-// SCE-MAP: todo_peer.scxml:91 :: _machine
+#![doc = "SCE-MAP: todo_peer.scxml:99 :: _machine"]
+// SCE-MAP: todo_peer.scxml:99 :: _machine
 
 use super::event_agenda;
 use super::event_conflict;
@@ -126,6 +126,7 @@ pub enum TodoPeerEvent {
     TodoNode,
     TodoPropose,
     TodoResync,
+    TodoRoom,
     TodoSettle,
     TodoShare,
     TodoSupersede,
@@ -162,6 +163,7 @@ impl TodoPeerEvent {
         TodoPeerEvent::TodoNode,
         TodoPeerEvent::TodoPropose,
         TodoPeerEvent::TodoResync,
+        TodoPeerEvent::TodoRoom,
         TodoPeerEvent::TodoSettle,
         TodoPeerEvent::TodoZone,
         TodoPeerEvent::TodoZoneClear,
@@ -235,6 +237,13 @@ pub struct TodoPeerTodoProposePayload {
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
+pub struct TodoPeerTodoRoomPayload {
+    pub values: u32,
+    pub history: u32,
+    pub digest: u32,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct TodoPeerTodoSettlePayload {
     pub before: i64,
     pub members: u32,
@@ -297,6 +306,7 @@ pub enum TodoPeerPayload {
     TodoKeep(TodoPeerTodoKeepPayload),
     TodoNode(TodoPeerTodoNodePayload),
     TodoPropose(TodoPeerTodoProposePayload),
+    TodoRoom(TodoPeerTodoRoomPayload),
     TodoSettle(TodoPeerTodoSettlePayload),
     TodoShare(TodoPeerTodoSharePayload),
     TodoSupersede(TodoPeerTodoSupersedePayload),
@@ -345,6 +355,10 @@ pub trait TodoPeerInject {
     /// Binds the event name and payload variant in one call (name↔type
     /// pairing cannot be constructed inconsistently).
     fn raise_todo_propose(&mut self, payload: TodoPeerTodoProposePayload);
+    /// Typed `_event.data` inject for `todo.room`.
+    /// Binds the event name and payload variant in one call (name↔type
+    /// pairing cannot be constructed inconsistently).
+    fn raise_todo_room(&mut self, payload: TodoPeerTodoRoomPayload);
     /// Typed `_event.data` inject for `todo.settle`.
     /// Binds the event name and payload variant in one call (name↔type
     /// pairing cannot be constructed inconsistently).
@@ -466,6 +480,17 @@ impl TodoPeerInject for ::sce_rust_runtime::Engine<TodoPeerPolicy> {
         self.raise_external_typed_with_data(
             TodoPeerEvent::TodoPropose,
             TodoPeerPayload::TodoPropose(payload),
+            &data,
+        );
+    }
+    fn raise_todo_room(&mut self, payload: TodoPeerTodoRoomPayload) {
+        let data = ::sce_rust_runtime::payload_wire(format_args!(
+            "{{\"values\":{}, \"history\":{}, \"digest\":{}}}",
+            payload.values, payload.history, payload.digest
+        ));
+        self.raise_external_typed_with_data(
+            TodoPeerEvent::TodoRoom,
+            TodoPeerPayload::TodoRoom(payload),
             &data,
         );
     }
@@ -1117,6 +1142,7 @@ pub struct TodoPeerData {
     pub floor: i64,
     pub stale: bool,
     pub late: u32,
+    pub full: u32,
 }
 
 /// What a host observes: the full active configuration — every active state,
@@ -1159,6 +1185,7 @@ impl TodoPeerObserve for Engine<TodoPeerPolicy> {
                 floor: policy.floor,
                 stale: policy.stale,
                 late: policy.late,
+                full: policy.full,
             },
             truncated: self.last_macrostep_truncated(),
         }
@@ -1701,7 +1728,7 @@ pub trait TodoPeerPersist: Sized {
 impl TodoPeerPersist for Engine<TodoPeerPolicy> {
     type Policy = TodoPeerPolicy;
 
-    const SHAPE: &'static str = "d6c8f53610a3872a968ce4af07b5375a5ac85144d8d2ac0e123ff319ee9db267";
+    const SHAPE: &'static str = "cd7bd037562af94211f6c70bf336da9fa7044d940a33153b9127d66288f901a9";
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<
         ::sce_rust_runtime::NoHistory,
@@ -1923,6 +1950,30 @@ impl TodoPeerPersist for Engine<TodoPeerPolicy> {
                     "agreed".to_string(),
                     ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.agreed),
                 ),
+                (
+                    "roomValues".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.room_values),
+                ),
+                (
+                    "roomHistory".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.room_history),
+                ),
+                (
+                    "roomDigest".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.room_digest),
+                ),
+                (
+                    "full".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.full),
+                ),
+                (
+                    "fresh".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.fresh),
+                ),
+                (
+                    "blocked".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.blocked),
+                ),
             ],
             ::sce_rust_runtime::saved_state::save_history(self.policy(), Self::HISTORIES),
             wall_now_ms,
@@ -2134,6 +2185,30 @@ impl TodoPeerPersist for Engine<TodoPeerPolicy> {
             saved.variable("agreed")?,
             "agreed",
         )?;
+        policy.room_values = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("roomValues")?,
+            "roomValues",
+        )?;
+        policy.room_history = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("roomHistory")?,
+            "roomHistory",
+        )?;
+        policy.room_digest = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("roomDigest")?,
+            "roomDigest",
+        )?;
+        policy.full = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("full")?,
+            "full",
+        )?;
+        policy.fresh = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("fresh")?,
+            "fresh",
+        )?;
+        policy.blocked = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("blocked")?,
+            "blocked",
+        )?;
         ::sce_rust_runtime::saved_state::enter(policy, saved, clock, wall_now_ms)
     }
 }
@@ -2168,6 +2243,12 @@ pub struct TodoPeerInvokeParams {
     pub members: Option<u32>,
     pub agreeing: Option<u32>,
     pub agreed: Option<u32>,
+    pub room_values: Option<u32>,
+    pub room_history: Option<u32>,
+    pub room_digest: Option<u32>,
+    pub full: Option<u32>,
+    pub fresh: Option<bool>,
+    pub blocked: Option<bool>,
 }
 
 // ======================================================================
@@ -2283,6 +2364,18 @@ pub struct TodoPeerPolicy {
     answer: TodoPeerAnswerRecord,
     /// W3C SCXML 5.2: the `agreed` datamodel variable.
     agreed: u32,
+    /// W3C SCXML 5.2: the `roomValues` datamodel variable.
+    room_values: u32,
+    /// W3C SCXML 5.2: the `roomHistory` datamodel variable.
+    room_history: u32,
+    /// W3C SCXML 5.2: the `roomDigest` datamodel variable.
+    room_digest: u32,
+    /// W3C SCXML 5.2: the `full` datamodel variable, published (`sce:direction="out"`).
+    full: u32,
+    /// W3C SCXML 5.2: the `fresh` datamodel variable.
+    fresh: bool,
+    /// W3C SCXML 5.2: the `blocked` datamodel variable.
+    blocked: bool,
     // W3C SCXML 5.10: Session ID (script engine + invoke tracking).
     //
     // SCE Protocol-Synthesis RFC §synth-5-J-2: gated to !no_std. Under `--no-std` both the
@@ -2431,6 +2524,12 @@ impl TodoPeerPolicy {
         let answers: Vec<TodoPeerAnswerRecord> = Vec::new();
         let answer: TodoPeerAnswerRecord = TodoPeerAnswerRecord { sender: 0, hash: 0 };
         let agreed: u32 = 0;
+        let room_values: u32 = 0;
+        let room_history: u32 = 0;
+        let room_digest: u32 = 0;
+        let full: u32 = 0;
+        let fresh: bool = false;
+        let blocked: bool = false;
         Self {
             pending_payload: TodoPeerPayload::default(),
             pending_event_invokeid: ::sce_rust_runtime::SceString::new(),
@@ -2485,6 +2584,12 @@ impl TodoPeerPolicy {
             answers,
             answer,
             agreed,
+            room_values,
+            room_history,
+            room_digest,
+            full,
+            fresh,
+            blocked,
             session_id: None,
             parent_external_queue: None,
             invoke_id: String::new(),
@@ -2570,6 +2675,24 @@ impl TodoPeerPolicy {
         if let Some(value) = params.agreed {
             self.agreed = value;
         }
+        if let Some(value) = params.room_values {
+            self.room_values = value;
+        }
+        if let Some(value) = params.room_history {
+            self.room_history = value;
+        }
+        if let Some(value) = params.room_digest {
+            self.room_digest = value;
+        }
+        if let Some(value) = params.full {
+            self.full = value;
+        }
+        if let Some(value) = params.fresh {
+            self.fresh = value;
+        }
+        if let Some(value) = params.blocked {
+            self.blocked = value;
+        }
     }
 
     /// W3C SCXML 5.2: what the published `node` datamodel variable
@@ -2648,6 +2771,12 @@ impl TodoPeerPolicy {
     /// holds now. Only the machine writes it.
     pub fn late(&self) -> u32 {
         self.late
+    }
+
+    /// W3C SCXML 5.2: what the published `full` datamodel variable
+    /// holds now. Only the machine writes it.
+    pub fn full(&self) -> u32 {
+        self.full
     }
 }
 
@@ -2793,6 +2922,7 @@ impl StatePolicy for TodoPeerPolicy {
             TodoPeerEvent::TodoNode => "todo.node",
             TodoPeerEvent::TodoPropose => "todo.propose",
             TodoPeerEvent::TodoResync => "todo.resync",
+            TodoPeerEvent::TodoRoom => "todo.room",
             TodoPeerEvent::TodoSettle => "todo.settle",
             TodoPeerEvent::TodoShare => "todo.share",
             TodoPeerEvent::TodoSupersede => "todo.supersede",
@@ -2817,6 +2947,7 @@ impl StatePolicy for TodoPeerPolicy {
             "todo.node" => Some(TodoPeerEvent::TodoNode),
             "todo.propose" => Some(TodoPeerEvent::TodoPropose),
             "todo.resync" => Some(TodoPeerEvent::TodoResync),
+            "todo.room" => Some(TodoPeerEvent::TodoRoom),
             "todo.settle" => Some(TodoPeerEvent::TodoSettle),
             "todo.share" => Some(TodoPeerEvent::TodoShare),
             "todo.supersede" => Some(TodoPeerEvent::TodoSupersede),
@@ -2957,6 +3088,14 @@ impl StatePolicy for TodoPeerPolicy {
                     before: fields.signed64("before")?,
                 });
             }
+            TodoPeerEvent::TodoRoom => {
+                let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
+                self.pending_payload = TodoPeerPayload::TodoRoom(TodoPeerTodoRoomPayload {
+                    values: fields.unsigned::<u32>("values")?,
+                    history: fields.unsigned::<u32>("history")?,
+                    digest: fields.unsigned::<u32>("digest")?,
+                });
+            }
             TodoPeerEvent::TodoSettle => {
                 let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
                 self.pending_payload = TodoPeerPayload::TodoSettle(TodoPeerTodoSettlePayload {
@@ -3034,8 +3173,8 @@ impl StatePolicy for TodoPeerPolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: todo_peer.scxml:91 :: _machine"]
-    // SCE-MAP: todo_peer.scxml:91 :: _machine
+    #[doc = "SCE-MAP: todo_peer.scxml:99 :: _machine"]
+    // SCE-MAP: todo_peer.scxml:99 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -3051,8 +3190,8 @@ impl StatePolicy for TodoPeerPolicy {
     // recorded runs nothing.
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: todo_peer.scxml:91 :: _machine"]
-    // SCE-MAP: todo_peer.scxml:91 :: _machine
+    #[doc = "SCE-MAP: todo_peer.scxml:99 :: _machine"]
+    // SCE-MAP: todo_peer.scxml:99 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -3068,8 +3207,8 @@ impl StatePolicy for TodoPeerPolicy {
     // the first of `state`'s own transitions, in document order, that `event`
     // enables. The engine walks the atomic states and their ancestors and
     // keeps the ordered set. `Event::Null` asks for eventless transitions.
-    #[doc = "SCE-MAP: todo_peer.scxml:91 :: _machine"]
-    // SCE-MAP: todo_peer.scxml:91 :: _machine
+    #[doc = "SCE-MAP: todo_peer.scxml:99 :: _machine"]
+    // SCE-MAP: todo_peer.scxml:99 :: _machine
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
@@ -3089,7 +3228,7 @@ impl StatePolicy for TodoPeerPolicy {
                         });
                     }
                 }
-                if event == TodoPeerEvent::TodoEdit {
+                if event == TodoPeerEvent::TodoRoom {
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
@@ -3100,8 +3239,7 @@ impl StatePolicy for TodoPeerPolicy {
                         });
                     }
                 }
-                if event == TodoPeerEvent::TodoWrite {
-                    if matches!(&self.pending_payload, TodoPeerPayload::TodoWrite(ev) if self.floor > 0 && ev.wallTime <= self.floor)
+                if event == TodoPeerEvent::TodoEdit {
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
@@ -3113,6 +3251,7 @@ impl StatePolicy for TodoPeerPolicy {
                     }
                 }
                 if event == TodoPeerEvent::TodoWrite {
+                    if matches!(&self.pending_payload, TodoPeerPayload::TodoWrite(ev) if self.floor > 0 && ev.wallTime <= self.floor)
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
@@ -3123,7 +3262,7 @@ impl StatePolicy for TodoPeerPolicy {
                         });
                     }
                 }
-                if event == TodoPeerEvent::TodoSupersede {
+                if event == TodoPeerEvent::TodoWrite {
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
@@ -3134,7 +3273,7 @@ impl StatePolicy for TodoPeerPolicy {
                         });
                     }
                 }
-                if event == TodoPeerEvent::TodoKeep {
+                if event == TodoPeerEvent::TodoSupersede {
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
@@ -3145,7 +3284,7 @@ impl StatePolicy for TodoPeerPolicy {
                         });
                     }
                 }
-                if event == TodoPeerEvent::TodoCompact {
+                if event == TodoPeerEvent::TodoKeep {
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
@@ -3156,7 +3295,7 @@ impl StatePolicy for TodoPeerPolicy {
                         });
                     }
                 }
-                if event == TodoPeerEvent::TodoSettle {
+                if event == TodoPeerEvent::TodoCompact {
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
@@ -3167,7 +3306,7 @@ impl StatePolicy for TodoPeerPolicy {
                         });
                     }
                 }
-                if event == TodoPeerEvent::TodoPropose {
+                if event == TodoPeerEvent::TodoSettle {
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
@@ -3178,7 +3317,7 @@ impl StatePolicy for TodoPeerPolicy {
                         });
                     }
                 }
-                if event == TodoPeerEvent::TodoAck {
+                if event == TodoPeerEvent::TodoPropose {
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
@@ -3189,7 +3328,7 @@ impl StatePolicy for TodoPeerPolicy {
                         });
                     }
                 }
-                if event == TodoPeerEvent::TodoFloor {
+                if event == TodoPeerEvent::TodoAck {
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
@@ -3200,7 +3339,7 @@ impl StatePolicy for TodoPeerPolicy {
                         });
                     }
                 }
-                if event == TodoPeerEvent::TodoResync {
+                if event == TodoPeerEvent::TodoFloor {
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
@@ -3211,7 +3350,7 @@ impl StatePolicy for TodoPeerPolicy {
                         });
                     }
                 }
-                if event == TodoPeerEvent::TodoVisit {
+                if event == TodoPeerEvent::TodoResync {
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
@@ -3222,7 +3361,7 @@ impl StatePolicy for TodoPeerPolicy {
                         });
                     }
                 }
-                if event == TodoPeerEvent::TodoNode {
+                if event == TodoPeerEvent::TodoVisit {
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
@@ -3233,7 +3372,7 @@ impl StatePolicy for TodoPeerPolicy {
                         });
                     }
                 }
-                if event == TodoPeerEvent::TodoShare {
+                if event == TodoPeerEvent::TodoNode {
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
@@ -3244,7 +3383,7 @@ impl StatePolicy for TodoPeerPolicy {
                         });
                     }
                 }
-                if event == TodoPeerEvent::TodoAgenda {
+                if event == TodoPeerEvent::TodoShare {
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
@@ -3255,7 +3394,7 @@ impl StatePolicy for TodoPeerPolicy {
                         });
                     }
                 }
-                if event == TodoPeerEvent::TodoZone {
+                if event == TodoPeerEvent::TodoAgenda {
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
@@ -3266,7 +3405,7 @@ impl StatePolicy for TodoPeerPolicy {
                         });
                     }
                 }
-                if event == TodoPeerEvent::TodoZoneClear {
+                if event == TodoPeerEvent::TodoZone {
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
@@ -3277,12 +3416,23 @@ impl StatePolicy for TodoPeerPolicy {
                         });
                     }
                 }
-                if event == TodoPeerEvent::ErrorExecution {
+                if event == TodoPeerEvent::TodoZoneClear {
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
                             targets: &[],
                             transition_index: 18,
+                            has_actions: true,
+                            is_internal: true,
+                        });
+                    }
+                }
+                if event == TodoPeerEvent::ErrorExecution {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[],
+                            transition_index: 19,
                             has_actions: true,
                             is_internal: true,
                         });
@@ -3296,8 +3446,8 @@ impl StatePolicy for TodoPeerPolicy {
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries.
-    #[doc = "SCE-MAP: todo_peer.scxml:91 :: _machine"]
-    // SCE-MAP: todo_peer.scxml:91 :: _machine
+    #[doc = "SCE-MAP: todo_peer.scxml:99 :: _machine"]
+    // SCE-MAP: todo_peer.scxml:99 :: _machine
     fn execute_transition_content(
         &mut self,
         source: Self::State,
@@ -3308,7 +3458,7 @@ impl StatePolicy for TodoPeerPolicy {
             TodoPeerState::Open => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: todo_peer.scxml:268 :: open :: _transition_0
+                        // SCE-MAP: todo_peer.scxml:291 :: open :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         let ev = match &self.pending_payload {
                             TodoPeerPayload::TodoJoin(ev) => ev.clone(),
@@ -3324,8 +3474,27 @@ impl StatePolicy for TodoPeerPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: todo_peer.scxml:276 :: open :: _transition_1
+                        // SCE-MAP: todo_peer.scxml:298 :: open :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
+                        let ev = match &self.pending_payload {
+                            TodoPeerPayload::TodoRoom(ev) => ev.clone(),
+                            _ => return,
+                        };
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 5.3: <assign location="roomValues">
+                            self.room_values = ev.values;
+
+                            // W3C SCXML 5.3: <assign location="roomHistory">
+                            self.room_history = ev.history;
+
+                            // W3C SCXML 5.3: <assign location="roomDigest">
+                            self.room_digest = ev.digest;
+                        }
+                    }
+                    2 => {
+                        // SCE-MAP: todo_peer.scxml:315 :: open :: _transition_2
+                        // W3C SCXML 3.13: Transition 2 actions
                         let ev = match &self.pending_payload {
                             TodoPeerPayload::TodoEdit(ev) => ev.clone(),
                             _ => return,
@@ -3340,21 +3509,6 @@ impl StatePolicy for TodoPeerPolicy {
     Ok(()) => false,
     Err(_) => {
         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<assign location='held.text'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                            if sce_failed {
-                                break 'action_block; // W3C SCXML 4.9: the error ends the block
-                            }
-
-                            // W3C SCXML 5.3: <assign location="clock">
-                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.clock = call_HlcSend__v(&self.clock, ev.now, self.node)?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<assign location='clock'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -3380,368 +3534,438 @@ impl StatePolicy for TodoPeerPolicy {
                                 break 'action_block; // W3C SCXML 4.9: the error ends the block
                             }
 
+                            // W3C SCXML 5.3: <assign location="fresh">
+                            self.fresh = true;
+
                             for o in self.adds.clone() {
                                 let _ = &o;
 
                                 // W3C SCXML 5.9: cond="o.element === entry.element"
                                 if o.element == self.entry.element {
-                                    {
-                                        let send_id =
-                                            ::sce_rust_runtime::sce_string_from_str("__send_0");
+                                    // W3C SCXML 5.3: <assign location="fresh">
+                                    self.fresh = false;
+                                }
+                            }
 
-                                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                        // delivered, so each name carries a vector. The typed value is kept
-                                        // rather than its text — a receiver reading `_event.data.value === 42`
-                                        // finds the string "42" unequal.
-                                        //
-                                        // Declared out here rather than inside the payload block because
-                                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                        // below are renderings of that one evaluation: the BasicHTTP and
-                                        // host-served arms read this map instead of asking the data model again.
-                                        let mut _send_wire_params: ::std::collections::BTreeMap<
-                                            String,
-                                            Vec<::sce_rust_runtime::ScriptValue>,
-                                        > = ::std::collections::BTreeMap::new();
-                                        // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                        let event_data_string: String = {
-                                            let wire_params = &mut _send_wire_params;
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params.entry("id".to_string()).or_default().push(
-                                                ::sce_rust_runtime::ScriptValue::Int(i64::from(
-                                                    ev.id,
-                                                )),
-                                            );
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params
-                                                .entry("field".to_string())
-                                                .or_default()
-                                                .push(::sce_rust_runtime::ScriptValue::Int(
-                                                    i64::from(ev.field),
-                                                ));
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params
-                                                .entry("wallTime".to_string())
-                                                .or_default()
-                                                .push(::sce_rust_runtime::ScriptValue::String(
-                                                    (o.wallTime).to_string(),
-                                                ));
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params
-                                                .entry("counter".to_string())
-                                                .or_default()
-                                                .push(::sce_rust_runtime::ScriptValue::Int(
-                                                    i64::from(o.counter),
-                                                ));
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params
-                                                .entry("nodeId".to_string())
-                                                .or_default()
-                                                .push(::sce_rust_runtime::ScriptValue::String(
-                                                    (o.nodeId).to_string(),
-                                                ));
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params.entry("by".to_string()).or_default().push(
-                                                ::sce_rust_runtime::ScriptValue::String(
-                                                    (self.node).to_string(),
-                                                ),
-                                            );
-                                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                        };
-                                        let event_data: &str = &event_data_string;
+                            // W3C SCXML 5.3: <assign location="blocked">
+                            self.blocked = self.room_values > 0
+                                && self.fresh
+                                && (self.values).len() as u32 >= self.room_values
+                                || self.room_history > 0
+                                    && (self.tombstones).len() as u32 >= self.room_history
+                                || self.room_digest > 0
+                                    && (self.digest).len() as u32 >= self.room_digest;
 
-                                        // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
-                                        // A delay postpones it and does not change the queue.
+                            // W3C SCXML 5.9: cond="blocked"
+                            if self.blocked {
+                                // W3C SCXML 5.3: <assign location="full">
+                                let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.full = sce_forge_runtime::algorithm::add::<u32>(self.full, 1)?;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<assign location='full'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                                if sce_failed {
+                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
+                                }
+                            }
+
+                            // W3C SCXML 5.9: cond="!blocked"
+                            if !self.blocked {
+                                // W3C SCXML 5.3: <assign location="clock">
+                                let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.clock = call_HlcSend__v(&self.clock, ev.now, self.node)?;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<assign location='clock'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                                if sce_failed {
+                                    break 'action_block; // W3C SCXML 4.9: the error ends the block
+                                }
+
+                                for o in self.adds.clone() {
+                                    let _ = &o;
+
+                                    // W3C SCXML 5.9: cond="o.element === entry.element"
+                                    if o.element == self.entry.element {
                                         {
-                                            let mut meta = sce_rust_runtime::EventWithMetadata::new(
-                                                TodoPeerEvent::TodoSupersede,
-                                            );
-                                            meta.set_event_data(event_data);
-                                            engine.raise(meta);
-                                        }
+                                            let send_id =
+                                                ::sce_rust_runtime::sce_string_from_str("__send_0");
 
-                                        let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                        let _ = send_id; // suppress unused warning when no send operation
-                                    }
-
-                                    {
-                                        let send_id =
-                                            ::sce_rust_runtime::sce_string_from_str("__send_1");
-
-                                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                        // delivered, so each name carries a vector. The typed value is kept
-                                        // rather than its text — a receiver reading `_event.data.value === 42`
-                                        // finds the string "42" unequal.
-                                        //
-                                        // Declared out here rather than inside the payload block because
-                                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                        // below are renderings of that one evaluation: the BasicHTTP and
-                                        // host-served arms read this map instead of asking the data model again.
-                                        let mut _send_wire_params: ::std::collections::BTreeMap<
-                                            String,
-                                            Vec<::sce_rust_runtime::ScriptValue>,
-                                        > = ::std::collections::BTreeMap::new();
-                                        // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                        let event_data_string: String = {
-                                            let wire_params = &mut _send_wire_params;
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params.entry("id".to_string()).or_default().push(
-                                                ::sce_rust_runtime::ScriptValue::Int(i64::from(
-                                                    ev.id,
-                                                )),
-                                            );
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params
-                                                .entry("field".to_string())
-                                                .or_default()
-                                                .push(::sce_rust_runtime::ScriptValue::Int(
-                                                    i64::from(ev.field),
-                                                ));
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params
-                                                .entry("wallTime".to_string())
-                                                .or_default()
-                                                .push(::sce_rust_runtime::ScriptValue::String(
-                                                    (o.wallTime).to_string(),
-                                                ));
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params
-                                                .entry("counter".to_string())
-                                                .or_default()
-                                                .push(::sce_rust_runtime::ScriptValue::Int(
-                                                    i64::from(o.counter),
-                                                ));
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params
-                                                .entry("nodeId".to_string())
-                                                .or_default()
-                                                .push(::sce_rust_runtime::ScriptValue::String(
-                                                    (o.nodeId).to_string(),
-                                                ));
-                                            // The value is read from the machine's field as it stands now.
-                                            wire_params.entry("by".to_string()).or_default().push(
-                                                ::sce_rust_runtime::ScriptValue::String(
-                                                    (self.node).to_string(),
-                                                ),
-                                            );
-                                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                        };
-                                        let event_data: &str = &event_data_string;
-
-                                        // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
-                                        // which declared it to this build. Dispatch rather than refuse.
-                                        {
-                                            let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
-                                            let __sce_request = sce_rust_runtime::HostSendRequest {
-                                                processor_type: "sce:mesh".to_string(),
-                                                event_name: "todo.supersede".to_string(),
-                                                target: "#server".to_string(),
-                                                content: "".to_string(),
-                                                params: host_params,
-                                                send_id: send_id.to_string(),
-                                                // W3C SCXML 5.10: the payload computed above, once, for every arm.
-                                                event_data: event_data.to_string(),
-                                                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
-                                                // processed now, carried back out as a W3C child's send to its
-                                                // parent carries it (§scxml-6.4.1). Analysis keeps the field on
-                                                // every machine with a host-served send.
-                                                invoke_id: self.pending_event_invokeid.to_string(),
+                                            // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                                            // delivered, so each name carries a vector. The typed value is kept
+                                            // rather than its text — a receiver reading `_event.data.value === 42`
+                                            // finds the string "42" unequal.
+                                            //
+                                            // Declared out here rather than inside the payload block because
+                                            // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                                            // below are renderings of that one evaluation: the BasicHTTP and
+                                            // host-served arms read this map instead of asking the data model again.
+                                            let mut _send_wire_params: ::std::collections::BTreeMap<String, Vec<::sce_rust_runtime::ScriptValue>> =
+        ::std::collections::BTreeMap::new();
+                                            // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                                            let event_data_string: String = {
+                                                let wire_params = &mut _send_wire_params;
+                                                // The value is read from the machine's field as it stands now.
+                                                wire_params
+                                                    .entry("id".to_string())
+                                                    .or_default()
+                                                    .push(::sce_rust_runtime::ScriptValue::Int(
+                                                        i64::from(ev.id),
+                                                    ));
+                                                // The value is read from the machine's field as it stands now.
+                                                wire_params
+                                                    .entry("field".to_string())
+                                                    .or_default()
+                                                    .push(::sce_rust_runtime::ScriptValue::Int(
+                                                        i64::from(ev.field),
+                                                    ));
+                                                // The value is read from the machine's field as it stands now.
+                                                wire_params
+                                                    .entry("wallTime".to_string())
+                                                    .or_default()
+                                                    .push(::sce_rust_runtime::ScriptValue::String(
+                                                        (o.wallTime).to_string(),
+                                                    ));
+                                                // The value is read from the machine's field as it stands now.
+                                                wire_params
+                                                    .entry("counter".to_string())
+                                                    .or_default()
+                                                    .push(::sce_rust_runtime::ScriptValue::Int(
+                                                        i64::from(o.counter),
+                                                    ));
+                                                // The value is read from the machine's field as it stands now.
+                                                wire_params
+                                                    .entry("nodeId".to_string())
+                                                    .or_default()
+                                                    .push(::sce_rust_runtime::ScriptValue::String(
+                                                        (o.nodeId).to_string(),
+                                                    ));
+                                                // The value is read from the machine's field as it stands now.
+                                                wire_params
+                                                    .entry("by".to_string())
+                                                    .or_default()
+                                                    .push(::sce_rust_runtime::ScriptValue::String(
+                                                        (self.node).to_string(),
+                                                    ));
+                                                ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
                                             };
-                                            let __sce_served =
-                                                engine.perform_host_send(__sce_request);
-                                            // W3C SCXML 6.2: a declared type with no handler registered is,
-                                            // from the document's side, a processor the platform does not
-                                            // support — the act it asked for was performed by nobody. Same
-                                            // event, so a wiring mistake cannot read as success.
-                                            if __sce_served.is_none()
-                                                && !engine.has_event_processor("sce:mesh")
+                                            let event_data: &str = &event_data_string;
+
+                                            // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
+                                            // A delay postpones it and does not change the queue.
                                             {
-                                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
-                                                engine.raise(err_meta);
+                                                let mut meta =
+                                                    sce_rust_runtime::EventWithMetadata::new(
+                                                        TodoPeerEvent::TodoSupersede,
+                                                    );
+                                                meta.set_event_data(event_data);
+                                                engine.raise(meta);
                                             }
+
+                                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                                            let _ = send_id; // suppress unused warning when no send operation
                                         }
 
-                                        let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                        let _ = send_id; // suppress unused warning when no send operation
+                                        {
+                                            let send_id =
+                                                ::sce_rust_runtime::sce_string_from_str("__send_1");
+
+                                            // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                                            // delivered, so each name carries a vector. The typed value is kept
+                                            // rather than its text — a receiver reading `_event.data.value === 42`
+                                            // finds the string "42" unequal.
+                                            //
+                                            // Declared out here rather than inside the payload block because
+                                            // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                                            // below are renderings of that one evaluation: the BasicHTTP and
+                                            // host-served arms read this map instead of asking the data model again.
+                                            let mut _send_wire_params: ::std::collections::BTreeMap<String, Vec<::sce_rust_runtime::ScriptValue>> =
+        ::std::collections::BTreeMap::new();
+                                            // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                                            let event_data_string: String = {
+                                                let wire_params = &mut _send_wire_params;
+                                                // The value is read from the machine's field as it stands now.
+                                                wire_params
+                                                    .entry("id".to_string())
+                                                    .or_default()
+                                                    .push(::sce_rust_runtime::ScriptValue::Int(
+                                                        i64::from(ev.id),
+                                                    ));
+                                                // The value is read from the machine's field as it stands now.
+                                                wire_params
+                                                    .entry("field".to_string())
+                                                    .or_default()
+                                                    .push(::sce_rust_runtime::ScriptValue::Int(
+                                                        i64::from(ev.field),
+                                                    ));
+                                                // The value is read from the machine's field as it stands now.
+                                                wire_params
+                                                    .entry("wallTime".to_string())
+                                                    .or_default()
+                                                    .push(::sce_rust_runtime::ScriptValue::String(
+                                                        (o.wallTime).to_string(),
+                                                    ));
+                                                // The value is read from the machine's field as it stands now.
+                                                wire_params
+                                                    .entry("counter".to_string())
+                                                    .or_default()
+                                                    .push(::sce_rust_runtime::ScriptValue::Int(
+                                                        i64::from(o.counter),
+                                                    ));
+                                                // The value is read from the machine's field as it stands now.
+                                                wire_params
+                                                    .entry("nodeId".to_string())
+                                                    .or_default()
+                                                    .push(::sce_rust_runtime::ScriptValue::String(
+                                                        (o.nodeId).to_string(),
+                                                    ));
+                                                // The value is read from the machine's field as it stands now.
+                                                wire_params
+                                                    .entry("by".to_string())
+                                                    .or_default()
+                                                    .push(::sce_rust_runtime::ScriptValue::String(
+                                                        (self.node).to_string(),
+                                                    ));
+                                                ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                                            };
+                                            let event_data: &str = &event_data_string;
+
+                                            // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+                                            // which declared it to this build. Dispatch rather than refuse.
+                                            {
+                                                let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
+                                                let __sce_request =
+                                                    sce_rust_runtime::HostSendRequest {
+                                                        processor_type: "sce:mesh".to_string(),
+                                                        event_name: "todo.supersede".to_string(),
+                                                        target: "#server".to_string(),
+                                                        content: "".to_string(),
+                                                        params: host_params,
+                                                        send_id: send_id.to_string(),
+                                                        // W3C SCXML 5.10: the payload computed above, once, for every arm.
+                                                        event_data: event_data.to_string(),
+                                                        // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                                                        // processed now, carried back out as a W3C child's send to its
+                                                        // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+                                                        // every machine with a host-served send.
+                                                        invoke_id: self
+                                                            .pending_event_invokeid
+                                                            .to_string(),
+                                                    };
+                                                let __sce_served =
+                                                    engine.perform_host_send(__sce_request);
+                                                // W3C SCXML 6.2: a declared type with no handler registered is,
+                                                // from the document's side, a processor the platform does not
+                                                // support — the act it asked for was performed by nobody. Same
+                                                // event, so a wiring mistake cannot read as success.
+                                                if __sce_served.is_none()
+                                                    && !engine.has_event_processor("sce:mesh")
+                                                {
+                                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                                    engine.raise(err_meta);
+                                                }
+                                            }
+
+                                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+                                            let _ = send_id; // suppress unused warning when no send operation
+                                        }
                                     }
                                 }
-                            }
 
-                            {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_2");
-
-                                // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                // delivered, so each name carries a vector. The typed value is kept
-                                // rather than its text — a receiver reading `_event.data.value === 42`
-                                // finds the string "42" unequal.
-                                //
-                                // Declared out here rather than inside the payload block because
-                                // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                // below are renderings of that one evaluation: the BasicHTTP and
-                                // host-served arms read this map instead of asking the data model again.
-                                let mut _send_wire_params: ::std::collections::BTreeMap<
-                                    String,
-                                    Vec<::sce_rust_runtime::ScriptValue>,
-                                > = ::std::collections::BTreeMap::new();
-                                // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                let event_data_string: String = {
-                                    let wire_params = &mut _send_wire_params;
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("id".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::Int(i64::from(ev.id)),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("field".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::Int(i64::from(ev.field)),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("value".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (ev.value).to_string(),
-                                        ),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("text".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            ev.text.to_string(),
-                                        ),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("wallTime".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (self.clock.wallTime).to_string(),
-                                        ),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("counter".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::Int(i64::from(
-                                            self.clock.counter,
-                                        )),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("nodeId".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (self.node).to_string(),
-                                        ),
-                                    );
-                                    ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                };
-                                let event_data: &str = &event_data_string;
-
-                                // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
-                                // A delay postpones it and does not change the queue.
                                 {
-                                    let mut meta = sce_rust_runtime::EventWithMetadata::new(
-                                        TodoPeerEvent::TodoWrite,
-                                    );
-                                    meta.set_event_data(event_data);
-                                    engine.raise(meta);
-                                }
+                                    let send_id =
+                                        ::sce_rust_runtime::sce_string_from_str("__send_2");
 
-                                let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                let _ = send_id; // suppress unused warning when no send operation
-                            }
-
-                            {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_3");
-
-                                // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                // delivered, so each name carries a vector. The typed value is kept
-                                // rather than its text — a receiver reading `_event.data.value === 42`
-                                // finds the string "42" unequal.
-                                //
-                                // Declared out here rather than inside the payload block because
-                                // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                // below are renderings of that one evaluation: the BasicHTTP and
-                                // host-served arms read this map instead of asking the data model again.
-                                let mut _send_wire_params: ::std::collections::BTreeMap<
-                                    String,
-                                    Vec<::sce_rust_runtime::ScriptValue>,
-                                > = ::std::collections::BTreeMap::new();
-                                // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                let event_data_string: String = {
-                                    let wire_params = &mut _send_wire_params;
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("id".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::Int(i64::from(ev.id)),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("field".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::Int(i64::from(ev.field)),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("value".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (ev.value).to_string(),
-                                        ),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("text".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            ev.text.to_string(),
-                                        ),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("wallTime".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (self.clock.wallTime).to_string(),
-                                        ),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("counter".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::Int(i64::from(
-                                            self.clock.counter,
-                                        )),
-                                    );
-                                    // The value is read from the machine's field as it stands now.
-                                    wire_params.entry("nodeId".to_string()).or_default().push(
-                                        ::sce_rust_runtime::ScriptValue::String(
-                                            (self.node).to_string(),
-                                        ),
-                                    );
-                                    ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                };
-                                let event_data: &str = &event_data_string;
-
-                                // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
-                                // which declared it to this build. Dispatch rather than refuse.
-                                {
-                                    let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
-                                    let __sce_request = sce_rust_runtime::HostSendRequest {
-                                        processor_type: "sce:mesh".to_string(),
-                                        event_name: "todo.write".to_string(),
-                                        target: "#server".to_string(),
-                                        content: "".to_string(),
-                                        params: host_params,
-                                        send_id: send_id.to_string(),
-                                        // W3C SCXML 5.10: the payload computed above, once, for every arm.
-                                        event_data: event_data.to_string(),
-                                        // SCE_MESH.md §mesh-10.7: the invokeid of the event being
-                                        // processed now, carried back out as a W3C child's send to its
-                                        // parent carries it (§scxml-6.4.1). Analysis keeps the field on
-                                        // every machine with a host-served send.
-                                        invoke_id: self.pending_event_invokeid.to_string(),
+                                    // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                                    // delivered, so each name carries a vector. The typed value is kept
+                                    // rather than its text — a receiver reading `_event.data.value === 42`
+                                    // finds the string "42" unequal.
+                                    //
+                                    // Declared out here rather than inside the payload block because
+                                    // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                                    // below are renderings of that one evaluation: the BasicHTTP and
+                                    // host-served arms read this map instead of asking the data model again.
+                                    let mut _send_wire_params: ::std::collections::BTreeMap<
+                                        String,
+                                        Vec<::sce_rust_runtime::ScriptValue>,
+                                    > = ::std::collections::BTreeMap::new();
+                                    // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                                    let event_data_string: String = {
+                                        let wire_params = &mut _send_wire_params;
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params.entry("id".to_string()).or_default().push(
+                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(ev.id)),
+                                        );
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params.entry("field".to_string()).or_default().push(
+                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(
+                                                ev.field,
+                                            )),
+                                        );
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params.entry("value".to_string()).or_default().push(
+                                            ::sce_rust_runtime::ScriptValue::String(
+                                                (ev.value).to_string(),
+                                            ),
+                                        );
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params.entry("text".to_string()).or_default().push(
+                                            ::sce_rust_runtime::ScriptValue::String(
+                                                ev.text.to_string(),
+                                            ),
+                                        );
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params
+                                            .entry("wallTime".to_string())
+                                            .or_default()
+                                            .push(::sce_rust_runtime::ScriptValue::String(
+                                                (self.clock.wallTime).to_string(),
+                                            ));
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params.entry("counter".to_string()).or_default().push(
+                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(
+                                                self.clock.counter,
+                                            )),
+                                        );
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params.entry("nodeId".to_string()).or_default().push(
+                                            ::sce_rust_runtime::ScriptValue::String(
+                                                (self.node).to_string(),
+                                            ),
+                                        );
+                                        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
                                     };
-                                    let __sce_served = engine.perform_host_send(__sce_request);
-                                    // W3C SCXML 6.2: a declared type with no handler registered is,
-                                    // from the document's side, a processor the platform does not
-                                    // support — the act it asked for was performed by nobody. Same
-                                    // event, so a wiring mistake cannot read as success.
-                                    if __sce_served.is_none()
-                                        && !engine.has_event_processor("sce:mesh")
+                                    let event_data: &str = &event_data_string;
+
+                                    // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
+                                    // A delay postpones it and does not change the queue.
                                     {
-                                        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
-                                        engine.raise(err_meta);
+                                        let mut meta = sce_rust_runtime::EventWithMetadata::new(
+                                            TodoPeerEvent::TodoWrite,
+                                        );
+                                        meta.set_event_data(event_data);
+                                        engine.raise(meta);
                                     }
+
+                                    let _ = event_data; // suppress unused warning in branches that skip dispatch
+                                    let _ = send_id; // suppress unused warning when no send operation
                                 }
 
-                                let _ = event_data; // suppress unused warning in branches that skip dispatch
-                                let _ = send_id; // suppress unused warning when no send operation
+                                {
+                                    let send_id =
+                                        ::sce_rust_runtime::sce_string_from_str("__send_3");
+
+                                    // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                                    // delivered, so each name carries a vector. The typed value is kept
+                                    // rather than its text — a receiver reading `_event.data.value === 42`
+                                    // finds the string "42" unequal.
+                                    //
+                                    // Declared out here rather than inside the payload block because
+                                    // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                                    // below are renderings of that one evaluation: the BasicHTTP and
+                                    // host-served arms read this map instead of asking the data model again.
+                                    let mut _send_wire_params: ::std::collections::BTreeMap<
+                                        String,
+                                        Vec<::sce_rust_runtime::ScriptValue>,
+                                    > = ::std::collections::BTreeMap::new();
+                                    // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                                    let event_data_string: String = {
+                                        let wire_params = &mut _send_wire_params;
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params.entry("id".to_string()).or_default().push(
+                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(ev.id)),
+                                        );
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params.entry("field".to_string()).or_default().push(
+                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(
+                                                ev.field,
+                                            )),
+                                        );
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params.entry("value".to_string()).or_default().push(
+                                            ::sce_rust_runtime::ScriptValue::String(
+                                                (ev.value).to_string(),
+                                            ),
+                                        );
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params.entry("text".to_string()).or_default().push(
+                                            ::sce_rust_runtime::ScriptValue::String(
+                                                ev.text.to_string(),
+                                            ),
+                                        );
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params
+                                            .entry("wallTime".to_string())
+                                            .or_default()
+                                            .push(::sce_rust_runtime::ScriptValue::String(
+                                                (self.clock.wallTime).to_string(),
+                                            ));
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params.entry("counter".to_string()).or_default().push(
+                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(
+                                                self.clock.counter,
+                                            )),
+                                        );
+                                        // The value is read from the machine's field as it stands now.
+                                        wire_params.entry("nodeId".to_string()).or_default().push(
+                                            ::sce_rust_runtime::ScriptValue::String(
+                                                (self.node).to_string(),
+                                            ),
+                                        );
+                                        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+                                    };
+                                    let event_data: &str = &event_data_string;
+
+                                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+                                    // which declared it to this build. Dispatch rather than refuse.
+                                    {
+                                        let host_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
+                                        let __sce_request = sce_rust_runtime::HostSendRequest {
+                                            processor_type: "sce:mesh".to_string(),
+                                            event_name: "todo.write".to_string(),
+                                            target: "#server".to_string(),
+                                            content: "".to_string(),
+                                            params: host_params,
+                                            send_id: send_id.to_string(),
+                                            // W3C SCXML 5.10: the payload computed above, once, for every arm.
+                                            event_data: event_data.to_string(),
+                                            // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                                            // processed now, carried back out as a W3C child's send to its
+                                            // parent carries it (§scxml-6.4.1). Analysis keeps the field on
+                                            // every machine with a host-served send.
+                                            invoke_id: self.pending_event_invokeid.to_string(),
+                                        };
+                                        let __sce_served = engine.perform_host_send(__sce_request);
+                                        // W3C SCXML 6.2: a declared type with no handler registered is,
+                                        // from the document's side, a processor the platform does not
+                                        // support — the act it asked for was performed by nobody. Same
+                                        // event, so a wiring mistake cannot read as success.
+                                        if __sce_served.is_none()
+                                            && !engine.has_event_processor("sce:mesh")
+                                        {
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                            engine.raise(err_meta);
+                                        }
+                                    }
+
+                                    let _ = event_data; // suppress unused warning in branches that skip dispatch
+                                    let _ = send_id; // suppress unused warning when no send operation
+                                }
                             }
                         }
                     }
-                    2 => {
-                        // SCE-MAP: todo_peer.scxml:330 :: open :: _transition_2
-                        // W3C SCXML 3.13: Transition 2 actions
+                    3 => {
+                        // SCE-MAP: todo_peer.scxml:381 :: open :: _transition_3
+                        // W3C SCXML 3.13: Transition 3 actions
                         let ev = match &self.pending_payload {
                             TodoPeerPayload::TodoWrite(ev) => ev.clone(),
                             _ => return,
@@ -3785,9 +4009,9 @@ impl StatePolicy for TodoPeerPolicy {
                             }
                         }
                     }
-                    3 => {
-                        // SCE-MAP: todo_peer.scxml:346 :: open :: _transition_3
-                        // W3C SCXML 3.13: Transition 3 actions
+                    4 => {
+                        // SCE-MAP: todo_peer.scxml:397 :: open :: _transition_4
+                        // W3C SCXML 3.13: Transition 4 actions
                         let ev = match &self.pending_payload {
                             TodoPeerPayload::TodoWrite(ev) => ev.clone(),
                             _ => return,
@@ -4240,9 +4464,9 @@ impl StatePolicy for TodoPeerPolicy {
                             }
                         }
                     }
-                    4 => {
-                        // SCE-MAP: todo_peer.scxml:428 :: open :: _transition_4
-                        // W3C SCXML 3.13: Transition 4 actions
+                    5 => {
+                        // SCE-MAP: todo_peer.scxml:479 :: open :: _transition_5
+                        // W3C SCXML 3.13: Transition 5 actions
                         let ev = match &self.pending_payload {
                             TodoPeerPayload::TodoSupersede(ev) => ev.clone(),
                             _ => return,
@@ -4708,9 +4932,9 @@ impl StatePolicy for TodoPeerPolicy {
                             }
                         }
                     }
-                    5 => {
-                        // SCE-MAP: todo_peer.scxml:502 :: open :: _transition_5
-                        // W3C SCXML 3.13: Transition 5 actions
+                    6 => {
+                        // SCE-MAP: todo_peer.scxml:553 :: open :: _transition_6
+                        // W3C SCXML 3.13: Transition 6 actions
                         let ev = match &self.pending_payload {
                             TodoPeerPayload::TodoKeep(ev) => ev.clone(),
                             _ => return,
@@ -4760,9 +4984,9 @@ impl StatePolicy for TodoPeerPolicy {
                             }
                         }
                     }
-                    6 => {
-                        // SCE-MAP: todo_peer.scxml:519 :: open :: _transition_6
-                        // W3C SCXML 3.13: Transition 6 actions
+                    7 => {
+                        // SCE-MAP: todo_peer.scxml:570 :: open :: _transition_7
+                        // W3C SCXML 3.13: Transition 7 actions
                         let ev = match &self.pending_payload {
                             TodoPeerPayload::TodoCompact(ev) => ev.clone(),
                             _ => return,
@@ -4846,9 +5070,9 @@ impl StatePolicy for TodoPeerPolicy {
                             }
                         }
                     }
-                    7 => {
-                        // SCE-MAP: todo_peer.scxml:540 :: open :: _transition_7
-                        // W3C SCXML 3.13: Transition 7 actions
+                    8 => {
+                        // SCE-MAP: todo_peer.scxml:591 :: open :: _transition_8
+                        // W3C SCXML 3.13: Transition 8 actions
                         let ev = match &self.pending_payload {
                             TodoPeerPayload::TodoSettle(ev) => ev.clone(),
                             _ => return,
@@ -5020,9 +5244,9 @@ impl StatePolicy for TodoPeerPolicy {
                             }
                         }
                     }
-                    8 => {
-                        // SCE-MAP: todo_peer.scxml:564 :: open :: _transition_8
-                        // W3C SCXML 3.13: Transition 8 actions
+                    9 => {
+                        // SCE-MAP: todo_peer.scxml:615 :: open :: _transition_9
+                        // W3C SCXML 3.13: Transition 9 actions
                         let ev = match &self.pending_payload {
                             TodoPeerPayload::TodoPropose(ev) => ev.clone(),
                             _ => return,
@@ -5171,9 +5395,9 @@ impl StatePolicy for TodoPeerPolicy {
                             }
                         }
                     }
-                    9 => {
-                        // SCE-MAP: todo_peer.scxml:594 :: open :: _transition_9
-                        // W3C SCXML 3.13: Transition 9 actions
+                    10 => {
+                        // SCE-MAP: todo_peer.scxml:645 :: open :: _transition_10
+                        // W3C SCXML 3.13: Transition 10 actions
                         let ev = match &self.pending_payload {
                             TodoPeerPayload::TodoAck(ev) => ev.clone(),
                             _ => return,
@@ -5645,9 +5869,9 @@ impl StatePolicy for TodoPeerPolicy {
                             }
                         }
                     }
-                    10 => {
-                        // SCE-MAP: todo_peer.scxml:663 :: open :: _transition_10
-                        // W3C SCXML 3.13: Transition 10 actions
+                    11 => {
+                        // SCE-MAP: todo_peer.scxml:714 :: open :: _transition_11
+                        // W3C SCXML 3.13: Transition 11 actions
                         let ev = match &self.pending_payload {
                             TodoPeerPayload::TodoFloor(ev) => ev.clone(),
                             _ => return,
@@ -5791,9 +6015,9 @@ impl StatePolicy for TodoPeerPolicy {
                             }
                         }
                     }
-                    11 => {
-                        // SCE-MAP: todo_peer.scxml:699 :: open :: _transition_11
-                        // W3C SCXML 3.13: Transition 11 actions
+                    12 => {
+                        // SCE-MAP: todo_peer.scxml:750 :: open :: _transition_12
+                        // W3C SCXML 3.13: Transition 12 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             {
@@ -5854,9 +6078,9 @@ impl StatePolicy for TodoPeerPolicy {
                             }
                         }
                     }
-                    12 => {
-                        // SCE-MAP: todo_peer.scxml:710 :: open :: _transition_12
-                        // W3C SCXML 3.13: Transition 12 actions
+                    13 => {
+                        // SCE-MAP: todo_peer.scxml:761 :: open :: _transition_13
+                        // W3C SCXML 3.13: Transition 13 actions
                         let ev = match &self.pending_payload {
                             TodoPeerPayload::TodoVisit(ev) => ev.clone(),
                             _ => return,
@@ -6169,9 +6393,9 @@ impl StatePolicy for TodoPeerPolicy {
                             }
                         }
                     }
-                    13 => {
-                        // SCE-MAP: todo_peer.scxml:759 :: open :: _transition_13
-                        // W3C SCXML 3.13: Transition 13 actions
+                    14 => {
+                        // SCE-MAP: todo_peer.scxml:810 :: open :: _transition_14
+                        // W3C SCXML 3.13: Transition 14 actions
                         let ev = match &self.pending_payload {
                             TodoPeerPayload::TodoNode(ev) => ev.clone(),
                             _ => return,
@@ -6579,9 +6803,9 @@ impl StatePolicy for TodoPeerPolicy {
                             }
                         }
                     }
-                    14 => {
-                        // SCE-MAP: todo_peer.scxml:808 :: open :: _transition_14
-                        // W3C SCXML 3.13: Transition 14 actions
+                    15 => {
+                        // SCE-MAP: todo_peer.scxml:859 :: open :: _transition_15
+                        // W3C SCXML 3.13: Transition 15 actions
                         let ev = match &self.pending_payload {
                             TodoPeerPayload::TodoShare(ev) => ev.clone(),
                             _ => return,
@@ -7143,9 +7367,9 @@ if self.hub && ev.to == 2 {
                             }
                         }
                     }
-                    15 => {
-                        // SCE-MAP: todo_peer.scxml:890 :: open :: _transition_15
-                        // W3C SCXML 3.13: Transition 15 actions
+                    16 => {
+                        // SCE-MAP: todo_peer.scxml:941 :: open :: _transition_16
+                        // W3C SCXML 3.13: Transition 16 actions
                         let ev = match &self.pending_payload {
                             TodoPeerPayload::TodoAgenda(ev) => ev.clone(),
                             _ => return,
@@ -7711,9 +7935,9 @@ if self.hub && ev.to == 2 {
                             }
                         }
                     }
-                    16 => {
-                        // SCE-MAP: todo_peer.scxml:1010 :: open :: _transition_16
-                        // W3C SCXML 3.13: Transition 16 actions
+                    17 => {
+                        // SCE-MAP: todo_peer.scxml:1061 :: open :: _transition_17
+                        // W3C SCXML 3.13: Transition 17 actions
                         let ev = match &self.pending_payload {
                             TodoPeerPayload::TodoZone(ev) => ev.clone(),
                             _ => return,
@@ -7829,9 +8053,9 @@ if self.hub && ev.to == 2 {
                             }
                         }
                     }
-                    17 => {
-                        // SCE-MAP: todo_peer.scxml:1029 :: open :: _transition_17
-                        // W3C SCXML 3.13: Transition 17 actions
+                    18 => {
+                        // SCE-MAP: todo_peer.scxml:1080 :: open :: _transition_18
+                        // W3C SCXML 3.13: Transition 18 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             // SCE Accepted Subset §2.15: <sce:clear target="zoneStarts1">
@@ -7859,9 +8083,9 @@ if self.hub && ev.to == 2 {
                             self.zone_offsets4.clear();
                         }
                     }
-                    18 => {
-                        // SCE-MAP: todo_peer.scxml:1040 :: open :: _transition_18
-                        // W3C SCXML 3.13: Transition 18 actions
+                    19 => {
+                        // SCE-MAP: todo_peer.scxml:1091 :: open :: _transition_19
+                        // W3C SCXML 3.13: Transition 19 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             // W3C SCXML 5.3: <assign location="refusals">
