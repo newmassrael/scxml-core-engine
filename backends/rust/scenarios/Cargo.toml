@@ -34,6 +34,11 @@ sce-portable-bytes = { path = "../portable-bytes" }
 # conformance harness's own parse does (backends/rust/forge-conformance).
 serde_json = { version = "1", features = ["float_roundtrip"] }
 
+[dev-dependencies]
+# The reference host of the standard host features, which the scenarios of
+# `tests/host_features/` replay a machine against (docs/SCE_HOST_FEATURES.md).
+sce-rust-host-features = { path = "../host-features" }
+
 # The wasm32 build is a cdylib a host script loads (`wasm/run.mjs`); every other
 # target uses the rlib, which is what the native tests link.
 [lib]

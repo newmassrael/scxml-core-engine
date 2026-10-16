@@ -1853,6 +1853,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "sce-rust-host-features"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "sce-rust-runtime",
+ "serde_json",
+]
+
+[[package]]
 name = "sce-rust-lua"
 version = "0.1.0"
 dependencies = [
@@ -1893,6 +1902,7 @@ version = "0.1.0"
 dependencies = [
  "sce-forge-runtime",
  "sce-portable-bytes",
+ "sce-rust-host-features",
  "sce-rust-runtime",
  "serde_json",
  "wasm-bindgen",
