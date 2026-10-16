@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: f00a1af9509aeb855cb8946645995169e7a8753555e3a8541ac4f9ef548d274c
-#![doc = "SCE-MAP: event_schedule.scxml:15 :: _forge_body"]
-// SCE-MAP: event_schedule.scxml:15 :: _forge_body
+// source-hash: 1bdfca3db4bb33c8c293390903822d652850c4718faefdf3c98b4d7553b2c7ee
+#![doc = "SCE-MAP: event_schedule.scxml:18 :: _forge_body"]
+// SCE-MAP: event_schedule.scxml:18 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="event-schema")
 // Runtime: none
@@ -21,8 +21,21 @@ pub struct EventSchedulePayload {
     pub bymonth: i64,
     pub md_pos: i64,
     pub md_neg: i64,
-    pub day_a: i64,
-    pub day_b: i64,
+    pub invalid: i64,
+    pub op0: i64,
+    pub op1: i64,
+    pub op2: i64,
+    pub op3: i64,
+    pub op4: i64,
+    pub op5: i64,
+    pub op6: i64,
+    pub on0: i64,
+    pub on1: i64,
+    pub on2: i64,
+    pub on3: i64,
+    pub on4: i64,
+    pub on5: i64,
+    pub on6: i64,
     pub sp_pos: i64,
     pub sp_neg: i64,
     pub wkst: i64,

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: f00a1af9509aeb855cb8946645995169e7a8753555e3a8541ac4f9ef548d274c
+// source-hash: 1bdfca3db4bb33c8c293390903822d652850c4718faefdf3c98b4d7553b2c7ee
 #![doc = "SCE-MAP: event_conflict.scxml:10 :: _forge_body"]
 // SCE-MAP: event_conflict.scxml:10 :: _forge_body
 
@@ -18,7 +18,7 @@ use super::mv_value;
 pub fn event_conflict(values: &[mv_value::MvValuePayload], id: u64) -> bool {
     let mut twice: bool = false;
     for a in values.iter() {
-        if a.id == id && (a.field == 9 || a.field >= 15 && a.field <= 44) {
+        if a.id == id && (a.field == 9 || a.field >= 15 && a.field <= 58) {
             for b in values.iter() {
                 if b.id == id
                     && b.field == a.field

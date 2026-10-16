@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: f00a1af9509aeb855cb8946645995169e7a8753555e3a8541ac4f9ef548d274c
+// source-hash: 1bdfca3db4bb33c8c293390903822d652850c4718faefdf3c98b4d7553b2c7ee
 // SCE-MAP: event_conflict.scxml:10 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")
@@ -21,7 +21,7 @@ import com.sce.generated.mv_value.*
 fun eventConflict(values: List<MvValuePayload>, id: ULong): Boolean {
     var twice: Boolean = false
     for (a in values) {
-        if (a.id == id && (a.field == 9.toULong() || a.field >= 15.toULong() && a.field <= 44.toULong())) {
+        if (a.id == id && (a.field == 9.toULong() || a.field >= 15.toULong() && a.field <= 58.toULong())) {
             for (b in values) {
                 if (b.id == id && b.field == a.field && (b.wallTime != a.wallTime || b.counter != a.counter || b.nodeId != a.nodeId)) {
                     twice = true

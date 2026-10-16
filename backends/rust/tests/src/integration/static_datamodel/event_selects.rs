@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: f00a1af9509aeb855cb8946645995169e7a8753555e3a8541ac4f9ef548d274c
-#![doc = "SCE-MAP: event_selects.scxml:18 :: _forge_body"]
-// SCE-MAP: event_selects.scxml:18 :: _forge_body
+// source-hash: 1bdfca3db4bb33c8c293390903822d652850c4718faefdf3c98b4d7553b2c7ee
+#![doc = "SCE-MAP: event_selects.scxml:19 :: _forge_body"]
+// SCE-MAP: event_selects.scxml:19 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")
 // Runtime: sce_forge_runtime
@@ -199,7 +199,22 @@ pub fn event_selects(
         )?;
         let has_month: bool = s.bymonth != 0;
         let has_md: bool = s.md_pos | s.md_neg != 0;
-        let has_day: bool = s.days | s.day_a | s.day_b != 0;
+        let has_day: bool = s.days
+            | s.op0
+            | s.op1
+            | s.op2
+            | s.op3
+            | s.op4
+            | s.op5
+            | s.op6
+            | s.on0
+            | s.on1
+            | s.on2
+            | s.on3
+            | s.on4
+            | s.on5
+            | s.on6
+            != 0;
         let has_wn: bool = s.wn_pos | s.wn_neg != 0;
         let has_yd: bool = s.yd0
             | s.yd1
@@ -258,29 +273,66 @@ pub fn event_selects(
                 1,
             )?
         };
-        let ord_mask: i64 = if wd < 4 { s.day_a } else { s.day_b };
-        let ord_base: i64 = sce_forge_runtime::algorithm::mul::<i64>(
-            sce_forge_runtime::algorithm::rem::<i64>(wd, 4)?,
-            10,
-        )?;
-        let ord_first: bool = ord_pos <= 5
-            && ord_mask
-                >> sce_forge_runtime::algorithm::sub::<i64>(
-                    sce_forge_runtime::algorithm::add::<i64>(ord_base, ord_pos)?,
-                    1,
-                )?
-                & 1
-                == 1;
-        let ord_last: bool = ord_neg <= 5
-            && ord_mask
-                >> sce_forge_runtime::algorithm::add::<i64>(
-                    sce_forge_runtime::algorithm::add::<i64>(ord_base, 4)?,
-                    ord_neg,
-                )?
-                & 1
-                == 1;
+        let word_first: i64 = if wd == 0 {
+            s.op0
+        } else {
+            if wd == 1 {
+                s.op1
+            } else {
+                if wd == 2 {
+                    s.op2
+                } else {
+                    if wd == 3 {
+                        s.op3
+                    } else {
+                        if wd == 4 {
+                            s.op4
+                        } else {
+                            if wd == 5 {
+                                s.op5
+                            } else {
+                                s.op6
+                            }
+                        }
+                    }
+                }
+            }
+        };
+        let word_last: i64 = if wd == 0 {
+            s.on0
+        } else {
+            if wd == 1 {
+                s.on1
+            } else {
+                if wd == 2 {
+                    s.on2
+                } else {
+                    if wd == 3 {
+                        s.on3
+                    } else {
+                        if wd == 4 {
+                            s.on4
+                        } else {
+                            if wd == 5 {
+                                s.on5
+                            } else {
+                                s.on6
+                            }
+                        }
+                    }
+                }
+            }
+        };
+        let ord_first: bool = ord_pos <= 53
+            && word_first >> sce_forge_runtime::algorithm::sub::<i64>(ord_pos, 1)? & 1 == 1;
+        let ord_last: bool = ord_neg <= 53
+            && word_last >> sce_forge_runtime::algorithm::sub::<i64>(ord_neg, 1)? & 1 == 1;
         let day_match: bool = plain_day || ord_first || ord_last;
-        let clamped: bool = dom == (if dom0 < last { dom0 } else { last });
+        let clamped: bool = if s.invalid == 1 {
+            dom == dom0
+        } else {
+            dom == (if dom0 < last { dom0 } else { last })
+        };
         ok = !has_month || s.bymonth >> mon & 1 == 1;
         if freq == 1 {
             if has_md {

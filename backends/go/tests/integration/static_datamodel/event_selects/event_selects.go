@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: f00a1af9509aeb855cb8946645995169e7a8753555e3a8541ac4f9ef548d274c
-// SCE-MAP: event_selects.scxml:18 :: _forge_body
+// source-hash: 1bdfca3db4bb33c8c293390903822d652850c4718faefdf3c98b4d7553b2c7ee
+// SCE-MAP: event_selects.scxml:19 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")
 // Runtime: sce_forge_runtime
@@ -132,7 +132,7 @@ func EventSelects(s sce_event_schedule.EventSchedulePayload, d int64, startDay i
         if sceFailure.Failed() {
             return sceValue, sceFailure.Err()
         }
-        var hasDay bool = s.Days | s.DayA | s.DayB != 0
+        var hasDay bool = s.Days | s.Op0 | s.Op1 | s.Op2 | s.Op3 | s.Op4 | s.Op5 | s.Op6 | s.On0 | s.On1 | s.On2 | s.On3 | s.On4 | s.On5 | s.On6 != 0
         if sceFailure.Failed() {
             return sceValue, sceFailure.Err()
         }
@@ -164,19 +164,19 @@ func EventSelects(s sce_event_schedule.EventSchedulePayload, d int64, startDay i
         if sceFailure.Failed() {
             return sceValue, sceFailure.Err()
         }
-        var ordMask int64 = func() int64 { if wd < 4 { return s.DayA }; return s.DayB }()
+        var wordFirst int64 = func() int64 { if wd == 0 { return s.Op0 }; return func() int64 { if wd == 1 { return s.Op1 }; return func() int64 { if wd == 2 { return s.Op2 }; return func() int64 { if wd == 3 { return s.Op3 }; return func() int64 { if wd == 4 { return s.Op4 }; return func() int64 { if wd == 5 { return s.Op5 }; return s.Op6 }() }() }() }() }() }()
         if sceFailure.Failed() {
             return sceValue, sceFailure.Err()
         }
-        var ordBase int64 = scealgorithm.MulInt64(&sceFailure, scealgorithm.RemInt64(&sceFailure, wd, 4), 10)
+        var wordLast int64 = func() int64 { if wd == 0 { return s.On0 }; return func() int64 { if wd == 1 { return s.On1 }; return func() int64 { if wd == 2 { return s.On2 }; return func() int64 { if wd == 3 { return s.On3 }; return func() int64 { if wd == 4 { return s.On4 }; return func() int64 { if wd == 5 { return s.On5 }; return s.On6 }() }() }() }() }() }()
         if sceFailure.Failed() {
             return sceValue, sceFailure.Err()
         }
-        var ordFirst bool = ordPos <= 5 && ordMask >> scealgorithm.SubInt64(&sceFailure, scealgorithm.AddInt64(&sceFailure, ordBase, ordPos), 1) & 1 == 1
+        var ordFirst bool = ordPos <= 53 && wordFirst >> scealgorithm.SubInt64(&sceFailure, ordPos, 1) & 1 == 1
         if sceFailure.Failed() {
             return sceValue, sceFailure.Err()
         }
-        var ordLast bool = ordNeg <= 5 && ordMask >> scealgorithm.AddInt64(&sceFailure, scealgorithm.AddInt64(&sceFailure, ordBase, 4), ordNeg) & 1 == 1
+        var ordLast bool = ordNeg <= 53 && wordLast >> scealgorithm.SubInt64(&sceFailure, ordNeg, 1) & 1 == 1
         if sceFailure.Failed() {
             return sceValue, sceFailure.Err()
         }
@@ -184,7 +184,7 @@ func EventSelects(s sce_event_schedule.EventSchedulePayload, d int64, startDay i
         if sceFailure.Failed() {
             return sceValue, sceFailure.Err()
         }
-        var clamped bool = dom == (func() int64 { if dom0 < last { return dom0 }; return last }())
+        var clamped bool = func() bool { if s.Invalid == 1 { return dom == dom0 }; return dom == (func() int64 { if dom0 < last { return dom0 }; return last }()) }()
         if sceFailure.Failed() {
             return sceValue, sceFailure.Err()
         }

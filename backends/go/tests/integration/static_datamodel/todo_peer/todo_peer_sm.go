@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: f00a1af9509aeb855cb8946645995169e7a8753555e3a8541ac4f9ef548d274c
+// source-hash: 1bdfca3db4bb33c8c293390903822d652850c4718faefdf3c98b4d7553b2c7ee
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -734,8 +734,21 @@ type TodoPeerScheduleRecord struct {
 	bymonth int64
 	mdPos int64
 	mdNeg int64
-	dayA int64
-	dayB int64
+	invalid int64
+	op0 int64
+	op1 int64
+	op2 int64
+	op3 int64
+	op4 int64
+	op5 int64
+	op6 int64
+	on0 int64
+	on1 int64
+	on2 int64
+	on3 int64
+	on4 int64
+	on5 int64
+	on6 int64
 	spPos int64
 	spNeg int64
 	wkst int64
@@ -812,14 +825,79 @@ func (r TodoPeerScheduleRecord) MdNeg() int64 {
 	return r.mdNeg
 }
 
-// DayA reports the `dayA` field.
-func (r TodoPeerScheduleRecord) DayA() int64 {
-	return r.dayA
+// Invalid reports the `invalid` field.
+func (r TodoPeerScheduleRecord) Invalid() int64 {
+	return r.invalid
 }
 
-// DayB reports the `dayB` field.
-func (r TodoPeerScheduleRecord) DayB() int64 {
-	return r.dayB
+// Op0 reports the `op0` field.
+func (r TodoPeerScheduleRecord) Op0() int64 {
+	return r.op0
+}
+
+// Op1 reports the `op1` field.
+func (r TodoPeerScheduleRecord) Op1() int64 {
+	return r.op1
+}
+
+// Op2 reports the `op2` field.
+func (r TodoPeerScheduleRecord) Op2() int64 {
+	return r.op2
+}
+
+// Op3 reports the `op3` field.
+func (r TodoPeerScheduleRecord) Op3() int64 {
+	return r.op3
+}
+
+// Op4 reports the `op4` field.
+func (r TodoPeerScheduleRecord) Op4() int64 {
+	return r.op4
+}
+
+// Op5 reports the `op5` field.
+func (r TodoPeerScheduleRecord) Op5() int64 {
+	return r.op5
+}
+
+// Op6 reports the `op6` field.
+func (r TodoPeerScheduleRecord) Op6() int64 {
+	return r.op6
+}
+
+// On0 reports the `on0` field.
+func (r TodoPeerScheduleRecord) On0() int64 {
+	return r.on0
+}
+
+// On1 reports the `on1` field.
+func (r TodoPeerScheduleRecord) On1() int64 {
+	return r.on1
+}
+
+// On2 reports the `on2` field.
+func (r TodoPeerScheduleRecord) On2() int64 {
+	return r.on2
+}
+
+// On3 reports the `on3` field.
+func (r TodoPeerScheduleRecord) On3() int64 {
+	return r.on3
+}
+
+// On4 reports the `on4` field.
+func (r TodoPeerScheduleRecord) On4() int64 {
+	return r.on4
+}
+
+// On5 reports the `on5` field.
+func (r TodoPeerScheduleRecord) On5() int64 {
+	return r.on5
+}
+
+// On6 reports the `on6` field.
+func (r TodoPeerScheduleRecord) On6() int64 {
+	return r.on6
 }
 
 // SpPos reports the `spPos` field.
@@ -924,7 +1002,7 @@ func sceAdapt_EventAgenda__vv(p0 TodoPeerScheduleRecord, p1 []TodoPeerValueRecor
 	for i, e := range p1 {
 		a1[i] = sce_mv_value.MvValuePayload{Id: e.id, Field: e.field, Value: e.value, Text: e.text, WallTime: e.wallTime, Counter: e.counter, NodeId: e.nodeId}
 	}
-	r, err := sce_event_agenda.EventAgenda(sce_event_schedule.EventSchedulePayload{Zone: p0.zone, Start: p0.start, Length: p0.length, Freq: p0.freq, Interval: p0.interval, Days: p0.days, Count: p0.count, Until: p0.until, Bymonth: p0.bymonth, MdPos: p0.mdPos, MdNeg: p0.mdNeg, DayA: p0.dayA, DayB: p0.dayB, SpPos: p0.spPos, SpNeg: p0.spNeg, Wkst: p0.wkst, WnPos: p0.wnPos, WnNeg: p0.wnNeg, Yd0: p0.yd0, Yd1: p0.yd1, Yd2: p0.yd2, Yd3: p0.yd3, Yd4: p0.yd4, Yd5: p0.yd5, Ydn0: p0.ydn0, Ydn1: p0.ydn1, Ydn2: p0.ydn2, Ydn3: p0.ydn3, Ydn4: p0.ydn4, Ydn5: p0.ydn5, Gone: p0.gone, Flag: p0.flag}, a1, p2, p3, p4, p5)
+	r, err := sce_event_agenda.EventAgenda(sce_event_schedule.EventSchedulePayload{Zone: p0.zone, Start: p0.start, Length: p0.length, Freq: p0.freq, Interval: p0.interval, Days: p0.days, Count: p0.count, Until: p0.until, Bymonth: p0.bymonth, MdPos: p0.mdPos, MdNeg: p0.mdNeg, Invalid: p0.invalid, Op0: p0.op0, Op1: p0.op1, Op2: p0.op2, Op3: p0.op3, Op4: p0.op4, Op5: p0.op5, Op6: p0.op6, On0: p0.on0, On1: p0.on1, On2: p0.on2, On3: p0.on3, On4: p0.on4, On5: p0.on5, On6: p0.on6, SpPos: p0.spPos, SpNeg: p0.spNeg, Wkst: p0.wkst, WnPos: p0.wnPos, WnNeg: p0.wnNeg, Yd0: p0.yd0, Yd1: p0.yd1, Yd2: p0.yd2, Yd3: p0.yd3, Yd4: p0.yd4, Yd5: p0.yd5, Ydn0: p0.ydn0, Ydn1: p0.ydn1, Ydn2: p0.ydn2, Ydn3: p0.ydn3, Ydn4: p0.ydn4, Ydn5: p0.ydn5, Gone: p0.gone, Flag: p0.flag}, a1, p2, p3, p4, p5)
 	if err != nil {
 		return scealgorithm.Outcome[[]TodoPeerOccurrenceRecord]{Err: err}
 	}
@@ -1257,7 +1335,7 @@ func NewTodoPeerPolicy() TodoPeerPolicy {
 		vZoneOffsets: nil,
 		vZoneRows: 0,
 		vSplit: false,
-		vSched: TodoPeerScheduleRecord{zone: 0, start: -1, length: 0, freq: 0, interval: 1, days: 0, count: 0, until: 0, bymonth: 0, mdPos: 0, mdNeg: 0, dayA: 0, dayB: 0, spPos: 0, spNeg: 0, wkst: 1, wnPos: 0, wnNeg: 0, yd0: 0, yd1: 0, yd2: 0, yd3: 0, yd4: 0, yd5: 0, ydn0: 0, ydn1: 0, ydn2: 0, ydn3: 0, ydn4: 0, ydn5: 0, gone: 0, flag: 0},
+		vSched: TodoPeerScheduleRecord{zone: 0, start: -1, length: 0, freq: 0, interval: 1, days: 0, count: 0, until: 0, bymonth: 0, mdPos: 0, mdNeg: 0, invalid: 0, op0: 0, op1: 0, op2: 0, op3: 0, op4: 0, op5: 0, op6: 0, on0: 0, on1: 0, on2: 0, on3: 0, on4: 0, on5: 0, on6: 0, spPos: 0, spNeg: 0, wkst: 1, wnPos: 0, wnNeg: 0, yd0: 0, yd1: 0, yd2: 0, yd3: 0, yd4: 0, yd5: 0, ydn0: 0, ydn1: 0, ydn2: 0, ydn3: 0, ydn4: 0, ydn5: 0, gone: 0, flag: 0},
 		vRawCount: 0,
 		vRawLast: 0,
 		vUtcSec: 0,
@@ -2122,7 +2200,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 	case TodoPeerStateOpen:
 		switch transitionIndex {
 		case 0:
-			//line todo_peer.scxml:211
+			//line todo_peer.scxml:224
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != TodoPeerPayloadTagTodoJoin {
@@ -2138,7 +2216,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 
 			}()
 		case 1:
-			//line todo_peer.scxml:219
+			//line todo_peer.scxml:232
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != TodoPeerPayloadTagTodoEdit {
@@ -2462,7 +2540,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 	}
 			}()
 		case 2:
-			//line todo_peer.scxml:268
+			//line todo_peer.scxml:281
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != TodoPeerPayloadTagTodoWrite {
@@ -2838,7 +2916,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 
 			}()
 		case 3:
-			//line todo_peer.scxml:350
+			//line todo_peer.scxml:363
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != TodoPeerPayloadTagTodoSupersede {
@@ -3210,7 +3288,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 
 			}()
 		case 4:
-			//line todo_peer.scxml:421
+			//line todo_peer.scxml:434
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != TodoPeerPayloadTagTodoKeep {
@@ -3246,7 +3324,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 
 			}()
 		case 5:
-			//line todo_peer.scxml:438
+			//line todo_peer.scxml:451
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != TodoPeerPayloadTagTodoCompact {
@@ -3300,7 +3378,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 
 			}()
 		case 6:
-			//line todo_peer.scxml:454
+			//line todo_peer.scxml:467
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -3451,7 +3529,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 
 			}()
 		case 7:
-			//line todo_peer.scxml:481
+			//line todo_peer.scxml:494
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != TodoPeerPayloadTagTodoVisit {
@@ -3717,7 +3795,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 
 			}()
 		case 8:
-			//line todo_peer.scxml:522
+			//line todo_peer.scxml:535
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != TodoPeerPayloadTagTodoNode {
@@ -4013,7 +4091,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 
 			}()
 		case 9:
-			//line todo_peer.scxml:569
+			//line todo_peer.scxml:582
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != TodoPeerPayloadTagTodoShare {
@@ -4593,7 +4671,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 
 			}()
 		case 10:
-			//line todo_peer.scxml:651
+			//line todo_peer.scxml:664
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != TodoPeerPayloadTagTodoAgenda {
@@ -4662,11 +4740,63 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 
 
 
-	p.vSched.dayA = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 26, 0)
+	p.vSched.invalid = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 26, 0)
 
 
 
-	p.vSched.dayB = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 27, 0)
+	p.vSched.op0 = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 45, 0)
+
+
+
+	p.vSched.op1 = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 46, 0)
+
+
+
+	p.vSched.op2 = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 47, 0)
+
+
+
+	p.vSched.op3 = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 48, 0)
+
+
+
+	p.vSched.op4 = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 49, 0)
+
+
+
+	p.vSched.op5 = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 50, 0)
+
+
+
+	p.vSched.op6 = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 51, 0)
+
+
+
+	p.vSched.on0 = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 52, 0)
+
+
+
+	p.vSched.on1 = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 53, 0)
+
+
+
+	p.vSched.on2 = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 54, 0)
+
+
+
+	p.vSched.on3 = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 55, 0)
+
+
+
+	p.vSched.on4 = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 56, 0)
+
+
+
+	p.vSched.on5 = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 57, 0)
+
+
+
+	p.vSched.on6 = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 58, 0)
 
 
 
@@ -5019,7 +5149,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 
 			}()
 		case 11:
-			//line todo_peer.scxml:758
+			//line todo_peer.scxml:784
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != TodoPeerPayloadTagTodoZone {
@@ -5099,7 +5229,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 
 			}()
 		case 12:
-			//line todo_peer.scxml:777
+			//line todo_peer.scxml:803
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -5144,7 +5274,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 
 			}()
 		case 13:
-			//line todo_peer.scxml:788
+			//line todo_peer.scxml:814
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

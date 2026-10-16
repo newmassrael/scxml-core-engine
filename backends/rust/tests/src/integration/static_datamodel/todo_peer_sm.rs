@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: f00a1af9509aeb855cb8946645995169e7a8753555e3a8541ac4f9ef548d274c
+// source-hash: 1bdfca3db4bb33c8c293390903822d652850c4718faefdf3c98b4d7553b2c7ee
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -510,8 +510,21 @@ pub struct TodoPeerScheduleRecord {
     pub bymonth: i64,
     pub mdPos: i64,
     pub mdNeg: i64,
-    pub dayA: i64,
-    pub dayB: i64,
+    pub invalid: i64,
+    pub op0: i64,
+    pub op1: i64,
+    pub op2: i64,
+    pub op3: i64,
+    pub op4: i64,
+    pub op5: i64,
+    pub op6: i64,
+    pub on0: i64,
+    pub on1: i64,
+    pub on2: i64,
+    pub on3: i64,
+    pub on4: i64,
+    pub on5: i64,
+    pub on6: i64,
     pub spPos: i64,
     pub spNeg: i64,
     pub wkst: i64,
@@ -568,8 +581,21 @@ fn call_EventAgenda__vv(
             bymonth: p0.bymonth,
             md_pos: p0.mdPos,
             md_neg: p0.mdNeg,
-            day_a: p0.dayA,
-            day_b: p0.dayB,
+            invalid: p0.invalid,
+            op0: p0.op0,
+            op1: p0.op1,
+            op2: p0.op2,
+            op3: p0.op3,
+            op4: p0.op4,
+            op5: p0.op5,
+            op6: p0.op6,
+            on0: p0.on0,
+            on1: p0.on1,
+            on2: p0.on2,
+            on3: p0.on3,
+            on4: p0.on4,
+            on5: p0.on5,
+            on6: p0.on6,
             sp_pos: p0.spPos,
             sp_neg: p0.spNeg,
             wkst: p0.wkst,
@@ -1264,12 +1290,64 @@ impl ::sce_rust_runtime::saved_state::SavedValue for TodoPeerScheduleRecord {
                 ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.mdNeg),
             ),
             (
-                "dayA".to_string(),
-                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.dayA),
+                "invalid".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.invalid),
             ),
             (
-                "dayB".to_string(),
-                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.dayB),
+                "op0".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.op0),
+            ),
+            (
+                "op1".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.op1),
+            ),
+            (
+                "op2".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.op2),
+            ),
+            (
+                "op3".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.op3),
+            ),
+            (
+                "op4".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.op4),
+            ),
+            (
+                "op5".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.op5),
+            ),
+            (
+                "op6".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.op6),
+            ),
+            (
+                "on0".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.on0),
+            ),
+            (
+                "on1".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.on1),
+            ),
+            (
+                "on2".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.on2),
+            ),
+            (
+                "on3".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.on3),
+            ),
+            (
+                "on4".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.on4),
+            ),
+            (
+                "on5".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.on5),
+            ),
+            (
+                "on6".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.on6),
             ),
             (
                 "spPos".to_string(),
@@ -1366,8 +1444,21 @@ impl ::sce_rust_runtime::saved_state::SavedValue for TodoPeerScheduleRecord {
             bymonth: ::sce_rust_runtime::saved_state::record_field(value, what, "bymonth")?,
             mdPos: ::sce_rust_runtime::saved_state::record_field(value, what, "mdPos")?,
             mdNeg: ::sce_rust_runtime::saved_state::record_field(value, what, "mdNeg")?,
-            dayA: ::sce_rust_runtime::saved_state::record_field(value, what, "dayA")?,
-            dayB: ::sce_rust_runtime::saved_state::record_field(value, what, "dayB")?,
+            invalid: ::sce_rust_runtime::saved_state::record_field(value, what, "invalid")?,
+            op0: ::sce_rust_runtime::saved_state::record_field(value, what, "op0")?,
+            op1: ::sce_rust_runtime::saved_state::record_field(value, what, "op1")?,
+            op2: ::sce_rust_runtime::saved_state::record_field(value, what, "op2")?,
+            op3: ::sce_rust_runtime::saved_state::record_field(value, what, "op3")?,
+            op4: ::sce_rust_runtime::saved_state::record_field(value, what, "op4")?,
+            op5: ::sce_rust_runtime::saved_state::record_field(value, what, "op5")?,
+            op6: ::sce_rust_runtime::saved_state::record_field(value, what, "op6")?,
+            on0: ::sce_rust_runtime::saved_state::record_field(value, what, "on0")?,
+            on1: ::sce_rust_runtime::saved_state::record_field(value, what, "on1")?,
+            on2: ::sce_rust_runtime::saved_state::record_field(value, what, "on2")?,
+            on3: ::sce_rust_runtime::saved_state::record_field(value, what, "on3")?,
+            on4: ::sce_rust_runtime::saved_state::record_field(value, what, "on4")?,
+            on5: ::sce_rust_runtime::saved_state::record_field(value, what, "on5")?,
+            on6: ::sce_rust_runtime::saved_state::record_field(value, what, "on6")?,
             spPos: ::sce_rust_runtime::saved_state::record_field(value, what, "spPos")?,
             spNeg: ::sce_rust_runtime::saved_state::record_field(value, what, "spNeg")?,
             wkst: ::sce_rust_runtime::saved_state::record_field(value, what, "wkst")?,
@@ -1475,7 +1566,7 @@ pub trait TodoPeerPersist: Sized {
 impl TodoPeerPersist for Engine<TodoPeerPolicy> {
     type Policy = TodoPeerPolicy;
 
-    const SHAPE: &'static str = "84dbefc5d58d7b4aa69b8c27f7e0ee5bce5cff9d4896d5be0566fde874cf3921";
+    const SHAPE: &'static str = "ca510c02a55948373cd4f96a8f567a374088bb8d9016dacc0fe78e39b46e8aca";
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<
         ::sce_rust_runtime::NoHistory,
@@ -2060,8 +2151,21 @@ impl TodoPeerPolicy {
             bymonth: 0,
             mdPos: 0,
             mdNeg: 0,
-            dayA: 0,
-            dayB: 0,
+            invalid: 0,
+            op0: 0,
+            op1: 0,
+            op2: 0,
+            op3: 0,
+            op4: 0,
+            op5: 0,
+            op6: 0,
+            on0: 0,
+            on1: 0,
+            on2: 0,
+            on3: 0,
+            on4: 0,
+            on5: 0,
+            on6: 0,
             spPos: 0,
             spNeg: 0,
             wkst: 1,
@@ -2815,7 +2919,7 @@ impl StatePolicy for TodoPeerPolicy {
             TodoPeerState::Open => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: todo_peer.scxml:211 :: open :: _transition_0
+                        // SCE-MAP: todo_peer.scxml:224 :: open :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         let ev = match &self.pending_payload {
                             TodoPeerPayload::TodoJoin(ev) => ev.clone(),
@@ -2831,7 +2935,7 @@ impl StatePolicy for TodoPeerPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: todo_peer.scxml:219 :: open :: _transition_1
+                        // SCE-MAP: todo_peer.scxml:232 :: open :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
                         let ev = match &self.pending_payload {
                             TodoPeerPayload::TodoEdit(ev) => ev.clone(),
@@ -3263,7 +3367,7 @@ impl StatePolicy for TodoPeerPolicy {
                         }
                     }
                     2 => {
-                        // SCE-MAP: todo_peer.scxml:268 :: open :: _transition_2
+                        // SCE-MAP: todo_peer.scxml:281 :: open :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
                         let ev = match &self.pending_payload {
                             TodoPeerPayload::TodoWrite(ev) => ev.clone(),
@@ -3731,7 +3835,7 @@ impl StatePolicy for TodoPeerPolicy {
                         }
                     }
                     3 => {
-                        // SCE-MAP: todo_peer.scxml:350 :: open :: _transition_3
+                        // SCE-MAP: todo_peer.scxml:363 :: open :: _transition_3
                         // W3C SCXML 3.13: Transition 3 actions
                         let ev = match &self.pending_payload {
                             TodoPeerPayload::TodoSupersede(ev) => ev.clone(),
@@ -4184,7 +4288,7 @@ impl StatePolicy for TodoPeerPolicy {
                         }
                     }
                     4 => {
-                        // SCE-MAP: todo_peer.scxml:421 :: open :: _transition_4
+                        // SCE-MAP: todo_peer.scxml:434 :: open :: _transition_4
                         // W3C SCXML 3.13: Transition 4 actions
                         let ev = match &self.pending_payload {
                             TodoPeerPayload::TodoKeep(ev) => ev.clone(),
@@ -4236,7 +4340,7 @@ impl StatePolicy for TodoPeerPolicy {
                         }
                     }
                     5 => {
-                        // SCE-MAP: todo_peer.scxml:438 :: open :: _transition_5
+                        // SCE-MAP: todo_peer.scxml:451 :: open :: _transition_5
                         // W3C SCXML 3.13: Transition 5 actions
                         let ev = match &self.pending_payload {
                             TodoPeerPayload::TodoCompact(ev) => ev.clone(),
@@ -4328,7 +4432,7 @@ impl StatePolicy for TodoPeerPolicy {
                         }
                     }
                     6 => {
-                        // SCE-MAP: todo_peer.scxml:454 :: open :: _transition_6
+                        // SCE-MAP: todo_peer.scxml:467 :: open :: _transition_6
                         // W3C SCXML 3.13: Transition 6 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -4505,7 +4609,7 @@ impl StatePolicy for TodoPeerPolicy {
                         }
                     }
                     7 => {
-                        // SCE-MAP: todo_peer.scxml:481 :: open :: _transition_7
+                        // SCE-MAP: todo_peer.scxml:494 :: open :: _transition_7
                         // W3C SCXML 3.13: Transition 7 actions
                         let ev = match &self.pending_payload {
                             TodoPeerPayload::TodoVisit(ev) => ev.clone(),
@@ -4804,7 +4908,7 @@ impl StatePolicy for TodoPeerPolicy {
                         }
                     }
                     8 => {
-                        // SCE-MAP: todo_peer.scxml:522 :: open :: _transition_8
+                        // SCE-MAP: todo_peer.scxml:535 :: open :: _transition_8
                         // W3C SCXML 3.13: Transition 8 actions
                         let ev = match &self.pending_payload {
                             TodoPeerPayload::TodoNode(ev) => ev.clone(),
@@ -5206,7 +5310,7 @@ impl StatePolicy for TodoPeerPolicy {
                         }
                     }
                     9 => {
-                        // SCE-MAP: todo_peer.scxml:569 :: open :: _transition_9
+                        // SCE-MAP: todo_peer.scxml:582 :: open :: _transition_9
                         // W3C SCXML 3.13: Transition 9 actions
                         let ev = match &self.pending_payload {
                             TodoPeerPayload::TodoShare(ev) => ev.clone(),
@@ -5770,7 +5874,7 @@ if self.hub && ev.to == 2 {
                         }
                     }
                     10 => {
-                        // SCE-MAP: todo_peer.scxml:651 :: open :: _transition_10
+                        // SCE-MAP: todo_peer.scxml:664 :: open :: _transition_10
                         // W3C SCXML 3.13: Transition 10 actions
                         let ev = match &self.pending_payload {
                             TodoPeerPayload::TodoAgenda(ev) => ev.clone(),
@@ -5834,13 +5938,51 @@ if self.hub && ev.to == 2 {
                             self.sched.mdNeg =
                                 call_EventLatest__v(&self.values, ev.id as u64, 25, 0);
 
-                            // W3C SCXML 5.3: <assign location="sched.dayA">
-                            self.sched.dayA =
+                            // W3C SCXML 5.3: <assign location="sched.invalid">
+                            self.sched.invalid =
                                 call_EventLatest__v(&self.values, ev.id as u64, 26, 0);
 
-                            // W3C SCXML 5.3: <assign location="sched.dayB">
-                            self.sched.dayB =
-                                call_EventLatest__v(&self.values, ev.id as u64, 27, 0);
+                            // W3C SCXML 5.3: <assign location="sched.op0">
+                            self.sched.op0 = call_EventLatest__v(&self.values, ev.id as u64, 45, 0);
+
+                            // W3C SCXML 5.3: <assign location="sched.op1">
+                            self.sched.op1 = call_EventLatest__v(&self.values, ev.id as u64, 46, 0);
+
+                            // W3C SCXML 5.3: <assign location="sched.op2">
+                            self.sched.op2 = call_EventLatest__v(&self.values, ev.id as u64, 47, 0);
+
+                            // W3C SCXML 5.3: <assign location="sched.op3">
+                            self.sched.op3 = call_EventLatest__v(&self.values, ev.id as u64, 48, 0);
+
+                            // W3C SCXML 5.3: <assign location="sched.op4">
+                            self.sched.op4 = call_EventLatest__v(&self.values, ev.id as u64, 49, 0);
+
+                            // W3C SCXML 5.3: <assign location="sched.op5">
+                            self.sched.op5 = call_EventLatest__v(&self.values, ev.id as u64, 50, 0);
+
+                            // W3C SCXML 5.3: <assign location="sched.op6">
+                            self.sched.op6 = call_EventLatest__v(&self.values, ev.id as u64, 51, 0);
+
+                            // W3C SCXML 5.3: <assign location="sched.on0">
+                            self.sched.on0 = call_EventLatest__v(&self.values, ev.id as u64, 52, 0);
+
+                            // W3C SCXML 5.3: <assign location="sched.on1">
+                            self.sched.on1 = call_EventLatest__v(&self.values, ev.id as u64, 53, 0);
+
+                            // W3C SCXML 5.3: <assign location="sched.on2">
+                            self.sched.on2 = call_EventLatest__v(&self.values, ev.id as u64, 54, 0);
+
+                            // W3C SCXML 5.3: <assign location="sched.on3">
+                            self.sched.on3 = call_EventLatest__v(&self.values, ev.id as u64, 55, 0);
+
+                            // W3C SCXML 5.3: <assign location="sched.on4">
+                            self.sched.on4 = call_EventLatest__v(&self.values, ev.id as u64, 56, 0);
+
+                            // W3C SCXML 5.3: <assign location="sched.on5">
+                            self.sched.on5 = call_EventLatest__v(&self.values, ev.id as u64, 57, 0);
+
+                            // W3C SCXML 5.3: <assign location="sched.on6">
+                            self.sched.on6 = call_EventLatest__v(&self.values, ev.id as u64, 58, 0);
 
                             // W3C SCXML 5.3: <assign location="sched.spPos">
                             self.sched.spPos =
@@ -6300,7 +6442,7 @@ if self.hub && ev.to == 2 {
                         }
                     }
                     11 => {
-                        // SCE-MAP: todo_peer.scxml:758 :: open :: _transition_11
+                        // SCE-MAP: todo_peer.scxml:784 :: open :: _transition_11
                         // W3C SCXML 3.13: Transition 11 actions
                         let ev = match &self.pending_payload {
                             TodoPeerPayload::TodoZone(ev) => ev.clone(),
@@ -6418,7 +6560,7 @@ if self.hub && ev.to == 2 {
                         }
                     }
                     12 => {
-                        // SCE-MAP: todo_peer.scxml:777 :: open :: _transition_12
+                        // SCE-MAP: todo_peer.scxml:803 :: open :: _transition_12
                         // W3C SCXML 3.13: Transition 12 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -6448,7 +6590,7 @@ if self.hub && ev.to == 2 {
                         }
                     }
                     13 => {
-                        // SCE-MAP: todo_peer.scxml:788 :: open :: _transition_13
+                        // SCE-MAP: todo_peer.scxml:814 :: open :: _transition_13
                         // W3C SCXML 3.13: Transition 13 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {

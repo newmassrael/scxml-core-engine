@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: f00a1af9509aeb855cb8946645995169e7a8753555e3a8541ac4f9ef548d274c
-// SCE-MAP: event_schedule.scxml:15 :: _forge_body
+// source-hash: 1bdfca3db4bb33c8c293390903822d652850c4718faefdf3c98b4d7553b2c7ee
+// SCE-MAP: event_schedule.scxml:18 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="event-schema")
 // Runtime: none
@@ -21,8 +21,21 @@ type EventSchedulePayload struct {
 	Bymonth int64
 	MdPos int64
 	MdNeg int64
-	DayA int64
-	DayB int64
+	Invalid int64
+	Op0 int64
+	Op1 int64
+	Op2 int64
+	Op3 int64
+	Op4 int64
+	Op5 int64
+	Op6 int64
+	On0 int64
+	On1 int64
+	On2 int64
+	On3 int64
+	On4 int64
+	On5 int64
+	On6 int64
 	SpPos int64
 	SpNeg int64
 	Wkst int64

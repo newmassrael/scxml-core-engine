@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: f00a1af9509aeb855cb8946645995169e7a8753555e3a8541ac4f9ef548d274c
+// source-hash: 1bdfca3db4bb33c8c293390903822d652850c4718faefdf3c98b4d7553b2c7ee
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/todo_peer.scxml
@@ -175,18 +175,18 @@ data class TodoPeerOccurrenceRecord(val id: ULong, val start: Long, val end: Lon
     }
 }
 /** SCE Accepted Subset §2.15: a `record:Schedule` datamodel value. */
-data class TodoPeerScheduleRecord(val zone: Long, val start: Long, val length: Long, val freq: Long, val interval: Long, val days: Long, val count: Long, val until: Long, val bymonth: Long, val mdPos: Long, val mdNeg: Long, val dayA: Long, val dayB: Long, val spPos: Long, val spNeg: Long, val wkst: Long, val wnPos: Long, val wnNeg: Long, val yd0: Long, val yd1: Long, val yd2: Long, val yd3: Long, val yd4: Long, val yd5: Long, val ydn0: Long, val ydn1: Long, val ydn2: Long, val ydn3: Long, val ydn4: Long, val ydn5: Long, val gone: Long, val flag: Long) {
+data class TodoPeerScheduleRecord(val zone: Long, val start: Long, val length: Long, val freq: Long, val interval: Long, val days: Long, val count: Long, val until: Long, val bymonth: Long, val mdPos: Long, val mdNeg: Long, val invalid: Long, val op0: Long, val op1: Long, val op2: Long, val op3: Long, val op4: Long, val op5: Long, val op6: Long, val on0: Long, val on1: Long, val on2: Long, val on3: Long, val on4: Long, val on5: Long, val on6: Long, val spPos: Long, val spNeg: Long, val wkst: Long, val wnPos: Long, val wnNeg: Long, val yd0: Long, val yd1: Long, val yd2: Long, val yd3: Long, val yd4: Long, val yd5: Long, val ydn0: Long, val ydn1: Long, val ydn2: Long, val ydn3: Long, val ydn4: Long, val ydn5: Long, val gone: Long, val flag: Long) {
     /** This value as a saved state writes it. */
-    fun toSaved(): Any = linkedMapOf("zone" to SavedValues.of(zone), "start" to SavedValues.of(start), "length" to SavedValues.of(length), "freq" to SavedValues.of(freq), "interval" to SavedValues.of(interval), "days" to SavedValues.of(days), "count" to SavedValues.of(count), "until" to SavedValues.of(until), "bymonth" to SavedValues.of(bymonth), "mdPos" to SavedValues.of(mdPos), "mdNeg" to SavedValues.of(mdNeg), "dayA" to SavedValues.of(dayA), "dayB" to SavedValues.of(dayB), "spPos" to SavedValues.of(spPos), "spNeg" to SavedValues.of(spNeg), "wkst" to SavedValues.of(wkst), "wnPos" to SavedValues.of(wnPos), "wnNeg" to SavedValues.of(wnNeg), "yd0" to SavedValues.of(yd0), "yd1" to SavedValues.of(yd1), "yd2" to SavedValues.of(yd2), "yd3" to SavedValues.of(yd3), "yd4" to SavedValues.of(yd4), "yd5" to SavedValues.of(yd5), "ydn0" to SavedValues.of(ydn0), "ydn1" to SavedValues.of(ydn1), "ydn2" to SavedValues.of(ydn2), "ydn3" to SavedValues.of(ydn3), "ydn4" to SavedValues.of(ydn4), "ydn5" to SavedValues.of(ydn5), "gone" to SavedValues.of(gone), "flag" to SavedValues.of(flag))
+    fun toSaved(): Any = linkedMapOf("zone" to SavedValues.of(zone), "start" to SavedValues.of(start), "length" to SavedValues.of(length), "freq" to SavedValues.of(freq), "interval" to SavedValues.of(interval), "days" to SavedValues.of(days), "count" to SavedValues.of(count), "until" to SavedValues.of(until), "bymonth" to SavedValues.of(bymonth), "mdPos" to SavedValues.of(mdPos), "mdNeg" to SavedValues.of(mdNeg), "invalid" to SavedValues.of(invalid), "op0" to SavedValues.of(op0), "op1" to SavedValues.of(op1), "op2" to SavedValues.of(op2), "op3" to SavedValues.of(op3), "op4" to SavedValues.of(op4), "op5" to SavedValues.of(op5), "op6" to SavedValues.of(op6), "on0" to SavedValues.of(on0), "on1" to SavedValues.of(on1), "on2" to SavedValues.of(on2), "on3" to SavedValues.of(on3), "on4" to SavedValues.of(on4), "on5" to SavedValues.of(on5), "on6" to SavedValues.of(on6), "spPos" to SavedValues.of(spPos), "spNeg" to SavedValues.of(spNeg), "wkst" to SavedValues.of(wkst), "wnPos" to SavedValues.of(wnPos), "wnNeg" to SavedValues.of(wnNeg), "yd0" to SavedValues.of(yd0), "yd1" to SavedValues.of(yd1), "yd2" to SavedValues.of(yd2), "yd3" to SavedValues.of(yd3), "yd4" to SavedValues.of(yd4), "yd5" to SavedValues.of(yd5), "ydn0" to SavedValues.of(ydn0), "ydn1" to SavedValues.of(ydn1), "ydn2" to SavedValues.of(ydn2), "ydn3" to SavedValues.of(ydn3), "ydn4" to SavedValues.of(ydn4), "ydn5" to SavedValues.of(ydn5), "gone" to SavedValues.of(gone), "flag" to SavedValues.of(flag))
 
     companion object {
         /** The value a saved state holds, refused unless it is one. */
-        fun fromSaved(value: Any?, what: String): TodoPeerScheduleRecord = TodoPeerScheduleRecord(zone = SavedValues.int64(SavedValues.field(value, what, "zone"), "$what.zone"), start = SavedValues.int64(SavedValues.field(value, what, "start"), "$what.start"), length = SavedValues.int64(SavedValues.field(value, what, "length"), "$what.length"), freq = SavedValues.int64(SavedValues.field(value, what, "freq"), "$what.freq"), interval = SavedValues.int64(SavedValues.field(value, what, "interval"), "$what.interval"), days = SavedValues.int64(SavedValues.field(value, what, "days"), "$what.days"), count = SavedValues.int64(SavedValues.field(value, what, "count"), "$what.count"), until = SavedValues.int64(SavedValues.field(value, what, "until"), "$what.until"), bymonth = SavedValues.int64(SavedValues.field(value, what, "bymonth"), "$what.bymonth"), mdPos = SavedValues.int64(SavedValues.field(value, what, "mdPos"), "$what.mdPos"), mdNeg = SavedValues.int64(SavedValues.field(value, what, "mdNeg"), "$what.mdNeg"), dayA = SavedValues.int64(SavedValues.field(value, what, "dayA"), "$what.dayA"), dayB = SavedValues.int64(SavedValues.field(value, what, "dayB"), "$what.dayB"), spPos = SavedValues.int64(SavedValues.field(value, what, "spPos"), "$what.spPos"), spNeg = SavedValues.int64(SavedValues.field(value, what, "spNeg"), "$what.spNeg"), wkst = SavedValues.int64(SavedValues.field(value, what, "wkst"), "$what.wkst"), wnPos = SavedValues.int64(SavedValues.field(value, what, "wnPos"), "$what.wnPos"), wnNeg = SavedValues.int64(SavedValues.field(value, what, "wnNeg"), "$what.wnNeg"), yd0 = SavedValues.int64(SavedValues.field(value, what, "yd0"), "$what.yd0"), yd1 = SavedValues.int64(SavedValues.field(value, what, "yd1"), "$what.yd1"), yd2 = SavedValues.int64(SavedValues.field(value, what, "yd2"), "$what.yd2"), yd3 = SavedValues.int64(SavedValues.field(value, what, "yd3"), "$what.yd3"), yd4 = SavedValues.int64(SavedValues.field(value, what, "yd4"), "$what.yd4"), yd5 = SavedValues.int64(SavedValues.field(value, what, "yd5"), "$what.yd5"), ydn0 = SavedValues.int64(SavedValues.field(value, what, "ydn0"), "$what.ydn0"), ydn1 = SavedValues.int64(SavedValues.field(value, what, "ydn1"), "$what.ydn1"), ydn2 = SavedValues.int64(SavedValues.field(value, what, "ydn2"), "$what.ydn2"), ydn3 = SavedValues.int64(SavedValues.field(value, what, "ydn3"), "$what.ydn3"), ydn4 = SavedValues.int64(SavedValues.field(value, what, "ydn4"), "$what.ydn4"), ydn5 = SavedValues.int64(SavedValues.field(value, what, "ydn5"), "$what.ydn5"), gone = SavedValues.int64(SavedValues.field(value, what, "gone"), "$what.gone"), flag = SavedValues.int64(SavedValues.field(value, what, "flag"), "$what.flag"))
+        fun fromSaved(value: Any?, what: String): TodoPeerScheduleRecord = TodoPeerScheduleRecord(zone = SavedValues.int64(SavedValues.field(value, what, "zone"), "$what.zone"), start = SavedValues.int64(SavedValues.field(value, what, "start"), "$what.start"), length = SavedValues.int64(SavedValues.field(value, what, "length"), "$what.length"), freq = SavedValues.int64(SavedValues.field(value, what, "freq"), "$what.freq"), interval = SavedValues.int64(SavedValues.field(value, what, "interval"), "$what.interval"), days = SavedValues.int64(SavedValues.field(value, what, "days"), "$what.days"), count = SavedValues.int64(SavedValues.field(value, what, "count"), "$what.count"), until = SavedValues.int64(SavedValues.field(value, what, "until"), "$what.until"), bymonth = SavedValues.int64(SavedValues.field(value, what, "bymonth"), "$what.bymonth"), mdPos = SavedValues.int64(SavedValues.field(value, what, "mdPos"), "$what.mdPos"), mdNeg = SavedValues.int64(SavedValues.field(value, what, "mdNeg"), "$what.mdNeg"), invalid = SavedValues.int64(SavedValues.field(value, what, "invalid"), "$what.invalid"), op0 = SavedValues.int64(SavedValues.field(value, what, "op0"), "$what.op0"), op1 = SavedValues.int64(SavedValues.field(value, what, "op1"), "$what.op1"), op2 = SavedValues.int64(SavedValues.field(value, what, "op2"), "$what.op2"), op3 = SavedValues.int64(SavedValues.field(value, what, "op3"), "$what.op3"), op4 = SavedValues.int64(SavedValues.field(value, what, "op4"), "$what.op4"), op5 = SavedValues.int64(SavedValues.field(value, what, "op5"), "$what.op5"), op6 = SavedValues.int64(SavedValues.field(value, what, "op6"), "$what.op6"), on0 = SavedValues.int64(SavedValues.field(value, what, "on0"), "$what.on0"), on1 = SavedValues.int64(SavedValues.field(value, what, "on1"), "$what.on1"), on2 = SavedValues.int64(SavedValues.field(value, what, "on2"), "$what.on2"), on3 = SavedValues.int64(SavedValues.field(value, what, "on3"), "$what.on3"), on4 = SavedValues.int64(SavedValues.field(value, what, "on4"), "$what.on4"), on5 = SavedValues.int64(SavedValues.field(value, what, "on5"), "$what.on5"), on6 = SavedValues.int64(SavedValues.field(value, what, "on6"), "$what.on6"), spPos = SavedValues.int64(SavedValues.field(value, what, "spPos"), "$what.spPos"), spNeg = SavedValues.int64(SavedValues.field(value, what, "spNeg"), "$what.spNeg"), wkst = SavedValues.int64(SavedValues.field(value, what, "wkst"), "$what.wkst"), wnPos = SavedValues.int64(SavedValues.field(value, what, "wnPos"), "$what.wnPos"), wnNeg = SavedValues.int64(SavedValues.field(value, what, "wnNeg"), "$what.wnNeg"), yd0 = SavedValues.int64(SavedValues.field(value, what, "yd0"), "$what.yd0"), yd1 = SavedValues.int64(SavedValues.field(value, what, "yd1"), "$what.yd1"), yd2 = SavedValues.int64(SavedValues.field(value, what, "yd2"), "$what.yd2"), yd3 = SavedValues.int64(SavedValues.field(value, what, "yd3"), "$what.yd3"), yd4 = SavedValues.int64(SavedValues.field(value, what, "yd4"), "$what.yd4"), yd5 = SavedValues.int64(SavedValues.field(value, what, "yd5"), "$what.yd5"), ydn0 = SavedValues.int64(SavedValues.field(value, what, "ydn0"), "$what.ydn0"), ydn1 = SavedValues.int64(SavedValues.field(value, what, "ydn1"), "$what.ydn1"), ydn2 = SavedValues.int64(SavedValues.field(value, what, "ydn2"), "$what.ydn2"), ydn3 = SavedValues.int64(SavedValues.field(value, what, "ydn3"), "$what.ydn3"), ydn4 = SavedValues.int64(SavedValues.field(value, what, "ydn4"), "$what.ydn4"), ydn5 = SavedValues.int64(SavedValues.field(value, what, "ydn5"), "$what.ydn5"), gone = SavedValues.int64(SavedValues.field(value, what, "gone"), "$what.gone"), flag = SavedValues.int64(SavedValues.field(value, what, "flag"), "$what.flag"))
     }
 }
 // ── SCE Accepted Subset §2.15: calls of an algorithm that takes or returns state ──
 private fun call_EventAgenda__vv(p0: TodoPeerScheduleRecord, p1: List<TodoPeerValueRecord>, p2: ULong, p3: Long, p4: Long, p5: UInt): com.sce.forge.runtime.AlgorithmResult<List<TodoPeerOccurrenceRecord>> =
-    when (val r = eventAgenda(EventSchedulePayload(zone = p0.zone, start = p0.start, length = p0.length, freq = p0.freq, interval = p0.interval, days = p0.days, count = p0.count, until = p0.until, bymonth = p0.bymonth, mdPos = p0.mdPos, mdNeg = p0.mdNeg, dayA = p0.dayA, dayB = p0.dayB, spPos = p0.spPos, spNeg = p0.spNeg, wkst = p0.wkst, wnPos = p0.wnPos, wnNeg = p0.wnNeg, yd0 = p0.yd0, yd1 = p0.yd1, yd2 = p0.yd2, yd3 = p0.yd3, yd4 = p0.yd4, yd5 = p0.yd5, ydn0 = p0.ydn0, ydn1 = p0.ydn1, ydn2 = p0.ydn2, ydn3 = p0.ydn3, ydn4 = p0.ydn4, ydn5 = p0.ydn5, gone = p0.gone, flag = p0.flag), p1.map { MvValuePayload(id = it.id, field = it.field, value = it.value, text = it.text, wallTime = it.wallTime, counter = it.counter, nodeId = it.nodeId) }, p2, p3, p4, p5)) {
+    when (val r = eventAgenda(EventSchedulePayload(zone = p0.zone, start = p0.start, length = p0.length, freq = p0.freq, interval = p0.interval, days = p0.days, count = p0.count, until = p0.until, bymonth = p0.bymonth, mdPos = p0.mdPos, mdNeg = p0.mdNeg, invalid = p0.invalid, op0 = p0.op0, op1 = p0.op1, op2 = p0.op2, op3 = p0.op3, op4 = p0.op4, op5 = p0.op5, op6 = p0.op6, on0 = p0.on0, on1 = p0.on1, on2 = p0.on2, on3 = p0.on3, on4 = p0.on4, on5 = p0.on5, on6 = p0.on6, spPos = p0.spPos, spNeg = p0.spNeg, wkst = p0.wkst, wnPos = p0.wnPos, wnNeg = p0.wnNeg, yd0 = p0.yd0, yd1 = p0.yd1, yd2 = p0.yd2, yd3 = p0.yd3, yd4 = p0.yd4, yd5 = p0.yd5, ydn0 = p0.ydn0, ydn1 = p0.ydn1, ydn2 = p0.ydn2, ydn3 = p0.ydn3, ydn4 = p0.ydn4, ydn5 = p0.ydn5, gone = p0.gone, flag = p0.flag), p1.map { MvValuePayload(id = it.id, field = it.field, value = it.value, text = it.text, wallTime = it.wallTime, counter = it.counter, nodeId = it.nodeId) }, p2, p3, p4, p5)) {
         is com.sce.forge.runtime.AlgorithmResult.Ok -> com.sce.forge.runtime.AlgorithmResult.Ok(r.value.map { TodoPeerOccurrenceRecord(id = it.id, start = it.start, end = it.end, nth = it.nth, conflict = it.conflict) })
         is com.sce.forge.runtime.AlgorithmResult.Failed -> r
     }
@@ -368,7 +368,7 @@ class TodoPeerStateMachine(
     /** W3C SCXML 5.2: the `split` datamodel variable, the machine's own. */
     private var vSplit: Boolean = false
     /** W3C SCXML 5.2: the `sched` datamodel variable, the machine's own. */
-    private var vSched: TodoPeerScheduleRecord = TodoPeerScheduleRecord(zone = 0, start = -1, length = 0, freq = 0, interval = 1, days = 0, count = 0, until = 0, bymonth = 0, mdPos = 0, mdNeg = 0, dayA = 0, dayB = 0, spPos = 0, spNeg = 0, wkst = 1, wnPos = 0, wnNeg = 0, yd0 = 0, yd1 = 0, yd2 = 0, yd3 = 0, yd4 = 0, yd5 = 0, ydn0 = 0, ydn1 = 0, ydn2 = 0, ydn3 = 0, ydn4 = 0, ydn5 = 0, gone = 0, flag = 0)
+    private var vSched: TodoPeerScheduleRecord = TodoPeerScheduleRecord(zone = 0, start = -1, length = 0, freq = 0, interval = 1, days = 0, count = 0, until = 0, bymonth = 0, mdPos = 0, mdNeg = 0, invalid = 0, op0 = 0, op1 = 0, op2 = 0, op3 = 0, op4 = 0, op5 = 0, op6 = 0, on0 = 0, on1 = 0, on2 = 0, on3 = 0, on4 = 0, on5 = 0, on6 = 0, spPos = 0, spNeg = 0, wkst = 1, wnPos = 0, wnNeg = 0, yd0 = 0, yd1 = 0, yd2 = 0, yd3 = 0, yd4 = 0, yd5 = 0, ydn0 = 0, ydn1 = 0, ydn2 = 0, ydn3 = 0, ydn4 = 0, ydn5 = 0, gone = 0, flag = 0)
     /** W3C SCXML 5.2: the `rawCount` datamodel variable, the machine's own. */
     private var vRawCount: UInt = 0.toUInt()
     /** W3C SCXML 5.2: the `rawLast` datamodel variable, the machine's own. */
@@ -484,7 +484,7 @@ class TodoPeerStateMachine(
      * from a document that renamed, re-typed or moved a state or a variable is
      * refused, one saved before a guard or an action changed is not.
      */
-    val savedShape: String = "84dbefc5d58d7b4aa69b8c27f7e0ee5bce5cff9d4896d5be0566fde874cf3921"
+    val savedShape: String = "ca510c02a55948373cd4f96a8f567a374088bb8d9016dacc0fe78e39b46e8aca"
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -1168,7 +1168,7 @@ class TodoPeerStateMachine(
     override fun onEntry(state: TodoPeerState, isDefaultEntry: Boolean) {
         when (state) {
             is TodoPeerState.Open -> {
-                // SCE-MAP: todo_peer.scxml:210 :: open :: _state_body
+                // SCE-MAP: todo_peer.scxml:223 :: open :: _state_body
             }
         }
     }
@@ -1178,7 +1178,7 @@ class TodoPeerStateMachine(
     override fun onExit(state: TodoPeerState) {
         when (state) {
             is TodoPeerState.Open -> {
-                // SCE-MAP: todo_peer.scxml:210 :: open :: _state_body
+                // SCE-MAP: todo_peer.scxml:223 :: open :: _state_body
             }
         }
     }
@@ -1190,7 +1190,7 @@ class TodoPeerStateMachine(
         when (source) {
         is TodoPeerState.Open -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: todo_peer.scxml:211 :: open :: _transition_0
+                // SCE-MAP: todo_peer.scxml:224 :: open :: _transition_0
                 if (pendingTodoJoinPayload == null) {
                     return
                 }
@@ -1200,7 +1200,7 @@ class TodoPeerStateMachine(
             vHub = pendingTodoJoinPayload!!.hub
             }
             1 -> {
-                // SCE-MAP: todo_peer.scxml:219 :: open :: _transition_1
+                // SCE-MAP: todo_peer.scxml:232 :: open :: _transition_1
                 if (pendingTodoEditPayload == null) {
                     return
                 }
@@ -1398,7 +1398,7 @@ class TodoPeerStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             2 -> {
-                // SCE-MAP: todo_peer.scxml:268 :: open :: _transition_2
+                // SCE-MAP: todo_peer.scxml:281 :: open :: _transition_2
                 if (pendingTodoWritePayload == null) {
                     return
                 }
@@ -1636,7 +1636,7 @@ class TodoPeerStateMachine(
             }
             }
             3 -> {
-                // SCE-MAP: todo_peer.scxml:350 :: open :: _transition_3
+                // SCE-MAP: todo_peer.scxml:363 :: open :: _transition_3
                 if (pendingTodoSupersedePayload == null) {
                     return
                 }
@@ -1866,7 +1866,7 @@ class TodoPeerStateMachine(
             }
             }
             4 -> {
-                // SCE-MAP: todo_peer.scxml:421 :: open :: _transition_4
+                // SCE-MAP: todo_peer.scxml:434 :: open :: _transition_4
                 if (pendingTodoKeepPayload == null) {
                     return
                 }
@@ -1888,7 +1888,7 @@ class TodoPeerStateMachine(
             }
             }
             5 -> {
-                // SCE-MAP: todo_peer.scxml:438 :: open :: _transition_5
+                // SCE-MAP: todo_peer.scxml:451 :: open :: _transition_5
                 if (pendingTodoCompactPayload == null) {
                     return
                 }
@@ -1924,7 +1924,7 @@ class TodoPeerStateMachine(
             }
             }
             6 -> {
-                // SCE-MAP: todo_peer.scxml:454 :: open :: _transition_6
+                // SCE-MAP: todo_peer.scxml:467 :: open :: _transition_6
 
 
             if (!vHub) {
@@ -2001,7 +2001,7 @@ class TodoPeerStateMachine(
             }
             }
             7 -> {
-                // SCE-MAP: todo_peer.scxml:481 :: open :: _transition_7
+                // SCE-MAP: todo_peer.scxml:494 :: open :: _transition_7
                 if (pendingTodoVisitPayload == null) {
                     return
                 }
@@ -2190,7 +2190,7 @@ class TodoPeerStateMachine(
             }
             }
             8 -> {
-                // SCE-MAP: todo_peer.scxml:522 :: open :: _transition_8
+                // SCE-MAP: todo_peer.scxml:535 :: open :: _transition_8
                 if (pendingTodoNodePayload == null) {
                     return
                 }
@@ -2359,7 +2359,7 @@ class TodoPeerStateMachine(
             }
             }
             9 -> {
-                // SCE-MAP: todo_peer.scxml:569 :: open :: _transition_9
+                // SCE-MAP: todo_peer.scxml:582 :: open :: _transition_9
                 if (pendingTodoSharePayload == null) {
                     return
                 }
@@ -2765,7 +2765,7 @@ class TodoPeerStateMachine(
             }
             }
             10 -> {
-                // SCE-MAP: todo_peer.scxml:651 :: open :: _transition_10
+                // SCE-MAP: todo_peer.scxml:664 :: open :: _transition_10
                 if (pendingTodoAgendaPayload == null) {
                     return
                 }
@@ -2800,9 +2800,35 @@ class TodoPeerStateMachine(
 
             vSched = vSched.copy(mdNeg = call_EventLatest__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), 25.toULong(), 0))
 
-            vSched = vSched.copy(dayA = call_EventLatest__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), 26.toULong(), 0))
+            vSched = vSched.copy(invalid = call_EventLatest__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), 26.toULong(), 0))
 
-            vSched = vSched.copy(dayB = call_EventLatest__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), 27.toULong(), 0))
+            vSched = vSched.copy(op0 = call_EventLatest__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), 45.toULong(), 0))
+
+            vSched = vSched.copy(op1 = call_EventLatest__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), 46.toULong(), 0))
+
+            vSched = vSched.copy(op2 = call_EventLatest__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), 47.toULong(), 0))
+
+            vSched = vSched.copy(op3 = call_EventLatest__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), 48.toULong(), 0))
+
+            vSched = vSched.copy(op4 = call_EventLatest__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), 49.toULong(), 0))
+
+            vSched = vSched.copy(op5 = call_EventLatest__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), 50.toULong(), 0))
+
+            vSched = vSched.copy(op6 = call_EventLatest__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), 51.toULong(), 0))
+
+            vSched = vSched.copy(on0 = call_EventLatest__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), 52.toULong(), 0))
+
+            vSched = vSched.copy(on1 = call_EventLatest__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), 53.toULong(), 0))
+
+            vSched = vSched.copy(on2 = call_EventLatest__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), 54.toULong(), 0))
+
+            vSched = vSched.copy(on3 = call_EventLatest__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), 55.toULong(), 0))
+
+            vSched = vSched.copy(on4 = call_EventLatest__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), 56.toULong(), 0))
+
+            vSched = vSched.copy(on5 = call_EventLatest__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), 57.toULong(), 0))
+
+            vSched = vSched.copy(on6 = call_EventLatest__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), 58.toULong(), 0))
 
             vSched = vSched.copy(spPos = call_EventLatest__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), 28.toULong(), 0))
 
@@ -3023,7 +3049,7 @@ class TodoPeerStateMachine(
             }
             }
             11 -> {
-                // SCE-MAP: todo_peer.scxml:758 :: open :: _transition_11
+                // SCE-MAP: todo_peer.scxml:784 :: open :: _transition_11
                 if (pendingTodoZonePayload == null) {
                     return
                 }
@@ -3077,7 +3103,7 @@ class TodoPeerStateMachine(
             }
             }
             12 -> {
-                // SCE-MAP: todo_peer.scxml:777 :: open :: _transition_12
+                // SCE-MAP: todo_peer.scxml:803 :: open :: _transition_12
 
             vZoneStarts1 = emptyList()
 
@@ -3096,7 +3122,7 @@ class TodoPeerStateMachine(
             vZoneOffsets4 = emptyList()
             }
             13 -> {
-                // SCE-MAP: todo_peer.scxml:788 :: open :: _transition_13
+                // SCE-MAP: todo_peer.scxml:814 :: open :: _transition_13
 
             if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return

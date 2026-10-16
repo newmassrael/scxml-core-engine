@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: f00a1af9509aeb855cb8946645995169e7a8753555e3a8541ac4f9ef548d274c
+// source-hash: 1bdfca3db4bb33c8c293390903822d652850c4718faefdf3c98b4d7553b2c7ee
 // SCE-MAP: event_conflict.scxml:10 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")
@@ -19,7 +19,7 @@ import (
 func EventConflict(values []sce_mv_value.MvValuePayload, id uint64) bool {
     var twice bool = false
     for _, a := range values {
-        if (a.Id == id && (a.Field == 9 || a.Field >= 15 && a.Field <= 44)) {
+        if (a.Id == id && (a.Field == 9 || a.Field >= 15 && a.Field <= 58)) {
             for _, b := range values {
                 if (b.Id == id && b.Field == a.Field && (b.WallTime != a.WallTime || b.Counter != a.Counter || b.NodeId != a.NodeId)) {
                     twice = true;
