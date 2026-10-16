@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   A copy of the shared to-do list telling itself to show a peer its digest's node at
-  (`depth`, `prefix`): `to` is the node id of the peer (a person's copy has only the hub
-  to send to and does not read it), and `reply` whether the node answers the peer's
+  (`depth`, `prefix`): `to` is the node id of the peer, 0 for every person (a person's
+  copy has only the hub to send to and does not read it), and `reply` whether the node
+  answers the peer's
   own at the last depth (todo_node). The copy sends the hash it holds there, which is 0
   where it holds nothing, so a peer that holds something there sees the difference.
 -->

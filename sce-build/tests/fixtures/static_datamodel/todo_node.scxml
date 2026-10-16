@@ -4,9 +4,11 @@
   differ (todo_peer): the node's depth and prefix in the trie of change minutes
   (merge/merkle_node), the XOR of the hashes of the changes under it (`hash`, 0 for a
   node the copy holds nothing under), `sender`, the node id of the copy that sends it, so
-  that the hub knows which of its two people to answer, and `reply`, set on the one
-  message a copy sends at the last depth in answer to the peer's, which is not answered
-  in turn.
+  that the hub knows which of its people to answer, `to`, the node id of the person the
+  hub means it for (0 for every person: a hub reaches its people by names that more than
+  one person may read, so a person takes a node that names another as not its own), and
+  `reply`, set on the one message a copy sends at the last depth in answer to the
+  peer's, which is not answered in turn.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -16,6 +18,7 @@
        sce:event-name="todo.node">
   <datamodel>
     <data id="sender" sce:type="uint64" sce:direction="in"/>
+    <data id="to" sce:type="uint64" sce:direction="in"/>
     <data id="depth" sce:type="uint8" sce:direction="in"/>
     <data id="prefix" sce:type="uint64" sce:direction="in"/>
     <data id="hash" sce:type="uint32" sce:direction="in"/>

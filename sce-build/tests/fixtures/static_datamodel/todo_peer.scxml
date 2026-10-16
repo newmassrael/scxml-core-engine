@@ -328,7 +328,18 @@
          person's copy stamps nothing at or before an instant it has answered for, so no
          write that is new is refused here. -->
     <transition event="todo.write" cond="floor &gt; 0 &amp;&amp; _event.data.wallTime &lt;= floor" type="internal">
-      <assign location="late" expr="late + 1"/>
+      <!-- It is counted only when this copy does not hold it: a live write that a peer
+           shows again, which a repair of another copy sends to every copy that reads the
+           same name, is held and changes nothing. -->
+      <assign location="held.id" expr="_event.data.id"/>
+      <assign location="held.field" expr="_event.data.field"/>
+      <assign location="held.wallTime" expr="_event.data.wallTime"/>
+      <assign location="held.counter" expr="_event.data.counter"/>
+      <assign location="held.nodeId" expr="_event.data.nodeId"/>
+      <assign location="present" expr="MvValueHolds(values, held)"/>
+      <if cond="!present">
+        <assign location="late" expr="late + 1"/>
+      </if>
     </transition>
 
     <!-- A write to a field, from a person here or from elsewhere: one more value, once. -->
@@ -683,31 +694,15 @@
     </transition>
 
     <!-- The host's word that this copy's link is back: it shows its peers the root of
-         its digest. A person's copy has only the hub to show it to; the hub shows both
-         people. -->
+         its digest. A person's copy has only the hub to show it to; the hub shows every
+         person (to 0), however many the host has. -->
     <transition event="todo.resync" type="internal">
-      <if cond="!hub">
-        <send target="#_internal" event="todo.visit">
-          <param name="to" expr="0"/>
-          <param name="depth" expr="0"/>
-          <param name="prefix" expr="0"/>
-          <param name="reply" expr="false"/>
-        </send>
-      </if>
-      <if cond="hub">
-        <send target="#_internal" event="todo.visit">
-          <param name="to" expr="1"/>
-          <param name="depth" expr="0"/>
-          <param name="prefix" expr="0"/>
-          <param name="reply" expr="false"/>
-        </send>
-        <send target="#_internal" event="todo.visit">
-          <param name="to" expr="2"/>
-          <param name="depth" expr="0"/>
-          <param name="prefix" expr="0"/>
-          <param name="reply" expr="false"/>
-        </send>
-      </if>
+      <send target="#_internal" event="todo.visit">
+        <param name="to" expr="0"/>
+        <param name="depth" expr="0"/>
+        <param name="prefix" expr="0"/>
+        <param name="reply" expr="false"/>
+      </send>
     </transition>
 
     <!-- Show a peer the node of this copy's digest at a place: the hash it holds there,
@@ -722,24 +717,32 @@
       <if cond="!hub">
         <send target="#server" event="todo.node">
           <param name="sender" expr="node"/>
+          <param name="to" expr="0"/>
           <param name="depth" expr="_event.data.depth"/>
           <param name="prefix" expr="_event.data.prefix"/>
           <param name="hash" expr="mine"/>
           <param name="reply" expr="_event.data.reply"/>
         </send>
       </if>
-      <if cond="hub &amp;&amp; _event.data.to === 1">
+      <!-- The hub reaches its people by two names, `#alice` and `#bob`: the first is every
+           person but the second and the second every person but the first, so that a
+           person other than those two is reached by either, and the second only by its
+           own. The node says whom it is for (`to`, 0 for all) and a person that it is
+           not for lets it go. -->
+      <if cond="hub &amp;&amp; _event.data.to !== 2">
         <send target="#alice" event="todo.node">
           <param name="sender" expr="node"/>
+          <param name="to" expr="_event.data.to"/>
           <param name="depth" expr="_event.data.depth"/>
           <param name="prefix" expr="_event.data.prefix"/>
           <param name="hash" expr="mine"/>
           <param name="reply" expr="_event.data.reply"/>
         </send>
       </if>
-      <if cond="hub &amp;&amp; _event.data.to === 2">
+      <if cond="hub &amp;&amp; (_event.data.to === 2 || _event.data.to === 0)">
         <send target="#bob" event="todo.node">
           <param name="sender" expr="node"/>
+          <param name="to" expr="_event.data.to"/>
           <param name="depth" expr="_event.data.depth"/>
           <param name="prefix" expr="_event.data.prefix"/>
           <param name="hash" expr="mine"/>
@@ -754,45 +757,47 @@
          this copy's node once, so that it sends its changes too; that one is marked, and
          is not answered. -->
     <transition event="todo.node" type="internal">
-      <assign location="mine" expr="0"/>
-      <foreach array="digest" item="n">
-        <if cond="n.depth === _event.data.depth &amp;&amp; n.prefix === _event.data.prefix">
-          <assign location="mine" expr="n.hash"/>
+      <if cond="hub || _event.data.to === 0 || _event.data.to === node">
+        <assign location="mine" expr="0"/>
+        <foreach array="digest" item="n">
+          <if cond="n.depth === _event.data.depth &amp;&amp; n.prefix === _event.data.prefix">
+            <assign location="mine" expr="n.hash"/>
+          </if>
+        </foreach>
+        <if cond="mine !== _event.data.hash &amp;&amp; _event.data.depth &lt; 30">
+          <send target="#_internal" event="todo.visit">
+            <param name="to" expr="_event.data.sender"/>
+            <param name="depth" expr="_event.data.depth + 1"/>
+            <param name="prefix" expr="_event.data.prefix * 3"/>
+            <param name="reply" expr="false"/>
+          </send>
+          <send target="#_internal" event="todo.visit">
+            <param name="to" expr="_event.data.sender"/>
+            <param name="depth" expr="_event.data.depth + 1"/>
+            <param name="prefix" expr="_event.data.prefix * 3 + 1"/>
+            <param name="reply" expr="false"/>
+          </send>
+          <send target="#_internal" event="todo.visit">
+            <param name="to" expr="_event.data.sender"/>
+            <param name="depth" expr="_event.data.depth + 1"/>
+            <param name="prefix" expr="_event.data.prefix * 3 + 2"/>
+            <param name="reply" expr="false"/>
+          </send>
         </if>
-      </foreach>
-      <if cond="mine !== _event.data.hash &amp;&amp; _event.data.depth &lt; 30">
-        <send target="#_internal" event="todo.visit">
-          <param name="to" expr="_event.data.sender"/>
-          <param name="depth" expr="_event.data.depth + 1"/>
-          <param name="prefix" expr="_event.data.prefix * 3"/>
-          <param name="reply" expr="false"/>
-        </send>
-        <send target="#_internal" event="todo.visit">
-          <param name="to" expr="_event.data.sender"/>
-          <param name="depth" expr="_event.data.depth + 1"/>
-          <param name="prefix" expr="_event.data.prefix * 3 + 1"/>
-          <param name="reply" expr="false"/>
-        </send>
-        <send target="#_internal" event="todo.visit">
-          <param name="to" expr="_event.data.sender"/>
-          <param name="depth" expr="_event.data.depth + 1"/>
-          <param name="prefix" expr="_event.data.prefix * 3 + 2"/>
-          <param name="reply" expr="false"/>
-        </send>
-      </if>
-      <if cond="mine !== _event.data.hash &amp;&amp; _event.data.depth === 30">
-        <send target="#_internal" event="todo.share">
-          <param name="to" expr="_event.data.sender"/>
-          <param name="minute" expr="_event.data.prefix"/>
-        </send>
-      </if>
-      <if cond="mine !== _event.data.hash &amp;&amp; _event.data.depth === 30 &amp;&amp; !_event.data.reply">
-        <send target="#_internal" event="todo.visit">
-          <param name="to" expr="_event.data.sender"/>
-          <param name="depth" expr="30"/>
-          <param name="prefix" expr="_event.data.prefix"/>
-          <param name="reply" expr="true"/>
-        </send>
+        <if cond="mine !== _event.data.hash &amp;&amp; _event.data.depth === 30">
+          <send target="#_internal" event="todo.share">
+            <param name="to" expr="_event.data.sender"/>
+            <param name="minute" expr="_event.data.prefix"/>
+          </send>
+        </if>
+        <if cond="mine !== _event.data.hash &amp;&amp; _event.data.depth === 30 &amp;&amp; !_event.data.reply">
+          <send target="#_internal" event="todo.visit">
+            <param name="to" expr="_event.data.sender"/>
+            <param name="depth" expr="30"/>
+            <param name="prefix" expr="_event.data.prefix"/>
+            <param name="reply" expr="true"/>
+          </send>
+        </if>
       </if>
     </transition>
 
@@ -816,7 +821,7 @@
               <param name="nodeId" expr="v.nodeId"/>
             </send>
           </if>
-          <if cond="hub &amp;&amp; _event.data.to === 1">
+          <if cond="hub &amp;&amp; _event.data.to !== 2">
             <send target="#alice" event="todo.write">
               <param name="id" expr="shareId"/>
               <param name="field" expr="shareField"/>
@@ -854,7 +859,7 @@
               <param name="by" expr="node"/>
             </send>
           </if>
-          <if cond="hub &amp;&amp; _event.data.to === 1">
+          <if cond="hub &amp;&amp; _event.data.to !== 2">
             <send target="#alice" event="todo.supersede">
               <param name="id" expr="shareId"/>
               <param name="field" expr="shareField"/>
