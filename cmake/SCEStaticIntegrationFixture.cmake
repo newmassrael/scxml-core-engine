@@ -181,9 +181,18 @@ endfunction()
 #   so a stale fixture surfaces as a stale tree per-context (mirroring
 #   the committed-tree backends' separate §6.2.6 drift contexts).
 function(sce_generate_static_integration_test STEM OUTPUT_DIR)
-    cmake_parse_arguments(_INT "" "SCXML_FILE" "" ${ARGN})
+    cmake_parse_arguments(_INT "EMIT_TRANSITION_TABLE" "SCXML_FILE" "" ${ARGN})
     _sce_refuse_children_arguments(sce_generate_static_integration_test "${STEM}"
         ${_INT_UNPARSED_ARGUMENTS})
+
+    # `EMIT_TRANSITION_TABLE` asks `generate` for the machine's transitions as
+    # constant data (`--emit-transition-table`). Nothing in the machine reads
+    # it; a fixture opts in so that the table is compiled by the channel's own
+    # build, which is the only place it is proven to compile.
+    set(_EMIT_ARGS "")
+    if(_INT_EMIT_TRANSITION_TABLE)
+        list(APPEND _EMIT_ARGS --emit-transition-table)
+    endif()
 
     if(_INT_SCXML_FILE)
         set(FIXTURE "${_INT_SCXML_FILE}")
@@ -266,6 +275,7 @@ function(sce_generate_static_integration_test STEM OUTPUT_DIR)
                 -l cpp -o "${OUTPUT_DIR}"
                 --input-root "${FIXTURE_ROOT}"
                 --write-deps "${_PARENT_DEPFILE}"
+                ${_EMIT_ARGS}
                 ${_FORMAT_ARGS}
         DEPENDS "${STAGED_SCXML}" "${SCE_CODEGEN}"
         DEPFILE "${_PARENT_DEPFILE}"
@@ -361,10 +371,17 @@ endfunction()
 #                            the answer explicit: a name that is wrong
 #                            fails at the copy, where it can be read.
 function(sce_generate_static_integration_c_test STEM OUTPUT_DIR)
-    cmake_parse_arguments(_INT "" "SCXML_FILE"
+    cmake_parse_arguments(_INT "EMIT_TRANSITION_TABLE" "SCXML_FILE"
         "HOST_PROCESSOR;HOST_INVOKER;STAGE_ALSO" ${ARGN})
     _sce_refuse_children_arguments(sce_generate_static_integration_c_test "${STEM}"
         ${_INT_UNPARSED_ARGUMENTS})
+
+    # See the cpp generator above: the fixture asks `generate` for the
+    # machine's transitions as constant data so this channel's build compiles it.
+    set(_EMIT_ARGS "")
+    if(_INT_EMIT_TRANSITION_TABLE)
+        list(APPEND _EMIT_ARGS --emit-transition-table)
+    endif()
 
     if(_INT_SCXML_FILE)
         get_filename_component(FIXTURE_ROOT "${_INT_SCXML_FILE}" DIRECTORY)
@@ -445,6 +462,7 @@ function(sce_generate_static_integration_c_test STEM OUTPUT_DIR)
                 -l c11 -o "${OUTPUT_DIR}"
                 --input-root "${FIXTURE_ROOT}"
                 ${_HOST_PROCESSOR_ARGS}
+                ${_EMIT_ARGS}
                 --write-deps "${_PARENT_DEPFILE}"
         DEPENDS "${STAGED_SCXML}" "${SCE_CODEGEN}"
         DEPFILE "${_PARENT_DEPFILE}"

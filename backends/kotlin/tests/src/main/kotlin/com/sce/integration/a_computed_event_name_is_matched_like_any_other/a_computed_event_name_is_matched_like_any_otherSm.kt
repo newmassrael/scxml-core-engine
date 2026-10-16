@@ -33,6 +33,44 @@ sealed interface AComputedEventNameIsMatchedLikeAnyOtherEvent : Event {
     }
     data object Request : AComputedEventNameIsMatchedLikeAnyOtherEvent
 }
+// --- Transition table (§synth-6.2.6), because the build asked for it ---
+
+/**
+ * One transition of this machine, as constant data. Nothing in the machine
+ * reads it: a host that draws the machine, or checks it against its own
+ * design, does. `from`, `to` and `event` are this file's own
+ * [AComputedEventNameIsMatchedLikeAnyOtherState] and [AComputedEventNameIsMatchedLikeAnyOtherEvent]; `index` is the
+ * transition's position within its state in document order; `annotation` is
+ * the `sce:req` tokens as written, space-separated and uninterpreted. `to` and
+ * `event` are null where a transition has no single id in those hierarchies: a
+ * targetless transition, a first target that is a `<history>`, an eventless
+ * transition, a wildcard or prefix descriptor, or several descriptors.
+ * `sce-codegen transition-table` lists the same transitions in the same order
+ * with the whole target set and every descriptor.
+ */
+data class AComputedEventNameIsMatchedLikeAnyOtherTransition(
+    val from: AComputedEventNameIsMatchedLikeAnyOtherState,
+    val to: AComputedEventNameIsMatchedLikeAnyOtherState?,
+    val event: AComputedEventNameIsMatchedLikeAnyOtherEvent?,
+    val index: Int,
+    val annotation: String,
+)
+
+object AComputedEventNameIsMatchedLikeAnyOtherTransitions {
+    /** The digest of the source set this machine was generated from: the `source-hash` of the file's own header, as a value. */
+    const val SOURCE_HASH: String = "292d1fc77f53bcad0ebbbb1eba40e4d11668b8d3c883688041c67e32a9df108c"
+
+    /** Every transition of the machine. */
+    val all: List<AComputedEventNameIsMatchedLikeAnyOtherTransition> = listOf(
+        AComputedEventNameIsMatchedLikeAnyOtherTransition(AComputedEventNameIsMatchedLikeAnyOtherState.S1, AComputedEventNameIsMatchedLikeAnyOtherState.S2, AComputedEventNameIsMatchedLikeAnyOtherEvent.Request, 0, ""),
+        AComputedEventNameIsMatchedLikeAnyOtherTransition(AComputedEventNameIsMatchedLikeAnyOtherState.S2, AComputedEventNameIsMatchedLikeAnyOtherState.S3, null, 0, ""),
+        AComputedEventNameIsMatchedLikeAnyOtherTransition(AComputedEventNameIsMatchedLikeAnyOtherState.S3, AComputedEventNameIsMatchedLikeAnyOtherState.S4, AComputedEventNameIsMatchedLikeAnyOtherEvent.Request, 0, ""),
+        AComputedEventNameIsMatchedLikeAnyOtherTransition(AComputedEventNameIsMatchedLikeAnyOtherState.S4, AComputedEventNameIsMatchedLikeAnyOtherState.S5, null, 0, ""),
+        AComputedEventNameIsMatchedLikeAnyOtherTransition(AComputedEventNameIsMatchedLikeAnyOtherState.S5, AComputedEventNameIsMatchedLikeAnyOtherState.S6, AComputedEventNameIsMatchedLikeAnyOtherEvent.Request, 0, ""),
+        AComputedEventNameIsMatchedLikeAnyOtherTransition(AComputedEventNameIsMatchedLikeAnyOtherState.S6, AComputedEventNameIsMatchedLikeAnyOtherState.Pass, null, 0, ""),
+    )
+}
+
 // --- State Machine (W3C SCXML) ---
 
 class AComputedEventNameIsMatchedLikeAnyOtherStateMachine(

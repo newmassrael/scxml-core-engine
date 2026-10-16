@@ -50,8 +50,12 @@ cp "$FIXTURE" "$TMP/$STEM.scxml"
 # `--input-root` overrides the default §synth-6.2.6 source-hash root (the
 # SCXML file's parent) so the embedded hash reflects the tracked
 # fixture location instead of the transient $TMP path.
+# `--emit-transition-table`: this stem also carries the machine's transitions as
+# constant data, which nothing in the machine reads. The channel's own build is
+# what proves it compiles; every channel of the stem asks for it.
 "$CODEGEN" generate "$TMP/$STEM.scxml" -l go -o "$TMP/" \
-    --input-root "$INPUT_ROOT"
+    --input-root "$INPUT_ROOT" \
+    --emit-transition-table
 
 # Step 4: per-child generate. `--parent-stem` rewrites each child's
 # `package <child>` header to the parent's package `<STEM>` so the

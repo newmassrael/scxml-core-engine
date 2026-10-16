@@ -1880,7 +1880,13 @@ sce_generate_static_integration_test(an_event_keeps_the_name_it_was_sent_under $
 # document cannot have written it; a transition on `request` takes `request.new`,
 # `*` takes the rest, and `_event.name` is the whole name — over the external and
 # the internal queue, now and after a delay.
-sce_generate_static_integration_test(a_computed_event_name_is_matched_like_any_other ${STATIC_INTEGRATION_OUTPUT_DIR})
+#
+# This stem also asks for the machine's transitions as constant data
+# (EMIT_TRANSITION_TABLE): nothing here reads the table, and the build of this
+# channel is what proves it compiles. Its wildcard transitions and its several
+# events are the shapes of an entry that has no single id.
+sce_generate_static_integration_test(a_computed_event_name_is_matched_like_any_other ${STATIC_INTEGRATION_OUTPUT_DIR}
+    EMIT_TRANSITION_TABLE)
 
 # W3C SCXML C.1: `_event.origin` must be the sender's published
 # `_ioprocessors` location, and that location must be a usable <send>

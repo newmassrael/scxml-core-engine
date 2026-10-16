@@ -110,6 +110,83 @@ pub enum AComputedEventNameIsMatchedLikeAnyOtherEvent {
 }
 
 // ======================================================================
+// Transition table (§synth-6.2.6), because the build asked for it
+// ======================================================================
+
+/// One transition of this machine, as constant data. Nothing in the machine
+/// reads it: a host that draws the machine, or checks it against its own
+/// design, does. `from`, `to` and `event` are this module's own
+/// `AComputedEventNameIsMatchedLikeAnyOtherState` and `AComputedEventNameIsMatchedLikeAnyOtherEvent`; `index` is the
+/// transition's position within its state in document order; `annotation` is
+/// the `sce:req` tokens as written, space-separated and uninterpreted. `to` and
+/// `event` are `None` where a transition has no single id in those enums: a
+/// targetless transition, a first target that is a `<history>`, an eventless
+/// transition, a wildcard or prefix descriptor, or several descriptors.
+/// `sce-codegen transition-table` lists the same transitions in the same order
+/// with the whole target set and every descriptor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AComputedEventNameIsMatchedLikeAnyOtherTransition {
+    pub from: AComputedEventNameIsMatchedLikeAnyOtherState,
+    pub to: Option<AComputedEventNameIsMatchedLikeAnyOtherState>,
+    pub event: Option<AComputedEventNameIsMatchedLikeAnyOtherEvent>,
+    pub index: u32,
+    pub annotation: &'static str,
+}
+
+impl AComputedEventNameIsMatchedLikeAnyOtherTransition {
+    /// The digest of the source set this machine was generated from: the
+    /// `source-hash` of the file's own header, as a value.
+    pub const SOURCE_HASH: &'static str =
+        "292d1fc77f53bcad0ebbbb1eba40e4d11668b8d3c883688041c67e32a9df108c";
+
+    /// Every transition of the machine.
+    pub const ALL: [AComputedEventNameIsMatchedLikeAnyOtherTransition; 6] = [
+        AComputedEventNameIsMatchedLikeAnyOtherTransition {
+            from: AComputedEventNameIsMatchedLikeAnyOtherState::S1,
+            to: Some(AComputedEventNameIsMatchedLikeAnyOtherState::S2),
+            event: Some(AComputedEventNameIsMatchedLikeAnyOtherEvent::Request),
+            index: 0,
+            annotation: "",
+        },
+        AComputedEventNameIsMatchedLikeAnyOtherTransition {
+            from: AComputedEventNameIsMatchedLikeAnyOtherState::S2,
+            to: Some(AComputedEventNameIsMatchedLikeAnyOtherState::S3),
+            event: None,
+            index: 0,
+            annotation: "",
+        },
+        AComputedEventNameIsMatchedLikeAnyOtherTransition {
+            from: AComputedEventNameIsMatchedLikeAnyOtherState::S3,
+            to: Some(AComputedEventNameIsMatchedLikeAnyOtherState::S4),
+            event: Some(AComputedEventNameIsMatchedLikeAnyOtherEvent::Request),
+            index: 0,
+            annotation: "",
+        },
+        AComputedEventNameIsMatchedLikeAnyOtherTransition {
+            from: AComputedEventNameIsMatchedLikeAnyOtherState::S4,
+            to: Some(AComputedEventNameIsMatchedLikeAnyOtherState::S5),
+            event: None,
+            index: 0,
+            annotation: "",
+        },
+        AComputedEventNameIsMatchedLikeAnyOtherTransition {
+            from: AComputedEventNameIsMatchedLikeAnyOtherState::S5,
+            to: Some(AComputedEventNameIsMatchedLikeAnyOtherState::S6),
+            event: Some(AComputedEventNameIsMatchedLikeAnyOtherEvent::Request),
+            index: 0,
+            annotation: "",
+        },
+        AComputedEventNameIsMatchedLikeAnyOtherTransition {
+            from: AComputedEventNameIsMatchedLikeAnyOtherState::S6,
+            to: Some(AComputedEventNameIsMatchedLikeAnyOtherState::Pass),
+            event: None,
+            index: 0,
+            annotation: "",
+        },
+    ];
+}
+
+// ======================================================================
 // Externally-drivable event surface (W3C SCXML 3.12 / 5.10)
 // ======================================================================
 

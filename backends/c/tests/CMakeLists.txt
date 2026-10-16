@@ -533,7 +533,13 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # the document cannot have written it; a transition on `request` takes
     # `request.new`, `*` takes the rest, and `_event.name` is the whole name — over
     # the external and the internal queue, now and after a delay.
-    sce_generate_static_integration_c_test(a_computed_event_name_is_matched_like_any_other "${SCE_C_INTEGRATION_GENERATED_DIR}")
+    #
+    # This stem also asks for the machine's transitions as constant data
+    # (EMIT_TRANSITION_TABLE): nothing here reads the table, and the build of this
+    # channel is what proves it compiles. Its wildcard transitions and its
+    # several events are the shapes of an entry that has no single id.
+    sce_generate_static_integration_c_test(a_computed_event_name_is_matched_like_any_other "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        EMIT_TRANSITION_TABLE)
 
     add_executable(sce_c_integration_a_computed_event_name_is_matched_like_any_other
         integration/test_a_computed_event_name_is_matched_like_any_other.c

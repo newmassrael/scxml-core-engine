@@ -45,8 +45,12 @@ cp "$FIXTURE" "$TMP/$STEM.scxml"
 # Step 3: parent generate. Emits parent <stem>_sm.py into $TMP AND
 # writes the split-out synth-invoke children (Mesh §9.6.6 rule 1)
 # into $TMP next to the staged parent.
+# `--emit-transition-table`: this stem also carries the machine's transitions as
+# constant data, which nothing in the machine reads. The channel's own build is
+# what proves it compiles; every channel of the stem asks for it.
 "$CODEGEN" generate "$TMP/$STEM.scxml" -l python -o "$TMP/" \
-    --input-root "$INPUT_ROOT"
+    --input-root "$INPUT_ROOT" \
+    --emit-transition-table
 
 # Step 4: per-child generate. `--parent-stem` rewrites each child's
 # generated package marker to the parent's so unqualified references

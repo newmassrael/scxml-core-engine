@@ -213,6 +213,45 @@ func (e AComputedEventNameIsMatchedLikeAnyOtherEvent) String() string {
 }
 
 // ======================================================================
+// Transition table (§synth-6.2.6), because the build asked for it
+// ======================================================================
+
+// AComputedEventNameIsMatchedLikeAnyOtherSourceHash is the digest of the source set this machine
+// was generated from: the `source-hash` of the file's own header, as a value.
+const AComputedEventNameIsMatchedLikeAnyOtherSourceHash = "292d1fc77f53bcad0ebbbb1eba40e4d11668b8d3c883688041c67e32a9df108c"
+
+// AComputedEventNameIsMatchedLikeAnyOtherTransition is one transition of this machine, as constant
+// data. Nothing in the machine reads it: a host that draws the machine, or
+// checks it against its own design, does. From, To and Event are this
+// package's own AComputedEventNameIsMatchedLikeAnyOtherState and AComputedEventNameIsMatchedLikeAnyOtherEvent; Index is
+// the transition's position within its state in document order; Annotation is
+// the `sce:req` tokens as written, space-separated and uninterpreted. To and
+// Event hold a value only where HasTo and HasEvent say so: a targetless
+// transition, a first target that is a <history>, an eventless transition, a
+// wildcard or prefix descriptor, or several descriptors has no single id in
+// those tables. `sce-codegen transition-table` lists the same transitions in
+// the same order with the whole target set and every descriptor.
+type AComputedEventNameIsMatchedLikeAnyOtherTransition struct {
+	From       AComputedEventNameIsMatchedLikeAnyOtherState
+	To         AComputedEventNameIsMatchedLikeAnyOtherState
+	HasTo      bool
+	Event      AComputedEventNameIsMatchedLikeAnyOtherEvent
+	HasEvent   bool
+	Index      uint32
+	Annotation string
+}
+
+// AComputedEventNameIsMatchedLikeAnyOtherTransitions lists every transition of the machine.
+var AComputedEventNameIsMatchedLikeAnyOtherTransitions = [...]AComputedEventNameIsMatchedLikeAnyOtherTransition{
+	{From: AComputedEventNameIsMatchedLikeAnyOtherStateS1, To: AComputedEventNameIsMatchedLikeAnyOtherStateS2, HasTo: true, Event: AComputedEventNameIsMatchedLikeAnyOtherEventRequest, HasEvent: true, Index: 0, Annotation: ""},
+	{From: AComputedEventNameIsMatchedLikeAnyOtherStateS2, To: AComputedEventNameIsMatchedLikeAnyOtherStateS3, HasTo: true, Index: 0, Annotation: ""},
+	{From: AComputedEventNameIsMatchedLikeAnyOtherStateS3, To: AComputedEventNameIsMatchedLikeAnyOtherStateS4, HasTo: true, Event: AComputedEventNameIsMatchedLikeAnyOtherEventRequest, HasEvent: true, Index: 0, Annotation: ""},
+	{From: AComputedEventNameIsMatchedLikeAnyOtherStateS4, To: AComputedEventNameIsMatchedLikeAnyOtherStateS5, HasTo: true, Index: 0, Annotation: ""},
+	{From: AComputedEventNameIsMatchedLikeAnyOtherStateS5, To: AComputedEventNameIsMatchedLikeAnyOtherStateS6, HasTo: true, Event: AComputedEventNameIsMatchedLikeAnyOtherEventRequest, HasEvent: true, Index: 0, Annotation: ""},
+	{From: AComputedEventNameIsMatchedLikeAnyOtherStateS6, To: AComputedEventNameIsMatchedLikeAnyOtherStatePass, HasTo: true, Index: 0, Annotation: ""},
+}
+
+// ======================================================================
 // Policy struct
 // ======================================================================
 

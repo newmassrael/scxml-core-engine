@@ -33,7 +33,10 @@ STEM="a_computed_event_name_is_matched_like_any_other"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-"$CODEGEN" generate "$FIXTURE" -l rust -o "$TMP/"
+# `--emit-transition-table`: this stem also carries the machine's transitions as
+# constant data, which nothing in the machine reads. The channel's own build is
+# what proves it compiles; every channel of the stem asks for it.
+"$CODEGEN" generate "$FIXTURE" -l rust -o "$TMP/" --emit-transition-table
 
 mkdir -p "$GENERATED_DIR"
 find "$GENERATED_DIR" -maxdepth 1 -name '*_sm.rs' -delete
