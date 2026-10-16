@@ -36,14 +36,14 @@ mutation_oracles backends/python/tests/integration/host_processor/test_static_ho
 
 mutation_case "a failure of a param's value escapes the invoke" <<'PY'
 edit("tools/codegen/templates/python/invoke_methods.py.jinja2",
-     "                except sce_algorithm.AlgorithmFailure:\n                    self._raise_error_execution(\n                        engine, \"<invoke> <param name='\"",
-     "                except ZeroDivisionError:\n                    self._raise_error_execution(\n                        engine, \"<invoke> <param name='\"")
+     "                except sce_algorithm.AlgorithmFailure:\n{% if inv.invoke_id in host_invoke_request_checks %}",
+     "                except ZeroDivisionError:\n{% if inv.invoke_id in host_invoke_request_checks %}")
 PY
 
 # ── ... and reported ───────────────────────────────────────────────
 
 mutation_case "a param whose value failed is left out without a word" <<'PY'
 edit("tools/codegen/templates/python/invoke_methods.py.jinja2",
-     "                    self._raise_error_execution(\n                        engine, \"<invoke> <param name='\" + {{ param.name | py_string_literal }} + \"'> expr failed to evaluate\"\n                    )\n                else:",
-     "                    pass\n                else:")
+     "{% else %}\n                    self._raise_error_execution(\n                        engine, \"<invoke> <param name='\" + {{ param.name | py_string_literal }} + \"'> expr failed to evaluate\"\n                    )\n{% endif %}",
+     "{% else %}\n                    pass\n{% endif %}")
 PY

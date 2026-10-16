@@ -110,8 +110,8 @@ PY
 
 mutation_case "an invoke's param that failed is written into the request" <<'PY'
 edit("tools/codegen/templates/invoke_methods.jinja2",
-     "                            if (sce_failure_.failed()) SCE_UNLIKELY {\n                                engine.raise(typename Engine::EventWithMetadata(\n                                    Event::Error_execution,\n                                    \"<invoke> <param name='{{ param.name | escape_cpp }}'> failed to evaluate\"));\n                            } else",
-     "                            if (false) SCE_UNLIKELY {\n                                engine.raise(typename Engine::EventWithMetadata(\n                                    Event::Error_execution,\n                                    \"<invoke> <param name='{{ param.name | escape_cpp }}'> failed to evaluate\"));\n                            } else")
+     "                            if (sce_failure_.failed()) SCE_UNLIKELY {\n                                {% if request_checks and param.name in request_checks %}",
+     "                            if (false) SCE_UNLIKELY {\n                                {% if request_checks and param.name in request_checks %}")
 PY
 
 mutation_case "a send's param reaches the host as the pairs' JSON alone" <<'PY'
