@@ -81,6 +81,10 @@ pub struct SCXMLParser {
     /// XML node id -> document-order rank for every state element, filled
     /// by [`SCXMLParser::assign_document_order`] before the states pass.
     document_order_by_node: BTreeMap<usize, u32>,
+    /// XML node id -> the id a state element WITHOUT an `id` attribute is
+    /// given, filled by [`SCXMLParser::assign_anonymous_state_ids`] beside the
+    /// document-order ranks. Empty for a document whose every state names itself.
+    anonymous_state_ids: BTreeMap<usize, String>,
     invoke_counter: u32,
     hybrid_invoke_counter: u32,
     send_counter: u32,
@@ -723,11 +727,22 @@ fn enforce_datamodel_languages(
 /// `<parallel>` — a construct in a final state's `<onentry>` or
 /// `<donedata>` names that state, not the one around it.
 fn owning_state(node: &roxmltree::Node) -> String {
-    node.ancestors()
+    match node
+        .ancestors()
         .find(|ancestor| is_scxml_state_element(ancestor))
-        .and_then(|state| state.attribute("id"))
-        .unwrap_or("")
-        .to_string()
+    {
+        Some(state) => match state.attribute("id") {
+            Some(id) => id.to_string(),
+            // A state that names no id has one given to it (`assign_anonymous_state_ids`),
+            // which an author never wrote: name it by where it stands.
+            None => format!(
+                "<{} at line {}>",
+                state.tag_name().name(),
+                state.document().text_pos_at(state.range().start).row
+            ),
+        },
+        None => String::new(),
+    }
 }
 
 /// Refuse what SCE's statically typed data model does not accept
@@ -2017,6 +2032,7 @@ impl SCXMLParser {
         Self {
             document_order_counter: 0,
             document_order_by_node: BTreeMap::new(),
+            anonymous_state_ids: BTreeMap::new(),
             invoke_counter: 0,
             hybrid_invoke_counter: 0,
             send_counter: 0,
@@ -2603,6 +2619,9 @@ impl SCXMLParser {
         // `parse_states` visits one element name at a time, so it cannot
         // number a mixed sibling set correctly on its own.
         self.assign_document_order(&root);
+        // §scxml-3.14: a state element that names no id is given one, so the
+        // states pass below finds every element the ranking above numbered.
+        self.assign_anonymous_state_ids(&root);
 
         // Parse states recursively
         self.parse_states(&root, None, &mut model, base_dir, diag_label)?;
@@ -3212,9 +3231,10 @@ impl SCXMLParser {
     /// Pre-order traversal IS document order for XML, so this walk hands
     /// out the same dense numbering the parse-order counter used to, only
     /// in the right order. It ranks every state element it meets and
-    /// recurses through all of them, so the set it numbers is a superset
-    /// of what [`Self::parse_states`] (which skips id-less elements and
-    /// does not descend into them) later looks up.
+    /// recurses through all of them, so the set it numbers is exactly
+    /// what [`Self::parse_states`] later looks up: an element without an
+    /// `id` is given one by [`Self::assign_anonymous_state_ids`], and is
+    /// parsed and descended into like any other.
     fn assign_document_order(&mut self, elem: &roxmltree::Node) {
         // §scxml-3.2 and §scxml-3.3 both make "the first child state in
         // document order" the default initial state, and the rank is emitted
@@ -3230,6 +3250,80 @@ impl SCXMLParser {
                 .insert(child.id().get_usize(), self.document_order_counter);
             self.document_order_counter += 1;
             self.assign_document_order(&child);
+        }
+    }
+
+    /// Give every state element that names no `id` one (§scxml-3.14: "if the
+    /// author does not provide a value, the processor will generate a unique
+    /// one"), for `<state>`, `<parallel>`, `<final>` and `<history>` alike.
+    ///
+    /// ⚠ This replaces a silent drop. `parse_states` used to `continue` past an
+    /// element without an `id`, and with it past everything inside: a
+    /// `<parallel>` written without one lost every region, the machine kept
+    /// the states around it, and `check` found nothing wrong because it read
+    /// the same model. Measured 2026-10-16 on a 140-transition document whose
+    /// two `<parallel>` elements had no id: three states and no events were
+    /// left, and `verify` reported the events "undeclared".
+    ///
+    /// The id is `sce_anon_<element>_<document order rank>`, deterministic
+    /// for one document, and made distinct from every id the document
+    /// writes itself (an underscore is appended until it is). It is a name for
+    /// the generated code and the sourcemap; nothing in the document can
+    /// target it, which is also all the specification asks of it.
+    fn assign_anonymous_state_ids(&mut self, root: &roxmltree::Node) {
+        fn written(elem: &roxmltree::Node, taken: &mut BTreeSet<String>) {
+            for child in scxml_children_any_of(elem, STATE_ELEMENT_TAGS) {
+                if let Some(id) = child.attribute("id") {
+                    taken.insert(id.to_string());
+                }
+                written(&child, taken);
+            }
+            for history in scxml_children(elem, "history") {
+                if let Some(id) = history.attribute("id") {
+                    taken.insert(id.to_string());
+                }
+            }
+        }
+        let mut taken = BTreeSet::new();
+        written(root, &mut taken);
+        self.give_ids_to_anonymous(root, &mut taken);
+    }
+
+    fn give_ids_to_anonymous(&mut self, elem: &roxmltree::Node, taken: &mut BTreeSet<String>) {
+        for child in scxml_children_any_of(elem, STATE_ELEMENT_TAGS) {
+            if child.attribute("id").is_none() {
+                let mut id = format!(
+                    "sce_anon_{}_{}",
+                    child.tag_name().name(),
+                    self.document_order_of(&child)
+                );
+                while !taken.insert(id.clone()) {
+                    id.push('_');
+                }
+                self.anonymous_state_ids.insert(child.id().get_usize(), id);
+            }
+            self.give_ids_to_anonymous(&child, taken);
+        }
+        // A `<history>` is not ranked in document order (it is no state to enter), so its id
+        // is made from where it stands in the text, which is as stable for one document.
+        for history in scxml_children(elem, "history") {
+            if history.attribute("id").is_none() {
+                let mut id = format!("sce_anon_history_{}", history.range().start);
+                while !taken.insert(id.clone()) {
+                    id.push('_');
+                }
+                self.anonymous_state_ids
+                    .insert(history.id().get_usize(), id);
+            }
+        }
+    }
+
+    /// The id of a state element: the one it names, or the one
+    /// [`Self::assign_anonymous_state_ids`] gave it.
+    fn state_id_of(&self, elem: &roxmltree::Node) -> String {
+        match elem.attribute("id") {
+            Some(id) => id.to_string(),
+            None => self.anonymous_state_ids[&elem.id().get_usize()].clone(),
         }
     }
 
@@ -3257,10 +3351,7 @@ impl SCXMLParser {
     ) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
         // Parse <state> elements
         for child in scxml_children(parent_elem, "state") {
-            let state_id = match child.attribute("id") {
-                Some(id) => id.to_string(),
-                None => continue,
-            };
+            let state_id = self.state_id_of(&child);
 
             let mut state = State {
                 id: state_id.clone(),
@@ -3394,10 +3485,7 @@ impl SCXMLParser {
 
         // Parse <final> elements
         for child in scxml_children(parent_elem, "final") {
-            let final_id = match child.attribute("id") {
-                Some(id) => id.to_string(),
-                None => continue,
-            };
+            let final_id = self.state_id_of(&child);
 
             let mut state = State {
                 id: final_id.clone(),
@@ -3450,10 +3538,7 @@ impl SCXMLParser {
 
         // Parse <parallel> elements
         for child in scxml_children(parent_elem, "parallel") {
-            let parallel_id = match child.attribute("id") {
-                Some(id) => id.to_string(),
-                None => continue,
-            };
+            let parallel_id = self.state_id_of(&child);
 
             let mut state = State {
                 id: parallel_id.clone(),
@@ -3518,10 +3603,7 @@ impl SCXMLParser {
 
         // Parse <history> elements
         for child in scxml_children(parent_elem, "history") {
-            let history_id = match child.attribute("id") {
-                Some(id) => id.to_string(),
-                None => continue,
-            };
+            let history_id = self.state_id_of(&child);
             let history_type = child.attribute("type").unwrap_or("shallow").to_string();
 
             let mut default_target = String::new();
@@ -8513,6 +8595,116 @@ mod tests {
         assert!(model.has_parallel_states);
     }
 
+    /// §scxml-3.14: a state element that names no id is given one, and is parsed and descended
+    /// into like any other. It used to be skipped with everything inside it, so a `<parallel>`
+    /// written without an id lost every region and nothing said so.
+    #[test]
+    fn a_parallel_without_an_id_keeps_its_regions() {
+        let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="outer">
+            <state id="outer">
+                <parallel>
+                    <state id="r1" initial="r1a">
+                        <state id="r1a"><transition event="go" target="r1b"/></state>
+                        <state id="r1b"/>
+                    </state>
+                    <state id="r2"><state id="r2a"/></state>
+                </parallel>
+            </state>
+        </scxml>"#;
+        let mut parser = SCXMLParser::new();
+        let model = parser.parse_string(scxml, "test").unwrap();
+        for id in ["outer", "r1", "r1a", "r1b", "r2", "r2a"] {
+            assert!(model.states.contains_key(id), "state {id} was dropped");
+        }
+        let parallels: Vec<_> = model.states.values().filter(|s| s.is_parallel).collect();
+        assert_eq!(1, parallels.len(), "the parallel itself was dropped");
+        assert_eq!(Some("outer"), parallels[0].parent.as_deref());
+        assert_eq!(
+            Some(parallels[0].id.as_str()),
+            model.states["r1"].parent.as_deref()
+        );
+        assert_eq!(
+            Some(parallels[0].id.as_str()),
+            model.states["r2"].parent.as_deref()
+        );
+        assert!(
+            model.states["r1a"]
+                .transitions
+                .iter()
+                .any(|t| t.event == "go"),
+            "a transition inside the region was dropped"
+        );
+    }
+
+    /// Every kind of state element is covered, not only `<parallel>`: the four parse sites each
+    /// had their own skip.
+    #[test]
+    fn a_state_final_and_history_without_an_id_are_given_one() {
+        let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="top">
+            <state id="top">
+                <state initial="inner"><state id="inner"/></state>
+                <history type="shallow"><transition target="inner"/></history>
+                <final/>
+            </state>
+        </scxml>"#;
+        let mut parser = SCXMLParser::new();
+        let model = parser.parse_string(scxml, "test").unwrap();
+        let children: Vec<_> = model
+            .states
+            .values()
+            .filter(|s| s.parent.as_deref() == Some("top"))
+            .collect();
+        // A `<history>` is stored beside the states, not among them.
+        assert_eq!(
+            2,
+            children.len(),
+            "the id-less children of `top` were not all kept"
+        );
+        assert_eq!(
+            1,
+            model.history_states.len(),
+            "the id-less <history> was dropped"
+        );
+        assert!(
+            children.iter().any(|s| s.is_final),
+            "the id-less <final> was dropped"
+        );
+        assert!(
+            model.states.contains_key("inner"),
+            "a state under an id-less state was dropped"
+        );
+        assert!(
+            children.iter().all(|s| !s.id.is_empty()),
+            "a state kept an empty id"
+        );
+    }
+
+    /// The given id is deterministic and never one the document wrote itself, so a document
+    /// that already uses the spelling cannot be captured by it.
+    #[test]
+    fn a_given_id_never_collides_with_one_the_document_wrote() {
+        let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">
+            <parallel id="s">
+                <state id="sce_anon_state_1"/>
+                <state/>
+            </parallel>
+        </scxml>"#;
+        let ids = |text: &str| -> Vec<String> {
+            let mut parser = SCXMLParser::new();
+            let model = parser.parse_string(text, "test").unwrap();
+            let mut ids: Vec<String> = model.states.keys().cloned().collect();
+            ids.sort();
+            ids
+        };
+        let first = ids(scxml);
+        assert_eq!(first, ids(scxml), "the given id changed between two parses");
+        assert_eq!(
+            3,
+            first.len(),
+            "a state was lost or two shared an id: {first:?}"
+        );
+    }
+
     #[test]
     fn parse_entry_exit_actions() {
         let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s1">
@@ -8613,19 +8805,20 @@ mod tests {
 
     #[test]
     fn graceful_state_without_id() {
-        // States without id are skipped (no panic)
+        // §scxml-3.14: a state without an id is given one, not skipped. It was skipped, with
+        // everything inside it, and the document looked fine to every check that read the same
+        // model (`a_parallel_without_an_id_keeps_its_regions`).
         let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s1">
             <state id="s1"/>
             <state/>
         </scxml>"#;
         let mut parser = SCXMLParser::new();
         let model = parser.parse_string(scxml, "test").unwrap();
-        // Only s1 should be in the model, the id-less state is skipped
         assert!(model.states.contains_key("s1"));
         assert_eq!(
             model.states.len(),
-            1,
-            "id-less state should be skipped, got: {:?}",
+            2,
+            "the id-less state was dropped, got: {:?}",
             model.states.keys().collect::<Vec<_>>()
         );
     }

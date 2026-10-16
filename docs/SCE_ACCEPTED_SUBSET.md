@@ -6194,6 +6194,22 @@ nothing lowers to a variant the generated enum never declares, so the
 document would otherwise pass `check` with `status: ok`, pass
 `generate`, and fail in the consumer's compiler.
 
+#### A state element without an `id`
+
+W3C SCXML §3.14: a `<state>`, `<parallel>`, `<final>` or `<history>` that
+names no `id` is given one by the processor. SCE reads it as the
+specification says: the element is parsed, and everything inside it is kept,
+under the id `sce_anon_<element>_<position>` (made distinct from every id the
+document writes itself). Nothing in the document can target that id, which
+is all §3.14 asks of it; it names the state in generated code and in the
+sourcemap. ⚠ Before this rule the parser skipped such an element **and
+everything inside it**, with no diagnostic: a `<parallel>` written without an
+`id` lost every region, the machine kept the states around it, and `check`
+passed because it read the same model. Measured 2026-10-16 on a document of
+140 transitions: 3 states and no events were left, and `verify` reported the
+events "undeclared". Of the 1198 `.scxml` documents tracked in this
+repository, none carried such an element as a state of the document.
+
 ---
 
 ### Design-time lints are opt-in (`--lint`)
