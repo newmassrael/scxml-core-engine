@@ -1683,9 +1683,17 @@ inside it — and, failing every one, at the window's end. A case asserting
 that an answer ARRIVES 2 s after the drive is therefore judged, not
 withheld: the deadline it asserts is inside its window by design. Where a
 deadline may or may not lie inside a window because of slack carried from
-earlier steps, whether it fired is not known, so the run is given up from
-there exactly as for an event that might have been sent — never judged on
-one of two machines.
+earlier steps, whether it fired is not known, so the run is played BOTH ways
+from there — once with the act fired, once without — and a case is judged
+only if every play reads it the same: passed if all pass it, failed if all
+fail it, and otherwise not judged, with the readings in its refusal. Never
+judged on one of two machines. The plays are the whole run again under a
+list of choices (an engine in another process is not copied), at most
+`MAX_CLOCK_FORKS` deep; past it the run is given up from there as for an
+event that might have been sent, and a document with no such deadline is
+played once, as before. Measured 2026-10-16: a setup step lasting 0..40 ms
+before a 30 ms delay withheld all seven cases of a component, three of which
+fail on every machine the window allows.
 A setup step that moves nothing still passes its time. A `clock` input is
 refused under a window rather than handed one end of it, and `when_absent`
 does not apply: a window is a statement, not a silence. Measured on one

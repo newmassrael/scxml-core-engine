@@ -97,6 +97,16 @@ class ClockLost(RunLost):
     machine's configuration from there on is not known."""
 
 
+class ClockFork(ClockLost):
+    """A deadline fell inside a time a record knows only as a window, and the play has no choice
+    left for it: the run can be played again once for each way it could have gone
+    (`_explore_the_clock`). Where no one is exploring, it is the `ClockLost` it extends."""
+
+    def __init__(self, message: str, index: int):
+        super().__init__(message)
+        self.index = index
+
+
 class RunStopped(RunLost):
     """The engine stopped a macrostep that would not end, or raised an error no
     state answered (`lowering.stopped_run`), so what the machine does from there
@@ -2510,6 +2520,20 @@ class CaseJudge:
                 if key in verification.assumptions:
                     verification.assumptions[key].positions.append(position)
 
+    def rebuild_refuted(self) -> None:
+        """`verification.refuted` again, from the failures the results hold now.
+
+        It is filled as each case is judged, so a verdict that was replaced afterwards (a case the
+        plays of one document did not agree on, `_agreed_across_the_clock`) would leave the guess
+        it failed at marked as refuted. The same lookup `_judge` makes, over what stands."""
+        refuted = self.verification.refuted
+        refuted.clear()
+        for result in self.verification.results:
+            for address, _, _ in result.failures:
+                rests_on = assumption_behind(self.writes.get(address), self.declared, self.binding)
+                if rests_on:
+                    refuted.setdefault(address, rests_on)
+
     def attribute(self) -> None:
         """Credit or blame every recorded guess by the JUDGED cases.
 
@@ -2878,7 +2902,13 @@ class StatechartRun:
     """
 
     def __init__(self, module, build: Build, model=None, payloads=None,
-                 absence_tokens=(), absent_addresses=frozenset(), trace: bool = False):
+                 absence_tokens=(), absent_addresses=frozenset(), trace: bool = False,
+                 plan: tuple = ()):
+        # How each deadline that falls inside a window is taken, in the order they come: True when
+        # the act fired before the window closed, False when it had not (`settle`). One more than
+        # the plan holds is a `ClockFork`, and the caller plays the run again with it.
+        self.plan = tuple(plan)
+        self.forks = 0
         # The addresses some rule reads the SILENCE of (`absent: true`): while one is not
         # reporting, only those rules fire for it.
         self.absent_addresses = frozenset(absent_addresses)
@@ -3216,21 +3246,46 @@ class StatechartRun:
         # given up rather than judged on one of two machines.
         self.slack_ms += hi - lo
         self.advance(lo)
-        self.settle()
+        self.settle(fork=True)
 
-    def settle(self) -> None:
-        """After a step: forget the slack if nothing is pending, give the run
-        up if a pending deadline lies within it."""
-        due = self.engine.time_until_next_scheduled_ms()
-        if due is None:
-            # Nothing pending: the uncertainty had nothing left to move.
-            self.slack_ms = 0.0
-        elif due <= self.slack_ms:
-            raise ClockLost(
-                f"a delayed act is due {due} ms after the earliest moment "
-                f"this record can have reached, and the record may have run "
-                f"up to {self.slack_ms:g} ms past it -- whether it fired is "
-                f"not known, so no configuration from here on is")
+    def settle(self, fork: bool = False) -> None:
+        """After a step: forget the slack if nothing is pending, and where a pending deadline lies
+        within it, either give the run up or take it as the plan says.
+
+        `fork` is for a step nothing was read at afterwards (`observe`): the run then goes on from
+        the choice. A reading taken before the deadline cannot be followed by one made after, because
+        what the act sent in between would belong to no case, so those give the run up as before.
+
+        A deadline inside the slack is one of two things in the run the record describes: the act
+        had fired by the time the step ended (`True`: the engine is moved to it, and the slack is
+        what is left after it), or it had not (`False`: real time was ahead of the engine by less
+        than the act's distance, at the millisecond the clock counts in)."""
+        for _ in range(MAX_TIME_STOPS):
+            due = self.engine.time_until_next_scheduled_ms()
+            if due is None:
+                # Nothing pending: the uncertainty had nothing left to move.
+                self.slack_ms = 0.0
+                return
+            if due > self.slack_ms:
+                return
+            message = (f"a delayed act is due {due} ms after the earliest moment "
+                       f"this record can have reached, and the record may have run "
+                       f"up to {self.slack_ms:g} ms past it -- whether it fired is "
+                       f"not known, so no configuration from here on is")
+            if not fork:
+                raise ClockLost(message)
+            if self.forks >= len(self.plan):
+                raise ClockFork(message, self.forks)
+            fired = self.plan[self.forks]
+            self.forks += 1
+            if not fired:
+                self.slack_ms = due - 1
+                return
+            self.advance(due)
+            self.slack_ms -= due
+        raise ClockLost(f"the machine's deadlines inside a time the record gives as a window "
+                        f"did not end within {MAX_TIME_STOPS} of them, so no configuration from "
+                        f"here on is known")
 
     def moments(self, case, from_drive: bool = False):
         """The instants a JUDGED step's reading may be taken at, earliest
@@ -3271,11 +3326,21 @@ class StatechartRun:
             if due is None or elapsed + due > span + self.slack_ms:
                 break
             if elapsed + due > span:
-                raise ClockLost(
-                    f"a delayed act is due {elapsed + due - span:g} ms after "
-                    f"the window this case was read in closes, and earlier "
-                    f"steps may have run up to {self.slack_ms:g} ms past the "
-                    f"engine's clock -- whether it fell inside is not known")
+                beyond = elapsed + due - span
+                message = (f"a delayed act is due {beyond:g} ms after "
+                           f"the window this case was read in closes, and earlier "
+                           f"steps may have run up to {self.slack_ms:g} ms past the "
+                           f"engine's clock -- whether it fell inside is not known")
+                # Either the act fell inside the window (real time was that far ahead of the
+                # engine's clock: the reading takes it) or it had not (the window closed first).
+                if self.forks >= len(self.plan):
+                    raise ClockFork(message, self.forks)
+                fired = self.plan[self.forks]
+                self.forks += 1
+                if not fired:
+                    self.slack_ms = beyond - 1
+                    break
+                self.slack_ms -= beyond
             self.advance(due)
             elapsed += due
             yield start + elapsed
@@ -3411,7 +3476,113 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
     why = restatement_needs_activation(examples.cases, pack.model, activation)
     if why:
         return Verification(refusal=why)
+    return _explore_the_clock(pack, binding, module, build, declared, explain)
 
+
+#: How many deadlines inside a time a record knows only as a window one document may be played
+#: both ways across. Every one doubles the plays, so the number is a budget; past it the run is
+#: given up at the next one, as it was before a deadline could be played both ways.
+MAX_CLOCK_FORKS = 6
+
+
+@dataclass
+class Played:
+    """One play of a statechart's cases, with the clock choices it was made under."""
+
+    verification: Verification
+    # None when the run was refused before it began.
+    judge: "CaseJudge | None"
+    # Judged-or-not step number -> the result that step added, for the steps that added one: the
+    # key that lines the plays of one document up, which `Verification.results` cannot (a step a
+    # play skipped leaves no entry).
+    rounds: dict
+    # The deadline inside a window the play stopped at, when it stopped there for lack of a choice.
+    fork: "ClockFork | None"
+
+
+def _explore_the_clock(pack: Pack, binding: dict, module, build: Build, declared,
+                       explain: tuple) -> Verification:
+    """Play the cases, and play them again wherever a delayed act fell inside a time known only
+    as a window, once for each way it could have gone.
+
+    ⚠ A window says the situation was observed somewhere in [min, max]. A machine waiting on an
+    act due inside it was, in the run the record describes, either past the act or before it, and
+    the cases share one run, so two answers are two machines for every case after. What is known
+    is narrower and exact: a case whose reading is the same on every machine the window allows
+    is judged, and one that reads differently is not. Giving the whole run up at the first such
+    deadline (`ClockLost`) withheld cases the choice never touched -- measured 2026-10-16: every
+    case of a component whose setup step lasted 0..40 ms before a 30 ms delay, 7 of 7.
+
+    Each play is the whole run again from the start under one list of choices (fired, not
+    fired), because an engine in another process is not copied. A play that stops for lack of a
+    choice is replaced by the plays that make it; `MAX_CLOCK_FORKS` bounds how many.
+    """
+    leaves: list = []
+
+    def walk(plan: tuple) -> None:
+        played = _play_statechart(pack, binding, module, build, declared, explain, plan)
+        if played.fork is not None and len(plan) < MAX_CLOCK_FORKS:
+            walk(plan + (False,))
+            walk(plan + (True,))
+        else:
+            leaves.append((plan, played))
+
+    walk(())
+    if len(leaves) == 1:
+        (_, played), = leaves
+        if played.judge is not None:
+            played.judge.attribute()
+        return played.verification
+    return _agreed_across_the_clock(leaves)
+
+
+def _kind_of(result) -> str:
+    if result is None or not result.judged:
+        return "unjudged"
+    return "passed" if result.passed else "failed"
+
+
+def _agreed_across_the_clock(leaves: list) -> Verification:
+    """The plays of one document, one per way its deadlines inside windows could have gone, read as
+    one verdict: a case is passed if every play passed it, failed if every play failed it, and
+    otherwise not judged -- never read off the play that happened to be tried first."""
+    base = leaves[0][1]
+    verification, judge = base.verification, base.judge
+    merged = []
+    for step in sorted({step for _, played in leaves for step in played.rounds}):
+        seen = [played.rounds.get(step) for _, played in leaves]
+        kinds = {_kind_of(result) for result in seen}
+        mine = base.rounds.get(step)
+        if len(kinds) == 1 and mine is not None:
+            merged.append(mine)
+            continue
+        named = next(result for result in seen if result is not None)
+        positions = set()
+        for result in seen:
+            if result is None:
+                continue
+            positions.update(result.compared, result.unwritten, result.undetermined)
+            positions.update(address for address, _, _ in result.failures
+                             if not address.startswith("("))
+        readings = ", ".join(sorted(kinds - {"unjudged"})) or "unjudged"
+        merged.append(CaseResult(
+            name=named.name, undetermined=sorted(positions),
+            refusal=(f"a delayed act the machine was waiting on fell inside a time the record "
+                     f"gives only as a window, and this case reads differently ({readings}) "
+                     f"according to whether it fired before the window closed -- whether it "
+                     f"fired is not known, so no answer is claimed")))
+    verification.results = merged
+    judge.rebuild_refuted()
+    judge.attribute()
+    return verification
+
+
+def _play_statechart(pack: Pack, binding: dict, module, build: Build, declared,
+                     explain: tuple, plan: tuple) -> Played:
+    """One play of the pack's cases through the document, as `verify_statechart` describes it, under
+    `plan`: how each deadline that fell inside a window is taken, in the order they come
+    (`StatechartRun.settle`)."""
+    examples = pack.examples
     inputs = dict(binding.get("inputs") or {})
     outputs = dict(binding.get("outputs") or {})
     # Never empty: `verify` refused a binding naming no event before building
@@ -3465,9 +3636,9 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
                             absence_tokens=pack.conventions.absence_tokens,
                             absent_addresses={r.get("address") for r in driving.values()
                                               if r.get("absent")},
-                            trace=bool(explain))
+                            trace=bool(explain), plan=plan)
     except VerifyError as exc:
-        return Verification(refusal=str(exc))
+        return Played(Verification(refusal=str(exc)), None, {}, None)
 
     def reading(name: str, rule: dict, requests) -> object:
         """What one output read as this round, before the binding lands it."""
@@ -3575,8 +3746,15 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
     machine_reads = set().union(*(rule_addresses(rule, latches) for rule in driving.values()))
     # Whether a delivery of the step being run moved the machine (`host_rounds`).
     step_moved = False
-    for case, owner, judged, part in host_rounds(examples, pack.model,
-                                                 pack.conventions.host, machine_reads):
+    # Which step added the result that stands last, and the deadline inside a window this play
+    # stopped at, if it did (`_explore_the_clock`).
+    rounds: dict = {}
+    fork = None
+    step_no = -1
+    for step_no, (case, owner, judged, part) in enumerate(
+            host_rounds(examples, pack.model, pack.conventions.host, machine_reads)):
+        if len(verification.results) > len(rounds):
+            rounds[step_no - 1] = verification.results[-1]
         if part == 0:
             step_moved = False
         # Under `on-change` the host runs the component only for an input
@@ -3804,6 +3982,8 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
             # (`lost`): a deadline inside a window, a macrostep the engine cut,
             # an error nothing answered.
             lost = f"at {case.name or '(unnamed)'!r}: {exc}"
+            if isinstance(exc, ClockFork):
+                fork = exc
             if judged:
                 withhold(result, case)
             # A setup step records nothing of its own: its case's judged
@@ -3831,8 +4011,9 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
             judge.judge(result, case, produced, planted=stood_in,
                         released=unreceived_drives(case, pack.model))
         verification.results.append(result)
-    judge.attribute()
-    return verification
+    if len(verification.results) > len(rounds):
+        rounds[step_no] = verification.results[-1]
+    return Played(verification, judge, rounds, fork)
 
 
 @contextlib.contextmanager

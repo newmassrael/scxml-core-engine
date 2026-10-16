@@ -258,7 +258,9 @@ class ATimeKnownOnlyAsAWindow(unittest.TestCase):
         self.assertTrue(result.ran, result.refusal)
         self.assertEqual((0, 0, 1), (result.passed, result.failed, result.unjudged),
                          details(result))
-        self.assertIn("whether it fell inside is not known", result.results[0].refusal)
+        # The deadline is played both ways (`_explore_the_clock`): the case reads FLASHING when it
+        # fell inside the window and DARK when it did not, so neither is claimed.
+        self.assertIn("whether it fired is not known", result.results[0].refusal)
 
     def test_a_setup_windows_uncertainty_carries_into_the_reading(self):
         """The setup step says only that 0 to 300 ms passed; the reading is
