@@ -30,11 +30,15 @@ publish = false
 
 [dependencies]
 sce-rust-runtime = { path = "../runtime", default-features = false }
-sce-rust-mesh = { path = "../mesh" }
+# The WebSocket binding is what `todo_peer_wss`, one copy of the to-do list as a process of
+# its own on real sockets, is served by; the simulated world does not use it.
+sce-rust-mesh = { path = "../mesh", features = ["wss"] }
 sce-forge-runtime = { path = "../forge-runtime" }
 sce-portable-bytes = { path = "../portable-bytes" }
 # The line protocol an actor hosted by another process is driven with (`external`).
 serde_json = "1"
+# The socket binding's runtime, which `todo_peer_wss` runs on.
+tokio = { version = "1", default-features = false, features = ["net", "rt", "sync", "time", "macros"] }
 
 # What a test reads the network's record back with, and the locator the generated-code
 # harness finds its toolchains with, so that a test that needs the JVM skips or fails by
