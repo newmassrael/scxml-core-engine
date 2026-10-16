@@ -509,10 +509,22 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                     sce_forge_wire_pair(&_host_inv_wire, "\"{{ param.name | escape_json_string | escape_c }}\"", sce_value);
 {% endif %}
                 } else {
+{% if invoke_info.invoke_id in host_invoke_request_checks %}
+                    /* SCE Accepted Subset 2.12: the host was promised the whole
+                       record, so a value that failed to evaluate refuses the
+                       request and starts nothing. */
+{% if 'error.execution' in model.events %}
+                    {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                        "<invoke> <param name='{{ param.name | escape_c }}'> cannot be its request field: it failed to evaluate");
+{% endif %}
+                    continue;
+{% else %}
 {% if 'error.execution' in model.events %}
                     {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                         sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
                         "<invoke> <param name='{{ param.name | escape_c }}'> failed to evaluate");
+{% endif %}
 {% endif %}
                 }
             }

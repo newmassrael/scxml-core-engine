@@ -1207,5 +1207,13 @@ name = "a_guard_reading_untyped_event_data_is_refused"
 path = "tests/a_guard_reading_untyped_event_data_is_refused.rs"
 required-features = ["cli"]
 
+# A typed host request's computed value is judged by the binary
+# (docs/SCE_ACCEPTED_SUBSET.md §2.12), so the target spawns `sce-codegen` and
+# carries the `cli` gate.
+[[test]]
+name = "a_typed_host_request_value_is_held_to_its_field"
+path = "tests/a_typed_host_request_value_is_held_to_its_field.rs"
+required-features = ["cli"]
+
 [lints]
 workspace = true

@@ -113,6 +113,33 @@
 {% if typed and not param.envelope_metadata %}
 			{{ typed }} = append({{ typed }}, sce.EventDataParam{Name: "{{ param.name | escape_go }}", Value: "{{ param.static_value | escape_go }}"})
 {% endif %}
+{% elif param.native_value %}
+{# `datamodel="sce-static"`: the value is native code over the machine's own
+   fields, shown to fit its field where the document was judged, so the only
+   way it fails to be a value is a checked operation that overflows — the
+   evaluation that failed, which refuses the request as any other value its
+   field cannot hold. #}
+			if !requestRefused {
+{% if param.native_fails %}
+				var sceFailure scealgorithm.Failure
+{% endif %}
+				sceValue := {{ param.native_value }}
+{% if param.native_fails %}
+				if sceFailure.Failed() {
+{% if 'error.execution' in model.events %}
+					engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke> <param name='{{ param.name | escape_go }}'> cannot be its request field: it failed to evaluate"))
+{% endif %}
+					requestRefused = true
+				} else {
+{% endif %}
+				{{ map }}["{{ param.name | escape_go }}"] = append({{ map }}["{{ param.name | escape_go }}"], sce.ToWireString(sceValue))
+{% if typed and not param.envelope_metadata %}
+				{{ typed }} = append({{ typed }}, sce.EventDataParam{Name: "{{ param.name | escape_go }}", Value: sceValue})
+{% endif %}
+{% if param.native_fails %}
+				}
+{% endif %}
+			}
 {% elif (param.expr or param.location) and model.needs_script_engine %}
 			if !requestRefused {
 {% if param.expr %}

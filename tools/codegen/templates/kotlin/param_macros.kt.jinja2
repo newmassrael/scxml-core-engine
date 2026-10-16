@@ -121,6 +121,33 @@
 {% if typed and not param.envelope_metadata %}
 {{ indent }}putParam({{ typed }}, "{{ param.name | escape_kotlin }}", "{{ param.static_value | escape_kotlin }}")
 {% endif %}
+{% elif param.native_value %}
+{# `datamodel="sce-static"`: the value is computed from the machine's own
+   fields, shown to fit its field where the document was judged, so the only
+   way it fails to be a value is a checked operation that overflows — the
+   evaluation that failed, which refuses the request as any other value its
+   field cannot hold. #}
+{% if param.native_fails %}
+{{ indent }}try {
+{% else %}
+{{ indent }}run {
+{% endif %}
+{{ indent }}    val v: Any? = {{ param.native_value }}
+{{ indent }}    {{ map }}["{{ param.name | escape_kotlin }}"] =
+{{ indent }}        ({{ map }}["{{ param.name | escape_kotlin }}"] ?: emptyList()) + valueToWireString(v)
+{% if typed and not param.envelope_metadata %}
+{{ indent }}    putParam({{ typed }}, "{{ param.name | escape_kotlin }}", v)
+{% endif %}
+{% if param.native_fails %}
+{{ indent }}} catch (_: com.sce.forge.runtime.AlgorithmFailure) {
+{% if 'error.execution' in model.events %}
+{{ indent }}    raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke> <param name='{{ param.name | escape_kotlin }}'> cannot be its request field: it failed to evaluate")
+{% endif %}
+{{ indent }}    return@deferInvoke
+{{ indent }}}
+{% else %}
+{{ indent }}}
+{% endif %}
 {% elif (param.expr or param.location) and model.needs_script_engine %}
 {{ indent }}try {
 {{ indent }}    val v = {{ eng }}.evaluateExpr({{ sid }}, {% if param.expr %}{{ param.expr | to_script_source_expr }}{% else %}{{ param.location | to_script_source_expr }}{% endif %})

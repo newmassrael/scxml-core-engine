@@ -641,19 +641,30 @@
                 _host_params: dict = {}
                 _host_payload: dict = {}
                 _host_repeats: dict = {}
+                _request_refused = False
 {% for param in inv.params %}
 {% if param.native_value %}
 {# `datamodel="sce-static"`: the value is native code over the policy's own
    attributes, read now. A checked operation that fails raises
    `AlgorithmFailure`: the evaluation that failed, so the pair is left out and
    reported (W3C SCXML 5.7.1) while the invocation still starts. The text is
-   the payload's own rendering, as a `<send>`'s host params are. #}
+   the payload's own rendering, as a `<send>`'s host params are. A request
+   typed by `sce:request` (SCE Accepted Subset 2.12) is the exception: the
+   host was promised the whole record, so the value that failed refuses the
+   request and starts nothing. #}
                 try:
                     _native = ({{ param.native_value }}).to_python()
                 except sce_algorithm.AlgorithmFailure:
+{% if inv.invoke_id in host_invoke_request_checks %}
+                    self._raise_error_execution(
+                        engine, "<invoke> <param name='" + {{ param.name | py_string_literal }} + "'> cannot be its request field: it failed to evaluate"
+                    )
+                    _request_refused = True
+{% else %}
                     self._raise_error_execution(
                         engine, "<invoke> <param name='" + {{ param.name | py_string_literal }} + "'> expr failed to evaluate"
                     )
+{% endif %}
                 else:
                     self._put_param(_host_payload, _host_repeats, {{ param.name | py_string_literal }}, _native)
                     _host_params.setdefault({{ param.name | py_string_literal }}, []).extend(
@@ -666,6 +677,10 @@
 {% endif %}
 {% endif %}
 {% endfor %}
+{% if inv.invoke_id in host_invoke_request_checks %}
+                if _request_refused:
+                    continue
+{% endif %}
                 _host_event_data = self._event_data_text(_host_payload, "", bool(_host_payload))
 {% endif %}
                 if not engine.perform_host_invoke(_HostInvokeRequest(

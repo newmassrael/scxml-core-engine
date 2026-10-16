@@ -2442,6 +2442,17 @@ the engine accepts a host-run completion only through its completion call,
 which checks that the start is still running. The generic `done.invoke`
 stays untyped — several invokes share it.
 
+Under `datamodel="sce-static"` a `<param>` of a typed request may be an
+expression of the machine's fields, and is held to the field it supplies where
+it is written (`scxml/static-datamodel-rule`): an integer whole in the field's
+range (the same signedness and no wider, or an unsigned one into a wider signed
+field), a real no wider than the field's, a bool, and a text held by a variable
+whose `sce:capacity` is no more than the field's `sce:max-size`. A computed
+value that fails when the invocation starts, a checked operation overflowing, is
+an argument that cannot be evaluated: `error.execution`, and the host is never
+asked. The standard host features (docs/SCE_HOST_FEATURES.md) are typed
+host-run invokes of this kind.
+
 A typed request is held to its record where the invocation starts: each
 `<param>`'s value, as the data model evaluated it, must be one its field's
 type holds — a whole number within the declared width for an integer field
@@ -3134,7 +3145,7 @@ line of the element or attribute that breaks it:
 | `<invoke idlocation>` | Refused for want of a reader, not of a form: the id it would store is the one the build already wrote (the `id`, or `<state>.platform_N`), and this model reads no `_event.invokeid` — only `_event.data` — so a stored id has nothing to be compared with. A document that must name its invocation writes `id`, which `done.invoke.<id>` and `error.invoke.<id>` already match |
 | a `<param>` or a `namelist` name of an `<invoke type="scxml">` whose child is not a `sce-static` document this build read, does not declare the name as a top-level `<data>`, declares it as a list, a record, an enum or bytes, is handed it twice, or is handed a value not of the variable's type | See **Child sessions** below. Refused at the `<param>` as `scxml/static-datamodel-rule` (a value of the wrong type as the expression's own refusal) rather than accepted and never delivered |
 | a `<finalize>` of an `<invoke type="scxml">` | §6.5 runs it in the invoking machine before a child's event is processed, but the model keeps its body as one script text and the generated code hands that text to a script engine this model never builds (measured 2026-10-01: the Rust body is an empty block, Kotlin finds no engine): the assignment would be accepted and never run. Refused at the `<invoke>` as `scxml/static-datamodel-rule`; the invoking state takes what the child sent in a transition. An EMPTY `<finalize/>` beside a `<param location>` or a `namelist` is the same refusal: §6.5.2 gives it the meaning "update each from the event's data of that name", which the model writes out as that script text. Lowering a body is not the obstacle — a `<finalize>` runs before any child event is processed, to read that event's `_event.data`, and no type rule reaches a payload that arrives from whichever event comes next; a body that reads none has no consumer. Under `ecmascript` the same document runs it |
-| a `<param>` of a `<send>`, of a host-run `<invoke>` or of a `<donedata>` whose value is not a bool, a string, a byte string, an integer, a real or an enum value held by a variable, a field of a record variable or a field of the payload, or reads a payload that is not in scope | See **Params** below. Refused at the `<param>` as `scxml/static-datamodel-rule`. An `<invoke>` typed by `sce:request` takes only literals |
+| a `<param>` of a `<send>`, of a host-run `<invoke>` or of a `<donedata>` whose value is not a bool, a string, a byte string, an integer, a real or an enum value held by a variable, a field of a record variable or a field of the payload, or reads a payload that is not in scope | See **Params** below. Refused at the `<param>` as `scxml/static-datamodel-rule`. An `<invoke>` typed by `sce:request` is held to its record: a literal where it is written, a computed value by its type (below) |
 
 **Expressions.** Every other expression is a forge expression judged
 against one closed scope — the declared variables at their `sce:type`, each

@@ -1788,6 +1788,136 @@ impl<'a> Judge<'a> {
         Ok(())
     }
 
+    /// A `<param>` of an `<invoke>` typed by `sce:request` (SCE Accepted Subset
+    /// §2.12), held to the field of the record it supplies.
+    ///
+    /// The host was promised the whole record, so a value the field cannot hold
+    /// is not left out as an untyped `<param>`'s is: it is refused where it is
+    /// written. This model knows the type of every value before it runs, so the
+    /// check is made here and the invocation has nothing to check when it
+    /// starts:
+    ///
+    /// - an integer of a width the field's range holds whole (the same
+    ///   signedness and no wider, or an unsigned value into a wider signed
+    ///   field), never narrowed;
+    /// - a real no wider than the field's;
+    /// - a bool into a `bool` field;
+    /// - a string or byte string held by a variable whose `sce:capacity` is no
+    ///   more than the field's `sce:max-size`, which is the one place this model
+    ///   knows the most bytes a value ever holds.
+    ///
+    /// A literal was held to its field at parse time, and an empty `<param>` is
+    /// judged where it is lowered.
+    fn request_field_value(
+        &self,
+        ctx: &TypeCtx<'_>,
+        param: &Param,
+        request: &crate::forge::model::EventSchemaModel,
+        element: &str,
+        state: &str,
+    ) -> Result<(), Located<ForgeError>> {
+        let wire = WireParam::of_param(param);
+        if wire.is_static_literal || wire.written.trim().is_empty() {
+            return Ok(());
+        }
+        let Some(field) = request.fields.iter().find(|f| f.id == param.name) else {
+            return Ok(());
+        };
+        let written = wire.written;
+        let ty = self.expr(
+            ctx,
+            written,
+            wire.spelling,
+            Expected::Hint(InferredType::Unknown),
+        )?;
+        let want = InferredType::from_sce_type(&field.sce_type);
+        let given = ty.wire_param_slot().unwrap_or(ty);
+        let verdict = match (want, given) {
+            (
+                InferredType::Int {
+                    signed: want_signed,
+                    bits: want_bits,
+                },
+                InferredType::Int {
+                    signed: given_signed,
+                    bits: given_bits,
+                },
+            ) => {
+                let holds = (want_signed == given_signed && given_bits <= want_bits)
+                    || (want_signed && !given_signed && given_bits < want_bits);
+                holds.then_some(()).ok_or_else(|| {
+                    format!(
+                        "the value is {}, which the field's {} does not hold whole",
+                        given.describe(),
+                        want.describe()
+                    )
+                })
+            }
+            (InferredType::Float { bits: want_bits }, InferredType::Float { bits: given_bits }) => {
+                (given_bits <= want_bits).then_some(()).ok_or_else(|| {
+                    format!(
+                        "the value is {}, which the field's {} does not hold whole",
+                        given.describe(),
+                        want.describe()
+                    )
+                })
+            }
+            (InferredType::Bool, InferredType::Bool) => Ok(()),
+            (InferredType::Str, InferredType::Str) | (InferredType::Bytes, InferredType::Bytes) => {
+                self.request_text_within(written, field.max_size)
+            }
+            _ => Err(format!(
+                "the value is {}, and the field is {}",
+                given.describe(),
+                want.describe()
+            )),
+        };
+        match verdict {
+            Ok(()) => Ok(()),
+            Err(why) => {
+                let at = wire.source_location;
+                Err(self.rule_at(
+                    format!("<param name=\"{}\"> of {element}", param.name),
+                    &format!(
+                        "a request typed by sce:request is held to the record its schema names, \
+                         and {why}: a field takes a value its type holds, never a narrowed one"
+                    ),
+                    at.and_then(|l| l.line),
+                    at.and_then(|l| l.col),
+                    state,
+                    written,
+                ))
+            }
+        }
+    }
+
+    /// Whether the text `written` is held by a variable whose declared bound is
+    /// within `max_size`: a string's length is a run-time fact except where a
+    /// declaration states its most, so only a bare variable name is shown to fit.
+    fn request_text_within(&self, written: &str, max_size: Option<u32>) -> Result<(), String> {
+        let Some(max) = max_size else {
+            return Ok(());
+        };
+        let name = written.trim();
+        let held = self
+            .scope
+            .variables
+            .iter()
+            .find(|v| v.id == name)
+            .and_then(|v| v.capacity);
+        match held {
+            Some(capacity) if capacity <= max => Ok(()),
+            Some(capacity) => Err(format!(
+                "`{name}` holds up to {capacity} bytes, past the {max} the field holds"
+            )),
+            None => Err(format!(
+                "the value is not a variable, so no declaration says how long it is, and the \
+                 field holds {max} bytes at most: take it into a variable declared with \
+                 sce:capacity of {max} or less"
+            )),
+        }
+    }
+
     fn actions(
         &self,
         ctx: &TypeCtx<'_>,
@@ -2621,30 +2751,14 @@ impl<'a> Judge<'a> {
         // `namelist`, which are the `<param name="x" expr="x"/>`s it abbreviates
         // ([`crate::model::UnsupportedInvokeInfo::fold_namelist_into_params`]).
         // One typed by `sce:request` holds the host to the whole record its
-        // schema names and checks each value against its field, which the
-        // lowering does not yet do — so such a request may carry literals and
-        // nothing computed, rather than a `<param>` the host was promised and
-        // is not given. It takes no `namelist` at all: the parser refuses one
-        // beside a typed request, under every data model.
+        // schema names, so each value is held to the field it supplies: a
+        // literal where it is written (`validation/typed-invoke-request`), and
+        // a value the machine computes by its type, below — this model knows
+        // every type before it runs, so there is nothing left to check when the
+        // invocation starts. It takes no `namelist` at all: the parser refuses
+        // one beside a typed request, under every data model.
         if let Invoke::Unsupported(info) = invoke {
             let element = format!("<invoke id=\"{}\">", base.invoke_id);
-            if !info.request_schema.is_empty() {
-                if let Some(param) = base.params.iter().find(|p| {
-                    !p.is_static_literal && !(p.expr.trim().is_empty() && p.location.is_empty())
-                }) {
-                    let at = param.source_location.as_ref();
-                    return Err(self.rule_at(
-                        format!("<param name=\"{}\"> of {element}", param.name),
-                        "a request typed by sce:request is held to the record its schema \
-                         names, and a value computed from this data model's variables is not \
-                         yet checked against its field: write it as a literal",
-                        at.and_then(|l| l.line).or(line),
-                        at.and_then(|l| l.col).or(col),
-                        state,
-                        &param.expr,
-                    ));
-                }
-            }
             // The `src` the host is handed is a string computed from the
             // machine's fields when the invocation starts. The element names its
             // source one way, written or computed, so a `src` beside it is
@@ -2686,6 +2800,11 @@ impl<'a> Judge<'a> {
             for name in info.namelist.split_whitespace() {
                 let pair = WireParam::of_namelist_name(name, None, at);
                 self.wire_param(ctx, &pair, &element, state)?;
+            }
+            if let Some(request) = self.schemas.get(&info.request_schema) {
+                for param in &base.params {
+                    self.request_field_value(ctx, param, request, &element, state)?;
+                }
             }
             return Ok(());
         }

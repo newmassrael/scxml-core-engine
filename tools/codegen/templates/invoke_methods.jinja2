@@ -737,16 +737,26 @@
                             // own fields, read now, with no script engine to ask.
                             // A checked operation that fails is the evaluation
                             // that failed: reported and its pair left out, while
-                            // the invocation still starts (W3C SCXML 5.7.1).
+                            // the invocation still starts (W3C SCXML 5.7.1) —
+                            // unless the request is typed by `sce:request`
+                            // (SCE Accepted Subset 2.12), which promised the host
+                            // the whole record, so it starts nothing.
                             {% if param.native_fails %}
                             SCE::Forge::AlgorithmFailure sce_failure_;
                             {% endif %}
                             ScriptValue paramValue = {{ param.native_value }};
                             {% if param.native_fails %}
                             if (sce_failure_.failed()) SCE_UNLIKELY {
+                                {% if request_checks and param.name in request_checks %}
+                                engine.raise(typename Engine::EventWithMetadata(
+                                    Event::Error_execution,
+                                    "<invoke> <param name='{{ param.name | escape_cpp }}'> cannot be its request field: it failed to evaluate"));
+                                return;
+                                {% else %}
                                 engine.raise(typename Engine::EventWithMetadata(
                                     Event::Error_execution,
                                     "<invoke> <param name='{{ param.name | escape_cpp }}'> failed to evaluate"));
+                                {% endif %}
                             } else
                             {% endif %}
                             {
