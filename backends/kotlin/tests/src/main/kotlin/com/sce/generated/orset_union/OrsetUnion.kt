@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 58e52c40de99a046030dfe178fb69ffa932b0a6a8146307d7430d1e6de80a470
+// source-hash: b8448cd407b1027864e71ab2f9c10d7e6a28146f7cc75313b45ffc4e7287b0f4
 // SCE-MAP: orset_union.scxml:23 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")
@@ -22,7 +22,7 @@ fun orsetUnion(a: List<OrsetEntryPayload>, b: List<OrsetEntryPayload>): com.sce.
     // SCE_FORGE.md §3.4.1: a checked operation throws its failure, and this
     // boundary hands it to the caller as a value — never as an exception.
     try {
-        val out = ArrayList<OrsetEntryPayload>(256)
+        val out = ArrayList<OrsetEntryPayload>(1024)
         for (x in a) {
             out.add(x)
         }

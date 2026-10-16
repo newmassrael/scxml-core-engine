@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 58e52c40de99a046030dfe178fb69ffa932b0a6a8146307d7430d1e6de80a470
+// source-hash: b8448cd407b1027864e71ab2f9c10d7e6a28146f7cc75313b45ffc4e7287b0f4
 // SCE-MAP: merkle_insert.scxml:33 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")
@@ -25,7 +25,7 @@ fun merkleInsert(nodes: List<MerkleNodePayload>, minute: Long, hash: UInt): com.
         if (!(minute >= 0 && minute <= 153722867280912)) {
             return com.sce.forge.runtime.AlgorithmResult.Failed(com.sce.forge.runtime.AlgorithmError.Precondition)
         }
-        val out = ArrayList<MerkleNodePayload>(1024)
+        val out = ArrayList<MerkleNodePayload>(2048)
         var pd: UInt = 0.toUInt()
         var pp: ULong = 0.toULong()
         var div: Long = 68630377364883

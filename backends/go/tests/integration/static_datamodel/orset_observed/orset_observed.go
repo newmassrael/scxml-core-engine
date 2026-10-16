@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 58e52c40de99a046030dfe178fb69ffa932b0a6a8146307d7430d1e6de80a470
+// source-hash: b8448cd407b1027864e71ab2f9c10d7e6a28146f7cc75313b45ffc4e7287b0f4
 // SCE-MAP: orset_observed.scxml:15 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")
@@ -21,7 +21,7 @@ func OrsetObserved(live []sce_orset_entry.OrsetEntryPayload, element uint64) (sc
     // SCE_FORGE.md §3.4.1: each checked operation records a failure here, and
     // the statement around it returns it before the next statement runs.
     var sceFailure scealgorithm.Failure
-    out := make([]sce_orset_entry.OrsetEntryPayload, 0, 256)
+    out := make([]sce_orset_entry.OrsetEntryPayload, 0, 1024)
     if sceFailure.Failed() {
         return sceValue, sceFailure.Err()
     }

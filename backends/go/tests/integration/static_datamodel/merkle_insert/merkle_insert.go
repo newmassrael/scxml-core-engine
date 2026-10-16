@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 58e52c40de99a046030dfe178fb69ffa932b0a6a8146307d7430d1e6de80a470
+// source-hash: b8448cd407b1027864e71ab2f9c10d7e6a28146f7cc75313b45ffc4e7287b0f4
 // SCE-MAP: merkle_insert.scxml:33 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")
@@ -26,7 +26,7 @@ func MerkleInsert(nodes []sce_merkle_node.MerkleNodePayload, minute int64, hash 
     } else if sceCond1 {
         return sceValue, scealgorithm.Precondition
     }
-    out := make([]sce_merkle_node.MerkleNodePayload, 0, 1024)
+    out := make([]sce_merkle_node.MerkleNodePayload, 0, 2048)
     if sceFailure.Failed() {
         return sceValue, sceFailure.Err()
     }

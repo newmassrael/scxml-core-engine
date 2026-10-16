@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 5b579589f1ff33cd05a081b40dc01d4d0d0b2ef410a9718dd0ae11e84c00a952
+// source-hash: f00a1af9509aeb855cb8946645995169e7a8753555e3a8541ac4f9ef548d274c
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -117,6 +117,7 @@ pub enum TodoPeerState {
 pub enum TodoPeerEvent {
     ErrorExecution,
     TodoAgenda,
+    TodoCompact,
     TodoEdit,
     TodoJoin,
     TodoKeep,
@@ -150,6 +151,7 @@ impl TodoPeerEvent {
     /// on the name.
     pub const EXTERNALLY_DRIVABLE_EVENTS: &'static [TodoPeerEvent] = &[
         TodoPeerEvent::TodoAgenda,
+        TodoPeerEvent::TodoCompact,
         TodoPeerEvent::TodoEdit,
         TodoPeerEvent::TodoJoin,
         TodoPeerEvent::TodoNode,
@@ -166,6 +168,11 @@ pub struct TodoPeerTodoAgendaPayload {
     pub windowStart: i64,
     pub windowEnd: i64,
     pub skip: u32,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct TodoPeerTodoCompactPayload {
+    pub before: i64,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -250,6 +257,7 @@ pub enum TodoPeerPayload {
     #[default]
     None,
     TodoAgenda(TodoPeerTodoAgendaPayload),
+    TodoCompact(TodoPeerTodoCompactPayload),
     TodoEdit(TodoPeerTodoEditPayload),
     TodoJoin(TodoPeerTodoJoinPayload),
     TodoKeep(TodoPeerTodoKeepPayload),
@@ -269,6 +277,10 @@ pub trait TodoPeerInject {
     /// Binds the event name and payload variant in one call (name↔type
     /// pairing cannot be constructed inconsistently).
     fn raise_todo_agenda(&mut self, payload: TodoPeerTodoAgendaPayload);
+    /// Typed `_event.data` inject for `todo.compact`.
+    /// Binds the event name and payload variant in one call (name↔type
+    /// pairing cannot be constructed inconsistently).
+    fn raise_todo_compact(&mut self, payload: TodoPeerTodoCompactPayload);
     /// Typed `_event.data` inject for `todo.edit`.
     /// Binds the event name and payload variant in one call (name↔type
     /// pairing cannot be constructed inconsistently).
@@ -316,6 +328,15 @@ impl TodoPeerInject for ::sce_rust_runtime::Engine<TodoPeerPolicy> {
         self.raise_external_typed_with_data(
             TodoPeerEvent::TodoAgenda,
             TodoPeerPayload::TodoAgenda(payload),
+            &data,
+        );
+    }
+    fn raise_todo_compact(&mut self, payload: TodoPeerTodoCompactPayload) {
+        let data =
+            ::sce_rust_runtime::payload_wire(format_args!("{{\"before\":\"{}\"}}", payload.before));
+        self.raise_external_typed_with_data(
+            TodoPeerEvent::TodoCompact,
+            TodoPeerPayload::TodoCompact(payload),
             &data,
         );
     }
@@ -670,6 +691,23 @@ fn call_HlcSend__v(
         counter: r.counter,
         nodeId: r.node_id,
     })
+}
+
+#[allow(non_snake_case)]
+fn call_MerkleChangeHash__i(
+    p0: &TodoPeerEntryRecord,
+    p1: u8,
+) -> Result<u32, sce_forge_runtime::algorithm::AlgorithmError> {
+    let r = merkle_change_hash::merkle_change_hash(
+        orset_entry::OrsetEntryPayload {
+            element: p0.element,
+            wall_time: p0.wallTime,
+            counter: p0.counter,
+            node_id: p0.nodeId,
+        },
+        p1,
+    )?;
+    Ok(r)
 }
 
 #[allow(non_snake_case)]
@@ -1437,7 +1475,7 @@ pub trait TodoPeerPersist: Sized {
 impl TodoPeerPersist for Engine<TodoPeerPolicy> {
     type Policy = TodoPeerPolicy;
 
-    const SHAPE: &'static str = "0d675589a1a598d334338d7def482d151314b543b4cdc5f04d343a186a0ffcb5";
+    const SHAPE: &'static str = "84dbefc5d58d7b4aa69b8c27f7e0ee5bce5cff9d4896d5be0566fde874cf3921";
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<
         ::sce_rust_runtime::NoHistory,
@@ -1490,6 +1528,10 @@ impl TodoPeerPersist for Engine<TodoPeerPolicy> {
                 (
                     "one".to_string(),
                     ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.one),
+                ),
+                (
+                    "stable".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.stable),
                 ),
                 (
                     "entry".to_string(),
@@ -1651,29 +1693,34 @@ impl TodoPeerPersist for Engine<TodoPeerPolicy> {
             "stamp",
         )?;
         policy.adds =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("adds")?, "adds", 256)?;
+            ::sce_rust_runtime::saved_state::bounded(saved.variable("adds")?, "adds", 1024)?;
         policy.tombstones = ::sce_rust_runtime::saved_state::bounded(
             saved.variable("tombstones")?,
             "tombstones",
-            256,
+            1024,
         )?;
         policy.live =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("live")?, "live", 256)?;
-        policy.observed =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("observed")?, "observed", 256)?;
-        policy.one = ::sce_rust_runtime::saved_state::bounded(saved.variable("one")?, "one", 256)?;
+            ::sce_rust_runtime::saved_state::bounded(saved.variable("live")?, "live", 1024)?;
+        policy.observed = ::sce_rust_runtime::saved_state::bounded(
+            saved.variable("observed")?,
+            "observed",
+            1024,
+        )?;
+        policy.one = ::sce_rust_runtime::saved_state::bounded(saved.variable("one")?, "one", 1024)?;
+        policy.stable =
+            ::sce_rust_runtime::saved_state::bounded(saved.variable("stable")?, "stable", 1024)?;
         policy.entry = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("entry")?,
             "entry",
         )?;
         policy.values =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("values")?, "values", 128)?;
+            ::sce_rust_runtime::saved_state::bounded(saved.variable("values")?, "values", 512)?;
         policy.held = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("held")?,
             "held",
         )?;
         policy.digest =
-            ::sce_rust_runtime::saved_state::bounded(saved.variable("digest")?, "digest", 1024)?;
+            ::sce_rust_runtime::saved_state::bounded(saved.variable("digest")?, "digest", 2048)?;
         policy.mine = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("mine")?,
             "mine",
@@ -1846,6 +1893,8 @@ pub struct TodoPeerPolicy {
     observed: Vec<TodoPeerEntryRecord>,
     /// W3C SCXML 5.2: the `one` datamodel variable.
     one: Vec<TodoPeerEntryRecord>,
+    /// W3C SCXML 5.2: the `stable` datamodel variable.
+    stable: Vec<TodoPeerEntryRecord>,
     /// W3C SCXML 5.2: the `entry` datamodel variable.
     entry: TodoPeerEntryRecord,
     /// W3C SCXML 5.2: the `values` datamodel variable, published (`sce:direction="out"`).
@@ -1951,6 +2000,7 @@ impl TodoPeerPolicy {
         let live: Vec<TodoPeerEntryRecord> = Vec::new();
         let observed: Vec<TodoPeerEntryRecord> = Vec::new();
         let one: Vec<TodoPeerEntryRecord> = Vec::new();
+        let stable: Vec<TodoPeerEntryRecord> = Vec::new();
         let entry: TodoPeerEntryRecord = TodoPeerEntryRecord {
             element: 0,
             wallTime: 0,
@@ -2047,6 +2097,7 @@ impl TodoPeerPolicy {
             live,
             observed,
             one,
+            stable,
             entry,
             values,
             held,
@@ -2333,6 +2384,7 @@ impl StatePolicy for TodoPeerPolicy {
         match event {
             TodoPeerEvent::ErrorExecution => "error.execution",
             TodoPeerEvent::TodoAgenda => "todo.agenda",
+            TodoPeerEvent::TodoCompact => "todo.compact",
             TodoPeerEvent::TodoEdit => "todo.edit",
             TodoPeerEvent::TodoJoin => "todo.join",
             TodoPeerEvent::TodoKeep => "todo.keep",
@@ -2352,6 +2404,7 @@ impl StatePolicy for TodoPeerPolicy {
         match name {
             "error.execution" => Some(TodoPeerEvent::ErrorExecution),
             "todo.agenda" => Some(TodoPeerEvent::TodoAgenda),
+            "todo.compact" => Some(TodoPeerEvent::TodoCompact),
             "todo.edit" => Some(TodoPeerEvent::TodoEdit),
             "todo.join" => Some(TodoPeerEvent::TodoJoin),
             "todo.keep" => Some(TodoPeerEvent::TodoKeep),
@@ -2429,6 +2482,12 @@ impl StatePolicy for TodoPeerPolicy {
                     windowStart: fields.signed64("windowStart")?,
                     windowEnd: fields.signed64("windowEnd")?,
                     skip: fields.unsigned::<u32>("skip")?,
+                });
+            }
+            TodoPeerEvent::TodoCompact => {
+                let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
+                self.pending_payload = TodoPeerPayload::TodoCompact(TodoPeerTodoCompactPayload {
+                    before: fields.signed64("before")?,
                 });
             }
             TodoPeerEvent::TodoEdit => {
@@ -2637,7 +2696,7 @@ impl StatePolicy for TodoPeerPolicy {
                         });
                     }
                 }
-                if event == TodoPeerEvent::TodoResync {
+                if event == TodoPeerEvent::TodoCompact {
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
@@ -2648,7 +2707,7 @@ impl StatePolicy for TodoPeerPolicy {
                         });
                     }
                 }
-                if event == TodoPeerEvent::TodoVisit {
+                if event == TodoPeerEvent::TodoResync {
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
@@ -2659,7 +2718,7 @@ impl StatePolicy for TodoPeerPolicy {
                         });
                     }
                 }
-                if event == TodoPeerEvent::TodoNode {
+                if event == TodoPeerEvent::TodoVisit {
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
@@ -2670,7 +2729,7 @@ impl StatePolicy for TodoPeerPolicy {
                         });
                     }
                 }
-                if event == TodoPeerEvent::TodoShare {
+                if event == TodoPeerEvent::TodoNode {
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
@@ -2681,7 +2740,7 @@ impl StatePolicy for TodoPeerPolicy {
                         });
                     }
                 }
-                if event == TodoPeerEvent::TodoAgenda {
+                if event == TodoPeerEvent::TodoShare {
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
@@ -2692,7 +2751,7 @@ impl StatePolicy for TodoPeerPolicy {
                         });
                     }
                 }
-                if event == TodoPeerEvent::TodoZone {
+                if event == TodoPeerEvent::TodoAgenda {
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
@@ -2703,7 +2762,7 @@ impl StatePolicy for TodoPeerPolicy {
                         });
                     }
                 }
-                if event == TodoPeerEvent::TodoZoneClear {
+                if event == TodoPeerEvent::TodoZone {
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
@@ -2714,12 +2773,23 @@ impl StatePolicy for TodoPeerPolicy {
                         });
                     }
                 }
-                if event == TodoPeerEvent::ErrorExecution {
+                if event == TodoPeerEvent::TodoZoneClear {
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
                             targets: &[],
                             transition_index: 12,
+                            has_actions: true,
+                            is_internal: true,
+                        });
+                    }
+                }
+                if event == TodoPeerEvent::ErrorExecution {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[],
+                            transition_index: 13,
                             has_actions: true,
                             is_internal: true,
                         });
@@ -2745,7 +2815,7 @@ impl StatePolicy for TodoPeerPolicy {
             TodoPeerState::Open => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: todo_peer.scxml:209 :: open :: _transition_0
+                        // SCE-MAP: todo_peer.scxml:211 :: open :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         let ev = match &self.pending_payload {
                             TodoPeerPayload::TodoJoin(ev) => ev.clone(),
@@ -2761,7 +2831,7 @@ impl StatePolicy for TodoPeerPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: todo_peer.scxml:217 :: open :: _transition_1
+                        // SCE-MAP: todo_peer.scxml:219 :: open :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
                         let ev = match &self.pending_payload {
                             TodoPeerPayload::TodoEdit(ev) => ev.clone(),
@@ -2801,7 +2871,7 @@ impl StatePolicy for TodoPeerPolicy {
 
                             // W3C SCXML 5.3: <assign location="live">
                             let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.live = sce_forge_runtime::algorithm::within((call_OrsetLive__vv(&self.adds, &self.tombstones)?).as_slice(), 256)?.to_vec();
+    self.live = sce_forge_runtime::algorithm::within((call_OrsetLive__vv(&self.adds, &self.tombstones)?).as_slice(), 1024)?.to_vec();
     Ok(())
 })() {
     Ok(()) => false,
@@ -2834,7 +2904,7 @@ impl StatePolicy for TodoPeerPolicy {
 
                             // W3C SCXML 5.3: <assign location="observed">
                             let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.observed = sce_forge_runtime::algorithm::within((call_OrsetObserved__v(&self.live, self.entry.element)?).as_slice(), 256)?.to_vec();
+    self.observed = sce_forge_runtime::algorithm::within((call_OrsetObserved__v(&self.live, self.entry.element)?).as_slice(), 1024)?.to_vec();
     Ok(())
 })() {
     Ok(()) => false,
@@ -3193,7 +3263,7 @@ impl StatePolicy for TodoPeerPolicy {
                         }
                     }
                     2 => {
-                        // SCE-MAP: todo_peer.scxml:266 :: open :: _transition_2
+                        // SCE-MAP: todo_peer.scxml:268 :: open :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
                         let ev = match &self.pending_payload {
                             TodoPeerPayload::TodoWrite(ev) => ev.clone(),
@@ -3287,11 +3357,11 @@ impl StatePolicy for TodoPeerPolicy {
                             self.one.clear();
 
                             // SCE Accepted Subset §2.15: <sce:append target="one">
-                            let sce_failed = if self.one.len() < 256 {
+                            let sce_failed = if self.one.len() < 1024 {
                                 self.one.push(self.entry);
                                 false
                             } else {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<sce:append target='one'>: the list already holds its capacity of 256"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<sce:append target='one'>: the list already holds its capacity of 1024"));
                                 true
                             };
                             if sce_failed {
@@ -3300,7 +3370,7 @@ impl StatePolicy for TodoPeerPolicy {
 
                             // W3C SCXML 5.3: <assign location="adds">
                             let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.adds = sce_forge_runtime::algorithm::within((call_OrsetUnion__vv(&self.adds, &self.one)?).as_slice(), 256)?.to_vec();
+    self.adds = sce_forge_runtime::algorithm::within((call_OrsetUnion__vv(&self.adds, &self.one)?).as_slice(), 1024)?.to_vec();
     Ok(())
 })() {
     Ok(()) => false,
@@ -3315,7 +3385,7 @@ impl StatePolicy for TodoPeerPolicy {
 
                             // W3C SCXML 5.3: <assign location="live">
                             let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.live = sce_forge_runtime::algorithm::within((call_OrsetLive__vv(&self.adds, &self.tombstones)?).as_slice(), 256)?.to_vec();
+    self.live = sce_forge_runtime::algorithm::within((call_OrsetLive__vv(&self.adds, &self.tombstones)?).as_slice(), 1024)?.to_vec();
     Ok(())
 })() {
     Ok(()) => false,
@@ -3370,7 +3440,7 @@ impl StatePolicy for TodoPeerPolicy {
                             if self.is_live && !self.present {
                                 // W3C SCXML 5.3: <assign location="values">
                                 let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.values = sce_forge_runtime::algorithm::within((call_MvValueKeep__vv(&self.values, &self.held)?).as_slice(), 128)?.to_vec();
+    self.values = sce_forge_runtime::algorithm::within((call_MvValueKeep__vv(&self.values, &self.held)?).as_slice(), 512)?.to_vec();
     Ok(())
 })() {
     Ok(()) => false,
@@ -3661,7 +3731,7 @@ impl StatePolicy for TodoPeerPolicy {
                         }
                     }
                     3 => {
-                        // SCE-MAP: todo_peer.scxml:348 :: open :: _transition_3
+                        // SCE-MAP: todo_peer.scxml:350 :: open :: _transition_3
                         // W3C SCXML 3.13: Transition 3 actions
                         let ev = match &self.pending_payload {
                             TodoPeerPayload::TodoSupersede(ev) => ev.clone(),
@@ -3717,11 +3787,11 @@ impl StatePolicy for TodoPeerPolicy {
                             self.one.clear();
 
                             // SCE Accepted Subset §2.15: <sce:append target="one">
-                            let sce_failed = if self.one.len() < 256 {
+                            let sce_failed = if self.one.len() < 1024 {
                                 self.one.push(self.entry);
                                 false
                             } else {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<sce:append target='one'>: the list already holds its capacity of 256"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<sce:append target='one'>: the list already holds its capacity of 1024"));
                                 true
                             };
                             if sce_failed {
@@ -3730,7 +3800,7 @@ impl StatePolicy for TodoPeerPolicy {
 
                             // W3C SCXML 5.3: <assign location="tombstones">
                             let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.tombstones = sce_forge_runtime::algorithm::within((call_OrsetUnion__vv(&self.tombstones, &self.one)?).as_slice(), 256)?.to_vec();
+    self.tombstones = sce_forge_runtime::algorithm::within((call_OrsetUnion__vv(&self.tombstones, &self.one)?).as_slice(), 1024)?.to_vec();
     Ok(())
 })() {
     Ok(()) => false,
@@ -3763,7 +3833,7 @@ impl StatePolicy for TodoPeerPolicy {
 
                             // W3C SCXML 5.3: <assign location="values">
                             let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.values = sce_forge_runtime::algorithm::within((call_MvValueDrop__vv(&self.values, &self.held)?).as_slice(), 128)?.to_vec();
+    self.values = sce_forge_runtime::algorithm::within((call_MvValueDrop__vv(&self.values, &self.held)?).as_slice(), 512)?.to_vec();
     Ok(())
 })() {
     Ok(()) => false,
@@ -4114,7 +4184,7 @@ impl StatePolicy for TodoPeerPolicy {
                         }
                     }
                     4 => {
-                        // SCE-MAP: todo_peer.scxml:419 :: open :: _transition_4
+                        // SCE-MAP: todo_peer.scxml:421 :: open :: _transition_4
                         // W3C SCXML 3.13: Transition 4 actions
                         let ev = match &self.pending_payload {
                             TodoPeerPayload::TodoKeep(ev) => ev.clone(),
@@ -4151,7 +4221,7 @@ impl StatePolicy for TodoPeerPolicy {
 
                             // W3C SCXML 5.3: <assign location="digest">
                             let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.digest = sce_forge_runtime::algorithm::within((call_MerkleInsert__v(&self.digest, sce_forge_runtime::algorithm::div::<i64>(ev.wallTime, 60000)?, self.mine)?).as_slice(), 1024)?.to_vec();
+    self.digest = sce_forge_runtime::algorithm::within((call_MerkleInsert__v(&self.digest, sce_forge_runtime::algorithm::div::<i64>(ev.wallTime, 60000)?, self.mine)?).as_slice(), 2048)?.to_vec();
     Ok(())
 })() {
     Ok(()) => false,
@@ -4166,8 +4236,100 @@ impl StatePolicy for TodoPeerPolicy {
                         }
                     }
                     5 => {
-                        // SCE-MAP: todo_peer.scxml:431 :: open :: _transition_5
+                        // SCE-MAP: todo_peer.scxml:438 :: open :: _transition_5
                         // W3C SCXML 3.13: Transition 5 actions
+                        let ev = match &self.pending_payload {
+                            TodoPeerPayload::TodoCompact(ev) => ev.clone(),
+                            _ => return,
+                        };
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // SCE Accepted Subset §2.15: <sce:clear target="stable">
+                            self.stable.clear();
+
+                            for t in self.tombstones.clone() {
+                                let _ = &t;
+
+                                // W3C SCXML 5.9: cond="t.wallTime <= _event.data.before"
+                                if t.wallTime <= ev.before {
+                                    // SCE Accepted Subset §2.15: <sce:append target="stable">
+                                    let sce_failed = if self.stable.len() < 1024 {
+                                        self.stable.push(t);
+                                        false
+                                    } else {
+                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<sce:append target='stable'>: the list already holds its capacity of 1024"));
+                                        true
+                                    };
+                                    if sce_failed {
+                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                                    }
+
+                                    // W3C SCXML 5.3: <assign location="mine">
+                                    let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.mine = call_MerkleChangeHash__i(&t, 1)?;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<assign location='mine'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                                    if sce_failed {
+                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                                    }
+
+                                    // W3C SCXML 5.3: <assign location="digest">
+                                    let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.digest = sce_forge_runtime::algorithm::within((call_MerkleInsert__v(&self.digest, sce_forge_runtime::algorithm::div::<i64>(t.wallTime, 60000)?, self.mine)?).as_slice(), 2048)?.to_vec();
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<assign location='digest'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                                    if sce_failed {
+                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                                    }
+                                }
+                            }
+
+                            // W3C SCXML 5.3: <assign location="adds">
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.adds = sce_forge_runtime::algorithm::within((call_OrsetLive__vv(&self.adds, &self.stable)?).as_slice(), 1024)?.to_vec();
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<assign location='adds'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            }
+
+                            // W3C SCXML 5.3: <assign location="tombstones">
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.tombstones = sce_forge_runtime::algorithm::within((call_OrsetLive__vv(&self.tombstones, &self.stable)?).as_slice(), 1024)?.to_vec();
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<assign location='tombstones'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            }
+                        }
+                    }
+                    6 => {
+                        // SCE-MAP: todo_peer.scxml:454 :: open :: _transition_6
+                        // W3C SCXML 3.13: Transition 6 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             // W3C SCXML 5.9: cond="!hub"
@@ -4342,9 +4504,9 @@ impl StatePolicy for TodoPeerPolicy {
                             }
                         }
                     }
-                    6 => {
-                        // SCE-MAP: todo_peer.scxml:458 :: open :: _transition_6
-                        // W3C SCXML 3.13: Transition 6 actions
+                    7 => {
+                        // SCE-MAP: todo_peer.scxml:481 :: open :: _transition_7
+                        // W3C SCXML 3.13: Transition 7 actions
                         let ev = match &self.pending_payload {
                             TodoPeerPayload::TodoVisit(ev) => ev.clone(),
                             _ => return,
@@ -4641,9 +4803,9 @@ impl StatePolicy for TodoPeerPolicy {
                             }
                         }
                     }
-                    7 => {
-                        // SCE-MAP: todo_peer.scxml:499 :: open :: _transition_7
-                        // W3C SCXML 3.13: Transition 7 actions
+                    8 => {
+                        // SCE-MAP: todo_peer.scxml:522 :: open :: _transition_8
+                        // W3C SCXML 3.13: Transition 8 actions
                         let ev = match &self.pending_payload {
                             TodoPeerPayload::TodoNode(ev) => ev.clone(),
                             _ => return,
@@ -5043,9 +5205,9 @@ impl StatePolicy for TodoPeerPolicy {
                             }
                         }
                     }
-                    8 => {
-                        // SCE-MAP: todo_peer.scxml:546 :: open :: _transition_8
-                        // W3C SCXML 3.13: Transition 8 actions
+                    9 => {
+                        // SCE-MAP: todo_peer.scxml:569 :: open :: _transition_9
+                        // W3C SCXML 3.13: Transition 9 actions
                         let ev = match &self.pending_payload {
                             TodoPeerPayload::TodoShare(ev) => ev.clone(),
                             _ => return,
@@ -5607,9 +5769,9 @@ if self.hub && ev.to == 2 {
                             }
                         }
                     }
-                    9 => {
-                        // SCE-MAP: todo_peer.scxml:628 :: open :: _transition_9
-                        // W3C SCXML 3.13: Transition 9 actions
+                    10 => {
+                        // SCE-MAP: todo_peer.scxml:651 :: open :: _transition_10
+                        // W3C SCXML 3.13: Transition 10 actions
                         let ev = match &self.pending_payload {
                             TodoPeerPayload::TodoAgenda(ev) => ev.clone(),
                             _ => return,
@@ -6137,9 +6299,9 @@ if self.hub && ev.to == 2 {
                             }
                         }
                     }
-                    10 => {
-                        // SCE-MAP: todo_peer.scxml:735 :: open :: _transition_10
-                        // W3C SCXML 3.13: Transition 10 actions
+                    11 => {
+                        // SCE-MAP: todo_peer.scxml:758 :: open :: _transition_11
+                        // W3C SCXML 3.13: Transition 11 actions
                         let ev = match &self.pending_payload {
                             TodoPeerPayload::TodoZone(ev) => ev.clone(),
                             _ => return,
@@ -6255,9 +6417,9 @@ if self.hub && ev.to == 2 {
                             }
                         }
                     }
-                    11 => {
-                        // SCE-MAP: todo_peer.scxml:754 :: open :: _transition_11
-                        // W3C SCXML 3.13: Transition 11 actions
+                    12 => {
+                        // SCE-MAP: todo_peer.scxml:777 :: open :: _transition_12
+                        // W3C SCXML 3.13: Transition 12 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             // SCE Accepted Subset §2.15: <sce:clear target="zoneStarts1">
@@ -6285,9 +6447,9 @@ if self.hub && ev.to == 2 {
                             self.zone_offsets4.clear();
                         }
                     }
-                    12 => {
-                        // SCE-MAP: todo_peer.scxml:765 :: open :: _transition_12
-                        // W3C SCXML 3.13: Transition 12 actions
+                    13 => {
+                        // SCE-MAP: todo_peer.scxml:788 :: open :: _transition_13
+                        // W3C SCXML 3.13: Transition 13 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             // W3C SCXML 5.3: <assign location="refusals">

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 5b579589f1ff33cd05a081b40dc01d4d0d0b2ef410a9718dd0ae11e84c00a952
+// source-hash: f00a1af9509aeb855cb8946645995169e7a8753555e3a8541ac4f9ef548d274c
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -157,19 +157,20 @@ type TodoPeerEvent int
 const (
 	TodoPeerEventErrorExecution TodoPeerEvent = 0
 	TodoPeerEventTodoAgenda TodoPeerEvent = 1
-	TodoPeerEventTodoEdit TodoPeerEvent = 2
-	TodoPeerEventTodoJoin TodoPeerEvent = 3
-	TodoPeerEventTodoKeep TodoPeerEvent = 4
-	TodoPeerEventTodoNode TodoPeerEvent = 5
-	TodoPeerEventTodoResync TodoPeerEvent = 6
-	TodoPeerEventTodoShare TodoPeerEvent = 7
-	TodoPeerEventTodoSupersede TodoPeerEvent = 8
-	TodoPeerEventTodoVisit TodoPeerEvent = 9
-	TodoPeerEventTodoWrite TodoPeerEvent = 10
-	TodoPeerEventTodoZone TodoPeerEvent = 11
-	TodoPeerEventTodoZoneClear TodoPeerEvent = 12
+	TodoPeerEventTodoCompact TodoPeerEvent = 2
+	TodoPeerEventTodoEdit TodoPeerEvent = 3
+	TodoPeerEventTodoJoin TodoPeerEvent = 4
+	TodoPeerEventTodoKeep TodoPeerEvent = 5
+	TodoPeerEventTodoNode TodoPeerEvent = 6
+	TodoPeerEventTodoResync TodoPeerEvent = 7
+	TodoPeerEventTodoShare TodoPeerEvent = 8
+	TodoPeerEventTodoSupersede TodoPeerEvent = 9
+	TodoPeerEventTodoVisit TodoPeerEvent = 10
+	TodoPeerEventTodoWrite TodoPeerEvent = 11
+	TodoPeerEventTodoZone TodoPeerEvent = 12
+	TodoPeerEventTodoZoneClear TodoPeerEvent = 13
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	TodoPeerEventNull TodoPeerEvent = 13
+	TodoPeerEventNull TodoPeerEvent = 14
 )
 
 func (e TodoPeerEvent) String() string {
@@ -178,6 +179,8 @@ func (e TodoPeerEvent) String() string {
 		return "error.execution"
 	case TodoPeerEventTodoAgenda:
 		return "todo.agenda"
+	case TodoPeerEventTodoCompact:
+		return "todo.compact"
 	case TodoPeerEventTodoEdit:
 		return "todo.edit"
 	case TodoPeerEventTodoJoin:
@@ -217,6 +220,7 @@ type TodoPeerPayloadTag int
 const (
 	TodoPeerPayloadTagNone TodoPeerPayloadTag = iota
 	TodoPeerPayloadTagTodoAgenda
+	TodoPeerPayloadTagTodoCompact
 	TodoPeerPayloadTagTodoEdit
 	TodoPeerPayloadTagTodoJoin
 	TodoPeerPayloadTagTodoKeep
@@ -236,6 +240,13 @@ type TodoPeerTodoAgendaPayload struct {
 	windowStart int64
 	windowEnd int64
 	skip uint32
+}
+
+// TodoPeerTodoCompactPayload is the NL→IR Item C1 Path A typed `_event.data`
+// payload for `todo.compact`. Internal to the package; consumers inject it via
+// the `RaiseTodoCompact` seam below (fields are unexported by design).
+type TodoPeerTodoCompactPayload struct {
+	before int64
 }
 
 // TodoPeerTodoEditPayload is the NL→IR Item C1 Path A typed `_event.data`
@@ -347,6 +358,26 @@ func RaiseTodoAgenda(e *sce.Engine[TodoPeerState, TodoPeerEvent], id uint32, win
 			// from. Filling only the first left an `<assign expr="_event.data.x">`
 			// on this event reading nothing, on every backend alike.
 			Data: sce.PayloadJSON(sce.Pair("id", id), sce.Pair("windowStart", sce.Int64PayloadText(windowStart)), sce.Pair("windowEnd", sce.Int64PayloadText(windowEnd)), sce.Pair("skip", skip)),
+		},
+	})
+}
+
+// RaiseTodoCompact is the NL→IR Item C1 Path A per-event typed `_event.data`
+// inject seam for `todo.compact` — binds the event name and the payload field
+// values in one call so the name↔type pairing cannot be constructed
+// inconsistently. Twin of the Rust `RaiseTodoCompact` extension-trait method
+// and the C11 `raise_<event>_typed` entry.
+func RaiseTodoCompact(e *sce.Engine[TodoPeerState, TodoPeerEvent], before int64) {
+	e.RaiseExternalWithMeta(sce.EventWithMetadata[TodoPeerEvent]{
+		Event:    TodoPeerEventTodoCompact,
+		Metadata: sce.EventMetadata{
+			EventType:    sce.EventTypeExternal,
+			TypedPayload: TodoPeerTodoCompactPayload{before: before, },
+			// Both carriers are filled: the typed one a native guard reads,
+			// and `Data`, which is what the script engine binds `_event.data`
+			// from. Filling only the first left an `<assign expr="_event.data.x">`
+			// on this event reading nothing, on every backend alike.
+			Data: sce.PayloadJSON(sce.Pair("before", sce.Int64PayloadText(before))),
 		},
 	})
 }
@@ -938,6 +969,11 @@ func sceAdapt_HlcSend__v(p0 TodoPeerHlcRecord, p1 int64, p2 uint64) scealgorithm
 	return scealgorithm.Outcome[TodoPeerHlcRecord]{Value: out}
 }
 
+func sceAdapt_MerkleChangeHash__i(p0 TodoPeerEntryRecord, p1 uint8) scealgorithm.Outcome[uint32] {
+	r, err := sce_merkle_change_hash.MerkleChangeHash(sce_orset_entry.OrsetEntryPayload{Element: p0.element, WallTime: p0.wallTime, Counter: p0.counter, NodeId: p0.nodeId}, p1)
+	return scealgorithm.Outcome[uint32]{Value: r, Err: err}
+}
+
 func sceAdapt_MerkleChangeHash__v(p0 TodoPeerEntryRecord, p1 uint8) scealgorithm.Outcome[uint32] {
 	r, err := sce_merkle_change_hash.MerkleChangeHash(sce_orset_entry.OrsetEntryPayload{Element: p0.element, WallTime: p0.wallTime, Counter: p0.counter, NodeId: p0.nodeId}, p1)
 	return scealgorithm.Outcome[uint32]{Value: r, Err: err}
@@ -1071,6 +1107,7 @@ type TodoPeerPolicy struct {
 	// the Rust policy's `pending_payload` / the C11 `sm->pending_payload`.
 	pendingPayloadTag TodoPeerPayloadTag
 	pendingTodoAgendaPayload TodoPeerTodoAgendaPayload
+	pendingTodoCompactPayload TodoPeerTodoCompactPayload
 	pendingTodoEditPayload TodoPeerTodoEditPayload
 	pendingTodoJoinPayload TodoPeerTodoJoinPayload
 	pendingTodoKeepPayload TodoPeerTodoKeepPayload
@@ -1104,6 +1141,8 @@ type TodoPeerPolicy struct {
 	vObserved []TodoPeerEntryRecord
 	// W3C SCXML 5.2: the `one` datamodel variable.
 	vOne []TodoPeerEntryRecord
+	// W3C SCXML 5.2: the `stable` datamodel variable.
+	vStable []TodoPeerEntryRecord
 	// W3C SCXML 5.2: the `entry` datamodel variable.
 	vEntry TodoPeerEntryRecord
 	// W3C SCXML 5.2: the `values` datamodel variable, published (`sce:direction="out"`).
@@ -1189,6 +1228,7 @@ func NewTodoPeerPolicy() TodoPeerPolicy {
 		vLive: nil,
 		vObserved: nil,
 		vOne: nil,
+		vStable: nil,
 		vEntry: TodoPeerEntryRecord{element: 0, wallTime: 0, counter: 0, nodeId: 0},
 		vValues: nil,
 		vHeld: TodoPeerValueRecord{id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0},
@@ -1479,6 +1519,8 @@ func (p *TodoPeerPolicy) GetEventFromName(name string) (TodoPeerEvent, bool) {
 		return TodoPeerEventErrorExecution, true
 	case "todo.agenda":
 		return TodoPeerEventTodoAgenda, true
+	case "todo.compact":
+		return TodoPeerEventTodoCompact, true
 	case "todo.edit":
 		return TodoPeerEventTodoEdit, true
 	case "todo.join":
@@ -1583,6 +1625,9 @@ func (p *TodoPeerPolicy) PopulateEventMetadata(meta *sce.EventMetadata) {
 	case TodoPeerTodoAgendaPayload:
 		p.pendingPayloadTag = TodoPeerPayloadTagTodoAgenda
 		p.pendingTodoAgendaPayload = v
+	case TodoPeerTodoCompactPayload:
+		p.pendingPayloadTag = TodoPeerPayloadTagTodoCompact
+		p.pendingTodoCompactPayload = v
 	case TodoPeerTodoEditPayload:
 		p.pendingPayloadTag = TodoPeerPayloadTagTodoEdit
 		p.pendingTodoEditPayload = v
@@ -1652,6 +1697,17 @@ func (p *TodoPeerPolicy) LiftTypedPayload(event TodoPeerEvent, meta *sce.EventMe
 		}
 		p.pendingTodoAgendaPayload = payload
 		p.pendingPayloadTag = TodoPeerPayloadTagTodoAgenda
+	case TodoPeerEventTodoCompact:
+		fields, err := sce.LiftPayload(meta.Data)
+		if err != nil {
+			return err
+		}
+		var payload TodoPeerTodoCompactPayload
+		if payload.before, err = sce.PayloadSigned64(fields, "before"); err != nil {
+			return err
+		}
+		p.pendingTodoCompactPayload = payload
+		p.pendingPayloadTag = TodoPeerPayloadTagTodoCompact
 	case TodoPeerEventTodoEdit:
 		fields, err := sce.LiftPayload(meta.Data)
 		if err != nil {
@@ -1964,7 +2020,7 @@ func (p *TodoPeerPolicy) FirstEnabledTransition(state TodoPeerState, event TodoP
 				}, true
 			}
 		}
-		if event == TodoPeerEventTodoResync {
+		if event == TodoPeerEventTodoCompact {
 			{
 				return sce.EnabledTransition[TodoPeerState, sce.HistoryID]{
 					Source:          state,
@@ -1974,7 +2030,7 @@ func (p *TodoPeerPolicy) FirstEnabledTransition(state TodoPeerState, event TodoP
 				}, true
 			}
 		}
-		if event == TodoPeerEventTodoVisit {
+		if event == TodoPeerEventTodoResync {
 			{
 				return sce.EnabledTransition[TodoPeerState, sce.HistoryID]{
 					Source:          state,
@@ -1984,7 +2040,7 @@ func (p *TodoPeerPolicy) FirstEnabledTransition(state TodoPeerState, event TodoP
 				}, true
 			}
 		}
-		if event == TodoPeerEventTodoNode {
+		if event == TodoPeerEventTodoVisit {
 			{
 				return sce.EnabledTransition[TodoPeerState, sce.HistoryID]{
 					Source:          state,
@@ -1994,7 +2050,7 @@ func (p *TodoPeerPolicy) FirstEnabledTransition(state TodoPeerState, event TodoP
 				}, true
 			}
 		}
-		if event == TodoPeerEventTodoShare {
+		if event == TodoPeerEventTodoNode {
 			{
 				return sce.EnabledTransition[TodoPeerState, sce.HistoryID]{
 					Source:          state,
@@ -2004,7 +2060,7 @@ func (p *TodoPeerPolicy) FirstEnabledTransition(state TodoPeerState, event TodoP
 				}, true
 			}
 		}
-		if event == TodoPeerEventTodoAgenda {
+		if event == TodoPeerEventTodoShare {
 			{
 				return sce.EnabledTransition[TodoPeerState, sce.HistoryID]{
 					Source:          state,
@@ -2014,7 +2070,7 @@ func (p *TodoPeerPolicy) FirstEnabledTransition(state TodoPeerState, event TodoP
 				}, true
 			}
 		}
-		if event == TodoPeerEventTodoZone {
+		if event == TodoPeerEventTodoAgenda {
 			{
 				return sce.EnabledTransition[TodoPeerState, sce.HistoryID]{
 					Source:          state,
@@ -2024,7 +2080,7 @@ func (p *TodoPeerPolicy) FirstEnabledTransition(state TodoPeerState, event TodoP
 				}, true
 			}
 		}
-		if event == TodoPeerEventTodoZoneClear {
+		if event == TodoPeerEventTodoZone {
 			{
 				return sce.EnabledTransition[TodoPeerState, sce.HistoryID]{
 					Source:          state,
@@ -2034,11 +2090,21 @@ func (p *TodoPeerPolicy) FirstEnabledTransition(state TodoPeerState, event TodoP
 				}, true
 			}
 		}
-		if event == TodoPeerEventErrorExecution {
+		if event == TodoPeerEventTodoZoneClear {
 			{
 				return sce.EnabledTransition[TodoPeerState, sce.HistoryID]{
 					Source:          state,
 					TransitionIndex: 12,
+					HasActions:      true,
+					IsInternal:      true,
+				}, true
+			}
+		}
+		if event == TodoPeerEventErrorExecution {
+			{
+				return sce.EnabledTransition[TodoPeerState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 13,
 					HasActions:      true,
 					IsInternal:      true,
 				}, true
@@ -2056,7 +2122,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 	case TodoPeerStateOpen:
 		switch transitionIndex {
 		case 0:
-			//line todo_peer.scxml:209
+			//line todo_peer.scxml:211
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != TodoPeerPayloadTagTodoJoin {
@@ -2072,7 +2138,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 
 			}()
 		case 1:
-			//line todo_peer.scxml:217
+			//line todo_peer.scxml:219
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != TodoPeerPayloadTagTodoEdit {
@@ -2092,7 +2158,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_OrsetLive__vv(p.vAdds, p.vTombstones)), 256); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='live'>: an integer operation overflowed or failed")); return true }; p.vLive = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_OrsetLive__vv(p.vAdds, p.vTombstones)), 1024); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='live'>: an integer operation overflowed or failed")); return true }; p.vLive = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -2108,7 +2174,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_OrsetObserved__v(p.vLive, p.vEntry.element)), 256); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='observed'>: an integer operation overflowed or failed")); return true }; p.vObserved = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_OrsetObserved__v(p.vLive, p.vEntry.element)), 1024); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='observed'>: an integer operation overflowed or failed")); return true }; p.vObserved = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -2396,7 +2462,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 	}
 			}()
 		case 2:
-			//line todo_peer.scxml:266
+			//line todo_peer.scxml:268
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != TodoPeerPayloadTagTodoWrite {
@@ -2472,19 +2538,19 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 
 	// SCE Accepted Subset §2.15: <sce:append target="one">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vOne) >= 256 { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<sce:append target='one'>: the list already holds its capacity of 256")); return true }; sceValue := scealgorithm.ElementOf(p.vOne, p.vEntry); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<sce:append target='one'>: an integer operation overflowed or failed")); return true }; p.vOne = append(p.vOne, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vOne) >= 1024 { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<sce:append target='one'>: the list already holds its capacity of 1024")); return true }; sceValue := scealgorithm.ElementOf(p.vOne, p.vEntry); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<sce:append target='one'>: an integer operation overflowed or failed")); return true }; p.vOne = append(p.vOne, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_OrsetUnion__vv(p.vAdds, p.vOne)), 256); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='adds'>: an integer operation overflowed or failed")); return true }; p.vAdds = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_OrsetUnion__vv(p.vAdds, p.vOne)), 1024); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='adds'>: an integer operation overflowed or failed")); return true }; p.vAdds = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_OrsetLive__vv(p.vAdds, p.vTombstones)), 256); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='live'>: an integer operation overflowed or failed")); return true }; p.vLive = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_OrsetLive__vv(p.vAdds, p.vTombstones)), 1024); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='live'>: an integer operation overflowed or failed")); return true }; p.vLive = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -2538,7 +2604,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 	if p.vIsLive && !p.vPresent {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_MvValueKeep__vv(p.vValues, p.vHeld)), 128); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='values'>: an integer operation overflowed or failed")); return true }; p.vValues = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_MvValueKeep__vv(p.vValues, p.vHeld)), 512); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='values'>: an integer operation overflowed or failed")); return true }; p.vValues = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -2772,7 +2838,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 
 			}()
 		case 3:
-			//line todo_peer.scxml:348
+			//line todo_peer.scxml:350
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != TodoPeerPayloadTagTodoSupersede {
@@ -2826,13 +2892,13 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 
 	// SCE Accepted Subset §2.15: <sce:append target="one">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vOne) >= 256 { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<sce:append target='one'>: the list already holds its capacity of 256")); return true }; sceValue := scealgorithm.ElementOf(p.vOne, p.vEntry); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<sce:append target='one'>: an integer operation overflowed or failed")); return true }; p.vOne = append(p.vOne, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vOne) >= 1024 { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<sce:append target='one'>: the list already holds its capacity of 1024")); return true }; sceValue := scealgorithm.ElementOf(p.vOne, p.vEntry); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<sce:append target='one'>: an integer operation overflowed or failed")); return true }; p.vOne = append(p.vOne, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_OrsetUnion__vv(p.vTombstones, p.vOne)), 256); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='tombstones'>: an integer operation overflowed or failed")); return true }; p.vTombstones = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_OrsetUnion__vv(p.vTombstones, p.vOne)), 1024); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='tombstones'>: an integer operation overflowed or failed")); return true }; p.vTombstones = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -2862,7 +2928,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_MvValueDrop__vv(p.vValues, p.vHeld)), 128); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='values'>: an integer operation overflowed or failed")); return true }; p.vValues = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_MvValueDrop__vv(p.vValues, p.vHeld)), 512); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='values'>: an integer operation overflowed or failed")); return true }; p.vValues = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -3144,7 +3210,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 
 			}()
 		case 4:
-			//line todo_peer.scxml:419
+			//line todo_peer.scxml:421
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != TodoPeerPayloadTagTodoKeep {
@@ -3174,13 +3240,67 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_MerkleInsert__v(p.vDigest, scealgorithm.DivInt64(&sceFailure, p.pendingTodoKeepPayload.wallTime, 60000), p.vMine)), 1024); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='digest'>: an integer operation overflowed or failed")); return true }; p.vDigest = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_MerkleInsert__v(p.vDigest, scealgorithm.DivInt64(&sceFailure, p.pendingTodoKeepPayload.wallTime, 60000), p.vMine)), 2048); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='digest'>: an integer operation overflowed or failed")); return true }; p.vDigest = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 			}()
 		case 5:
-			//line todo_peer.scxml:431
+			//line todo_peer.scxml:438
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+				if p.pendingPayloadTag != TodoPeerPayloadTagTodoCompact {
+					return
+				}
+
+	// SCE Accepted Subset §2.15: <sce:clear target="stable">
+
+	p.vStable = p.vStable[:0]
+
+
+	// W3C SCXML 4.6: <foreach array="tombstones" item="t">, a native loop over a sce-static list
+	for _, t := range append(p.vTombstones[:0:0], p.vTombstones...) {
+		_ = t
+
+	if t.wallTime <= p.pendingTodoCompactPayload.before {
+
+	// SCE Accepted Subset §2.15: <sce:append target="stable">
+
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vStable) >= 1024 { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<sce:append target='stable'>: the list already holds its capacity of 1024")); return true }; sceValue := scealgorithm.ElementOf(p.vStable, t); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<sce:append target='stable'>: an integer operation overflowed or failed")); return true }; p.vStable = append(p.vStable, sceValue); return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+
+
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_MerkleChangeHash__i(t, 1)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='mine'>: an integer operation overflowed or failed")); return true }; p.vMine = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+
+
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_MerkleInsert__v(p.vDigest, scealgorithm.DivInt64(&sceFailure, t.wallTime, 60000), p.vMine)), 2048); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='digest'>: an integer operation overflowed or failed")); return true }; p.vDigest = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+	}
+
+	}
+
+
+
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_OrsetLive__vv(p.vAdds, p.vStable)), 1024); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='adds'>: an integer operation overflowed or failed")); return true }; p.vAdds = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+
+
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_OrsetLive__vv(p.vTombstones, p.vStable)), 1024); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='tombstones'>: an integer operation overflowed or failed")); return true }; p.vTombstones = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+			}()
+		case 6:
+			//line todo_peer.scxml:454
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -3330,8 +3450,8 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 	}
 
 			}()
-		case 6:
-			//line todo_peer.scxml:458
+		case 7:
+			//line todo_peer.scxml:481
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != TodoPeerPayloadTagTodoVisit {
@@ -3596,8 +3716,8 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 	}
 
 			}()
-		case 7:
-			//line todo_peer.scxml:499
+		case 8:
+			//line todo_peer.scxml:522
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != TodoPeerPayloadTagTodoNode {
@@ -3892,8 +4012,8 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 	}
 
 			}()
-		case 8:
-			//line todo_peer.scxml:546
+		case 9:
+			//line todo_peer.scxml:569
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != TodoPeerPayloadTagTodoShare {
@@ -3905,8 +4025,8 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 		_ = v
 
 	{
-	var ifCondFailed22 bool
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.DivInt64(&sceFailure, v.wallTime, 60000) == int64(p.pendingTodoSharePayload.minute); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<if cond='v.wallTime / 60000 === _event.data.minute'>: an integer operation overflowed or failed")); ifCondFailed22 = true; return false }; return sceValue }() {
+	var ifCondFailed23 bool
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.DivInt64(&sceFailure, v.wallTime, 60000) == int64(p.pendingTodoSharePayload.minute); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<if cond='v.wallTime / 60000 === _event.data.minute'>: an integer operation overflowed or failed")); ifCondFailed23 = true; return false }; return sceValue }() {
 
 
 	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.NarrowUint32FromUint(&sceFailure, uint64(v.id)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='shareId'>: an integer operation overflowed or failed")); return true }; p.vShareId = sceValue; return false }() {
@@ -4184,7 +4304,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 	}
 
 	}
-	if ifCondFailed22 {
+	if ifCondFailed23 {
 		return // W3C SCXML 4.9: the error ends the block
 	}
 	}
@@ -4197,8 +4317,8 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 		_ = t
 
 	{
-	var ifCondFailed26 bool
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.DivInt64(&sceFailure, t.wallTime, 60000) == int64(p.pendingTodoSharePayload.minute); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<if cond='t.wallTime / 60000 === _event.data.minute'>: an integer operation overflowed or failed")); ifCondFailed26 = true; return false }; return sceValue }() {
+	var ifCondFailed27 bool
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.DivInt64(&sceFailure, t.wallTime, 60000) == int64(p.pendingTodoSharePayload.minute); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<if cond='t.wallTime / 60000 === _event.data.minute'>: an integer operation overflowed or failed")); ifCondFailed27 = true; return false }; return sceValue }() {
 
 
 	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.NarrowUint32FromUint(&sceFailure, uint64(scealgorithm.DivUint64(&sceFailure, t.element, 65536))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='shareId'>: an integer operation overflowed or failed")); return true }; p.vShareId = sceValue; return false }() {
@@ -4464,7 +4584,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 	}
 
 	}
-	if ifCondFailed26 {
+	if ifCondFailed27 {
 		return // W3C SCXML 4.9: the error ends the block
 	}
 	}
@@ -4472,8 +4592,8 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 	}
 
 			}()
-		case 9:
-			//line todo_peer.scxml:628
+		case 10:
+			//line todo_peer.scxml:651
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != TodoPeerPayloadTagTodoAgenda {
@@ -4898,8 +5018,8 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 	}
 
 			}()
-		case 10:
-			//line todo_peer.scxml:735
+		case 11:
+			//line todo_peer.scxml:758
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != TodoPeerPayloadTagTodoZone {
@@ -4978,8 +5098,8 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 	}
 
 			}()
-		case 11:
-			//line todo_peer.scxml:754
+		case 12:
+			//line todo_peer.scxml:777
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -5023,8 +5143,8 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 	p.vZoneOffsets4 = p.vZoneOffsets4[:0]
 
 			}()
-		case 12:
-			//line todo_peer.scxml:765
+		case 13:
+			//line todo_peer.scxml:788
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

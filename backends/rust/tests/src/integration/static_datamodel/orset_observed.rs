@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 58e52c40de99a046030dfe178fb69ffa932b0a6a8146307d7430d1e6de80a470
+// source-hash: b8448cd407b1027864e71ab2f9c10d7e6a28146f7cc75313b45ffc4e7287b0f4
 #![doc = "SCE-MAP: orset_observed.scxml:15 :: _forge_body"]
 // SCE-MAP: orset_observed.scxml:15 :: _forge_body
 
@@ -21,10 +21,10 @@ pub fn orset_observed(
     live: &[orset_entry::OrsetEntryPayload],
     element: u64,
 ) -> Result<
-    SceOwnedList<orset_entry::OrsetEntryPayload, 256>,
+    SceOwnedList<orset_entry::OrsetEntryPayload, 1024>,
     sce_forge_runtime::algorithm::AlgorithmError,
 > {
-    let mut out: SceOwnedList<orset_entry::OrsetEntryPayload, 256> = SceOwnedList::new();
+    let mut out: SceOwnedList<orset_entry::OrsetEntryPayload, 1024> = SceOwnedList::new();
     for &x in live.iter() {
         if x.element == element {
             out.push(x)?;

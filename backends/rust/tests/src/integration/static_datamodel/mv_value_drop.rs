@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 58e52c40de99a046030dfe178fb69ffa932b0a6a8146307d7430d1e6de80a470
+// source-hash: b8448cd407b1027864e71ab2f9c10d7e6a28146f7cc75313b45ffc4e7287b0f4
 #![doc = "SCE-MAP: mv_value_drop.scxml:16 :: _forge_body"]
 // SCE-MAP: mv_value_drop.scxml:16 :: _forge_body
 
@@ -20,9 +20,9 @@ use sce_portable_bytes::SceOwnedList;
 pub fn mv_value_drop(
     values: &[mv_value::MvValuePayload],
     gone: mv_value::MvValuePayload,
-) -> Result<SceOwnedList<mv_value::MvValuePayload, 128>, sce_forge_runtime::algorithm::AlgorithmError>
+) -> Result<SceOwnedList<mv_value::MvValuePayload, 512>, sce_forge_runtime::algorithm::AlgorithmError>
 {
-    let mut out: SceOwnedList<mv_value::MvValuePayload, 128> = SceOwnedList::new();
+    let mut out: SceOwnedList<mv_value::MvValuePayload, 512> = SceOwnedList::new();
     for v in values.iter() {
         if v.id != gone.id
             || v.field != gone.field
