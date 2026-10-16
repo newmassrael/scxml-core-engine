@@ -2740,6 +2740,9 @@ impl SCXMLParser {
             // resolved — and its completion is bound to its result schema
             // before any typed-path validator reads the event map below.
             crate::forge::typed_invoke::validate(&model, &model.imported_records, diag_label)?;
+            // An invoke of a standard host type (docs/SCE_HOST_FEATURES.md) is
+            // held to the records the standard library gives that type.
+            crate::forge::standard_host::validate(&model, diag_label)?;
             crate::forge::typed_invoke::bind_results(&mut model);
             // A closed interface is judged against the schemas just
             // resolved, here where they are read and for the same reason

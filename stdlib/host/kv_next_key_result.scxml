@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/host/kv_next_key_result.scxml — the answer of `sce-host-kv-next-key`
+  (docs/SCE_HOST_FEATURES.md, "Key-value store"). `found` is false when no key
+  follows, and `key` is then empty.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="kv_next_key_result"
+       sce:event-name="host.kv.next_key.result">
+  <datamodel>
+    <data id="error" sce:type="string" sce:max-size="24" sce:direction="in"/>
+    <data id="found" sce:type="bool" sce:direction="in"/>
+    <data id="key" sce:type="string" sce:max-size="256" sce:direction="in"/>
+  </datamodel>
+</scxml>

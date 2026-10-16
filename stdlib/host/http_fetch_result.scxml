@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/host/http_fetch_result.scxml — the answer of `sce-host-http-fetch`
+  (docs/SCE_HOST_FEATURES.md, "HTTP"): the response as it came, a redirect or
+  an error status included. `headers` holds one `name: value` line per field,
+  names in lower case, in the order received, separated by a line feed.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="http_fetch_result"
+       sce:event-name="host.http.fetch.result">
+  <datamodel>
+    <data id="error" sce:type="string" sce:max-size="24" sce:direction="in"/>
+    <data id="status" sce:type="uint16" sce:direction="in"/>
+    <data id="headers" sce:type="string" sce:max-size="4096" sce:direction="in"/>
+    <data id="body" sce:type="string" sce:max-size="16384" sce:direction="in"/>
+  </datamodel>
+</scxml>

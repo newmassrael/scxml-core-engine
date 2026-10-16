@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/host/notify_permission_result.scxml — the answer of
+  `sce-host-notify-permission` and `sce-host-notify-request-permission`
+  (docs/SCE_HOST_FEATURES.md, "Notifications"). Neither takes an argument, so
+  there is no request document. `state` is one of `granted`, `denied` and
+  `undetermined`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="notify_permission_result"
+       sce:event-name="host.notify.permission.result">
+  <datamodel>
+    <data id="error" sce:type="string" sce:max-size="24" sce:direction="in"/>
+    <data id="state" sce:type="string" sce:max-size="16" sce:direction="in"/>
+  </datamodel>
+</scxml>

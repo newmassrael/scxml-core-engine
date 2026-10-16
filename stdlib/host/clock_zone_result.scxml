@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/host/clock_zone_result.scxml — the answer of `sce-host-clock-zone`
+  (docs/SCE_HOST_FEATURES.md, "Clock"): the zone the host reads local time in.
+  The request has no document: asking for the zone takes no argument.
+
+  `zone_id` is an IANA time zone identifier ("Asia/Seoul"), or empty when the
+  host knows only an offset. `utc_offset_s` is the offset from UTC, in
+  seconds east, in force at the instant the host answered.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="clock_zone_result"
+       sce:event-name="host.clock.zone.result">
+  <datamodel>
+    <data id="error" sce:type="string" sce:max-size="24" sce:direction="in"/>
+    <data id="zone_id" sce:type="string" sce:max-size="64" sce:direction="in"/>
+    <data id="utc_offset_s" sce:type="int32" sce:direction="in"/>
+  </datamodel>
+</scxml>

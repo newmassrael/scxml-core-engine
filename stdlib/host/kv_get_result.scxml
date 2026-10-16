@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/host/kv_get_result.scxml — the answer of `sce-host-kv-get`
+  (docs/SCE_HOST_FEATURES.md, "Key-value store"). `found` is false when the
+  store holds nothing under the key, and `value` is then empty.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="kv_get_result"
+       sce:event-name="host.kv.get.result">
+  <datamodel>
+    <data id="error" sce:type="string" sce:max-size="24" sce:direction="in"/>
+    <data id="found" sce:type="bool" sce:direction="in"/>
+    <data id="value" sce:type="string" sce:max-size="4096" sce:direction="in"/>
+  </datamodel>
+</scxml>

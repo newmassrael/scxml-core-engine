@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/host/kv_delete_result.scxml — the answer of `sce-host-kv-delete`
+  (docs/SCE_HOST_FEATURES.md, "Key-value store"). `existed` is false when the
+  store held nothing under the key, which is not a failure.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="kv_delete_result"
+       sce:event-name="host.kv.delete.result">
+  <datamodel>
+    <data id="error" sce:type="string" sce:max-size="24" sce:direction="in"/>
+    <data id="existed" sce:type="bool" sce:direction="in"/>
+  </datamodel>
+</scxml>

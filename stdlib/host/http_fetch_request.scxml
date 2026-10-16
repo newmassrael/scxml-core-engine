@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/host/http_fetch_request.scxml — the request of `sce-host-http-fetch`
+  (docs/SCE_HOST_FEATURES.md, "HTTP").
+
+  `method` is GET, HEAD, POST, PUT, PATCH, DELETE or OPTIONS. `headers` is
+  zero or more `Name: value` lines separated by a line feed. `body` is text:
+  empty for a request that sends none.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="http_fetch_request"
+       sce:event-name="host.http.fetch.request">
+  <datamodel>
+    <data id="method" sce:type="string" sce:max-size="8" sce:direction="in"/>
+    <data id="url" sce:type="string" sce:max-size="2048" sce:direction="in"/>
+    <data id="headers" sce:type="string" sce:max-size="2048" sce:direction="in"/>
+    <data id="body" sce:type="string" sce:max-size="16384" sce:direction="in"/>
+  </datamodel>
+</scxml>

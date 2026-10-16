@@ -1215,5 +1215,13 @@ name = "a_typed_host_request_value_is_held_to_its_field"
 path = "tests/a_typed_host_request_value_is_held_to_its_field.rs"
 required-features = ["cli"]
 
+# The standard host features' invoke types are served and judged by the binary
+# (docs/SCE_HOST_FEATURES.md), so the target spawns `sce-codegen` and carries the
+# `cli` gate.
+[[test]]
+name = "the_standard_host_features_are_one_set"
+path = "tests/the_standard_host_features_are_one_set.rs"
+required-features = ["cli"]
+
 [lints]
 workspace = true

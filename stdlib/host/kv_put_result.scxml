@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/host/kv_put_result.scxml — the answer of `sce-host-kv-put`
+  (docs/SCE_HOST_FEATURES.md, "Key-value store"). `replaced` is true when the
+  key already held a value, whether or not it was the same one.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="kv_put_result"
+       sce:event-name="host.kv.put.result">
+  <datamodel>
+    <data id="error" sce:type="string" sce:max-size="24" sce:direction="in"/>
+    <data id="replaced" sce:type="bool" sce:direction="in"/>
+  </datamodel>
+</scxml>

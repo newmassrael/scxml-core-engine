@@ -406,12 +406,24 @@ pub fn parse_deadline_ms(written: &str) -> Option<u64> {
 /// Every route a declaration takes into a build passes through here, so
 /// this is where [`check_host_declarations`] runs; the model is left
 /// untouched when it refuses.
+///
+/// The standard host features' invoke types
+/// ([`crate::forge::standard_host`]) are served by every host, so a document
+/// that runs one needs no declaration: they join the declared list here, after
+/// it, in the order the document first names them.
 pub fn declare_host_surfaces(
     model: &mut SCXMLModel,
     send_types: &[String],
     invoke_types: &[String],
 ) -> Result<(), ReservedHostType> {
     check_host_declarations(send_types, invoke_types)?;
+    let mut served_invoke_types = invoke_types.to_vec();
+    for standard in crate::forge::standard_host::types_used_by(model) {
+        if !served_invoke_types.contains(&standard) {
+            served_invoke_types.push(standard);
+        }
+    }
+    let invoke_types = served_invoke_types.as_slice();
     model.host_processor_types = send_types.to_vec();
     model.host_invoker_types = invoke_types.to_vec();
     if !invoke_types.is_empty() {

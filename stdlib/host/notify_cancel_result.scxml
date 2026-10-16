@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/host/notify_cancel_result.scxml — the answer of `sce-host-notify-cancel`
+  (docs/SCE_HOST_FEATURES.md, "Notifications"). `existed` is false when the id
+  named nothing, which is not a failure.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="notify_cancel_result"
+       sce:event-name="host.notify.cancel.result">
+  <datamodel>
+    <data id="error" sce:type="string" sce:max-size="24" sce:direction="in"/>
+    <data id="existed" sce:type="bool" sce:direction="in"/>
+  </datamodel>
+</scxml>

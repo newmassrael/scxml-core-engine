@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/host/notify_post_request.scxml — the request of `sce-host-notify-post`
+  (docs/SCE_HOST_FEATURES.md, "Notifications").
+
+  `id` names the notification (1 to 64 UTF-8 bytes): posting an id again
+  replaces what it named. `at_ms` is the instant to show it at, in the
+  `utc_ms` of `clock_now_result`; zero, or an instant not after the host's
+  clock, means now.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="notify_post_request"
+       sce:event-name="host.notify.post.request">
+  <datamodel>
+    <data id="id" sce:type="string" sce:max-size="64" sce:direction="in"/>
+    <data id="title" sce:type="string" sce:max-size="128" sce:direction="in"/>
+    <data id="body" sce:type="string" sce:max-size="512" sce:direction="in"/>
+    <data id="at_ms" sce:type="int64" sce:direction="in"/>
+  </datamodel>
+</scxml>

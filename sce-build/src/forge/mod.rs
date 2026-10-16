@@ -57,6 +57,7 @@ pub mod requirement_nodes;
 pub mod retention;
 pub mod review_table;
 pub mod sourcemap;
+pub mod standard_host;
 pub mod static_datamodel;
 pub(crate) mod static_enum;
 pub mod static_imports;

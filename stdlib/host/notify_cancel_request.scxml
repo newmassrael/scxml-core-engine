@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/host/notify_cancel_request.scxml — the request of
+  `sce-host-notify-cancel` (docs/SCE_HOST_FEATURES.md, "Notifications"): the
+  id of the notification to withdraw, whether it is waiting or already shown.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="notify_cancel_request"
+       sce:event-name="host.notify.cancel.request">
+  <datamodel>
+    <data id="id" sce:type="string" sce:max-size="64" sce:direction="in"/>
+  </datamodel>
+</scxml>

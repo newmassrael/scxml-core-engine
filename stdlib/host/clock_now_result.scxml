@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/host/clock_now_result.scxml — the answer of `sce-host-clock-now`
+  (docs/SCE_HOST_FEATURES.md, "Clock"), both readings taken at one instant.
+  The request has no document: reading the clock takes no argument.
+
+  `utc_ms` is milliseconds since 1970-01-01T00:00:00Z with every day 86400
+  seconds (POSIX time), and may jump when the host's clock is set.
+  `monotonic_ms` is milliseconds since an origin the host fixes for the life
+  of its process, and never decreases.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="clock_now_result"
+       sce:event-name="host.clock.now.result">
+  <datamodel>
+    <data id="error" sce:type="string" sce:max-size="24" sce:direction="in"/>
+    <data id="utc_ms" sce:type="int64" sce:direction="in"/>
+    <data id="monotonic_ms" sce:type="int64" sce:direction="in"/>
+  </datamodel>
+</scxml>
