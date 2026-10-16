@@ -305,8 +305,10 @@ impl Room {
     }
 
     fn settle(&mut self, before: i64) {
-        self.server
-            .raise("todo.settle", &format!(r#"{{"before":"{before}"}}"#));
+        self.server.raise(
+            "todo.settle",
+            &format!(r#"{{"before":"{before}","members":2}}"#),
+        );
         self.wait_floor(before);
     }
 

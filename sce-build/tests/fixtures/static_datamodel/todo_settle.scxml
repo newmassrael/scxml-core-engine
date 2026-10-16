@@ -2,11 +2,16 @@
 <!--
   The host's request that the hub of the to-do list (todo_peer) try to settle the changes
   up to an instant so that the copies can forget them: `before`, a wall time in
-  milliseconds. It is a proposal and not a promise, as todo.compact is: the hub asks each
-  person's copy (todo.propose) for what it holds up to the instant, and only when every
-  copy, the hub's own among them, holds the same does it tell them all to forget
-  (todo.floor). A copy that lacks a change, or whose answer is lost, makes the round
-  settle nothing, and the host asks again.
+  milliseconds, and `members`, how many people's copies the list has. It is a proposal and
+  not a promise, as todo.compact is: the hub asks each person's copy (todo.propose) for
+  what it holds up to the instant, and only when `members` copies, each a different one,
+  hold what the hub holds does it tell them all to forget (todo.floor). A copy that lacks a
+  change, or whose answer is lost, makes the round settle nothing, and the host asks again.
+
+  The hub does not keep a list of its readers, so who the people are is the host's to say,
+  and it is what the safety of the round rests on: the instant is settled only if every
+  copy took part, and `members` fewer than the copies there are would settle it without
+  one that holds something the others lack.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -16,5 +21,6 @@
        sce:event-name="todo.settle">
   <datamodel>
     <data id="before" sce:type="int64" sce:direction="in"/>
+    <data id="members" sce:type="uint32" sce:direction="in"/>
   </datamodel>
 </scxml>

@@ -451,7 +451,7 @@ fn todo_afternoon() -> World {
     world.raise(
         "server",
         "todo.settle",
-        &format!(r#"{{"before":"{settled}"}}"#),
+        &format!(r#"{{"before":"{settled}","members":2}}"#),
     );
     assert_eq!(world.run_until_quiet(60_000), Outcome::Quiet);
     for who in ["alice", "bob", "server"] {

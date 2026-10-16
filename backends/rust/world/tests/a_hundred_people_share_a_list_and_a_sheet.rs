@@ -58,6 +58,78 @@ fn sheet_crowd(seed: u64, names: &[String]) -> World {
     world
 }
 
+/// A hundred people settle an instant when each of them has answered the hub, over links
+/// that delay, reorder and repeat: every copy then forgets up to it. The hub does not keep
+/// a list of its readers, so the host says how many there are; one more than there are
+/// leaves the round open, and nothing is forgotten.
+#[test]
+fn a_hundred_people_settle_an_instant_when_every_one_has_answered() {
+    let names = crowd(PEOPLE);
+    let mut world = todo_crowd(7, &names);
+    let mut rng = Rng::new(7);
+    for round in 0..3 {
+        for who in &names {
+            let id = 1 + rng.below(6);
+            todo_set(
+                &mut world,
+                who,
+                id,
+                DUE,
+                i64::try_from(rng.below(10_000)).unwrap(),
+            );
+        }
+        assert_eq!(
+            world.run_until_quiet(600_000),
+            Outcome::Quiet,
+            "round {round}"
+        );
+        world.advance_ms(60_000);
+    }
+    let floors = |world: &mut World| -> Vec<i128> {
+        names
+            .iter()
+            .chain(std::iter::once(&HUB.to_string()))
+            .map(|who| whole(&todo_variables_of(world, who)["floor"]))
+            .collect()
+    };
+    let settle = |world: &mut World, before: i64, members: usize| {
+        world.raise(
+            HUB,
+            "todo.settle",
+            &format!(r#"{{"before":"{before}","members":{members}}}"#),
+        );
+        assert_eq!(world.run_until_quiet(600_000), Outcome::Quiet);
+    };
+
+    // One more copy than there are never answers: nothing is settled, anywhere.
+    let first = world.now_ms() - 1;
+    settle(&mut world, first, PEOPLE + 1);
+    assert!(floors(&mut world).iter().all(|floor| *floor == 0));
+
+    // As many as there are: every copy, the hub's among them, forgets up to the instant.
+    settle(&mut world, first, PEOPLE);
+    assert!(
+        floors(&mut world)
+            .iter()
+            .all(|floor| *floor == i128::from(first)),
+        "a copy did not settle the instant"
+    );
+    for who in &names {
+        let variables = todo_variables_of(&mut world, who);
+        assert_eq!(
+            variables["stale"],
+            serde_json::json!(false),
+            "{who} is stale"
+        );
+        assert_eq!(
+            whole(&variables["late"]),
+            0,
+            "{who} refused a write as late"
+        );
+    }
+    assert!(world.host_errors().is_empty());
+}
+
 /// An afternoon of changes to a few to-dos by people chosen at random, at random times:
 /// every copy ends with the list the hub holds, which is the one the oracle says, and
 /// a field two people wrote in the same instant, neither having seen the other's, holds

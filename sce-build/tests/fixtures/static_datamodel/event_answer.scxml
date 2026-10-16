@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  One answer a person's copy gave the hub of the to-do list (todo_peer) to the question of
+  what it holds up to an instant (todo.propose): the copy's node (`sender`) and the hash of
+  what it held (`hash`, event_settled). The hub keeps the answers of the round it has open
+  and settles the instant when as many copies as the host named hold what the hub holds.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="event_answer"
+       sce:event-name="calendar.answer">
+  <datamodel>
+    <data id="sender" sce:type="uint64" sce:direction="in"/>
+    <data id="hash" sce:type="uint32" sce:direction="in"/>
+  </datamodel>
+</scxml>

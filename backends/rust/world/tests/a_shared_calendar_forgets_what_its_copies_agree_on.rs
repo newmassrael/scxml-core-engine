@@ -74,7 +74,7 @@ fn settle(world: &mut World, before: i64) {
     world.raise(
         "server",
         "todo.settle",
-        &format!(r#"{{"before":"{before}"}}"#),
+        &format!(r#"{{"before":"{before}","members":2}}"#),
     );
     quiet(world);
 }
@@ -148,6 +148,38 @@ fn copies_that_hold_the_same_settle_an_instant_by_themselves() {
     assert_eq!(digests[0], digests[2]);
     assert_eq!(digests[1], digests[2]);
     assert!(world.host_errors().is_empty());
+}
+
+/// What a copy promised when it answered, that it stamps nothing at or before the instant,
+/// does not rest on the host: the clock is `hlc_send`'s, which takes the later of the
+/// instant the host gives and the clock's own, and the clock was moved past the instant. A
+/// host that gives a copy an instant long past, a device whose clock was set back, still
+/// has its change stamped after the floor, taken in everywhere and not refused as late.
+#[test]
+fn a_copy_given_a_past_instant_still_stamps_after_what_was_settled() {
+    let mut world = a_calendar(6);
+    for day in 0..8 {
+        an_afternoon(&mut world, day);
+    }
+    let before = world.now_ms() - 1;
+    settle(&mut world, before);
+    assert_eq!(floors(&mut world), [before; 3]);
+
+    // Alice's host says it is the first millisecond of the world.
+    let value = instant(2027, 1, 1, 9, 0);
+    todo_edit_at(&mut world, "alice", 1, START, value, "", 1);
+    quiet(&mut world);
+
+    assert_eq!(late(&mut world), [0; 3], "a change was refused as late");
+    let list = agreed_todos(&mut world);
+    let field = &list[&(1, START)];
+    assert_eq!(field.value, value, "the change was not taken in");
+    assert!(
+        i64::try_from(field.stamp.0).expect("a stamp") > before,
+        "the change was stamped at {}, at or before the floor {before}",
+        field.stamp.0
+    );
+    assert_eq!(stale(&mut world), [false; 3]);
 }
 
 /// A copy that has lost changes for good answers with another hash: the round settles
