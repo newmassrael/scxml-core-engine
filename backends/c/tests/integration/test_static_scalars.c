@@ -2244,6 +2244,8 @@ STATIC_SCENARIO(static_text_record, text_record_states, text_record_variables, N
 VARIABLE_READER(todo_peer, hub)
 VARIABLE_READER(todo_peer, refusals)
 VARIABLE_READER(todo_peer, agendaNext)
+VARIABLE_READER(todo_peer, stale)
+VARIABLE_READER(todo_peer, late)
 
 static const char *todo_peer_text_text(sce_static_string_32_t text) {
     static char copy[sizeof(text.data)];
@@ -2263,6 +2265,9 @@ static const char *todo_peer_text(void *sm, const char *name) {
     if (strcmp(name, "node") == 0) {
         return wide_digits(todo_peer_get_node((const todo_peer_t *)sm));
     }
+    if (strcmp(name, "floor") == 0) {
+        return wide_signed_digits(todo_peer_get_floor((const todo_peer_t *)sm));
+    }
     return NULL;
 }
 
@@ -2270,9 +2275,8 @@ static const name_value_t todo_peer_states[] = {
     {"open", TODO_PEER_STATE_OPEN},
 };
 static const variable_t todo_peer_variables[] = {
-    {"hub", todo_peer_read_hub},
-    {"refusals", todo_peer_read_refusals},
-    {"agendaNext", todo_peer_read_agendaNext},
+    {"hub", todo_peer_read_hub},     {"refusals", todo_peer_read_refusals}, {"agendaNext", todo_peer_read_agendaNext},
+    {"stale", todo_peer_read_stale}, {"late", todo_peer_read_late},
 };
 static const record_variable_t todo_peer_records[] = {RECORD_ROW(todo_peer, clock),
                                                       RECORD_LIST_ROW(todo_peer, adds),

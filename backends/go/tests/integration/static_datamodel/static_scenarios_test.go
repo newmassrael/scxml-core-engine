@@ -1788,6 +1788,9 @@ func todoCopy() machine {
 		"refusals":   func() any { return policy.Refusals() },
 		"agenda":     func() any { return occurrencesJSON(policy.Agenda()) },
 		"agendaNext": func() any { return policy.AgendaNext() },
+		"floor":      func() any { return signedDigits(policy.Floor()) },
+		"stale":      func() any { return policy.Stale() },
+		"late":       func() any { return policy.Late() },
 	})
 }
 

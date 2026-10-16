@@ -486,7 +486,7 @@ endforeach()
 # todo_peer's schedule: the occurrence record, the rule that orders two writes and the one
 # that expands a repetition, which are fixtures of the machine's own directory.
 foreach(_EVENT_DOCUMENT event_occurrence event_schedule event_later event_latest event_conflict
-                        event_selects event_agenda)
+                        event_selects event_agenda event_settled)
     sce_add_algorithm(
         TARGET static_datamodel_generated_cpp_test
         SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_EVENT_DOCUMENT}.scxml

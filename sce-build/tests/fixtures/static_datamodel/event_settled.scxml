@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  What a copy of the to-do list (todo_peer) holds of the changes stamped at or before an
+  instant, as one 32-bit number: the XOR of the hash of every live add and of every
+  tombstone whose wall time is at most `before` (merge/merkle_change_hash, the hash the
+  digest keeps, an add as kind 0 and a tombstone as kind 1). An add that a tombstone
+  names is not counted, as the digest does not count it: a copy that was never sent a
+  write that was already written over holds the tombstone and not the add, and holds what
+  a copy that has both holds. Two copies that hold the same live adds and the same
+  tombstones up to the instant return the same number, whatever order the changes
+  reached each in; a copy that lacks one, or holds one more, returns another, but for
+  the chance of 2^-32 that the hashes cancel.
+
+  The copies compare it before they compact (todo.settle): the instant is settled when
+  every copy holds the same up to it and none will stamp a change at or before it again.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       name="event_settled"
+       version="1.0">
+  <sce:import kind="event-schema" src="sce:std/merge/orset_entry.scxml" as="Entry"/>
+  <sce:import kind="algorithm" src="sce:std/merge/merkle_change_hash.scxml" as="MerkleChangeHash"/>
+  <sce:signature>
+    <sce:param name="adds" type="list&lt;record:Entry&gt;"/>
+    <sce:param name="tombstones" type="list&lt;record:Entry&gt;"/>
+    <sce:param name="before" type="int64"/>
+    <sce:return type="uint32" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="h" type="uint32" init="0"/>
+    <sce:foreach item="a" in="adds">
+      <sce:if cond="a.wallTime &lt;= before">
+        <sce:var name="named" type="bool" init="false"/>
+        <sce:foreach item="n" in="tombstones">
+          <sce:if cond="n.element === a.element &amp;&amp; n.wallTime === a.wallTime &amp;&amp; n.counter === a.counter &amp;&amp; n.nodeId === a.nodeId">
+            <sce:assign target="named" expr="true"/>
+          </sce:if>
+        </sce:foreach>
+        <sce:if cond="!named">
+          <sce:assign target="h" expr="h ^ MerkleChangeHash(a, 0)"/>
+        </sce:if>
+      </sce:if>
+    </sce:foreach>
+    <sce:foreach item="t" in="tombstones">
+      <sce:if cond="t.wallTime &lt;= before">
+        <sce:assign target="h" expr="h ^ MerkleChangeHash(t, 1)"/>
+      </sce:if>
+    </sce:foreach>
+    <sce:return expr="h"/>
+  </sce:body>
+</scxml>

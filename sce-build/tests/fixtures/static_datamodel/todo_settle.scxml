@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The host's request that the hub of the to-do list (todo_peer) try to settle the changes
+  up to an instant so that the copies can forget them: `before`, a wall time in
+  milliseconds. It is a proposal and not a promise, as todo.compact is: the hub asks each
+  person's copy (todo.propose) for what it holds up to the instant, and only when every
+  copy, the hub's own among them, holds the same does it tell them all to forget
+  (todo.floor). A copy that lacks a change, or whose answer is lost, makes the round
+  settle nothing, and the host asks again.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="todo_settle"
+       sce:event-name="todo.settle">
+  <datamodel>
+    <data id="before" sce:type="int64" sce:direction="in"/>
+  </datamodel>
+</scxml>

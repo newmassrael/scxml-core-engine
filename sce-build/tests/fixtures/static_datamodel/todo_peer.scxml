@@ -66,6 +66,22 @@
   A tombstone names its register by the element, and the supersede sent for it takes the
   element back to the to-do and the field (`element / 65536`, `element % 65536`).
 
+  A copy that is written to for long enough has to forget what is settled, and the
+  copies decide when they may. The host asks the hub (`todo.settle`: an instant); the hub
+  asks each person's copy what it holds of the changes up to it (`todo.propose`); each
+  person moves its clock past the instant, so that it stamps nothing at or before it
+  again, and answers with a hash of its adds and tombstones up to it (`todo.ack`,
+  event_settled). When both answers are the hub's own, every copy holds the same up to
+  the instant and none will add to it, whatever order the messages came in and however
+  often: the hub tells every copy to forget (`todo.floor`), and each forgets the
+  tombstones it held when it answered, with the adds they name. From then on a write
+  stamped at or before the floor is not taken in: what a copy does not hold of it, it
+  forgot. A copy whose answer was not the hub's, restarted from an old save, is told the
+  floor and finds that it never held what the others settled: it forgets nothing and
+  says it is `stale`, since the tombstones that would tell it which of its values were
+  written over are gone from its peers. `todo.compact` is the host's own word, for a host
+  that knows.
+
   `values` and `digest` are what a run compares across copies.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
@@ -101,6 +117,11 @@
   <sce:import kind="event-schema" src="todo_zone.scxml" as="Zone"/>
   <sce:import kind="event-schema" src="todo_compact.scxml" as="Compact"/>
   <sce:import kind="algorithm" src="sce:std/time/utc_from_local.scxml" as="UtcFromLocal"/>
+  <sce:import kind="event-schema" src="todo_settle.scxml" as="Settle"/>
+  <sce:import kind="event-schema" src="todo_propose.scxml" as="Propose"/>
+  <sce:import kind="event-schema" src="todo_ack.scxml" as="Ack"/>
+  <sce:import kind="event-schema" src="todo_floor.scxml" as="Floor"/>
+  <sce:import kind="algorithm" src="event_settled.scxml" as="EventSettled"/>
   <datamodel>
     <data id="node" sce:type="uint64" expr="0" sce:direction="out"/>
     <data id="hub" sce:type="bool" expr="false" sce:direction="out"/>
@@ -219,6 +240,24 @@
     <data id="rawCount" sce:type="uint32" expr="0"/>
     <data id="rawLast" sce:type="uint32" expr="0"/>
     <data id="utcSec" sce:type="int64" expr="0"/>
+    <!-- What the copies have settled (todo.settle): `floor`, the instant up to which this
+         copy has forgotten, `stale` when the hub settled an instant this copy did not
+         hold the same of, and `late` the writes refused for being stamped at or before
+         the floor. `frozenFor` and `frozenHash` are what the copy held of the tombstones
+         and the adds up to the instant it was last asked about, kept in `stable`; the hub
+         keeps the round it has open (`pending`, -1 for none) and what each person
+         answered. -->
+    <data id="floor" sce:type="int64" expr="0" sce:direction="out"/>
+    <data id="stale" sce:type="bool" expr="false" sce:direction="out"/>
+    <data id="late" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="frozenFor" sce:type="int64" expr="-1"/>
+    <data id="frozenHash" sce:type="uint32" expr="0"/>
+    <data id="pending" sce:type="int64" expr="-1"/>
+    <data id="heardAlice" sce:type="bool" expr="false"/>
+    <data id="heardBob" sce:type="bool" expr="false"/>
+    <data id="ackAlice" sce:type="uint32" expr="0"/>
+    <data id="ackBob" sce:type="uint32" expr="0"/>
+    <data id="agreed" sce:type="uint32" expr="0"/>
   </datamodel>
   <state id="open">
     <transition event="todo.join" type="internal">
@@ -275,6 +314,16 @@
         <param name="counter" expr="clock.counter"/>
         <param name="nodeId" expr="node"/>
       </send>
+    </transition>
+
+    <!-- A write stamped at or before the floor is not taken in, from anyone and however
+         often it arrives. Everything up to the floor was settled when the copies agreed on
+         it: a write of that time that this copy does not hold is one it forgot, with the
+         tombstone that named it, and taking it in again would bring the value back. A
+         person's copy stamps nothing at or before an instant it has answered for, so no
+         write that is new is refused here. -->
+    <transition event="todo.write" cond="floor &gt; 0 &amp;&amp; _event.data.wallTime &lt;= floor" type="internal">
+      <assign location="late" expr="late + 1"/>
     </transition>
 
     <!-- A write to a field, from a person here or from elsewhere: one more value, once. -->
@@ -450,6 +499,7 @@
          is how a set forgets). -->
     <transition event="todo.compact" type="internal">
       <sce:clear target="stable"/>
+      <assign location="frozenFor" expr="-1"/>
       <foreach array="tombstones" item="t">
         <if cond="t.wallTime &lt;= _event.data.before">
           <sce:append target="stable" expr="t"/>
@@ -459,6 +509,162 @@
       </foreach>
       <assign location="adds" expr="OrsetLive(adds, stable)"/>
       <assign location="tombstones" expr="OrsetLive(tombstones, stable)"/>
+      <if cond="_event.data.before &gt; floor">
+        <assign location="floor" expr="_event.data.before"/>
+      </if>
+    </transition>
+
+    <!-- The host asks the hub to settle what is stamped at or before an instant, so that
+         the copies decide the instant themselves and no host has to know that every copy
+         holds everything up to it. The hub moves its clock past the instant, asks each
+         person's copy what it holds (todo.propose), and repeats the last instant it
+         settled to both, so that a copy that missed it is told again. -->
+    <transition event="todo.settle" type="internal">
+      <if cond="hub &amp;&amp; _event.data.before &gt; floor">
+        <assign location="pending" expr="_event.data.before"/>
+        <assign location="heardAlice" expr="false"/>
+        <assign location="heardBob" expr="false"/>
+        <if cond="clock.wallTime &lt;= _event.data.before">
+          <assign location="clock.wallTime" expr="_event.data.before + 1"/>
+          <assign location="clock.counter" expr="0"/>
+        </if>
+        <send target="#alice" event="todo.propose">
+          <param name="before" expr="_event.data.before"/>
+        </send>
+        <send target="#bob" event="todo.propose">
+          <param name="before" expr="_event.data.before"/>
+        </send>
+      </if>
+    </transition>
+
+    <!-- A person's copy is asked what it holds up to an instant. It moves its clock past
+         the instant first, so that what it stamps from now on is after it, and then
+         takes what it holds of the tombstones up to the instant and the hash of the
+         adds and tombstones (event_settled): the tombstones are what it will forget if
+         the hub settles, and no others, so that a tombstone that arrives after it
+         answered is kept with the value it names. -->
+    <transition event="todo.propose" type="internal">
+      <if cond="!hub &amp;&amp; _event.data.before &gt; floor">
+        <if cond="clock.wallTime &lt;= _event.data.before">
+          <assign location="clock.wallTime" expr="_event.data.before + 1"/>
+          <assign location="clock.counter" expr="0"/>
+        </if>
+        <sce:clear target="stable"/>
+        <foreach array="tombstones" item="t">
+          <if cond="t.wallTime &lt;= _event.data.before">
+            <sce:append target="stable" expr="t"/>
+          </if>
+        </foreach>
+        <assign location="frozenFor" expr="_event.data.before"/>
+        <assign location="frozenHash" expr="EventSettled(adds, tombstones, _event.data.before)"/>
+        <send target="#server" event="todo.ack">
+          <param name="sender" expr="node"/>
+          <param name="before" expr="_event.data.before"/>
+          <param name="hash" expr="frozenHash"/>
+        </send>
+      </if>
+    </transition>
+
+    <!-- The hub reads an answer only for the round it has open. When both people have
+         answered, and what each held is what the hub holds, every copy held the same up
+         to the instant when it answered and none stamped anything at or before it
+         after: the instant is settled, and the hub tells every copy, itself included,
+         to forget. An answer that differs settles nothing; the round stays open for a
+         later answer, or for the host's next todo.settle. -->
+    <transition event="todo.ack" type="internal">
+      <if cond="hub &amp;&amp; _event.data.before === pending">
+        <if cond="_event.data.sender === 1">
+          <assign location="heardAlice" expr="true"/>
+          <assign location="ackAlice" expr="_event.data.hash"/>
+        </if>
+        <if cond="_event.data.sender === 2">
+          <assign location="heardBob" expr="true"/>
+          <assign location="ackBob" expr="_event.data.hash"/>
+        </if>
+        <if cond="heardAlice &amp;&amp; heardBob">
+          <assign location="mine" expr="EventSettled(adds, tombstones, pending)"/>
+          <if cond="mine === ackAlice &amp;&amp; mine === ackBob">
+            <sce:clear target="stable"/>
+            <foreach array="tombstones" item="t">
+              <if cond="t.wallTime &lt;= pending">
+                <sce:append target="stable" expr="t"/>
+              </if>
+            </foreach>
+            <assign location="frozenFor" expr="pending"/>
+            <assign location="frozenHash" expr="mine"/>
+            <send target="#alice" event="todo.floor">
+              <param name="before" expr="pending"/>
+              <param name="hash" expr="mine"/>
+            </send>
+            <send target="#bob" event="todo.floor">
+              <param name="before" expr="pending"/>
+              <param name="hash" expr="mine"/>
+            </send>
+            <send target="#_internal" event="todo.floor">
+              <param name="before" expr="pending"/>
+              <param name="hash" expr="mine"/>
+            </send>
+            <assign location="pending" expr="-1"/>
+          </if>
+          <!-- A person whose answer is not the hub's is told the last instant settled,
+               when there was one: a copy that took part in it finds that it holds what
+               was agreed, and one that did not (restarted from an old save) finds that
+               it never did, and is stale. -->
+          <if cond="mine !== ackAlice &amp;&amp; floor &gt; 0">
+            <send target="#alice" event="todo.floor">
+              <param name="before" expr="floor"/>
+              <param name="hash" expr="agreed"/>
+            </send>
+          </if>
+          <if cond="mine !== ackBob &amp;&amp; floor &gt; 0">
+            <send target="#bob" event="todo.floor">
+              <param name="before" expr="floor"/>
+              <param name="hash" expr="agreed"/>
+            </send>
+          </if>
+        </if>
+      </if>
+    </transition>
+
+    <!-- The hub's word that an instant is settled. A copy that held what the hub says
+         every copy held (it answered, or it holds it now) forgets the tombstones it held
+         up to the instant, with the adds they name, and stamps nothing at or before the
+         instant from here on. A copy that holds another thing is not one the hub asked:
+         it forgets nothing, and says it is stale, for the host to start it again from
+         what its peers hold, since the tombstones its peers forgot are the ones that
+         would tell it which of its values were written over. -->
+    <transition event="todo.floor" type="internal">
+      <if cond="_event.data.before &gt; floor">
+        <if cond="frozenFor !== _event.data.before">
+          <sce:clear target="stable"/>
+          <foreach array="tombstones" item="t">
+            <if cond="t.wallTime &lt;= _event.data.before">
+              <sce:append target="stable" expr="t"/>
+            </if>
+          </foreach>
+          <assign location="frozenFor" expr="_event.data.before"/>
+          <assign location="frozenHash" expr="EventSettled(adds, tombstones, _event.data.before)"/>
+        </if>
+        <if cond="frozenHash === _event.data.hash">
+          <if cond="clock.wallTime &lt;= _event.data.before">
+            <assign location="clock.wallTime" expr="_event.data.before + 1"/>
+            <assign location="clock.counter" expr="0"/>
+          </if>
+          <foreach array="stable" item="t">
+            <assign location="mine" expr="MerkleChangeHash(t, 1)"/>
+            <assign location="digest" expr="MerkleInsert(digest, t.wallTime / 60000, mine)"/>
+          </foreach>
+          <assign location="adds" expr="OrsetLive(adds, stable)"/>
+          <assign location="tombstones" expr="OrsetLive(tombstones, stable)"/>
+          <assign location="floor" expr="_event.data.before"/>
+          <assign location="agreed" expr="_event.data.hash"/>
+          <assign location="stale" expr="false"/>
+          <assign location="frozenFor" expr="-1"/>
+        </if>
+        <if cond="frozenHash !== _event.data.hash">
+          <assign location="stale" expr="true"/>
+        </if>
+      </if>
     </transition>
 
     <!-- The host's word that this copy's link is back: it shows its peers the root of

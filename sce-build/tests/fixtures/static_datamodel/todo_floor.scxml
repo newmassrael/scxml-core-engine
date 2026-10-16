@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The hub's word to every copy of the to-do list (todo_peer) that the changes up to
+  `before` are settled: every copy held `hash` of them (event_settled) when it was asked,
+  and none stamps a change at or before the instant again. A copy that holds the same
+  forgets what is settled (todo.compact) and from then on takes in no change stamped at or
+  before the instant that it does not already hold. A copy that holds another is not one
+  the hub asked, a copy restarted from an old save or one that has missed changes: it
+  forgets nothing, and says so (`stale`), so that the host starts it again from what its
+  peers hold.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="todo_floor"
+       sce:event-name="todo.floor">
+  <datamodel>
+    <data id="before" sce:type="int64" sce:direction="in"/>
+    <data id="hash" sce:type="uint32" sce:direction="in"/>
+  </datamodel>
+</scxml>

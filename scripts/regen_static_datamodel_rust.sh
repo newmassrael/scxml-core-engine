@@ -80,7 +80,7 @@ SCHEMAS=(schema_entry schema_total)
 # records, the rules that order two writes, read a field, tell a conflict, select a day
 # and expand a repetition. Each is named by its file, which a machine's import names as
 # `super::<file>`.
-SCHEMAS+=(event_occurrence event_schedule event_later event_latest event_conflict event_selects event_agenda)
+SCHEMAS+=(event_occurrence event_schedule event_later event_latest event_conflict event_selects event_agenda event_settled)
 # The standard algorithms sync_client imports, by their library names; each
 # is generated beside the machines under its own name, as a local one is.
 STD_ALGORITHMS=(sync/sync_failure sync/sync_retry_at sync/sync_delete_outcome sync/sync_upload_outcome)

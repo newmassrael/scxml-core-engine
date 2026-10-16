@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A person's copy of the to-do list (todo_peer) answers the hub's todo.propose: `sender`,
+  its node id, `before`, the instant it was asked about, and `hash`, what it holds of the
+  changes up to the instant (event_settled). The hub reads it only for the round it has
+  open, so an answer that arrives late, twice, or out of order settles nothing it should
+  not.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="todo_ack"
+       sce:event-name="todo.ack">
+  <datamodel>
+    <data id="sender" sce:type="uint64" sce:direction="in"/>
+    <data id="before" sce:type="int64" sce:direction="in"/>
+    <data id="hash" sce:type="uint32" sce:direction="in"/>
+  </datamodel>
+</scxml>

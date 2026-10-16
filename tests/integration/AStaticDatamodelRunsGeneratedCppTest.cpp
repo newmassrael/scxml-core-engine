@@ -1701,6 +1701,9 @@ Driver<ClockPeeking<G::todo_peer::todo_peer>> todoPeerDriver() {
         {"refusals", [](const Machine &m) { return json(m.refusals()); }},
         {"agenda", [](const Machine &m) { return occurrencesJson(m.agenda()); }},
         {"agendaNext", [](const Machine &m) { return json(m.agendaNext()); }},
+        {"floor", [](const Machine &m) { return wideText(m.floor()); }},
+        {"stale", [](const Machine &m) { return json(m.stale()); }},
+        {"late", [](const Machine &m) { return json(m.late()); }},
     });
 }
 

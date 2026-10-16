@@ -49,6 +49,9 @@ const TODO_PUBLISHED: &[&str] = &[
     "refusals",
     "agenda",
     "agendaNext",
+    "floor",
+    "stale",
+    "late",
 ];
 
 /// The variables a copy of the presence list publishes.
@@ -433,6 +436,33 @@ fn todo_afternoon() -> World {
         refused_after, refused_before,
         "a copy refused a schedule it had no room for"
     );
+
+    // Then the copies settle by themselves: a to-do is written over twice more, and the
+    // host asks the hub to settle the minute before. The hub asks each person what it
+    // holds up to it, both answer with the hash of the same changes, and the hub tells
+    // every copy to forget; each moves its floor to the instant.
+    world.advance_ms(60_000);
+    for (who, due) in [("alice", 31_000), ("bob", 32_000), ("alice", 33_000)] {
+        todo_set(&mut world, who, 9_000, DUE, due);
+    }
+    assert_eq!(world.run_until_quiet(60_000), Outcome::Quiet);
+    world.advance_ms(60_000);
+    let settled = world.now_ms() - 1;
+    world.raise(
+        "server",
+        "todo.settle",
+        &format!(r#"{{"before":"{settled}"}}"#),
+    );
+    assert_eq!(world.run_until_quiet(60_000), Outcome::Quiet);
+    for who in ["alice", "bob", "server"] {
+        let variables = todo_variables_of(&mut world, who);
+        assert_eq!(
+            whole(&variables["floor"]),
+            i128::from(settled),
+            "{who} did not forget up to the instant"
+        );
+        assert_eq!(variables["stale"], json!(false));
+    }
     world
 }
 

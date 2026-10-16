@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The hub's question to a person's copy of the to-do list (todo_peer), made of a settle
+  (todo.settle): what do you hold of the changes up to `before`? The copy moves its clock
+  past `before` before it answers, so that nothing it stamps from then on is at or before
+  it, and answers with todo.ack.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="todo_propose"
+       sce:event-name="todo.propose">
+  <datamodel>
+    <data id="before" sce:type="int64" sce:direction="in"/>
+  </datamodel>
+</scxml>
