@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<!--
+  Structural smoke fixture: a transition whose event descriptor catches none of
+  the document's events.
+
+  `never.*` asks for every event under `never.`, and nothing in this document
+  raises or sends one, so the list of events the transition catches is empty.
+  The IR leaves an empty list out of the serialised transition, and the C
+  template measured its length without asking whether it was there: the backend
+  refused a legal document with a render error. Every backend must generate it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       name="descriptor_matches_no_event" initial="s0">
+  <state id="s0">
+    <transition event="never.*" target="done"/>
+    <transition event="go" target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>

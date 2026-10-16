@@ -3296,12 +3296,16 @@ SCE_SM_FN static void execute_history_default_content({{ csym_prefix }}{{ model.
            would also be correct here but would scale linearly with
            model.events; the EVENT_NONE inequality is O(1) regardless. #}
         if (event != {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE)
-{% elif trans.prefix_matching_events | length == 0 %}
-        {# Defensive — analyzer.rs::build_prefix_matching always populates
-           prefix_matching_events for non-empty descriptors; an empty list
-           means none of the model's events satisfy the descriptor (e.g.
-           a `<transition event="never_raised"/>` with no matching raise/
-           send). Unreachable in well-formed SCXML, kept as a guard. #}
+{% elif not trans.prefix_matching_events %}
+        {# An empty list means none of the model's events satisfy the
+           descriptor (e.g. `<transition event="never.*"/>` with no matching
+           raise/send) — a legal document, not a defect, and one the
+           transition simply cannot be taken from.
+           ⚠ `not`, not `| length == 0`: the IR leaves an empty list out of the
+           serialised transition (`skip_serializing_if = "Vec::is_empty"`), so
+           the field is undefined here, and measuring the length of an undefined
+           value is a render error — the backend refused the document. The
+           Kotlin template asks `is defined` for the same reason. #}
         if (0)
 {% elif trans.prefix_matching_events | length == 1 %}
         if (event == {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ trans.prefix_matching_events[0] | to_c11_upper_ident }})
