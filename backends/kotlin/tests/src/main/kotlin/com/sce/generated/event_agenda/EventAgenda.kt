@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 6caf91b7141c88d0a508e4aad3e1cd20df805c8c56903e8b0db3f1f4b706723b
-// SCE-MAP: event_agenda.scxml:43 :: _forge_body
+// source-hash: b9ab4ddbd49e8ce2a3b4c80917bc3eecdf0d5285c15974d4e0a00636f93fd573
+// SCE-MAP: event_agenda.scxml:54 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")
 // Runtime: sce_forge_runtime
@@ -34,6 +34,7 @@ fun eventAgenda(values: List<MvValuePayload>, id: ULong, windowStart: Long, wind
         var every0: Long = 1
         var days: Long = 0
         var count: Long = 0
+        var until: Long = 0
         var flag: UByte = 0.toUByte()
         var found: Boolean = false
         var held: Long = 0
@@ -159,6 +160,23 @@ fun eventAgenda(values: List<MvValuePayload>, id: ULong, windowStart: Long, wind
         if (held > 1) {
             flag = 1.toUByte()
         }
+        found = false
+        held = 0
+        for (w22 in values) {
+            if (w22.id == id && w22.field == 22.toULong()) {
+                held = com.sce.forge.runtime.SceChecked.add(held, 1)
+                if (!found || eventLater(w22.wallTime, w22.counter, w22.nodeId, bw, bc, bn)) {
+                    found = true
+                    bw = w22.wallTime
+                    bc = w22.counter
+                    bn = w22.nodeId
+                    until = w22.value
+                }
+            }
+        }
+        if (held > 1) {
+            flag = 1.toUByte()
+        }
         if (startAt >= 0 && gone != 1L && freq >= 0 && freq <= 3 && windowEnd > windowStart && windowEnd > 0) {
             var every: Long = if (every0 < 1) 1 else every0
             var timeOfDay: Long = com.sce.forge.runtime.SceChecked.rem(startAt, day)
@@ -211,7 +229,7 @@ fun eventAgenda(values: List<MvValuePayload>, id: ULong, windowStart: Long, wind
                 }
                 var occStart: Long = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(d, day), timeOfDay)
                 var occEnd: Long = com.sce.forge.runtime.SceChecked.add(occStart, length)
-                if (d >= endDay || occStart >= windowEnd) {
+                if (d >= endDay || occStart >= windowEnd || until > 0 && occStart > until) {
                     going = false
                 } else {
                     if (valid) {
@@ -219,9 +237,39 @@ fun eventAgenda(values: List<MvValuePayload>, id: ULong, windowStart: Long, wind
                             going = false
                         } else {
                             if ((occEnd > windowStart || occStart >= windowStart) && emitted < 64) {
-                                var line = EventOccurrencePayload(id = id, start = occStart, end = occEnd, nth = com.sce.forge.runtime.SceChecked.narrowToUInt(nth), conflict = flag)
-                                out.add(line)
-                                emitted = com.sce.forge.runtime.SceChecked.add(emitted, 1)
+                                var excluded: Boolean = false
+                                var mark: UByte = flag
+                                var dayNo: Long = com.sce.forge.runtime.SceChecked.div(occStart, day)
+                                if (dayNo >= 18262 && com.sce.forge.runtime.SceChecked.sub(dayNo, 18262) < 65472) {
+                                    var xfield: ULong = com.sce.forge.runtime.SceChecked.narrowToULong(com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.sub(dayNo, 18262), 64))
+                                    var xfound: Boolean = false
+                                    var xheld: Long = 0
+                                    var xw: Long = 0
+                                    var xc: UInt = 0.toUInt()
+                                    var xn: ULong = 0.toULong()
+                                    var xv: Long = 0
+                                    for (wx in values) {
+                                        if (wx.id == id && wx.field == xfield) {
+                                            xheld = com.sce.forge.runtime.SceChecked.add(xheld, 1)
+                                            if (!xfound || eventLater(wx.wallTime, wx.counter, wx.nodeId, xw, xc, xn)) {
+                                                xfound = true
+                                                xw = wx.wallTime
+                                                xc = wx.counter
+                                                xn = wx.nodeId
+                                                xv = wx.value
+                                            }
+                                        }
+                                    }
+                                    excluded = xfound && xv == 1L
+                                    if (xheld > 1) {
+                                        mark = 1.toUByte()
+                                    }
+                                }
+                                if (!excluded) {
+                                    var line = EventOccurrencePayload(id = id, start = occStart, end = occEnd, nth = com.sce.forge.runtime.SceChecked.narrowToUInt(nth), conflict = mark)
+                                    out.add(line)
+                                    emitted = com.sce.forge.runtime.SceChecked.add(emitted, 1)
+                                }
                             }
                             nth = com.sce.forge.runtime.SceChecked.add(nth, 1)
                             if (freq == 0L) {

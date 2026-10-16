@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 6caf91b7141c88d0a508e4aad3e1cd20df805c8c56903e8b0db3f1f4b706723b
-#![doc = "SCE-MAP: event_agenda.scxml:43 :: _forge_body"]
-// SCE-MAP: event_agenda.scxml:43 :: _forge_body
+// source-hash: b9ab4ddbd49e8ce2a3b4c80917bc3eecdf0d5285c15974d4e0a00636f93fd573
+#![doc = "SCE-MAP: event_agenda.scxml:54 :: _forge_body"]
+// SCE-MAP: event_agenda.scxml:54 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")
 // Runtime: sce_forge_runtime
@@ -38,6 +38,7 @@ pub fn event_agenda(
     let mut every0: i64 = 1;
     let mut days: i64 = 0;
     let mut count: i64 = 0;
+    let mut until: i64 = 0;
     let mut flag: u8 = 0;
     let mut found: bool = false;
     let mut held: i64 = 0;
@@ -170,6 +171,25 @@ pub fn event_agenda(
                 bc = w21.counter;
                 bn = w21.node_id;
                 count = w21.value;
+            }
+        }
+    }
+    if held > 1 {
+        flag = 1;
+    }
+    found = false;
+    held = 0;
+    for w22 in values.iter() {
+        if w22.id == id && w22.field == 22 {
+            held = sce_forge_runtime::algorithm::add::<i64>(held, 1)?;
+            if !found
+                || event_later::event_later(w22.wall_time, w22.counter, w22.node_id, bw, bc, bn)
+            {
+                found = true;
+                bw = w22.wall_time;
+                bc = w22.counter;
+                bn = w22.node_id;
+                until = w22.value;
             }
         }
     }
@@ -399,7 +419,7 @@ pub fn event_agenda(
                 time_of_day,
             )?;
             let occ_end: i64 = sce_forge_runtime::algorithm::add::<i64>(occ_start, length)?;
-            if d >= end_day || occ_start >= window_end {
+            if d >= end_day || occ_start >= window_end || until > 0 && occ_start > until {
                 going = false;
             } else {
                 if valid {
@@ -407,15 +427,62 @@ pub fn event_agenda(
                         going = false;
                     } else {
                         if (occ_end > window_start || occ_start >= window_start) && emitted < 64 {
-                            let line = event_occurrence::EventOccurrencePayload {
-                                id: id,
-                                start: occ_start,
-                                end: occ_end,
-                                nth: sce_forge_runtime::algorithm::narrow::<u32, i64>(nth)?,
-                                conflict: flag,
-                            };
-                            out.push(line)?;
-                            emitted = sce_forge_runtime::algorithm::add::<i64>(emitted, 1)?;
+                            let mut excluded: bool = false;
+                            let mut mark: u8 = flag;
+                            let day_no: i64 =
+                                sce_forge_runtime::algorithm::div::<i64>(occ_start, day)?;
+                            if day_no >= 18262
+                                && sce_forge_runtime::algorithm::sub::<i64>(day_no, 18262)? < 65472
+                            {
+                                let xfield: u64 = sce_forge_runtime::algorithm::narrow::<u64, i64>(
+                                    sce_forge_runtime::algorithm::add::<i64>(
+                                        sce_forge_runtime::algorithm::sub::<i64>(day_no, 18262)?,
+                                        64,
+                                    )?,
+                                )?;
+                                let mut xfound: bool = false;
+                                let mut xheld: i64 = 0;
+                                let mut xw: i64 = 0;
+                                let mut xc: u32 = 0;
+                                let mut xn: u64 = 0;
+                                let mut xv: i64 = 0;
+                                for wx in values.iter() {
+                                    if wx.id == id && wx.field == xfield {
+                                        xheld = sce_forge_runtime::algorithm::add::<i64>(xheld, 1)?;
+                                        if !xfound
+                                            || event_later::event_later(
+                                                wx.wall_time,
+                                                wx.counter,
+                                                wx.node_id,
+                                                xw,
+                                                xc,
+                                                xn,
+                                            )
+                                        {
+                                            xfound = true;
+                                            xw = wx.wall_time;
+                                            xc = wx.counter;
+                                            xn = wx.node_id;
+                                            xv = wx.value;
+                                        }
+                                    }
+                                }
+                                excluded = xfound && xv == 1;
+                                if xheld > 1 {
+                                    mark = 1;
+                                }
+                            }
+                            if !excluded {
+                                let line = event_occurrence::EventOccurrencePayload {
+                                    id: id,
+                                    start: occ_start,
+                                    end: occ_end,
+                                    nth: sce_forge_runtime::algorithm::narrow::<u32, i64>(nth)?,
+                                    conflict: mark,
+                                };
+                                out.push(line)?;
+                                emitted = sce_forge_runtime::algorithm::add::<i64>(emitted, 1)?;
+                            }
                         }
                         nth = sce_forge_runtime::algorithm::add::<i64>(nth, 1)?;
                         if freq == 0 {

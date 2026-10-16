@@ -1,10 +1,11 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 6caf91b7141c88d0a508e4aad3e1cd20df805c8c56903e8b0db3f1f4b706723b
+// source-hash: b9ab4ddbd49e8ce2a3b4c80917bc3eecdf0d5285c15974d4e0a00636f93fd573
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/todo_peer.scxml
 // Generator: SCE Kotlin Code Generator v1.0
 // SCE-MAP: todo_peer.scxml:71 :: _machine
+@file:OptIn(ExperimentalUnsignedTypes::class)
 
 package com.sce.integration.todo_peer
 
@@ -25,6 +26,8 @@ import com.sce.generated.orset_entry.*
 import com.sce.generated.orset_live.*
 import com.sce.generated.orset_observed.*
 import com.sce.generated.orset_union.*
+import com.sce.generated.utc_from_local.*
+import com.sce.generated.utc_offset_at.*
 
 
 // --- States (W3C SCXML 3.2) ---
@@ -50,6 +53,8 @@ sealed interface TodoPeerEvent : Event {
         data object Supersede : Todo
         data object Visit : Todo
         data object Write : Todo
+        data object Zone : Todo
+        data object ZoneClear : Todo
     }
 }
 // ── NL→IR Item C1 Path A: typed `_event.data` payload classes ─────────
@@ -103,6 +108,11 @@ data class TodoPeerTodoVisitPayload(val to: ULong, val depth: UByte, val prefix:
 // payload for `todo.write`. Consumers inject it via the `raiseTodoWrite` seam
 // on the machine — they never name this class directly.
 data class TodoPeerTodoWritePayload(val id: UInt, val field: UShort, val value: Long, val text: String, val wallTime: Long, val counter: UInt, val nodeId: ULong)
+
+// TodoPeerTodoZonePayload is the NL→IR Item C1 Path A typed `_event.data`
+// payload for `todo.zone`. Consumers inject it via the `raiseTodoZone` seam
+// on the machine — they never name this class directly.
+data class TodoPeerTodoZonePayload(val start: Long, val offset: Int)
 
 
 // ── SCE Accepted Subset §2.15: sce-static enum and record variable classes ─────
@@ -211,6 +221,16 @@ private fun call_OrsetUnion__vv(p0: List<TodoPeerEntryRecord>, p1: List<TodoPeer
         is com.sce.forge.runtime.AlgorithmResult.Ok -> com.sce.forge.runtime.AlgorithmResult.Ok(r.value.map { TodoPeerEntryRecord(element = it.element, wallTime = it.wallTime, counter = it.counter, nodeId = it.nodeId) })
         is com.sce.forge.runtime.AlgorithmResult.Failed -> r
     }
+private fun call_UtcFromLocal__vv(p0: List<Long>, p1: List<Int>, p2: Long): com.sce.forge.runtime.AlgorithmResult<Long> =
+    when (val r = utcFromLocal(p0.toLongArray(), p1.toIntArray(), p2)) {
+        is com.sce.forge.runtime.AlgorithmResult.Ok -> com.sce.forge.runtime.AlgorithmResult.Ok(r.value)
+        is com.sce.forge.runtime.AlgorithmResult.Failed -> r
+    }
+private fun call_UtcOffsetAt__vv(p0: List<Long>, p1: List<Int>, p2: Long): com.sce.forge.runtime.AlgorithmResult<Int> =
+    when (val r = utcOffsetAt(p0.toLongArray(), p1.toIntArray(), p2)) {
+        is com.sce.forge.runtime.AlgorithmResult.Ok -> com.sce.forge.runtime.AlgorithmResult.Ok(r.value)
+        is com.sce.forge.runtime.AlgorithmResult.Failed -> r
+    }
 
 // --- State Machine (W3C SCXML) ---
 
@@ -286,6 +306,22 @@ class TodoPeerStateMachine(
 
     /** What the published `agenda` holds. */
     val agenda: List<TodoPeerOccurrenceRecord> get() = vAgenda
+    /** W3C SCXML 5.2: the `local` datamodel variable, the machine's own. */
+    private var vLocal: List<TodoPeerOccurrenceRecord> = emptyList()
+    /** W3C SCXML 5.2: the `occ` datamodel variable, the machine's own. */
+    private var vOcc: TodoPeerOccurrenceRecord = TodoPeerOccurrenceRecord(id = 0.toULong(), start = 0, end = 0, nth = 0.toUInt(), conflict = 0.toUByte())
+    /** W3C SCXML 5.2: the `zoneStarts` datamodel variable, the machine's own. */
+    private var vZoneStarts: List<Long> = emptyList()
+    /** W3C SCXML 5.2: the `zoneOffsets` datamodel variable, the machine's own. */
+    private var vZoneOffsets: List<Int> = emptyList()
+    /** W3C SCXML 5.2: the `zoned` datamodel variable, the machine's own. */
+    private var vZoned: Boolean = false
+    /** W3C SCXML 5.2: the `offStart` datamodel variable, the machine's own. */
+    private var vOffStart: Int = 0
+    /** W3C SCXML 5.2: the `offEnd` datamodel variable, the machine's own. */
+    private var vOffEnd: Int = 0
+    /** W3C SCXML 5.2: the `utcSec` datamodel variable, the machine's own. */
+    private var vUtcSec: Long = 0
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -303,6 +339,10 @@ class TodoPeerStateMachine(
         var isLive: Boolean? = null
         var present: Boolean? = null
         var refusals: UInt? = null
+        var zoned: Boolean? = null
+        var offStart: Int? = null
+        var offEnd: Int? = null
+        var utcSec: Long? = null
     }
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
@@ -317,6 +357,10 @@ class TodoPeerStateMachine(
         params.isLive?.let { vIsLive = it }
         params.present?.let { vPresent = it }
         params.refusals?.let { vRefusals = it }
+        params.zoned?.let { vZoned = it }
+        params.offStart?.let { vOffStart = it }
+        params.offEnd?.let { vOffEnd = it }
+        params.utcSec?.let { vUtcSec = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -381,7 +425,7 @@ class TodoPeerStateMachine(
      * from a document that renamed, re-typed or moved a state or a variable is
      * refused, one saved before a guard or an action changed is not.
      */
-    val savedShape: String = "a225b664772e7638f4fc2eff98534c60678e67268dcb337f02cbfa3a5e439981"
+    val savedShape: String = "bc6fb654993165f167e3530a1545f264295f6f345e20f367abc7020e27ebd05c"
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -419,6 +463,14 @@ class TodoPeerStateMachine(
             "present" to SavedValues.of(vPresent),
             "refusals" to SavedValues.of(vRefusals),
             "agenda" to SavedValues.list(vAgenda) { it.toSaved() },
+            "local" to SavedValues.list(vLocal) { it.toSaved() },
+            "occ" to vOcc.toSaved(),
+            "zoneStarts" to SavedValues.list(vZoneStarts) { SavedValues.of(it) },
+            "zoneOffsets" to SavedValues.list(vZoneOffsets) { SavedValues.of(it) },
+            "zoned" to SavedValues.of(vZoned),
+            "offStart" to SavedValues.of(vOffStart),
+            "offEnd" to SavedValues.of(vOffEnd),
+            "utcSec" to SavedValues.of(vUtcSec),
         ),
         wallNowMs,
     )
@@ -466,6 +518,14 @@ class TodoPeerStateMachine(
         val saved20 = SavedValues.bool(saved.variable("present"), "present")
         val saved21 = SavedValues.uint32(saved.variable("refusals"), "refusals")
         val saved22 = SavedValues.list(saved.variable("agenda"), "agenda", 64) { e, w -> TodoPeerOccurrenceRecord.fromSaved(e, w) }
+        val saved23 = SavedValues.list(saved.variable("local"), "local", 64) { e, w -> TodoPeerOccurrenceRecord.fromSaved(e, w) }
+        val saved24 = TodoPeerOccurrenceRecord.fromSaved(saved.variable("occ"), "occ")
+        val saved25 = SavedValues.list(saved.variable("zoneStarts"), "zoneStarts", 64) { e, w -> SavedValues.int64(e, w) }
+        val saved26 = SavedValues.list(saved.variable("zoneOffsets"), "zoneOffsets", 64) { e, w -> SavedValues.int32(e, w) }
+        val saved27 = SavedValues.bool(saved.variable("zoned"), "zoned")
+        val saved28 = SavedValues.int32(saved.variable("offStart"), "offStart")
+        val saved29 = SavedValues.int32(saved.variable("offEnd"), "offEnd")
+        val saved30 = SavedValues.int64(saved.variable("utcSec"), "utcSec")
         vNode = saved1
         vHub = saved2
         vClock = saved3
@@ -488,6 +548,14 @@ class TodoPeerStateMachine(
         vPresent = saved20
         vRefusals = saved21
         vAgenda = saved22
+        vLocal = saved23
+        vOcc = saved24
+        vZoneStarts = saved25
+        vZoneOffsets = saved26
+        vZoned = saved27
+        vOffStart = saved28
+        vOffEnd = saved29
+        vUtcSec = saved30
         enterSaved(saved, wallNowMs)
     }
 
@@ -506,6 +574,7 @@ class TodoPeerStateMachine(
     private var pendingTodoSupersedePayload: TodoPeerTodoSupersedePayload? = null
     private var pendingTodoVisitPayload: TodoPeerTodoVisitPayload? = null
     private var pendingTodoWritePayload: TodoPeerTodoWritePayload? = null
+    private var pendingTodoZonePayload: TodoPeerTodoZonePayload? = null
 
     // NL→IR Item C1 Path A: bind the dequeued event's typed `_event.data` view
     // — from the type-erased carrier the inject seam fills, and otherwise by
@@ -525,6 +594,7 @@ class TodoPeerStateMachine(
         pendingTodoSupersedePayload = null
         pendingTodoVisitPayload = null
         pendingTodoWritePayload = null
+        pendingTodoZonePayload = null
         when (val tp = metadata.typedPayload) {
             is TodoPeerTodoAgendaPayload -> pendingTodoAgendaPayload = tp
             is TodoPeerTodoEditPayload -> pendingTodoEditPayload = tp
@@ -535,6 +605,7 @@ class TodoPeerStateMachine(
             is TodoPeerTodoSupersedePayload -> pendingTodoSupersedePayload = tp
             is TodoPeerTodoVisitPayload -> pendingTodoVisitPayload = tp
             is TodoPeerTodoWritePayload -> pendingTodoWritePayload = tp
+            is TodoPeerTodoZonePayload -> pendingTodoZonePayload = tp
             else -> {
                 // No typed carrier, so the producer was not the inject seam: read the
                 // fields out of `data`, which every other producer fills.
@@ -565,6 +636,9 @@ class TodoPeerStateMachine(
                 } else if (event == TodoPeerEvent.Todo.Write) {
                     val fields = EventPayload.decode(metadata.data)
                     pendingTodoWritePayload = TodoPeerTodoWritePayload(fields.uint32("id"), fields.uint16("field"), fields.int64("value"), fields.string("text"), fields.int64("wallTime"), fields.uint32("counter"), fields.uint64("nodeId"))
+                } else if (event == TodoPeerEvent.Todo.Zone) {
+                    val fields = EventPayload.decode(metadata.data)
+                    pendingTodoZonePayload = TodoPeerTodoZonePayload(fields.int64("start"), fields.int32("offset"))
                 }
             }
         }
@@ -715,6 +789,22 @@ class TodoPeerStateMachine(
             )
         )
     }
+    // NL→IR Item C1 Path A typed `_event.data` inject seam for
+    // `todo.zone` — binds the event name and the payload field values in one call.
+    fun raiseTodoZone(start: Long, offset: Int) {
+        send(
+            TodoPeerEvent.Todo.Zone,
+            EventMetadata(
+                type = "external",
+                typedPayload = TodoPeerTodoZonePayload(start, offset),
+                // Both carriers are filled: the typed one a native guard reads, and
+                // `data`, which is what the script engine binds `_event.data` from.
+                // Filling only the first left an `<assign expr="_event.data.x">` on
+                // this event reading nothing, on every backend alike.
+                data = EventPayload.encode(mapOf("start" to start, "offset" to offset))
+            )
+        )
+    }
 
 
     override val initialState: TodoPeerState = TodoPeerState.Open
@@ -841,6 +931,24 @@ class TodoPeerStateMachine(
             hasActions = true,
             isInternal = true,
         )
+
+        // W3C SCXML 3.13: open's transition 11, as the microstep reads it.
+        val transitionOpenAt11 = EnabledTransition<TodoPeerState, HistoryId>(
+            TodoPeerState.Open,
+            emptyList(),
+            11,
+            hasActions = true,
+            isInternal = true,
+        )
+
+        // W3C SCXML 3.13: open's transition 12, as the microstep reads it.
+        val transitionOpenAt12 = EnabledTransition<TodoPeerState, HistoryId>(
+            TodoPeerState.Open,
+            emptyList(),
+            12,
+            hasActions = true,
+            isInternal = true,
+        )
     }
 
     // W3C SCXML: Resolve state ID string to State object
@@ -872,6 +980,8 @@ class TodoPeerStateMachine(
         "todo.supersede" -> TodoPeerEvent.Todo.Supersede
         "todo.visit" -> TodoPeerEvent.Todo.Visit
         "todo.write" -> TodoPeerEvent.Todo.Write
+        "todo.zone" -> TodoPeerEvent.Todo.Zone
+        "todo.zone_clear" -> TodoPeerEvent.Todo.ZoneClear
         else -> null
     }
 
@@ -888,6 +998,8 @@ class TodoPeerStateMachine(
         is TodoPeerEvent.Todo.Supersede -> "todo.supersede"
         is TodoPeerEvent.Todo.Visit -> "todo.visit"
         is TodoPeerEvent.Todo.Write -> "todo.write"
+        is TodoPeerEvent.Todo.Zone -> "todo.zone"
+        is TodoPeerEvent.Todo.ZoneClear -> "todo.zone_clear"
     }
 
 
@@ -914,7 +1026,9 @@ class TodoPeerStateMachine(
             event is TodoPeerEvent.Todo.Node -> transitionOpenAt7
             event is TodoPeerEvent.Todo.Share -> transitionOpenAt8
             event is TodoPeerEvent.Todo.Agenda -> transitionOpenAt9
-            event is TodoPeerEvent.Error.Execution -> transitionOpenAt10
+            event is TodoPeerEvent.Todo.Zone -> transitionOpenAt10
+            event is TodoPeerEvent.Todo.ZoneClear -> transitionOpenAt11
+            event is TodoPeerEvent.Error.Execution -> transitionOpenAt12
             else -> null
         }
     }
@@ -925,7 +1039,7 @@ class TodoPeerStateMachine(
     override fun onEntry(state: TodoPeerState, isDefaultEntry: Boolean) {
         when (state) {
             is TodoPeerState.Open -> {
-                // SCE-MAP: todo_peer.scxml:143 :: open :: _state_body
+                // SCE-MAP: todo_peer.scxml:160 :: open :: _state_body
             }
         }
     }
@@ -935,7 +1049,7 @@ class TodoPeerStateMachine(
     override fun onExit(state: TodoPeerState) {
         when (state) {
             is TodoPeerState.Open -> {
-                // SCE-MAP: todo_peer.scxml:143 :: open :: _state_body
+                // SCE-MAP: todo_peer.scxml:160 :: open :: _state_body
             }
         }
     }
@@ -947,7 +1061,7 @@ class TodoPeerStateMachine(
         when (source) {
         is TodoPeerState.Open -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: todo_peer.scxml:144 :: open :: _transition_0
+                // SCE-MAP: todo_peer.scxml:161 :: open :: _transition_0
                 if (pendingTodoJoinPayload == null) {
                     return
                 }
@@ -957,7 +1071,7 @@ class TodoPeerStateMachine(
             vHub = pendingTodoJoinPayload!!.hub
             }
             1 -> {
-                // SCE-MAP: todo_peer.scxml:152 :: open :: _transition_1
+                // SCE-MAP: todo_peer.scxml:169 :: open :: _transition_1
                 if (pendingTodoEditPayload == null) {
                     return
                 }
@@ -1155,7 +1269,7 @@ class TodoPeerStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             2 -> {
-                // SCE-MAP: todo_peer.scxml:201 :: open :: _transition_2
+                // SCE-MAP: todo_peer.scxml:218 :: open :: _transition_2
                 if (pendingTodoWritePayload == null) {
                     return
                 }
@@ -1393,7 +1507,7 @@ class TodoPeerStateMachine(
             }
             }
             3 -> {
-                // SCE-MAP: todo_peer.scxml:283 :: open :: _transition_3
+                // SCE-MAP: todo_peer.scxml:300 :: open :: _transition_3
                 if (pendingTodoSupersedePayload == null) {
                     return
                 }
@@ -1623,7 +1737,7 @@ class TodoPeerStateMachine(
             }
             }
             4 -> {
-                // SCE-MAP: todo_peer.scxml:354 :: open :: _transition_4
+                // SCE-MAP: todo_peer.scxml:371 :: open :: _transition_4
                 if (pendingTodoKeepPayload == null) {
                     return
                 }
@@ -1645,7 +1759,7 @@ class TodoPeerStateMachine(
             }
             }
             5 -> {
-                // SCE-MAP: todo_peer.scxml:366 :: open :: _transition_5
+                // SCE-MAP: todo_peer.scxml:383 :: open :: _transition_5
 
 
             if (!vHub) {
@@ -1722,7 +1836,7 @@ class TodoPeerStateMachine(
             }
             }
             6 -> {
-                // SCE-MAP: todo_peer.scxml:393 :: open :: _transition_6
+                // SCE-MAP: todo_peer.scxml:410 :: open :: _transition_6
                 if (pendingTodoVisitPayload == null) {
                     return
                 }
@@ -1911,7 +2025,7 @@ class TodoPeerStateMachine(
             }
             }
             7 -> {
-                // SCE-MAP: todo_peer.scxml:434 :: open :: _transition_7
+                // SCE-MAP: todo_peer.scxml:451 :: open :: _transition_7
                 if (pendingTodoNodePayload == null) {
                     return
                 }
@@ -2080,7 +2194,7 @@ class TodoPeerStateMachine(
             }
             }
             8 -> {
-                // SCE-MAP: todo_peer.scxml:481 :: open :: _transition_8
+                // SCE-MAP: todo_peer.scxml:498 :: open :: _transition_8
                 if (pendingTodoSharePayload == null) {
                     return
                 }
@@ -2486,19 +2600,98 @@ class TodoPeerStateMachine(
             }
             }
             9 -> {
-                // SCE-MAP: todo_peer.scxml:563 :: open :: _transition_9
+                // SCE-MAP: todo_peer.scxml:580 :: open :: _transition_9
                 if (pendingTodoAgendaPayload == null) {
                     return
                 }
 
             vAgenda = emptyList()
 
+
+            if (!vZoned) {
+
             if (try { vAgenda = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_EventAgenda__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), pendingTodoAgendaPayload!!.windowStart, pendingTodoAgendaPayload!!.windowEnd)), 64); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='agenda'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
+
+
+            if (vZoned) {
+
+            if (try { vOffStart = com.sce.forge.runtime.SceChecked.take(call_UtcOffsetAt__vv(vZoneStarts, vZoneOffsets, com.sce.forge.runtime.SceChecked.div(pendingTodoAgendaPayload!!.windowStart, 1000))); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='offStart'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+
+            if (try { vOffEnd = com.sce.forge.runtime.SceChecked.take(call_UtcOffsetAt__vv(vZoneStarts, vZoneOffsets, com.sce.forge.runtime.SceChecked.div(pendingTodoAgendaPayload!!.windowEnd, 1000))); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='offEnd'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+
+            if (try { vLocal = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_EventAgenda__v(vValues, pendingTodoAgendaPayload!!.id.toULong(), com.sce.forge.runtime.SceChecked.sub(com.sce.forge.runtime.SceChecked.add(pendingTodoAgendaPayload!!.windowStart, com.sce.forge.runtime.SceChecked.mul(vOffStart, 1000).toLong()), 86400000), com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.add(pendingTodoAgendaPayload!!.windowEnd, com.sce.forge.runtime.SceChecked.mul(vOffEnd, 1000).toLong()), 86400000))), 64); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='local'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+
+
+            for (l in vLocal) {
+
+            vOcc = vOcc.copy(id = l.id)
+
+            vOcc = vOcc.copy(nth = l.nth)
+
+            vOcc = vOcc.copy(conflict = l.conflict)
+
+            if (try { vUtcSec = com.sce.forge.runtime.SceChecked.take(call_UtcFromLocal__vv(vZoneStarts, vZoneOffsets, com.sce.forge.runtime.SceChecked.div(l.start, 1000))); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='utcSec'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+
+            if (try { vOcc = vOcc.copy(start = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(vUtcSec, 1000), com.sce.forge.runtime.SceChecked.rem(l.start, 1000))); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='occ.start'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+
+            if (try { vUtcSec = com.sce.forge.runtime.SceChecked.take(call_UtcFromLocal__vv(vZoneStarts, vZoneOffsets, com.sce.forge.runtime.SceChecked.div(l.end, 1000))); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='utcSec'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+
+            if (try { vOcc = vOcc.copy(end = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(vUtcSec, 1000), com.sce.forge.runtime.SceChecked.rem(l.end, 1000))); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='occ.end'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+
+
+            if ((vOcc.end > pendingTodoAgendaPayload!!.windowStart || vOcc.start >= pendingTodoAgendaPayload!!.windowStart) && vOcc.start < pendingTodoAgendaPayload!!.windowEnd) {
+
+            if (if (vAgenda.size < 64) { vAgenda = vAgenda + (vOcc); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, "<sce:append target='agenda'>: the list already holds its capacity of 64"); true }) {
+                return
+            }
+            }
+            }
+            }
+            }
             10 -> {
-                // SCE-MAP: todo_peer.scxml:568 :: open :: _transition_10
+                // SCE-MAP: todo_peer.scxml:613 :: open :: _transition_10
+                if (pendingTodoZonePayload == null) {
+                    return
+                }
+
+            if (if (vZoneStarts.size < 64) { vZoneStarts = vZoneStarts + (pendingTodoZonePayload!!.start); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, "<sce:append target='zoneStarts'>: the list already holds its capacity of 64"); true }) {
+                return
+            }
+
+            if (if (vZoneOffsets.size < 64) { vZoneOffsets = vZoneOffsets + (pendingTodoZonePayload!!.offset); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, "<sce:append target='zoneOffsets'>: the list already holds its capacity of 64"); true }) {
+                return
+            }
+
+            vZoned = true
+            }
+            11 -> {
+                // SCE-MAP: todo_peer.scxml:619 :: open :: _transition_11
+
+            vZoneStarts = emptyList()
+
+            vZoneOffsets = emptyList()
+
+            vZoned = false
+            }
+            12 -> {
+                // SCE-MAP: todo_peer.scxml:625 :: open :: _transition_12
 
             if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
