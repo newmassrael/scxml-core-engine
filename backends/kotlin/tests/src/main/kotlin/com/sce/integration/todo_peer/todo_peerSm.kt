@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 1bdfca3db4bb33c8c293390903822d652850c4718faefdf3c98b4d7553b2c7ee
+// source-hash: 813d6364249fab80a1abeae788a84cd3c18674a102058aa8392a43c48f4123ae
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/todo_peer.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: todo_peer.scxml:71 :: _machine
+// SCE-MAP: todo_peer.scxml:87 :: _machine
 @file:OptIn(ExperimentalUnsignedTypes::class)
 
 package com.sce.integration.todo_peer
@@ -15,6 +15,7 @@ import com.sce.generated.event_conflict.*
 import com.sce.generated.event_latest.*
 import com.sce.generated.event_occurrence.*
 import com.sce.generated.event_schedule.*
+import com.sce.generated.event_settled.*
 import com.sce.generated.hlc_receive.*
 import com.sce.generated.hlc_send.*
 import com.sce.generated.hlc_timestamp.*
@@ -45,13 +46,17 @@ sealed interface TodoPeerEvent : Event {
         data object Execution : Error
     }
     sealed interface Todo : TodoPeerEvent {
+        data object Ack : Todo
         data object Agenda : Todo
         data object Compact : Todo
         data object Edit : Todo
+        data object Floor : Todo
         data object Join : Todo
         data object Keep : Todo
         data object Node : Todo
+        data object Propose : Todo
         data object Resync : Todo
+        data object Settle : Todo
         data object Share : Todo
         data object Supersede : Todo
         data object Visit : Todo
@@ -67,6 +72,11 @@ sealed interface TodoPeerEvent : Event {
 // The Kotlin twin of the Rust `TodoPeerPayload` enum / Go per-event payload
 // structs: one data class per guarded event, carried through the queue in the
 // type-erased `EventMetadata.typedPayload` and lifted into a nullable field.
+// TodoPeerTodoAckPayload is the NL→IR Item C1 Path A typed `_event.data`
+// payload for `todo.ack`. Consumers inject it via the `raiseTodoAck` seam
+// on the machine — they never name this class directly.
+data class TodoPeerTodoAckPayload(val sender: ULong, val before: Long, val hash: UInt)
+
 // TodoPeerTodoAgendaPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `todo.agenda`. Consumers inject it via the `raiseTodoAgenda` seam
 // on the machine — they never name this class directly.
@@ -82,6 +92,11 @@ data class TodoPeerTodoCompactPayload(val before: Long)
 // on the machine — they never name this class directly.
 data class TodoPeerTodoEditPayload(val id: UInt, val field: UShort, val value: Long, val text: String, val now: Long)
 
+// TodoPeerTodoFloorPayload is the NL→IR Item C1 Path A typed `_event.data`
+// payload for `todo.floor`. Consumers inject it via the `raiseTodoFloor` seam
+// on the machine — they never name this class directly.
+data class TodoPeerTodoFloorPayload(val before: Long, val hash: UInt)
+
 // TodoPeerTodoJoinPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `todo.join`. Consumers inject it via the `raiseTodoJoin` seam
 // on the machine — they never name this class directly.
@@ -96,6 +111,16 @@ data class TodoPeerTodoKeepPayload(val kind: UByte, val element: ULong, val wall
 // payload for `todo.node`. Consumers inject it via the `raiseTodoNode` seam
 // on the machine — they never name this class directly.
 data class TodoPeerTodoNodePayload(val sender: ULong, val depth: UByte, val prefix: ULong, val hash: UInt, val reply: Boolean)
+
+// TodoPeerTodoProposePayload is the NL→IR Item C1 Path A typed `_event.data`
+// payload for `todo.propose`. Consumers inject it via the `raiseTodoPropose` seam
+// on the machine — they never name this class directly.
+data class TodoPeerTodoProposePayload(val before: Long)
+
+// TodoPeerTodoSettlePayload is the NL→IR Item C1 Path A typed `_event.data`
+// payload for `todo.settle`. Consumers inject it via the `raiseTodoSettle` seam
+// on the machine — they never name this class directly.
+data class TodoPeerTodoSettlePayload(val before: Long)
 
 // TodoPeerTodoSharePayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `todo.share`. Consumers inject it via the `raiseTodoShare` seam
@@ -198,6 +223,11 @@ private fun call_EventLatest__v(p0: List<TodoPeerValueRecord>, p1: ULong, p2: UL
     val r = eventLatest(p0.map { MvValuePayload(id = it.id, field = it.field, value = it.value, text = it.text, wallTime = it.wallTime, counter = it.counter, nodeId = it.nodeId) }, p1, p2, p3)
     return r
 }
+private fun call_EventSettled__vv(p0: List<TodoPeerEntryRecord>, p1: List<TodoPeerEntryRecord>, p2: Long): com.sce.forge.runtime.AlgorithmResult<UInt> =
+    when (val r = eventSettled(p0.map { OrsetEntryPayload(element = it.element, wallTime = it.wallTime, counter = it.counter, nodeId = it.nodeId) }, p1.map { OrsetEntryPayload(element = it.element, wallTime = it.wallTime, counter = it.counter, nodeId = it.nodeId) }, p2)) {
+        is com.sce.forge.runtime.AlgorithmResult.Ok -> com.sce.forge.runtime.AlgorithmResult.Ok(r.value)
+        is com.sce.forge.runtime.AlgorithmResult.Failed -> r
+    }
 private fun call_HlcReceive__vv(p0: TodoPeerHlcRecord, p1: TodoPeerHlcRecord, p2: Long, p3: ULong): com.sce.forge.runtime.AlgorithmResult<TodoPeerHlcRecord> =
     when (val r = hlcReceive(HlcTimestampPayload(wallTime = p0.wallTime, counter = p0.counter, nodeId = p0.nodeId), HlcTimestampPayload(wallTime = p1.wallTime, counter = p1.counter, nodeId = p1.nodeId), p2, p3)) {
         is com.sce.forge.runtime.AlgorithmResult.Ok -> com.sce.forge.runtime.AlgorithmResult.Ok(TodoPeerHlcRecord(wallTime = r.value.wallTime, counter = r.value.counter, nodeId = r.value.nodeId))
@@ -375,6 +405,37 @@ class TodoPeerStateMachine(
     private var vRawLast: UInt = 0.toUInt()
     /** W3C SCXML 5.2: the `utcSec` datamodel variable, the machine's own. */
     private var vUtcSec: Long = 0
+    /** W3C SCXML 5.2: the `floor` datamodel variable, published (`sce:direction="out"`). */
+    private var vFloor: Long = 0
+
+    /** What the published `floor` holds. */
+    val floor: Long get() = vFloor
+    /** W3C SCXML 5.2: the `stale` datamodel variable, published (`sce:direction="out"`). */
+    private var vStale: Boolean = false
+
+    /** What the published `stale` holds. */
+    val stale: Boolean get() = vStale
+    /** W3C SCXML 5.2: the `late` datamodel variable, published (`sce:direction="out"`). */
+    private var vLate: UInt = 0.toUInt()
+
+    /** What the published `late` holds. */
+    val late: UInt get() = vLate
+    /** W3C SCXML 5.2: the `frozenFor` datamodel variable, the machine's own. */
+    private var vFrozenFor: Long = -1
+    /** W3C SCXML 5.2: the `frozenHash` datamodel variable, the machine's own. */
+    private var vFrozenHash: UInt = 0.toUInt()
+    /** W3C SCXML 5.2: the `pending` datamodel variable, the machine's own. */
+    private var vPending: Long = -1
+    /** W3C SCXML 5.2: the `heardAlice` datamodel variable, the machine's own. */
+    private var vHeardAlice: Boolean = false
+    /** W3C SCXML 5.2: the `heardBob` datamodel variable, the machine's own. */
+    private var vHeardBob: Boolean = false
+    /** W3C SCXML 5.2: the `ackAlice` datamodel variable, the machine's own. */
+    private var vAckAlice: UInt = 0.toUInt()
+    /** W3C SCXML 5.2: the `ackBob` datamodel variable, the machine's own. */
+    private var vAckBob: UInt = 0.toUInt()
+    /** W3C SCXML 5.2: the `agreed` datamodel variable, the machine's own. */
+    private var vAgreed: UInt = 0.toUInt()
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -398,6 +459,17 @@ class TodoPeerStateMachine(
         var rawCount: UInt? = null
         var rawLast: UInt? = null
         var utcSec: Long? = null
+        var floor: Long? = null
+        var stale: Boolean? = null
+        var late: UInt? = null
+        var frozenFor: Long? = null
+        var frozenHash: UInt? = null
+        var pending: Long? = null
+        var heardAlice: Boolean? = null
+        var heardBob: Boolean? = null
+        var ackAlice: UInt? = null
+        var ackBob: UInt? = null
+        var agreed: UInt? = null
     }
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
@@ -418,6 +490,17 @@ class TodoPeerStateMachine(
         params.rawCount?.let { vRawCount = it }
         params.rawLast?.let { vRawLast = it }
         params.utcSec?.let { vUtcSec = it }
+        params.floor?.let { vFloor = it }
+        params.stale?.let { vStale = it }
+        params.late?.let { vLate = it }
+        params.frozenFor?.let { vFrozenFor = it }
+        params.frozenHash?.let { vFrozenHash = it }
+        params.pending?.let { vPending = it }
+        params.heardAlice?.let { vHeardAlice = it }
+        params.heardBob?.let { vHeardBob = it }
+        params.ackAlice?.let { vAckAlice = it }
+        params.ackBob?.let { vAckBob = it }
+        params.agreed?.let { vAgreed = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -432,6 +515,9 @@ class TodoPeerStateMachine(
         val refusals: UInt,
         val agenda: List<TodoPeerOccurrenceRecord>,
         val agendaNext: UInt,
+        val floor: Long,
+        val stale: Boolean,
+        val late: UInt,
     )
 
     /**
@@ -458,6 +544,9 @@ class TodoPeerStateMachine(
         refusals = vRefusals,
         agenda = vAgenda,
         agendaNext = vAgendaNext,
+        floor = vFloor,
+        stale = vStale,
+        late = vLate,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -484,7 +573,7 @@ class TodoPeerStateMachine(
      * from a document that renamed, re-typed or moved a state or a variable is
      * refused, one saved before a guard or an action changed is not.
      */
-    val savedShape: String = "ca510c02a55948373cd4f96a8f567a374088bb8d9016dacc0fe78e39b46e8aca"
+    val savedShape: String = "baaabf6af2e75f49fac9e2c02645b71bbc844af7d14f8ae6226370ec1291d83c"
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -542,6 +631,17 @@ class TodoPeerStateMachine(
             "rawCount" to SavedValues.of(vRawCount),
             "rawLast" to SavedValues.of(vRawLast),
             "utcSec" to SavedValues.of(vUtcSec),
+            "floor" to SavedValues.of(vFloor),
+            "stale" to SavedValues.of(vStale),
+            "late" to SavedValues.of(vLate),
+            "frozenFor" to SavedValues.of(vFrozenFor),
+            "frozenHash" to SavedValues.of(vFrozenHash),
+            "pending" to SavedValues.of(vPending),
+            "heardAlice" to SavedValues.of(vHeardAlice),
+            "heardBob" to SavedValues.of(vHeardBob),
+            "ackAlice" to SavedValues.of(vAckAlice),
+            "ackBob" to SavedValues.of(vAckBob),
+            "agreed" to SavedValues.of(vAgreed),
         ),
         wallNowMs,
     )
@@ -609,6 +709,17 @@ class TodoPeerStateMachine(
         val saved40 = SavedValues.uint32(saved.variable("rawCount"), "rawCount")
         val saved41 = SavedValues.uint32(saved.variable("rawLast"), "rawLast")
         val saved42 = SavedValues.int64(saved.variable("utcSec"), "utcSec")
+        val saved43 = SavedValues.int64(saved.variable("floor"), "floor")
+        val saved44 = SavedValues.bool(saved.variable("stale"), "stale")
+        val saved45 = SavedValues.uint32(saved.variable("late"), "late")
+        val saved46 = SavedValues.int64(saved.variable("frozenFor"), "frozenFor")
+        val saved47 = SavedValues.uint32(saved.variable("frozenHash"), "frozenHash")
+        val saved48 = SavedValues.int64(saved.variable("pending"), "pending")
+        val saved49 = SavedValues.bool(saved.variable("heardAlice"), "heardAlice")
+        val saved50 = SavedValues.bool(saved.variable("heardBob"), "heardBob")
+        val saved51 = SavedValues.uint32(saved.variable("ackAlice"), "ackAlice")
+        val saved52 = SavedValues.uint32(saved.variable("ackBob"), "ackBob")
+        val saved53 = SavedValues.uint32(saved.variable("agreed"), "agreed")
         vNode = saved1
         vHub = saved2
         vClock = saved3
@@ -651,6 +762,17 @@ class TodoPeerStateMachine(
         vRawCount = saved40
         vRawLast = saved41
         vUtcSec = saved42
+        vFloor = saved43
+        vStale = saved44
+        vLate = saved45
+        vFrozenFor = saved46
+        vFrozenHash = saved47
+        vPending = saved48
+        vHeardAlice = saved49
+        vHeardBob = saved50
+        vAckAlice = saved51
+        vAckBob = saved52
+        vAgreed = saved53
         enterSaved(saved, wallNowMs)
     }
 
@@ -660,12 +782,16 @@ class TodoPeerStateMachine(
     // NL→IR Item C1 Path A: the current event's typed `_event.data` payload(s),
     // lifted from the dequeued event by populateTypedPayload and read by the
     // native transition guards. `null` between events / for untyped events.
+    private var pendingTodoAckPayload: TodoPeerTodoAckPayload? = null
     private var pendingTodoAgendaPayload: TodoPeerTodoAgendaPayload? = null
     private var pendingTodoCompactPayload: TodoPeerTodoCompactPayload? = null
     private var pendingTodoEditPayload: TodoPeerTodoEditPayload? = null
+    private var pendingTodoFloorPayload: TodoPeerTodoFloorPayload? = null
     private var pendingTodoJoinPayload: TodoPeerTodoJoinPayload? = null
     private var pendingTodoKeepPayload: TodoPeerTodoKeepPayload? = null
     private var pendingTodoNodePayload: TodoPeerTodoNodePayload? = null
+    private var pendingTodoProposePayload: TodoPeerTodoProposePayload? = null
+    private var pendingTodoSettlePayload: TodoPeerTodoSettlePayload? = null
     private var pendingTodoSharePayload: TodoPeerTodoSharePayload? = null
     private var pendingTodoSupersedePayload: TodoPeerTodoSupersedePayload? = null
     private var pendingTodoVisitPayload: TodoPeerTodoVisitPayload? = null
@@ -681,24 +807,32 @@ class TodoPeerStateMachine(
     // of the Go policy's PopulateEventMetadata + LiftTypedPayload / the C11 pop
     // loop's `sm->pending_payload = evt.payload`.
     override fun populateTypedPayload(event: TodoPeerEvent, metadata: EventMetadata) {
+        pendingTodoAckPayload = null
         pendingTodoAgendaPayload = null
         pendingTodoCompactPayload = null
         pendingTodoEditPayload = null
+        pendingTodoFloorPayload = null
         pendingTodoJoinPayload = null
         pendingTodoKeepPayload = null
         pendingTodoNodePayload = null
+        pendingTodoProposePayload = null
+        pendingTodoSettlePayload = null
         pendingTodoSharePayload = null
         pendingTodoSupersedePayload = null
         pendingTodoVisitPayload = null
         pendingTodoWritePayload = null
         pendingTodoZonePayload = null
         when (val tp = metadata.typedPayload) {
+            is TodoPeerTodoAckPayload -> pendingTodoAckPayload = tp
             is TodoPeerTodoAgendaPayload -> pendingTodoAgendaPayload = tp
             is TodoPeerTodoCompactPayload -> pendingTodoCompactPayload = tp
             is TodoPeerTodoEditPayload -> pendingTodoEditPayload = tp
+            is TodoPeerTodoFloorPayload -> pendingTodoFloorPayload = tp
             is TodoPeerTodoJoinPayload -> pendingTodoJoinPayload = tp
             is TodoPeerTodoKeepPayload -> pendingTodoKeepPayload = tp
             is TodoPeerTodoNodePayload -> pendingTodoNodePayload = tp
+            is TodoPeerTodoProposePayload -> pendingTodoProposePayload = tp
+            is TodoPeerTodoSettlePayload -> pendingTodoSettlePayload = tp
             is TodoPeerTodoSharePayload -> pendingTodoSharePayload = tp
             is TodoPeerTodoSupersedePayload -> pendingTodoSupersedePayload = tp
             is TodoPeerTodoVisitPayload -> pendingTodoVisitPayload = tp
@@ -707,7 +841,10 @@ class TodoPeerStateMachine(
             else -> {
                 // No typed carrier, so the producer was not the inject seam: read the
                 // fields out of `data`, which every other producer fills.
-                if (event == TodoPeerEvent.Todo.Agenda) {
+                if (event == TodoPeerEvent.Todo.Ack) {
+                    val fields = EventPayload.decode(metadata.data)
+                    pendingTodoAckPayload = TodoPeerTodoAckPayload(fields.uint64("sender"), fields.int64("before"), fields.uint32("hash"))
+                } else if (event == TodoPeerEvent.Todo.Agenda) {
                     val fields = EventPayload.decode(metadata.data)
                     pendingTodoAgendaPayload = TodoPeerTodoAgendaPayload(fields.uint32("id"), fields.int64("windowStart"), fields.int64("windowEnd"), fields.uint32("skip"))
                 } else if (event == TodoPeerEvent.Todo.Compact) {
@@ -716,6 +853,9 @@ class TodoPeerStateMachine(
                 } else if (event == TodoPeerEvent.Todo.Edit) {
                     val fields = EventPayload.decode(metadata.data)
                     pendingTodoEditPayload = TodoPeerTodoEditPayload(fields.uint32("id"), fields.uint16("field"), fields.int64("value"), fields.string("text"), fields.int64("now"))
+                } else if (event == TodoPeerEvent.Todo.Floor) {
+                    val fields = EventPayload.decode(metadata.data)
+                    pendingTodoFloorPayload = TodoPeerTodoFloorPayload(fields.int64("before"), fields.uint32("hash"))
                 } else if (event == TodoPeerEvent.Todo.Join) {
                     val fields = EventPayload.decode(metadata.data)
                     pendingTodoJoinPayload = TodoPeerTodoJoinPayload(fields.uint64("node"), fields.boolean("hub"))
@@ -725,6 +865,12 @@ class TodoPeerStateMachine(
                 } else if (event == TodoPeerEvent.Todo.Node) {
                     val fields = EventPayload.decode(metadata.data)
                     pendingTodoNodePayload = TodoPeerTodoNodePayload(fields.uint64("sender"), fields.uint8("depth"), fields.uint64("prefix"), fields.uint32("hash"), fields.boolean("reply"))
+                } else if (event == TodoPeerEvent.Todo.Propose) {
+                    val fields = EventPayload.decode(metadata.data)
+                    pendingTodoProposePayload = TodoPeerTodoProposePayload(fields.int64("before"))
+                } else if (event == TodoPeerEvent.Todo.Settle) {
+                    val fields = EventPayload.decode(metadata.data)
+                    pendingTodoSettlePayload = TodoPeerTodoSettlePayload(fields.int64("before"))
                 } else if (event == TodoPeerEvent.Todo.Share) {
                     val fields = EventPayload.decode(metadata.data)
                     pendingTodoSharePayload = TodoPeerTodoSharePayload(fields.uint64("to"), fields.uint64("minute"))
@@ -746,6 +892,22 @@ class TodoPeerStateMachine(
     }
 
     // NL→IR Item C1 Path A: per-event typed `_event.data` inject seams.
+    // NL→IR Item C1 Path A typed `_event.data` inject seam for
+    // `todo.ack` — binds the event name and the payload field values in one call.
+    fun raiseTodoAck(sender: ULong, before: Long, hash: UInt) {
+        send(
+            TodoPeerEvent.Todo.Ack,
+            EventMetadata(
+                type = "external",
+                typedPayload = TodoPeerTodoAckPayload(sender, before, hash),
+                // Both carriers are filled: the typed one a native guard reads, and
+                // `data`, which is what the script engine binds `_event.data` from.
+                // Filling only the first left an `<assign expr="_event.data.x">` on
+                // this event reading nothing, on every backend alike.
+                data = EventPayload.encode(mapOf("sender" to sender, "before" to before, "hash" to hash))
+            )
+        )
+    }
     // NL→IR Item C1 Path A typed `_event.data` inject seam for
     // `todo.agenda` — binds the event name and the payload field values in one call.
     fun raiseTodoAgenda(id: UInt, windowStart: Long, windowEnd: Long, skip: UInt) {
@@ -795,6 +957,22 @@ class TodoPeerStateMachine(
         )
     }
     // NL→IR Item C1 Path A typed `_event.data` inject seam for
+    // `todo.floor` — binds the event name and the payload field values in one call.
+    fun raiseTodoFloor(before: Long, hash: UInt) {
+        send(
+            TodoPeerEvent.Todo.Floor,
+            EventMetadata(
+                type = "external",
+                typedPayload = TodoPeerTodoFloorPayload(before, hash),
+                // Both carriers are filled: the typed one a native guard reads, and
+                // `data`, which is what the script engine binds `_event.data` from.
+                // Filling only the first left an `<assign expr="_event.data.x">` on
+                // this event reading nothing, on every backend alike.
+                data = EventPayload.encode(mapOf("before" to before, "hash" to hash))
+            )
+        )
+    }
+    // NL→IR Item C1 Path A typed `_event.data` inject seam for
     // `todo.join` — binds the event name and the payload field values in one call.
     fun raiseTodoJoin(node: ULong, hub: Boolean) {
         send(
@@ -839,6 +1017,38 @@ class TodoPeerStateMachine(
                 // Filling only the first left an `<assign expr="_event.data.x">` on
                 // this event reading nothing, on every backend alike.
                 data = EventPayload.encode(mapOf("sender" to sender, "depth" to depth, "prefix" to prefix, "hash" to hash, "reply" to reply))
+            )
+        )
+    }
+    // NL→IR Item C1 Path A typed `_event.data` inject seam for
+    // `todo.propose` — binds the event name and the payload field values in one call.
+    fun raiseTodoPropose(before: Long) {
+        send(
+            TodoPeerEvent.Todo.Propose,
+            EventMetadata(
+                type = "external",
+                typedPayload = TodoPeerTodoProposePayload(before),
+                // Both carriers are filled: the typed one a native guard reads, and
+                // `data`, which is what the script engine binds `_event.data` from.
+                // Filling only the first left an `<assign expr="_event.data.x">` on
+                // this event reading nothing, on every backend alike.
+                data = EventPayload.encode(mapOf("before" to before))
+            )
+        )
+    }
+    // NL→IR Item C1 Path A typed `_event.data` inject seam for
+    // `todo.settle` — binds the event name and the payload field values in one call.
+    fun raiseTodoSettle(before: Long) {
+        send(
+            TodoPeerEvent.Todo.Settle,
+            EventMetadata(
+                type = "external",
+                typedPayload = TodoPeerTodoSettlePayload(before),
+                // Both carriers are filled: the typed one a native guard reads, and
+                // `data`, which is what the script engine binds `_event.data` from.
+                // Filling only the first left an `<assign expr="_event.data.x">` on
+                // this event reading nothing, on every backend alike.
+                data = EventPayload.encode(mapOf("before" to before))
             )
         )
     }
@@ -1075,6 +1285,51 @@ class TodoPeerStateMachine(
             hasActions = true,
             isInternal = true,
         )
+
+        // W3C SCXML 3.13: open's transition 14, as the microstep reads it.
+        val transitionOpenAt14 = EnabledTransition<TodoPeerState, HistoryId>(
+            TodoPeerState.Open,
+            emptyList(),
+            14,
+            hasActions = true,
+            isInternal = true,
+        )
+
+        // W3C SCXML 3.13: open's transition 15, as the microstep reads it.
+        val transitionOpenAt15 = EnabledTransition<TodoPeerState, HistoryId>(
+            TodoPeerState.Open,
+            emptyList(),
+            15,
+            hasActions = true,
+            isInternal = true,
+        )
+
+        // W3C SCXML 3.13: open's transition 16, as the microstep reads it.
+        val transitionOpenAt16 = EnabledTransition<TodoPeerState, HistoryId>(
+            TodoPeerState.Open,
+            emptyList(),
+            16,
+            hasActions = true,
+            isInternal = true,
+        )
+
+        // W3C SCXML 3.13: open's transition 17, as the microstep reads it.
+        val transitionOpenAt17 = EnabledTransition<TodoPeerState, HistoryId>(
+            TodoPeerState.Open,
+            emptyList(),
+            17,
+            hasActions = true,
+            isInternal = true,
+        )
+
+        // W3C SCXML 3.13: open's transition 18, as the microstep reads it.
+        val transitionOpenAt18 = EnabledTransition<TodoPeerState, HistoryId>(
+            TodoPeerState.Open,
+            emptyList(),
+            18,
+            hasActions = true,
+            isInternal = true,
+        )
     }
 
     // W3C SCXML: Resolve state ID string to State object
@@ -1096,13 +1351,17 @@ class TodoPeerStateMachine(
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): TodoPeerEvent? = when (name) {
         "error.execution" -> TodoPeerEvent.Error.Execution
+        "todo.ack" -> TodoPeerEvent.Todo.Ack
         "todo.agenda" -> TodoPeerEvent.Todo.Agenda
         "todo.compact" -> TodoPeerEvent.Todo.Compact
         "todo.edit" -> TodoPeerEvent.Todo.Edit
+        "todo.floor" -> TodoPeerEvent.Todo.Floor
         "todo.join" -> TodoPeerEvent.Todo.Join
         "todo.keep" -> TodoPeerEvent.Todo.Keep
         "todo.node" -> TodoPeerEvent.Todo.Node
+        "todo.propose" -> TodoPeerEvent.Todo.Propose
         "todo.resync" -> TodoPeerEvent.Todo.Resync
+        "todo.settle" -> TodoPeerEvent.Todo.Settle
         "todo.share" -> TodoPeerEvent.Todo.Share
         "todo.supersede" -> TodoPeerEvent.Todo.Supersede
         "todo.visit" -> TodoPeerEvent.Todo.Visit
@@ -1115,13 +1374,17 @@ class TodoPeerStateMachine(
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: TodoPeerEvent): String? = when (event) {
         is TodoPeerEvent.Error.Execution -> "error.execution"
+        is TodoPeerEvent.Todo.Ack -> "todo.ack"
         is TodoPeerEvent.Todo.Agenda -> "todo.agenda"
         is TodoPeerEvent.Todo.Compact -> "todo.compact"
         is TodoPeerEvent.Todo.Edit -> "todo.edit"
+        is TodoPeerEvent.Todo.Floor -> "todo.floor"
         is TodoPeerEvent.Todo.Join -> "todo.join"
         is TodoPeerEvent.Todo.Keep -> "todo.keep"
         is TodoPeerEvent.Todo.Node -> "todo.node"
+        is TodoPeerEvent.Todo.Propose -> "todo.propose"
         is TodoPeerEvent.Todo.Resync -> "todo.resync"
+        is TodoPeerEvent.Todo.Settle -> "todo.settle"
         is TodoPeerEvent.Todo.Share -> "todo.share"
         is TodoPeerEvent.Todo.Supersede -> "todo.supersede"
         is TodoPeerEvent.Todo.Visit -> "todo.visit"
@@ -1146,51 +1409,56 @@ class TodoPeerStateMachine(
         is TodoPeerState.Open -> when {
             event is TodoPeerEvent.Todo.Join -> transitionOpenAt0
             event is TodoPeerEvent.Todo.Edit -> transitionOpenAt1
-            event is TodoPeerEvent.Todo.Write -> transitionOpenAt2
-            event is TodoPeerEvent.Todo.Supersede -> transitionOpenAt3
-            event is TodoPeerEvent.Todo.Keep -> transitionOpenAt4
-            event is TodoPeerEvent.Todo.Compact -> transitionOpenAt5
-            event is TodoPeerEvent.Todo.Resync -> transitionOpenAt6
-            event is TodoPeerEvent.Todo.Visit -> transitionOpenAt7
-            event is TodoPeerEvent.Todo.Node -> transitionOpenAt8
-            event is TodoPeerEvent.Todo.Share -> transitionOpenAt9
-            event is TodoPeerEvent.Todo.Agenda -> transitionOpenAt10
-            event is TodoPeerEvent.Todo.Zone -> transitionOpenAt11
-            event is TodoPeerEvent.Todo.ZoneClear -> transitionOpenAt12
-            event is TodoPeerEvent.Error.Execution -> transitionOpenAt13
+            event is TodoPeerEvent.Todo.Write && pendingTodoWritePayload != null && (vFloor > 0 && pendingTodoWritePayload!!.wallTime <= vFloor) -> transitionOpenAt2
+            event is TodoPeerEvent.Todo.Write -> transitionOpenAt3
+            event is TodoPeerEvent.Todo.Supersede -> transitionOpenAt4
+            event is TodoPeerEvent.Todo.Keep -> transitionOpenAt5
+            event is TodoPeerEvent.Todo.Compact -> transitionOpenAt6
+            event is TodoPeerEvent.Todo.Settle -> transitionOpenAt7
+            event is TodoPeerEvent.Todo.Propose -> transitionOpenAt8
+            event is TodoPeerEvent.Todo.Ack -> transitionOpenAt9
+            event is TodoPeerEvent.Todo.Floor -> transitionOpenAt10
+            event is TodoPeerEvent.Todo.Resync -> transitionOpenAt11
+            event is TodoPeerEvent.Todo.Visit -> transitionOpenAt12
+            event is TodoPeerEvent.Todo.Node -> transitionOpenAt13
+            event is TodoPeerEvent.Todo.Share -> transitionOpenAt14
+            event is TodoPeerEvent.Todo.Agenda -> transitionOpenAt15
+            event is TodoPeerEvent.Todo.Zone -> transitionOpenAt16
+            event is TodoPeerEvent.Todo.ZoneClear -> transitionOpenAt17
+            event is TodoPeerEvent.Error.Execution -> transitionOpenAt18
             else -> null
         }
     }
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: todo_peer.scxml:71 :: _machine
+    // SCE-MAP: todo_peer.scxml:87 :: _machine
     override fun onEntry(state: TodoPeerState, isDefaultEntry: Boolean) {
         when (state) {
             is TodoPeerState.Open -> {
-                // SCE-MAP: todo_peer.scxml:223 :: open :: _state_body
+                // SCE-MAP: todo_peer.scxml:262 :: open :: _state_body
             }
         }
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: todo_peer.scxml:71 :: _machine
+    // SCE-MAP: todo_peer.scxml:87 :: _machine
     override fun onExit(state: TodoPeerState) {
         when (state) {
             is TodoPeerState.Open -> {
-                // SCE-MAP: todo_peer.scxml:223 :: open :: _state_body
+                // SCE-MAP: todo_peer.scxml:262 :: open :: _state_body
             }
         }
     }
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: todo_peer.scxml:71 :: _machine
+    // SCE-MAP: todo_peer.scxml:87 :: _machine
     override fun executeTransitionContent(source: TodoPeerState, transitionIndex: Int) {
         when (source) {
         is TodoPeerState.Open -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: todo_peer.scxml:224 :: open :: _transition_0
+                // SCE-MAP: todo_peer.scxml:263 :: open :: _transition_0
                 if (pendingTodoJoinPayload == null) {
                     return
                 }
@@ -1200,7 +1468,7 @@ class TodoPeerStateMachine(
             vHub = pendingTodoJoinPayload!!.hub
             }
             1 -> {
-                // SCE-MAP: todo_peer.scxml:232 :: open :: _transition_1
+                // SCE-MAP: todo_peer.scxml:271 :: open :: _transition_1
                 if (pendingTodoEditPayload == null) {
                     return
                 }
@@ -1398,7 +1666,14 @@ class TodoPeerStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             2 -> {
-                // SCE-MAP: todo_peer.scxml:281 :: open :: _transition_2
+                // SCE-MAP: todo_peer.scxml:325 :: open :: _transition_2
+
+            if (try { vLate = com.sce.forge.runtime.SceChecked.add(vLate, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='late'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+            }
+            3 -> {
+                // SCE-MAP: todo_peer.scxml:330 :: open :: _transition_3
                 if (pendingTodoWritePayload == null) {
                     return
                 }
@@ -1635,8 +1910,8 @@ class TodoPeerStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             }
-            3 -> {
-                // SCE-MAP: todo_peer.scxml:363 :: open :: _transition_3
+            4 -> {
+                // SCE-MAP: todo_peer.scxml:412 :: open :: _transition_4
                 if (pendingTodoSupersedePayload == null) {
                     return
                 }
@@ -1865,8 +2140,8 @@ class TodoPeerStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             }
-            4 -> {
-                // SCE-MAP: todo_peer.scxml:434 :: open :: _transition_4
+            5 -> {
+                // SCE-MAP: todo_peer.scxml:483 :: open :: _transition_5
                 if (pendingTodoKeepPayload == null) {
                     return
                 }
@@ -1887,13 +2162,15 @@ class TodoPeerStateMachine(
                 return
             }
             }
-            5 -> {
-                // SCE-MAP: todo_peer.scxml:451 :: open :: _transition_5
+            6 -> {
+                // SCE-MAP: todo_peer.scxml:500 :: open :: _transition_6
                 if (pendingTodoCompactPayload == null) {
                     return
                 }
 
             vStable = emptyList()
+
+            vFrozenFor = -1
 
 
             for (t in vTombstones) {
@@ -1922,9 +2199,574 @@ class TodoPeerStateMachine(
             if (try { vTombstones = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_OrsetLive__vv(vTombstones, vStable)), 1024); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='tombstones'>: an integer operation overflowed or failed"); true }) {
                 return
             }
+
+
+            if (pendingTodoCompactPayload!!.before > vFloor) {
+
+            vFloor = pendingTodoCompactPayload!!.before
             }
-            6 -> {
-                // SCE-MAP: todo_peer.scxml:467 :: open :: _transition_6
+            }
+            7 -> {
+                // SCE-MAP: todo_peer.scxml:522 :: open :: _transition_7
+                if (pendingTodoSettlePayload == null) {
+                    return
+                }
+
+
+            if (vHub && pendingTodoSettlePayload!!.before > vFloor) {
+
+            vPending = pendingTodoSettlePayload!!.before
+
+            vHeardAlice = false
+
+            vHeardBob = false
+
+
+            if (vClock.wallTime <= pendingTodoSettlePayload!!.before) {
+
+            if (try { vClock = vClock.copy(wallTime = com.sce.forge.runtime.SceChecked.add(pendingTodoSettlePayload!!.before, 1)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='clock.wallTime'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+
+            vClock = vClock.copy(counter = 0.toUInt())
+            }
+
+
+            if (run send@{
+            val sendPayload = mutableMapOf<String, Any?>()
+            putParam(sendPayload, "before", (pendingTodoSettlePayload!!.before).toString())
+
+            val sendData = buildJsonFromParams(sendPayload)
+            // The same pairs as the text a form carries (W3C SCXML C.2), so no
+            // `<param>` is evaluated twice.
+            val sendWireParams = sendPayload.mapValues { (_, v) ->
+                if (v is RepeatedParam) v.values.map { valueToWireString(it) } else listOf(valueToWireString(v))
+            }
+            // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+            // which declared it to this build. Dispatch rather than refuse —
+            // and take the whole send, because a processor the host serves
+            // owns delivery; falling through would also enqueue the event
+            // locally and the document would see the act twice.
+            val hostRequest = HostSendRequest(
+                processorType = "sce:mesh",
+                eventName = "todo.propose",
+                target = "#alice",
+                content = "",
+                params = sendWireParams,
+                sendId = "__send_11",
+                eventData = sendData,
+                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                // processed now, carried back out as a W3C child's send to its
+                // parent carries it (§scxml-6.4.1).
+                invokeId = currentEventMetadata.invokeId
+            )
+            val hostServed = performHostSend(hostRequest)
+            // W3C SCXML 6.2: a declared type with no handler registered is,
+            // from the document's side, a processor the platform does not
+            // support — the act it asked for was performed by nobody. Same
+            // event as an undeclared type, so a wiring mistake cannot read
+            // as success.
+            if (hostServed == null && !hasEventProcessor("sce:mesh")) {
+                raisePlatformError(TodoPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_11")
+            }
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
+
+
+            if (run send@{
+            val sendPayload = mutableMapOf<String, Any?>()
+            putParam(sendPayload, "before", (pendingTodoSettlePayload!!.before).toString())
+
+            val sendData = buildJsonFromParams(sendPayload)
+            // The same pairs as the text a form carries (W3C SCXML C.2), so no
+            // `<param>` is evaluated twice.
+            val sendWireParams = sendPayload.mapValues { (_, v) ->
+                if (v is RepeatedParam) v.values.map { valueToWireString(it) } else listOf(valueToWireString(v))
+            }
+            // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+            // which declared it to this build. Dispatch rather than refuse —
+            // and take the whole send, because a processor the host serves
+            // owns delivery; falling through would also enqueue the event
+            // locally and the document would see the act twice.
+            val hostRequest = HostSendRequest(
+                processorType = "sce:mesh",
+                eventName = "todo.propose",
+                target = "#bob",
+                content = "",
+                params = sendWireParams,
+                sendId = "__send_12",
+                eventData = sendData,
+                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                // processed now, carried back out as a W3C child's send to its
+                // parent carries it (§scxml-6.4.1).
+                invokeId = currentEventMetadata.invokeId
+            )
+            val hostServed = performHostSend(hostRequest)
+            // W3C SCXML 6.2: a declared type with no handler registered is,
+            // from the document's side, a processor the platform does not
+            // support — the act it asked for was performed by nobody. Same
+            // event as an undeclared type, so a wiring mistake cannot read
+            // as success.
+            if (hostServed == null && !hasEventProcessor("sce:mesh")) {
+                raisePlatformError(TodoPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_12")
+            }
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
+            }
+            }
+            8 -> {
+                // SCE-MAP: todo_peer.scxml:546 :: open :: _transition_8
+                if (pendingTodoProposePayload == null) {
+                    return
+                }
+
+
+            if (!vHub && pendingTodoProposePayload!!.before > vFloor) {
+
+
+            if (vClock.wallTime <= pendingTodoProposePayload!!.before) {
+
+            if (try { vClock = vClock.copy(wallTime = com.sce.forge.runtime.SceChecked.add(pendingTodoProposePayload!!.before, 1)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='clock.wallTime'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+
+            vClock = vClock.copy(counter = 0.toUInt())
+            }
+
+            vStable = emptyList()
+
+
+            for (t in vTombstones) {
+
+
+            if (t.wallTime <= pendingTodoProposePayload!!.before) {
+
+            if (if (vStable.size < 1024) { vStable = vStable + (t); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, "<sce:append target='stable'>: the list already holds its capacity of 1024"); true }) {
+                return
+            }
+            }
+            }
+
+            vFrozenFor = pendingTodoProposePayload!!.before
+
+            if (try { vFrozenHash = com.sce.forge.runtime.SceChecked.take(call_EventSettled__vv(vAdds, vTombstones, pendingTodoProposePayload!!.before)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='frozenHash'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+
+
+            if (run send@{
+            val sendPayload = mutableMapOf<String, Any?>()
+            putParam(sendPayload, "sender", (vNode).toString())
+
+            putParam(sendPayload, "before", (pendingTodoProposePayload!!.before).toString())
+
+            putParam(sendPayload, "hash", (vFrozenHash).toLong())
+
+            val sendData = buildJsonFromParams(sendPayload)
+            // The same pairs as the text a form carries (W3C SCXML C.2), so no
+            // `<param>` is evaluated twice.
+            val sendWireParams = sendPayload.mapValues { (_, v) ->
+                if (v is RepeatedParam) v.values.map { valueToWireString(it) } else listOf(valueToWireString(v))
+            }
+            // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+            // which declared it to this build. Dispatch rather than refuse —
+            // and take the whole send, because a processor the host serves
+            // owns delivery; falling through would also enqueue the event
+            // locally and the document would see the act twice.
+            val hostRequest = HostSendRequest(
+                processorType = "sce:mesh",
+                eventName = "todo.ack",
+                target = "#server",
+                content = "",
+                params = sendWireParams,
+                sendId = "__send_13",
+                eventData = sendData,
+                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                // processed now, carried back out as a W3C child's send to its
+                // parent carries it (§scxml-6.4.1).
+                invokeId = currentEventMetadata.invokeId
+            )
+            val hostServed = performHostSend(hostRequest)
+            // W3C SCXML 6.2: a declared type with no handler registered is,
+            // from the document's side, a processor the platform does not
+            // support — the act it asked for was performed by nobody. Same
+            // event as an undeclared type, so a wiring mistake cannot read
+            // as success.
+            if (hostServed == null && !hasEventProcessor("sce:mesh")) {
+                raisePlatformError(TodoPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_13")
+            }
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
+            }
+            }
+            9 -> {
+                // SCE-MAP: todo_peer.scxml:574 :: open :: _transition_9
+                if (pendingTodoAckPayload == null) {
+                    return
+                }
+
+
+            if (vHub && pendingTodoAckPayload!!.before == vPending) {
+
+
+            if (pendingTodoAckPayload!!.sender == 1.toULong()) {
+
+            vHeardAlice = true
+
+            vAckAlice = pendingTodoAckPayload!!.hash
+            }
+
+
+            if (pendingTodoAckPayload!!.sender == 2.toULong()) {
+
+            vHeardBob = true
+
+            vAckBob = pendingTodoAckPayload!!.hash
+            }
+
+
+            if (vHeardAlice && vHeardBob) {
+
+            if (try { vMine = com.sce.forge.runtime.SceChecked.take(call_EventSettled__vv(vAdds, vTombstones, vPending)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='mine'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+
+
+            if (vMine == vAckAlice && vMine == vAckBob) {
+
+            vStable = emptyList()
+
+
+            for (t in vTombstones) {
+
+
+            if (t.wallTime <= vPending) {
+
+            if (if (vStable.size < 1024) { vStable = vStable + (t); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, "<sce:append target='stable'>: the list already holds its capacity of 1024"); true }) {
+                return
+            }
+            }
+            }
+
+            vFrozenFor = vPending
+
+            vFrozenHash = vMine
+
+
+            if (run send@{
+            val sendPayload = mutableMapOf<String, Any?>()
+            putParam(sendPayload, "before", (vPending).toString())
+
+            putParam(sendPayload, "hash", (vMine).toLong())
+
+            val sendData = buildJsonFromParams(sendPayload)
+            // The same pairs as the text a form carries (W3C SCXML C.2), so no
+            // `<param>` is evaluated twice.
+            val sendWireParams = sendPayload.mapValues { (_, v) ->
+                if (v is RepeatedParam) v.values.map { valueToWireString(it) } else listOf(valueToWireString(v))
+            }
+            // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+            // which declared it to this build. Dispatch rather than refuse —
+            // and take the whole send, because a processor the host serves
+            // owns delivery; falling through would also enqueue the event
+            // locally and the document would see the act twice.
+            val hostRequest = HostSendRequest(
+                processorType = "sce:mesh",
+                eventName = "todo.floor",
+                target = "#alice",
+                content = "",
+                params = sendWireParams,
+                sendId = "__send_14",
+                eventData = sendData,
+                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                // processed now, carried back out as a W3C child's send to its
+                // parent carries it (§scxml-6.4.1).
+                invokeId = currentEventMetadata.invokeId
+            )
+            val hostServed = performHostSend(hostRequest)
+            // W3C SCXML 6.2: a declared type with no handler registered is,
+            // from the document's side, a processor the platform does not
+            // support — the act it asked for was performed by nobody. Same
+            // event as an undeclared type, so a wiring mistake cannot read
+            // as success.
+            if (hostServed == null && !hasEventProcessor("sce:mesh")) {
+                raisePlatformError(TodoPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_14")
+            }
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
+
+
+            if (run send@{
+            val sendPayload = mutableMapOf<String, Any?>()
+            putParam(sendPayload, "before", (vPending).toString())
+
+            putParam(sendPayload, "hash", (vMine).toLong())
+
+            val sendData = buildJsonFromParams(sendPayload)
+            // The same pairs as the text a form carries (W3C SCXML C.2), so no
+            // `<param>` is evaluated twice.
+            val sendWireParams = sendPayload.mapValues { (_, v) ->
+                if (v is RepeatedParam) v.values.map { valueToWireString(it) } else listOf(valueToWireString(v))
+            }
+            // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+            // which declared it to this build. Dispatch rather than refuse —
+            // and take the whole send, because a processor the host serves
+            // owns delivery; falling through would also enqueue the event
+            // locally and the document would see the act twice.
+            val hostRequest = HostSendRequest(
+                processorType = "sce:mesh",
+                eventName = "todo.floor",
+                target = "#bob",
+                content = "",
+                params = sendWireParams,
+                sendId = "__send_15",
+                eventData = sendData,
+                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                // processed now, carried back out as a W3C child's send to its
+                // parent carries it (§scxml-6.4.1).
+                invokeId = currentEventMetadata.invokeId
+            )
+            val hostServed = performHostSend(hostRequest)
+            // W3C SCXML 6.2: a declared type with no handler registered is,
+            // from the document's side, a processor the platform does not
+            // support — the act it asked for was performed by nobody. Same
+            // event as an undeclared type, so a wiring mistake cannot read
+            // as success.
+            if (hostServed == null && !hasEventProcessor("sce:mesh")) {
+                raisePlatformError(TodoPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_15")
+            }
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
+
+
+            if (run send@{
+            val sendPayload = mutableMapOf<String, Any?>()
+            putParam(sendPayload, "before", (vPending).toString())
+
+            putParam(sendPayload, "hash", (vMine).toLong())
+
+            val sendData = buildJsonFromParams(sendPayload)
+            // W3C SCXML 5.10: an internal send carries `_event.data` just as an
+            // external one does.
+            raiseInternal(TodoPeerEvent.Todo.Floor, EventMetadata.internal(sendData))
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
+
+            vPending = -1
+            }
+
+
+            if (vMine != vAckAlice && vFloor > 0) {
+
+
+            if (run send@{
+            val sendPayload = mutableMapOf<String, Any?>()
+            putParam(sendPayload, "before", (vFloor).toString())
+
+            putParam(sendPayload, "hash", (vAgreed).toLong())
+
+            val sendData = buildJsonFromParams(sendPayload)
+            // The same pairs as the text a form carries (W3C SCXML C.2), so no
+            // `<param>` is evaluated twice.
+            val sendWireParams = sendPayload.mapValues { (_, v) ->
+                if (v is RepeatedParam) v.values.map { valueToWireString(it) } else listOf(valueToWireString(v))
+            }
+            // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+            // which declared it to this build. Dispatch rather than refuse —
+            // and take the whole send, because a processor the host serves
+            // owns delivery; falling through would also enqueue the event
+            // locally and the document would see the act twice.
+            val hostRequest = HostSendRequest(
+                processorType = "sce:mesh",
+                eventName = "todo.floor",
+                target = "#alice",
+                content = "",
+                params = sendWireParams,
+                sendId = "__send_17",
+                eventData = sendData,
+                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                // processed now, carried back out as a W3C child's send to its
+                // parent carries it (§scxml-6.4.1).
+                invokeId = currentEventMetadata.invokeId
+            )
+            val hostServed = performHostSend(hostRequest)
+            // W3C SCXML 6.2: a declared type with no handler registered is,
+            // from the document's side, a processor the platform does not
+            // support — the act it asked for was performed by nobody. Same
+            // event as an undeclared type, so a wiring mistake cannot read
+            // as success.
+            if (hostServed == null && !hasEventProcessor("sce:mesh")) {
+                raisePlatformError(TodoPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_17")
+            }
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
+            }
+
+
+            if (vMine != vAckBob && vFloor > 0) {
+
+
+            if (run send@{
+            val sendPayload = mutableMapOf<String, Any?>()
+            putParam(sendPayload, "before", (vFloor).toString())
+
+            putParam(sendPayload, "hash", (vAgreed).toLong())
+
+            val sendData = buildJsonFromParams(sendPayload)
+            // The same pairs as the text a form carries (W3C SCXML C.2), so no
+            // `<param>` is evaluated twice.
+            val sendWireParams = sendPayload.mapValues { (_, v) ->
+                if (v is RepeatedParam) v.values.map { valueToWireString(it) } else listOf(valueToWireString(v))
+            }
+            // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+            // which declared it to this build. Dispatch rather than refuse —
+            // and take the whole send, because a processor the host serves
+            // owns delivery; falling through would also enqueue the event
+            // locally and the document would see the act twice.
+            val hostRequest = HostSendRequest(
+                processorType = "sce:mesh",
+                eventName = "todo.floor",
+                target = "#bob",
+                content = "",
+                params = sendWireParams,
+                sendId = "__send_18",
+                eventData = sendData,
+                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                // processed now, carried back out as a W3C child's send to its
+                // parent carries it (§scxml-6.4.1).
+                invokeId = currentEventMetadata.invokeId
+            )
+            val hostServed = performHostSend(hostRequest)
+            // W3C SCXML 6.2: a declared type with no handler registered is,
+            // from the document's side, a processor the platform does not
+            // support — the act it asked for was performed by nobody. Same
+            // event as an undeclared type, so a wiring mistake cannot read
+            // as success.
+            if (hostServed == null && !hasEventProcessor("sce:mesh")) {
+                raisePlatformError(TodoPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_18")
+            }
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
+            }
+            }
+            }
+            }
+            10 -> {
+                // SCE-MAP: todo_peer.scxml:636 :: open :: _transition_10
+                if (pendingTodoFloorPayload == null) {
+                    return
+                }
+
+
+            if (pendingTodoFloorPayload!!.before > vFloor) {
+
+
+            if (vFrozenFor != pendingTodoFloorPayload!!.before) {
+
+            vStable = emptyList()
+
+
+            for (t in vTombstones) {
+
+
+            if (t.wallTime <= pendingTodoFloorPayload!!.before) {
+
+            if (if (vStable.size < 1024) { vStable = vStable + (t); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, "<sce:append target='stable'>: the list already holds its capacity of 1024"); true }) {
+                return
+            }
+            }
+            }
+
+            vFrozenFor = pendingTodoFloorPayload!!.before
+
+            if (try { vFrozenHash = com.sce.forge.runtime.SceChecked.take(call_EventSettled__vv(vAdds, vTombstones, pendingTodoFloorPayload!!.before)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='frozenHash'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+            }
+
+
+            if (vFrozenHash == pendingTodoFloorPayload!!.hash) {
+
+
+            if (vClock.wallTime <= pendingTodoFloorPayload!!.before) {
+
+            if (try { vClock = vClock.copy(wallTime = com.sce.forge.runtime.SceChecked.add(pendingTodoFloorPayload!!.before, 1)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='clock.wallTime'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+
+            vClock = vClock.copy(counter = 0.toUInt())
+            }
+
+
+            for (t in vStable) {
+
+            if (try { vMine = com.sce.forge.runtime.SceChecked.take(call_MerkleChangeHash__i(t, 1.toUByte())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='mine'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+
+            if (try { vDigest = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_MerkleInsert__v(vDigest, com.sce.forge.runtime.SceChecked.div(t.wallTime, 60000), vMine)), 2048); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='digest'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+            }
+
+            if (try { vAdds = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_OrsetLive__vv(vAdds, vStable)), 1024); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='adds'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+
+            if (try { vTombstones = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_OrsetLive__vv(vTombstones, vStable)), 1024); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='tombstones'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+
+            vFloor = pendingTodoFloorPayload!!.before
+
+            vAgreed = pendingTodoFloorPayload!!.hash
+
+            vStale = false
+
+            vFrozenFor = -1
+            }
+
+
+            if (vFrozenHash != pendingTodoFloorPayload!!.hash) {
+
+            vStale = true
+            }
+            }
+            }
+            11 -> {
+                // SCE-MAP: todo_peer.scxml:673 :: open :: _transition_11
 
 
             if (!vHub) {
@@ -2000,8 +2842,8 @@ class TodoPeerStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             }
-            7 -> {
-                // SCE-MAP: todo_peer.scxml:494 :: open :: _transition_7
+            12 -> {
+                // SCE-MAP: todo_peer.scxml:700 :: open :: _transition_12
                 if (pendingTodoVisitPayload == null) {
                     return
                 }
@@ -2051,7 +2893,7 @@ class TodoPeerStateMachine(
                 target = "#server",
                 content = "",
                 params = sendWireParams,
-                sendId = "__send_14",
+                sendId = "__send_22",
                 eventData = sendData,
                 // SCE_MESH.md §mesh-10.7: the invokeid of the event being
                 // processed now, carried back out as a W3C child's send to its
@@ -2065,7 +2907,7 @@ class TodoPeerStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(TodoPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_14")
+                raisePlatformError(TodoPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_22")
             }
             false
             }) {
@@ -2108,7 +2950,7 @@ class TodoPeerStateMachine(
                 target = "#alice",
                 content = "",
                 params = sendWireParams,
-                sendId = "__send_15",
+                sendId = "__send_23",
                 eventData = sendData,
                 // SCE_MESH.md §mesh-10.7: the invokeid of the event being
                 // processed now, carried back out as a W3C child's send to its
@@ -2122,7 +2964,7 @@ class TodoPeerStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(TodoPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_15")
+                raisePlatformError(TodoPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_23")
             }
             false
             }) {
@@ -2165,7 +3007,7 @@ class TodoPeerStateMachine(
                 target = "#bob",
                 content = "",
                 params = sendWireParams,
-                sendId = "__send_16",
+                sendId = "__send_24",
                 eventData = sendData,
                 // SCE_MESH.md §mesh-10.7: the invokeid of the event being
                 // processed now, carried back out as a W3C child's send to its
@@ -2179,7 +3021,7 @@ class TodoPeerStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(TodoPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_16")
+                raisePlatformError(TodoPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_24")
             }
             false
             }) {
@@ -2189,8 +3031,8 @@ class TodoPeerStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             }
-            8 -> {
-                // SCE-MAP: todo_peer.scxml:535 :: open :: _transition_8
+            13 -> {
+                // SCE-MAP: todo_peer.scxml:741 :: open :: _transition_13
                 if (pendingTodoNodePayload == null) {
                     return
                 }
@@ -2358,8 +3200,8 @@ class TodoPeerStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             }
-            9 -> {
-                // SCE-MAP: todo_peer.scxml:582 :: open :: _transition_9
+            14 -> {
+                // SCE-MAP: todo_peer.scxml:788 :: open :: _transition_14
                 if (pendingTodoSharePayload == null) {
                     return
                 }
@@ -2368,8 +3210,8 @@ class TodoPeerStateMachine(
             for (v in vValues) {
 
 
-            var ifCondFailed23 = false
-            if ((try { com.sce.forge.runtime.SceChecked.div(v.wallTime, 60000) == pendingTodoSharePayload!!.minute.toLong() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<if cond='v.wallTime / 60000 === _event.data.minute'>: an integer operation overflowed or failed"); ifCondFailed23 = true; false })) {
+            var ifCondFailed43 = false
+            if ((try { com.sce.forge.runtime.SceChecked.div(v.wallTime, 60000) == pendingTodoSharePayload!!.minute.toLong() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<if cond='v.wallTime / 60000 === _event.data.minute'>: an integer operation overflowed or failed"); ifCondFailed43 = true; false })) {
 
             if (try { vShareId = com.sce.forge.runtime.SceChecked.narrowToUInt(v.id); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='shareId'>: an integer operation overflowed or failed"); true }) {
                 return
@@ -2416,7 +3258,7 @@ class TodoPeerStateMachine(
                 target = "#server",
                 content = "",
                 params = sendWireParams,
-                sendId = "__send_22",
+                sendId = "__send_30",
                 eventData = sendData,
                 // SCE_MESH.md §mesh-10.7: the invokeid of the event being
                 // processed now, carried back out as a W3C child's send to its
@@ -2430,7 +3272,7 @@ class TodoPeerStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(TodoPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_22")
+                raisePlatformError(TodoPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_30")
             }
             false
             }) {
@@ -2477,7 +3319,7 @@ class TodoPeerStateMachine(
                 target = "#alice",
                 content = "",
                 params = sendWireParams,
-                sendId = "__send_23",
+                sendId = "__send_31",
                 eventData = sendData,
                 // SCE_MESH.md §mesh-10.7: the invokeid of the event being
                 // processed now, carried back out as a W3C child's send to its
@@ -2491,7 +3333,7 @@ class TodoPeerStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(TodoPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_23")
+                raisePlatformError(TodoPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_31")
             }
             false
             }) {
@@ -2538,7 +3380,7 @@ class TodoPeerStateMachine(
                 target = "#bob",
                 content = "",
                 params = sendWireParams,
-                sendId = "__send_24",
+                sendId = "__send_32",
                 eventData = sendData,
                 // SCE_MESH.md §mesh-10.7: the invokeid of the event being
                 // processed now, carried back out as a W3C child's send to its
@@ -2552,7 +3394,7 @@ class TodoPeerStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(TodoPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_24")
+                raisePlatformError(TodoPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_32")
             }
             false
             }) {
@@ -2562,7 +3404,7 @@ class TodoPeerStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             }
-            if (ifCondFailed23) {
+            if (ifCondFailed43) {
                 return
             }
             }
@@ -2571,8 +3413,8 @@ class TodoPeerStateMachine(
             for (t in vTombstones) {
 
 
-            var ifCondFailed27 = false
-            if ((try { com.sce.forge.runtime.SceChecked.div(t.wallTime, 60000) == pendingTodoSharePayload!!.minute.toLong() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<if cond='t.wallTime / 60000 === _event.data.minute'>: an integer operation overflowed or failed"); ifCondFailed27 = true; false })) {
+            var ifCondFailed47 = false
+            if ((try { com.sce.forge.runtime.SceChecked.div(t.wallTime, 60000) == pendingTodoSharePayload!!.minute.toLong() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<if cond='t.wallTime / 60000 === _event.data.minute'>: an integer operation overflowed or failed"); ifCondFailed47 = true; false })) {
 
             if (try { vShareId = com.sce.forge.runtime.SceChecked.narrowToUInt(com.sce.forge.runtime.SceChecked.div(t.element, 65536.toULong())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='shareId'>: an integer operation overflowed or failed"); true }) {
                 return
@@ -2617,7 +3459,7 @@ class TodoPeerStateMachine(
                 target = "#server",
                 content = "",
                 params = sendWireParams,
-                sendId = "__send_25",
+                sendId = "__send_33",
                 eventData = sendData,
                 // SCE_MESH.md §mesh-10.7: the invokeid of the event being
                 // processed now, carried back out as a W3C child's send to its
@@ -2631,7 +3473,7 @@ class TodoPeerStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(TodoPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_25")
+                raisePlatformError(TodoPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_33")
             }
             false
             }) {
@@ -2676,7 +3518,7 @@ class TodoPeerStateMachine(
                 target = "#alice",
                 content = "",
                 params = sendWireParams,
-                sendId = "__send_26",
+                sendId = "__send_34",
                 eventData = sendData,
                 // SCE_MESH.md §mesh-10.7: the invokeid of the event being
                 // processed now, carried back out as a W3C child's send to its
@@ -2690,7 +3532,7 @@ class TodoPeerStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(TodoPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_26")
+                raisePlatformError(TodoPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_34")
             }
             false
             }) {
@@ -2735,7 +3577,7 @@ class TodoPeerStateMachine(
                 target = "#bob",
                 content = "",
                 params = sendWireParams,
-                sendId = "__send_27",
+                sendId = "__send_35",
                 eventData = sendData,
                 // SCE_MESH.md §mesh-10.7: the invokeid of the event being
                 // processed now, carried back out as a W3C child's send to its
@@ -2749,7 +3591,7 @@ class TodoPeerStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(TodoPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_27")
+                raisePlatformError(TodoPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_35")
             }
             false
             }) {
@@ -2759,13 +3601,13 @@ class TodoPeerStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             }
-            if (ifCondFailed27) {
+            if (ifCondFailed47) {
                 return
             }
             }
             }
-            10 -> {
-                // SCE-MAP: todo_peer.scxml:664 :: open :: _transition_10
+            15 -> {
+                // SCE-MAP: todo_peer.scxml:870 :: open :: _transition_15
                 if (pendingTodoAgendaPayload == null) {
                     return
                 }
@@ -3048,8 +3890,8 @@ class TodoPeerStateMachine(
             }
             }
             }
-            11 -> {
-                // SCE-MAP: todo_peer.scxml:784 :: open :: _transition_11
+            16 -> {
+                // SCE-MAP: todo_peer.scxml:990 :: open :: _transition_16
                 if (pendingTodoZonePayload == null) {
                     return
                 }
@@ -3102,8 +3944,8 @@ class TodoPeerStateMachine(
             }
             }
             }
-            12 -> {
-                // SCE-MAP: todo_peer.scxml:803 :: open :: _transition_12
+            17 -> {
+                // SCE-MAP: todo_peer.scxml:1009 :: open :: _transition_17
 
             vZoneStarts1 = emptyList()
 
@@ -3121,8 +3963,8 @@ class TodoPeerStateMachine(
 
             vZoneOffsets4 = emptyList()
             }
-            13 -> {
-                // SCE-MAP: todo_peer.scxml:814 :: open :: _transition_13
+            18 -> {
+                // SCE-MAP: todo_peer.scxml:1020 :: open :: _transition_18
 
             if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return

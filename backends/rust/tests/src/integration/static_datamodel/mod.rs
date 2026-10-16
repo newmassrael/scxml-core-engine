@@ -10,6 +10,7 @@ pub mod event_latest;
 pub mod event_occurrence;
 pub mod event_schedule;
 pub mod event_selects;
+pub mod event_settled;
 pub mod hlc_compare;
 pub mod hlc_receive;
 pub mod hlc_send;
