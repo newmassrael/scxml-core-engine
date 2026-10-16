@@ -29,6 +29,16 @@ lives is shown in one line and is otherwise not a screen of its own.
 record names who made it, so that moving a workspace to a server later adds members and loses no
 history.
 
+**A workspace's settings are a record in its store, and a connection is the person's.** What the
+workspace as a whole holds to (which providers it allows, its default folder, its recipe versions) is
+a record in the store (ADR 0027), so that it moves with the workspace and reaches a new member without
+anyone setting it up. There is no project file a person edits to configure a workspace. A connection
+(ADR 0031) is where one person's client or model server is and is kept in that person's own settings,
+outside the store: an export or a copy of a workspace never carries it, because an address says where
+a specification is sent and must not arrive from someone else. A workspace may limit which kinds of
+connection are allowed; it never holds a person's connection. Until a workspace has settings of its
+own, there is nothing of this kind to keep.
+
 **One command set, two hosts.** The interface speaks the command set and nothing else. The desktop
 host runs the core inside the application process; the server host exposes the same command set, with
 the same replies and refusals, over the network. There is no second server interface. A change to the
