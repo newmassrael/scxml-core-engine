@@ -312,7 +312,7 @@ rather than re-prompting.'"/>
       reconstruct from the tree in one turn.
     -->
     <data id="working_rules"
-          expr="'1. Builds and tests go through ~/.claude/remote-build/bin/bx. It \
+          expr="'1. Builds and tests go through ~/.local/bin/bx. It \
 decides where to run and keeps the full log; a bare cargo/ctest invocation on \
 this host competes with other sessions for a machine that is usually in swap.\n\
 2. The judge is CI, not a local batch. Verify locally only the target you \

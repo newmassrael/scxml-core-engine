@@ -54,7 +54,7 @@
 # ── Where this runs, and why that is a decision ────────────────────
 #
 # Locally, always. This script calls `cargo`, `cmake` and `ctest` directly and
-# never goes through `~/.claude/remote-build/bin/bx`, so no placement decision
+# never goes through `~/.local/bin/bx`, so no placement decision
 # is made for it — which is worth saying out loud, because a mutation round is
 # a full rebuild plus a suite run and is among the heaviest things this
 # repository does.
