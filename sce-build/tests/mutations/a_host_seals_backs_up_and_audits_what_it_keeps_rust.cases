@@ -1,0 +1,268 @@
+# Mutation cases for what a host of a shared list does with what it keeps: the content it seals under
+# the key of an epoch (the nonce and the associated data made from the list, the epoch and the stamp,
+# the padding of a sealed text to a class, the key a member is given and what it is wrapped under), the
+# key a person agrees with another on, the base64 text a key and a signature are written in, the copy a
+# device keeps of its secrets under a passphrase (the cost, the header, the refusals, what is put back),
+# the record an auditor checks from outside, and the byte form of a checkpoint.
+#
+# Each case takes one of those checks away or weakens it, and the tests under study must turn red. A
+# check no test notices is a check nothing holds in place. Several bindings are held twice over (the
+# nonce and the associated data both carry the list, the epoch and the stamp; the cost is in the key
+# and in the header): a case that weakens one of the two is held by the known-answer vectors of
+# `a_byte_format_does_not_drift` and of the copy, and a case that weakens both is held by a behaviour.
+#
+# The memory a copy may ask is not weakened here: without its bound a copy asking for 4 GiB is opened,
+# and a round that pays for that is a round that exhausts the host it runs on.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/a_host_seals_backs_up_and_audits_what_it_keeps_rust.cases`.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported INCONCLUSIVE with the
+# anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-trust --lib --test a_byte_format_does_not_drift --test a_device_is_backed_up_under_a_passphrase_and_the_list_is_audited_from_outside --test a_host_keeps_the_content_from_the_hub --test a_host_settles_on_the_checkpoints_of_its_members --test a_host_admits_what_its_members_signed
+mutation_targets backends/rust/trust/src/secrecy.rs backends/rust/trust/src/backup.rs backends/rust/trust/src/audit.rs backends/rust/trust/src/identity.rs backends/rust/trust/src/encoding.rs backends/rust/trust/src/checkpoint.rs
+mutation_oracles backends/rust/trust/tests/a_byte_format_does_not_drift.rs backends/rust/trust/tests/a_device_is_backed_up_under_a_passphrase_and_the_list_is_audited_from_outside.rs backends/rust/trust/tests/a_host_keeps_the_content_from_the_hub.rs backends/rust/trust/tests/a_host_settles_on_the_checkpoints_of_its_members.rs
+
+# ── Sealed content: what the nonce and the associated data are made from ──────────────────────
+
+mutation_case "A write is sealed under a nonce that does not hold its stamp" <<'PY'
+edit("backends/rust/trust/src/secrecy.rs",
+     "        &epoch.to_be_bytes(),\n        stamp,\n    ]);",
+     "        &epoch.to_be_bytes(),\n        &stamp[..0],\n    ]);")
+PY
+
+mutation_case "A sealed text opens for another write than the one it was sealed for" <<'PY'
+edit("backends/rust/trust/src/secrecy.rs",
+     "        &epoch.to_be_bytes(),\n        stamp,\n    ]);",
+     "        &epoch.to_be_bytes(),\n        &stamp[..0],\n    ]);")
+edit("backends/rust/trust/src/secrecy.rs",
+     "        &epoch.to_be_bytes(),\n        stamp,\n    ] {",
+     "        &epoch.to_be_bytes(),\n        &stamp[..0],\n    ] {")
+PY
+
+mutation_case "A sealed text opens for another list than the one it was sealed for" <<'PY'
+edit("backends/rust/trust/src/secrecy.rs",
+     "        NONCE_DOMAIN.as_bytes(),\n        calendar.as_bytes(),",
+     "        NONCE_DOMAIN.as_bytes(),\n        &calendar.as_bytes()[..0],")
+edit("backends/rust/trust/src/secrecy.rs",
+     "        AAD_DOMAIN.as_bytes(),\n        calendar.as_bytes(),",
+     "        AAD_DOMAIN.as_bytes(),\n        &calendar.as_bytes()[..0],")
+PY
+
+mutation_case "A sealed text is sealed without the epoch it was sealed under bound to it" <<'PY'
+edit("backends/rust/trust/src/secrecy.rs",
+     "        calendar.as_bytes(),\n        &epoch.to_be_bytes(),\n        stamp,\n    ]);",
+     "        calendar.as_bytes(),\n        &epoch.to_be_bytes()[..0],\n        stamp,\n    ]);")
+edit("backends/rust/trust/src/secrecy.rs",
+     "        calendar.as_bytes(),\n        &epoch.to_be_bytes(),\n        stamp,\n    ] {",
+     "        calendar.as_bytes(),\n        &epoch.to_be_bytes()[..0],\n        stamp,\n    ] {")
+PY
+
+# ── Sealed content: padding and its validation ────────────────────────────────────────────────
+
+mutation_case "A text that is empty is sealed at no length at all" <<'PY'
+edit("backends/rust/trust/src/secrecy.rs",
+     "let padded = 10 + text.len().div_ceil(TEXT_CLASS).max(1) * TEXT_CLASS;",
+     "let padded = 10 + text.len().div_ceil(TEXT_CLASS) * TEXT_CLASS;")
+PY
+
+mutation_case "A sealed text opens when the padding after its text is not zeros" <<'PY'
+edit("backends/rust/trust/src/secrecy.rs",
+     "if plain[10 + length..].iter().any(|byte| *byte != 0)",
+     "if false")
+PY
+
+# ── The key a member is given ─────────────────────────────────────────────────────────────────
+
+mutation_case "A key is wrapped under a key that does not hold what the two agreed on" <<'PY'
+edit("backends/rust/trust/src/secrecy.rs",
+     "        WRAP_DOMAIN.as_bytes(),\n        shared,\n        &from.to_bytes(),",
+     "        WRAP_DOMAIN.as_bytes(),\n        &shared[..0],\n        &from.to_bytes(),")
+PY
+
+mutation_case "A key is wrapped under a key that does not hold the giver's key" <<'PY'
+edit("backends/rust/trust/src/secrecy.rs",
+     "        &from.to_bytes(),\n        &to.to_bytes(),\n    ])",
+     "        &from.to_bytes()[..0],\n        &to.to_bytes(),\n    ])")
+PY
+
+mutation_case "A wrapped key opens under another epoch than the one it was wrapped for" <<'PY'
+edit("backends/rust/trust/src/secrecy.rs",
+     "        &epoch.to_be_bytes(),\n    ]);\n    let sealed = cipher",
+     "        &epoch.to_be_bytes()[..0],\n    ]);\n    let sealed = cipher")
+edit("backends/rust/trust/src/secrecy.rs",
+     "        &epoch.to_be_bytes(),\n    ]);\n    let plain = cipher",
+     "        &epoch.to_be_bytes()[..0],\n    ]);\n    let plain = cipher")
+PY
+
+mutation_case "The epoch of a sealed text is read from the wrong bytes of it" <<'PY'
+edit("backends/rust/trust/src/secrecy.rs",
+     "Some(u32::from_be_bytes(bytes.get(..4)?.try_into().ok()?))",
+     "Some(u32::from_be_bytes(bytes.get(1..5)?.try_into().ok()?))")
+PY
+
+# ── A person's key ────────────────────────────────────────────────────────────────────────────
+
+mutation_case "A key agreement takes the seed of a key where it needs the scalar" <<'PY'
+edit("backends/rust/trust/src/identity.rs",
+     "self.key.to_scalar_bytes()",
+     "self.key.to_bytes()")
+PY
+
+mutation_case "A key agreement takes the Edwards point of a peer where it needs the Montgomery one" <<'PY'
+edit("backends/rust/trust/src/identity.rs",
+     "x25519_dalek::PublicKey::from(peer.to_montgomery().to_bytes())",
+     "x25519_dalek::PublicKey::from(peer.to_bytes())")
+PY
+
+mutation_case "A key agreement with a peer of small order gives a secret of zeros" <<'PY'
+edit("backends/rust/trust/src/identity.rs",
+     "(!shared.as_bytes().iter().all(|b| *b == 0)).then(|| *shared.as_bytes())",
+     "Some(*shared.as_bytes())")
+PY
+
+# ── The text a key and a signature are written in ─────────────────────────────────────────────
+
+mutation_case "A text with bits past its last byte set is read as bytes" <<'PY'
+edit("backends/rust/trust/src/encoding.rs",
+     "if bytes[1 + count..4].iter().any(|b| *b != 0) {",
+     "if false {")
+PY
+
+mutation_case "A character outside the alphabet is read as the first one" <<'PY'
+edit("backends/rust/trust/src/encoding.rs",
+     "let sextet = ALPHABET.iter().position(|a| a == c)? as u32;",
+     "let sextet = ALPHABET.iter().position(|a| a == c).unwrap_or(0) as u32;")
+PY
+
+# ── A copy of a device's secrets ──────────────────────────────────────────────────────────────
+
+mutation_case "A copy is sealed and opened with no header authenticated" <<'PY'
+edit("backends/rust/trust/src/backup.rs",
+     "                msg: &plain,\n                aad: header(cost, &salt).as_bytes(),",
+     "                msg: &plain,\n                aad: &header(cost, &salt).as_bytes()[..0],")
+edit("backends/rust/trust/src/backup.rs",
+     "            msg: &ciphertext,\n            aad: header(cost, &salt).as_bytes(),",
+     "            msg: &ciphertext,\n            aad: &header(cost, &salt).as_bytes()[..0],")
+PY
+
+mutation_case "A copy's key is made by Argon2i where its header says Argon2id" <<'PY'
+edit("backends/rust/trust/src/backup.rs",
+     "Argon2::new(Algorithm::Argon2id, Version::V0x13, params)",
+     "Argon2::new(Algorithm::Argon2i, Version::V0x13, params)")
+PY
+
+mutation_case "A copy may ask for any number of passes" <<'PY'
+edit("backends/rust/trust/src/backup.rs",
+     "        || cost.passes > Cost::MAX.passes",
+     "        || false")
+PY
+
+mutation_case "A copy opened under a wrong passphrase is called something other than corrupt" <<'PY'
+edit("backends/rust/trust/src/backup.rs",
+     "let mut plain = opened.map_err(|_| BackupError::Corrupt)?;",
+     "let mut plain = opened.unwrap_or_default();")
+PY
+
+mutation_case "A copy that names another key derivation is taken for one" <<'PY'
+edit("backends/rust/trust/src/backup.rs",
+     "        || value.get(\"kdf\").and_then(Value::as_str) != Some(\"argon2id\")",
+     "        || false")
+PY
+
+mutation_case "A copy keeps a name twice when it is given twice" <<'PY'
+edit("backends/rust/trust/src/backup.rs",
+     "self.extras.retain(|(held, _)| held != name);",
+     "self.extras.retain(|_| true);")
+PY
+
+mutation_case "A copy puts back the key of an epoch the list had destroyed and counts it" <<'PY'
+edit("backends/rust/trust/src/backup.rs",
+     "taken += usize::from(trust.set_epoch_key(epoch, key));",
+     "let _ = trust.set_epoch_key(epoch, key);\n                taken += 1;")
+PY
+
+mutation_case "Two copies of one thing are made with one salt and one nonce" <<'PY'
+edit("backends/rust/trust/src/backup.rs",
+     "getrandom::getrandom(&mut salt).map_err(|_| BackupError::NoRandomness)?;",
+     "let _ = &mut salt;")
+edit("backends/rust/trust/src/backup.rs",
+     "getrandom::getrandom(&mut nonce).map_err(|_| BackupError::NoRandomness)?;",
+     "let _ = &mut nonce;")
+PY
+
+mutation_case "A copy's contents are read with bytes left over after the last extra" <<'PY'
+edit("backends/rust/trust/src/backup.rs",
+     "rest.is_empty().then_some(Self {",
+     "(rest.len() < usize::MAX).then_some(Self {")
+PY
+
+mutation_case "A device's seed is not wiped when its contents are dropped" <<'PY'
+edit("backends/rust/trust/src/backup.rs",
+     "self.seed.zeroize();",
+     "let _ = &self.seed;")
+PY
+
+# ── The record an auditor checks ──────────────────────────────────────────────────────────────
+
+mutation_case "An auditor takes a record whose first entry is not the genesis they were told" <<'PY'
+edit("backends/rust/trust/src/audit.rs",
+     "    if first.hash() != genesis {",
+     "    if false {")
+PY
+
+mutation_case "An auditor goes on past an entry of the log that does not hold" <<'PY'
+edit("backends/rust/trust/src/audit.rs",
+     "        trust\n            .append(entry)\n            .map_err(|error| AuditError::Log { index, error })?;",
+     "        let _ = trust\n            .append(entry)\n            .map_err(|error| AuditError::Log { index, error });")
+PY
+
+mutation_case "An operation of a record that does not hold is not listed" <<'PY'
+edit("backends/rust/trust/src/audit.rs",
+     "refused.push(format!(\"{event}: {error:?}\"));",
+     "let _ = error;")
+PY
+
+mutation_case "A chain with a gap in it is said to be whole to its last" <<'PY'
+edit("backends/rust/trust/src/audit.rs",
+     "whole_to: whole.get(&node).copied().unwrap_or(0),",
+     "whole_to: whole.get(&node).copied().unwrap_or(last),")
+PY
+
+mutation_case "A record is exported with none of its checkpoints" <<'PY'
+edit("backends/rust/trust/src/audit.rs",
+     "\"checkpoints\": trust.checkpoints().iter().map(Checkpoint::to_json).collect::<Vec<_>>(),",
+     "\"checkpoints\": trust.checkpoints().iter().take(0).map(Checkpoint::to_json).collect::<Vec<_>>(),")
+PY
+
+mutation_case "A report names none of the epochs the list destroyed" <<'PY'
+edit("backends/rust/trust/src/audit.rs",
+     "shredded: trust.shredded(),",
+     "shredded: Vec::new(),")
+PY
+
+# ── A checkpoint's byte form ──────────────────────────────────────────────────────────────────
+
+mutation_case "A checkpoint is signed without the list it is about" <<'PY'
+edit("backends/rust/trust/src/checkpoint.rs",
+     "        message::part(&mut bytes, &self.list);",
+     "        let _ = &self.list;")
+PY
+
+mutation_case "A checkpoint is signed without the number of heads it holds" <<'PY'
+edit("backends/rust/trust/src/checkpoint.rs",
+     "message::part(&mut bytes, &self.heads.len().to_string());",
+     "let _ = self.heads.len();")
+PY
+
+mutation_case "A checkpoint whose heads repeat a node is canonical" <<'PY'
+edit("backends/rust/trust/src/checkpoint.rs",
+     "                .all(|pair| pair[0].node < pair[1].node)",
+     "                .all(|pair| pair[0].node <= pair[1].node)")
+PY
+
+mutation_case "A checkpoint is read back whatever the order of its heads" <<'PY'
+edit("backends/rust/trust/src/checkpoint.rs",
+     "checkpoint.is_canonical().then_some(checkpoint)",
+     "Some(checkpoint)")
+PY
