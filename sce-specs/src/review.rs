@@ -165,7 +165,7 @@ impl SceCodegen {
             .args(["--error-format", "json", "check"])
             .arg(&document)
             .arg("--lint");
-        let run = run_bounded(command, scratch.path(), self.timeout())?;
+        let run = run_bounded(command, scratch.path(), self.timeout_for(scratch.path()))?;
         let records = records_of(&run.stderr);
         if !run.success {
             if records.is_empty() {
@@ -217,7 +217,7 @@ impl SceCodegen {
         if let Some(lexicon) = request.lexicon {
             command.arg("--lexicon").arg(word("--lexicon", lexicon)?);
         }
-        let run = run_bounded(command, scratch.path(), self.timeout())?;
+        let run = run_bounded(command, scratch.path(), self.timeout_for(scratch.path()))?;
         let (page, page_refusal) = if run.success {
             // Byte for byte: the page's contract is that a value reaches it as its
             // author spelled it, and a reader that trims it is the first thing to

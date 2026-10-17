@@ -34,6 +34,7 @@ const SCRIPT: &str = r#"#!/bin/sh
 if [ "$1" = "--version" ]; then echo "stand-in-codegen 1.2.3 (abc123)"; exit 0; fi
 doc="$4"; out="$6"
 model="$(cat "$doc")"
+case "$model" in *SLOW*) sleep 2;; esac
 case "$3" in
   check)
     case "$*" in *--lint*) ;; *) echo '{"v":1,"code":"cli/no-lint","message":"the check was run without --lint"}' >&2; exit 3;; esac
@@ -194,6 +195,37 @@ fn a_generator_that_hangs_is_stopped() {
         "stopped, not waited for: {:?}",
         started.elapsed()
     );
+}
+
+/// The wait is bounded by the base the generator was given and by the length of the model: a
+/// model that is slow because it is long is not a generator that hangs. The stand-in takes two
+/// seconds over a model that says SLOW; against a base of one second, a short one is stopped and
+/// one of 12 KiB (three seconds more) is waited for. Both runs of the generator are held: the
+/// figures and the review.
+#[test]
+fn a_long_model_is_given_the_time_its_length_asks_for_and_a_short_one_is_not() {
+    let base = Duration::from_secs(1);
+    let long = format!("SLOW{}", "x".repeat(3 * 4096));
+
+    let stopped = generator().with_timeout(base).render(&request("SLOW"));
+    assert!(
+        matches!(stopped, Err(RenderError::TimedOut { .. })),
+        "{stopped:?}"
+    );
+    let drawn = generator().with_timeout(base).render(&request(&long));
+    assert!(drawn.is_ok(), "{drawn:?}");
+
+    let stopped = generator()
+        .with_timeout(base)
+        .review(&review_request("SLOW"));
+    assert!(
+        matches!(stopped, Err(RenderError::TimedOut { .. })),
+        "{stopped:?}"
+    );
+    let read = generator()
+        .with_timeout(base)
+        .review(&review_request(&long));
+    assert!(read.is_ok(), "{read:?}");
 }
 
 /// What the generator names outside the folder it was given is not read.

@@ -1,0 +1,96 @@
+# Mutation cases for the bound on one run of the generator.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/a_long_model_is_given_the_time_its_length_asks_for.cases`.
+#
+# The bound is the base the generator was given and a second more for every 4 KiB of what it is
+# staged to read. A fixed 30 s stopped a design of fifty rooms (20 s with a release generator,
+# 105 s with a debug one) that was only slow. Each case breaks the length term, or one of the
+# eight runs of the generator that is bounded by it (the figures, the check and the page of a
+# review, and the five of an acceptance), by giving that run the base alone.
+#
+# Anchors are literal slices of the source, so a reformat can move one out from under a case. That
+# is reported as INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-specs --test figures --test acceptance_product --lib
+mutation_targets sce-specs/src/figures.rs sce-specs/src/review.rs sce-specs/src/acceptance_run.rs
+mutation_oracles sce-specs/tests/figures.rs sce-specs/tests/acceptance_product.rs
+
+# ── The length term ────────────────────────────────────────────────
+
+mutation_case "the bound is the base alone" <<'PY'
+edit("sce-specs/src/figures.rs",
+     '        self.timeout + Duration::from_secs(staged_bytes(staged) / STAGED_BYTES_PER_SECOND)',
+     '        let _ = staged_bytes(staged);\n        self.timeout')
+PY
+
+mutation_case "a byte is a second, not four thousand of them" <<'PY'
+edit("sce-specs/src/figures.rs",
+     'Duration::from_secs(staged_bytes(staged) / STAGED_BYTES_PER_SECOND)',
+     'Duration::from_secs(staged_bytes(staged))')
+PY
+
+mutation_case "only the files beside the entry are measured, not those of a folder below" <<'PY'
+edit("sce-specs/src/figures.rs",
+     '            Ok(meta) if meta.is_dir() => staged_bytes(&entry.path()),',
+     '            Ok(meta) if meta.is_dir() => 0,')
+PY
+
+mutation_case "a folder that cannot be measured is given a bound of nothing" <<'PY'
+edit("sce-specs/src/figures.rs",
+     '    let Ok(entries) = fs::read_dir(dir) else {\n        return 0;\n    };',
+     '    let Ok(entries) = fs::read_dir(dir) else {\n        return u64::MAX / 2;\n    };')
+PY
+
+# ── The runs of the generator that the bound is given to ───────────
+
+mutation_case "the figures are bounded by the base alone" <<'PY'
+edit("sce-specs/src/figures.rs",
+     '        let run = run_bounded(command, scratch.path(), self.timeout_for(scratch.path()))?;\n'
+     '        if !run.success {\n            return Err(refusal(&run.stderr, run.code));',
+     '        let run = run_bounded(command, scratch.path(), self.timeout_for(std::path::Path::new("/nonexistent")))?;\n'
+     '        if !run.success {\n            return Err(refusal(&run.stderr, run.code));')
+PY
+
+mutation_case "the check of a review is bounded by the base alone" <<'PY'
+edit("sce-specs/src/review.rs",
+     '            .arg("--lint");\n        let run = run_bounded(command, scratch.path(), self.timeout_for(scratch.path()))?;',
+     '            .arg("--lint");\n        let run = run_bounded(command, scratch.path(), self.timeout_for(std::path::Path::new("/nonexistent")))?;')
+PY
+
+mutation_case "the page of a review is bounded by the base alone" <<'PY'
+edit("sce-specs/src/review.rs",
+     '            command.arg("--lexicon").arg(word("--lexicon", lexicon)?);\n        }\n'
+     '        let run = run_bounded(command, scratch.path(), self.timeout_for(scratch.path()))?;',
+     '            command.arg("--lexicon").arg(word("--lexicon", lexicon)?);\n        }\n'
+     '        let run = run_bounded(command, scratch.path(), self.timeout_for(std::path::Path::new("/nonexistent")))?;')
+PY
+
+mutation_case "the requirements are bounded by the base alone" <<'PY'
+edit("sce-specs/src/acceptance_run.rs",
+     '            .arg(&staged.manifest);\n        let run = run_bounded(command, scratch.path(), self.timeout_for(scratch.path()))?;',
+     '            .arg(&staged.manifest);\n        let run = run_bounded(command, scratch.path(), self.timeout_for(std::path::Path::new("/nonexistent")))?;')
+PY
+
+mutation_case "the page of the requirements is bounded by the base alone" <<'PY'
+edit("sce-specs/src/acceptance_run.rs",
+     '            command.arg("--sidecar").arg(sidecar);\n        }\n        let run = run_bounded(command, scratch.path(), self.timeout_for(scratch.path()))?;',
+     '            command.arg("--sidecar").arg(sidecar);\n        }\n        let run = run_bounded(command, scratch.path(), self.timeout_for(std::path::Path::new("/nonexistent")))?;')
+PY
+
+mutation_case "taking an acceptance is bounded by the base alone" <<'PY'
+edit("sce-specs/src/acceptance_run.rs",
+     '        command.args(["--channel", crate::acceptance::CHANNEL]);\n        let run = run_bounded(command, scratch.path(), self.timeout_for(scratch.path()))?;',
+     '        command.args(["--channel", crate::acceptance::CHANNEL]);\n        let run = run_bounded(command, scratch.path(), self.timeout_for(std::path::Path::new("/nonexistent")))?;')
+PY
+
+mutation_case "checking an acceptance is bounded by the base alone" <<'PY'
+edit("sce-specs/src/acceptance_run.rs",
+     '            command.arg("--decisions").arg(answers);\n        }\n        let run = run_bounded(command, scratch.path(), self.timeout_for(scratch.path()))?;',
+     '            command.arg("--decisions").arg(answers);\n        }\n        let run = run_bounded(command, scratch.path(), self.timeout_for(std::path::Path::new("/nonexistent")))?;')
+PY
+
+mutation_case "the delta is bounded by the base alone" <<'PY'
+edit("sce-specs/src/acceptance_run.rs",
+     '            .arg(&staged.root);\n        let run = run_bounded(command, scratch.path(), self.timeout_for(scratch.path()))?;',
+     '            .arg(&staged.root);\n        let run = run_bounded(command, scratch.path(), self.timeout_for(std::path::Path::new("/nonexistent")))?;')
+PY

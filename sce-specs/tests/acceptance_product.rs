@@ -18,6 +18,7 @@ mod common;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::sync::OnceLock;
+use std::time::Duration;
 
 use sce_specs::{
     Acceptor, CheckOutcome, ModelFiles, RenderError, Requirements, SceCodegen, Snapshot,
@@ -29,6 +30,7 @@ use sce_specs::{
 const SCRIPT: &str = r#"#!/bin/sh
 if [ "$1" = "--version" ]; then echo "stand-in-codegen 1.2.3 (abc123)"; exit 0; fi
 cmd="$3"; first="$4"; all="$*"
+case "$(cat "$first" 2>/dev/null)" in *SLOW*) sleep 2;; esac
 usage() { echo "{\"v\":1,\"code\":\"cli/usage\",\"message\":\"$1\"}" >&2; exit 2; }
 flag() { prev=""; for a in "$@"; do if [ "$prev" = "$FLAG" ]; then echo "$a"; return; fi; prev="$a"; done; }
 variant() { case "$all" in *"--variant base"*) ;; *) usage "no --variant base";; esac; }
@@ -160,6 +162,42 @@ fn the_requirements_are_the_lines_the_product_wrote_and_nothing_it_did_not() {
         ["states.a", "states.b.transitions[0]"]
     );
     assert_eq!(report.outcomes[2].section, None);
+}
+
+/// Every run of the product is bounded by the base the generator was given and by the length of
+/// the design: one that is slow because it is long is not one that hangs. The stand-in takes two
+/// seconds over a design (or, for a check and a delta, a record) that says SLOW; against a base of
+/// one second a short one is stopped and one of 12 KiB (three seconds more) is waited for.
+#[test]
+fn a_long_design_is_given_the_time_its_length_asks_for_in_every_run_and_a_short_one_is_not() {
+    let base = Duration::from_secs(1);
+    let short = snapshot("SLOW", true, None);
+    let long = snapshot(&format!("SLOW{}", "x".repeat(3 * 4096)), true, None);
+    let record = "{\"record\":\"SLOW\"}";
+    let stopped = |result: Result<(), RenderError>| {
+        assert!(
+            matches!(result, Err(RenderError::TimedOut { .. })),
+            "{result:?}"
+        );
+    };
+    let generator = || generator().with_timeout(base);
+
+    stopped(generator().report_requirements(&short).map(drop));
+    let report = generator().report_requirements(&long).unwrap();
+    assert!(
+        report.page.is_some() && report.page_refusal.is_none(),
+        "the page run is held to the same bound: {:?}",
+        report.page_refusal
+    );
+
+    stopped(generator().take_acceptance(&short).map(drop));
+    generator().take_acceptance(&long).unwrap();
+
+    stopped(generator().check_acceptance(&short, record).map(drop));
+    generator().check_acceptance(&long, record).unwrap();
+
+    stopped(generator().delta_acceptance(&short, record).map(drop));
+    generator().delta_acceptance(&long, record).unwrap();
 }
 
 /// The page is the product's, byte for byte, and it is asked for the layout the record

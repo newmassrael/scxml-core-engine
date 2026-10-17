@@ -44,6 +44,27 @@ use crate::review::Product;
 /// How long the generator may take for one model.
 pub const RENDER_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// How many bytes of staged model add a second to the bound on one run: four KiB, so that 198 KiB
+/// of model is given fifty seconds past the base, two and a half times what a release generator
+/// took for it.
+pub const STAGED_BYTES_PER_SECOND: u64 = 4096;
+
+/// The bytes of the files under `dir`, as they stand. A folder that cannot be read counts for
+/// nothing, so a failure to measure gives the base bound and never a longer one.
+fn staged_bytes(dir: &Path) -> u64 {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return 0;
+    };
+    entries
+        .filter_map(Result::ok)
+        .map(|entry| match entry.metadata() {
+            Ok(meta) if meta.is_dir() => staged_bytes(&entry.path()),
+            Ok(meta) => meta.len(),
+            Err(_) => 0,
+        })
+        .sum()
+}
+
 /// The most one set of figures may hold, in bytes of SVG.
 pub const MAX_FIGURE_BYTES: usize = 64 * 1024 * 1024;
 
@@ -239,9 +260,17 @@ impl SceCodegen {
         Command::new(&self.program)
     }
 
-    /// How long one run of the generator may take.
-    pub(crate) fn timeout(&self) -> Duration {
-        self.timeout
+    /// How long one run of the generator may take on the model staged in `staged`: the base this
+    /// generator was given, and a second more for every [`STAGED_BYTES_PER_SECOND`] bytes of what
+    /// it will read.
+    ///
+    /// The bound is there to stop a generator that hangs, and a fixed one stops a long model that
+    /// is only slow. Measured 2026-10-17, one design of fifty rooms (14 documents, 198 KiB) took
+    /// 20.5 s with a release generator and 105 s with a debug one, against a fixed 30 s that a
+    /// design of sixty would not have kept. The check reads every byte staged, so the size of the
+    /// staging folder is the size of the work.
+    pub(crate) fn timeout_for(&self, staged: &Path) -> Duration {
+        self.timeout + Duration::from_secs(staged_bytes(staged) / STAGED_BYTES_PER_SECOND)
     }
 
     /// Where the generator is: [`GENERATOR_ENV`] when it is set, otherwise
@@ -339,7 +368,7 @@ impl FigureRenderer for SceCodegen {
             command.arg("--min-pt").arg(format!("{min_pt}"));
         }
 
-        let run = run_bounded(command, scratch.path(), self.timeout)?;
+        let run = run_bounded(command, scratch.path(), self.timeout_for(scratch.path()))?;
         if !run.success {
             return Err(refusal(&run.stderr, run.code));
         }
@@ -603,6 +632,57 @@ impl Drop for Scratch {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_long_model_is_given_a_second_more_for_every_four_kib_and_a_short_one_the_base() {
+        let generator =
+            SceCodegen::at("/nonexistent/sce-codegen").with_timeout(Duration::from_secs(30));
+        let scratch = Scratch::new().unwrap();
+        assert_eq!(
+            generator.timeout_for(scratch.path()),
+            Duration::from_secs(30),
+            "an empty staging is the base"
+        );
+
+        fs::write(scratch.path().join("a.scxml"), vec![b'x'; 4095]).unwrap();
+        assert_eq!(
+            generator.timeout_for(scratch.path()),
+            Duration::from_secs(30),
+            "less than a step adds nothing"
+        );
+
+        // Files in a folder below count the same as those beside the entry: a model of several
+        // documents is staged with its imports, and the work is all of them.
+        fs::create_dir(scratch.path().join("more")).unwrap();
+        fs::write(
+            scratch.path().join("more/b.scxml"),
+            vec![b'x'; 4 * 4096 + 1],
+        )
+        .unwrap();
+        assert_eq!(
+            generator.timeout_for(scratch.path()),
+            Duration::from_secs(35),
+            "4095 + 16385 bytes is 20480, five steps"
+        );
+
+        let longer =
+            SceCodegen::at("/nonexistent/sce-codegen").with_timeout(Duration::from_secs(5));
+        assert_eq!(
+            longer.timeout_for(scratch.path()),
+            Duration::from_secs(10),
+            "the base given to the generator is the one that is added to"
+        );
+    }
+
+    #[test]
+    fn a_staging_folder_that_cannot_be_read_gives_the_base_and_not_a_longer_bound() {
+        let generator =
+            SceCodegen::at("/nonexistent/sce-codegen").with_timeout(Duration::from_secs(30));
+        assert_eq!(
+            generator.timeout_for(Path::new("/nonexistent/staging")),
+            Duration::from_secs(30)
+        );
+    }
 
     #[test]
     fn the_generator_comes_from_the_environment_then_the_bundle_then_a_search() {

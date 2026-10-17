@@ -148,7 +148,7 @@ impl Acceptor for SceCodegen {
             .arg(&staged.entry)
             .arg("--manifest")
             .arg(&staged.manifest);
-        let run = run_bounded(command, scratch.path(), self.timeout())?;
+        let run = run_bounded(command, scratch.path(), self.timeout_for(scratch.path()))?;
         if !run.success {
             return Err(refusal(&run.stderr, run.code));
         }
@@ -215,7 +215,7 @@ impl Acceptor for SceCodegen {
         if let Some(sidecar) = &staged.sidecar {
             command.arg("--sidecar").arg(sidecar);
         }
-        let run = run_bounded(command, scratch.path(), self.timeout())?;
+        let run = run_bounded(command, scratch.path(), self.timeout_for(scratch.path()))?;
         let (page, page_refusal) = if run.success {
             (Some(run.stdout), None)
         } else {
@@ -264,7 +264,7 @@ impl Acceptor for SceCodegen {
             command.arg("--sidecar").arg(sidecar);
         }
         command.args(["--channel", crate::acceptance::CHANNEL]);
-        let run = run_bounded(command, scratch.path(), self.timeout())?;
+        let run = run_bounded(command, scratch.path(), self.timeout_for(scratch.path()))?;
         if !run.success {
             return Err(refusal(&run.stderr, run.code));
         }
@@ -316,7 +316,7 @@ impl Acceptor for SceCodegen {
         if let Some(answers) = &staged.answers {
             command.arg("--decisions").arg(answers);
         }
-        let run = run_bounded(command, scratch.path(), self.timeout())?;
+        let run = run_bounded(command, scratch.path(), self.timeout_for(scratch.path()))?;
         if run.success {
             return Ok(CheckOutcome::Holds);
         }
@@ -356,7 +356,7 @@ impl Acceptor for SceCodegen {
             .arg(&record_file)
             .arg("--root")
             .arg(&staged.root);
-        let run = run_bounded(command, scratch.path(), self.timeout())?;
+        let run = run_bounded(command, scratch.path(), self.timeout_for(scratch.path()))?;
         if !run.success {
             return Err(refusal(&run.stderr, run.code));
         }
