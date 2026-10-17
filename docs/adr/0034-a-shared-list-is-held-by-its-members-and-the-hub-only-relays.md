@@ -277,7 +277,7 @@ given, and each can be revisited by a later ADR that names the reason.
 
 Stage 1 and the membership log of stage 2 have landed. Stage 2 as first landed removed a member
 by a time (`from`), which is not what section 4 says; it was corrected with stage 3, where the
-number of an operation that section 4 needs exists. Stages 3 and 4 have landed with the
+number of an operation that section 4 needs exists. Stages 3, 4 and 5 have landed with the
 refinements below. This ADR is Accepted with stage 3, since the log and the chains are what make
 the rest binding.
 
@@ -322,3 +322,28 @@ the rest binding.
 - **The persisted text holds every operation**, not only the ones keyed by their content, so a
   restarted host can still give a range it held; the text and its two functions are `to_text` and
   `restore_from_text` (`signatures_to_text` named what it no longer is).
+- **The relay verifies with `Trust` and nothing else** (stage 5, `docs/SCE_SHARED_LIST_RELAY.md`).
+  A relay is a `Trust` with no person and no key for each list, plus the records in arrival order and
+  a session's allowance; it applies the rules that need no key (entry, role, cutoff, signature,
+  chain) and the host applies the same ones to what the relay gives it, so there is one
+  implementation of the judgement and a relay cannot disagree with a host about what holds. It is
+  therefore specific to the events `sce-rust-trust` knows, and generic over its store and link.
+- **A relay is a store of records in arrival order**, and its feed is a cursor into that order, plus
+  ranges by device. A host does not need a queue: it compares heads with the relay's and sends the
+  missing ranges, so a crash between signing and sending loses nothing, the operation being in the
+  host's own `Trust` from the moment it was made.
+- **A relay that starts verifies what it reads.** A store that was tampered with does not start it.
+  A relay that cannot write a record down takes nothing more, rather than hold what it did not keep.
+- **No batching and no arrival times.** Section 8 had the relay see arrival time and batch
+  operations; the relay records neither, which shows less than the design allowed, and batching is
+  left to a transport that wants it.
+- **Padding is inside the seal**, not a relay setting: a sealed write is the number, the length of
+  the text, the text and zeros up to 32 bytes (a class, longer texts grow by a class), so a word, a
+  line and a number are one size to the relay (84 characters). This changed the sealed bytes, and
+  the known-answer vector with them.
+- **Pseudonymous identity is the node number the log gave a device in that list.** The token binds a
+  list and a node and names no account; login stays the application's.
+- **Trusted-hub is the same relay.** The profile is a fact in the log, the hub a member device that
+  holds a member's keys; nothing in the relay changes.
+- **Not built:** compaction (a relay never forgets a record), hiding stamps from the relay, TLS, and
+  rules for any list but the to-do list.

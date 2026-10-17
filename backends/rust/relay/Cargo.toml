@@ -1,0 +1,47 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+
+[package]
+name = "sce-rust-relay"
+version.workspace = true
+edition.workspace = true
+rust-version = "1.77"
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "A relay for a shared list whose members do not trust the host between them: it verifies and stores what members sign, serves it back by range, and holds no key"
+publish = false
+
+# The reference relay of ADR 0034. It holds the membership log, the operations of every device's
+# chain and the members' checkpoints of one or more lists; it verifies each against the log (the
+# `sce-rust-trust` rules, which it applies without any key) and refuses what a removed member, a
+# reader or a stranger sends, rate-limits by device, and gives back what it holds by range or in
+# the order it arrived. It never decides anything the members' hosts would then trust: a host checks
+# what it is given as it checks what anyone gives it, so a relay that withholds is routed around
+# by asking another.
+#
+# The core is transport-free (a request text goes in and a response text comes out), like the Mesh
+# core; the `serve` feature adds the WebSocket binding that carries those texts.
+
+[[test]]
+name = "a_relay_is_reached_over_a_websocket"
+path = "tests/a_relay_is_reached_over_a_websocket.rs"
+required-features = ["serve"]
+
+[features]
+default = []
+# The WebSocket binding: a server that accepts links bound to a login token, and a client link for
+# a host's courier. Off by default: the core links no async runtime.
+serve = ["dep:tokio", "dep:tokio-tungstenite", "dep:futures-util"]
+
+[dependencies]
+sce-rust-trust = { path = "../trust" }
+# The seam a host that has no hub puts behind its machine (`Keep`).
+sce-rust-mesh = { path = "../mesh" }
+serde_json = "1"
+sha2 = { version = "0.10", default-features = false }
+# The secret a relay signs its tokens with is drawn from the operating system, never made up.
+getrandom = "0.2"
+tokio = { version = "1", optional = true, default-features = false, features = ["net", "rt", "rt-multi-thread", "sync", "time", "macros"] }
+tokio-tungstenite = { version = "0.30", optional = true, default-features = false, features = ["connect", "handshake", "rustls-tls-webpki-roots"] }
+futures-util = { version = "0.3", optional = true, default-features = false, features = ["sink", "std"] }

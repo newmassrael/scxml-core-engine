@@ -95,9 +95,15 @@ fn aad_of(calendar: &str, epoch: u32, stamp: &[u8]) -> Vec<u8> {
     aad
 }
 
+/// The least a text takes in what is sealed, and the step by which a longer one grows: a sealed
+/// write is the same length whether it holds a number, a word or a line of the longest a person
+/// types (32 bytes), so what a relay sees of its size says nothing of what it holds.
+pub const TEXT_CLASS: usize = 32;
+
 /// `value` and `text` of the write whose stamp is `stamp`, sealed under `key` of `epoch`, as
 /// the text that is put in the write's `text`: [`SEALED_PREFIX`] and the epoch and the
-/// ciphertext in the URL alphabet, at most 81 characters for a text of 32 bytes.
+/// ciphertext in the URL alphabet, 84 characters for any text of up to [`TEXT_CLASS`] bytes.
+/// What is sealed is the number, the length of the text, the text, and zeros up to the class.
 pub fn seal(
     calendar: &str,
     epoch: u32,
@@ -107,7 +113,10 @@ pub fn seal(
     text: &str,
 ) -> String {
     let mut plain = value.to_be_bytes().to_vec();
+    plain.extend_from_slice(&(text.len() as u16).to_be_bytes());
     plain.extend_from_slice(text.as_bytes());
+    let padded = 10 + text.len().div_ceil(TEXT_CLASS).max(1) * TEXT_CLASS;
+    plain.resize(padded, 0);
     let cipher = XChaCha20Poly1305::new(Key::from_slice(key));
     let sealed = cipher
         .encrypt(
@@ -160,11 +169,19 @@ pub fn open(
             },
         )
         .map_err(|_| OpenError::Corrupt)?;
-    if plain.len() < 8 {
+    if plain.len() < 10 + TEXT_CLASS || (plain.len() - 10) % TEXT_CLASS != 0 {
         return Err(OpenError::Corrupt);
     }
     let value = i64::from_be_bytes(plain[..8].try_into().map_err(|_| OpenError::Corrupt)?);
-    let text = String::from_utf8(plain[8..].to_vec()).map_err(|_| OpenError::Corrupt)?;
+    let length = usize::from(u16::from_be_bytes([plain[8], plain[9]]));
+    let body = plain.get(10..10 + length).ok_or(OpenError::Corrupt)?;
+    // Padding is zeros and no more than the class takes: one write has one sealed form.
+    if plain[10 + length..].iter().any(|byte| *byte != 0)
+        || plain.len() != 10 + length.div_ceil(TEXT_CLASS).max(1) * TEXT_CLASS
+    {
+        return Err(OpenError::Corrupt);
+    }
+    let text = String::from_utf8(body.to_vec()).map_err(|_| OpenError::Corrupt)?;
     Ok((value, text))
 }
 
@@ -289,7 +306,27 @@ mod tests {
     fn a_text_of_the_longest_a_person_writes_fits_the_room_a_write_has() {
         let sealed = seal("home", u32::MAX, &[1; 32], b"s", i64::MIN, &"x".repeat(32));
         assert!(sealed.len() <= 96, "{}", sealed.len());
-        assert_eq!(sealed.len(), 81);
+        assert_eq!(sealed.len(), 84);
+    }
+
+    /// What a relay sees of the size says nothing of the text, up to what a person types; a longer
+    /// one grows by a class.
+    #[test]
+    fn a_sealed_write_is_one_length_for_every_text_up_to_a_class() {
+        let key = [7u8; 32];
+        let sizes: Vec<usize> = ["", "a", "buy milk", &"x".repeat(32), &"y".repeat(33)]
+            .iter()
+            .map(|text| seal("home", 1, &key, b"s", 5, text).len())
+            .collect();
+        assert_eq!(sizes[..4], [84, 84, 84, 84]);
+        assert!(sizes[4] > sizes[0]);
+        for text in ["", "a", "buy milk", &"x".repeat(32), &"y".repeat(33)] {
+            let sealed = seal("home", 1, &key, b"s", 5, text);
+            assert_eq!(
+                open("home", &keys(1, key), b"s", &sealed),
+                Ok((5, text.to_string()))
+            );
+        }
     }
 
     #[test]

@@ -2063,6 +2063,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "sce-rust-relay"
+version = "0.1.0"
+dependencies = [
+ "futures-util",
+ "getrandom 0.2.17",
+ "sce-rust-mesh",
+ "sce-rust-trust",
+ "serde_json",
+ "sha2",
+ "tokio",
+ "tokio-tungstenite",
+]
+
+[[package]]
 name = "sce-rust-runtime"
 version = "0.1.0"
 dependencies = [
@@ -2123,6 +2137,7 @@ dependencies = [
  "sce-forge-runtime",
  "sce-portable-bytes",
  "sce-rust-mesh",
+ "sce-rust-relay",
  "sce-rust-runtime",
  "sce-rust-trust",
  "serde_json",

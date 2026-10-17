@@ -388,6 +388,11 @@ impl Trust {
         Ok(store_checkpoint(&mut state, checkpoint.clone()))
     }
 
+    /// The checkpoints this host holds, its own and the ones it took in.
+    pub fn checkpoints(&self) -> Vec<Checkpoint> {
+        self.state().checkpoints.values().cloned().collect()
+    }
+
     /// The settlement of `before` with `digest`, when the checkpoints this host holds make one:
     /// those of every device that was a writer at one entry of the log, each for that instant and
     /// digest. A host that holds the log checks it alone. `None` while a writer's is missing, or
@@ -436,6 +441,28 @@ impl Trust {
             }
         }
         found
+    }
+
+    /// Take an operation in as [`Admission::admit`] does, and say whose it is, what number it has,
+    /// whether the host held it already, and what the machine is told. What a relay does with
+    /// what it is given, and what a host does with what a relay gives it. Nothing is taken from
+    /// a log that forked.
+    pub fn take_operation(&self, event: &str, data: &str) -> Result<Taken, TakeError> {
+        let mut state = self.state();
+        if let Some(index) = state.forked {
+            return Err(TakeError::Refused(format!(
+                "{event}: the membership log forked at {index}, and nothing is taken in until an administrator resolves it"
+            )));
+        }
+        let event = signed_name(event).ok_or_else(|| {
+            TakeError::Refused(format!("{event}: it is not an event that is signed"))
+        })?;
+        take(&mut state, event, data)
+    }
+
+    /// How many entries the membership log this host holds has: the position the next one takes.
+    pub fn log_len(&self) -> u64 {
+        self.state().log.entries().len() as u64
     }
 
     /// The operations of `node` numbered `from` to `to` that this host holds, each as the event
@@ -954,27 +981,68 @@ impl Admission for Trust {
         let Some(event) = signed_name(event) else {
             return Ok(None);
         };
-        let mut value: Value =
-            serde_json::from_str(data).map_err(|_| format!("{event}: the data is not JSON"))?;
-        let signature = signature_of(&mut value, event)?;
-        match verify_operation(&state, event, value, &signature) {
-            Ok(verified) => {
-                let visible = verified.visible.to_string();
-                record(&mut state, event, verified, signature);
-                Ok(Some(visible))
-            }
-            Err(Refusal::Refused(reason)) => Err(reason),
-            Err(Refusal::Equivocation { node, seq, reason }) => {
-                let from = state.frozen.get(&node).map_or(seq, |held| (*held).min(seq));
-                state.frozen.insert(node, from);
-                Err(reason)
-            }
+        match take(&mut state, event, data) {
+            Ok(taken) => Ok(Some(taken.told)),
+            Err(TakeError::NotReached(reason) | TakeError::Refused(reason)) => Err(reason),
+        }
+    }
+}
+
+/// An operation that was taken in: whose it is and the number it has, whether the host held it
+/// already (a relay or a mirror hands on what it was given before), and the event as the machine
+/// is told it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Taken {
+    pub node: u64,
+    pub seq: u64,
+    pub new: bool,
+    pub told: String,
+}
+
+/// Why an operation was not taken in.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TakeError {
+    /// It names an entry of the membership log that this host has not reached yet: it holds once
+    /// the host has the log up to there, and a host that is fed in order stops and asks for the log.
+    NotReached(String),
+    /// It does not hold, whenever it is looked at again.
+    Refused(String),
+}
+
+fn take(state: &mut State, event: &'static str, data: &str) -> Result<Taken, TakeError> {
+    let mut value: Value = serde_json::from_str(data)
+        .map_err(|_| TakeError::Refused(format!("{event}: the data is not JSON")))?;
+    let signature = signature_of(&mut value, event).map_err(TakeError::Refused)?;
+    match verify_operation(state, event, value, &signature) {
+        Ok(verified) => {
+            let (node, seq) = (verified.author, verified.link.seq);
+            let new = !state
+                .ops
+                .get(&node)
+                .is_some_and(|ops| ops.contains_key(&seq));
+            let told = verified.visible.to_string();
+            record(state, event, verified, signature);
+            Ok(Taken {
+                node,
+                seq,
+                new,
+                told,
+            })
+        }
+        Err(Refusal::NotReached(reason)) => Err(TakeError::NotReached(reason)),
+        Err(Refusal::Refused(reason)) => Err(TakeError::Refused(reason)),
+        Err(Refusal::Equivocation { node, seq, reason }) => {
+            let from = state.frozen.get(&node).map_or(seq, |held| (*held).min(seq));
+            state.frozen.insert(node, from);
+            Err(TakeError::Refused(reason))
         }
     }
 }
 
 /// Why an operation was not taken in.
 enum Refusal {
+    /// It names an entry of the log the host has not reached.
+    NotReached(String),
     /// It does not hold: its reason.
     Refused(String),
     /// The device signed two different operations at one number: proof that its chain forked, which
@@ -1026,11 +1094,15 @@ fn verify_operation(
     let id = message::operation_id(&bytes);
 
     if state.log.hash_at(link.log) != Some(link.log_hash) {
-        return Err(format!(
+        let reason = format!(
             "{event}: it names entry {} of the membership log, which this host does not hold as it is",
             link.log
-        )
-        .into());
+        );
+        return Err(if link.log >= state.log.entries().len() as u64 {
+            Refusal::NotReached(reason)
+        } else {
+            Refusal::Refused(reason)
+        });
     }
     let era = state.log.era_for(author, link.log).ok_or_else(|| {
         format!(

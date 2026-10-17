@@ -1,0 +1,885 @@
+// SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+// SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+//
+// A relay between the devices of a list whose members do not trust the host between them. It holds
+// the membership log, the operations of every device's chain and the members' checkpoints, and it
+// holds no key. What is asked of it here: that it keeps what verifies and refuses what does not (a
+// stranger, a reader that writes, a device taken off past its last number, a change to what a
+// member signed, plaintext in a list that keeps its content sealed); that a token names a device of
+// one list and nothing else; that a device's allowance is its own; that what it keeps comes back
+// after a restart through the same checks, and a store that was tampered with does not start it;
+// and that a host that is given what it holds takes it in as it would from anyone.
+
+use std::sync::{Arc, Mutex};
+
+use sce_rust_mesh::endpoint::Sealer;
+use sce_rust_relay::{
+    Authority, Code, Courier, DirectLink, FileStore, Limits, Link, LinkError, MemoryStore, Record,
+    Relay, Request, Response, Store,
+};
+use sce_rust_trust::membership::{Body, Entry, Log, Profile};
+use sce_rust_trust::{Identity, Trust};
+use serde_json::{json, Value};
+
+const LIST: &str = "home";
+const ADMIN: u8 = 9;
+
+fn person(node: u64) -> Identity {
+    Identity::from_seed([node as u8; 32])
+}
+
+fn admin() -> Identity {
+    Identity::from_seed([ADMIN; 32])
+}
+
+/// The entries of the list: alice (1) and bob (2) write, carol (3) reads; dave (4) is no member.
+fn entries() -> Vec<Entry> {
+    let scratch = Trust::open(LIST);
+    let genesis = Log::genesis_draft(
+        LIST,
+        Body::Genesis {
+            administrators: vec![admin().public()],
+            quorum: 1,
+            profile: Profile::Untrusted,
+        },
+    )
+    .sign(&admin())
+    .finish();
+    scratch.append(&genesis).unwrap();
+    let mut all = vec![genesis];
+    for (node, role) in [(1u64, 2u8), (2, 2), (3, 1)] {
+        let entry = scratch
+            .draft(Body::Grant {
+                node,
+                role,
+                key: person(node).public(),
+                final_seq: None,
+            })
+            .sign(&admin())
+            .finish();
+        scratch.append(&entry).unwrap();
+        all.push(entry);
+    }
+    all
+}
+
+fn host(own: Option<u64>) -> Trust {
+    let trust = Trust::open(LIST);
+    for entry in entries() {
+        trust.append(&entry).unwrap();
+    }
+    if let Some(node) = own {
+        trust.set_identity(node, person(node));
+    }
+    trust
+}
+
+fn authority() -> Authority {
+    Authority::new([7; 32], "relay-a")
+}
+
+fn relay_over<S: Store>(store: S, limits: Limits) -> Relay<S> {
+    Relay::open(store, authority(), limits).unwrap()
+}
+
+fn relay() -> Relay<MemoryStore> {
+    relay_over(MemoryStore::new(), Limits::default())
+}
+
+fn token(node: u64) -> String {
+    authority().issue(LIST, node, 1_000_000)
+}
+
+fn ask<S: Store>(relay: &mut Relay<S>, node: u64, request: Request, now: u64) -> Response {
+    let text = relay.handle(&token(node), &request.to_json(), now);
+    Response::from_json(&text).unwrap()
+}
+
+/// The relay is given the whole log by `node`, in order.
+fn give_log<S: Store>(relay: &mut Relay<S>, node: u64) {
+    for entry in entries() {
+        let response = ask(
+            relay,
+            node,
+            Request::Append {
+                entry: entry.to_json(),
+            },
+            0,
+        );
+        assert!(
+            matches!(response, Response::Appended { new: true, .. }),
+            "{response:?}"
+        );
+    }
+}
+
+fn write(author: u64, id: u64, wall: i64) -> String {
+    json!({"id": id.to_string(), "field": "3", "value": "1", "text": "",
+           "wallTime": wall.to_string(), "counter": "0", "nodeId": author.to_string()})
+    .to_string()
+}
+
+/// What a person's host sends of a write: the operation as it travels.
+fn operation(host: &mut Trust, author: u64, id: u64, wall: i64) -> (String, String) {
+    let sent = host
+        .seal("#server", "todo.write", &write(author, id, wall))
+        .unwrap()
+        .unwrap();
+    ("todo.write".to_string(), sent)
+}
+
+fn submit<S: Store>(relay: &mut Relay<S>, node: u64, op: &(String, String)) -> Response {
+    ask(
+        relay,
+        node,
+        Request::Submit {
+            event: op.0.clone(),
+            data: op.1.clone(),
+        },
+        0,
+    )
+}
+
+fn refused(response: &Response) -> &Code {
+    match response {
+        Response::Refused { code, .. } => code,
+        other => panic!("expected a refusal, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_token_names_a_device_of_one_list_and_nothing_else_is_answered() {
+    let mut relay = relay();
+    let expired = authority().issue(LIST, 1, 5);
+    for bad in ["", "nonsense", expired.as_str()] {
+        let text = relay.handle(bad, &Request::Heads.to_json(), 10);
+        let response = Response::from_json(&text).unwrap();
+        assert_eq!(refused(&response), &Code::Unauthorized, "{bad}");
+    }
+    let other_relay = Authority::new([7; 32], "relay-b").issue(LIST, 1, 1_000_000);
+    let text = relay.handle(&other_relay, &Request::Heads.to_json(), 0);
+    assert_eq!(
+        refused(&Response::from_json(&text).unwrap()),
+        &Code::Unauthorized
+    );
+
+    // A token for another list reaches that list and not this one.
+    let work = authority().issue("work", 1, 1_000_000);
+    give_log(&mut relay, 1);
+    let text = relay.handle(&work, &Request::Heads.to_json(), 0);
+    assert_eq!(
+        refused(&Response::from_json(&text).unwrap()),
+        &Code::Forbidden,
+        "the relay holds no list `work`"
+    );
+}
+
+#[test]
+fn a_relay_takes_the_log_in_order_and_gives_it_back_by_range() {
+    let mut relay = relay();
+    let all = entries();
+    // A position the relay has not reached waits for the ones before it.
+    let response = ask(
+        &mut relay,
+        1,
+        Request::Append {
+            entry: all[1].to_json(),
+        },
+        0,
+    );
+    assert!(
+        matches!(refused(&response), Code::Invalid | Code::Behind),
+        "{response:?}"
+    );
+
+    give_log(&mut relay, 1);
+    // The same entry again is held once.
+    let again = ask(
+        &mut relay,
+        1,
+        Request::Append {
+            entry: all[2].to_json(),
+        },
+        0,
+    );
+    assert_eq!(again, Response::Appended { new: false, len: 4 });
+    assert_eq!(relay.records(LIST), 4);
+
+    let Response::Entries { entries: got, len } =
+        ask(&mut relay, 4, Request::Entries { from: 2 }, 0)
+    else {
+        panic!("entries");
+    };
+    assert_eq!(len, 4);
+    assert_eq!(got, vec![all[2].to_json(), all[3].to_json()]);
+
+    // An entry no administrator signed is refused.
+    let forged = host(None)
+        .draft(Body::Grant {
+            node: 4,
+            role: 2,
+            key: person(4).public(),
+            final_seq: None,
+        })
+        .sign(&person(4))
+        .finish();
+    let response = ask(
+        &mut relay,
+        4,
+        Request::Append {
+            entry: forged.to_json(),
+        },
+        0,
+    );
+    assert_eq!(refused(&response), &Code::Invalid);
+}
+
+#[test]
+fn an_operation_that_verifies_is_kept_once_and_one_that_does_not_is_refused() {
+    let mut relay = relay();
+    give_log(&mut relay, 1);
+    let mut alice = host(Some(1));
+    let op = operation(&mut alice, 1, 1, 1000);
+
+    let first = submit(&mut relay, 1, &op);
+    assert_eq!(
+        first,
+        Response::Accepted {
+            new: true,
+            cursor: 5
+        }
+    );
+    let again = submit(&mut relay, 2, &op);
+    assert_eq!(
+        again,
+        Response::Accepted {
+            new: false,
+            cursor: 5
+        },
+        "another device hands the same operation on: held once"
+    );
+    assert_eq!(relay.records(LIST), 5);
+
+    // A change to what alice signed is no operation of hers.
+    let mut changed: Value = serde_json::from_str(&op.1).unwrap();
+    changed["value"] = json!("2");
+    let response = submit(&mut relay, 1, &(op.0.clone(), changed.to_string()));
+    assert_eq!(refused(&response), &Code::Invalid);
+
+    // Not a signed event, not JSON.
+    for (event, data) in [("todo.edit", op.1.as_str()), ("todo.write", "{")] {
+        let response = submit(&mut relay, 1, &(event.to_string(), data.to_string()));
+        assert_eq!(refused(&response), &Code::Invalid, "{event} {data}");
+    }
+    assert_eq!(relay.records(LIST), 5, "none of them was kept");
+}
+
+#[test]
+fn a_reader_reads_and_does_not_write_and_a_stranger_does_neither() {
+    let mut relay = relay();
+    give_log(&mut relay, 1);
+    let mut alice = host(Some(1));
+    let op = operation(&mut alice, 1, 1, 1000);
+    submit(&mut relay, 1, &op);
+
+    assert_eq!(
+        refused(&submit(&mut relay, 3, &op)),
+        &Code::Forbidden,
+        "carol reads"
+    );
+    assert!(matches!(
+        ask(
+            &mut relay,
+            3,
+            Request::Feed {
+                cursor: 0,
+                limit: 10
+            },
+            0
+        ),
+        Response::Feed { .. }
+    ));
+    for request in [
+        Request::Feed {
+            cursor: 0,
+            limit: 10,
+        },
+        Request::Heads,
+        Request::Operations {
+            node: 1,
+            from: 1,
+            to: 1,
+        },
+    ] {
+        let response = ask(&mut relay, 4, request, 0);
+        assert_eq!(refused(&response), &Code::Forbidden, "dave is no member");
+    }
+    assert_eq!(
+        refused(&submit(&mut relay, 4, &op)),
+        &Code::Forbidden,
+        "dave writes nothing"
+    );
+}
+
+#[test]
+fn an_operation_that_names_an_entry_the_relay_lacks_waits_for_the_log() {
+    let mut relay = relay();
+    // Only the genesis and alice's grant are given: alice's operation names the latest entry.
+    for entry in &entries()[..2] {
+        ask(
+            &mut relay,
+            1,
+            Request::Append {
+                entry: entry.to_json(),
+            },
+            0,
+        );
+    }
+    let mut alice = host(Some(1));
+    let op = operation(&mut alice, 1, 1, 1000);
+    assert_eq!(refused(&submit(&mut relay, 1, &op)), &Code::Behind);
+
+    for entry in &entries()[2..] {
+        ask(
+            &mut relay,
+            1,
+            Request::Append {
+                entry: entry.to_json(),
+            },
+            0,
+        );
+    }
+    assert!(matches!(
+        submit(&mut relay, 1, &op),
+        Response::Accepted { new: true, .. }
+    ));
+}
+
+#[test]
+fn a_device_taken_off_may_not_write_past_its_last_number_and_what_it_made_stays() {
+    let mut relay = relay();
+    give_log(&mut relay, 1);
+    let mut bob = host(Some(2));
+    let first = operation(&mut bob, 2, 1, 1000);
+    let second = operation(&mut bob, 2, 2, 1001);
+    submit(&mut relay, 2, &first);
+
+    // The administrator takes bob off after his first operation.
+    let scratch = host(None);
+    let removal = scratch
+        .draft(Body::Grant {
+            node: 2,
+            role: 0,
+            key: person(2).public(),
+            final_seq: Some(1),
+        })
+        .sign(&admin())
+        .finish();
+    let response = ask(
+        &mut relay,
+        1,
+        Request::Append {
+            entry: removal.to_json(),
+        },
+        0,
+    );
+    assert!(
+        matches!(response, Response::Appended { new: true, .. }),
+        "{response:?}"
+    );
+
+    assert_eq!(
+        refused(&submit(&mut relay, 2, &second)),
+        &Code::Forbidden,
+        "bob's own session is refused"
+    );
+    assert_eq!(
+        refused(&submit(&mut relay, 1, &second)),
+        &Code::Invalid,
+        "and so is his operation past the last the administrators accepted, from anyone"
+    );
+    let Response::Feed { records, .. } = ask(
+        &mut relay,
+        1,
+        Request::Feed {
+            cursor: 0,
+            limit: 50,
+        },
+        0,
+    ) else {
+        panic!("feed");
+    };
+    assert!(
+        records
+            .iter()
+            .any(|record| matches!(record, Record::Operation { data, .. } if *data == first.1)),
+        "what he made before stays"
+    );
+}
+
+#[test]
+fn a_feed_gives_the_records_in_the_order_they_arrived_by_cursor() {
+    let mut relay = relay_over(
+        MemoryStore::new(),
+        Limits {
+            max_feed: 3,
+            ..Limits::default()
+        },
+    );
+    give_log(&mut relay, 1);
+    let mut alice = host(Some(1));
+    for n in 1..=4 {
+        submit(&mut relay, 1, &operation(&mut alice, 1, n, 1000 + n as i64));
+    }
+    assert_eq!(relay.records(LIST), 8);
+
+    let mut seen = Vec::new();
+    let mut cursor = 0;
+    loop {
+        let Response::Feed {
+            records,
+            next,
+            more,
+        } = ask(&mut relay, 2, Request::Feed { cursor, limit: 100 }, 0)
+        else {
+            panic!("feed");
+        };
+        assert!(records.len() <= 3, "the relay's own bound holds");
+        seen.extend(records);
+        cursor = next;
+        if !more {
+            break;
+        }
+    }
+    assert_eq!(seen.len(), 8);
+    assert!(matches!(seen[0], Record::Entry(_)));
+    assert!(matches!(seen[4], Record::Operation { .. }));
+
+    let response = ask(
+        &mut relay,
+        2,
+        Request::Feed {
+            cursor: 99,
+            limit: 1,
+        },
+        0,
+    );
+    assert_eq!(refused(&response), &Code::Invalid, "a cursor past the end");
+
+    let Response::Operations { operations } = ask(
+        &mut relay,
+        2,
+        Request::Operations {
+            node: 1,
+            from: 2,
+            to: 3,
+        },
+        0,
+    ) else {
+        panic!("operations");
+    };
+    assert_eq!(operations.len(), 2);
+    let Response::Heads {
+        heads,
+        log_len,
+        cursor,
+    } = ask(&mut relay, 2, Request::Heads, 0)
+    else {
+        panic!("heads");
+    };
+    assert_eq!((heads.len(), heads[0].node, heads[0].seq), (1, 1, 4));
+    assert_eq!((log_len, cursor), (4, 8));
+}
+
+#[test]
+fn a_device_that_spends_its_allowance_waits_and_the_others_do_not() {
+    let limits = Limits {
+        burst: 4,
+        refill_per_second: 1,
+        write_cost: 1,
+        ..Limits::default()
+    };
+    let mut relay = relay_over(MemoryStore::new(), limits);
+    give_log(&mut relay, 1);
+    // The log took the four requests of alice's allowance; she is spent, bob is not.
+    let spent = ask(&mut relay, 1, Request::Heads, 0);
+    let Response::Refused {
+        code: Code::RateLimited { retry_after_ms },
+        ..
+    } = spent
+    else {
+        panic!("{spent:?}");
+    };
+    assert!(retry_after_ms > 0);
+    assert!(matches!(
+        ask(&mut relay, 2, Request::Heads, 0),
+        Response::Heads { .. }
+    ));
+    assert!(matches!(
+        ask(&mut relay, 1, Request::Heads, retry_after_ms),
+        Response::Heads { .. }
+    ));
+}
+
+#[test]
+fn a_request_larger_than_the_relay_takes_is_refused_before_it_is_read() {
+    let mut relay = relay_over(
+        MemoryStore::new(),
+        Limits {
+            max_request_bytes: 64,
+            ..Limits::default()
+        },
+    );
+    let text = relay.handle(
+        &token(1),
+        &Request::Append {
+            entry: "x".repeat(200),
+        }
+        .to_json(),
+        0,
+    );
+    assert_eq!(
+        refused(&Response::from_json(&text).unwrap()),
+        &Code::TooLarge
+    );
+}
+
+/// A list that keeps its content sealed: the relay checks that what it is given is sealed under an
+/// epoch the log began, holds it as it is, and what it holds says nothing of what was written.
+#[test]
+fn a_relay_holds_sealed_content_of_one_size_and_refuses_plaintext_in_a_sealed_list() {
+    let mut relay = relay();
+    give_log(&mut relay, 1);
+    let epoch = host(None)
+        .draft(Body::Epoch { epoch: 1 })
+        .sign(&admin())
+        .finish();
+    assert!(matches!(
+        ask(
+            &mut relay,
+            1,
+            Request::Append {
+                entry: epoch.to_json()
+            },
+            0
+        ),
+        Response::Appended { new: true, .. }
+    ));
+
+    let mut alice = host(Some(1));
+    alice.append(&epoch).unwrap();
+    alice.set_epoch_key(1, [5; 32]);
+    let titled = |id: u64, text: &str| {
+        json!({"id": id.to_string(), "field": "3", "value": "0", "text": text,
+               "wallTime": (1000 + id).to_string(), "counter": "0", "nodeId": "1"})
+        .to_string()
+    };
+    let mut sent = Vec::new();
+    let longest = "ABCDEFGHIJKLMNOPQRSTUVWXYZ012345";
+    assert_eq!(longest.len(), 32);
+    for (id, text) in [(1u64, "buy milk"), (2, ""), (3, longest)] {
+        let data = alice
+            .seal("#server", "todo.write", &titled(id, text))
+            .unwrap()
+            .unwrap();
+        let response = submit(&mut relay, 1, &("todo.write".to_string(), data.clone()));
+        assert!(
+            matches!(response, Response::Accepted { new: true, .. }),
+            "{response:?}"
+        );
+        sent.push(data);
+    }
+    let sizes: Vec<usize> = sent
+        .iter()
+        .map(|data| {
+            let value: Value = serde_json::from_str(data).unwrap();
+            value["text"].as_str().unwrap().len()
+        })
+        .collect();
+    assert_eq!(
+        sizes,
+        [84, 84, 84],
+        "a word, a number and a line are one size to the relay"
+    );
+
+    let Response::Feed { records, .. } = ask(
+        &mut relay,
+        2,
+        Request::Feed {
+            cursor: 0,
+            limit: 50,
+        },
+        0,
+    ) else {
+        panic!("feed");
+    };
+    let held = format!("{records:?}");
+    for secret in ["buy milk", longest] {
+        assert!(!held.contains(secret), "the relay holds {secret}");
+    }
+
+    // A write in the clear that bob signed before the epoch began, in a list that is sealed now,
+    // is refused whatever entry it names.
+    let mut before_the_epoch = host(Some(2));
+    let plain = operation(&mut before_the_epoch, 2, 9, 2000);
+    let response = submit(&mut relay, 2, &plain);
+    assert_eq!(refused(&response), &Code::Invalid);
+    let reason = match response {
+        Response::Refused { reason, .. } => reason,
+        other => panic!("{other:?}"),
+    };
+    assert!(reason.contains("not sealed"), "{reason}");
+}
+
+#[test]
+fn a_relay_that_restarts_holds_what_it_held_and_a_tampered_store_does_not_start_it() {
+    let dir = std::env::temp_dir().join(format!(
+        "sce-relay-restart-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let mut alice = host(Some(1));
+    let op = operation(&mut alice, 1, 1, 1000);
+    {
+        let mut relay = relay_over(FileStore::open(&dir).unwrap(), Limits::default());
+        give_log(&mut relay, 1);
+        assert!(matches!(
+            submit(&mut relay, 1, &op),
+            Response::Accepted { new: true, .. }
+        ));
+    }
+    {
+        let mut again = relay_over(FileStore::open(&dir).unwrap(), Limits::default());
+        assert_eq!(again.records(LIST), 5);
+        assert_eq!(
+            submit(&mut again, 2, &op),
+            Response::Accepted {
+                new: false,
+                cursor: 5
+            },
+            "held already"
+        );
+    }
+
+    // One byte of what alice signed is changed on the disk.
+    let file = std::fs::read_dir(&dir)
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let text = std::fs::read_to_string(&file).unwrap();
+    let tampered = text.replacen("\\\"value\\\":\\\"1\\\"", "\\\"value\\\":\\\"2\\\"", 1);
+    assert_ne!(tampered, text);
+    std::fs::write(&file, tampered).unwrap();
+    let error = Relay::open(
+        FileStore::open(&dir).unwrap(),
+        authority(),
+        Limits::default(),
+    )
+    .err()
+    .expect("a relay does not start from what its members did not sign");
+    assert!(error.to_string().contains("does not verify"), "{error}");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// A store that cannot write down a record: the relay takes nothing more rather than hold what it
+/// cannot keep, and says so.
+#[test]
+fn a_relay_that_cannot_keep_a_record_takes_nothing_more() {
+    struct Failing {
+        inner: MemoryStore,
+        fail: Arc<Mutex<bool>>,
+    }
+    impl Store for Failing {
+        fn load(&mut self) -> std::io::Result<Vec<(String, Record)>> {
+            self.inner.load()
+        }
+        fn append(&mut self, list: &str, record: &Record) -> std::io::Result<()> {
+            if *self.fail.lock().unwrap() {
+                return Err(std::io::Error::other("the disk is full"));
+            }
+            self.inner.append(list, record)
+        }
+    }
+    let fail = Arc::new(Mutex::new(false));
+    let mut relay = relay_over(
+        Failing {
+            inner: MemoryStore::new(),
+            fail: fail.clone(),
+        },
+        Limits::default(),
+    );
+    give_log(&mut relay, 1);
+    *fail.lock().unwrap() = true;
+    let mut alice = host(Some(1));
+    let response = submit(&mut relay, 1, &operation(&mut alice, 1, 1, 1000));
+    assert_eq!(refused(&response), &Code::Unavailable);
+    *fail.lock().unwrap() = false;
+    assert_eq!(
+        refused(&ask(&mut relay, 1, Request::Heads, 0)),
+        &Code::Unavailable,
+        "it does not go on holding what it did not keep"
+    );
+}
+
+/// Two hosts that never meet: what alice's courier gives the relay, bob's takes out, checked as it
+/// would be from anyone, and the machine is told each operation once.
+#[test]
+fn a_host_gives_a_relay_what_it_lacks_and_is_given_what_it_lacks() {
+    let relay = Arc::new(Mutex::new(relay()));
+    let clock: Arc<dyn Fn() -> u64 + Send + Sync> = Arc::new(|| 0);
+    let link = |node: u64| DirectLink::new(relay.clone(), token(node), clock.clone());
+
+    let alice = host(Some(1));
+    let mut alice_sealer = alice.clone();
+    let mut alice_courier = Courier::new(alice.clone(), link(1));
+    // alice's host holds the log and has made two operations; the relay holds nothing.
+    alice_sealer
+        .seal("#server", "todo.write", &write(1, 1, 1000))
+        .unwrap();
+    alice_sealer
+        .seal("#server", "todo.write", &write(1, 2, 1001))
+        .unwrap();
+    let round = alice_courier.sync().unwrap();
+    assert_eq!(round.pushed, 4 + 2, "the log and the two operations");
+    assert!(round.refused.is_empty(), "{:?}", round.refused);
+
+    let bob = Trust::open(LIST);
+    bob.set_identity(2, person(2));
+    // bob was told only the genesis, which is all an invitation carries.
+    bob.append(&entries()[0]).unwrap();
+    let mut bob_courier = Courier::new(bob.clone(), link(2));
+    let round = bob_courier.sync().unwrap();
+    assert!(round.refused.is_empty(), "{:?}", round.refused);
+    assert!(!round.stalled);
+    let writes: Vec<&(String, String)> = round
+        .events
+        .iter()
+        .filter(|(event, _)| event == "todo.write")
+        .collect();
+    assert_eq!(writes.len(), 2);
+    let told: Value = serde_json::from_str(&writes[0].1).unwrap();
+    assert_eq!(
+        told["nodeId"], "1",
+        "the machine is told the write as its author made it"
+    );
+    assert!(
+        round.events.iter().any(|(event, _)| event == "todo.role"),
+        "and the roster the log makes"
+    );
+
+    // A second round has nothing new for the machine.
+    let again = bob_courier.sync().unwrap();
+    assert!(
+        again.events.iter().all(|(event, _)| event != "todo.write"),
+        "{:?}",
+        again.events
+    );
+    // A machine that lost its state is told the list again.
+    let replay = bob_courier.resync().unwrap();
+    assert_eq!(
+        replay
+            .events
+            .iter()
+            .filter(|(event, _)| event == "todo.write")
+            .count(),
+        2
+    );
+}
+
+/// A relay that withholds an operation is seen by the members and routed around: bob's host takes
+/// alice's checkpoint from the relay that hides the operation, sees what it lacks, and the relay
+/// that does not hide it gives it.
+#[test]
+fn a_relay_that_withholds_is_seen_and_routed_around_by_a_second_relay() {
+    struct Hiding<L: Link> {
+        inner: L,
+        hide_seq: &'static str,
+    }
+    impl<L: Link> Link for Hiding<L> {
+        fn call(&mut self, request: &Request) -> Result<Response, LinkError> {
+            let response = self.inner.call(request)?;
+            Ok(match response {
+                Response::Feed {
+                    records,
+                    next,
+                    more,
+                } => Response::Feed {
+                    records: records
+                        .into_iter()
+                        .filter(|record| {
+                            !matches!(record, Record::Operation { data, .. }
+                                if serde_json::from_str::<Value>(data).unwrap()["seq"]
+                                    == self.hide_seq)
+                        })
+                        .collect(),
+                    next,
+                    more,
+                },
+                other => other,
+            })
+        }
+    }
+
+    let honest = Arc::new(Mutex::new(relay()));
+    let hiding = Arc::new(Mutex::new(relay()));
+    let clock: Arc<dyn Fn() -> u64 + Send + Sync> = Arc::new(|| 0);
+    let link = |relay: &Arc<Mutex<Relay<MemoryStore>>>, node: u64| {
+        DirectLink::new(relay.clone(), token(node), clock.clone())
+    };
+
+    let alice = host(Some(1));
+    let mut sealer = alice.clone();
+    for n in 1..=3 {
+        sealer
+            .seal("#server", "todo.write", &write(1, n, 1000 + n as i64))
+            .unwrap();
+    }
+    // alice gives both relays everything; the second one will not pass the second operation on.
+    for relay in [&honest, &hiding] {
+        Courier::new(alice.clone(), link(relay, 1)).sync().unwrap();
+    }
+    let checkpoint = alice.checkpoint(30_000, 7).unwrap();
+    Courier::new(alice.clone(), link(&hiding, 1))
+        .sync()
+        .unwrap();
+
+    let bob = host(Some(2));
+    let mut through_the_hiding = Courier::new(
+        bob.clone(),
+        Hiding {
+            inner: link(&hiding, 2),
+            hide_seq: "2",
+        },
+    );
+    let round = through_the_hiding.sync().unwrap();
+    let writes = round
+        .events
+        .iter()
+        .filter(|(e, _)| e == "todo.write")
+        .count();
+    assert_eq!(writes, 2, "the relay passed on 1 and 3");
+    assert_eq!(bob.heads()[0].seq, 1, "the chain is in full only to 1");
+    assert_eq!(
+        bob.take_checkpoint(&checkpoint),
+        Ok(false),
+        "the relay that hides the operation passed the checkpoint on, and bob holds it"
+    );
+    assert_eq!(bob.divergences().len(), 1, "alice's checkpoint names 3");
+
+    // The other relay gives the one that is missing, and the machine is told it.
+    let mut through_the_honest = Courier::new(bob.clone(), link(&honest, 2));
+    let round = through_the_honest.sync().unwrap();
+    let writes: Vec<_> = round
+        .events
+        .iter()
+        .filter(|(e, _)| e == "todo.write")
+        .collect();
+    assert_eq!(writes.len(), 1, "only the operation the host lacked");
+    assert!(bob.divergences().is_empty());
+    assert_eq!(bob.heads()[0].seq, 3);
+}

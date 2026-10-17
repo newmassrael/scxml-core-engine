@@ -5,7 +5,8 @@ relays between them. This document says what each party can be trusted with, and
 host of each copy does to hold to it. The code is `backends/rust/trust` (`sce-rust-trust`) and
 the two seams it sits behind in Mesh, `Admission` and `Sealer` (`backends/rust/mesh`,
 `Endpoint::set_admission` / `set_sealer`), with `Endpoint::forbid_events_from` for what a link
-may deliver at all.
+may deliver at all. Where members that are not online together leave what they sign for each other
+is the relay (`docs/SCE_SHARED_LIST_RELAY.md`, `backends/rust/relay`).
 
 ## 1. Where the rule is kept
 
@@ -168,7 +169,9 @@ A host that holds keys seals the number and the text of every write under the ke
 **epoch** it holds (XChaCha20-Poly1305). The nonce is made from the write's stamp, so a host
 needs no source of randomness and one write is one set of bytes; the stamp, the list and the
 epoch are the associated data, so sealed content does not move to another write, list or epoch.
-A sealed text is `~` and the epoch and ciphertext in the URL alphabet, at most 81 bytes, which
+A sealed text is `~` and the epoch and ciphertext in the URL alphabet, 84 characters for any
+text a person types (what is sealed is the number, the length, the text and zeros up to 32 bytes,
+so the size a relay sees says nothing of whether a write holds a number, a word or a line), which
 is why a write's `text` holds 96 (a person still types 32, held by the machine's `typed`).
 
 What the hub holds and relays is the **stamp** of each write (which to-do, which field, when, by

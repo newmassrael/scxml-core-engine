@@ -209,7 +209,7 @@ fn sealed_content_and_a_wrapped_key_are_written_the_same_way() {
     );
     assert_eq!(
         secrecy::seal("home", 2, &[7; 32], &stamp, -42, "buy milk"),
-        "~AAAAAnNxtIUL1OyQ6GF4hwegfPTIqgLpiEpReyh7OBrx6XkO"
+        "~AAAAAnNxtIUL1OyQihxj0hPpffYTNYe5LDXx-J_TiFDSbvPeQjjxUObsr9p9qncyyKg541lfLarzNyxFifo"
     );
     let shared = alice().agree(&bob().public()).unwrap();
     assert_eq!(

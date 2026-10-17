@@ -217,6 +217,9 @@ scan_exclusions = [
     # sources: not one carries a `§` citation, so excluding them swallows no section from
     # this gate.
     "backends/rust/trust/",
+    # The relay of a shared list (`sce-rust-relay`): it implements no clause of the Recommendation
+    # and carries no `§` citation.
+    "backends/rust/relay/",
     "sce-build/examples/",
     "sce-build/tests/",
     "tests/",
