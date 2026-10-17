@@ -135,6 +135,9 @@
   <sce:import kind="event-schema" src="event_answer.scxml" as="Answer"/>
   <sce:import kind="algorithm" src="event_settled.scxml" as="EventSettled"/>
   <sce:import kind="event-schema" src="todo_room.scxml" as="Room"/>
+  <sce:import kind="event-schema" src="todo_role.scxml" as="Role"/>
+  <sce:import kind="event-schema" src="event_member.scxml" as="Member"/>
+  <sce:import kind="algorithm" src="event_roster.scxml" as="EventRoster"/>
   <datamodel>
     <data id="node" sce:type="uint64" expr="0" sce:direction="out"/>
     <data id="hub" sce:type="bool" expr="false" sce:direction="out"/>
@@ -286,6 +289,12 @@
     <data id="full" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="fresh" sce:type="bool" expr="false"/>
     <data id="blocked" sce:type="bool" expr="false"/>
+    <!-- What the host lets each member do (todo.role), the changes that were refused for it
+         (`denied`) and what the change in hand is judged by: whether its author may write. -->
+    <data id="roster" sce:type="list&lt;record:Member&gt;" sce:capacity="64" sce:limit="todo_roster"/>
+    <data id="denied" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="forbidden" sce:type="bool" expr="false"/>
+    <data id="authorized" sce:type="bool" expr="true"/>
   </datamodel>
   <state id="open">
     <transition event="todo.join" type="internal">
@@ -299,6 +308,15 @@
       <assign location="roomValues" expr="_event.data.values"/>
       <assign location="roomHistory" expr="_event.data.history"/>
       <assign location="roomDigest" expr="_event.data.digest"/>
+    </transition>
+
+    <!-- What the host lets a member do (todo.role): the member takes the role, or is taken
+         off the roster by a role of 0. A copy with no roster refuses no one, and one with a
+         roster refuses a change of its own member's that is not a writer's, and the hub
+         what a member that is not a writer sends it. The roster is the host's word and the
+         copies take it alike, as they take the room. -->
+    <transition event="todo.role" type="internal">
+      <assign location="roster" expr="EventRoster(roster, _event.data.node, _event.data.role)"/>
     </transition>
 
     <!-- A person's change: stamped, then handled as any write is, and sent to the hub.
@@ -325,11 +343,27 @@
           <assign location="fresh" expr="false"/>
         </if>
       </foreach>
-      <assign location="blocked" expr="(roomValues &gt; 0 &amp;&amp; fresh &amp;&amp; len(values) &gt;= roomValues) || (roomHistory &gt; 0 &amp;&amp; len(tombstones) &gt;= roomHistory) || (roomDigest &gt; 0 &amp;&amp; len(digest) &gt;= roomDigest)"/>
+      <!-- Whether the host let this copy's member write (todo.role): with no roster set,
+           anyone; with one, a member whose role is a writer's. A change it may not make is
+           refused as one that does not fit is, before the clock moves, and counted in
+           `denied`. -->
+      <assign location="forbidden" expr="false"/>
+      <if cond="len(roster) &gt; 0">
+        <assign location="forbidden" expr="true"/>
+        <foreach array="roster" item="m">
+          <if cond="m.node === node &amp;&amp; m.role &gt;= 2">
+            <assign location="forbidden" expr="false"/>
+          </if>
+        </foreach>
+      </if>
+      <assign location="blocked" expr="!forbidden &amp;&amp; ((roomValues &gt; 0 &amp;&amp; fresh &amp;&amp; len(values) &gt;= roomValues) || (roomHistory &gt; 0 &amp;&amp; len(tombstones) &gt;= roomHistory) || (roomDigest &gt; 0 &amp;&amp; len(digest) &gt;= roomDigest))"/>
+      <if cond="forbidden">
+        <assign location="denied" expr="denied + 1"/>
+      </if>
       <if cond="blocked">
         <assign location="full" expr="full + 1"/>
       </if>
-      <if cond="!blocked">
+      <if cond="!blocked &amp;&amp; !forbidden">
         <assign location="clock" expr="HlcSend(clock, _event.data.now, node)"/>
         <foreach array="adds" item="o">
           <if cond="o.element === entry.element">
@@ -393,156 +427,189 @@
       </if>
     </transition>
 
-    <!-- A write to a field, from a person here or from elsewhere: one more value, once. -->
+    <!-- A write to a field, from a person here or from elsewhere: one more value, once.
+         The hub takes it only from a member the host let write (todo.role): a write whose
+         author is not on a roster that is set, or is on it with less than a writer's role,
+         is dropped whole and counted in `denied`, as a change a person's copy was not let
+         make is. -->
     <transition event="todo.write" type="internal">
-      <!-- The same, for a write that arrives: one whose text does not fit changes
-           nothing here and is passed on to no one, rather than being merged in part. -->
-      <assign location="held.text" expr="_event.data.text"/>
-      <if cond="_event.data.nodeId !== node">
-        <assign location="stamp.wallTime" expr="_event.data.wallTime"/>
-        <assign location="stamp.counter" expr="_event.data.counter"/>
-        <assign location="stamp.nodeId" expr="_event.data.nodeId"/>
-        <assign location="clock" expr="HlcReceive(clock, stamp, clock.wallTime, node)"/>
+      <assign location="authorized" expr="true"/>
+      <if cond="hub &amp;&amp; len(roster) &gt; 0">
+        <assign location="authorized" expr="false"/>
+        <foreach array="roster" item="m">
+          <if cond="m.node === _event.data.nodeId &amp;&amp; m.role &gt;= 2">
+            <assign location="authorized" expr="true"/>
+          </if>
+        </foreach>
       </if>
-      <!-- A write this copy made and no longer holds, which a peer sends back when the
-           copy has been restarted from an older save, is taken in with the clock moved
-           up to it, so that what the copy writes next is stamped after it and never with
-           a dot it has already used. A write made here that the clock already stands at
-           (every one, as it is first handled) moves nothing. -->
-      <if cond="_event.data.nodeId === node &amp;&amp; (_event.data.wallTime &gt; clock.wallTime || (_event.data.wallTime === clock.wallTime &amp;&amp; _event.data.counter &gt; clock.counter))">
-        <assign location="clock.wallTime" expr="_event.data.wallTime"/>
-        <assign location="clock.counter" expr="_event.data.counter"/>
+      <if cond="!authorized">
+        <assign location="denied" expr="denied + 1"/>
       </if>
-      <assign location="entry.element" expr="_event.data.id"/>
-      <assign location="entry.element" expr="entry.element * 65536 + _event.data.field"/>
-      <assign location="entry.wallTime" expr="_event.data.wallTime"/>
-      <assign location="entry.counter" expr="_event.data.counter"/>
-      <assign location="entry.nodeId" expr="_event.data.nodeId"/>
-      <!-- Whether the write is live: no tombstone names it. One a person wrote over
-           before it arrived is not taken in, and only a live one is added. And whether
-           its value is already held, which a write that arrives twice is. -->
-      <assign location="isLive" expr="true"/>
-      <foreach array="tombstones" item="t">
-        <if cond="t.element === entry.element &amp;&amp; t.wallTime === entry.wallTime &amp;&amp; t.counter === entry.counter &amp;&amp; t.nodeId === entry.nodeId">
-          <assign location="isLive" expr="false"/>
+      <if cond="authorized">
+        <!-- The same, for a write that arrives: one whose text does not fit changes
+             nothing here and is passed on to no one, rather than being merged in part. -->
+        <assign location="held.text" expr="_event.data.text"/>
+        <if cond="_event.data.nodeId !== node">
+          <assign location="stamp.wallTime" expr="_event.data.wallTime"/>
+          <assign location="stamp.counter" expr="_event.data.counter"/>
+          <assign location="stamp.nodeId" expr="_event.data.nodeId"/>
+          <assign location="clock" expr="HlcReceive(clock, stamp, clock.wallTime, node)"/>
         </if>
-      </foreach>
-      <if cond="isLive">
-        <sce:clear target="one"/>
-        <sce:append target="one" expr="entry"/>
-        <assign location="adds" expr="OrsetUnion(adds, one)"/>
-      </if>
-      <assign location="held.id" expr="_event.data.id"/>
-      <assign location="held.field" expr="_event.data.field"/>
-      <assign location="held.value" expr="_event.data.value"/>
-      <assign location="held.wallTime" expr="_event.data.wallTime"/>
-      <assign location="held.counter" expr="_event.data.counter"/>
-      <assign location="held.nodeId" expr="_event.data.nodeId"/>
-      <assign location="present" expr="MvValueHolds(values, held)"/>
-      <if cond="isLive &amp;&amp; !present">
-        <assign location="values" expr="MvValueKeep(values, held)"/>
-        <send target="#_internal" event="todo.keep">
-          <param name="kind" expr="0"/>
-          <param name="element" expr="entry.element"/>
-          <param name="wallTime" expr="_event.data.wallTime"/>
-          <param name="counter" expr="_event.data.counter"/>
-          <param name="nodeId" expr="_event.data.nodeId"/>
-        </send>
-      </if>
+        <!-- A write this copy made and no longer holds, which a peer sends back when the
+             copy has been restarted from an older save, is taken in with the clock moved
+             up to it, so that what the copy writes next is stamped after it and never with
+             a dot it has already used. A write made here that the clock already stands at
+             (every one, as it is first handled) moves nothing. -->
+        <if cond="_event.data.nodeId === node &amp;&amp; (_event.data.wallTime &gt; clock.wallTime || (_event.data.wallTime === clock.wallTime &amp;&amp; _event.data.counter &gt; clock.counter))">
+          <assign location="clock.wallTime" expr="_event.data.wallTime"/>
+          <assign location="clock.counter" expr="_event.data.counter"/>
+        </if>
+        <assign location="entry.element" expr="_event.data.id"/>
+        <assign location="entry.element" expr="entry.element * 65536 + _event.data.field"/>
+        <assign location="entry.wallTime" expr="_event.data.wallTime"/>
+        <assign location="entry.counter" expr="_event.data.counter"/>
+        <assign location="entry.nodeId" expr="_event.data.nodeId"/>
+        <!-- Whether the write is live: no tombstone names it. One a person wrote over
+             before it arrived is not taken in, and only a live one is added. And whether
+             its value is already held, which a write that arrives twice is. -->
+        <assign location="isLive" expr="true"/>
+        <foreach array="tombstones" item="t">
+          <if cond="t.element === entry.element &amp;&amp; t.wallTime === entry.wallTime &amp;&amp; t.counter === entry.counter &amp;&amp; t.nodeId === entry.nodeId">
+            <assign location="isLive" expr="false"/>
+          </if>
+        </foreach>
+        <if cond="isLive">
+          <sce:clear target="one"/>
+          <sce:append target="one" expr="entry"/>
+          <assign location="adds" expr="OrsetUnion(adds, one)"/>
+        </if>
+        <assign location="held.id" expr="_event.data.id"/>
+        <assign location="held.field" expr="_event.data.field"/>
+        <assign location="held.value" expr="_event.data.value"/>
+        <assign location="held.wallTime" expr="_event.data.wallTime"/>
+        <assign location="held.counter" expr="_event.data.counter"/>
+        <assign location="held.nodeId" expr="_event.data.nodeId"/>
+        <assign location="present" expr="MvValueHolds(values, held)"/>
+        <if cond="isLive &amp;&amp; !present">
+          <assign location="values" expr="MvValueKeep(values, held)"/>
+          <send target="#_internal" event="todo.keep">
+            <param name="kind" expr="0"/>
+            <param name="element" expr="entry.element"/>
+            <param name="wallTime" expr="_event.data.wallTime"/>
+            <param name="counter" expr="_event.data.counter"/>
+            <param name="nodeId" expr="_event.data.nodeId"/>
+          </send>
+        </if>
 
-      <if cond="hub &amp;&amp; _event.data.nodeId !== 1">
-        <send target="#alice" event="todo.write">
-          <param name="id" expr="_event.data.id"/>
-          <param name="field" expr="_event.data.field"/>
-          <param name="value" expr="_event.data.value"/>
-          <param name="text" expr="_event.data.text"/>
-          <param name="wallTime" expr="_event.data.wallTime"/>
-          <param name="counter" expr="_event.data.counter"/>
-          <param name="nodeId" expr="_event.data.nodeId"/>
-        </send>
-      </if>
-      <if cond="hub &amp;&amp; _event.data.nodeId !== 2">
-        <send target="#bob" event="todo.write">
-          <param name="id" expr="_event.data.id"/>
-          <param name="field" expr="_event.data.field"/>
-          <param name="value" expr="_event.data.value"/>
-          <param name="text" expr="_event.data.text"/>
-          <param name="wallTime" expr="_event.data.wallTime"/>
-          <param name="counter" expr="_event.data.counter"/>
-          <param name="nodeId" expr="_event.data.nodeId"/>
-        </send>
+        <if cond="hub &amp;&amp; _event.data.nodeId !== 1">
+          <send target="#alice" event="todo.write">
+            <param name="id" expr="_event.data.id"/>
+            <param name="field" expr="_event.data.field"/>
+            <param name="value" expr="_event.data.value"/>
+            <param name="text" expr="_event.data.text"/>
+            <param name="wallTime" expr="_event.data.wallTime"/>
+            <param name="counter" expr="_event.data.counter"/>
+            <param name="nodeId" expr="_event.data.nodeId"/>
+          </send>
+        </if>
+        <if cond="hub &amp;&amp; _event.data.nodeId !== 2">
+          <send target="#bob" event="todo.write">
+            <param name="id" expr="_event.data.id"/>
+            <param name="field" expr="_event.data.field"/>
+            <param name="value" expr="_event.data.value"/>
+            <param name="text" expr="_event.data.text"/>
+            <param name="wallTime" expr="_event.data.wallTime"/>
+            <param name="counter" expr="_event.data.counter"/>
+            <param name="nodeId" expr="_event.data.nodeId"/>
+          </send>
+        </if>
       </if>
     </transition>
 
     <!-- A value someone wrote over, from a person here or from elsewhere: its add is
-         named by a tombstone, and its value, if held, is taken out. -->
+         named by a tombstone, and its value, if held, is taken out. The hub takes it only
+         from a member the host let write, as it takes a write (`by` is who wrote over). -->
     <transition event="todo.supersede" type="internal">
-      <assign location="entry.element" expr="_event.data.id"/>
-      <assign location="entry.element" expr="entry.element * 65536 + _event.data.field"/>
-      <assign location="entry.wallTime" expr="_event.data.wallTime"/>
-      <assign location="entry.counter" expr="_event.data.counter"/>
-      <assign location="entry.nodeId" expr="_event.data.nodeId"/>
-      <!-- Whether the tombstone is new, which one that arrives twice is not. -->
-      <assign location="known" expr="false"/>
-      <foreach array="tombstones" item="t">
-        <if cond="t.element === entry.element &amp;&amp; t.wallTime === entry.wallTime &amp;&amp; t.counter === entry.counter &amp;&amp; t.nodeId === entry.nodeId">
-          <assign location="known" expr="true"/>
+      <assign location="authorized" expr="true"/>
+      <if cond="hub &amp;&amp; len(roster) &gt; 0">
+        <assign location="authorized" expr="false"/>
+        <foreach array="roster" item="m">
+          <if cond="m.node === _event.data.by &amp;&amp; m.role &gt;= 2">
+            <assign location="authorized" expr="true"/>
+          </if>
+        </foreach>
+      </if>
+      <if cond="!authorized">
+        <assign location="denied" expr="denied + 1"/>
+      </if>
+      <if cond="authorized">
+        <assign location="entry.element" expr="_event.data.id"/>
+        <assign location="entry.element" expr="entry.element * 65536 + _event.data.field"/>
+        <assign location="entry.wallTime" expr="_event.data.wallTime"/>
+        <assign location="entry.counter" expr="_event.data.counter"/>
+        <assign location="entry.nodeId" expr="_event.data.nodeId"/>
+        <!-- Whether the tombstone is new, which one that arrives twice is not. -->
+        <assign location="known" expr="false"/>
+        <foreach array="tombstones" item="t">
+          <if cond="t.element === entry.element &amp;&amp; t.wallTime === entry.wallTime &amp;&amp; t.counter === entry.counter &amp;&amp; t.nodeId === entry.nodeId">
+            <assign location="known" expr="true"/>
+          </if>
+        </foreach>
+        <sce:clear target="one"/>
+        <sce:append target="one" expr="entry"/>
+        <assign location="tombstones" expr="OrsetUnion(tombstones, one)"/>
+        <!-- The add it names is no longer live: it leaves `adds` (a tombstone that is
+             not new leaves nothing to take out). -->
+        <assign location="adds" expr="OrsetLive(adds, one)"/>
+
+        <!-- And whether the write it names is held, which is when its add leaves the
+             digest as the tombstone enters it. -->
+        <assign location="held.id" expr="_event.data.id"/>
+        <assign location="held.field" expr="_event.data.field"/>
+        <assign location="held.wallTime" expr="_event.data.wallTime"/>
+        <assign location="held.counter" expr="_event.data.counter"/>
+        <assign location="held.nodeId" expr="_event.data.nodeId"/>
+        <assign location="wasLive" expr="MvValueHolds(values, held)"/>
+        <assign location="values" expr="MvValueDrop(values, held)"/>
+        <if cond="!known">
+          <send target="#_internal" event="todo.keep">
+            <param name="kind" expr="1"/>
+            <param name="element" expr="entry.element"/>
+            <param name="wallTime" expr="_event.data.wallTime"/>
+            <param name="counter" expr="_event.data.counter"/>
+            <param name="nodeId" expr="_event.data.nodeId"/>
+          </send>
         </if>
-      </foreach>
-      <sce:clear target="one"/>
-      <sce:append target="one" expr="entry"/>
-      <assign location="tombstones" expr="OrsetUnion(tombstones, one)"/>
-      <!-- The add it names is no longer live: it leaves `adds` (a tombstone that is
-           not new leaves nothing to take out). -->
-      <assign location="adds" expr="OrsetLive(adds, one)"/>
+        <if cond="wasLive">
+          <send target="#_internal" event="todo.keep">
+            <param name="kind" expr="0"/>
+            <param name="element" expr="entry.element"/>
+            <param name="wallTime" expr="_event.data.wallTime"/>
+            <param name="counter" expr="_event.data.counter"/>
+            <param name="nodeId" expr="_event.data.nodeId"/>
+          </send>
+        </if>
 
-      <!-- And whether the write it names is held, which is when its add leaves the
-           digest as the tombstone enters it. -->
-      <assign location="held.id" expr="_event.data.id"/>
-      <assign location="held.field" expr="_event.data.field"/>
-      <assign location="held.wallTime" expr="_event.data.wallTime"/>
-      <assign location="held.counter" expr="_event.data.counter"/>
-      <assign location="held.nodeId" expr="_event.data.nodeId"/>
-      <assign location="wasLive" expr="MvValueHolds(values, held)"/>
-      <assign location="values" expr="MvValueDrop(values, held)"/>
-      <if cond="!known">
-        <send target="#_internal" event="todo.keep">
-          <param name="kind" expr="1"/>
-          <param name="element" expr="entry.element"/>
-          <param name="wallTime" expr="_event.data.wallTime"/>
-          <param name="counter" expr="_event.data.counter"/>
-          <param name="nodeId" expr="_event.data.nodeId"/>
-        </send>
-      </if>
-      <if cond="wasLive">
-        <send target="#_internal" event="todo.keep">
-          <param name="kind" expr="0"/>
-          <param name="element" expr="entry.element"/>
-          <param name="wallTime" expr="_event.data.wallTime"/>
-          <param name="counter" expr="_event.data.counter"/>
-          <param name="nodeId" expr="_event.data.nodeId"/>
-        </send>
-      </if>
-
-      <if cond="hub &amp;&amp; _event.data.by !== 1">
-        <send target="#alice" event="todo.supersede">
-          <param name="id" expr="_event.data.id"/>
-          <param name="field" expr="_event.data.field"/>
-          <param name="wallTime" expr="_event.data.wallTime"/>
-          <param name="counter" expr="_event.data.counter"/>
-          <param name="nodeId" expr="_event.data.nodeId"/>
-          <param name="by" expr="_event.data.by"/>
-        </send>
-      </if>
-      <if cond="hub &amp;&amp; _event.data.by !== 2">
-        <send target="#bob" event="todo.supersede">
-          <param name="id" expr="_event.data.id"/>
-          <param name="field" expr="_event.data.field"/>
-          <param name="wallTime" expr="_event.data.wallTime"/>
-          <param name="counter" expr="_event.data.counter"/>
-          <param name="nodeId" expr="_event.data.nodeId"/>
-          <param name="by" expr="_event.data.by"/>
-        </send>
+        <if cond="hub &amp;&amp; _event.data.by !== 1">
+          <send target="#alice" event="todo.supersede">
+            <param name="id" expr="_event.data.id"/>
+            <param name="field" expr="_event.data.field"/>
+            <param name="wallTime" expr="_event.data.wallTime"/>
+            <param name="counter" expr="_event.data.counter"/>
+            <param name="nodeId" expr="_event.data.nodeId"/>
+            <param name="by" expr="_event.data.by"/>
+          </send>
+        </if>
+        <if cond="hub &amp;&amp; _event.data.by !== 2">
+          <send target="#bob" event="todo.supersede">
+            <param name="id" expr="_event.data.id"/>
+            <param name="field" expr="_event.data.field"/>
+            <param name="wallTime" expr="_event.data.wallTime"/>
+            <param name="counter" expr="_event.data.counter"/>
+            <param name="nodeId" expr="_event.data.nodeId"/>
+            <param name="by" expr="_event.data.by"/>
+          </send>
+        </if>
       </if>
     </transition>
 

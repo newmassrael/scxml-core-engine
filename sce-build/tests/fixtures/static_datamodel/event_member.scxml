@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  One member of the shared to-do list (todo_peer) and what the host let it do: the member's
+  node (`node`, the id its stamps carry) and its `role`: 1 may read, 2 may also write, 3 may
+  also do what an owner does (the host's to say: a copy takes the host's word on it, as it
+  takes `todo.room`). A list's roster is the members the host named; a member it did not name
+  has no role, and a list with no roster at all is one the host has not set up and refuses
+  no one.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="event_member"
+       sce:event-name="calendar.member">
+  <datamodel>
+    <data id="node" sce:type="uint64" sce:direction="in"/>
+    <data id="role" sce:type="uint8" sce:direction="in"/>
+  </datamodel>
+</scxml>

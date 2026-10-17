@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The roster of a shared to-do list (todo_peer) once a member's role is given: every
+  member of `roster` but the one named, in the order it had them, then the member with the
+  role if it is not 0. A member the roster did not hold is added, one it held takes the new
+  role, and a role of 0 takes it off. The result holds at most 64 members (`todo_roster`).
+
+  roster {1: 2, 2: 2}, node 2, role 1 → {1: 2, 2: 1} · role 0 → {1: 2}.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       name="event_roster"
+       version="1.0">
+  <sce:import kind="event-schema" src="event_member.scxml" as="Member"/>
+  <sce:signature>
+    <sce:param name="roster" type="list&lt;record:Member&gt;"/>
+    <sce:param name="node" type="uint64"/>
+    <sce:param name="role" type="uint8"/>
+    <sce:return type="list&lt;record:Member&gt;" returns-max-size="64" sce:limit="todo_roster" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="out" type="list&lt;record:Member&gt;" capacity="64" sce:limit="todo_roster"/>
+    <sce:foreach item="m" in="roster">
+      <sce:if cond="m.node !== node">
+        <sce:append target="out" expr="m"/>
+      </sce:if>
+    </sce:foreach>
+    <sce:if cond="role !== 0">
+      <sce:var name="made" type="record:Member">
+        <sce:set name="node" expr="node"/>
+        <sce:set name="role" expr="role"/>
+      </sce:var>
+      <sce:append target="out" expr="made"/>
+    </sce:if>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>

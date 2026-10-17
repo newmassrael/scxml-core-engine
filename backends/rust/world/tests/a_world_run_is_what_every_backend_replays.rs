@@ -53,6 +53,7 @@ const TODO_PUBLISHED: &[&str] = &[
     "stale",
     "late",
     "full",
+    "denied",
 ];
 
 /// The variables a copy of the presence list publishes.

@@ -1792,6 +1792,7 @@ func todoCopy() machine {
 		"stale":      func() any { return policy.Stale() },
 		"late":       func() any { return policy.Late() },
 		"full":       func() any { return policy.Full() },
+		"denied":     func() any { return policy.Denied() },
 	})
 }
 
