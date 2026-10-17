@@ -1,5 +1,7 @@
+schema = 1
+
 # What this repository needs from a build machine, and what "verified"
-# means for it. Machine names live in `~/.claude/remote-build/hosts.toml`,
+# means for it. Machine names live in bx's registry (`bx-paths.sh registry`),
 # never here — see the remote-build skill, rule 11.
 #
 # The verify set is a decision, not something to detect: this tree carries
@@ -26,9 +28,12 @@
 # CMakeLists.txt` — a transfer failure that reads as a build failure.
 send    = "tracked+submodules"
 
-# `target` is a symlink into ~/.buildcache and would arrive broken.
-# `build` and `embed` are generated locally and are rebuilt there anyway.
-exclude = ["/target", "/build", "/embed"]
+# What crosses is what git tracks. `target` (a symlink into ~/.buildcache) and
+# `build` are untracked and stay home for that reason alone. `embed/` is
+# TRACKED (`embed/MANIFEST.json` is the gate's snapshot of the public API) and
+# is sent on every transfer. An `exclude = ["/target", "/build", "/embed"]`
+# line sat here until 2026-10-17 claiming otherwise: bx never read it, and
+# bx.toml refuses a key bx does not define.
 
 # THE COMMANDS OF THIS REPOSITORY WHOSE POINT IS TO CHANGE THIS TREE.
 #
@@ -164,6 +169,15 @@ packages = ["libssl-dev", "openjdk-17-jdk-headless"]
 min_ram_gb  = 16
 min_free_gb = 60
 
+# A hint for the run-time parallelism calculation, not a limit. Rust test
+# processes here are small; the C++ link steps are what peak.
+#
+# ⚠ It sat at the end of the file, INSIDE [commands], until 2026-10-17. By
+# TOML's rules that made it a command named `peak_gb_per_task`; bx's old
+# line-by-line reader found it anyway, which is the only reason it ever had
+# effect. bx.toml is read by TOML's tables, so it belongs up here.
+peak_gb_per_task = 4
+
 [commands]
 # `--features cli` is not optional here: `cargo test --workspace` silently
 # skips every cli-gated target, so a workspace run without it reports green
@@ -204,7 +218,3 @@ build  = "cargo build --bin sce-codegen --features cli -p sce-build && cmake -S 
 # with the port free, then the server, then cargo. Both statuses are OR'd so
 # a red ctest cannot be hidden by a green cargo run.
 verify = "ctest --test-dir build --output-on-failure; c=$?; node tests/w3c/standalone_http_server.js 8080 /test & srv=$!; sleep 1; cargo test --workspace --features cli --no-fail-fast; r=$?; kill $srv 2>/dev/null; exit $(( c | r ))"
-
-# A hint for the run-time parallelism calculation, not a limit. Rust test
-# processes here are small; the C++ link steps are what peak.
-peak_gb_per_task = 4

@@ -6,7 +6,7 @@
 #
 # The Kotlin gates choose their JDK with `sce_gate_require_jdk`, from the
 # `java-version:` their workflow pins. A build declared outside the gates —
-# `.claude/remote-build.toml`'s `build` produces the Kotlin runtime jar the forge
+# `bx.toml`'s `build` produces the Kotlin runtime jar the forge
 # gates put on `kotlinc -cp` — reaches Gradle without that step, and Gradle takes
 # `JAVA_HOME`, else the `java` on PATH, whatever a machine's package manager
 # installed last. Gradle 8.11.1 with this repository's Kotlin plugin cannot

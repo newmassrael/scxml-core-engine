@@ -392,7 +392,7 @@ header: the bytes may depend only on inputs a reader can name.
   becomes `--format-style` (`sce_codegen_format_args`).
 - **Where it must be installed.** Every CI lane that generates C++ installs
   `clang-format-19`, and the build machines declare it in
-  `.claude/remote-build.toml` `needs`.
+  `bx.toml` `needs`.
 - **Other backends.** Go, Kotlin, Python and C11 are emitted as the templates
   write them, with no formatter. The committed Rust trees are rustfmt's output
   applied after generation (§8), the one committed form that is not yet the
