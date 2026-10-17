@@ -327,6 +327,11 @@ fn what_an_executor_writes_is_the_requests_and_not_the_specs_until_it_completes(
         Some(true)
     );
     assert_eq!(read["model"]["revision"], candidate["model"]);
+    // The documents the model is made of are said as `read_model` says them.
+    let documents = read["model"]["documents"].as_array().expect("documents");
+    assert_eq!(documents.len(), 1);
+    assert!(documents[0]["text"].as_str().unwrap().contains("door"));
+    assert!(read["model"]["entry"].is_string(), "{read}");
     assert_eq!(
         f.run("read_bundle", json!({"id": f.spec})),
         json!({"bundle": null}),
@@ -336,6 +341,48 @@ fn what_an_executor_writes_is_the_requests_and_not_the_specs_until_it_completes(
         f.run("read_model", json!({"id": f.spec}))["model"],
         Value::Null
     );
+}
+
+#[test]
+fn a_model_of_several_documents_is_read_as_the_documents_and_a_text_that_is_none_has_none() {
+    let f = fixture("request-commands-candidate-set");
+    let id = f.running("press-1");
+    let set = json!({
+        "format": "sce-model-set", "v": 1, "entry": "main.scxml",
+        "documents": [
+            {"name": "main.scxml", "text": "<scxml>main</scxml>"},
+            {"name": "events.scxml", "text": "<scxml>events</scxml>"},
+        ],
+    })
+    .to_string();
+    f.write_candidate(&id, &set);
+
+    let read = f.run(
+        "read_request_candidate",
+        json!({"id": f.spec, "request": id}),
+    );
+
+    assert_eq!(read["model"]["entry"], json!("main.scxml"));
+    let names: Vec<&str> = read["model"]["documents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| d["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, vec!["main.scxml", "events.scxml"]);
+
+    // A text that begins as a set and is not one is kept as it is said, with no documents.
+    f.write_candidate(&id, "{\"format\": \"something-else\", \"v\": 1}");
+    let unread = f.run(
+        "read_request_candidate",
+        json!({"id": f.spec, "request": id}),
+    );
+    assert_eq!(unread["model"]["entry"], Value::Null);
+    assert_eq!(unread["model"]["documents"], Value::Null);
+    assert!(unread["model"]["text"]
+        .as_str()
+        .unwrap()
+        .contains("something-else"));
 }
 
 #[test]

@@ -284,7 +284,13 @@ pub const COMMANDS: &[&str] = &[
 /// latest events (`read_request_journal`), for a request that ended as for one that runs. A screen
 /// written for 28 shows whose a failure is to fix and what a run has done so far; a core of 27
 /// would refuse the commands as `unknown-command` and the `failure` argument as `bad-request`.
-pub const COMMAND_SET_VERSION: u32 = 28;
+///
+/// 29: the model an executor wrote for a request (`read_request_candidate`) says the documents it is
+/// made of and which is the entry, as `read_model` does (`documents`, `entry`; `null` for a text that
+/// does not read as a model), so that a screen can show the last design a run that failed was
+/// holding as the documents it is and not as the text it was kept in. A screen written for 28 reads
+/// the `text` and shows a model of several documents as a blob; a core of 28 gives it no documents.
+pub const COMMAND_SET_VERSION: u32 = 29;
 
 /// A command that did not do what was asked, in a shape every shell can pass on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -1004,6 +1010,20 @@ fn model_json(model: &ModelText, files: &ModelFiles) -> Value {
         "text": files.entry_text(),
         "entry": files.entry_file(),
         "documents": files.documents(),
+    })
+}
+
+/// The model an executor wrote for a request, as the screens read it: the text as it was kept, and
+/// the documents it is made of with the one that is the entry, as `read_model` says them. A text
+/// that does not read as a model (a client may keep what it likes in a candidate, which nothing has
+/// checked) has no documents: `entry` and `documents` are `null`, and the text is what there is.
+fn candidate_model_json(revision: &Revision, text: &str) -> Value {
+    let files = ModelFiles::parse(text).ok();
+    json!({
+        "revision": revision,
+        "text": text,
+        "entry": files.as_ref().map(ModelFiles::entry_file),
+        "documents": files.as_ref().map(ModelFiles::documents),
     })
 }
 
@@ -1938,7 +1958,7 @@ pub fn call_with<C: Clock>(
             let texts = store.read_candidate(&id, &request)?;
             Ok(json!({
                 "request": request,
-                "model": texts.model.map(|(revision, text)| json!({ "revision": revision, "text": text })),
+                "model": texts.model.map(|(revision, text)| candidate_model_json(&revision, &text)),
                 "requirements": texts
                     .requirements
                     .map(|(revision, text)| json!({ "revision": revision, "text": text })),
