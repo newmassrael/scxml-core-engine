@@ -12,14 +12,14 @@ authors.workspace = true
 description = "What is done to the shared list's code to find what its authors did not think of: seeded mutation of every parser's input, checked for no panic and a stable round trip"
 publish = false
 
-# ADR 0034, stage 8. No code that ships is here: a seeded mutator (bytes, and JSON by structure) and
-# the tests that feed what it makes to every parser of the trust, relay, MLS and C ABI crates. A
-# parser may refuse; it may not panic, and what it accepts it must write back as it read it.
+# ADR 0034, stage 8. No code that ships is here: a seeded mutator (bytes, and JSON by structure), the
+# targets (every place the trust, relay, MLS and C ABI crates read what another party wrote, each with
+# its corpus and what must hold), the tests that feed the targets what the mutator makes, and under
+# `fuzz/` the coverage-guided fuzzer that feeds the same targets. A parser may refuse; it may not
+# panic, and what it accepts it must write back as it read it.
 
 [dependencies]
 serde_json = "1"
-
-[dev-dependencies]
 sce-rust-trust = { path = "../trust" }
 sce-rust-relay = { path = "../relay" }
 sce-rust-mls = { path = "../mls" }

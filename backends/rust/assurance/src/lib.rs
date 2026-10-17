@@ -12,6 +12,8 @@
 
 use serde_json::{Map, Number, Value};
 
+pub mod targets;
+
 /// splitmix64: a seeded source of numbers that is the same everywhere.
 pub struct Rng(pub u64);
 

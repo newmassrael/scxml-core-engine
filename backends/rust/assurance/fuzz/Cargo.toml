@@ -1,0 +1,173 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+
+[package]
+name = "sce-rust-assurance-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "The coverage-guided fuzzer (libFuzzer) of what the trust, relay and group key code read; its targets are those of sce-rust-assurance"
+
+[package.metadata]
+cargo-fuzz = true
+
+# Needs a nightly toolchain and `cargo install cargo-fuzz`; run with `scripts/fuzz/run.sh`. It is not
+# a member of the workspace: a sanitizer build is not what `cargo test --workspace` should do.
+[workspace]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+sce-rust-assurance = { path = ".." }
+
+[profile.release]
+debug = 1
+
+# One binary per target of `sce_rust_assurance::targets::NAMES` (a `-` of the name is a `_` here); the
+# seeded tests of the crate check that the two lists are the same.
+
+[[bin]]
+name = "entries"
+path = "fuzz_targets/entries.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "checkpoints"
+path = "fuzz_targets/checkpoints.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "settlements"
+path = "fuzz_targets/settlements.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "encoding"
+path = "fuzz_targets/encoding.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "operations_hub"
+path = "fuzz_targets/operations_hub.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "operations_member"
+path = "fuzz_targets/operations_member.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "floors"
+path = "fuzz_targets/floors.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "store"
+path = "fuzz_targets/store.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "grant"
+path = "fuzz_targets/grant.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "backup"
+path = "fuzz_targets/backup.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "audit"
+path = "fuzz_targets/audit.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "requests"
+path = "fuzz_targets/requests.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "responses"
+path = "fuzz_targets/responses.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "relay"
+path = "fuzz_targets/relay.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "store_file"
+path = "fuzz_targets/store_file.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "device_state"
+path = "fuzz_targets/device_state.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "welcome"
+path = "fuzz_targets/welcome.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "join_commit"
+path = "fuzz_targets/join_commit.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "apply_commit"
+path = "fuzz_targets/apply_commit.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "key_package"
+path = "fuzz_targets/key_package.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "capi"
+path = "fuzz_targets/capi.rs"
+test = false
+doc = false
+bench = false

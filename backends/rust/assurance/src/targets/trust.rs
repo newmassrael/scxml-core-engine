@@ -1,16 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
-//
-// Every place the trust crate reads what someone else wrote: the entries of the membership log,
-// checkpoints and settlements, operations as they travel, the floor with its settlement, the text a
-// host keeps its operations in, a grant of a key, a copy of a device's secrets, the record of an
-// audit, and the encodings under them. Each is given a corpus of what it reads when it is true, and what
-// a seeded mutator makes of the corpus (a bit, a cut, a hole, a repeat, a number that does not fit, a
-// value of another type). A parser may refuse. It may not panic, and what it accepts it writes back as
-// it read it.
+// SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
-mod common;
+//! Every place the trust crate reads what someone else wrote: the entries of the membership log,
+//! checkpoints and settlements, operations as they travel, the floor with its settlement, the text a
+//! host keeps its operations in, a grant of a key, a copy of a device's secrets, the record of an audit,
+//! and the encodings under them.
 
-use common::fuzz;
 use sce_rust_mesh::endpoint::{Admission, Sealer};
 use sce_rust_trust::audit;
 use sce_rust_trust::backup::{self, Contents, Cost};
@@ -19,6 +14,8 @@ use sce_rust_trust::membership::{link_bytes, Body, Entry, Log, Profile};
 use sce_rust_trust::message::Link;
 use sce_rust_trust::{Checkpoint, Identity, PublicKey, Settlement, Trust};
 use serde_json::{json, Value};
+
+use super::{bytes_of, text, Target};
 
 const LIST: &str = "home";
 const WEAK: Cost = Cost {
@@ -252,32 +249,20 @@ fn corpus() -> Corpus {
     }
 }
 
-fn bytes_of(texts: impl IntoIterator<Item = String>) -> Vec<Vec<u8>> {
-    texts.into_iter().map(String::into_bytes).collect()
-}
-
-fn text(input: &[u8]) -> String {
-    sce_rust_assurance::lossy(input)
-}
-
-#[test]
-fn the_entries_of_the_membership_log_are_read_without_a_panic_and_written_back_as_read() {
-    let corpus = corpus();
-    let items = bytes_of(corpus.entries.iter().map(Entry::to_json));
-    fuzz("entries", &items, 6000, |input| {
+pub fn entries() -> Target {
+    let items = bytes_of(corpus().entries.iter().map(Entry::to_json));
+    Target::new("entries", 6000, items, |input| {
         if let Some(entry) = Entry::from_json(&text(input)) {
             assert_eq!(Entry::from_json(&entry.to_json()), Some(entry.clone()));
             let _ = entry.hash();
             let _ = entry.signing_bytes();
         }
-    });
+    })
 }
 
-#[test]
-fn checkpoints_and_settlements_are_read_without_a_panic_and_written_back_as_read() {
-    let corpus = corpus();
-    let items = bytes_of(corpus.checkpoints.iter().map(Checkpoint::to_json));
-    fuzz("checkpoints", &items, 6000, |input| {
+pub fn checkpoints() -> Target {
+    let items = bytes_of(corpus().checkpoints.iter().map(Checkpoint::to_json));
+    Target::new("checkpoints", 6000, items, |input| {
         if let Some(checkpoint) = Checkpoint::from_json(&text(input)) {
             assert_eq!(
                 Checkpoint::from_json(&checkpoint.to_json()),
@@ -285,9 +270,17 @@ fn checkpoints_and_settlements_are_read_without_a_panic_and_written_back_as_read
             );
             let _ = checkpoint.signing_bytes();
         }
-    });
-    let items = bytes_of(corpus.settlements.iter().map(|s| s.to_value().to_string()));
-    fuzz("settlements", &items, 3000, |input| {
+    })
+}
+
+pub fn settlements() -> Target {
+    let items = bytes_of(
+        corpus()
+            .settlements
+            .iter()
+            .map(|s| s.to_value().to_string()),
+    );
+    Target::new("settlements", 3000, items, |input| {
         if let Ok(value) = serde_json::from_slice::<Value>(input) {
             if let Some(settlement) = Settlement::from_value(&value) {
                 assert_eq!(
@@ -296,11 +289,10 @@ fn checkpoints_and_settlements_are_read_without_a_panic_and_written_back_as_read
                 );
             }
         }
-    });
+    })
 }
 
-#[test]
-fn the_encodings_under_them_read_what_they_wrote_and_nothing_that_is_not() {
+pub fn encodings() -> Target {
     let items: Vec<Vec<u8>> = [
         encoding::encode(&[0u8; 64]),
         encoding::encode(&[255u8; 32]),
@@ -312,7 +304,7 @@ fn the_encodings_under_them_read_what_they_wrote_and_nothing_that_is_not() {
     .into_iter()
     .map(String::into_bytes)
     .collect();
-    fuzz("encoding", &items, 6000, |input| {
+    Target::new("encoding", 6000, items, |input| {
         let input = text(input);
         if let Some(bytes) = encoding::decode(&input) {
             assert_eq!(encoding::encode(&bytes), input, "one text for one value");
@@ -320,72 +312,80 @@ fn the_encodings_under_them_read_what_they_wrote_and_nothing_that_is_not() {
         if let Some(key) = PublicKey::from_text(&input) {
             assert_eq!(PublicKey::from_text(&key.to_text()), Some(key));
         }
-    });
+    })
 }
 
-#[test]
-fn what_a_host_is_given_as_an_operation_a_floor_a_store_or_a_grant_never_panics_it() {
-    let corpus = corpus();
-
-    // A host that has the log (and, to open content, bob's key) is given the operations mutated.
-    let entries: Vec<Entry> = corpus.entries[..8].to_vec();
-    let fresh = |own: Option<u64>| {
-        let trust = Trust::invited(LIST, corpus.genesis_hash);
-        for entry in entries.iter() {
-            let _ = trust.append(entry);
-        }
-        if let Some(node) = own {
-            trust.set_identity(node, person(node));
-            trust.set_epoch_key(1, [5; 32]);
-        }
-        trust
-    };
-    for own in [None, Some(3)] {
-        let items: Vec<Vec<u8>> = corpus
-            .operations
-            .iter()
-            .map(|(_, data)| data.clone().into_bytes())
-            .collect();
-        fuzz("operations", &items, 2500, |input| {
-            let trust = fresh(own);
-            for event in ["todo.write", "todo.supersede"] {
-                let _ = trust.take_operation(event, &text(input));
-                let _ = trust.clone().admit("relay", event, &text(input));
-            }
-            let _ = Link::take_from(&mut serde_json::from_slice(input).unwrap_or(Value::Null));
-        });
+/// A host that has the log (and, to open content, bob's key), as it is for one input.
+fn fresh(entries: &[Entry], genesis_hash: [u8; 32], own: Option<u64>) -> Trust {
+    let trust = Trust::invited(LIST, genesis_hash);
+    for entry in entries {
+        let _ = trust.append(entry);
     }
+    if let Some(node) = own {
+        trust.set_identity(node, person(node));
+        trust.set_epoch_key(1, [5; 32]);
+    }
+    trust
+}
 
-    let items = bytes_of(corpus.floors.clone());
-    fuzz("floors", &items, 2500, |input| {
+/// What a hub, or a member who holds the epoch's key, does with an operation as it is given.
+pub fn operations(name: &'static str, own: Option<u64>) -> Target {
+    let corpus = corpus();
+    let entries: Vec<Entry> = corpus.entries[..8].to_vec();
+    let genesis_hash = corpus.genesis_hash;
+    let items: Vec<Vec<u8>> = corpus
+        .operations
+        .iter()
+        .map(|(_, data)| data.clone().into_bytes())
+        .collect();
+    Target::new(name, 2500, items, move |input| {
+        let trust = fresh(&entries, genesis_hash, own);
+        for event in ["todo.write", "todo.supersede"] {
+            let _ = trust.take_operation(event, &text(input));
+            let _ = trust.clone().admit("relay", event, &text(input));
+        }
+        let _ = Link::take_from(&mut serde_json::from_slice(input).unwrap_or(Value::Null));
+    })
+}
+
+pub fn floors() -> Target {
+    let items = bytes_of(corpus().floors);
+    Target::new("floors", 2500, items, |input| {
         let mut trust = host(Some(1));
         let _ = trust.admit("hub", "todo.floor", &text(input));
         let mut allowed = host(None);
         allowed.allow_unsigned(&["todo.floor"]);
         let _ = allowed.admit("hub", "todo.floor", &text(input));
-    });
-
-    let items = bytes_of([corpus.store.clone()]);
-    fuzz("store", &items, 1500, |input| {
-        let trust = fresh(Some(3));
-        let _ = trust.restore_from_text(&text(input));
-        let _ = trust.to_text();
-    });
-
-    let items = bytes_of([corpus.grant.clone()]);
-    fuzz("grant", &items, 2500, |input| {
-        let _ = fresh(Some(2)).receive_grant(&text(input));
-    });
+    })
 }
 
-#[test]
-fn a_copy_of_a_devices_secrets_and_the_record_of_an_audit_are_read_without_a_panic() {
+pub fn store() -> Target {
     let corpus = corpus();
+    let entries: Vec<Entry> = corpus.entries[..8].to_vec();
+    let genesis_hash = corpus.genesis_hash;
+    let items = bytes_of([corpus.store]);
+    Target::new("store", 1500, items, move |input| {
+        let trust = fresh(&entries, genesis_hash, Some(3));
+        let _ = trust.restore_from_text(&text(input));
+        let _ = trust.to_text();
+    })
+}
 
-    let items = bytes_of([corpus.backup.clone()]);
-    fuzz("backup", &items, 400, |input| {
+pub fn grant() -> Target {
+    let corpus = corpus();
+    let entries: Vec<Entry> = corpus.entries[..8].to_vec();
+    let genesis_hash = corpus.genesis_hash;
+    let items = bytes_of([corpus.grant]);
+    Target::new("grant", 2500, items, move |input| {
+        let _ = fresh(&entries, genesis_hash, Some(2)).receive_grant(&text(input));
+    })
+}
+
+pub fn backup() -> Target {
+    let items = bytes_of([corpus().backup]);
+    Target::new("backup", 400, items, |input| {
         // A copy that asks for a great deal of memory is refused before it is paid for
-        // (`a_copy_that_asks_for_more_than_a_device_offers_is_refused_before_it_is_paid_for`); the
+        // (`a_copy_that_asks_for_more_than_a_device_offers_is_refused_before_it_is_paid_for`); a
         // fuzz does not pay it either, so that it can run many inputs.
         let input = text(input);
         if let Ok(value) = serde_json::from_str::<Value>(&input) {
@@ -401,10 +401,14 @@ fn a_copy_of_a_devices_secrets_and_the_record_of_an_audit_are_read_without_a_pan
         if let Ok(contents) = backup::open(b"pass", &input) {
             let _ = contents.extra("mls");
         }
-    });
+    })
+}
 
-    let items = bytes_of([corpus.audit.clone()]);
-    fuzz("audit", &items, 500, |input| {
-        let _ = audit::verify(corpus.genesis_hash, &text(input));
-    });
+pub fn audit() -> Target {
+    let corpus = corpus();
+    let genesis_hash = corpus.genesis_hash;
+    let items = bytes_of([corpus.audit]);
+    Target::new("audit", 500, items, move |input| {
+        let _ = audit::verify(genesis_hash, &text(input));
+    })
 }
