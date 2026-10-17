@@ -1,0 +1,241 @@
+# Mutation cases for what a relay of a shared list checks before it keeps anything and before it gives
+# anything back (ADR 0034): the token that names a device (its tag, its time, its audience, the list it
+# is for), the allowance of each device and the bounds on a request, who may ask what (a reader, a
+# stranger, a device taken off), what is kept once, the feed and the ranges it is read by, what a store
+# is held to when a relay starts from it, and the bounds on the MLS messages a relay keeps for a group.
+#
+# Each case takes one of those checks away or weakens it, and the tests under study must turn red.
+# A check no test notices is a check nothing holds in place.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/a_relay_keeps_only_what_a_host_would_take_rust.cases`.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported INCONCLUSIVE with the
+# anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-relay --lib --test a_relay_keeps_what_members_signed_and_reads_none_of_it
+mutation_targets backends/rust/relay/src/relay.rs backends/rust/relay/src/token.rs backends/rust/relay/src/limits.rs backends/rust/relay/src/store.rs backends/rust/relay/src/protocol.rs
+mutation_oracles backends/rust/relay/tests/a_relay_keeps_what_members_signed_and_reads_none_of_it.rs
+
+# ── A token: the tag, the time, the audience, the list ────────────────────────────────────────
+
+mutation_case "A relay takes a token whose tag is not the one its secret makes" <<'PY'
+edit("backends/rust/relay/src/token.rs",
+     "    if !equal(&hmac_sha256(&self.secret, &payload), &tag) {",
+     "    if !equal(&hmac_sha256(&self.secret, &payload), &tag) && false {")
+PY
+
+mutation_case "A relay takes a token whose tag is shorter or longer than the one its secret makes" <<'PY'
+edit("backends/rust/relay/src/token.rs",
+     "a.len() == b.len() && a.iter()",
+     "a.iter()")
+PY
+
+mutation_case "A relay takes a token in the very millisecond it expires" <<'PY'
+edit("backends/rust/relay/src/token.rs",
+     "        if now_ms >= expires {",
+     "        if now_ms > expires {")
+PY
+
+mutation_case "A relay takes a token that another relay issued under the same secret" <<'PY'
+edit("backends/rust/relay/src/token.rs",
+     "        if audience != self.audience {",
+     "        if audience != self.audience && false {")
+PY
+
+mutation_case "A token names the audience where it should name the list" <<'PY'
+edit("backends/rust/relay/src/token.rs",
+     "            list: list.to_string(),",
+     "            list: audience.to_string(),")
+PY
+
+# ── The allowance of a device ─────────────────────────────────────────────────────────────────
+
+mutation_case "A device that holds exactly what a request costs is made to wait" <<'PY'
+edit("backends/rust/relay/src/limits.rs",
+     "        if *held >= wanted {",
+     "        if *held > wanted {")
+PY
+
+mutation_case "A device that was away gains more than its burst" <<'PY'
+edit("backends/rust/relay/src/limits.rs",
+     "        *held = held.saturating_add(gained).min(capacity);",
+     "        *held = held.saturating_add(gained);")
+PY
+
+mutation_case "A relay that refills nothing divides by the nothing" <<'PY'
+edit("backends/rust/relay/src/limits.rs",
+     "        } else if refill == 0 {",
+     "        } else if false {")
+PY
+
+mutation_case "A device that is new to the relay starts with nothing" <<'PY'
+edit("backends/rust/relay/src/limits.rs",
+     "            .or_insert((capacity, now_ms));",
+     "            .or_insert((0, now_ms));")
+PY
+
+mutation_case "The devices of a list spend one allowance between them" <<'PY'
+edit("backends/rust/relay/src/limits.rs",
+     "            .entry((list.to_string(), node))",
+     "            .entry((list.to_string(), node.min(1)))")
+PY
+
+mutation_case "The lists of a relay spend one allowance between them" <<'PY'
+edit("backends/rust/relay/src/limits.rs",
+     "            .entry((list.to_string(), node))",
+     "            .entry((list.chars().take(0).collect::<String>(), node))")
+PY
+
+# ── A request: its size, its cost, who may make it ────────────────────────────────────────────
+
+mutation_case "A relay reads a request larger than it takes" <<'PY'
+edit("backends/rust/relay/src/relay.rs",
+     "                if request.len() > self.limits.max_request_bytes {",
+     "                if false {")
+PY
+
+mutation_case "A relay does not spend a device's allowance on its requests" <<'PY'
+edit("backends/rust/relay/src/relay.rs",
+     ".take(&session.list, session.node, cost, now_ms, &self.limits)",
+     ".take(&session.list, session.node, cost, now_ms, &self.limits)\n                .or(Ok(()))")
+PY
+
+mutation_case "A relay asks no role of a session for what it asks" <<'PY'
+edit("backends/rust/relay/src/relay.rs",
+     "        if role < needs {",
+     "        if false {")
+PY
+
+mutation_case "A reader may submit, check, and publish what only a writer may" <<'PY'
+edit("backends/rust/relay/src/relay.rs",
+     "            | Request::PublishWelcome { .. } => WRITER,",
+     "            | Request::PublishWelcome { .. } => READER,")
+PY
+
+mutation_case "A device that is no member reads the feed, the ranges and the heads" <<'PY'
+edit("backends/rust/relay/src/relay.rs",
+     "Request::Feed { .. } | Request::Operations { .. } | Request::Heads => READER,",
+     "Request::Feed { .. } | Request::Operations { .. } | Request::Heads => 0,")
+PY
+
+# ── What is kept, and kept once ───────────────────────────────────────────────────────────────
+
+mutation_case "A relay says it took an entry it held already as new" <<'PY'
+edit("backends/rust/relay/src/relay.rs",
+     "            Ok(false) => Response::Appended {\n                new: false,",
+     "            Ok(false) => Response::Appended {\n                new: true,")
+PY
+
+mutation_case "A relay keeps an operation it held already a second time" <<'PY'
+edit("backends/rust/relay/src/relay.rs",
+     "            Ok(taken) if taken.new => match",
+     "            Ok(taken) if taken.new || !taken.new => match")
+PY
+
+mutation_case "A relay that cannot write a record down goes on taking records" <<'PY'
+edit("backends/rust/relay/src/relay.rs",
+     "            self.failed = Some(reason.clone());",
+     "            let _ = &reason;")
+PY
+
+mutation_case "A relay gives out entries past the end of its log" <<'PY'
+edit("backends/rust/relay/src/relay.rs",
+     "            .saturating_add(self.limits.max_range as usize)\n            .min(held.len());",
+     "            .saturating_add(self.limits.max_range as usize);")
+PY
+
+# ── The feed and the ranges ───────────────────────────────────────────────────────────────────
+
+mutation_case "A relay refuses a feed read from the end of what it holds" <<'PY'
+edit("backends/rust/relay/src/relay.rs",
+     "        if cursor > total {",
+     "        if cursor >= total {")
+PY
+
+mutation_case "A relay reads a feed from a cursor past the end of what it holds" <<'PY'
+edit("backends/rust/relay/src/relay.rs",
+     "        if cursor > total {",
+     "        if false {")
+PY
+
+mutation_case "A relay gives a feed longer than its own bound" <<'PY'
+edit("backends/rust/relay/src/relay.rs",
+     "        let count = u64::from(limit.min(self.limits.max_feed));",
+     "        let count = u64::from(limit);")
+PY
+
+mutation_case "A feed never says there is more" <<'PY'
+edit("backends/rust/relay/src/relay.rs",
+     "            more: end < total,",
+     "            more: false,")
+PY
+
+mutation_case "A range of operations is one longer than the relay's bound" <<'PY'
+edit("backends/rust/relay/src/relay.rs",
+     "from.saturating_add(self.limits.max_range.saturating_sub(1))",
+     "from.saturating_add(self.limits.max_range)")
+PY
+
+# ── A relay that starts from a store holds it to the checks that took each record in ──────────
+
+mutation_case "A relay starts from an operation in its store that does not verify" <<'PY'
+edit("backends/rust/relay/src/relay.rs",
+     "Record::Operation { event, data } => trust\n            .take_operation(event, data)\n            .map(|taken| taken.new)\n            .map_err(|error| match error {\n                TakeError::NotReached(reason)\n                | TakeError::NoKey(reason)\n                | TakeError::Refused(reason) => (Code::Invalid, reason),\n            }),",
+     "Record::Operation { .. } => Ok(true),")
+PY
+
+mutation_case "A relay starts from a store and passes over a record that does not verify" <<'PY'
+edit("backends/rust/relay/src/relay.rs",
+     "Err((_, reason)) => {\n                    return Err(invalid_data(format!(\n                        \"record {index} of `{list}` does not verify: {reason}\"\n                    )))\n                }",
+     "Err((_, _reason)) => {}")
+PY
+
+mutation_case "A relay starts from a checkpoint in its store that does not verify" <<'PY'
+edit("backends/rust/relay/src/relay.rs",
+     "Record::Checkpoint(text) => {\n            let checkpoint = Checkpoint::from_json(text)\n                .ok_or((Code::Invalid, \"it is not a checkpoint\".to_string()))?;\n            trust\n                .take_checkpoint(&checkpoint)\n                .map_err(|error| (Code::Invalid, format!(\"{error:?}\")))\n        }",
+     "Record::Checkpoint(_) => Ok(true),")
+PY
+
+mutation_case "A store reads the last line a crash cut off as a record" <<'PY'
+edit("backends/rust/relay/src/store.rs",
+     "            let complete = text.rfind('\\n').map_or(0, |end| end + 1);",
+     "            let complete = text.len();")
+PY
+
+# ── The MLS messages a relay keeps for a group ────────────────────────────────────────────────
+
+mutation_case "A relay keeps an MLS message larger than its bound" <<'PY'
+edit("backends/rust/relay/src/relay.rs",
+     "        if bytes.len() > limits.max_group_message_bytes {",
+     "        if false {")
+PY
+
+mutation_case "A relay keeps an MLS message with nothing in it" <<'PY'
+edit("backends/rust/relay/src/relay.rs",
+     "        if bytes.is_empty() {",
+     "        if false {")
+PY
+
+mutation_case "A device leaves more key packages than the relay allows" <<'PY'
+edit("backends/rust/relay/src/relay.rs",
+     "            if held.map_or(0, BTreeSet::len) >= limits.max_key_packages_per_node {",
+     "            if false {")
+PY
+
+mutation_case "A relay keeps one key package of a device again and again" <<'PY'
+edit("backends/rust/relay/src/relay.rs",
+     "            if held.is_some_and(|held| held.contains(&hash)) {",
+     "            if false {")
+PY
+
+mutation_case "A relay keeps a commit that is not the one the log names for its epoch" <<'PY'
+edit("backends/rust/relay/src/relay.rs",
+     "                Some(named) if named != hash => Err((",
+     "                Some(named) if named != hash && false => Err((")
+PY
+
+mutation_case "A relay keeps a Welcome for an epoch the log has not begun" <<'PY'
+edit("backends/rust/relay/src/relay.rs",
+     "            if state.trust.commit_of(*epoch).is_none() {",
+     "            if false {")
+PY
