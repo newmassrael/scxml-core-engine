@@ -501,6 +501,15 @@ const CI_ONLY: &[(&str, &str)] = &[
          skips those tests with a warning.",
     ),
     (
+        "gradlew :sce-kotlin-mls-replay:installDist",
+        "provisions the runner rather than verifying the tree: it builds the \
+         JVM program the Kotlin lane of the group key agreement's C ABI \
+         replays the recorded scenario with. Like the step server above it is \
+         a prerequisite and not a verification; CI builds it and, with \
+         SCE_REQUIRE_TOOLS, fails the test that finds it missing, and a \
+         workstation that has not built it skips that lane with a warning.",
+    ),
+    (
         "gradlew :sce-forge-runtime-kotlin:jvmJar",
         "provisions the runner rather than verifying the tree: it builds the \
          jar every Kotlin forge gate puts on `kotlinc -cp`, and a runner \
