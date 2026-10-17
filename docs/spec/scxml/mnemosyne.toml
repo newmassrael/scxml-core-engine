@@ -211,6 +211,12 @@ scan_exclusions = [
     # Measured 2026-10-16 over its 7 Rust sources: not one carries a `§` citation,
     # so excluding them swallows no section from this gate.
     "backends/rust/host-features/",
+    # What a host of a shared list keeps that its machines cannot (`sce-rust-trust`):
+    # signatures, certificates and the keys that keep a write's content from the hub. It
+    # implements no clause of the Recommendation. Measured 2026-10-17 over its 9 Rust
+    # sources: not one carries a `§` citation, so excluding them swallows no section from
+    # this gate.
+    "backends/rust/trust/",
     "sce-build/examples/",
     "sce-build/tests/",
     "tests/",
