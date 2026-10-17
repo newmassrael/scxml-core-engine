@@ -1,0 +1,84 @@
+# Mutation cases for "the table a backend emits equals the export".
+#
+# Run with `scripts/mutate sce-build/tests/mutations/the_emitted_transition_table_equals_the_export.cases`.
+#
+# `sce-codegen generate --emit-transition-table` writes each transition of a machine into
+# the generated source of six backends, and `the_emitted_transition_table_equals_the_export`
+# holds every one of them to the export of the same document. A test that has never been
+# made to fail says nothing about whether it could, so each backend's table is made wrong
+# here in the one place that is its own: the line of its template that writes an entry.
+#
+# The first six put the same wrong fact in every backend, the position of the transition
+# within its state, which is what a host reads to find the transition again in the design.
+# The seventh is the one reading a table back cannot see. Reading Kotlin's table back
+# unescapes what the template wrote, so a `$` left bare reads back as the `$` it should
+# be; it is the Kotlin compiler that reads `$x` as an interpolation of a name that is not
+# there. The escape for `$` is therefore held by a test that asks the source for the
+# spelling the language requires, which any lane can run, and again by the program built
+# and run where a Kotlin toolchain and the runtime jar are present.
+#
+# The tests that build and run need tools a cargo job does not carry (the Kotlin runtime
+# jar, the Python runtime's Lua binding), and they skip without them, so the cases below
+# are judged by the tests every job can run; the built programs are held by the suite lane.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test the_emitted_transition_table_equals_the_export
+mutation_targets tools/codegen/templates/utility_methods.jinja2
+mutation_targets tools/codegen/templates/c/state_machine.c.jinja2
+mutation_targets tools/codegen/templates/rust/state_machine.rs.jinja2
+mutation_targets tools/codegen/templates/go/state_machine.go.jinja2
+mutation_targets tools/codegen/templates/kotlin/state_machine.kt.jinja2
+mutation_targets tools/codegen/templates/python/state_machine.py.jinja2
+mutation_targets sce-build/src/filters.rs
+mutation_oracles sce-build/tests/the_emitted_transition_table_equals_the_export.rs
+
+# ── The position of the transition: one past what the design says ──
+
+mutation_case "C++ numbers a transition one past its place in the state" <<'PY'
+edit("tools/codegen/templates/utility_methods.jinja2",
+     '{{ t.index }}u, "{{ t.annotation | escape_cpp }}"',
+     '{{ t.index + 1 }}u, "{{ t.annotation | escape_cpp }}"')
+PY
+
+mutation_case "C numbers a transition one past its place in the state" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     '{{ t.index }}u, "{{ t.annotation | escape_c }}"',
+     '{{ t.index + 1 }}u, "{{ t.annotation | escape_c }}"')
+PY
+
+mutation_case "Rust numbers a transition one past its place in the state" <<'PY'
+edit("tools/codegen/templates/rust/state_machine.rs.jinja2",
+     'index: {{ t.index }}, annotation: "{{ t.annotation | escape_rust }}"',
+     'index: {{ t.index + 1 }}, annotation: "{{ t.annotation | escape_rust }}"')
+PY
+
+mutation_case "Go numbers a transition one past its place in the state" <<'PY'
+edit("tools/codegen/templates/go/state_machine.go.jinja2",
+     'Index: {{ t.index }}, Annotation: "{{ t.annotation | escape_go }}"',
+     'Index: {{ t.index + 1 }}, Annotation: "{{ t.annotation | escape_go }}"')
+PY
+
+mutation_case "Kotlin numbers a transition one past its place in the state" <<'PY'
+edit("tools/codegen/templates/kotlin/state_machine.kt.jinja2",
+     '{{ t.index }}, "{{ t.annotation | escape_kotlin }}"',
+     '{{ t.index + 1 }}, "{{ t.annotation | escape_kotlin }}"')
+PY
+
+mutation_case "Python numbers a transition one past its place in the state" <<'PY'
+edit("tools/codegen/templates/python/state_machine.py.jinja2",
+     '{{ t.index }}, "{{ t.annotation | escape_python }}"',
+     '{{ t.index + 1 }}, "{{ t.annotation | escape_python }}"')
+PY
+
+# ── The `$` of an annotation: written as typed, so the compiler reads it ──
+
+mutation_case "Kotlin writes a dollar sign in an annotation as it was typed" <<'PY'
+edit("sce-build/src/filters.rs",
+     r'''        .replace('\t', "\\t")
+        .replace('$', "\\$")
+}''',
+     r'''        .replace('\t', "\\t")
+}''')
+PY
