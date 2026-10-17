@@ -57,6 +57,27 @@ pub enum TrustError {
     Stale { held: u64 },
 }
 
+/// A new epoch begun by an administrator: its number, and the grant of its key for each recipient.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Rotation {
+    pub epoch: u32,
+    /// Each recipient's key and the grant (text) for that member's host, to carry by any channel.
+    pub grants: Vec<(PublicKey, String)>,
+}
+
+/// Why an epoch could not be begun.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RotateError {
+    /// The key that asked is no administrator this host was told to trust.
+    NotAnAdministrator,
+    /// The operating system gave no randomness, and no weaker source is used in its place.
+    NoRandomness,
+    /// Every epoch number is used.
+    NoMoreEpochs,
+    /// A recipient is not a point of the curve a key can be agreed on.
+    BadRecipient(PublicKey),
+}
+
 /// Why a grant of a key was not taken in.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GrantError {
@@ -70,6 +91,8 @@ pub enum GrantError {
     UnknownGiver,
     /// The secret the giver's key and this person's agree on does not open it.
     CannotOpen,
+    /// The host holds another key of that epoch already.
+    EpochTaken,
 }
 
 /// What one certificate says of a member from its time on.
@@ -262,6 +285,68 @@ impl Trust {
         )
     }
 
+    /// The members this host's certificates make of the list now, as the node and the key of each:
+    /// every node whose latest certificate gives a role of 1 or more. What a rotation is given to
+    /// when a member was taken off: the ones left.
+    pub fn current_members(&self) -> Vec<(u64, PublicKey)> {
+        self.state()
+            .members
+            .iter()
+            .filter_map(|(node, eras)| {
+                let latest = eras.values().next_back()?;
+                (latest.role >= 1).then_some((*node, latest.key))
+            })
+            .collect()
+    }
+
+    /// Begin a new epoch of the list, made by an administrator's host: a fresh key (drawn here,
+    /// from the operating system), the next number after the latest this host holds, and a grant
+    /// for each of `recipients`, which is the keys of the members that are left when one was taken
+    /// off. A member who is not among them is given nothing, derives nothing from what they were
+    /// given before (the key is not made from the old one), and so opens none of what is sealed
+    /// from here on. What was sealed before stays what it was, to those who hold those keys.
+    ///
+    /// The grants are the administrator's: a host takes them because their giver is one the host
+    /// was told to trust. Nothing here makes the removed member's older keys stop opening older
+    /// content, which no scheme can; it makes sure that nothing written afterwards opens for them.
+    pub fn rotate_epoch(
+        &self,
+        administrator: &Identity,
+        recipients: &[PublicKey],
+    ) -> Result<Rotation, RotateError> {
+        let mut state = self.state();
+        if !state.administrators.contains(&administrator.public()) {
+            return Err(RotateError::NotAnAdministrator);
+        }
+        let epoch = state
+            .epoch_keys
+            .keys()
+            .next_back()
+            .map_or(Some(1), |latest| latest.checked_add(1))
+            .ok_or(RotateError::NoMoreEpochs)?;
+        let key = secrecy::generate_key().map_err(|_| RotateError::NoRandomness)?;
+        let from = administrator.public();
+        let mut grants = Vec::with_capacity(recipients.len());
+        for to in recipients {
+            let shared = administrator
+                .agree(to)
+                .ok_or(RotateError::BadRecipient(*to))?;
+            grants.push((
+                *to,
+                json!({
+                    "calendar": state.calendar,
+                    "epoch": epoch,
+                    "from": from.to_text(),
+                    "to": to.to_text(),
+                    "wrapped": secrecy::wrap(&state.calendar, &shared, &from, to, epoch, &key),
+                })
+                .to_string(),
+            ));
+        }
+        state.epoch_keys.insert(epoch, key);
+        Ok(Rotation { epoch, grants })
+    }
+
     /// Take a key a member or an administrator gave this host's person: held when it is for
     /// this list and this person, from a key that belongs to the list's members or
     /// administrators, and opens. Gives its epoch.
@@ -301,6 +386,13 @@ impl Trust {
         let shared = identity.agree(&from).ok_or(GrantError::CannotOpen)?;
         let key = secrecy::unwrap(&state.calendar, &shared, &from, &to, epoch, wrapped)
             .ok_or(GrantError::CannotOpen)?;
+        // A key of an epoch the host holds is not replaced by another: two keys for one epoch is a
+        // host that was given a number someone else already used, and what it sealed under the
+        // first would not open for those who hold the second.
+        match state.epoch_keys.get(&epoch) {
+            Some(held) if *held != key => return Err(GrantError::EpochTaken),
+            _ => {}
+        }
         state.epoch_keys.insert(epoch, key);
         Ok(epoch)
     }

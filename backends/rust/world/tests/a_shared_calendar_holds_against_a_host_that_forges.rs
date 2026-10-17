@@ -396,6 +396,62 @@ fn the_hub_holds_what_its_members_wrote_without_being_able_to_read_it() {
     assert!(errors.is_empty(), "{errors:?}");
 }
 
+/// A member is taken off and an administrator begins a new epoch for the members left: what alice
+/// writes afterwards reaches the hub (sealed) and carol's... here, the one member that is left,
+/// and bob's copy, which was given no key of it, holds none of it, while what was written before
+/// is still what his copy holds.
+#[test]
+fn a_member_taken_off_reads_nothing_written_after_the_next_epoch() {
+    let (mut world, hosts) = untrusting_world(9, 2, &["alice", "bob", "server"]);
+    for person in [&hosts.alice, &hosts.bob] {
+        person.set_epoch_key(1, [5; 32]);
+    }
+    todo_title(&mut world, "alice", 1, "before");
+    quiet(&mut world);
+    assert_eq!(todos_of(&mut world, "bob").len(), 1);
+    world.host_errors();
+
+    // The administrator's host takes bob off and begins epoch 2 for who is left.
+    world.advance_ms(1_000);
+    hosts.certify(&certificate_from(BOB, 0, 2, world.now_ms()));
+    let administrator = Trust::new(CALENDAR, &[administrator().public()]);
+    administrator.set_epoch_key(1, [5; 32]);
+    for node in [ALICE, BOB] {
+        administrator.accept(&certificate(node, 2, 1)).unwrap();
+    }
+    administrator
+        .accept(&certificate_from(BOB, 0, 2, world.now_ms()))
+        .unwrap();
+    let left: Vec<_> = administrator
+        .current_members()
+        .into_iter()
+        .map(|(_, key)| key)
+        .collect();
+    assert_eq!(left, vec![key_of(ALICE).public()]);
+    let rotation = administrator
+        .rotate_epoch(&self::administrator(), &left)
+        .unwrap();
+    assert_eq!(hosts.alice.receive_grant(&rotation.grants[0].1), Ok(2));
+
+    world.advance_ms(1_000);
+    todo_title(&mut world, "alice", 2, "after");
+    quiet(&mut world);
+
+    assert!(todos_of(&mut world, "alice").contains_key(&(2, TITLE)));
+    let hub = todo_variables_of(&mut world, "server").to_string();
+    assert!(!hub.contains("after"), "the hub holds the text");
+    let bob = todos_of(&mut world, "bob");
+    assert!(
+        !bob.contains_key(&(2, TITLE)),
+        "bob holds what was written after"
+    );
+    assert!(bob.contains_key(&(1, TITLE)), "bob lost what he had");
+    assert!(
+        refused(&mut world, "no key of epoch 2") >= 1,
+        "bob's host says why"
+    );
+}
+
 /// What a member wrote before they were taken off stays: when everyone resyncs afterwards, the
 /// hub sends their values to the copies and the tombstone of the one a person wrote over (as
 /// itself, which the host puts who really wrote over it back on), and no host refuses any of it,

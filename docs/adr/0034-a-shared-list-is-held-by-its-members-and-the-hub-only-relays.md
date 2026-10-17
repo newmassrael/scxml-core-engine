@@ -1,6 +1,6 @@
 # ADR 0034 - A shared list is held by its members, and the hub only relays
 
-- Status: Proposed
+- Status: Proposed (decisions taken 2026-10-17; Accepted when stage 2 lands)
 - Date: 2026-10-17
 - Scope: the shared to-do list and every list built like it (`todo_peer`), `sce-rust-trust`,
   the Mesh endpoint seams, a relay service, the host features that carry keys
@@ -248,14 +248,32 @@ Safety properties the model and tests state:
 - A member removed at epoch *n* cannot open an operation sealed under an epoch after *n*.
 - A fork of the membership log is detected by any two members that exchange heads.
 
-## Open decisions for the owner
+## Decisions
 
-1. **The cipher suite and library** (the MLS mandatory suite and `openmls`, or another audited
-   implementation); the binding technique for the other lanes (C ABI with generated bindings).
-2. **The relay's home:** a service this project runs, a component others deploy, or both, which
-   decides how much of stage 5 is product and how much is reference.
-3. **History for a new member:** whether the default is none or all.
-4. **Loss on revocation:** whether an administrator may extend `final_head` after the fact when
-   the removed device proves (by its log) that an operation predates the removal.
-5. **Whether the trusted-hub profile is shipped,** or only the untrusted one with a hub that
-   happens to be run by the family.
+The owner asked on 2026-10-17 for the design that is longest-lived and correct for production,
+cost set aside, and left the choices below to be made. They are made here, each for the reason
+given, and each can be revisited by a later ADR that names the reason.
+
+1. **Cipher suite and library:** the MLS mandatory suite (X25519, AES-128-GCM, SHA-256,
+   Ed25519) through `openmls`, in Rust, with other lanes through a C ABI and generated bindings.
+   The standard suite is the one every audited implementation interoperates on, and a second
+   implementation can be checked against it.
+2. **The relay's home:** a reference relay in this repository (small, generic, with the
+   verification and the limits of stage 5) that anyone may deploy, and no hosted service
+   as part of this project. The protocol must not depend on who runs a relay, and a reference
+   that is tested against it is what keeps that true.
+3. **History for a new member:** none by default; an administrator may add the older epochs'
+   keys to a Welcome. A key that is not given cannot leak, and the choice that costs a member
+   history is the one that can be corrected later by giving it.
+4. **Loss on revocation:** an administrator may issue an `Amend(device, final_head)` entry that
+   raises a `final_head` when the removed device's own log proves, with the signatures of
+   members' checkpoints that name those operations, that they were seen before the removal. It is a log
+   entry, so every host sees it and none can be talked into it.
+5. **The trusted-hub profile is shipped,** as a fact in the membership log (section 10). A
+   household with one server is the common case, and refusing it would push it to a weaker
+   product of someone else's.
+
+## Status of the plan
+
+Stage 1 is being built on the existing design, and the stages after it as listed. This ADR is
+Accepted when stage 2 lands, since the membership log is what makes the rest binding.

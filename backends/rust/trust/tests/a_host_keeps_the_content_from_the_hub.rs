@@ -10,7 +10,7 @@
 // the list's members or administrators hold.
 
 use sce_rust_mesh::endpoint::{Admission, Sealer};
-use sce_rust_trust::{Certificate, GrantError, Identity, Trust};
+use sce_rust_trust::{Certificate, GrantError, Identity, RotateError, Trust};
 use serde_json::{json, Value};
 
 const CALENDAR: &str = "home";
@@ -237,5 +237,87 @@ fn what_a_host_keeps_comes_back_from_its_store_and_still_opens() {
     assert_eq!(
         text_of(&send(&mut restarted, &told).unwrap()),
         text_of(&wire)
+    );
+}
+
+/// A member is taken off, and an administrator begins a new epoch for the members that are left:
+/// what is written from then on is sealed under a key the removed member was never given, and
+/// they open none of it; what was sealed before opens for whoever held its key, as it did.
+#[test]
+fn a_member_taken_off_opens_nothing_written_after_the_next_epoch() {
+    let mut alice = host(Some((1, 1)), &[(1, 5)]);
+    let mut bob = host(Some((2, 2)), &[(1, 5)]);
+    let mut carol = host(Some((3, 3)), &[(1, 5)]);
+    let before = send(&mut alice, &titled(1, 1000, "before")).unwrap();
+
+    // The administrator's host holds the list's certificates and the key it knows, takes bob off
+    // and begins epoch 2 for who is left.
+    let administrator = host(None, &[(1, 5)]);
+    administrator
+        .accept(&Certificate::issue(
+            &admin(),
+            CALENDAR,
+            2,
+            0,
+            person(2).public(),
+            2,
+            1500,
+        ))
+        .unwrap();
+    let left: Vec<_> = administrator
+        .current_members()
+        .into_iter()
+        .map(|(_, key)| key)
+        .collect();
+    assert_eq!(left, vec![person(1).public(), person(3).public()]);
+    let rotation = administrator.rotate_epoch(&admin(), &left).unwrap();
+    assert_eq!(rotation.epoch, 2);
+    assert_eq!(rotation.grants.len(), 2);
+    assert_eq!(administrator.epochs(), vec![1, 2]);
+
+    for (key, grant) in &rotation.grants {
+        let who = if *key == person(1).public() {
+            &alice
+        } else {
+            &carol
+        };
+        assert_eq!(who.receive_grant(grant), Ok(2));
+    }
+    // The grants are for those two and no one else; bob cannot use either.
+    for (_, grant) in &rotation.grants {
+        assert_eq!(bob.receive_grant(grant), Err(GrantError::NotForThisHost));
+    }
+    assert_eq!(bob.epochs(), vec![1]);
+
+    // From now on alice seals under epoch 2; carol opens it and bob does not.
+    let after = send(&mut alice, &titled(1, 2000, "after")).unwrap();
+    let told = carol
+        .admit("server", "todo.write", &after)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        serde_json::from_str::<Value>(&told).unwrap()["text"],
+        "after"
+    );
+    let reason = bob.admit("server", "todo.write", &after).unwrap_err();
+    assert!(reason.contains("no key of epoch 2"), "{reason}");
+
+    // What was sealed before opens for the keys that opened it: the new key is no part of it.
+    assert!(carol.admit("server", "todo.write", &before).is_ok());
+    assert!(bob.admit("server", "todo.write", &before).is_ok());
+
+    // Only an administrator begins an epoch, and a key that is held is not replaced.
+    assert_eq!(
+        administrator.rotate_epoch(&person(1), &left),
+        Err(RotateError::NotAnAdministrator)
+    );
+    let other = host(None, &[(2, 6)]);
+    let clash = other.rotate_epoch(&admin(), &left).unwrap();
+    assert_eq!(clash.epoch, 3);
+    let one_held_already = host(Some((1, 1)), &[(3, 7)]);
+    let grant_of_3 = &clash.grants[0].1;
+    assert_eq!(
+        one_held_already.receive_grant(grant_of_3),
+        Err(GrantError::EpochTaken)
     );
 }

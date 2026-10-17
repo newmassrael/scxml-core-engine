@@ -108,10 +108,23 @@ from a member who could write or an administrator, and opens.
 
 ### Taking a member off
 
-A member taken off still holds the keys they were given, and reads what was sealed under them.
-To keep what is written from then on, an owner makes a new epoch key and gives it to the members
-that remain. This is the host's flow and is not automated here. A lost key means lost content:
-the hub cannot recover it.
+A member taken off still holds the keys they were given, and reads what was sealed under them;
+no scheme can take that back. What can be done is that nothing written afterwards opens for them.
+The administrator's host does it in one call: `Trust::rotate_epoch(administrator, recipients)`
+draws a new key from the operating system (never from the old one, never from the host's own
+source), takes the next epoch number, and gives back a grant for each recipient, which is
+`Trust::current_members()` after the removal's certificate was accepted. The members that are left
+take the grant (`receive_grant`) and seal under the new epoch from then on; the removed member is
+given nothing and finds `no key of epoch N` on every write that follows. A host does not replace
+the key it holds for an epoch with another (`GrantError::EpochTaken`), so an administrator's host
+must hold the keys of the epochs that exist, or it would begin a number already used. Only an
+administrator the host was told to trust begins an epoch. A lost key means lost content: the hub
+cannot recover it.
+
+The bytes that are signed and sealed are pinned by known-answer vectors
+(`backends/rust/trust/tests/a_byte_format_does_not_drift.rs`): a change to any of them is a
+decision that makes every existing signature and sealed text stop verifying, and the vectors are
+where it shows.
 
 ## 5. What a host keeps across a restart
 

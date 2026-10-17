@@ -40,6 +40,14 @@ const WRAP_DOMAIN: &str = "sce-trust/wrap/1";
 /// A key of one epoch of a list.
 pub type EpochKey = [u8; 32];
 
+/// A new key, drawn from the operating system's source of randomness. A host that has no such
+/// source (it cannot run this crate's host) fails here, and never falls back to a weaker one.
+pub fn generate_key() -> Result<EpochKey, getrandom::Error> {
+    let mut key = [0u8; 32];
+    getrandom::getrandom(&mut key)?;
+    Ok(key)
+}
+
 /// Why a sealed text did not open.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OpenError {
@@ -267,6 +275,14 @@ mod tests {
             open("home", &keys(3, key), b"stamp", "buy milk"),
             Err(OpenError::NotSealed)
         );
+    }
+
+    #[test]
+    fn a_generated_key_is_new_each_time() {
+        let a = generate_key().unwrap();
+        let b = generate_key().unwrap();
+        assert_ne!(a, b);
+        assert_ne!(a, [0u8; 32]);
     }
 
     #[test]

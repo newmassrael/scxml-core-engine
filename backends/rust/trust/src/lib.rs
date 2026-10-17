@@ -43,4 +43,4 @@ pub mod trust;
 
 pub use certificate::Certificate;
 pub use identity::{Identity, PublicKey};
-pub use trust::{GrantError, Trust, TrustError};
+pub use trust::{GrantError, RotateError, Rotation, Trust, TrustError};
