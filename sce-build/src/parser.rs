@@ -745,6 +745,45 @@ fn owning_state(node: &roxmltree::Node) -> String {
     }
 }
 
+/// The member of `_event` an expression reads other than `data`, when it reads one: `origin`
+/// of `_event.origin === 'x'`, outside the string literals the expression holds.
+fn event_metadata_member(expression: &str) -> Option<String> {
+    let bytes = expression.as_bytes();
+    let mut quote: Option<u8> = None;
+    let mut at = 0;
+    while at < bytes.len() {
+        let byte = bytes[at];
+        match quote {
+            Some(open) => {
+                if byte == b'\\' {
+                    at += 1;
+                } else if byte == open {
+                    quote = None;
+                }
+            }
+            None if byte == b'\'' || byte == b'"' => quote = Some(byte),
+            None if expression[at..].starts_with("_event.") => {
+                let before_is_name = at > 0
+                    && (bytes[at - 1].is_ascii_alphanumeric()
+                        || bytes[at - 1] == b'_'
+                        || bytes[at - 1] == b'.');
+                let after = &expression[at + "_event.".len()..];
+                let member: String = after
+                    .chars()
+                    .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+                    .collect();
+                if !before_is_name && !member.is_empty() && member != "data" {
+                    return Some(member);
+                }
+                at += "_event.".len() - 1;
+            }
+            None => {}
+        }
+        at += 1;
+    }
+    None
+}
+
 /// Refuse what SCE's statically typed data model does not accept
 /// (docs/SCE_ACCEPTED_SUBSET.md §2.15).
 ///
@@ -802,6 +841,27 @@ fn enforce_static_datamodel(
         let name = node.tag_name().name();
         if name == "scxml" {
             continue;
+        }
+
+        // An expression of this data model reads the payload of an event, and no other
+        // member of `_event`: the generated machine has no `_event` of its own to read the
+        // metadata of (the origin, the name, the type…) from, so an expression that names one
+        // would be written into the code as it stands, and refused only by the compiler of
+        // the generated language, or not at all.
+        for attribute in ["cond", "expr"] {
+            if let Some((written, pos)) = attribute_as_written(&node, attribute) {
+                if let Some(member) = event_metadata_member(written) {
+                    return Err(refused(
+                        pos,
+                        format!("{attribute}=\"{written}\""),
+                        "a machine of this data model reads the payload of an event \
+                         (`_event.data.<field>`) and no other member of `_event`: the metadata \
+                         of an event is not lowered, so it has nothing to read it from",
+                        &node,
+                        Some(format!("_event.{member}")),
+                    ));
+                }
+            }
         }
 
         if name == "data" && crate::sce_attr::read(&node, "kind").is_none() {

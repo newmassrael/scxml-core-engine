@@ -1335,6 +1335,17 @@ runs each of the seven on the engine a generated machine uses, so this
 paragraph cannot go stale again without a test going red. What a call
 on one of those fields does is §3.7.
 
+That is the script engine's `_event`. A machine of `datamodel="sce-static"` has no
+script engine and no `_event` of its own: it reads the payload of an event,
+`_event.data.<field>`, and no other member, so a `cond` or an `expr` that names one
+(`_event.origin`, `_event.name`, …) is refused where it is written
+(`scxml/static-datamodel-rule`), as it was not until 2026-10-17, when `check` accepted it
+and `generate` wrote `_event.origin` into the code of every language as it stood, for the
+compiler of the generated language to refuse as an unknown name.
+`a_static_machine_reads_no_event_metadata` holds this. What a link may deliver to such a
+machine is decided where the link is known, by the host
+(`Endpoint::forbid_events_from` of the Rust Mesh host), and not by the machine.
+
 ### §3.4 Unsupported expression-language constructs
 
 The forge expression language (SCE_FORGE.md §3.4) is a typed subset of
