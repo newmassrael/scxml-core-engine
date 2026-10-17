@@ -11,12 +11,11 @@ schema = 1
 #
 # ⚠ THIS COMMENT USED TO CLAIM `go` WAS ABSENT FROM THE BUILD MACHINE, and
 # that the Go, Python and Kotlin lanes therefore had to stay local. Measured
-# 2026-08-24 across all three registered hosts: every one carries go 1.22,
-# openjdk 21, python3 3.12 and pytest. The claim had been false for long
-# enough that nobody knew when it stopped being true — which is the trouble
-# with a comment that states a fact about ANOTHER machine. A statement like
-# that goes stale in silence, reads exactly like a true one, and sent every
-# Go/Python/Kotlin gate to this host for no reason.
+# 2026-08-24, the claim had been false for long enough that nobody knew when it
+# stopped being true — which is the trouble with a comment that states a fact
+# about ANOTHER machine. A statement like that goes stale in silence, reads
+# exactly like a true one, and kept every Go/Python/Kotlin gate local for no
+# reason.
 #
 # So the rule this file follows now: state what THIS repository needs, in
 # `needs`, where bx checks it against the machine and excludes a host that
@@ -117,22 +116,22 @@ writes = ["scripts/regen_", "scripts/mutate", "scripts/emit_embed_manifest.sh", 
 #
 # `kotlinc` joined on 2026-09-11, and it is the one that did NOT fail loudly:
 # the forge Kotlin gates degrade to skip-with-warn, so a host without it
-# reported green over seven checks that never ran. It is listed now because
-# both registered machines carry it — it was installed on them rather than
-# worked around, which is the order these two moves belong in. Declaring a
-# tool nobody has would have cost this repository its 32-core host for every
-# job, Kotlin or not; installing first makes the declaration free, and the
-# declaration is what keeps the NEXT host from re-entering that silence.
+# reported green over seven checks that never ran. It is listed so that such a
+# host is refused instead. It was installed on the build machines before it was
+# declared, which is the order these two moves belong in: a tool no host has
+# refuses every host for every job, Kotlin or not; installing first makes the
+# declaration free, and the declaration is what keeps the NEXT host from
+# re-entering that silence.
 #
 # `gradle` is deliberately NOT here: the Kotlin lanes run `./gradlew`, which
 # fetches its own distribution, so the machine needs a JDK and nothing more.
 #
 # `clang-format-19` joined on 2026-09-24, in the same order `kotlinc` did:
-# installed on both machines first (the Ubuntu archive's 19.1.1, the package
-# CI installs), then declared. `sce-codegen` formats the C++ it generates with
-# clang-format pinned to major 19 and refuses without it
-# (docs/SCE_CODEGEN_DETERMINISM.md §9), and pc2's unsuffixed `clang-format`
-# is 18 — so the suffixed name is the tool a host must be able to run.
+# installed first (the Ubuntu archive's 19.1.1, the package CI installs), then
+# declared. `sce-codegen` formats the C++ it generates with clang-format pinned
+# to major 19 and refuses without it (docs/SCE_CODEGEN_DETERMINISM.md §9), and a
+# host's unsuffixed `clang-format` can be another major — so the suffixed name
+# is the tool a host must be able to run.
 #
 # ⚠ ONE LINE. bx reads this key with a single `sed` that anchors on `[` and
 # `]` in the same line, unlike `writes`/`packages` which are read across
@@ -159,9 +158,9 @@ needs = ["cargo", "cmake", "ninja", "g++", "node", "git", "mnemosyne-cli", "go",
 # in `compileJvmMainJava` with `Cannot find a Java installation ... languageVersion=17`. `java`
 # in `needs` cannot say WHICH. (`gradle` is still not here: `./gradlew` brings its own.)
 #
-# Declared only after all three registered machines were checked to satisfy both names: a name a
-# host cannot satisfy would refuse that host for every job, which is the failure `kotlinc`'s
-# comment above describes.
+# Declared only after the build machines were checked to satisfy both names: a name a host
+# cannot satisfy would refuse that host for every job, which is the failure `kotlinc`'s comment
+# above describes.
 packages = ["libssl-dev", "openjdk-17-jdk-headless"]
 
 # The C++ tree is the constraint: a debug build of this repository has
@@ -198,14 +197,14 @@ peak_gb_per_task = 4
 # and skips-with-warn without it, so a provisioned host that lacks it reports
 # green over checks that never ran. It is gitignored, so `send` never carries
 # it — a remote tree has one only if something built it there. Measured
-# 2026-09-11: the build machine had a jar at all only because an earlier run
+# 2026-09-11: a build machine had a jar at all only because an earlier run
 # in that session happened to route a `jvmJar` to it, which is a property of
 # that history and not of the host.
 #
 # Gradle is called through `scripts/gradlew-on-ci-jdk.sh`, not directly: a bare
 # `./gradlew` runs on the machine's default JDK, and Gradle 8.11.1 with this
 # repository's Kotlin plugin dies on JDK 25 (`* What went wrong: 25.0.4`,
-# measured 2026-09-30 on the build machine, whose `java` is 25.0.4). The script
+# measured 2026-09-30 on a build machine whose default `java` was 25.0.4). The script
 # picks the JDK the Kotlin gates pick, from the version CI installs.
 build  = "cargo build --bin sce-codegen --features cli -p sce-build && cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo && cmake --build build && cargo test --workspace --features cli --no-run && scripts/gradlew-on-ci-jdk.sh :sce-forge-runtime-kotlin:jvmJar --console=plain"
 
