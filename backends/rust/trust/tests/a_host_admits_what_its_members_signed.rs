@@ -208,17 +208,22 @@ fn the_signatures_a_host_relays_with_survive_a_restart_when_they_are_still_true(
     let mut hub = host(None);
     let sealed = send(&mut alice, "todo.write", &write(1, 10)).unwrap();
     let for_the_machine = hub.admit("alice", "todo.write", &sealed).unwrap().unwrap();
-    let kept = hub.signatures();
-    assert_eq!(kept.len(), 1);
+    let kept = hub.signatures_to_text();
 
     let mut restarted = host(None);
-    assert_eq!(restarted.restore_signatures(&kept), 1);
+    assert_eq!(restarted.restore_signatures_from_text(&kept), 1);
     assert!(send(&mut restarted, "todo.write", &for_the_machine).is_some());
 
-    let mut tampered = kept.clone();
-    tampered[0].1[0] ^= 1;
+    let signature = serde_json::from_str::<Value>(&sealed).unwrap()["sig"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let mut flipped = signature.clone();
+    flipped.replace_range(0..1, if signature.starts_with('A') { "B" } else { "A" });
+    let tampered = kept.replace(&signature, &flipped);
+    assert_ne!(tampered, kept);
     let mut again = host(None);
-    assert_eq!(again.restore_signatures(&tampered), 0);
+    assert_eq!(again.restore_signatures_from_text(&tampered), 0);
     assert_eq!(send(&mut again, "todo.write", &for_the_machine), None);
 }
 

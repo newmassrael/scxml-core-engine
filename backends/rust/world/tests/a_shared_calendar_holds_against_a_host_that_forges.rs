@@ -344,6 +344,58 @@ fn an_instant_an_administrator_attested_is_settled_for_every_host() {
     assert_eq!(agree(&mut world), 2);
 }
 
+/// The members hold a key the hub does not, and what they write reaches the hub sealed: its
+/// machine holds the stamp of each write and a text it cannot read, relays it as it is, and the
+/// members' copies hold what was written and agree on one list, over a resync as well.
+#[test]
+fn the_hub_holds_what_its_members_wrote_without_being_able_to_read_it() {
+    let (mut world, hosts) = untrusting_world(8, 2, &["alice", "bob", "server"]);
+    for person in [&hosts.alice, &hosts.bob] {
+        person.set_epoch_key(1, [5; 32]);
+    }
+    todo_title(&mut world, "alice", 1, "buy milk");
+    hosts.edit(&mut world, "bob", 2, DUE, 987_654_321);
+    todo_title(&mut world, "bob", 3, "call dad");
+    quiet(&mut world);
+
+    let hub = todo_variables_of(&mut world, "server");
+    let held = hub["values"].as_array().expect("values are a list");
+    assert_eq!(held.len(), 3);
+    for value in held {
+        assert!(value["text"].as_str().unwrap().starts_with('~'), "{value}");
+        assert_eq!(whole(&value["value"]), 0, "{value}");
+    }
+    let hub_text = hub.to_string();
+    for secret in ["buy milk", "call dad", "987654321"] {
+        assert!(!hub_text.contains(secret), "the hub holds {secret}");
+    }
+
+    for round in 0..2 {
+        assert_eq!(
+            todos_of(&mut world, "alice"),
+            todos_of(&mut world, "bob"),
+            "round {round}"
+        );
+        for who in ["alice", "bob"] {
+            let copy = todo_variables_of(&mut world, who).to_string();
+            for secret in ["buy milk", "call dad", "987654321"] {
+                assert!(copy.contains(secret), "{who} lost {secret}");
+            }
+            assert_eq!(
+                todo_variables_of(&mut world, who)["digest"],
+                hub["digest"],
+                "{who}"
+            );
+        }
+        for who in ["alice", "bob", "server"] {
+            world.raise(who, "todo.resync", "");
+        }
+        quiet(&mut world);
+    }
+    let errors = world.host_errors();
+    assert!(errors.is_empty(), "{errors:?}");
+}
+
 /// What a member wrote before they were taken off stays: when everyone resyncs afterwards, the
 /// hub sends their values to the copies and the tombstone of the one a person wrote over (as
 /// itself, which the host puts who really wrote over it back on), and no host refuses any of it,

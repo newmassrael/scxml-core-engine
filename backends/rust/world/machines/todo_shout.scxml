@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   What the host of the wide sender (todo_wide_sender) hands it: a to-do and a title of
-  at most 64 bytes of UTF-8.
+  at most 128 bytes of UTF-8.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -11,6 +11,6 @@
        sce:event-name="todo.shout">
   <datamodel>
     <data id="id" sce:type="uint32" sce:direction="in"/>
-    <data id="text" sce:type="string" sce:max-size="64" sce:direction="in"/>
+    <data id="text" sce:type="string" sce:max-size="128" sce:direction="in"/>
   </datamodel>
 </scxml>

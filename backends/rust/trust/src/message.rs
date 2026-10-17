@@ -57,6 +57,31 @@ pub fn signing(calendar: &str, event: &str, data: &Value) -> Option<Result<Signi
     Some(build(calendar, event, data, fields, author, at))
 }
 
+/// The number and the text a write carries, which is what is sealed when a host keeps a
+/// write's content from the hub.
+pub fn write_content(data: &Value) -> Result<(i64, String), MessageError> {
+    let object = data.as_object().ok_or(MessageError::NotAnObject)?;
+    let value = read(object, "value", Kind::Signed(Some(0)))?
+        .parse::<i64>()
+        .map_err(|_| MessageError::Field("value"))?;
+    Ok((value, read(object, "text", Kind::Text)?))
+}
+
+/// What names a write, apart from its content and who it is for: the fields that make its
+/// stamp, written as the parts of a message. A write is sealed under this (it is the nonce
+/// and what the cipher binds the content to), so that sealed content moves to no other write.
+pub fn write_stamp(data: &Value) -> Result<Vec<u8>, MessageError> {
+    let object = data.as_object().ok_or(MessageError::NotAnObject)?;
+    let mut stamp = Vec::new();
+    for (name, kind) in WRITE {
+        if ["value", "text"].contains(name) {
+            continue;
+        }
+        part(&mut stamp, &read(object, name, *kind)?);
+    }
+    Ok(stamp)
+}
+
 /// The bytes a `todo.supersede` is signed as, written again from what a host keeps of it: the
 /// subject of the note ([`Signing::subject`]), who wrote over and when. It is what [`signing`]
 /// writes for the note, so that a host that stored the three can check the signature again.

@@ -33,6 +33,20 @@ impl Identity {
     pub fn sign(&self, message: &[u8]) -> [u8; 64] {
         self.key.sign(message).to_bytes()
     }
+
+    /// The secret that this key and `peer`'s agree on, the same one from either side: the
+    /// signing key and the public key are taken as the points of the curve that a key
+    /// agreement works on, so that a person has one key for both. `None` when `peer` is not
+    /// a point of the curve.
+    pub fn agree(&self, peer: &PublicKey) -> Option<[u8; 32]> {
+        let peer = VerifyingKey::from_bytes(&peer.0).ok()?;
+        let secret = x25519_dalek::StaticSecret::from(self.key.to_scalar_bytes());
+        let public = x25519_dalek::PublicKey::from(peer.to_montgomery().to_bytes());
+        let shared = secret.diffie_hellman(&public);
+        // A peer that is a point of small order makes the secret all zeros, which anyone can
+        // compute.
+        (!shared.as_bytes().iter().all(|b| *b == 0)).then(|| *shared.as_bytes())
+    }
 }
 
 impl fmt::Debug for Identity {

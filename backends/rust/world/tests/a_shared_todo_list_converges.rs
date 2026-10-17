@@ -199,7 +199,7 @@ fn a_title_in_another_script_is_held_to_its_bytes_and_kept_whole() {
 }
 
 /// A write that reaches the hub over the network with a text past its bound — sent by a
-/// copy of the app that holds titles to 64 bytes, not 32 — is refused whole there: no
+/// copy of the app that holds titles to 128 bytes, not 96 — is refused whole there: no
 /// cell is merged, nothing is passed on, and the copies stay alike. A refusal in part
 /// would leave the hub with a field its text is missing from, and the others without it.
 #[test]
@@ -216,8 +216,8 @@ fn a_write_whose_text_does_not_fit_changes_nothing_at_the_hub() {
     todo_title(&mut world, "bob", 1, "kept");
     assert_eq!(world.run_until_quiet(10_000), Outcome::Quiet);
 
-    // 33 bytes: it fits the sender's bound and not the list's.
-    let too_long = "x".repeat(33);
+    // 97 bytes: it fits the sender's bound and not the list's.
+    let too_long = "x".repeat(97);
     world.raise(
         "alice",
         "todo.shout",

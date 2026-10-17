@@ -36,6 +36,7 @@ use crate::certificate::Certificate;
 use crate::encoding;
 use crate::identity::{Identity, PublicKey};
 use crate::message::{self, SIGNATURE_FIELD};
+use crate::secrecy;
 
 /// The role from which a member may write.
 const WRITER: u8 = 2;
@@ -56,6 +57,21 @@ pub enum TrustError {
     Stale { held: u64 },
 }
 
+/// Why a grant of a key was not taken in.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GrantError {
+    /// It is not what [`Trust::grant_key`] writes.
+    Malformed,
+    /// It is for another list.
+    WrongCalendar,
+    /// It is for another person, or this host has no person.
+    NotForThisHost,
+    /// It is from a key that is no member's who could write, and no administrator's.
+    UnknownGiver,
+    /// The secret the giver's key and this person's agree on does not open it.
+    CannotOpen,
+}
+
 /// What one certificate says of a member from its time on.
 struct Era {
     from: i64,
@@ -71,6 +87,13 @@ struct Note {
     signature: [u8; 64],
 }
 
+/// A write as it travels, and the signature its author made of it.
+#[derive(Clone)]
+struct Wire {
+    data: String,
+    signature: [u8; 64],
+}
+
 type Clock = Box<dyn Fn() -> i64 + Send>;
 
 struct State {
@@ -82,9 +105,16 @@ struct State {
     /// The host's clock, the one it gives its machine as `now`: what a note this host's person
     /// makes is made at.
     clock: Option<Clock>,
-    /// What each write that was admitted was signed with, by the bytes it is signed as: what a
-    /// host that relays a write sends it on with. The floors an administrator attested are here.
+    /// The floors an administrator attested, by the bytes they are signed as: what the hub's
+    /// floor leaves with.
     signatures: BTreeMap<Vec<u8>, [u8; 64]>,
+    /// Each write that was admitted or made here, by the bytes it is signed as when the machine
+    /// holds it: what the host that relays it sends it on as. It is the write as it travels
+    /// (sealed, when the host keeps content from the hub) and its author's signature.
+    wires: BTreeMap<Vec<u8>, Wire>,
+    /// The keys of the epochs this host holds. A host that holds any keeps the content of every
+    /// write from the hub, and takes no write that is not sealed.
+    epoch_keys: BTreeMap<u32, secrecy::EpochKey>,
     /// Who wrote over each write, by the note's subject.
     notes: BTreeMap<Vec<u8>, Note>,
     /// The events that arrive with no signature and make a copy forget, which this host does
@@ -101,13 +131,6 @@ impl State {
             .values()
             .rev()
             .find(|era| era.from <= at)
-    }
-
-    fn keys(&self) -> impl Iterator<Item = &PublicKey> {
-        self.members
-            .values()
-            .flat_map(|eras| eras.values().map(|era| &era.key))
-            .chain(self.administrators.iter())
     }
 }
 
@@ -137,6 +160,8 @@ impl Trust {
                 own: None,
                 clock: None,
                 signatures: BTreeMap::new(),
+                wires: BTreeMap::new(),
+                epoch_keys: BTreeMap::new(),
                 notes: BTreeMap::new(),
                 unsigned_refused: UNSIGNED_REFUSED.iter().map(|e| e.to_string()).collect(),
             })),
@@ -201,6 +226,83 @@ impl Trust {
         }
         state.signatures.insert(message, signature);
         Ok(())
+    }
+
+    /// This host holds the key of `epoch`: from now on it keeps the content of every write from
+    /// the hub, seals what its person writes under the latest epoch it holds, and takes only
+    /// writes that are sealed under an epoch it holds. For a host that makes a list's key
+    /// (its owner's; the key is drawn from the host's source of randomness) or reads one it kept.
+    pub fn set_epoch_key(&self, epoch: u32, key: secrecy::EpochKey) {
+        self.state().epoch_keys.insert(epoch, key);
+    }
+
+    /// The epochs this host holds a key of.
+    pub fn epochs(&self) -> Vec<u32> {
+        self.state().epoch_keys.keys().copied().collect()
+    }
+
+    /// The key of `epoch` as a grant to `to`: sealed so that only `to`'s key opens it, as text
+    /// for any channel to carry (the hub's included). `None` when this host has no identity or
+    /// no key of the epoch, or `to` is not a point of the curve.
+    pub fn grant_key(&self, epoch: u32, to: &PublicKey) -> Option<String> {
+        let state = self.state();
+        let (_, identity) = state.own.as_ref()?;
+        let key = state.epoch_keys.get(&epoch)?;
+        let from = identity.public();
+        let shared = identity.agree(to)?;
+        Some(
+            json!({
+                "calendar": state.calendar,
+                "epoch": epoch,
+                "from": from.to_text(),
+                "to": to.to_text(),
+                "wrapped": secrecy::wrap(&state.calendar, &shared, &from, to, epoch, key),
+            })
+            .to_string(),
+        )
+    }
+
+    /// Take a key a member or an administrator gave this host's person: held when it is for
+    /// this list and this person, from a key that belongs to the list's members or
+    /// administrators, and opens. Gives its epoch.
+    pub fn receive_grant(&self, text: &str) -> Result<u32, GrantError> {
+        let mut state = self.state();
+        let grant: Value = serde_json::from_str(text).map_err(|_| GrantError::Malformed)?;
+        let text_of = |name: &str| grant.get(name).and_then(Value::as_str);
+        if text_of("calendar") != Some(state.calendar.as_str()) {
+            return Err(GrantError::WrongCalendar);
+        }
+        let epoch = u32::try_from(
+            grant
+                .get("epoch")
+                .and_then(Value::as_u64)
+                .ok_or(GrantError::Malformed)?,
+        )
+        .map_err(|_| GrantError::Malformed)?;
+        let from = text_of("from")
+            .and_then(PublicKey::from_text)
+            .ok_or(GrantError::Malformed)?;
+        let to = text_of("to")
+            .and_then(PublicKey::from_text)
+            .ok_or(GrantError::Malformed)?;
+        let wrapped = text_of("wrapped").ok_or(GrantError::Malformed)?;
+        let (_, identity) = state.own.as_ref().ok_or(GrantError::NotForThisHost)?;
+        if identity.public() != to {
+            return Err(GrantError::NotForThisHost);
+        }
+        let known = state.administrators.contains(&from)
+            || state.members.values().any(|eras| {
+                eras.values()
+                    .any(|era| era.key == from && era.role >= WRITER)
+            });
+        if !known {
+            return Err(GrantError::UnknownGiver);
+        }
+        let shared = identity.agree(&from).ok_or(GrantError::CannotOpen)?;
+        let key = secrecy::unwrap(&state.calendar, &shared, &from, &to, epoch, wrapped)
+            .ok_or(GrantError::CannotOpen)?;
+        state.epoch_keys.insert(epoch, key);
+        Ok(epoch)
     }
 
     /// Take `events` from a peer although they carry no signature, because this host trusts
@@ -291,24 +393,19 @@ impl Trust {
             .collect()
     }
 
-    /// The signatures this host holds for the writes it relays, to keep across a restart.
-    pub fn signatures(&self) -> Vec<(Vec<u8>, [u8; 64])> {
-        self.state()
-            .signatures
-            .iter()
-            .map(|(message, signature)| (message.clone(), *signature))
-            .collect()
-    }
-
     /// What this host holds, as one text for its store (the key-value feature): a JSON object
-    /// with the signatures of the writes and floors it relays, as `[message, signature]`, and
-    /// who wrote over what, as `[subject, by, at, signature]`, each bytes written as
-    /// [`encoding`] writes them.
+    /// with the floors an administrator attested, as `[message, signature]`, the writes it
+    /// relays, as `[the write as it travels, signature]`, and who wrote over what, as
+    /// `[subject, by, at, signature]`, each bytes written as [`encoding`] writes them. It holds
+    /// no key: a host keeps those where it keeps its person's secret.
     pub fn signatures_to_text(&self) -> String {
         let state = self.state();
         json!({
             "signatures": state.signatures.iter()
                 .map(|(message, signature)| json!([encoding::encode(message), encoding::encode(signature)]))
+                .collect::<Vec<_>>(),
+            "wires": state.wires.values()
+                .map(|wire| json!([wire.data, encoding::encode(&wire.signature)]))
                 .collect::<Vec<_>>(),
             "notes": state.notes.iter()
                 .map(|(subject, note)| json!([
@@ -346,6 +443,24 @@ impl Trust {
             .collect();
         let mut kept = self.restore_signatures(&signatures);
         let mut state = self.state();
+        for row in rows("wires") {
+            let parsed = (|| {
+                let data = row.get(0)?.as_str()?.to_string();
+                let signature: [u8; 64] =
+                    encoding::decode(row.get(1)?.as_str()?)?.try_into().ok()?;
+                Some((data, signature))
+            })();
+            let Some((data, signature)) = parsed else {
+                continue;
+            };
+            let Ok(wire) = serde_json::from_str::<Value>(&data) else {
+                continue;
+            };
+            if let Ok((visible, _)) = verified_write(&state, &wire, &signature) {
+                state.wires.insert(visible, Wire { data, signature });
+                kept += 1;
+            }
+        }
         for row in rows("notes") {
             let parsed = (|| {
                 let subject = encoding::decode(row.get(0)?.as_str()?)?;
@@ -370,15 +485,17 @@ impl Trust {
         kept
     }
 
-    /// Take back signatures [`Self::signatures`] gave: each one that a key of today (a
-    /// member's, or an administrator's for a floor) verifies is kept, and the rest are dropped,
-    /// since what a host reads back from its own storage is not taken for true. Returns how
-    /// many were kept.
-    pub fn restore_signatures(&self, entries: &[(Vec<u8>, [u8; 64])]) -> usize {
+    /// Take back the floors [`Self::signatures_to_text`] wrote: each one that an administrator's
+    /// key verifies is kept, and the rest are dropped, since what a host reads back from its
+    /// own storage is not taken for true. Returns how many were kept.
+    fn restore_signatures(&self, entries: &[(Vec<u8>, [u8; 64])]) -> usize {
         let mut state = self.state();
         let mut kept = 0;
         for (message, signature) in entries {
-            let true_of_a_key = state.keys().any(|key| key.verifies(message, signature));
+            let true_of_a_key = state
+                .administrators
+                .iter()
+                .any(|key| key.verifies(message, signature));
             if true_of_a_key {
                 state.signatures.insert(message.clone(), *signature);
                 kept += 1;
@@ -427,41 +544,112 @@ impl Admission for Trust {
         let mut value: Value =
             serde_json::from_str(data).map_err(|_| format!("{event}: the data is not JSON"))?;
         let signature = signature_of(&mut value, event)?;
+        if event == "todo.write" {
+            let (visible_message, visible) = verified_write(&state, &value, &signature)?;
+            state.wires.insert(
+                visible_message,
+                Wire {
+                    data: value.to_string(),
+                    signature,
+                },
+            );
+            return Ok(Some(visible.to_string()));
+        }
         let signing = match message::signing(&state.calendar, event, &value) {
             Some(Ok(signing)) => signing,
             Some(Err(error)) => return Err(format!("{event}: {error:?}")),
             None => return Ok(None),
         };
-        let era = state.era_at(signing.author, signing.at).ok_or_else(|| {
-            format!(
-                "{event}: node {} was not a member at {}",
-                signing.author, signing.at
-            )
-        })?;
-        if era.role < WRITER {
-            return Err(format!(
-                "{event}: node {} may not write (role {} at {})",
-                signing.author, era.role, signing.at
-            ));
-        }
-        if !era.key.verifies(&signing.message, &signature) {
-            return Err(format!(
-                "{event}: the signature is not node {}'s",
-                signing.author
-            ));
-        }
-        if event == "todo.supersede" {
-            state.notes.entry(signing.subject).or_insert(Note {
-                by: signing.author,
-                at: signing.at,
-                signature,
-            });
-            value.as_object_mut().map(|object| object.remove(AT_FIELD));
-        } else {
-            state.signatures.insert(signing.message, signature);
-        }
+        check_author(&state, event, &signing, &signature)?;
+        state.notes.entry(signing.subject).or_insert(Note {
+            by: signing.author,
+            at: signing.at,
+            signature,
+        });
+        value.as_object_mut().map(|object| object.remove(AT_FIELD));
         Ok(Some(value.to_string()))
     }
+}
+
+/// Whether the author of what was signed was a member who could write at the time they say they
+/// made it, and the signature is true under the key their certificate of that time gave.
+fn check_author(
+    state: &State,
+    event: &str,
+    signing: &message::Signing,
+    signature: &[u8; 64],
+) -> Result<(), String> {
+    let era = state.era_at(signing.author, signing.at).ok_or_else(|| {
+        format!(
+            "{event}: node {} was not a member at {}",
+            signing.author, signing.at
+        )
+    })?;
+    if era.role < WRITER {
+        return Err(format!(
+            "{event}: node {} may not write (role {} at {})",
+            signing.author, era.role, signing.at
+        ));
+    }
+    if !era.key.verifies(&signing.message, signature) {
+        return Err(format!(
+            "{event}: the signature is not node {}'s",
+            signing.author
+        ));
+    }
+    Ok(())
+}
+
+/// A write as it traveled (`wire`, without its signature) and the signature: judged as a write
+/// is, and opened when this host keeps content from the hub. Gives the bytes the write is signed
+/// as when the machine holds it, and the write as the machine is told it.
+fn verified_write(
+    state: &State,
+    wire: &Value,
+    signature: &[u8; 64],
+) -> Result<(Vec<u8>, Value), String> {
+    let event = "todo.write";
+    let signing = match message::signing(&state.calendar, event, wire) {
+        Some(Ok(signing)) => signing,
+        Some(Err(error)) => return Err(format!("{event}: {error:?}")),
+        None => return Err(format!("{event}: it is not a write")),
+    };
+    check_author(state, event, &signing, signature)?;
+    let visible = open_write(state, wire)?;
+    let held = message::signing(&state.calendar, event, &visible)
+        .and_then(Result::ok)
+        .ok_or_else(|| format!("{event}: what it holds is not a write"))?;
+    Ok((held.message, visible))
+}
+
+/// The write as the machine is told it: the content opened, when this host keeps content from
+/// the hub, and the write as it is otherwise.
+fn open_write(state: &State, wire: &Value) -> Result<Value, String> {
+    if state.epoch_keys.is_empty() {
+        return Ok(wire.clone());
+    }
+    let sealed = wire.get("text").and_then(Value::as_str).unwrap_or("");
+    let stamp = message::write_stamp(wire).map_err(|error| format!("todo.write: {error:?}"))?;
+    let (value, text) =
+        secrecy::open(&state.calendar, &state.epoch_keys, &stamp, sealed).map_err(|error| {
+            match error {
+            secrecy::OpenError::NotSealed => {
+                "todo.write: its content is not sealed, and this host keeps content from the hub"
+                    .to_string()
+            }
+            secrecy::OpenError::NoKey { epoch } => {
+                format!("todo.write: this host holds no key of epoch {epoch}")
+            }
+            secrecy::OpenError::Corrupt => "todo.write: its content does not open".to_string(),
+        }
+        })?;
+    let mut visible = wire.clone();
+    let object = visible
+        .as_object_mut()
+        .ok_or("todo.write: the data is not an object")?;
+    object.insert("value".to_string(), Value::String(value.to_string()));
+    object.insert("text".to_string(), Value::String(text));
+    Ok(visible)
 }
 
 /// A `todo.floor` is admitted when an administrator attested it: its `sig` is an administrator
@@ -569,16 +757,62 @@ impl Sealer for Trust {
         if !message::SIGNED_EVENTS.contains(&event) {
             return None;
         }
-        let mut value: Value = serde_json::from_str(data).ok()?;
-        let signing = message::signing(&state.calendar, event, &value)?.ok()?;
-        let signature = match &state.own {
-            Some((node, identity)) if *node == signing.author => identity.sign(&signing.message),
-            _ => *state.signatures.get(&signing.message)?,
-        };
+        seal_write(&mut state, data)
+    }
+}
+
+/// A write leaves as it traveled to this host, with its author's signature, when it is another
+/// person's; and as this host's person's own, sealed when the host keeps content from the hub,
+/// and signed here, when it is theirs.
+fn seal_write(state: &mut State, data: &str) -> Option<String> {
+    let visible: Value = serde_json::from_str(data).ok()?;
+    let signing = message::signing(&state.calendar, "todo.write", &visible)?.ok()?;
+    let held = signing.message;
+    let own = matches!(&state.own, Some((node, _)) if *node == signing.author);
+    // What was made or admitted before leaves as it did: one write is one set of bytes.
+    if let Some(wire) = state.wires.get(&held).cloned() {
+        let mut value: Value = serde_json::from_str(&wire.data).ok()?;
         value.as_object_mut()?.insert(
             SIGNATURE_FIELD.to_string(),
-            Value::String(encoding::encode(&signature)),
+            Value::String(encoding::encode(&wire.signature)),
         );
-        Some(value.to_string())
+        return Some(value.to_string());
     }
+    if !own {
+        return None;
+    }
+    let mut wire = visible.clone();
+    if let Some(epoch) = state.epoch_keys.keys().next_back().copied() {
+        let key = state.epoch_keys.get(&epoch)?;
+        let (number, text) = message::write_content(&visible).ok()?;
+        let stamp = message::write_stamp(&visible).ok()?;
+        let object = wire.as_object_mut()?;
+        object.insert("value".to_string(), Value::String("0".to_string()));
+        object.insert(
+            "text".to_string(),
+            Value::String(secrecy::seal(
+                &state.calendar,
+                epoch,
+                key,
+                &stamp,
+                number,
+                &text,
+            )),
+        );
+    }
+    let travelling = message::signing(&state.calendar, "todo.write", &wire)?.ok()?;
+    let (_, identity) = state.own.as_ref()?;
+    let signature = identity.sign(&travelling.message);
+    state.wires.insert(
+        held,
+        Wire {
+            data: wire.to_string(),
+            signature,
+        },
+    );
+    wire.as_object_mut()?.insert(
+        SIGNATURE_FIELD.to_string(),
+        Value::String(encoding::encode(&signature)),
+    );
+    Some(wire.to_string())
 }

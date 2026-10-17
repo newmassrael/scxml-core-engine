@@ -26,4 +26,11 @@ publish = false
 [dependencies]
 sce-rust-mesh = { path = "../mesh" }
 ed25519-dalek = { version = "2", default-features = false, features = ["std", "fast"] }
+# What keeps the content of a write from the hub: an authenticated cipher with a nonce long
+# enough to be derived from the write's stamp, a key agreement that a member's signing key
+# takes part in (so that a person has one key, not two), and the hash that turns the shared
+# secret into a key.
+chacha20poly1305 = { version = "0.10", default-features = false, features = ["alloc"] }
+x25519-dalek = { version = "2", default-features = false, features = ["static_secrets"] }
+sha2 = { version = "0.10", default-features = false }
 serde_json = "1"

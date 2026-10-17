@@ -15,9 +15,11 @@
   set of orset_live; what a set cannot carry is the value, and this is where it is
   kept beside the dot.
 
-  `text` is bounded by `sce:max-size`, 32 UTF-8 bytes, which is the size every
+  `text` is bounded by `sce:max-size`, 96 UTF-8 bytes, which is the size every
   backend gives the buffer it is held in: a write to a field with a smaller bound
-  than the text came from is refused where it is written, never cut.
+  than the text came from is refused where it is written, never cut. A person's text
+  is at most 32 (todo_edit); a copy that holds a write whose content a host sealed
+  holds the sealed text, which is longer (todo_write).
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -29,7 +31,7 @@
     <data id="id" sce:type="uint64" sce:direction="in"/>
     <data id="field" sce:type="uint64" sce:direction="in"/>
     <data id="value" sce:type="int64" sce:direction="in"/>
-    <data id="text" sce:type="string" sce:max-size="32" sce:direction="in"/>
+    <data id="text" sce:type="string" sce:max-size="96" sce:direction="in"/>
     <data id="wallTime" sce:type="int64" sce:direction="in"/>
     <data id="counter" sce:type="uint32" sce:direction="in"/>
     <data id="nodeId" sce:type="uint64" sce:direction="in"/>

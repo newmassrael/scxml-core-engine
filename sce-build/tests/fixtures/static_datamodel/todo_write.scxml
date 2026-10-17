@@ -11,8 +11,11 @@
   uint32 and a field by a uint16, so that the register they name, `id * 65536 +
   field`, is one uint64 below 2^48 (todo_peer): any number the types hold names a
   register of its own, and none is refused for being large.
-  `text` holds at most 32 bytes of UTF-8, counted in bytes as every string of a
-  `sce-static` machine is.
+  `text` holds at most 96 bytes of UTF-8, counted in bytes as every string of a
+  `sce-static` machine is. A person writes at most 32 (todo_edit); the rest is room for
+  what a host puts there instead of the text when it keeps the content from the hub: the
+  sealed content, which is the text and the number with the cost of sealing them, as a
+  text of at most 81 bytes.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -24,7 +27,7 @@
     <data id="id" sce:type="uint32" sce:direction="in"/>
     <data id="field" sce:type="uint16" sce:direction="in"/>
     <data id="value" sce:type="int64" sce:direction="in"/>
-    <data id="text" sce:type="string" sce:max-size="32" sce:direction="in"/>
+    <data id="text" sce:type="string" sce:max-size="96" sce:direction="in"/>
     <data id="wallTime" sce:type="int64" sce:direction="in"/>
     <data id="counter" sce:type="uint32" sce:direction="in"/>
     <data id="nodeId" sce:type="uint64" sce:direction="in"/>

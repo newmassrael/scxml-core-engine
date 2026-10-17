@@ -17,6 +17,10 @@
 //!   a host that relays them cannot make one.
 //! * [`message`] — the bytes a write is signed as, written from the event's own fields and the
 //!   list's name, so a signature neither moves to another write nor to another list.
+//! * [`secrecy`] — keeping the content of a write from the hub: a key for each epoch of the
+//!   list, held by its members, seals the number and the text of a write under its stamp, and is
+//!   given to a member sealed under what their key and the giver's agree on. What the hub holds
+//!   is the stamp and a text it cannot read.
 //! * [`trust`] — the rule a host puts in front of its machine and behind it: a write leaves
 //!   with its author's signature, and one that arrives is admitted when its author is a member
 //!   who may write and the signature is true. The signature is written into an event as it
@@ -34,8 +38,9 @@ pub mod certificate;
 pub mod encoding;
 pub mod identity;
 pub mod message;
+pub mod secrecy;
 pub mod trust;
 
 pub use certificate::Certificate;
 pub use identity::{Identity, PublicKey};
-pub use trust::{Trust, TrustError};
+pub use trust::{GrantError, Trust, TrustError};

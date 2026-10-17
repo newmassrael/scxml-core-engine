@@ -166,6 +166,10 @@
       <sce:set name="nodeId" expr="0"/>
     </data>
     <data id="values" sce:type="list&lt;record:Value&gt;" sce:capacity="512" sce:limit="merge_values" sce:direction="out"/>
+    <!-- The text a person types, held to the 32 bytes a person writes (todo_edit): a write
+         has room for more, for what a host puts there when it keeps the content from the hub
+         (todo_write), and a text past 32 that a person typed is refused as one past the room. -->
+    <data id="typed" sce:type="string" sce:capacity="32" expr="''"/>
     <data id="held" sce:type="record:Value">
       <sce:set name="id" expr="0"/>
       <sce:set name="field" expr="0"/>
@@ -333,7 +337,9 @@
     <transition event="todo.edit" type="internal">
       <!-- The text is read first, into a place nothing else reads: a text past its bound
            is an assignment that fails and ends the block, so the change is refused
-           whole, with the clock where it was and nothing sent. -->
+           whole, with the clock where it was and nothing sent. The bound a person's text
+           has is the one `typed` holds, and the one a write has is wider. -->
+      <assign location="typed" expr="_event.data.text"/>
       <assign location="held.text" expr="_event.data.text"/>
       <assign location="entry.element" expr="_event.data.id"/>
       <assign location="entry.element" expr="entry.element * 65536 + _event.data.field"/>
