@@ -44,7 +44,7 @@ from . import delivery, landing, process, sandbox
 from .check import (STATECHART_KINDS, Finding, activation_in_force, activation_unsaid,
                     addresses_of, clock_refusals, closed_value_refusals, driving_refusals,
                     imports_of, read_binding)
-from .errors import AuthoringError, VerifyError
+from .errors import AuthoringError, GeneratorUnavailable, VerifyError
 # ⚠ Re-exported, not defined here. Generated code is imported, and a design's
 # machine started, only in a process of its own (`sandbox`, `worker`); what
 # `verify` keeps is the names its callers and tests have always imported from it.
@@ -119,15 +119,35 @@ class RunStopped(RunLost):
 #: authoring document.
 CODEGEN_SECONDS = 600
 
+#: The exit statuses the generator's contract has (SCE_ERROR_CONTRACT.md §6, the table that
+#: `sce-build/tests/exit_status_contract.rs` reads). A status outside it is the program failing,
+#: not a judgment of the document: a Rust panic ends in 101, and a signal is a negative number.
+CONTRACT_STATUSES = frozenset({0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 20})
+
+#: How much of what the generator wrote is carried in the sentence that says it failed.
+FAILED_TAIL_CHARS = 600
+
 
 def _generator_run(argv: list, cwd=None):
     """Run the product's generator through the one place this package starts a
     program, with a clock. A generator that does not end is an answer, not a
-    hang."""
+    hang.
+
+    ⚠ A generator that ENDS outside its contract is not an answer about the document either.
+    Left to the callers it came back as `refused`, with the panic's lines as `unparsed`
+    diagnostics, and a model that was told its document was refused rewrote it for eighty minutes
+    against a generator that could not find its templates."""
     try:
-        return process.run(argv, cwd=cwd, timeout=CODEGEN_SECONDS)
+        run = process.run(argv, cwd=cwd, timeout=CODEGEN_SECONDS)
     except process.ProcessTimeout as exc:
         raise VerifyError(f"the code generator did not answer: {exc}") from exc
+    if run.returncode not in CONTRACT_STATUSES:
+        said = (run.stderr.strip() or run.stdout.strip())[-FAILED_TAIL_CHARS:]
+        raise GeneratorUnavailable(
+            f"the code generator failed with status {run.returncode}, which its contract does "
+            f"not have, so it judged nothing about the document and no change to the document "
+            f"puts this right. What it wrote ends: {said}")
+    return run
 
 
 def _host_names(module, part: str) -> dict:
@@ -487,7 +507,7 @@ def _emit(document: pathlib.Path, codegen: pathlib.Path, into: pathlib.Path,
     the feedback the author needs. Re-phrasing it would lose the reason.
     """
     if not codegen.exists():
-        raise VerifyError(
+        raise GeneratorUnavailable(
             f"{codegen}: the code generator is not there, so no document can "
             f"be run. Build it, or name another with --codegen.")
     argv = [str(codegen), "generate", str(document), "-o", str(into),
@@ -1007,7 +1027,7 @@ def _product_answer(args: list[str], codegen: pathlib.Path | None, *,
     """
     codegen = pathlib.Path(codegen).resolve() if codegen else _default_codegen()
     if not codegen.exists():
-        raise VerifyError(
+        raise GeneratorUnavailable(
             f"{codegen}: the code generator is not there, so no document can "
             f"be read. Build sce-codegen before using this tool.")
     run = _generator_run([str(codegen), "--error-format", "json", *args], cwd=cwd)
@@ -1448,7 +1468,7 @@ def pseudo_page(document: pathlib.Path, codegen: pathlib.Path | None,
     """
     codegen = pathlib.Path(codegen).resolve() if codegen else _default_codegen()
     if not codegen.exists():
-        raise VerifyError(
+        raise GeneratorUnavailable(
             f"{codegen}: the code generator is not there, so no document can "
             f"be shown. Build it, or name another with --codegen.")
     argv = [str(codegen), "pseudo", str(document)]

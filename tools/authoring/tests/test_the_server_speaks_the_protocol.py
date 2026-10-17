@@ -413,6 +413,55 @@ class TheServerSpeaksTheProtocol(unittest.TestCase):
                       f"the refusal reached the caller without the names "
                       f"there are: {said}")
 
+    def test_a_generator_that_failed_is_not_a_refusal_of_the_document(self):
+        """A generator that panics judged nothing, and the answer says so in a field.
+
+        ⚠ It came back as `verdict: refused` with the panic's lines as `unparsed` diagnostics,
+        which is what a document with a defect looks like. A model that was handed that
+        rewrote a sound document for eighty minutes against a generator that could not find
+        its templates. A refusal with a record is the document's; a status the contract does
+        not have is the program's, and the host reads `_meta` to tell them apart.
+        """
+        for status in (101, -11):
+            with self.subTest(status=status), generator_that_records(
+                    returncode=status, stdout="",
+                    stderr="thread 'main' panicked at sce-build/src/lib.rs:8580:5:\n"
+                           "Cannot find Jinja2 templates. Set SCE_TEMPLATE_DIR."):
+                result = self.call("validate_scxml", document_text="<scxml/>",
+                                   document_name="door.scxml")
+            self.assertTrue(result.get("isError"))
+            self.assertEqual({mcp.CANNOT_JUDGE: True}, result.get("_meta"))
+            said = result["content"][0]["text"]
+            self.assertIn(f"status {status}", said)
+            self.assertIn("Cannot find Jinja2 templates", said)
+            self.assertNotIn('"verdict"', said)
+
+    def test_a_refusal_with_a_record_stays_the_documents_own(self):
+        """The same failure of a check, with a status the contract has, is still the document's.
+
+        ⚠ The other half of the case above: a rule that took every non-zero status for a fault
+        of the installation would tell the owner their sound generator is broken whenever a
+        design is refused.
+        """
+        record = json.dumps({"v": 1, "code": "validation/unreachable-state",
+                             "message": "state `a` cannot be reached"})
+        with generator_that_records(returncode=3, stdout="", stderr=record + "\n"):
+            result = self.call("validate_scxml", document_text="<scxml/>",
+                               document_name="door.scxml")
+        self.assertTrue(result.get("isError"))
+        self.assertNotIn("_meta", result)
+        self.assertEqual("refused", json.loads(result["content"][0]["text"])["verdict"])
+
+    def test_a_generator_that_is_not_there_is_not_a_refusal_either(self):
+        with unittest.mock.patch.object(
+                verify, "_default_codegen",
+                lambda: pathlib.Path("/nonexistent/sce-codegen")):
+            result = self.call("validate_scxml", document_text="<scxml/>",
+                               document_name="door.scxml")
+        self.assertTrue(result.get("isError"))
+        self.assertEqual({mcp.CANNOT_JUDGE: True}, result.get("_meta"))
+        self.assertIn("not there", result["content"][0]["text"])
+
     def test_pseudo_refuses_an_empty_document_path(self):
         """A refusal names the file the caller gave, not this program.
 

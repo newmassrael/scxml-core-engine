@@ -96,7 +96,7 @@ from .coverage import coverage as run_coverage
 from .decisions import cited_by_binding, compose_record
 from .decisions import hold as hold_decisions
 from .decisions import load_record as load_decision_record
-from .errors import AuthoringError, describe_path
+from .errors import AuthoringError, GeneratorUnavailable, describe_path
 from .gaps import ORDER as GAP_ORDER
 from .gaps import report as gap_report
 from .pack import check_pack, load_pack
@@ -2181,6 +2181,17 @@ def _text(payload: str) -> dict:
 
 def _failure(payload: str) -> dict:
     return {"content": [{"type": "text", "text": payload}], "isError": True}
+
+
+#: The `_meta` key of a result that says the tool could not judge at all. A failure is
+#: something the model is told and can put right; this one is not, and the host that runs the
+#: model is the reader it is for, so it is a field the host reads and not a phrase it searches
+#: for.
+CANNOT_JUDGE = "sce.dev/cannot-judge"
+
+
+def _cannot_judge(payload: str) -> dict:
+    return {**_failure(payload), "_meta": {CANNOT_JUDGE: True}}
 
 
 def _pack_arg(args: dict) -> pathlib.Path:
@@ -4451,6 +4462,8 @@ def call_tool(name: str, args: dict, *, remote: bool = False,
     # not be read down the arm below, so a client that named a missing file got
     # a Python traceback back over the wire -- this program's internals, as an
     # answer to the client's own ordinary mistake.
+    except GeneratorUnavailable as exc:
+        return _cannot_judge(str(exc))
     except AuthoringError as exc:
         return _failure(str(exc))
     except (FileNotFoundError, KeyError, TypeError) as exc:

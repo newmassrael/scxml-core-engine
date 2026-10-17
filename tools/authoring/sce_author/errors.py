@@ -44,6 +44,14 @@ class VerifyError(AuthoringError):
     verifier to do so."""
 
 
+class GeneratorUnavailable(VerifyError):
+    """The product's generator could not judge: it is not there, or it ended in a way its own
+    contract has no status for (a panic, a signal). Nothing here says anything about the
+    document, and no rewrite of the document puts it right, so a caller that is a model must not
+    be told to try again. It is a fault of the installation, and the host that runs the model is
+    the one to say so."""
+
+
 # What reading a file off a disk can raise, other than the file simply not
 # being there: a directory in its place, a permission, a symlink loop, a
 # device that is not a file, bytes that are not text in the encoding claimed.
