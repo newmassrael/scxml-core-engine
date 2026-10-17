@@ -1,0 +1,247 @@
+# Mutation cases for the group key of a shared list (ADR 0034, section 6): the MLS group that gives the
+# list its content key for each epoch, bound to the membership log. A commit is applied only when the
+# log names it by hash and at the epoch the log gives it; after a commit the group's roster is the
+# log's members and a commit that leaves it otherwise is undone; a device that joins from a Welcome
+# holds the confirmation tag of the commit the log names; a device the log has no grant for (or has
+# with another key) is not added; a removed device derives no key of a later epoch; the epoch key and
+# the key of a section come from the group's exporter under labels and contexts of their own; and the
+# member of a host takes the entries of the log, the commit and the Welcome in that order.
+#
+# Each case takes one of those checks away or weakens it, and the tests under study must turn red. A
+# check no test notices is a check nothing holds in place.
+#
+# The tests under study are the three of the crate and the one that carries the commits and Welcomes
+# through a relay, which is the only one that runs `Member::absorb` and `Member::advance`.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/a_group_key_follows_only_what_the_log_names_rust.cases`.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported INCONCLUSIVE with the
+# anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-mls --lib --test a_known_answer_scenario_is_what_every_lane_replays --test a_person_links_a_device_loses_one_and_is_taken_off_with_the_group_following --test an_mls_group_follows_the_log_and_cuts_off_the_removed -p sce-rust-world --test a_shared_list_keys_its_content_with_mls_through_a_relay
+mutation_targets backends/rust/mls/src/lib.rs backends/rust/mls/src/host.rs
+mutation_oracles backends/rust/mls/tests/a_known_answer_scenario_is_what_every_lane_replays.rs backends/rust/mls/tests/a_person_links_a_device_loses_one_and_is_taken_off_with_the_group_following.rs backends/rust/mls/tests/an_mls_group_follows_the_log_and_cuts_off_the_removed.rs backends/rust/world/tests/a_shared_list_keys_its_content_with_mls_through_a_relay.rs
+
+# ── The keys the exporter gives: the labels and what they are asked with ──────────────────────
+
+mutation_case "The key of an epoch is asked of the exporter under another label" <<'PY'
+edit("backends/rust/mls/src/lib.rs",
+     'const EPOCH_LABEL: &str = "sce-trust/epoch-key/1";',
+     'const EPOCH_LABEL: &str = "sce-trust/epoch-key/2";')
+PY
+
+mutation_case "The key of a section is asked of the exporter under the label of the epoch's" <<'PY'
+edit("backends/rust/mls/src/lib.rs",
+     'const SECTION_LABEL: &str = "sce-trust/section-key/1";',
+     'const SECTION_LABEL: &str = "sce-trust/epoch-key/1";')
+PY
+
+mutation_case "The key of a section does not depend on the name of the section" <<'PY'
+edit("backends/rust/mls/src/lib.rs",
+     "        context.extend_from_slice(name.as_bytes());",
+     "        let _ = name;")
+PY
+
+mutation_case "The key of an epoch is asked for no list" <<'PY'
+edit("backends/rust/mls/src/lib.rs",
+     "        self.export(EPOCH_LABEL, self.list.as_bytes())",
+     "        self.export(EPOCH_LABEL, &[])")
+PY
+
+mutation_case "A device removed from the group is given the exporter's key of the epoch it was in" <<'PY'
+edit("backends/rust/mls/src/lib.rs",
+     "        if !group.is_active() {\n            return Err(MlsError::Removed);",
+     "        if false {\n            return Err(MlsError::Removed);")
+PY
+
+# ── A commit the log names, and when ──────────────────────────────────────────────────────────
+
+mutation_case "A device applies a commit the log does not name as the one that begins the next epoch" <<'PY'
+edit("backends/rust/mls/src/lib.rs",
+     "        if named != Some(commit_hash(commit)) {\n            return Err(MlsError::CommitNotNamed { epoch: next });",
+     "        if false {\n            return Err(MlsError::CommitNotNamed { epoch: next });")
+PY
+
+mutation_case "A device applies a commit the log names for its latest epoch, whichever epoch is next" <<'PY'
+edit("backends/rust/mls/src/lib.rs",
+     "        let named = u32::try_from(next)\n            .ok()\n            .and_then(|epoch| log.commit_of(epoch));",
+     "        let named = u32::try_from(next)\n            .ok()\n            .and_then(|_| log.commit_of(log.epoch()));")
+PY
+
+mutation_case "A commit that removes the device is taken as one more epoch" <<'PY'
+edit("backends/rust/mls/src/lib.rs",
+     "            Ok(()) if !self.is_active() => Ok(Applied::Removed),",
+     "            Ok(()) if false => Ok(Applied::Removed),")
+PY
+
+mutation_case "The administrator merges a commit the log does not name" <<'PY'
+edit("backends/rust/mls/src/lib.rs",
+     "        if named != Some(pending.commit_hash) {",
+     "        if false {")
+PY
+
+mutation_case "A commit is made for the epoch two after the group's, and the log names it there" <<'PY'
+edit("backends/rust/mls/src/lib.rs",
+     "            welcome: Some(welcome.to_bytes().map_err(lib)?),\n            commit_hash: [0; 32],\n            epoch: group.epoch().as_u64() + 1,",
+     "            welcome: Some(welcome.to_bytes().map_err(lib)?),\n            commit_hash: [0; 32],\n            epoch: group.epoch().as_u64() + 2,")
+PY
+
+mutation_case "A commit is named by one hash for every commit" <<'PY'
+edit("backends/rust/mls/src/lib.rs",
+     "    Sha256::digest(commit).into()\n}",
+     "    let _ = commit;\n    [0; 32]\n}")
+PY
+
+mutation_case "A commit that was merged is still waiting to be merged" <<'PY'
+edit("backends/rust/mls/src/lib.rs",
+     "        self.pending = None;\n        self.epoch()\n",
+     "        self.epoch()\n")
+PY
+
+# ── The roster is the log's members, and a commit that leaves it otherwise is undone ──────────
+
+mutation_case "A group whose members are not the log's is taken as the log's" <<'PY'
+edit("backends/rust/mls/src/lib.rs",
+     "        if have == want {\n            return Ok(());",
+     "        if true {\n            return Ok(());")
+PY
+
+mutation_case "A merge is not checked against the log's roster" <<'PY'
+edit("backends/rust/mls/src/lib.rs",
+     "        let checked = merged.and_then(|()| self.verify_roster(log));",
+     "        let checked = merged;")
+PY
+
+mutation_case "A merge that leaves the roster other than the log's is not undone" <<'PY'
+edit("backends/rust/mls/src/lib.rs",
+     "            self.restore_snapshot(snapshot);\n            return Err(error);",
+     "            let _ = snapshot;\n            return Err(error);")
+PY
+
+# ── A device the log holds, with the key it holds, and the one it takes off ───────────────────
+
+mutation_case "A device the log has no grant for is added" <<'PY'
+edit("backends/rust/mls/src/lib.rs",
+     "            if !listed {",
+     "            if false {")
+PY
+
+mutation_case "A device is added with another key than the log gave its node" <<'PY'
+edit("backends/rust/mls/src/lib.rs",
+     "                .any(|(held, key)| *held == node && key == leaf.signature_key().as_slice());",
+     "                .any(|(held, _)| *held == node);")
+PY
+
+mutation_case "A removal takes out the devices that are not named" <<'PY'
+edit("backends/rust/mls/src/lib.rs",
+     "                    .is_some_and(|node| nodes.contains(&node))",
+     "                    .is_some_and(|node| !nodes.contains(&node))")
+PY
+
+mutation_case "A device the log still holds as a member is taken out of the group" <<'PY'
+edit("backends/rust/mls/src/lib.rs",
+     "        if let Some((node, _)) = members.iter().find(|(node, _)| nodes.contains(node)) {",
+     "        if let Some((node, _)) = members.iter().find(|(node, _)| nodes.contains(node) && false) {")
+PY
+
+mutation_case "A device that was taken out of the group is active in it" <<'PY'
+edit("backends/rust/mls/src/lib.rs",
+     "        self.group.as_ref().is_some_and(MlsGroup::is_active)",
+     "        self.group.is_some()")
+PY
+
+# ── A Welcome the log vouches for ─────────────────────────────────────────────────────────────
+
+mutation_case "A Welcome is taken whose group does not hold the confirmation tag of the commit the log names" <<'PY'
+edit("backends/rust/mls/src/lib.rs",
+     "        if public.confirmation_tag() != Some(group.confirmation_tag()) {",
+     "        if false {")
+PY
+
+mutation_case "A Welcome is taken with a commit the log does not name for its epoch" <<'PY'
+edit("backends/rust/mls/src/lib.rs",
+     "        if named != Some(commit_hash(commit)) {\n            return Err(MlsError::CommitNotNamed { epoch });",
+     "        if false {\n            return Err(MlsError::CommitNotNamed { epoch });")
+PY
+
+mutation_case "A Welcome that was refused leaves the key package it used consumed" <<'PY'
+edit("backends/rust/mls/src/lib.rs",
+     "        if joined.is_err() {\n            self.restore_snapshot(snapshot);\n        }\n        joined",
+     "        let _ = snapshot;\n        joined")
+PY
+
+# ── The wire format: handshake messages in the clear ──────────────────────────────────────────
+
+mutation_case "A group is made to send its handshake as encrypted messages" <<'PY'
+edit("backends/rust/mls/src/lib.rs",
+     "        .ciphersuite(SUITE)\n        .use_ratchet_tree_extension(true)\n        .wire_format_policy(PURE_PLAINTEXT_WIRE_FORMAT_POLICY)",
+     "        .ciphersuite(SUITE)\n        .use_ratchet_tree_extension(true)\n        .wire_format_policy(PURE_CIPHERTEXT_WIRE_FORMAT_POLICY)")
+PY
+
+mutation_case "A device that joins takes only encrypted handshake messages" <<'PY'
+edit("backends/rust/mls/src/lib.rs",
+     "MlsGroupJoinConfig::builder()\n        .use_ratchet_tree_extension(true)\n        .wire_format_policy(PURE_PLAINTEXT_WIRE_FORMAT_POLICY)",
+     "MlsGroupJoinConfig::builder()\n        .use_ratchet_tree_extension(true)\n        .wire_format_policy(PURE_CIPHERTEXT_WIRE_FORMAT_POLICY)")
+PY
+
+# ── What a host's member writes to the log and gives its group ────────────────────────────────
+
+mutation_case "A member is added without the grant that makes it one" <<'PY'
+edit("backends/rust/mls/src/host.rs",
+     "            .any(|(held, held_key)| *held == node && *held_key == key)",
+     "            .any(|_| true)")
+PY
+
+mutation_case "A linked device is written to the log as a grant that nobody vouched for" <<'PY'
+edit("backends/rust/mls/src/host.rs",
+     "            Body::LinkedGrant {\n                node,\n                role,\n                key,\n                parent,\n                parent_signature,\n                signature,\n            },\n        )?];",
+     "            Body::Grant {\n                node,\n                role,\n                key,\n                final_seq: None,\n            },\n        )?];")
+PY
+
+mutation_case "A person is taken off by the one device that was named" <<'PY'
+edit("backends/rust/mls/src/host.rs",
+     "        for device in self.trust.devices_of(node) {",
+     "        for device in [node] {")
+PY
+
+mutation_case "A person is taken off device by device, those that were off already included" <<'PY'
+edit("backends/rust/mls/src/host.rs",
+     "            if self.trust.role(device) > 0 {",
+     "            if true {")
+PY
+
+mutation_case "A new device is given a grant for an epoch its host holds no key of" <<'PY'
+edit("backends/rust/mls/src/host.rs",
+     "            .filter_map(|epoch| Some((*epoch, self.trust.grant_key(*epoch, to)?)))",
+     "            .filter_map(|epoch| Some((*epoch, self.trust.grant_key(*epoch, to).unwrap_or_default())))")
+PY
+
+mutation_case "The entry of the log names a commit that is not the one made" <<'PY'
+edit("backends/rust/mls/src/host.rs",
+     "                commit: pending.commit_hash,\n            },\n        )?);",
+     "                commit: [0; 32],\n            },\n        )?);")
+PY
+
+mutation_case "The administrator's device does not give its host the key of the epoch it made" <<'PY'
+edit("backends/rust/mls/src/host.rs",
+     "        self.device.merge_pending(&self.trust)?;\n        self.device.publish_epoch_key(&self.trust)?;",
+     "        self.device.merge_pending(&self.trust)?;")
+PY
+
+mutation_case "A device that joined from a Welcome does not give its host the key of its epoch" <<'PY'
+edit("backends/rust/mls/src/host.rs",
+     "                        let _ = self.device.publish_epoch_key(&self.trust);\n                        steps.push(Step::Joined(joined));",
+     "                        steps.push(Step::Joined(joined));")
+PY
+
+mutation_case "A Welcome whose commit the log has not named yet is refused for good" <<'PY'
+edit("backends/rust/mls/src/host.rs",
+     "                    // The log does not name the commit yet: it may be given to this host later.\n                    Err(MlsError::CommitNotNamed { .. }) => {}\n",
+     "")
+PY
+
+mutation_case "A commit the log has not named yet is refused for good" <<'PY'
+edit("backends/rust/mls/src/host.rs",
+     "            // The log has not named the commit yet: wait for the entry.\n            Err(MlsError::CommitNotNamed { .. }) => false,\n",
+     "")
+PY
