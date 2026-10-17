@@ -122,6 +122,36 @@ pub struct Endpoint<T, E> {
     /// The events a link may not deliver to the machine, by link
     /// ([`Self::forbid_events_from`]).
     forbidden: std::collections::BTreeMap<String, Vec<String>>,
+    /// What decides, event by event, whether what arrived may reach the machine
+    /// ([`Self::set_admission`]).
+    admission: Option<Box<dyn Admission>>,
+    /// What the host writes into an event as it leaves ([`Self::set_sealer`]).
+    sealer: Option<Box<dyn Sealer>>,
+}
+
+/// What the host asks of an event that arrived before the machine is told of it. It sees the
+/// link the event came on (which the host authenticated), the event's name, and its data as
+/// the sender wrote it, and answers with the reason when the event may not reach the machine.
+///
+/// An admission is where a rule that needs the event's content is kept, which a machine of the
+/// statically typed data model cannot do for itself: it reads no `_event` but the payload, so
+/// it cannot tell who sent an event, or check a signature the payload carries.
+pub trait Admission: Send {
+    /// `Ok(None)` when `event`, which `peer`'s link delivered with `data` for its payload, may
+    /// reach the machine as it is; `Ok(Some(data))` when it may, with `data` in place of what
+    /// arrived (the admission took out what was written for the host and not for the machine);
+    /// `Err` with the reason when it may not.
+    fn admit(&mut self, peer: &str, event: &str, data: &str) -> Result<Option<String>, String>;
+}
+
+/// What the host writes into an event as it leaves, after the machine sent it and before it is
+/// put in an envelope: the half of an [`Admission`] that is on the sending side. A machine
+/// that does not carry a proof of its own sends (a signature, a token) leaves the host to add
+/// it, and the receiving host's admission takes it out again.
+pub trait Sealer: Send {
+    /// The data `event`, which the machine sent to `target` with `data`, leaves with, or `None`
+    /// when it leaves as it is.
+    fn seal(&mut self, target: &str, event: &str, data: &str) -> Option<String>;
 }
 
 impl<T: Transport, E: Environment> Endpoint<T, E> {
@@ -134,7 +164,23 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
             to_engine: Vec::new(),
             host_errors: Vec::new(),
             forbidden: std::collections::BTreeMap::new(),
+            admission: None,
+            sealer: None,
         }
+    }
+
+    /// Put `sealer` behind the machine: what the machine sends is shown to it, and leaves with
+    /// the data it answers with. Replaces the one set before.
+    pub fn set_sealer(&mut self, sealer: Box<dyn Sealer>) {
+        self.sealer = Some(sealer);
+    }
+
+    /// Put `admission` in front of the machine: every event that arrives and is not already
+    /// forbidden by its link ([`Self::forbid_events_from`]) is shown to it, and one it does
+    /// not admit is dropped and told to the host as [`RouterError::EventNotAdmitted`]. Replaces
+    /// the one set before.
+    pub fn set_admission(&mut self, admission: Box<dyn Admission>) {
+        self.admission = Some(admission);
     }
 
     /// The events the link `peer` may not deliver to the machine: what arrives on it under
@@ -161,7 +207,20 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
     pub fn send(&mut self, request: &HostSendRequest) {
         let id = self.environment.envelope_id();
         let now = self.environment.now_ms();
-        let effects = self.router.send(request, id, now);
+        let sealed = self.sealer.as_mut().and_then(|sealer| {
+            sealer.seal(&request.target, &request.event_name, &request.event_data)
+        });
+        let effects = match sealed {
+            Some(event_data) => self.router.send(
+                &HostSendRequest {
+                    event_data,
+                    ..request.clone()
+                },
+                id,
+                now,
+            ),
+            None => self.router.send(request, id, now),
+        };
         self.apply(effects);
     }
 
@@ -207,26 +266,39 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
     pub fn receive(&mut self, peer: &str, bytes: Vec<u8>) {
         let now = self.environment.now_ms();
         let mut effects = self.router.receive(peer, bytes, now);
-        let refused: Vec<String> = match (self.forbidden.get(peer), effects.as_mut()) {
-            (Some(forbidden), Ok(list)) => {
-                let mut refused = Vec::new();
-                list.retain(|effect| match effect {
-                    Effect::Deliver { event, .. } if forbidden.contains(event) => {
-                        refused.push(event.clone());
+        let mut refused: Vec<RouterError> = Vec::new();
+        if let Ok(list) = effects.as_mut() {
+            let forbidden = self.forbidden.get(peer);
+            let admission = &mut self.admission;
+            list.retain_mut(|effect| {
+                let Effect::Deliver { event, data, .. } = effect else {
+                    return true;
+                };
+                if forbidden.is_some_and(|events| events.contains(event)) {
+                    refused.push(RouterError::EventForbidden {
+                        peer: peer.to_string(),
+                        event: event.clone(),
+                    });
+                    return false;
+                }
+                match admission.as_mut().map(|a| a.admit(peer, event, data)) {
+                    Some(Err(reason)) => {
+                        refused.push(RouterError::EventNotAdmitted {
+                            peer: peer.to_string(),
+                            event: event.clone(),
+                            reason,
+                        });
                         false
                     }
+                    Some(Ok(Some(admitted))) => {
+                        *data = admitted;
+                        true
+                    }
                     _ => true,
-                });
-                refused
-            }
-            _ => Vec::new(),
-        };
-        for event in refused {
-            self.host_errors.push(RouterError::EventForbidden {
-                peer: peer.to_string(),
-                event,
+                }
             });
         }
+        self.host_errors.append(&mut refused);
         self.apply(effects);
     }
 
@@ -649,6 +721,66 @@ mod tests {
         again.receive("ecu", go);
         assert_eq!(raised(&mut again).len(), 1);
         assert!(again.take_host_errors().is_empty());
+    }
+
+    /// What decides an event's admission is shown the link, the name and the data the sender
+    /// wrote; an event it does not admit never reaches the machine and the host is told why,
+    /// and one it admits goes through.
+    #[test]
+    fn an_admission_decides_what_reaches_the_machine() {
+        struct OnlyShort;
+        impl Admission for OnlyShort {
+            fn admit(
+                &mut self,
+                peer: &str,
+                event: &str,
+                data: &str,
+            ) -> Result<Option<String>, String> {
+                assert_eq!(peer, "ecu");
+                if event == "go" {
+                    // What the sealer wrote for the host is taken out before the machine
+                    // is told.
+                    Ok(data.strip_suffix("+seal").map(str::to_string))
+                } else {
+                    Err(alloc::format!("{event} is not for this link"))
+                }
+            }
+        }
+        struct Seal;
+        impl Sealer for Seal {
+            fn seal(&mut self, target: &str, _event: &str, data: &str) -> Option<String> {
+                assert_eq!(target, "#hmi");
+                Some(alloc::format!("{data}+seal"))
+            }
+        }
+        let mut ecu = endpoint("ecu", "hmi", None);
+        ecu.set_sealer(Box::new(Seal));
+        ecu.send(&send("go", "s-1"));
+        let (_, go) = ecu.transport.sent.pop().unwrap();
+        ecu.send(&send("stop", "s-2"));
+        let (_, stop) = ecu.transport.sent.pop().unwrap();
+
+        let mut hmi = endpoint("hmi", "ecu", None);
+        hmi.set_admission(Box::new(OnlyShort));
+        hmi.receive("ecu", go);
+        hmi.receive("ecu", stop);
+        let events = raised(&mut hmi);
+        assert_eq!(
+            events.iter().map(|e| e.name.as_str()).collect::<Vec<_>>(),
+            ["go"]
+        );
+        assert_eq!(
+            events[0].metadata.data, r#"{"a":1}"#,
+            "the machine is told what it sent, without what the host wrote"
+        );
+        assert_eq!(
+            hmi.take_host_errors(),
+            vec![RouterError::EventNotAdmitted {
+                peer: "ecu".to_string(),
+                event: "stop".to_string(),
+                reason: "stop is not for this link".to_string(),
+            }]
+        );
     }
 
     #[test]

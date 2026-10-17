@@ -72,7 +72,8 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use sce_rust_mesh::endpoint::{
-    self, Endpoint, EngineCall, Environment, SharedEndpoint, Transport, TransportFailure,
+    self, Admission, Endpoint, EngineCall, Environment, Sealer, SharedEndpoint, Transport,
+    TransportFailure,
 };
 use sce_rust_mesh::router::Router;
 use sce_rust_runtime::{Engine, SceClock, StatePolicy};
@@ -1093,6 +1094,20 @@ impl World {
         self.with_actor(actor, |actor| {
             actor.lock_endpoint().forbid_events_from(peer, events)
         });
+    }
+
+    /// The host of `actor` puts `admission` in front of the machine: what arrives is shown to
+    /// it and dropped when it is not admitted ([`Endpoint::set_admission`]).
+    pub fn set_admission(&mut self, actor: &str, admission: Box<dyn Admission>) {
+        self.with_actor(actor, |actor| {
+            actor.lock_endpoint().set_admission(admission)
+        });
+    }
+
+    /// The host of `actor` puts `sealer` behind the machine: what the machine sends leaves with
+    /// the data it answers with ([`Endpoint::set_sealer`]).
+    pub fn set_sealer(&mut self, actor: &str, sealer: Box<dyn Sealer>) {
+        self.with_actor(actor, |actor| actor.lock_endpoint().set_sealer(sealer));
     }
 
     /// The actor `name`, as the machine it was added as.

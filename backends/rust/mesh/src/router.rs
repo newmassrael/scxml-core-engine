@@ -590,6 +590,13 @@ pub enum RouterError {
     /// An event arrived on a link that may not deliver it, and was dropped before the machine
     /// was told ([`crate::endpoint::Endpoint::forbid_events_from`]).
     EventForbidden { peer: String, event: String },
+    /// An event arrived that the host's [`crate::endpoint::Admission`] did not admit, and was
+    /// dropped before the machine was told. `reason` is the admission's own word for it.
+    EventNotAdmitted {
+        peer: String,
+        event: String,
+        reason: String,
+    },
 }
 
 /// The peer a `<send target>` names, when it names one — the runtime's
