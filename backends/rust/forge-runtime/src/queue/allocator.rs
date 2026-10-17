@@ -71,7 +71,9 @@ pub unsafe trait SegmentAllocator {
 }
 
 /// A block from `allocator` holding `make()`, or `None` when it refuses. `make`
-/// runs only once the block is there, so a refusal builds nothing.
+/// runs only once the block is there, so a refusal builds nothing. Used by the
+/// segmented queues, which are where there is a compare-and-swap of 8 bits.
+#[cfg(target_has_atomic = "8")]
 pub(crate) fn place<A: SegmentAllocator, S>(
     allocator: &A,
     make: impl FnOnce() -> S,
@@ -89,6 +91,7 @@ pub(crate) fn place<A: SegmentAllocator, S>(
 ///
 /// `block` came from [`place`] on this allocator and holds a live `S` nothing
 /// else reaches; it is released once.
+#[cfg(target_has_atomic = "8")]
 pub(crate) unsafe fn release<A: SegmentAllocator, S>(allocator: &A, block: NonNull<S>) {
     // SAFETY: the caller's contract.
     unsafe {

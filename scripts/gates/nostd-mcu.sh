@@ -31,6 +31,18 @@ cargo clippy -p sce-rust-runtime --no-default-features --features=no_std \
     --target=thumbv7em-none-eabihf -- -D warnings \
     || sce_gate_fail "no_std runtime clippy"
 
+# The forge runtime on a target whose atomics are loads and stores alone (ARMv6-M). The queue algorithms
+# need compare-and-swap, swap or fetch-add, which that target does not have, so a queue module that needs
+# one must be absent there and not fail inside: a consumer that builds the runtime with no default features
+# for thumbv6m (a firmware codec crate) found out from its own CI, after a pin moved, that `queue::hazard`
+# was compiled on every target. thumbv7em, the target above, has the compare-and-swap and cannot show it.
+sce_gate_step "forge runtime, no read-modify-write atomics (thumbv6m)"
+rustup target add thumbv6m-none-eabi >/dev/null 2>&1 || true
+cargo build -p sce-forge-runtime --no-default-features --target=thumbv6m-none-eabi \
+    || sce_gate_fail "forge runtime build for thumbv6m"
+cargo clippy -p sce-forge-runtime --no-default-features --target=thumbv6m-none-eabi -- -D warnings \
+    || sce_gate_fail "forge runtime clippy for thumbv6m"
+
 sce_gate_step "allocator-free probe machine"
 "$CODEGEN" --workspace-root "$SCE_REPO_ROOT" generate \
     -l rust --no-std --output-dir backends/rust/probes/nostd-build/src \

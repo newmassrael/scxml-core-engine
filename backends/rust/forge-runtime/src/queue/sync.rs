@@ -18,8 +18,18 @@ pub(crate) use loom::sync::atomic::{
     AtomicBool, AtomicI64, AtomicPtr, AtomicU32, AtomicU64, AtomicUsize, Ordering,
 };
 
+/// What every queue uses, on every target: loads and stores of a word.
 #[cfg(not(loom))]
-pub(crate) use core::sync::atomic::{AtomicBool, AtomicPtr, AtomicU32, AtomicUsize, Ordering};
+pub(crate) use core::sync::atomic::{AtomicUsize, Ordering};
+
+/// What the modules that compare and swap a flag use (`linked`, `hazard`): present where those modules
+/// are, so that a target without the atomics (ARMv6-M) has neither the modules nor an import nothing uses.
+#[cfg(all(not(loom), target_has_atomic = "8"))]
+pub(crate) use core::sync::atomic::{AtomicBool, AtomicPtr};
+
+/// What `intrusive` uses, where it is.
+#[cfg(all(not(loom), target_has_atomic = "32"))]
+pub(crate) use core::sync::atomic::AtomicU32;
 
 /// The 64-bit atomics the SCQ rows need. A target without them has no
 /// such row, and the module that uses them is absent there too.

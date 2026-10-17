@@ -23,13 +23,25 @@
 //! - [`intrusive`] — the `intrusive` storage mode: Vyukov's MPSC list over
 //!   a node array the caller owns, linked through a `u32` field of the
 //!   element. Push is wait-free and cannot fail; pop is `blocking`, and may
-//!   answer "empty" while a push is in flight. It needs only 32-bit atomics.
+//!   answer "empty" while a push is in flight. It needs only 32-bit atomics,
+//!   and a swap of one: it is absent on a target whose 32-bit atomics are
+//!   loads and stores alone (ARMv6-M, `thumbv6m-none-eabi`).
 //!
 //! - [`linked`] — the `segmented` row for one producer and one consumer:
-//!   linked Lamport rings, wait-free but for the allocator.
+//!   linked Lamport rings, wait-free but for the allocator. The two handles
+//!   are taken once each with a compare-and-swap of a flag, so it is absent
+//!   where there is none of 8 bits.
 //! - [`lscq`] — the `segmented` row for any other cardinality: LSCQ, a list of
 //!   SCQ rings reclaimed through a hazard-pointer [`hazard::HazardDomain`],
 //!   lock-free but for the allocator. Like [`scq`] it needs 64-bit atomics.
+//! - [`hazard`] — the hazard-pointer domain a `segmented` queue reclaims its
+//!   segments through. It compares and swaps a flag and a pointer and adds to
+//!   a word, so it is absent where those are not atomic.
+//!
+//! A module that needs a read-modify-write atomic the target lacks is absent
+//! there, as [`scq`] is without 64-bit atomics, and a build for the target
+//! finds out by not seeing the module and not by failing inside it. [`spsc`]
+//! uses loads and stores alone and is on every target.
 //! - [`allocator`] — the [`allocator::SegmentAllocator`] a `segmented` queue is
 //!   injected with, and the progress it declares.
 //!
@@ -39,8 +51,11 @@
 //! the allocator it is given, so the crate links no `alloc` and has no default.
 
 pub mod allocator;
+#[cfg(all(target_has_atomic = "8", target_has_atomic = "ptr"))]
 pub mod hazard;
+#[cfg(target_has_atomic = "32")]
 pub mod intrusive;
+#[cfg(target_has_atomic = "8")]
 pub mod linked;
 #[cfg(target_has_atomic = "64")]
 pub mod lscq;

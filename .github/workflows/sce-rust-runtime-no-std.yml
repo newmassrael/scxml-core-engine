@@ -13,12 +13,18 @@ name: sce-rust-runtime no_std MCU target build
 # The thumbv7em-none-eabihf target's linker and rustflags are declared in
 # `.cargo/config.toml` (C3 Atomic B-γ1 `dfad80b4`); this workflow only adds the
 # rustup target and runs the build.
+#
+# It also builds `sce-forge-runtime` without default features for `thumbv6m-none-eabi`, whose atomics
+# are loads and stores alone: a queue module that needs a compare-and-swap must be absent there
+# (`backends/rust/forge-runtime/src/queue/mod.rs`), which thumbv7em cannot show, and a consumer that
+# builds the runtime for ARMv6-M found a module that was not.
 
 on:
   push:
     branches: [ main ]
     paths:
       - 'backends/rust/runtime/**'
+      - 'backends/rust/forge-runtime/**'
       - 'tools/codegen/templates/rust/**'
       - 'backends/rust/probes/nostd-build/**'
       - 'backends/rust/probes/portable-emit/**'
@@ -35,6 +41,7 @@ on:
     branches: [ main ]
     paths:
       - 'backends/rust/runtime/**'
+      - 'backends/rust/forge-runtime/**'
       - 'tools/codegen/templates/rust/**'
       - 'backends/rust/probes/nostd-build/**'
       - 'backends/rust/probes/portable-emit/**'
