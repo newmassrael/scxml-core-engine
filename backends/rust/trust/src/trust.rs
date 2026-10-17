@@ -18,10 +18,14 @@
 //! The signature and `at` are the host's: they are written into the event as it leaves and taken
 //! out as it arrives, and a machine sees neither.
 //!
-//! The time is the author's own claim, and the window it leaves is closed by the administrator:
-//! an instant they attest as settled ([`Trust::attest_floor`]) is one every copy refuses writes
-//! at or before, so that what a member taken off writes in a time before the entry that took them
-//! off, after it was made, is refused once the instant it was taken off from is settled.
+//! An instant is settled, and every copy forgets the tombstones up to it, on the members' word and
+//! no one else's: the checkpoints of every device that is a writer ([`Trust::checkpoint`]), all
+//! agreeing on the instant and the digest of their copies, make a settlement that each host checks
+//! alone ([`Trust::settlement`]). A hub holds none of the devices' keys and cannot make one, and an
+//! administrator is not asked for anything. The same checkpoints name the head of each device's
+//! chain, which is how a host learns that an operation was withheld from it
+//! ([`Trust::divergences`]) and fetches it from another host that holds it
+//! ([`Trust::operations`]).
 //!
 //! One [`Trust`] is both halves of one host: it is cloned, and a clone is put in front of the
 //! machine as its [`Admission`] and another behind it as its [`Sealer`].
@@ -32,19 +36,46 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use sce_rust_mesh::endpoint::{Admission, Sealer};
 use serde_json::{json, Value};
 
+use crate::checkpoint::{Checkpoint, Head, Settlement};
 use crate::encoding;
 use crate::identity::{Identity, PublicKey};
 use crate::membership::{Body, Draft, Entry, Hash, Log, LogError, Profile, WRITER};
-use crate::message::{self, Link, SIGNATURE_FIELD};
+use crate::message::{self, Link, SETTLEMENT_FIELD, SIGNATURE_FIELD};
 use crate::secrecy;
 
-/// Why an attestation was not taken in.
+/// Why a checkpoint was not made or not taken in.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TrustError {
-    /// The key is no administrator of the list's membership log.
-    UnknownIssuer,
-    /// No administrator signed it.
+pub enum CheckpointError {
+    /// This host has no person, so it signs no checkpoint.
+    NoPerson,
+    /// The membership log has no entry yet.
+    NoLog,
+    /// It is a checkpoint of another list.
+    WrongList,
+    /// It names an entry of the log that this host does not hold as it is: the host is behind, or
+    /// holds another history. It can be taken in once the host holds that entry.
+    LogNotHeld { log: u64 },
+    /// The device was not a writer at the entry the checkpoint names.
+    NotAWriter { device: u64, log: u64 },
+    /// The key the log gave the device at that entry did not sign it.
     BadSignature,
+}
+
+/// What a checkpoint shows that this host does not hold as it should.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Divergence {
+    /// `by` holds the chain of `node` up to `named` and this host only up to `held`: the
+    /// operations after `held` exist, and this host was not given them. Ask another host for
+    /// [`Trust::operations`] of `node` from `held + 1`.
+    Missing {
+        node: u64,
+        held: u64,
+        named: u64,
+        by: u64,
+    },
+    /// `by` holds an operation of `node` at `seq` that is not the one this host holds there: the
+    /// device signed two histories, or `by` did not.
+    Differs { node: u64, seq: u64, by: u64 },
 }
 
 /// A new epoch begun by an administrator: the entry of the membership log that begins it, and the
@@ -118,12 +149,15 @@ impl Wire {
 
 /// What a host remembers of an operation of a device that it admitted: its id, the one it
 /// names before it, and, for a write, its stamp, so that a chain can be checked whatever order its
-/// operations arrive in.
-#[derive(Clone, Copy)]
+/// operations arrive in; and the operation itself, as it travels, to give to a host that was
+/// not given it.
+#[derive(Clone)]
 struct Held {
     id: [u8; 32],
     prev: [u8; 32],
     stamp: Option<(i64, u64)>,
+    event: &'static str,
+    wire: Wire,
 }
 
 struct State {
@@ -135,9 +169,9 @@ struct State {
     /// administrator resolves it.
     forked: Option<u64>,
     own: Option<(u64, Identity)>,
-    /// The floors an administrator attested, by the bytes they are signed as: what the hub's
-    /// floor leaves with.
-    signatures: BTreeMap<Vec<u8>, [u8; 64]>,
+    /// The checkpoints the host made or took in, one for each device and each instant and digest
+    /// it speaks of: what a settlement is made from, and what shows an operation withheld.
+    checkpoints: BTreeMap<(u64, i64, u32), Checkpoint>,
     /// Each write that was admitted or made here, by the bytes it is signed as when the machine
     /// holds it: what the host that relays it sends it on as. It is the operation as it travels.
     wires: BTreeMap<Vec<u8>, Wire>,
@@ -184,9 +218,9 @@ impl State {
 /// The events a host that trusts nobody refuses unless it was told to take them: `todo.floor`
 /// is the word that an instant is settled, on which a copy forgets the tombstones up to it,
 /// and a copy that forgot a tombstone takes a write it named in again. It carries no
-/// signature, so a host that relays it could settle an instant its copies have not, and bring
-/// back with the old signed writes what was deleted. A host that trusts the one that settles
-/// (its own hub) allows it.
+/// settlement by the members, so a host that relays it could settle an instant its copies have
+/// not, and bring back with the old signed writes what was deleted. A host that trusts the one
+/// that settles (its own hub) allows it.
 pub const UNSIGNED_REFUSED: [&str; 1] = ["todo.floor"];
 
 /// The trust of one host in one list. Clones share it.
@@ -216,7 +250,7 @@ impl Trust {
                 log,
                 forked: None,
                 own: None,
-                signatures: BTreeMap::new(),
+                checkpoints: BTreeMap::new(),
                 wires: BTreeMap::new(),
                 notes: BTreeMap::new(),
                 ops: BTreeMap::new(),
@@ -311,46 +345,114 @@ impl Trust {
             .collect()
     }
 
-    /// An administrator's attestation that the changes up to `before` are settled with the hash
-    /// `hash`, made here by the host that holds the administrator's key and kept for the hub's
-    /// floor to leave with. The administrator's host reads the hash from its own copy, which
-    /// is a member's, so that what it attests is what its own copy held.
-    pub fn attest_floor(
-        &self,
-        administrator: &Identity,
-        before: i64,
-        hash: u32,
-    ) -> Result<(), TrustError> {
-        let mut state = self.state();
-        if !state.log.administrators().contains(&administrator.public()) {
-            return Err(TrustError::UnknownIssuer);
-        }
-        let message = message::floor_message(&state.calendar, before, hash);
-        let signature = administrator.sign(&message);
-        state.signatures.insert(message, signature);
-        Ok(())
+    /// The head of every device's chain this host holds in full: the highest number `n` such that
+    /// it holds the operations 1 to `n` of the device, with the id of the nth. What a checkpoint
+    /// of this host names. A device of which the host holds nothing from number 1 has no head.
+    pub fn heads(&self) -> Vec<Head> {
+        heads_of(&self.state())
     }
 
-    /// Take an attestation another host made, for the floor of a hub that sends it on: held
-    /// when an administrator's key verifies it, and refused otherwise.
-    pub fn hold_floor_signature(
-        &self,
-        before: i64,
-        hash: u32,
-        signature: [u8; 64],
-    ) -> Result<(), TrustError> {
+    /// This host's person says that their copy holds, of everything up to `before`, the digest
+    /// `digest` (the machine's `frozenHash` of that settle), and which operations of each device
+    /// it holds. Signed with the person's key, under the entry of the log the host holds now, and
+    /// kept: the host's own checkpoint is one of those a settlement is made from. Sent to the
+    /// other hosts by any channel, a relay's included, for them to [`Self::take_checkpoint`].
+    pub fn checkpoint(&self, before: i64, digest: u32) -> Result<Checkpoint, CheckpointError> {
         let mut state = self.state();
-        let message = message::floor_message(&state.calendar, before, hash);
-        if !state
-            .log
-            .administrators()
-            .iter()
-            .any(|administrator| administrator.verifies(&message, &signature))
-        {
-            return Err(TrustError::BadSignature);
+        let (device, identity) = state.own.as_ref().ok_or(CheckpointError::NoPerson)?;
+        let (log, log_hash) = state.log.tip().ok_or(CheckpointError::NoLog)?;
+        let mut checkpoint = Checkpoint {
+            list: state.calendar.clone(),
+            device: *device,
+            log,
+            log_hash,
+            before,
+            digest,
+            heads: heads_of(&state),
+            signature: [0; 64],
+        };
+        checkpoint.signature = identity.sign(&checkpoint.signing_bytes());
+        verify_checkpoint(&state, &checkpoint)?;
+        store_checkpoint(&mut state, checkpoint.clone());
+        Ok(checkpoint)
+    }
+
+    /// Take a checkpoint another host made: held when it is for this list, names an entry of the
+    /// log this host holds, and the key the log gave its device then signed it, and the device was
+    /// a writer. `Ok(false)` when it is no fresher than one already held for that device and that
+    /// instant and digest. Whether the heads it names show anything missing is
+    /// [`Self::divergences`].
+    pub fn take_checkpoint(&self, checkpoint: &Checkpoint) -> Result<bool, CheckpointError> {
+        let mut state = self.state();
+        verify_checkpoint(&state, checkpoint)?;
+        Ok(store_checkpoint(&mut state, checkpoint.clone()))
+    }
+
+    /// The settlement of `before` with `digest`, when the checkpoints this host holds make one:
+    /// those of every device that was a writer at one entry of the log, each for that instant and
+    /// digest. A host that holds the log checks it alone. `None` while a writer's is missing, or
+    /// when the heads the checkpoints name disagree on an operation.
+    pub fn settlement(&self, before: i64, digest: u32) -> Option<Settlement> {
+        settlement_of(&self.state(), before, digest)
+    }
+
+    /// What the checkpoints this host holds show that it does not hold as it should: an
+    /// operation the others hold and this host was not given (a relay that withheld it, or one
+    /// still in flight), and an operation that is not the one this host holds at that number.
+    pub fn divergences(&self) -> Vec<Divergence> {
+        let state = self.state();
+        let mut found: Vec<Divergence> = Vec::new();
+        let mut furthest: BTreeMap<u64, (u64, u64)> = BTreeMap::new();
+        for checkpoint in state.checkpoints.values() {
+            for head in &checkpoint.heads {
+                match state.ops.get(&head.node).and_then(|ops| ops.get(&head.seq)) {
+                    Some(held) if held.id != head.id => {
+                        let differs = Divergence::Differs {
+                            node: head.node,
+                            seq: head.seq,
+                            by: checkpoint.device,
+                        };
+                        if !found.contains(&differs) {
+                            found.push(differs);
+                        }
+                    }
+                    _ => {}
+                }
+                let entry = furthest.entry(head.node).or_insert((0, checkpoint.device));
+                if head.seq > entry.0 {
+                    *entry = (head.seq, checkpoint.device);
+                }
+            }
         }
-        state.signatures.insert(message, signature);
-        Ok(())
+        for (node, (named, by)) in furthest {
+            let held = contiguous(&state, node);
+            if named > held {
+                found.push(Divergence::Missing {
+                    node,
+                    held,
+                    named,
+                    by,
+                });
+            }
+        }
+        found
+    }
+
+    /// The operations of `node` numbered `from` to `to` that this host holds, each as the event
+    /// and the data it travels with: what a host that was not given them takes in by
+    /// [`Admission::admit`], which checks each as it would from anyone, so that the host asked
+    /// need not be trusted.
+    pub fn operations(&self, node: u64, from: u64, to: u64) -> Vec<(String, String)> {
+        if from > to {
+            return Vec::new();
+        }
+        let state = self.state();
+        let Some(ops) = state.ops.get(&node) else {
+            return Vec::new();
+        };
+        ops.range(from..=to)
+            .filter_map(|(_, held)| Some((held.event.to_string(), held.wire.to_json()?)))
+            .collect()
     }
 
     /// This host holds the key of `epoch`, which it kept from an earlier run or was given outside a
@@ -563,26 +665,27 @@ impl Trust {
     }
 
     /// What this host holds, as one text for its store (the key-value feature): a JSON object
-    /// with the floors an administrator attested, as `[message, signature]`, and the operations it
-    /// holds (the writes it relays and the notes of who wrote over what), each as the data it goes
-    /// on the wire with. It holds no key: a host keeps those where it keeps its person's secret.
-    pub fn signatures_to_text(&self) -> String {
+    /// with the checkpoints it made or took in, and every operation it holds (the writes it
+    /// relays and the notes of who wrote over what, every number of every chain), each as the
+    /// event and the data it goes on the wire with. It holds no key: a host keeps those where it
+    /// keeps its person's secret.
+    pub fn to_text(&self) -> String {
         let state = self.state();
         json!({
-            "signatures": state.signatures.iter()
-                .map(|(message, signature)| json!([encoding::encode(message), encoding::encode(signature)]))
+            "checkpoints": state.checkpoints.values().map(Checkpoint::to_value).collect::<Vec<_>>(),
+            "operations": state.ops.values()
+                .flat_map(|ops| ops.values())
+                .filter_map(|held| Some(json!([held.event, held.wire.to_json()?])))
                 .collect::<Vec<_>>(),
-            "wires": state.wires.values().filter_map(Wire::to_json).collect::<Vec<_>>(),
-            "notes": state.notes.values().filter_map(Wire::to_json).collect::<Vec<_>>(),
         })
         .to_string()
     }
 
-    /// Take back what [`Self::signatures_to_text`] wrote: each floor and each operation that
-    /// today's log verifies is kept, and the rest are dropped, since what a host reads back from
-    /// its own storage is not taken for true. The chain of this host's own person is what was
-    /// kept of it, so that what it writes next is the next one. Returns how many were kept.
-    pub fn restore_signatures_from_text(&self, text: &str) -> usize {
+    /// Take back what [`Self::to_text`] wrote: each checkpoint and each operation that today's log
+    /// verifies is kept, and the rest are dropped, since what a host reads back from its own
+    /// storage is not taken for true. The chain of this host's own person is what was kept of it,
+    /// so that what it writes next is the next one. Returns how many were kept.
+    pub fn restore_from_text(&self, text: &str) -> usize {
         let Ok(value) = serde_json::from_str::<Value>(text) else {
             return 0;
         };
@@ -593,53 +696,223 @@ impl Trust {
                 .cloned()
                 .unwrap_or_default()
         };
-        let signatures: Vec<(Vec<u8>, [u8; 64])> = rows("signatures")
-            .iter()
-            .filter_map(|row| {
-                let message = encoding::decode(row.get(0)?.as_str()?)?;
-                let signature = encoding::decode(row.get(1)?.as_str()?)?.try_into().ok()?;
-                Some((message, signature))
-            })
-            .collect();
-        let mut kept = self.restore_signatures(&signatures);
+        let mut kept = 0;
         let mut state = self.state();
-        for (name, event) in [("wires", "todo.write"), ("notes", "todo.supersede")] {
-            for row in rows(name) {
-                let Some(text) = row.as_str() else { continue };
-                let Ok(mut value) = serde_json::from_str::<Value>(text) else {
-                    continue;
-                };
-                let Ok(signature) = signature_of(&mut value, event) else {
-                    continue;
-                };
-                if let Ok(verified) = verify_operation(&state, event, value, &signature) {
-                    record(&mut state, event, verified, signature);
-                    kept += 1;
-                }
+        for row in rows("operations") {
+            let (Some(event), Some(text)) = (
+                row.get(0).and_then(Value::as_str),
+                row.get(1).and_then(Value::as_str),
+            ) else {
+                continue;
+            };
+            let Some(event) = message::SIGNED_EVENTS
+                .iter()
+                .copied()
+                .find(|name| *name == event)
+            else {
+                continue;
+            };
+            let Ok(mut value) = serde_json::from_str::<Value>(text) else {
+                continue;
+            };
+            let Ok(signature) = signature_of(&mut value, event) else {
+                continue;
+            };
+            if let Ok(verified) = verify_operation(&state, event, value, &signature) {
+                record(&mut state, event, verified, signature);
+                kept += 1;
             }
         }
-        kept
-    }
-
-    /// Take back the floors [`Self::signatures_to_text`] wrote: each one that an administrator's
-    /// key verifies is kept, and the rest are dropped, since what a host reads back from its
-    /// own storage is not taken for true. Returns how many were kept.
-    fn restore_signatures(&self, entries: &[(Vec<u8>, [u8; 64])]) -> usize {
-        let mut state = self.state();
-        let mut kept = 0;
-        for (message, signature) in entries {
-            let true_of_a_key = state
-                .log
-                .administrators()
-                .iter()
-                .any(|key| key.verifies(message, signature));
-            if true_of_a_key {
-                state.signatures.insert(message.clone(), *signature);
+        for row in rows("checkpoints") {
+            let Some(checkpoint) = Checkpoint::from_value(&row) else {
+                continue;
+            };
+            if verify_checkpoint(&state, &checkpoint).is_ok() {
+                store_checkpoint(&mut state, checkpoint);
                 kept += 1;
             }
         }
         kept
     }
+}
+
+/// The highest number `n` such that `node`'s operations 1 to `n` are all held.
+fn contiguous(state: &State, node: u64) -> u64 {
+    let Some(ops) = state.ops.get(&node) else {
+        return 0;
+    };
+    let mut head = 0;
+    while ops.contains_key(&(head + 1)) {
+        head += 1;
+    }
+    head
+}
+
+fn heads_of(state: &State) -> Vec<Head> {
+    state
+        .ops
+        .iter()
+        .filter_map(|(node, ops)| {
+            let seq = contiguous(state, *node);
+            Some(Head {
+                node: *node,
+                seq,
+                id: ops.get(&seq)?.id,
+            })
+        })
+        .collect()
+}
+
+/// Whether `checkpoint` holds: it is for this list, names an entry of the log this host holds as
+/// it is, its device was a writer under that entry, and the key the log gave the device then
+/// signed it.
+fn verify_checkpoint(state: &State, checkpoint: &Checkpoint) -> Result<(), CheckpointError> {
+    if checkpoint.list != state.calendar {
+        return Err(CheckpointError::WrongList);
+    }
+    if state.log.hash_at(checkpoint.log) != Some(checkpoint.log_hash) {
+        return Err(CheckpointError::LogNotHeld {
+            log: checkpoint.log,
+        });
+    }
+    let not_a_writer = CheckpointError::NotAWriter {
+        device: checkpoint.device,
+        log: checkpoint.log,
+    };
+    let era = state
+        .log
+        .era_for(checkpoint.device, checkpoint.log)
+        .ok_or_else(|| not_a_writer.clone())?;
+    if era.role < WRITER {
+        return Err(not_a_writer);
+    }
+    if !checkpoint.is_canonical()
+        || !era
+            .key
+            .verifies(&checkpoint.signing_bytes(), &checkpoint.signature)
+    {
+        return Err(CheckpointError::BadSignature);
+    }
+    Ok(())
+}
+
+/// Keep a checkpoint that holds. For one device and one instant and digest only one is kept: a
+/// later one replaces it when it names more of the devices' chains, and `false` is returned when
+/// it does not.
+fn store_checkpoint(state: &mut State, checkpoint: Checkpoint) -> bool {
+    let key = (checkpoint.device, checkpoint.before, checkpoint.digest);
+    let reach = |held: &Checkpoint| -> u64 { held.heads.iter().map(|head| head.seq).sum() };
+    match state.checkpoints.get(&key) {
+        Some(held) if reach(held) >= reach(&checkpoint) => false,
+        _ => {
+            state.checkpoints.insert(key, checkpoint);
+            true
+        }
+    }
+}
+
+/// The devices that were writers under the entry of the log at `entry`.
+fn writers_at(state: &State, entry: u64) -> Vec<u64> {
+    state
+        .log
+        .eras()
+        .filter_map(|(node, _)| {
+            let era = state.log.era_for(node, entry)?;
+            (era.role >= WRITER).then_some(node)
+        })
+        .collect()
+}
+
+/// Whether the heads two checkpoints name agree: the same number of one device is the same
+/// operation.
+fn heads_agree(checkpoints: &[&Checkpoint]) -> bool {
+    let mut named: BTreeMap<(u64, u64), Hash> = BTreeMap::new();
+    checkpoints
+        .iter()
+        .flat_map(|checkpoint| checkpoint.heads.iter())
+        .all(|head| *named.entry((head.node, head.seq)).or_insert(head.id) == head.id)
+}
+
+/// The settlement the checkpoints a host holds make for `before` and `digest`: from the latest
+/// entry of the log under which every device that was a writer there has one.
+fn settlement_of(state: &State, before: i64, digest: u32) -> Option<Settlement> {
+    let mut under: BTreeMap<u64, Vec<&Checkpoint>> = BTreeMap::new();
+    for checkpoint in state.checkpoints.values() {
+        if checkpoint.before == before && checkpoint.digest == digest {
+            under.entry(checkpoint.log).or_default().push(checkpoint);
+        }
+    }
+    under.into_iter().rev().find_map(|(log, checkpoints)| {
+        let writers = writers_at(state, log);
+        let complete = !writers.is_empty()
+            && writers
+                .iter()
+                .all(|writer| checkpoints.iter().any(|c| c.device == *writer));
+        (complete && heads_agree(&checkpoints)).then(|| Settlement {
+            checkpoints: checkpoints.into_iter().cloned().collect(),
+        })
+    })
+}
+
+/// Whether `settlement` proves that `before` is settled with `digest`: every checkpoint holds,
+/// each is for that instant and digest, they all speak under one entry of the log, they are from
+/// the devices that were writers under it and from none other, no device twice, and the heads they
+/// name agree with each other and with the operations this host holds.
+fn verify_settlement(
+    state: &State,
+    before: i64,
+    digest: u32,
+    settlement: &Settlement,
+) -> Result<(), String> {
+    let checkpoints: Vec<&Checkpoint> = settlement.checkpoints.iter().collect();
+    let Some(first) = checkpoints.first() else {
+        return Err("it holds no checkpoint".to_string());
+    };
+    for checkpoint in &checkpoints {
+        verify_checkpoint(state, checkpoint).map_err(|error| {
+            format!(
+                "the checkpoint of node {} does not hold: {error:?}",
+                checkpoint.device
+            )
+        })?;
+        if checkpoint.before != before || checkpoint.digest != digest {
+            return Err(format!(
+                "the checkpoint of node {} is for another instant or digest",
+                checkpoint.device
+            ));
+        }
+        if checkpoint.log != first.log {
+            return Err("the checkpoints speak under different entries of the log".to_string());
+        }
+    }
+    let mut devices: Vec<u64> = checkpoints.iter().map(|c| c.device).collect();
+    devices.sort_unstable();
+    if devices.windows(2).any(|pair| pair[0] == pair[1]) {
+        return Err("a device is in it twice".to_string());
+    }
+    let mut writers = writers_at(state, first.log);
+    writers.sort_unstable();
+    if devices != writers {
+        return Err(format!(
+            "it is from nodes {devices:?} and the writers at entry {} were {writers:?}",
+            first.log
+        ));
+    }
+    if !heads_agree(&checkpoints) {
+        return Err("the checkpoints name different operations at one number".to_string());
+    }
+    for checkpoint in &checkpoints {
+        for head in &checkpoint.heads {
+            let held = state.ops.get(&head.node).and_then(|ops| ops.get(&head.seq));
+            if held.is_some_and(|held| held.id != head.id) {
+                return Err(format!(
+                    "node {} names another operation than this host holds at number {} of node {}",
+                    checkpoint.device, head.seq, head.node
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 fn role_event(node: u64, role: u8) -> (String, String) {
@@ -678,9 +951,9 @@ impl Admission for Trust {
                 "{event}: it carries no signature and this host does not take it on a peer's word"
             ));
         }
-        if !message::SIGNED_EVENTS.contains(&event) {
+        let Some(event) = signed_name(event) else {
             return Ok(None);
-        }
+        };
         let mut value: Value =
             serde_json::from_str(data).map_err(|_| format!("{event}: the data is not JSON"))?;
         let signature = signature_of(&mut value, event)?;
@@ -909,20 +1182,22 @@ fn verify_operation(
 }
 
 /// Keep an operation that holds: among its device's, and under the key the host finds it by.
-fn record(state: &mut State, event: &str, verified: Verified, signature: [u8; 64]) {
+fn record(state: &mut State, event: &'static str, verified: Verified, signature: [u8; 64]) {
+    let wire = Wire {
+        data: verified.travelling.to_string(),
+        link: verified.link,
+        signature,
+    };
     state.ops.entry(verified.author).or_default().insert(
         verified.link.seq,
         Held {
             id: verified.id,
             prev: verified.link.prev,
             stamp: verified.stamp,
+            event,
+            wire: wire.clone(),
         },
     );
-    let wire = Wire {
-        data: verified.travelling.to_string(),
-        link: verified.link,
-        signature,
-    };
     let table = if event == "todo.write" {
         &mut state.wires
     } else {
@@ -975,52 +1250,44 @@ fn open_write(state: &State, wire: &Value) -> Result<Value, String> {
     Ok(visible)
 }
 
-/// A `todo.floor` is admitted when an administrator attested it: its `sig` is an administrator
-/// key's signature of the instant and the hash (`message::floor_message`). One with no
-/// signature is admitted only when the host was told to take it unsigned.
+/// A `todo.floor` is admitted when the members settled it: its `cert` is the checkpoints of every
+/// writer, each for this instant and this hash ([`verify_settlement`]). The machine is told the
+/// floor without it. One with no settlement is admitted only when the host was told to take it
+/// unsigned, and a settlement that does not hold is refused whatever the host was told.
 fn admit_floor(state: &State, data: &str) -> Result<Option<String>, String> {
     let event = message::FLOOR_EVENT;
     let mut value: Value =
         serde_json::from_str(data).map_err(|_| format!("{event}: the data is not JSON"))?;
-    let has_signature = value
-        .as_object()
-        .is_some_and(|object| object.contains_key(SIGNATURE_FIELD));
-    if !has_signature {
+    let carried = value
+        .as_object_mut()
+        .and_then(|object| object.remove(SETTLEMENT_FIELD));
+    let Some(carried) = carried else {
         return if state.refuses_unsigned(event) {
             Err(format!(
-                "{event}: it carries no administrator's signature and this host does not take it on a peer's word"
+                "{event}: it carries no settlement by the members and this host does not take it on a peer's word"
             ))
         } else {
             Ok(None)
         };
-    }
-    let signature = signature_of(&mut value, event)?;
+    };
     let (before, hash) =
         message::floor_fields(&value).map_err(|error| format!("{event}: {error:?}"))?;
-    let signed = message::floor_message(&state.calendar, before, hash);
-    if state
-        .log
-        .administrators()
-        .iter()
-        .any(|administrator| administrator.verifies(&signed, &signature))
-    {
-        Ok(Some(value.to_string()))
-    } else {
-        Err(format!("{event}: no administrator signed this instant"))
-    }
+    let settlement = Settlement::from_value(&carried)
+        .ok_or_else(|| format!("{event}: its settlement is not checkpoints"))?;
+    verify_settlement(state, before, hash, &settlement)
+        .map_err(|reason| format!("{event}: the settlement does not hold: {reason}"))?;
+    Ok(Some(value.to_string()))
 }
 
-/// The floor leaves with the signature an administrator made of it, when the host holds one.
+/// The floor leaves with the settlement the members' checkpoints make of it, when the host holds
+/// one, and as the machine made it when it does not.
 fn seal_floor(state: &State, data: &str) -> Option<String> {
     let mut value: Value = serde_json::from_str(data).ok()?;
     let (before, hash) = message::floor_fields(&value).ok()?;
-    let signature = state
-        .signatures
-        .get(&message::floor_message(&state.calendar, before, hash))?;
-    value.as_object_mut()?.insert(
-        SIGNATURE_FIELD.to_string(),
-        Value::String(encoding::encode(signature)),
-    );
+    let settlement = settlement_of(state, before, hash)?;
+    value
+        .as_object_mut()?
+        .insert(SETTLEMENT_FIELD.to_string(), settlement.to_value());
     Some(value.to_string())
 }
 
@@ -1074,19 +1341,31 @@ fn make_operation(
     } else {
         None
     };
+    let wire = Wire {
+        data: travelling.to_string(),
+        link,
+        signature,
+    };
+    let event = signed_name(event).ok_or_else(|| format!("{event}: it is not a signed event"))?;
     state.ops.entry(author).or_default().insert(
         seq,
         Held {
             id: message::operation_id(&bytes),
             prev,
             stamp,
+            event,
+            wire: wire.clone(),
         },
     );
-    Ok(Wire {
-        data: travelling.to_string(),
-        link,
-        signature,
-    })
+    Ok(wire)
+}
+
+/// The name of a signed event as the host keeps it, when `event` is one.
+fn signed_name(event: &str) -> Option<&'static str> {
+    message::SIGNED_EVENTS
+        .iter()
+        .copied()
+        .find(|name| *name == event)
 }
 
 /// A note leaves as who really wrote over the write, with their operation as it was made, when

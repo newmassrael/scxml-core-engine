@@ -297,20 +297,20 @@ fn what_a_host_keeps_comes_back_from_its_store_and_still_opens() {
     let mut hub = host_in(&one, None, &[]);
     let wire = send(&mut alice, &titled(1, 1000, "buy milk"));
     let held = hub.admit("alice", "todo.write", &wire).unwrap().unwrap();
-    let text = hub.signatures_to_text();
+    let text = hub.to_text();
     assert!(!text.contains("buy milk"));
 
     let mut restarted = host_in(&one, None, &[]);
-    assert_eq!(restarted.restore_signatures_from_text(&text), 1);
+    assert_eq!(restarted.restore_from_text(&text), 1);
     assert_eq!(text_of(&send(&mut restarted, &held)), text_of(&wire));
 
     // A person's host that kept the key reads the same text back, and holds the write as its
     // machine holds it.
     let mut bob = host_in(&one, Some((2, 2)), &[(1, 5)]);
     let told = bob.admit("server", "todo.write", &wire).unwrap().unwrap();
-    let text = bob.signatures_to_text();
+    let text = bob.to_text();
     let mut restarted = host_in(&one, Some((2, 2)), &[(1, 5)]);
-    assert_eq!(restarted.restore_signatures_from_text(&text), 1);
+    assert_eq!(restarted.restore_from_text(&text), 1);
     assert_eq!(text_of(&send(&mut restarted, &told)), text_of(&wire));
 }
 

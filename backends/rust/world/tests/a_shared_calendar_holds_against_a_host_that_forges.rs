@@ -18,8 +18,9 @@
 mod common;
 
 use common::*;
+use sce_rust_mesh::endpoint::{Admission, Sealer};
 use sce_rust_trust::membership::{Body, Entry, Log, Profile};
-use sce_rust_trust::{Identity, Trust};
+use sce_rust_trust::{Divergence, Identity, Trust};
 use sce_rust_world::{Outcome, World};
 
 const CALENDAR: &str = "home";
@@ -309,57 +310,141 @@ fn the_hub_cannot_settle_an_instant_for_a_host_that_trusts_nobody() {
     assert_eq!(agree(&mut world), 2);
 }
 
-/// An instant is settled for hosts that trust nobody when an administrator attests it: the
-/// administrator's host signs the instant and the hash its own copy held of it, and the hub's
-/// host sends the hub's floor on with that signature. A signature of another hash, or of
-/// another instant, settles nothing. The run is deterministic, so a first run learns the
-/// hash the second is attested with.
+/// An instant is settled for hosts that trust nobody when the members settle it, and no
+/// administrator is asked: each member's host signs a checkpoint of the instant and the hash its
+/// own copy held of it, the hub's host holds them, and sends the hub's floor on with the
+/// settlement they make. A checkpoint of another hash or another instant, and the word of one
+/// member alone, settle nothing. The run is deterministic, so a first run learns the hash the
+/// second is told by the members.
 #[test]
-fn an_instant_an_administrator_attested_is_settled_for_every_host() {
-    let run = |attest: Option<(i64, u32)>| {
+fn an_instant_the_members_settled_is_settled_for_every_host() {
+    let run = |members: &[(&str, i64, u32)]| {
         let (mut world, hosts) = untrusting_world(6, 2, &["alice", "bob", "server"]);
         todo_set(&mut world, "alice", 1, DUE, 10);
         todo_set(&mut world, "bob", 2, DUE, 20);
         quiet(&mut world);
         world.advance_ms(60_000);
         world.host_errors();
-        if let Some((before, hash)) = attest {
-            hosts
-                .hub
-                .attest_floor(&administrator(), before, hash)
-                .unwrap();
+        for (who, before, hash) in members {
+            let checkpoint = hosts.of(who).checkpoint(*before, *hash).unwrap();
+            hosts.hub.take_checkpoint(&checkpoint).unwrap();
         }
         world.raise("server", "todo.settle", r#"{"before":"30000","members":2}"#);
         quiet(&mut world);
         world
     };
+    let floor_of = |world: &mut World, who: &str| whole(&todo_variables_of(world, who)["floor"]);
 
-    let mut first = run(None);
+    let mut first = run(&[]);
     let hash = whole(&todo_variables_of(&mut first, "alice")["frozenHash"]) as u32;
     for who in ["alice", "bob"] {
-        assert_eq!(whole(&todo_variables_of(&mut first, who)["floor"]), 0);
+        assert_eq!(floor_of(&mut first, who), 0, "no member said anything");
     }
 
-    for (before, hash) in [(30_000, hash ^ 1), (20_000, hash)] {
-        let mut world = run(Some((before, hash)));
+    for (what, members) in [
+        ("one member alone", vec![("alice", 30_000, hash)]),
+        (
+            "another hash",
+            vec![("alice", 30_000, hash), ("bob", 30_000, hash ^ 1)],
+        ),
+        (
+            "another instant",
+            vec![("alice", 20_000, hash), ("bob", 20_000, hash)],
+        ),
+    ] {
+        let mut world = run(&members);
         for who in ["alice", "bob"] {
-            assert_eq!(
-                whole(&todo_variables_of(&mut world, who)["floor"]),
-                0,
-                "{who} took a floor attested for {before} with {hash}"
-            );
+            assert_eq!(floor_of(&mut world, who), 0, "{who} took {what}");
         }
     }
 
-    let mut world = run(Some((30_000, hash)));
+    let mut world = run(&[("alice", 30_000, hash), ("bob", 30_000, hash)]);
     for who in ["alice", "bob"] {
-        assert_eq!(
-            whole(&todo_variables_of(&mut world, who)["floor"]),
-            30_000,
-            "{who}"
-        );
+        assert_eq!(floor_of(&mut world, who), 30_000, "{who}");
     }
     assert_eq!(agree(&mut world), 2);
+    assert!(world.host_errors().is_empty(), "nothing honest was refused");
+}
+
+/// A relay that withholds a member's operation from another is seen by the members' checkpoints:
+/// bob's copy lacks what alice's host made, her checkpoint names it, and the hub's host that
+/// holds it gives it to bob's host, which checks it as it would from anyone.
+#[test]
+fn an_operation_a_hub_did_not_pass_on_is_seen_and_fetched() {
+    let (mut world, mut hosts) = untrusting_world(7, 2, &["alice", "bob", "server"]);
+    // The hub's host leaves the second write it sends toward bob out, and says nothing of it.
+    world.set_sealer(
+        "server",
+        Box::new(Withholding {
+            inner: hosts.hub.clone(),
+            toward: "#bob",
+            seen: 0,
+            withhold: 2,
+        }),
+    );
+    todo_set(&mut world, "alice", 1, DUE, 10);
+    todo_set(&mut world, "alice", 2, DUE, 20);
+    quiet(&mut world);
+    world.host_errors();
+    assert_ne!(
+        todos_of(&mut world, "alice"),
+        todos_of(&mut world, "bob"),
+        "bob was not given the second"
+    );
+
+    // Alice's checkpoint names her chain in full, and bob's host sees what it lacks.
+    assert!(hosts.bob.divergences().is_empty());
+    hosts
+        .bob
+        .take_checkpoint(&hosts.alice.checkpoint(30_000, 7).unwrap())
+        .unwrap();
+    let seen = hosts.bob.divergences();
+    let [Divergence::Missing {
+        node: ALICE,
+        held,
+        named,
+        by: ALICE,
+    }] = &seen[..]
+    else {
+        panic!("{seen:?}");
+    };
+    assert_eq!((*held, *named), (1, 2));
+
+    // Any host that holds it gives it: the hub's here, and bob's host checks it as it would
+    // from anyone before its machine is told.
+    for (event, data) in hosts.hub.operations(ALICE, held + 1, *named) {
+        let told = hosts
+            .bob
+            .admit("server", &event, &data)
+            .unwrap()
+            .expect("an operation is told to the machine");
+        world.raise("bob", &event, &told);
+    }
+    quiet(&mut world);
+    assert!(hosts.bob.divergences().is_empty());
+    assert_eq!(todos_of(&mut world, "alice"), todos_of(&mut world, "bob"));
+    let errors = world.host_errors();
+    assert!(errors.is_empty(), "{errors:?}");
+}
+
+/// A hub's host that keeps one write back from one member: what a relay that withholds does.
+struct Withholding {
+    inner: Trust,
+    toward: &'static str,
+    seen: usize,
+    withhold: usize,
+}
+
+impl Sealer for Withholding {
+    fn seal(&mut self, target: &str, event: &str, data: &str) -> Result<Option<String>, String> {
+        if target == self.toward && event == "todo.write" {
+            self.seen += 1;
+            if self.seen == self.withhold {
+                return Err("withheld".to_string());
+            }
+        }
+        self.inner.seal(target, event, data)
+    }
 }
 
 /// The members hold a key the hub does not, and what they write reaches the hub sealed: its

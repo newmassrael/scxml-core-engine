@@ -195,23 +195,12 @@ pub fn operation_id(operation: &[u8]) -> [u8; 32] {
     Sha256::digest(operation).into()
 }
 
-/// The event by which the hub says an instant is settled, which an administrator attests.
+/// The event by which the hub says an instant is settled, which the members' settlement proves
+/// (`crate::checkpoint::Settlement`, carried in the data under [`SETTLEMENT_FIELD`]).
 pub const FLOOR_EVENT: &str = "todo.floor";
 
-const FLOOR_DOMAIN: &str = "sce-trust/floor/1";
-
-/// The bytes an administrator signs to attest that the changes up to `before` are settled in
-/// `calendar` with the hash `hash` (todo_floor): not the event's own text, so that what is
-/// attested is the instant and what every copy held of it, and nothing the hub could write
-/// around it.
-pub fn floor_message(calendar: &str, before: i64, hash: u32) -> Vec<u8> {
-    let mut message = Vec::new();
-    part(&mut message, FLOOR_DOMAIN);
-    part(&mut message, calendar);
-    part(&mut message, &before.to_string());
-    part(&mut message, &hash.to_string());
-    message
-}
+/// The key of the floor's data under which the settlement travels between hosts.
+pub const SETTLEMENT_FIELD: &str = "cert";
 
 /// The instant and the hash a `todo.floor` carries.
 pub fn floor_fields(data: &Value) -> Result<(i64, u32), MessageError> {
@@ -287,7 +276,7 @@ fn build(
     })
 }
 
-fn part(message: &mut Vec<u8>, text: &str) {
+pub(crate) fn part(message: &mut Vec<u8>, text: &str) {
     message.extend_from_slice(&(text.len() as u64).to_be_bytes());
     message.extend_from_slice(text.as_bytes());
 }

@@ -113,10 +113,40 @@ nothing back to wait for a predecessor):
   over what, and when a machine sends the tombstone again as itself (a resync), the host puts
   back the operation of the person who really did.
 - **A settled instant** (`todo.floor`) is the word on which every copy forgets the tombstones
-  up to an instant. It is accepted only with the signature of an administrator over the instant
-  and the hash (`Trust::attest_floor`, `hold_floor_signature`), because a hub that could settle
-  an instant its copies have not could bring back, with an old signed write, what was deleted.
-  A host that trusts its hub allows it unsigned (`Trust::allow_unsigned`).
+  up to an instant. It is accepted only with the members' settlement (below), because a hub that
+  could settle an instant its copies have not could bring back, with an old signed write, what
+  was deleted. A host that trusts its hub allows it without (`Trust::allow_unsigned`).
+
+### Checkpoints, settlement and withholding
+
+A **checkpoint** is one device's signed statement (`sce-rust-trust`, `checkpoint`): the entry of
+the log it speaks under, the instant `before` and the `digest` its copy holds of everything up to
+it (the machine's own `frozenHash` of the settle), and the **head** of every device's chain it
+holds in full (the highest number `n` for which it holds every operation from 1 to `n`, and the id
+of the nth). Only a device that was a writer under the entry it names can make one
+(`Trust::checkpoint`), and a host takes one in when the key the log gave that device then signed
+it (`Trust::take_checkpoint`). The checkpoints travel by any channel, a relay's included: a relay
+cannot make or change one, and one it keeps back only delays the settlement.
+
+**The settlement** of an instant is the checkpoints of every device that was a writer under one
+entry of the log, all for that instant and that digest (`Trust::settlement`). The hub's host
+sends its `todo.floor` on with it (`cert`), and every other host checks it alone: each checkpoint
+holds, they are for this instant and this hash, they speak under one entry the host holds, they
+are from exactly the writers under it (none missing, none twice, no reader), and the heads they
+name agree with each other and with the operations the host holds. No administrator is asked, and
+a hub holds none of the devices' keys. A device that was taken off is not a writer under the
+later entry and is not asked; a settlement made under an earlier entry is a settlement of that
+entry's writers still. A writer that is lost stops a settlement until an administrator takes it
+off, which is the price of every copy agreeing before any forgets.
+
+**Withholding** is what the heads show. A host that holds the chain of a device only to 5 and
+takes in a checkpoint that names its head at 7 knows that 6 and 7 exist and were not given to it
+(`Trust::divergences`, `Divergence::Missing`); one that holds another operation than the one a
+checkpoint names at a number (`Divergence::Differs`) knows that the device signed two histories,
+or that the member lies about it, and settles on nothing that carries it. The host asks any other
+host that holds the operations (`Trust::operations`: a relay, or another member) and takes them in
+as it takes in anything (`Admission::admit`), so the host asked need not be trusted. A host that
+is connected to several relays has one `Trust`; what one of them did not pass on another gives.
 
 ### Limits
 
@@ -125,9 +155,12 @@ keep them from going back along one chain. What decides is the log and the numbe
 leaked made valid operations until it was taken off, and the ones up to `final_seq` stay valid:
 undoing them is an operation of its own.
 
-An operation a device made and never published is not in its chain as far as the hosts know, and
-a host that holds operation 5 and 7 of a device and never 6 cannot tell a lost one from a withheld
-one. Telling them apart is what the members' checkpoints are for (ADR 0034, stage 4).
+An operation a device made and never published is not in its chain as far as the hosts know. A
+host that holds operations 5 and 7 and never 6 shows it in its own checkpoint (its head is 4),
+and a member whose checkpoint names a later head shows it to every host that takes it in; a
+member that is never heard from, or a relay that withholds every checkpoint as well as the
+operations, is a delay that no host can tell from a quiet list until some checkpoint arrives by
+another route.
 
 ## 4. Keeping the content from the hub
 
@@ -181,10 +214,11 @@ where it shows.
 
 ## 5. What a host keeps across a restart
 
-`Trust::signatures_to_text` is one text for the host's store (the key-value feature): the
-attested instants, the writes it relays (as they travel, with their signatures) and who wrote
-over what. It holds no key. `restore_signatures_from_text` verifies each row against today's
-log and keeps only what is still true. The log itself is kept as its entries (`Trust::entries`, each
+`Trust::to_text` is one text for the host's store (the key-value feature): the checkpoints it
+made or took in, and every operation it holds (the writes it relays and the notes of who wrote
+over what, as they travel, with their signatures and numbers). It holds no key.
+`restore_from_text` verifies each row against today's log and keeps only what is still true,
+so that what a host knew to be withheld is still known after a restart. The log itself is kept as its entries (`Trust::entries`, each
 `Entry::to_json`), and a host reads it back by appending them in order, which checks the chain again.
 Keys and the person's secret are kept where the host keeps secrets.
 

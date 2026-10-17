@@ -8,6 +8,7 @@
 // vectors are the guard: each is a fixed input and the bytes it must give, written down, so that
 // a change shows as a difference here and is a decision, not an accident.
 
+use sce_rust_trust::checkpoint::{Checkpoint, Head};
 use sce_rust_trust::encoding;
 use sce_rust_trust::membership::{Body, Log, Profile};
 use sce_rust_trust::message;
@@ -88,7 +89,7 @@ fn the_bytes_a_write_is_signed_as_do_not_move() {
 }
 
 #[test]
-fn the_bytes_a_note_and_a_floor_are_signed_as_do_not_move() {
+fn the_bytes_a_note_is_signed_as_do_not_move() {
     let signing = message::signing("home", "todo.supersede", &note())
         .unwrap()
         .unwrap();
@@ -96,9 +97,49 @@ fn the_bytes_a_note_and_a_floor_are_signed_as_do_not_move() {
         hex(&signing.message),
         "00000000000000117363652d74727573742f6576656e742f310000000000000004686f6d65000000000000000e746f646f2e737570657273656465000000000000000131000000000000000133000000000000000431303030000000000000000130000000000000000132000000000000000131"
     );
+}
+
+fn checkpoint() -> Checkpoint {
+    let mut checkpoint = Checkpoint {
+        list: "home".to_string(),
+        device: 2,
+        log: 3,
+        log_hash: [4; 32],
+        before: 30_000,
+        digest: 7,
+        heads: vec![
+            Head {
+                node: 1,
+                seq: 5,
+                id: [6; 32],
+            },
+            Head {
+                node: 2,
+                seq: 2,
+                id: [8; 32],
+            },
+        ],
+        signature: [0; 64],
+    };
+    checkpoint.signature = bob().sign(&checkpoint.signing_bytes());
+    checkpoint
+}
+
+/// What a member signs of what its copy holds, and how it travels.
+#[test]
+fn a_checkpoint_is_signed_and_written_as_it_always_was() {
+    let checkpoint = checkpoint();
     assert_eq!(
-        hex(&message::floor_message("home", 30_000, 7)),
-        "00000000000000117363652d74727573742f666c6f6f722f310000000000000004686f6d6500000000000000053330303030000000000000000137"
+        hex(&checkpoint.signing_bytes()),
+        "00000000000000167363652d74727573742f636865636b706f696e742f310000000000000004686f6d65000000000000000132000000000000000133000000000000002b4241514542415145424151454241514542415145424151454241514542415145424151454241514542415100000000000000053330303030000000000000000137000000000000000132000000000000000131000000000000000135000000000000002b42675947426759474267594742675947426759474267594742675947426759474267594742675947426759000000000000000132000000000000000132000000000000002b43416749434167494341674943416749434167494341674943416749434167494341674943416749434167"
+    );
+    assert_eq!(
+        encoding::encode(&checkpoint.signature),
+        "c4JzEw-wPKwIb2G5FR_juV9_TelC_4psND1-PPXSxUBvNslhbgDpkN2M71qK1BXp5V6rXIXqbJi-BWXBZDs4DQ"
+    );
+    assert_eq!(
+        checkpoint.to_json(),
+        r#"{"before":"30000","device":"2","digest":"7","heads":[["1","5","BgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgY"],["2","2","CAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg"]],"list":"home","mh":"3","mhh":"BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ","sig":"c4JzEw-wPKwIb2G5FR_juV9_TelC_4psND1-PPXSxUBvNslhbgDpkN2M71qK1BXp5V6rXIXqbJi-BWXBZDs4DQ"}"#
     );
 }
 

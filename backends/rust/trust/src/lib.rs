@@ -16,6 +16,10 @@
 //!   append-only chain of entries signed by administrators, so that a host believes nothing a
 //!   hub says about who the members are, and two histories of one position are a fork it
 //!   reports.
+//! * [`checkpoint`] - what a member's device says it holds (an instant, the digest of its copy up
+//!   to it, the head of every chain it has in full), signed; and the settlement the checkpoints
+//!   of every writer make together, which a host checks alone, with no administrator, and which
+//!   shows a relay that withholds an operation.
 //! * [`message`] - the bytes a write is signed as, written from the event's own fields and the
 //!   list's name, so a signature neither moves to another write nor to another list.
 //! * [`secrecy`] - keeping the content of a write from the hub: a key for each epoch of the
@@ -35,6 +39,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod checkpoint;
 pub mod encoding;
 pub mod identity;
 pub mod membership;
@@ -42,6 +47,7 @@ pub mod message;
 pub mod secrecy;
 pub mod trust;
 
+pub use checkpoint::{Checkpoint, Head, Settlement};
 pub use identity::{Identity, PublicKey};
 pub use membership::{Body, Entry, Log, LogError, Profile};
-pub use trust::{GrantError, RotateError, Rotation, Trust, TrustError};
+pub use trust::{CheckpointError, Divergence, GrantError, RotateError, Rotation, Trust};

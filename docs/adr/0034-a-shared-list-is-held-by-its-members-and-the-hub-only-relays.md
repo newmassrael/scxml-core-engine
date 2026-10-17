@@ -277,9 +277,9 @@ given, and each can be revisited by a later ADR that names the reason.
 
 Stage 1 and the membership log of stage 2 have landed. Stage 2 as first landed removed a member
 by a time (`from`), which is not what section 4 says; it was corrected with stage 3, where the
-number of an operation that section 4 needs exists. Stage 3 has landed with the refinements
-below. This ADR is Accepted with stage 3, since the log and the chains are what make the rest
-binding.
+number of an operation that section 4 needs exists. Stages 3 and 4 have landed with the
+refinements below. This ADR is Accepted with stage 3, since the log and the chains are what make
+the rest binding.
 
 ## Revisions made in building it
 
@@ -302,3 +302,23 @@ binding.
 - **Sealing refuses instead of falling back.** A host that cannot sign or seal as the list
   requires sends nothing, and says why (`RouterError::EventNotSealed`), where it used to send what
   it could.
+- **The settlement replaces the administrator's attestation** (stage 4). The attestation of an
+  administrator was the weaker rule: one stolen key could settle an instant a slow member had not
+  reached, and an administrator had to be online. A `todo.floor` now carries the checkpoints of
+  every writer under one entry of the log, all for its instant and digest, and the attestation
+  (`attest_floor`, `hold_floor_signature`) is gone. Every device that is a writer under the entry
+  is required, so a lost writer stops a settlement until an administrator takes it off.
+- **A head is a contiguous head.** A checkpoint names, for each device, the highest number held
+  with every number before it, and the id of that operation; so a host that holds 5 and 7 and not
+  6 names 4 or fewer, and a member that names 7 shows the gap to everyone who takes it in. An
+  operation is not held back for a gap (above), the gap is only made visible.
+- **Checkpoints are carried by the host, not by the machines.** The settle protocol of the
+  machines is unchanged: the host reads the machine's digest, signs it, and moves the checkpoints
+  between hosts by any channel (the relay of stage 5 will store them), so that no machine or
+  document changes and no relay has to understand one.
+- **Operations can be asked of any host** (`Trust::operations`) and are taken in by the same
+  admission as anything else, so a relay that withholds is routed around by asking another relay
+  or a member, whichever is reachable.
+- **The persisted text holds every operation**, not only the ones keyed by their content, so a
+  restarted host can still give a range it held; the text and its two functions are `to_text` and
+  `restore_from_text` (`signatures_to_text` named what it no longer is).
