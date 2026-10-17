@@ -2249,7 +2249,7 @@ VARIABLE_READER(todo_peer, late)
 VARIABLE_READER(todo_peer, full)
 VARIABLE_READER(todo_peer, denied)
 
-static const char *todo_peer_text_text(sce_static_string_32_t text) {
+static const char *todo_peer_text_text(sce_static_string_96_t text) {
     static char copy[sizeof(text.data)];
     memcpy(copy, text.data, sizeof(copy));
     return copy;
