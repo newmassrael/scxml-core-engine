@@ -118,8 +118,12 @@ went on signing itself. Both are fixed (`evict_past_the_cutoff`, `evict_from`, t
 
 - Known-answer vectors for every byte form that is signed or sealed (and a recorded MLS scenario that
   Rust, C, C++, Python, Go and Kotlin replay).
-- A seeded simulation that checks the safety properties against the code, and a TLA+ model of the
-  convergence rule checked with TLC (one configuration that passes, one that fails as the history says).
+- A seeded simulation that checks the safety properties against the code, and two TLA+ models of the
+  convergence rule checked with TLC, each with a configuration that passes and one that fails as the
+  history says: the dropping of what a later entry puts out, and, since the independent read, the
+  conflicts of a device (two operations at a number, a write whose time goes back) held as a set. The
+  models are of the rule and not of the code, and they have no stamp repeats, replaced keys or first
+  epoch: the simulation is what plays those against the code.
 - A fuzz of every parser of the trust, relay and group-key code and of the C ABI: a seeded mutator
   (no panic over the default run and over a run forty times longer, with a harness that is checked to
   find planted defects of each kind) and libFuzzer on the same 21 targets.

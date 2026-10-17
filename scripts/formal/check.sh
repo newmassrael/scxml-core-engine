@@ -11,6 +11,12 @@
 #   * SharedListConvergence_without_eviction.cfg: the rule as it was before the model was checked against
 #     the code. TLC must find the divergence. A model that cannot fail proves nothing, so this is the
 #     check that the model is able to say no.
+#   * SharedListConflicts.cfg: a device whose operations conflict (two at one number, a write whose time
+#     goes back), with the rule the code has since an independent review: a host holds every operation
+#     that holds under its log and is told what is below the lowest conflict, so that two hosts given the
+#     same operations in any order are told the same. TLC must find no violation.
+#   * SharedListConflicts_arrival.cfg: the rule before that review (a conflicting operation is refused
+#     at the door and the device frozen from there). TLC must find the divergence the review found.
 #
 # Needs Java 11 or later. TLC is fetched once into ~/.cache/sce-formal and checked against a pinned
 # SHA-256, or taken from $TLA2TOOLS.
@@ -39,7 +45,7 @@ cp "$here"/*.tla "$here"/*.cfg "$work"/
 cd "$work"
 
 tlc() {
-    java -XX:+UseParallelGC -cp "$jar" tlc2.TLC -workers auto -config "$1" SharedListConvergence.tla
+    java -XX:+UseParallelGC -cp "$jar" tlc2.TLC -workers auto -config "$1" "${2:-SharedListConvergence}.tla"
 }
 
 for config in SharedListConvergence SharedListConvergence_fork SharedListConvergence_both; do
@@ -60,4 +66,20 @@ if [[ "$status" -ne 12 ]]; then
     echo "check.sh: expected TLC to report an invariant violation (exit 12), got $status" >&2
     exit 1
 fi
-echo "check.sh: the model holds with the dropping rule and fails without it"
+echo "== conflicts of a device (two at a number, a time that goes back): the set rule, no violation expected"
+if ! tlc SharedListConflicts.cfg SharedListConflicts; then
+    echo "check.sh: TLC found a violation of the rule the code applies to conflicts" >&2
+    exit 1
+fi
+
+echo "== conflicts of a device refused at the door: a violation expected"
+set +e
+tlc SharedListConflicts_arrival.cfg SharedListConflicts > arrival.log 2>&1
+status=$?
+set -e
+tail -n 25 arrival.log
+if [[ "$status" -ne 12 ]]; then
+    echo "check.sh: expected TLC to report an invariant violation (exit 12), got $status" >&2
+    exit 1
+fi
+echo "check.sh: the models hold with the rules the code applies and fail without them"
