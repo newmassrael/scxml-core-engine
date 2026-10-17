@@ -24,12 +24,23 @@
 
 set -euo pipefail
 
+MSG_FILE="${1:?commit-msg hook requires the message file path}"
+
+# The restricted-term list, over the message, ahead of the bypass below on
+# purpose: the pre-commit gate reads the files a commit carries and never read
+# the message, and a message is published with the commit all the same. It
+# runs before SKIP_COMMIT_MSG for the reason the pre-commit one runs before
+# SKIP_PRECOMMIT: a format emergency is no reason to publish a term, and this
+# gate has its own override, which says so.
+# shellcheck source=tools/git-hooks/restricted-term-gate.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/restricted-term-gate.sh"
+restricted_term_gate_message "$MSG_FILE" || exit 1
+
 if [[ "${SKIP_COMMIT_MSG:-0}" == "1" ]]; then
     printf 'commit-msg: SKIP_COMMIT_MSG=1 — message format check skipped.\n' >&2
     exit 0
 fi
 
-MSG_FILE="${1:?commit-msg hook requires the message file path}"
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 AUDIT_HOOK="$REPO_ROOT/.claude/hooks/commit_audit.sh"
 

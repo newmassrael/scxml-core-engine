@@ -39,6 +39,120 @@
 
 RESTRICTED_TERMS_FILE="${SCE_RESTRICTED_TERMS:-$HOME/.claude/restricted-terms.txt}"
 
+# ── The loose tier, and the numbers that exclude a pattern from it ─────────
+#
+# The list is matched twice. The STRICT tier is the list as its owner wrote it:
+# case-sensitive, anchors and all, over every staged blob. The LOOSE tier is
+# the same list with its word boundaries removed and case ignored, over the
+# lines a commit ADDS (and over the whole commit message). It exists for the
+# two shapes the strict tier is documented to miss: a term with a letter stuck
+# in front of it, and a term in another case. It is built from the list by
+# string substitution, so nothing here reads what a pattern says.
+#
+# A loose pattern is a blunter one, and some patterns are blunt enough to match
+# ordinary words: measured 2026-10-17 over 2003 commits, 364 carried a loose hit
+# and two patterns produced nearly all of them. So the tier looks at added lines
+# only (a file whose old lines happen to match does not refuse a commit that
+# did not write them), and a pattern the owner finds too noisy is left out of
+# it by NUMBER, in a file beside the list that holds numbers and comments and
+# no term. A pattern nobody excluded is checked loosely: a new line in the list
+# is covered the day it is written, and a number that is not in the file is
+# never a reason to check less.
+RESTRICTED_LOOSE_EXCLUDE_FILE="${SCE_RESTRICTED_LOOSE_EXCLUDE:-${RESTRICTED_TERMS_FILE}.loose-exclude}"
+
+# Read the list into RT_PATS (as written), and the loose tier into RT_LOOSE_PATS
+# with RT_LOOSE_IDX (each one's number in RT_PATS).
+_rt_load() {
+    RT_PATS=()
+    RT_LOOSE_PATS=()
+    RT_LOOSE_IDX=()
+    local line loose n=0 left=" "
+    if [[ -r "$RESTRICTED_LOOSE_EXCLUDE_FILE" ]]; then
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            line="${line%%#*}"
+            line="${line//[[:space:]]/}"
+            [[ "$line" =~ ^[0-9]+$ ]] && left+="$line "
+        done < "$RESTRICTED_LOOSE_EXCLUDE_FILE"
+    fi
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        [[ -z "${line// /}" ]] && continue
+        [[ "$line" == \#* ]] && continue
+        RT_PATS+=("$line")
+        if [[ "$left" != *" $n "* ]]; then
+            loose="${line//\\b/}"
+            loose="${loose//\\</}"
+            loose="${loose//\\>/}"
+            RT_LOOSE_PATS+=("$loose")
+            RT_LOOSE_IDX+=("$n")
+        fi
+        n=$((n + 1))
+    done < "$RESTRICTED_TERMS_FILE"
+}
+
+# The lines the staged diff adds, as `start count` ranges per path, in
+# RT_RANGES. A staged path the diff has no hunk for has an empty range (a mode
+# change, a rename, a binary file add no line). A header this parser cannot
+# map to a staged path (git quotes a path with a tab or a newline in it) sets
+# RT_UNMAPPED, and every line then counts as added: a path it cannot place is
+# scanned, never skipped.
+_rt_added_ranges() {
+    local f
+    declare -gA RT_RANGES=()
+    RT_UNMAPPED=0
+    for f in "$@"; do RT_RANGES["$f"]=""; done
+    local rpath rs rc
+    while IFS=$'\t' read -r rpath rs rc; do
+        if [[ "$rpath" == "?" ]]; then
+            RT_UNMAPPED=1
+        elif [[ -n "${RT_RANGES[$rpath]+x}" ]]; then
+            RT_RANGES["$rpath"]+="$rs $rc;"
+        else
+            RT_UNMAPPED=1
+        fi
+    done < <(git -c core.quotePath=false diff --cached -U0 --no-color --no-ext-diff \
+                 --src-prefix=a/ --dst-prefix=b/ --diff-filter=ACMR 2>/dev/null \
+             | awk '
+        /^diff --git / { inhdr = 1; cur = ""; next }
+        inhdr && /^\+\+\+ / {
+            p = substr($0, 5); sub(/\t.*$/, "", p)
+            if (p == "/dev/null") { cur = ""; next }
+            if (substr(p, 1, 1) == "\"") { print "?\t0\t0"; cur = ""; next }
+            sub(/^b\//, "", p); cur = p; next
+        }
+        /^@@ / {
+            inhdr = 0
+            if (cur == "") next
+            s = $3; sub(/^\+/, "", s); c = 1
+            k = index(s, ",")
+            if (k > 0) { c = substr(s, k + 1); s = substr(s, 1, k - 1) }
+            print cur "\t" s "\t" c
+        }')
+}
+
+# The line numbers of $1 ("3,5,") that $2 ("5,") does not already name.
+_rt_without() {
+    local out="" n
+    local IFS=','
+    for n in $1; do
+        [[ ",$2" == *",$n,"* ]] || out+="$n,"
+    done
+    printf '%s' "$out"
+}
+
+# Whether line $2 of staged path $1 is one the commit adds.
+_rt_is_added() {
+    [[ "$RT_UNMAPPED" == "1" ]] && return 0
+    [[ -z "${RT_RANGES[$1]+x}" ]] && return 0
+    local spec="${RT_RANGES[$1]}" r s c
+    local IFS=';'
+    for r in $spec; do
+        s="${r% *}"
+        c="${r#* }"
+        (( $2 >= s && $2 < s + c )) && return 0
+    done
+    return 1
+}
+
 restricted_term_gate_staged() {
     if [[ "${SCE_RESTRICTED_OVERRIDE:-0}" == "1" ]]; then
         printf '\n⚠ pre-commit: SCE_RESTRICTED_OVERRIDE=1 — restricted-term gate DISABLED.\n' >&2
@@ -58,8 +172,11 @@ restricted_term_gate_staged() {
         return 1
     fi
 
-    # ⚠⚠ KNOWN WEAKNESS, MEASURED 2026-09-18 AND DELIBERATELY NOT PATCHED
-    # HERE. Several of the list's patterns are anchored `\b<term>`, and a
+    # ⚠⚠ KNOWN WEAKNESS OF THE STRICT TIER, MEASURED 2026-09-18 AND
+    # DELIBERATELY NOT PATCHED IN IT. The loose tier (above, and run below
+    # over the lines a commit adds) is the answer to it: the two repairs
+    # described here are done there, where they cannot turn an old file red.
+    # Several of the list's patterns are anchored `\b<term>`, and a
     # word boundary needs a non-word character on the other side — so a
     # term does not match when one letter is stuck in front of it. That
     # is not a hypothetical spelling: the platform model this repository
@@ -92,13 +209,8 @@ restricted_term_gate_staged() {
     # is doing the reading, which is worse than the hole. So both belong
     # to whoever owns the list, and this note is here so the weaknesses
     # are recorded rather than rediscovered.
-    local -a pats=()
-    local line
-    while IFS= read -r line || [[ -n "$line" ]]; do
-        [[ -z "${line// /}" ]] && continue
-        [[ "$line" == \#* ]] && continue
-        pats+=("$line")
-    done < "$RESTRICTED_TERMS_FILE"
+    _rt_load
+    local -a pats=("${RT_PATS[@]}")
 
     if [[ ${#pats[@]} -eq 0 ]]; then
         printf '\nERROR pre-commit: the restricted-term list is empty (%s).\n' "$RESTRICTED_TERMS_FILE" >&2
@@ -162,6 +274,21 @@ restricted_term_gate_staged() {
             found["$i:${path#"$root"/}"]+="${hit%%:*},"
         done < <(grep -r -I -n -Z -E -- "${pats[$i]}" "$root" 2>/dev/null)
     done
+    # The loose tier, over the same scratch root and over the added lines only.
+    local -A lfound=()
+    local j rel n
+    if [[ ${#RT_LOOSE_PATS[@]} -gt 0 ]]; then
+        _rt_added_ranges "${staged[@]}"
+        for j in "${!RT_LOOSE_PATS[@]}"; do
+            while IFS= read -r -d '' path && IFS= read -r hit; do
+                rel="${path#"$root"/}"
+                n="${hit%%:*}"
+                if _rt_is_added "$rel" "$n"; then
+                    lfound["${RT_LOOSE_IDX[$j]}:$rel"]+="$n,"
+                fi
+            done < <(grep -r -I -n -i -Z -E -- "${RT_LOOSE_PATS[$j]}" "$root" 2>/dev/null)
+        done
+    fi
     rm -rf "$root"
 
     local hits=0 nums
@@ -172,6 +299,14 @@ restricted_term_gate_staged() {
                 printf '  %s: line(s) %s — term #%d\n' "$f" "${nums%,}" "$i" >&2
                 hits=$((hits + 1))
             fi
+            nums="${lfound["$i:$f"]:-}"
+            # A subshell per file per pattern is what cost seventy minutes once:
+            # it is spent only where there is something to subtract from.
+            [[ -n "$nums" ]] && nums="$(_rt_without "$nums" "${found["$i:$f"]:-}")"
+            if [[ -n "$nums" ]]; then
+                printf '  %s: line(s) %s — loose term #%d\n' "$f" "${nums%,}" "$i" >&2
+                hits=$((hits + 1))
+            fi
         done
     done
 
@@ -179,8 +314,75 @@ restricted_term_gate_staged() {
         printf '\nERROR pre-commit: staged content matches the restricted-term list.\n' >&2
         printf '  The matched text is deliberately NOT printed — see this gate.\n' >&2
         printf '  Term indexes refer to the non-comment lines of:\n    %s\n' "$RESTRICTED_TERMS_FILE" >&2
+        printf '  "loose term" is the same pattern with case ignored and no word boundary,\n' >&2
+        printf '  over the lines this commit adds. A pattern that is too blunt for that is\n' >&2
+        printf '  left out by number in:\n    %s\n' "$RESTRICTED_LOOSE_EXCLUDE_FILE" >&2
         printf '  Remove the content and re-stage. SKIP_PRECOMMIT does NOT cover\n' >&2
         printf '  this gate; SCE_RESTRICTED_OVERRIDE=1 does, and says so loudly.\n' >&2
+        return 1
+    fi
+    return 0
+}
+
+# The commit message, held to the same list: strict, and loose with every line
+# counted as added. `commit-msg` calls it with the message file; lines git
+# would drop as comments are not part of the message and are not scanned.
+restricted_term_gate_message() {
+    local message="${1:?restricted_term_gate_message needs the message file}"
+    if [[ "${SCE_RESTRICTED_OVERRIDE:-0}" == "1" ]]; then
+        printf '\n⚠ commit-msg: SCE_RESTRICTED_OVERRIDE=1 — restricted-term gate DISABLED.\n' >&2
+        printf '  The remote is public and a push does not un-publish. You are\n' >&2
+        printf '  asserting that you have read the message yourself.\n\n' >&2
+        return 0
+    fi
+    if [[ ! -r "$RESTRICTED_TERMS_FILE" ]]; then
+        printf '\nERROR commit-msg: restricted-term gate cannot read its term list.\n' >&2
+        printf '  Expected at: %s\n' "$RESTRICTED_TERMS_FILE" >&2
+        printf '  This gate FAILS CLOSED, as the one in pre-commit does.\n' >&2
+        return 1
+    fi
+    _rt_load
+    if [[ ${#RT_PATS[@]} -eq 0 ]]; then
+        printf '\nERROR commit-msg: the restricted-term list is empty (%s).\n' "$RESTRICTED_TERMS_FILE" >&2
+        return 1
+    fi
+
+    local body
+    body="$(mktemp)" || return 1
+    # A comment line becomes an empty one, so a line keeps its number.
+    sed 's/^#.*$//' "$message" > "$body"
+
+    local i j hit nums strict hits=0
+    for i in "${!RT_PATS[@]}"; do
+        nums=""
+        while IFS= read -r hit; do nums+="${hit%%:*},"; done \
+            < <(grep -n -E -- "${RT_PATS[$i]}" "$body" 2>/dev/null)
+        if [[ -n "$nums" ]]; then
+            printf '  commit message: line(s) %s — term #%d\n' "${nums%,}" "$i" >&2
+            hits=$((hits + 1))
+        fi
+    done
+    for j in "${!RT_LOOSE_PATS[@]}"; do
+        nums=""
+        while IFS= read -r hit; do nums+="${hit%%:*},"; done \
+            < <(grep -n -i -E -- "${RT_LOOSE_PATS[$j]}" "$body" 2>/dev/null)
+        # What the strict tier named for this pattern is not named twice.
+        strict=""
+        while IFS= read -r hit; do strict+="${hit%%:*},"; done \
+            < <(grep -n -E -- "${RT_PATS[${RT_LOOSE_IDX[$j]}]}" "$body" 2>/dev/null)
+        nums="$(_rt_without "$nums" "$strict")"
+        if [[ -n "$nums" ]]; then
+            printf '  commit message: line(s) %s — loose term #%d\n' "${nums%,}" "${RT_LOOSE_IDX[$j]}" >&2
+            hits=$((hits + 1))
+        fi
+    done
+    rm -f "$body"
+
+    if [[ $hits -gt 0 ]]; then
+        printf '\nERROR commit-msg: the message matches the restricted-term list.\n' >&2
+        printf '  The matched text is deliberately NOT printed — see this gate.\n' >&2
+        printf '  Term indexes refer to the non-comment lines of:\n    %s\n' "$RESTRICTED_TERMS_FILE" >&2
+        printf '  Rewrite the message. SCE_RESTRICTED_OVERRIDE=1 covers this gate and says so.\n' >&2
         return 1
     fi
     return 0

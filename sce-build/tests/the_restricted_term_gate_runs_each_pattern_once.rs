@@ -10,6 +10,11 @@
 //! blobs, so the first half of this suite holds the report to its old shape
 //! and the second half counts the `grep` processes.
 //!
+//! The second half of the file holds what the gate added to the strict tier: a
+//! loose one (case ignored, no word boundary) over the lines a commit adds, a
+//! file of pattern numbers that leaves a blunt pattern out of it, and the same
+//! list held to the commit message.
+//!
 //! Every run here reads a synthetic term list through `SCE_RESTRICTED_TERMS`.
 //! The real list lives outside the repository and is never opened by a test:
 //! reading it would copy the terms it exists to keep out.
@@ -272,4 +277,273 @@ fn grep_runs_once_per_pattern_however_many_files_are_staged() {
         "grep ran {few} times for 12 staged files and {many} for 60: the gate's \
          cost must follow the pattern count, not the file count"
     );
+}
+
+/// The lines of the loose tier: `  <path>: line(s) <n,...> — loose term #<i>`.
+fn loose_lines(out: &Output) -> Vec<String> {
+    String::from_utf8_lossy(&out.stderr)
+        .lines()
+        .filter(|l| l.starts_with("  ") && l.contains(" — loose term #"))
+        .map(str::to_string)
+        .collect()
+}
+
+impl Sandbox {
+    /// Commit what is staged, with an identity of its own and no hooks.
+    fn commit(&self, message: &str) {
+        self.git(&[
+            "-c",
+            "user.name=probe",
+            "-c",
+            "user.email=probe@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "-q",
+            "--no-verify",
+            "-m",
+            message,
+        ]);
+    }
+
+    /// Source the gate and hold `message` to it, the way `commit-msg` does.
+    fn run_message_gate(&self, terms: &Path, message: &str) -> Output {
+        let gate = common::repository::root().join("tools/git-hooks/restricted-term-gate.sh");
+        let file = self.dir.join("COMMIT_EDITMSG");
+        std::fs::write(&file, message).expect("write the message");
+        let script = format!(
+            "source '{}'\nrestricted_term_gate_message '{}'\n",
+            gate.display(),
+            file.display()
+        );
+        Command::new("bash")
+            .arg("-c")
+            .arg(script)
+            .current_dir(self.repo())
+            .env("SCE_RESTRICTED_TERMS", terms)
+            .env_remove("SCE_RESTRICTED_OVERRIDE")
+            .output()
+            .expect("bash runs the gate")
+    }
+}
+
+#[test]
+fn a_term_in_another_case_or_behind_a_letter_is_refused_on_a_line_the_commit_adds() {
+    let sb = Sandbox::new("loose-added");
+    let terms = sb.terms(TERMS);
+    sb.stage("case.txt", b"fine\nNeedle\n");
+    sb.stage("prefix.txt", b"mneedle\n");
+    sb.stage("clean.txt", b"a nee dle line\n");
+
+    let out = sb.run_gate(&terms, None);
+
+    assert!(!out.status.success(), "a loose hit must refuse the commit");
+    assert!(
+        hit_lines(&out).is_empty(),
+        "the strict tier names neither: {:?}",
+        hit_lines(&out)
+    );
+    assert_eq!(
+        loose_lines(&out),
+        vec![
+            "  case.txt: line(s) 2 — loose term #1",
+            "  prefix.txt: line(s) 1 — loose term #1",
+        ],
+        "stderr was:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !stderr.contains("eedle"),
+        "the report must not carry the matched text:\n{stderr}"
+    );
+}
+
+#[test]
+fn a_line_that_matches_loosely_and_was_there_before_does_not_refuse_the_commit_that_did_not_write_it(
+) {
+    let sb = Sandbox::new("loose-old");
+    let terms = sb.terms(TERMS);
+    sb.stage("old.txt", b"Needle here\nother\nlast\n");
+    sb.commit("the file as it was");
+
+    // A line that does not match is changed beside the one that does.
+    sb.stage("old.txt", b"Needle here\nother, changed\nlast\n");
+    let beside = sb.run_gate(&terms, None);
+    assert!(
+        beside.status.success(),
+        "an old line is not the commit's to answer for:\n{}",
+        String::from_utf8_lossy(&beside.stderr)
+    );
+
+    // A line that matches is added to it.
+    sb.stage(
+        "old.txt",
+        b"Needle here\nother, changed\nlast\nNEEDLE again\n",
+    );
+    let added = sb.run_gate(&terms, None);
+    assert!(!added.status.success(), "an added line must be refused");
+    assert_eq!(
+        loose_lines(&added),
+        vec!["  old.txt: line(s) 4 — loose term #1"],
+        "stderr was:\n{}",
+        String::from_utf8_lossy(&added.stderr)
+    );
+}
+
+#[test]
+fn a_line_the_strict_tier_named_is_not_named_again_by_the_loose_one() {
+    let sb = Sandbox::new("loose-once");
+    let terms = sb.terms(TERMS);
+    sb.stage("both.txt", b"needle\nNeedle\n");
+
+    let out = sb.run_gate(&terms, None);
+
+    assert_eq!(hit_lines(&out), vec!["  both.txt: line(s) 1 — term #1"]);
+    assert_eq!(
+        loose_lines(&out),
+        vec!["  both.txt: line(s) 2 — loose term #1"]
+    );
+}
+
+#[test]
+fn a_pattern_the_exclude_file_names_leaves_the_loose_tier_and_not_the_strict_one() {
+    let sb = Sandbox::new("loose-exclude");
+    let terms = sb.terms(TERMS);
+    // Numbers and comments only: the file holds no term.
+    std::fs::write(
+        sb.dir.join("terms.list.loose-exclude"),
+        "# too blunt for the loose tier\n1  # the second pattern\n",
+    )
+    .expect("write the exclude file");
+
+    sb.stage("loose.txt", b"Needle\n");
+    let loose = sb.run_gate(&terms, None);
+    assert!(
+        loose.status.success(),
+        "an excluded pattern is not checked loosely:\n{}",
+        String::from_utf8_lossy(&loose.stderr)
+    );
+
+    sb.stage("strict.txt", b"needle\n");
+    let strict = sb.run_gate(&terms, None);
+    assert!(!strict.status.success(), "the strict tier still applies");
+    assert_eq!(
+        hit_lines(&strict),
+        vec!["  strict.txt: line(s) 1 — term #1"]
+    );
+
+    // Pattern 0 is not excluded, so it is still checked loosely.
+    sb.stage("other.txt", b"sce_probe_term_4\n");
+    let other = sb.run_gate(&terms, None);
+    assert_eq!(
+        loose_lines(&other),
+        vec!["  other.txt: line(s) 1 — loose term #0"],
+        "stderr was:\n{}",
+        String::from_utf8_lossy(&other.stderr)
+    );
+}
+
+#[test]
+fn many_files_that_match_loosely_are_reported_in_bounded_time() {
+    // `grep_runs_once_per_pattern_however_many_files_are_staged` stages clean
+    // files, where the loose tier also runs; this one stages files that match
+    // it, so the added-line bookkeeping runs over many of them.
+    let sb = Sandbox::new("loose-cost");
+    let terms = sb.terms(TERMS);
+    for n in 0..80 {
+        sb.write(&format!("d{}/f{n}.txt", n % 5), b"first\nNeedle\n");
+    }
+    sb.git(&["add", "-A"]);
+
+    let began = std::time::Instant::now();
+    let out = sb.run_gate(&terms, None);
+
+    assert!(!out.status.success());
+    assert_eq!(loose_lines(&out).len(), 80, "one line for each file");
+    assert!(
+        began.elapsed() < std::time::Duration::from_secs(30),
+        "80 files took {:?}",
+        began.elapsed()
+    );
+}
+
+#[test]
+fn a_message_is_held_to_the_list_strictly_and_loosely_and_never_prints_what_it_matched() {
+    let sb = Sandbox::new("message");
+    let terms = sb.terms(TERMS);
+
+    let out = sb.run_message_gate(
+        &terms,
+        "subject\n\nthe body says Needle once\n# a comment says needle and git drops it\nSCE_PROBE_TERM_7 too\n",
+    );
+
+    assert!(!out.status.success(), "a message with a term is refused");
+    assert_eq!(
+        hit_lines(&out),
+        vec!["  commit message: line(s) 5 — term #0"],
+        "stderr was:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        loose_lines(&out),
+        vec!["  commit message: line(s) 3 — loose term #1"],
+        "the comment line is not scanned"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !stderr.contains("eedle") && !stderr.contains("SCE_PROBE_TERM"),
+        "the report must not carry the matched text:\n{stderr}"
+    );
+}
+
+#[test]
+fn a_clean_message_passes_and_a_list_that_cannot_be_read_refuses() {
+    let sb = Sandbox::new("message-verdicts");
+    let terms = sb.terms(TERMS);
+
+    let clean = sb.run_message_gate(&terms, "subject\n\n- one plain line\n");
+    assert!(
+        clean.status.success(),
+        "{}",
+        String::from_utf8_lossy(&clean.stderr)
+    );
+
+    let missing = sb.run_message_gate(&sb.dir.join("no-such-list"), "subject\n");
+    assert!(
+        !missing.status.success(),
+        "no list is no check, and it refuses"
+    );
+    let hollow = sb.run_message_gate(&sb.terms("# only a comment\n"), "subject\n");
+    assert!(!hollow.status.success(), "an empty list refuses");
+}
+
+#[test]
+fn the_commit_msg_hook_refuses_a_term_before_it_looks_at_the_format_and_past_its_bypass() {
+    let sb = Sandbox::new("hook");
+    let terms = sb.terms(TERMS);
+    let hook = common::repository::root().join("tools/git-hooks/commit-msg");
+    let file = sb.dir.join("COMMIT_EDITMSG");
+    std::fs::write(&file, "subject\n\na body with a Needle in it\n").expect("write the message");
+
+    let out = Command::new("bash")
+        .arg(&hook)
+        .arg(&file)
+        .current_dir(sb.repo())
+        .env("SCE_RESTRICTED_TERMS", &terms)
+        .env("SKIP_COMMIT_MSG", "1")
+        .env_remove("SCE_RESTRICTED_OVERRIDE")
+        .output()
+        .expect("bash runs the hook");
+
+    assert!(
+        !out.status.success(),
+        "SKIP_COMMIT_MSG does not cover the term gate"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("matches the restricted-term list"),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("check skipped"), "{stderr}");
 }
