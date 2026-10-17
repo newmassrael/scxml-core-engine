@@ -275,5 +275,30 @@ given, and each can be revisited by a later ADR that names the reason.
 
 ## Status of the plan
 
-Stage 1 is being built on the existing design, and the stages after it as listed. This ADR is
-Accepted when stage 2 lands, since the membership log is what makes the rest binding.
+Stage 1 and the membership log of stage 2 have landed. Stage 2 as first landed removed a member
+by a time (`from`), which is not what section 4 says; it was corrected with stage 3, where the
+number of an operation that section 4 needs exists. Stage 3 has landed with the refinements
+below. This ADR is Accepted with stage 3, since the log and the chains are what make the rest
+binding.
+
+## Revisions made in building it
+
+- **Removal is a position, as section 4 says.** A grant carries no time. It carries `final_seq`
+  when it takes writing away or changes the key; an operation numbered past it is refused whatever
+  entry it names. A replaced key begins a new chain at the number after the end, naming nothing
+  before it. (Section 2's `Revoke` is the grant with role 0 and a `final_seq`.)
+- **No operation is held back for a predecessor** (section 3 said out-of-order operations are
+  held). The machine's merge is commutative, so an operation that holds by itself (entry, role,
+  cutoff, signature, consistency with what the host holds) is admitted in whatever order it comes,
+  which is stronger than ordering and needs no queue. What holding was meant to catch, an operation
+  missing from a chain, is detected by the members' checkpoints (stage 4), which name each device's
+  head.
+- **A device that signs two things at one number is frozen** on every host that sees both, from
+  that number, until an administrator removes it; the host reports it (`Trust::equivocating`).
+- **A note is an operation** in its author's chain, numbered with the writes, and the host's table
+  of who wrote over what is the store of those operations, not a separate record.
+- **No time is read to admit an operation.** The one place a stamp is looked at is that a device's
+  writes do not go back along one chain.
+- **Sealing refuses instead of falling back.** A host that cannot sign or seal as the list
+  requires sends nothing, and says why (`RouterError::EventNotSealed`), where it used to send what
+  it could.

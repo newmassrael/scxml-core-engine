@@ -13,8 +13,9 @@ A machine of the statically typed data model reads the payload of an event and n
 member of `_event` (SCE Accepted Subset, §2.15), so it cannot tell who sent an event, and it
 cannot check a signature. The rule is therefore kept by the **host** of each copy, which is
 the one party a member can trust: their own device. The machines and their documents do not
-know of it; a signature, the time of a note and sealed content are written into an event as it
-leaves a host and taken out as it arrives at the next, and a machine sees none of them.
+know of it; a signature, the place of an operation in its device's chain and sealed content are
+written into an event as it leaves a host and taken out as it arrives at the next, and a machine
+sees none of them.
 
 Two modes follow from who runs the hub:
 
@@ -50,7 +51,7 @@ its word.
 | Entry | Does | Signatures it needs |
 |---|---|---|
 | Genesis | names the administrators, the quorum and the profile | one of the administrators it names |
-| Grant | from a time `from`, the device of a node is a member with a role and signs with a key (role 0 takes it off) | one administrator |
+| Grant | from this entry, the device of a node is a member with a role and signs with a key (role 0 takes it off); one that takes writing away or changes the key carries `final_seq`, where the device's chain ends | one administrator |
 | Epoch | the content key of the list changes | one administrator |
 | Administrators | add and remove administrators, set the quorum | the quorum |
 | Profile | the hub becomes trusted or not | the quorum |
@@ -62,44 +63,71 @@ entry already held is taken in once. **Two different entries at one position are
 host that is shown both has proof that the chain was signed two ways, says where, and takes in no
 write, note or settled instant (and sends none) until an administrator resolves it.
 
-The grants of one node make its history. A write or a note made at a time *t* is judged by the
-latest grant among those whose `from` is at or before *t*. So:
+The grants of one node make its history, and **a removal is a position, not a time**. An
+operation names the entry of the log it was made under, and is judged by the latest grant at or
+before that entry. A grant that takes writing away from a device that could write (a role below
+2, or another key) must carry `final_seq`, the number of the last operation of that device the
+administrators accept, and the log refuses the entry without it. Every host then refuses an
+operation of the device numbered past it, whatever entry it names, so a device cannot be removed
+by a time it alone can claim, and cannot go back to an entry before its removal to write on. So:
 
-- A member taken off (role 0 from a time) still wrote what they wrote before it; what they sign
-  from that time on is refused.
-- A replaced key (a lost device) judges only what is made from its time; the old key still
-  judges what came before.
+- A device taken off keeps what it made up to `final_seq`, which reaches any host in any order;
+  what it made past it is refused by every host. The cost is stated and accepted: operations the
+  device made and had not yet published when it was removed are lost.
+- A replaced key (a lost device) begins a new chain at the number after the end the grant set:
+  the old key's operations up to it stay, and the new key's are numbered past it and name nothing
+  before them.
+- The administrator reads `final_seq` from what the hosts have seen of the device's chain
+  (`Trust::last_seq`).
 - A host that relays entries cannot make one: it does not hold an administrator's key.
 
-A hub's machine is told, by `Trust::hub_role_events`, that anyone who could write at some time
-is a writer: it has no time to judge by, and must not refuse what its host let through. A
+A hub's machine is told, by `Trust::hub_role_events`, that anyone who could write at some entry
+is a writer: the machine has no log to judge by, and must not refuse what its host let through. A
 person's machine is told the role they have now (`Trust::role_events`).
 
-## 3. Writes, notes and settled instants
+## 3. Operations, and the settled instant
 
-- **A write** (`todo.write`) is signed by the node that stamped it. A host admits it when its
-  author was a writer at the time of the stamp and the signature is true under that era's key.
-  A hub relays a write with the signature it arrived with; it cannot make one.
-- **A note that a write was written over** (`todo.supersede`) is signed by whoever wrote over
-  it, with the time they made it at, which the host adds (`at`, from `Trust::set_clock`, the
-  clock the host gives its machine as an edit's `now`). The host keeps who wrote over what, and
-  when a machine sends the tombstone again as itself (a resync), the host puts back the real
-  author, the time and the signature.
+What a device sends is an **operation** of its chain: the event as it travels, the number it has
+among the device's operations (`seq`), the id of the one it follows (`prev`), the entry of the
+log it was made under (`mh`, and that entry's hash `mhh`), and the device's signature of all of
+it (`message::operation_bytes`). Nothing in it is a time the device claims: what decides whether
+it holds is the entry it names and the number it has.
+
+A host admits an operation when the entry it names is the one the host holds, its author was a
+writer under that entry, the number is not past the end the log set for the device, the signature
+is true under the key of that entry, and it stands consistently among the device's operations the
+host holds, **whatever order they came in** (the machine's merge is commutative, so the host holds
+nothing back to wait for a predecessor):
+
+- two different operations at one number, or one that names a predecessor other than the one
+  held, are the device signing two histories. The host says so, takes nothing of the device from
+  that number on (`Trust::equivocating`), and goes on with everyone else;
+- a write's stamp is its author's clock when it wrote it, and along one chain it does not go
+  back: a later write given an earlier stamp is refused;
+- an operation that names an entry the host has not reached is refused until it has.
+
+- **A write** (`todo.write`) is an operation of the node that stamped it. A hub relays it as the
+  operation the member made (`Wire`), with its number and its signature; it cannot make one.
+- **A note that a write was written over** (`todo.supersede`) is an operation of whoever wrote
+  over it, numbered in the same chain as the writes and cut with them. The host keeps who wrote
+  over what, and when a machine sends the tombstone again as itself (a resync), the host puts
+  back the operation of the person who really did.
 - **A settled instant** (`todo.floor`) is the word on which every copy forgets the tombstones
   up to an instant. It is accepted only with the signature of an administrator over the instant
   and the hash (`Trust::attest_floor`, `hold_floor_signature`), because a hub that could settle
   an instant its copies have not could bring back, with an old signed write, what was deleted.
   A host that trusts its hub allows it unsigned (`Trust::allow_unsigned`).
 
-### Limits of the time
+### Limits
 
-The time of a write or a note is its author's claim. What a member taken off signs with an
-earlier time than the one they were taken off from, after it was made, is accepted until the
-instant they were taken off from is settled; after that every copy refuses writes at or before
-the settled instant. An administrator who takes a member off therefore settles promptly.
+A device's stamps and the time they say are its own claim, and nothing here reads them except to
+keep them from going back along one chain. What decides is the log and the number. A key that was
+leaked made valid operations until it was taken off, and the ones up to `final_seq` stay valid:
+undoing them is an operation of its own.
 
-A key that was leaked made valid writes until it was taken off, and they stay valid: undoing
-them is a write of its own.
+An operation a device made and never published is not in its chain as far as the hosts know, and
+a host that holds operation 5 and 7 of a device and never 6 cannot tell a lost one from a withheld
+one. Telling them apart is what the members' checkpoints are for (ADR 0034, stage 4).
 
 ## 4. Keeping the content from the hub
 

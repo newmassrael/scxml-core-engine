@@ -49,7 +49,7 @@ fn list(epochs: u32) -> Vec<Entry> {
                 node,
                 role,
                 key: person(node as u8).public(),
-                from: 0,
+                final_seq: None,
             })
             .sign(&admin())
             .finish();
@@ -201,11 +201,12 @@ fn sealed_content_under_another_key_or_epoch_is_refused() {
     let mut right_key = host_in(&two, Some((2, 2)), &[(1, 5), (2, 6)]);
     assert!(right_key.admit("server", "todo.write", &wire).is_ok());
 
-    // A host whose log has not begun epoch 2 does not take what is sealed under it, and neither
-    // does a hub that holds no key.
+    // A host whose log has not begun epoch 2 does not take what is sealed under it: the operation
+    // names the entry that begins it, which the host does not hold, and neither does a hub that
+    // holds no key.
     let mut behind = host_in(one, Some((2, 2)), &[(1, 5), (2, 6)]);
     let reason = behind.admit("server", "todo.write", &wire).unwrap_err();
-    assert!(reason.contains("has not begun"), "{reason}");
+    assert!(reason.contains("does not hold as it is"), "{reason}");
     let mut behind_hub = host_in(one, None, &[]);
     assert!(behind_hub.admit("alice", "todo.write", &wire).is_err());
 }
@@ -333,7 +334,7 @@ fn a_member_taken_off_opens_nothing_written_after_the_next_epoch() {
             node: 2,
             role: 0,
             key: person(2).public(),
-            from: 1500,
+            final_seq: Some(0),
         })
         .sign(&admin())
         .finish();

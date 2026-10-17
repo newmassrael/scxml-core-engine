@@ -17,9 +17,6 @@
 
 mod common;
 
-use std::sync::atomic::{AtomicI64, Ordering};
-use std::sync::Arc;
-
 use common::*;
 use sce_rust_trust::membership::{Body, Entry, Log, Profile};
 use sce_rust_trust::{Identity, Trust};
@@ -44,19 +41,15 @@ fn key_of(node: u64) -> Identity {
 /// The hosts of alice, bob and the hub, in that order. Each holds the membership log (alice a
 /// writer and bob with `bob_role`, the entries signed by the administrator), and is installed in
 /// front of and behind its machine; the machines of `told` are given the roster the log makes.
-/// `now` is the clock the hosts of the persons sign a note at: the time the machine is given as
-/// the edit's `now`.
 struct Hosts {
     alice: Trust,
     bob: Trust,
     hub: Trust,
-    now: Arc<AtomicI64>,
 }
 
 impl Hosts {
-    /// A person changes a number, with the hosts' clock reading the world's time.
+    /// A person changes a number.
     fn edit(&self, world: &mut World, who: &str, id: u64, field: u64, value: i64) {
-        self.now.store(world.now_ms(), Ordering::SeqCst);
         todo_set(world, who, id, field, value);
     }
 
@@ -77,13 +70,24 @@ impl Hosts {
         entry
     }
 
-    /// The administrator gives the device of `node` the role `role` from the time `from`.
-    fn grant(&self, node: u64, role: u8, from: i64) {
+    /// The administrator gives the device of `node` the role `role`.
+    fn grant(&self, node: u64, role: u8) {
         self.publish(Body::Grant {
             node,
             role,
             key: key_of(node).public(),
-            from,
+            final_seq: None,
+        });
+    }
+
+    /// The administrator takes the device of `node` off, ending its chain at the last operation the
+    /// hub has seen of it.
+    fn remove(&self, node: u64) {
+        self.publish(Body::Grant {
+            node,
+            role: 0,
+            key: key_of(node).public(),
+            final_seq: Some(self.hub.last_seq(node)),
         });
     }
 
@@ -115,7 +119,6 @@ fn untrusting_world(seed: u64, bob_role: u8, told: &[&str]) -> (World, Hosts) {
         alice: Trust::open(CALENDAR),
         bob: Trust::open(CALENDAR),
         hub: Trust::open(CALENDAR),
-        now: Arc::new(AtomicI64::new(0)),
     };
     let genesis = Log::genesis_draft(
         CALENDAR,
@@ -132,12 +135,8 @@ fn untrusting_world(seed: u64, bob_role: u8, told: &[&str]) -> (World, Hosts) {
     }
     hosts.alice.set_identity(ALICE, key_of(ALICE));
     hosts.bob.set_identity(BOB, key_of(BOB));
-    for person in [&hosts.alice, &hosts.bob] {
-        let now = hosts.now.clone();
-        person.set_clock(move || now.load(Ordering::SeqCst));
-    }
-    hosts.grant(ALICE, 2, 0);
-    hosts.grant(BOB, bob_role, 0);
+    hosts.grant(ALICE, 2);
+    hosts.grant(BOB, bob_role);
     for who in ["alice", "bob", "server"] {
         world.set_admission(who, Box::new(hosts.of(who).clone()));
         world.set_sealer(who, Box::new(hosts.of(who).clone()));
@@ -248,7 +247,7 @@ fn a_member_taken_off_by_a_later_certificate_is_refused_from_then_on() {
     quiet(&mut world);
     assert_eq!(agree(&mut world), 1);
 
-    hosts.grant(BOB, 0, world.now_ms());
+    hosts.remove(BOB);
     todo_set(&mut world, "bob", 2, DUE, 2);
     quiet(&mut world);
 
@@ -428,7 +427,7 @@ fn a_member_taken_off_reads_nothing_written_after_the_next_epoch() {
 
     // The administrator's host takes bob off and begins epoch 2 for who is left.
     world.advance_ms(1_000);
-    hosts.grant(BOB, 0, world.now_ms());
+    hosts.remove(BOB);
     let administrator = Trust::open(CALENDAR);
     for entry in hosts.hub.entries() {
         administrator.append(&entry).unwrap();
@@ -478,7 +477,7 @@ fn what_a_member_wrote_before_they_were_taken_off_still_reaches_every_copy() {
     hosts.edit(&mut world, "bob", 1, DUE, 1);
     quiet(&mut world);
     world.advance_ms(1_000);
-    // Alice writes over bob's value: a note that carries her, and the time she made it at.
+    // Alice writes over bob's value: a note that carries her, as the next operation of her chain.
     hosts.edit(&mut world, "alice", 1, DUE, 2);
     hosts.edit(&mut world, "bob", 2, DUE, 5);
     quiet(&mut world);
@@ -486,7 +485,7 @@ fn what_a_member_wrote_before_they_were_taken_off_still_reaches_every_copy() {
     world.host_errors();
 
     world.advance_ms(1_000);
-    hosts.grant(BOB, 0, world.now_ms());
+    hosts.remove(BOB);
     for who in ["alice", "server"] {
         hosts.tell(&mut world, who);
     }

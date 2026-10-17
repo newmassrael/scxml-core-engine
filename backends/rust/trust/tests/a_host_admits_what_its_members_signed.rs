@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// What a host that does not trust the host beside it lets through. A write leaves with its
-// author's signature and arrives at a host that holds the list's membership log: it is admitted
-// when the author was a member who could write at the time they made it and the signature is
-// true, and it reaches the machine as the machine wrote it. What anyone else does with it (a
-// changed field, a key that is not the author's, a reader, a stranger, another list, a member
-// taken off, a host shown two histories of the log) is refused, and what a hub relays it relays
-// with the signature the member made.
+// What a host that does not trust the host beside it lets through. What a device sends is an
+// operation of its chain: the event, the number it has among the device's operations, the one it
+// follows, the entry of the membership log it was made under, and the device's signature of all of
+// it. A host admits an operation when the entry it names is the one the host holds, its author was a
+// writer under that entry, the administrators accepted the device's operations up to its number,
+// and the signature is true; whatever order the operations came in, and whatever time the device
+// claims, which decides nothing. What anyone else does with it (a changed field, a key that is not
+// the author's, a reader, a stranger, another list, a device taken off, a device that signed two
+// things at one number, a host shown two histories of the log) is refused, and what a hub relays it
+// relays as the operation the member made.
 
 use sce_rust_mesh::endpoint::{Admission, Sealer};
 use sce_rust_trust::membership::{Body, Entry, Log, LogError, Profile};
@@ -38,19 +41,19 @@ fn genesis_of(list: &str, profile: Profile) -> Entry {
 }
 
 /// The entries of a log of `list` that the administrator signed: the genesis, and a grant for
-/// each of `grants`, as `(node, role, key seed, from)`.
-fn entries_of(list: &str, profile: Profile, grants: &[(u64, u8, u8, i64)]) -> Vec<Entry> {
+/// each of `grants`, as `(node, role, key seed)`.
+fn entries_of(list: &str, profile: Profile, grants: &[(u64, u8, u8)]) -> Vec<Entry> {
     let scratch = Trust::open(list);
     let genesis = genesis_of(list, profile);
     scratch.append(&genesis).unwrap();
     let mut entries = vec![genesis];
-    for (node, role, seed, from) in grants {
+    for (node, role, seed) in grants {
         let entry = scratch
             .draft(Body::Grant {
                 node: *node,
                 role: *role,
                 key: person(*seed).public(),
-                from: *from,
+                final_seq: None,
             })
             .sign(&admin())
             .finish();
@@ -65,7 +68,7 @@ fn standard() -> Vec<Entry> {
     entries_of(
         CALENDAR,
         Profile::Untrusted,
-        &[(1, 2, 1, 0), (2, 2, 2, 0), (3, 1, 3, 0)],
+        &[(1, 2, 1), (2, 2, 2), (3, 1, 3)],
     )
 }
 
@@ -76,7 +79,6 @@ fn host_with(entries: &[Entry], own: Option<(u64, Identity)>) -> Trust {
     }
     if let Some((node, identity)) = own {
         trust.set_identity(node, identity);
-        trust.set_clock(|| 2000);
     }
     trust
 }
@@ -84,6 +86,19 @@ fn host_with(entries: &[Entry], own: Option<(u64, Identity)>) -> Trust {
 /// A host of the standard list, for the person `own` when there is one.
 fn host(own: Option<(u64, Identity)>) -> Trust {
     host_with(&standard(), own)
+}
+
+/// The entry an administrator signs to take the device of `node` (which signs with `seed`) off,
+/// its chain ending at `final_seq`, drafted on the log `on` holds.
+fn removal(on: &Trust, node: u64, seed: u8, final_seq: u64) -> Entry {
+    on.draft(Body::Grant {
+        node,
+        role: 0,
+        key: person(seed).public(),
+        final_seq: Some(final_seq),
+    })
+    .sign(&admin())
+    .finish()
 }
 
 fn write(author: u64, value: i64) -> String {
@@ -119,13 +134,17 @@ fn a_write_a_member_signed_is_admitted_and_arrives_as_the_machine_wrote_it() {
     let mut alice = host(Some((1, person(1))));
     let mut hub = host(None);
     let sealed = sent(&mut alice, "todo.write", &write(1, 10));
-    assert!(sealed.contains("\"sig\""), "{sealed}");
+    let on_the_wire: Value = serde_json::from_str(&sealed).unwrap();
+    for field in ["sig", "seq", "prev", "mh", "mhh"] {
+        assert!(on_the_wire.get(field).is_some(), "{field}: {sealed}");
+    }
+    assert_eq!(on_the_wire["seq"], "1");
     let admitted = hub.admit("alice", "todo.write", &sealed).unwrap().unwrap();
     let admitted: Value = serde_json::from_str(&admitted).unwrap();
     let wrote: Value = serde_json::from_str(&write(1, 10)).unwrap();
     assert_eq!(
         admitted, wrote,
-        "the machine is told what it was sent, signature out"
+        "the machine is told what it was sent, with nothing the host wrote"
     );
 }
 
@@ -148,6 +167,17 @@ fn a_write_with_no_signature_or_a_changed_field_or_another_key_is_refused() {
     assert_ne!(edited, sealed);
     let reason = hub.admit("alice", "todo.write", &edited).unwrap_err();
     assert!(reason.contains("not node 1's"), "{reason}");
+
+    // A link that was edited is as good as a field: the number, the entry it names.
+    for (field, other) in [("seq", "2"), ("mh", "1")] {
+        let mut value: Value = serde_json::from_str(&sealed).unwrap();
+        value[field] = json!(other);
+        assert!(
+            hub.admit("alice", "todo.write", &value.to_string())
+                .is_err(),
+            "{field}"
+        );
+    }
 
     // Bob's host does not sign in alice's name, and a host that holds another key for node 1
     // does, which the key the log gives node 1 does not verify.
@@ -176,7 +206,7 @@ fn a_reader_and_a_stranger_may_not_write_whatever_they_sign() {
 fn a_write_is_good_in_its_own_list_only() {
     let mut alice = host(Some((1, person(1))));
     let sealed = sent(&mut alice, "todo.write", &write(1, 10));
-    let work = entries_of("work", Profile::Untrusted, &[(1, 2, 1, 0)]);
+    let work = entries_of("work", Profile::Untrusted, &[(1, 2, 1)]);
     let mut other = Trust::open("work");
     for entry in &work {
         other.append(entry).unwrap();
@@ -190,7 +220,7 @@ fn a_write_is_good_in_its_own_list_only() {
 }
 
 #[test]
-fn a_hub_hands_on_what_a_member_wrote_with_the_signature_it_arrived_with() {
+fn a_hub_hands_on_what_a_member_wrote_as_the_operation_the_member_made() {
     let mut alice = host(Some((1, person(1))));
     let mut hub = host(None);
     let mut bob = host(Some((2, person(2))));
@@ -198,81 +228,221 @@ fn a_hub_hands_on_what_a_member_wrote_with_the_signature_it_arrived_with() {
     let for_the_machine = hub.admit("alice", "todo.write", &sealed).unwrap().unwrap();
     // The hub's machine sends it on to bob as the write it holds.
     let relayed = sent(&mut hub, "todo.write", &for_the_machine);
+    assert_eq!(
+        serde_json::from_str::<Value>(&relayed).unwrap(),
+        serde_json::from_str::<Value>(&sealed).unwrap(),
+        "the very operation, with its number and its signature"
+    );
     assert!(bob.admit("server", "todo.write", &relayed).is_ok());
-    // A write it never saw it cannot send on: it holds no signature for it and signs nothing
-    // of its own, and it says so instead of sending something else.
+    // A write it never saw it cannot send on: it holds no operation of node 1's for it and signs
+    // nothing of its own, and it says so instead of sending something else.
     let reason = send(&mut hub, "todo.write", &write(1, 99)).unwrap_err();
     assert!(reason.contains("signs none in their name"), "{reason}");
 }
 
+/// The operations of one device come in numbers and name the one before them; a host admits each
+/// that holds in whatever order they arrive, and one that arrives twice is admitted once.
 #[test]
-fn a_member_is_taken_off_by_a_later_entry_and_what_was_admitted_stays_known() {
+fn operations_are_admitted_in_whatever_order_they_come_and_once() {
     let mut alice = host(Some((1, person(1))));
-    let mut entries = standard();
-    let mut hub = host_with(&entries, None);
-    let sealed = sent(&mut alice, "todo.write", &write(1, 10));
-    assert!(hub.admit("alice", "todo.write", &sealed).is_ok());
+    let wire: Vec<String> = (0..4)
+        .map(|n| sent(&mut alice, "todo.write", &write_at(1, n, 1000 + n)))
+        .collect();
+    let seqs: Vec<Value> = wire
+        .iter()
+        .map(|w| serde_json::from_str::<Value>(w).unwrap()["seq"].clone())
+        .collect();
+    assert_eq!(seqs, vec!["1", "2", "3", "4"]);
 
-    let scratch = host_with(&entries, None);
-    let off = scratch
+    let mut hub = host(None);
+    for n in [2, 0, 3, 1, 2] {
+        assert!(hub.admit("x", "todo.write", &wire[n]).is_ok(), "{n}");
+    }
+    assert_eq!(hub.last_seq(1), 4);
+    assert!(hub.equivocating().is_empty());
+}
+
+/// A device that signs two different operations at one number has forked its own chain, and a
+/// host that sees both says so and takes nothing of the device from there, though it goes on with
+/// everyone else.
+#[test]
+fn a_device_that_signed_two_things_at_one_number_is_frozen() {
+    let mut alice = host(Some((1, person(1))));
+    let first = sent(&mut alice, "todo.write", &write_at(1, 1, 1000));
+    // The same device on another host (a restored backup) writes something else at number 1.
+    let mut twin = host(Some((1, person(1))));
+    let other = sent(&mut twin, "todo.write", &write_at(1, 2, 1001));
+
+    let mut hub = host(None);
+    assert!(hub.admit("x", "todo.write", &first).is_ok());
+    let reason = hub.admit("x", "todo.write", &other).unwrap_err();
+    assert!(reason.contains("two different operations at 1"), "{reason}");
+    assert_eq!(hub.equivocating(), vec![(1, 1)]);
+
+    // Nothing of node 1's from number 1 on, not even what was held, and nothing else is touched.
+    let reason = hub.admit("x", "todo.write", &first).unwrap_err();
+    assert!(reason.contains("signed two operations at 1"), "{reason}");
+    let mut bob = host(Some((2, person(2))));
+    assert!(hub
+        .admit(
+            "x",
+            "todo.write",
+            &sent(&mut bob, "todo.write", &write(2, 5))
+        )
+        .is_ok());
+}
+
+/// A device's stamps do not go back along its chain: what it wrote later is not given an earlier
+/// time than what it had already written, whatever number order they came in.
+#[test]
+fn a_stamp_that_goes_back_along_a_chain_is_refused() {
+    let mut alice = host(Some((1, person(1))));
+    let early = sent(&mut alice, "todo.write", &write_at(1, 1, 2000));
+    let backdated = sent(&mut alice, "todo.write", &write_at(1, 2, 1500));
+    let later = sent(&mut alice, "todo.write", &write_at(1, 3, 3000));
+
+    let mut hub = host(None);
+    assert!(hub.admit("x", "todo.write", &later).is_ok());
+    assert!(hub.admit("x", "todo.write", &early).is_ok());
+    let reason = hub.admit("x", "todo.write", &backdated).unwrap_err();
+    assert!(reason.contains("stamp goes back"), "{reason}");
+}
+
+/// A device is taken off at the last operation of its chain that the administrators accept. What
+/// it made up to there stays and reaches any host in any order; what it made past it is refused
+/// by every host, though it names an entry of the log from before it was taken off.
+#[test]
+fn a_device_taken_off_is_cut_at_the_last_operation_accepted() {
+    let entries = standard();
+    let mut alice = host_with(&entries, Some((1, person(1))));
+    let ops: Vec<String> = (0..4)
+        .map(|n| sent(&mut alice, "todo.write", &write_at(1, n, 1000 + n)))
+        .collect();
+
+    // The hub has seen the first two, and the administrator ends the chain there.
+    let mut hub = host_with(&entries, None);
+    for op in &ops[..2] {
+        assert!(hub.admit("alice", "todo.write", op).is_ok());
+    }
+    assert_eq!(hub.last_seq(1), 2);
+    let off = removal(&hub, 1, 1, hub.last_seq(1));
+    assert_eq!(hub.append(&off), Ok(true));
+    assert_eq!(hub.role(1), 0);
+
+    // The device did not hear of it: it names the entry it knew, and goes on, past the end.
+    for op in &ops[2..] {
+        let reason = hub.admit("alice", "todo.write", op).unwrap_err();
+        assert!(reason.contains("past 2"), "{reason}");
+    }
+    // What was admitted is admitted again, and a host that joins after the removal takes the same
+    // two in the other order and none of the rest.
+    assert!(hub.admit("alice", "todo.write", &ops[1]).is_ok());
+    let mut late = host_with(&entries, None);
+    late.append(&off).unwrap();
+    assert!(late.admit("x", "todo.write", &ops[1]).is_ok());
+    assert!(late.admit("x", "todo.write", &ops[0]).is_ok());
+    assert!(late.admit("x", "todo.write", &ops[2]).is_err());
+}
+
+/// A grant that takes writing away has to say where the chain ends, and the entry that does is
+/// the whole of a removal: the device cannot go back to an entry before it to write on.
+#[test]
+fn a_removed_device_cannot_write_on_by_naming_an_older_entry() {
+    let entries = standard();
+    let mut alice = host_with(&entries, Some((1, person(1))));
+    let mut hub = host_with(&entries, None);
+    let first = sent(&mut alice, "todo.write", &write_at(1, 1, 1000));
+    assert!(hub.admit("alice", "todo.write", &first).is_ok());
+    hub.append(&removal(&hub, 1, 1, hub.last_seq(1))).unwrap();
+
+    // Alice's own host learns of the removal too and writes: it names the newest entry, where
+    // her role is 0, and so does a host that backdates and names the old one.
+    let mut told = host_with(&entries, Some((1, person(1))));
+    told.append(&removal(&told, 1, 1, 1)).unwrap();
+    told.restore_signatures_from_text(&alice.signatures_to_text());
+    let next = sent(&mut told, "todo.write", &write_at(1, 2, 1001));
+    let reason = hub.admit("alice", "todo.write", &next).unwrap_err();
+    assert!(
+        reason.contains("may not write") || reason.contains("past 1"),
+        "{reason}"
+    );
+    let backdated = sent(&mut alice, "todo.write", &write_at(1, 3, 1002));
+    let reason = hub.admit("alice", "todo.write", &backdated).unwrap_err();
+    assert!(reason.contains("past 1"), "{reason}");
+}
+
+/// A grant that does not say where the chain ends is refused where it is made.
+#[test]
+fn a_grant_that_takes_writing_away_must_say_where_the_chain_ends() {
+    let hub = host(None);
+    let without = hub
         .draft(Body::Grant {
             node: 1,
             role: 0,
             key: person(1).public(),
-            from: 1500,
+            final_seq: None,
         })
         .sign(&admin())
         .finish();
-    assert_eq!(hub.append(&off), Ok(true));
     assert_eq!(
-        hub.append(&off),
-        Ok(false),
-        "an entry held is taken in once"
+        hub.append(&without),
+        Err(LogError::Invalid(
+            "a grant that takes writing away carries the last operation accepted"
+        ))
     );
-    entries.push(off);
-    assert_eq!(hub.role(1), 0);
-    // What was made before the time it takes effect from is still theirs.
-    assert!(hub.admit("alice", "todo.write", &sealed).is_ok());
-    let after = sent(&mut alice, "todo.write", &write_at(1, 10, 1600));
-    assert!(hub.admit("alice", "todo.write", &after).is_err());
 }
 
+/// A new key for a node (a lost device replaced) begins a new chain after the end the grant set:
+/// the old key's operations up to it stay, its later ones are refused, and the new key's are
+/// numbered past it and name nothing before them.
 #[test]
-fn an_entry_the_administrators_did_not_sign_is_not_taken_in() {
-    let trust = Trust::open(CALENDAR);
-    trust
-        .append(&genesis_of(CALENDAR, Profile::Untrusted))
-        .unwrap();
-    let by_mallory = trust
-        .draft(Body::Grant {
-            node: 1,
-            role: 3,
-            key: person(1).public(),
-            from: 0,
-        })
-        .sign(&person(66))
-        .finish();
-    assert_eq!(
-        trust.append(&by_mallory),
-        Err(LogError::NotEnoughSignatures { needed: 1, had: 0 })
-    );
-    let mut edited = trust
+fn a_replaced_key_begins_a_new_chain_where_the_old_one_ended() {
+    let base = standard();
+    let mut old = host_with(&base, Some((1, person(1))));
+    let old_ops: Vec<String> = (0..3)
+        .map(|n| sent(&mut old, "todo.write", &write_at(1, n, 1000 + n)))
+        .collect();
+
+    // The administrator replaces node 1's key and ends its chain at 2.
+    let scratch = host_with(&base, None);
+    let swap = scratch
         .draft(Body::Grant {
             node: 1,
             role: 2,
-            key: person(1).public(),
-            from: 0,
+            key: person(11).public(),
+            final_seq: Some(2),
         })
         .sign(&admin())
         .finish();
-    edited.body = Body::Grant {
-        node: 1,
-        role: 3,
-        key: person(1).public(),
-        from: 0,
-    };
-    assert_eq!(trust.append(&edited), Err(LogError::BadSignature));
-    assert_eq!(trust.role(1), 0);
+    let mut all = base.clone();
+    all.push(swap);
+
+    let mut hub = host_with(&all, None);
+    assert!(hub.admit("x", "todo.write", &old_ops[0]).is_ok());
+    assert!(hub.admit("x", "todo.write", &old_ops[1]).is_ok());
+    let reason = hub.admit("x", "todo.write", &old_ops[2]).unwrap_err();
+    assert!(reason.contains("past 2"), "{reason}");
+
+    let mut new = host_with(&all, Some((1, person(11))));
+    let first = sent(&mut new, "todo.write", &write_at(1, 9, 500));
+    let second = sent(&mut new, "todo.write", &write_at(1, 10, 501));
+    let numbers: Vec<Value> = [&first, &second]
+        .iter()
+        .map(|w| serde_json::from_str::<Value>(w).unwrap()["seq"].clone())
+        .collect();
+    assert_eq!(numbers, vec!["3", "4"], "past the end the grant set");
+    assert!(hub.admit("x", "todo.write", &first).is_ok());
+    assert!(hub.admit("x", "todo.write", &second).is_ok());
+    // The new chain's stamps are not held to the old one's: it is another device's clock.
+    assert_eq!(hub.last_seq(1), 4);
+
+    // The old key cannot claim the numbers of the new chain, and the new key cannot claim the old's.
+    let mut old_late = host_with(&base, Some((1, person(1))));
+    for _ in 0..3 {
+        sent(&mut old_late, "todo.write", &write_at(1, 0, 1));
+    }
+    let past = sent(&mut old_late, "todo.write", &write_at(1, 1, 2000));
+    assert!(hub.admit("x", "todo.write", &past).is_err());
 }
 
 #[test]
@@ -289,6 +459,20 @@ fn entries_that_arrive_out_of_order_wait_for_the_ones_before_them() {
     assert_eq!(trust.append(&entries[2]), Ok(true));
     assert_eq!(trust.role(1), 2);
     assert_eq!(trust.role(2), 2);
+}
+
+/// An operation names an entry of the log; a host behind on the log refuses what names an entry it
+/// does not hold, and takes it once it does.
+#[test]
+fn an_operation_that_names_an_entry_the_host_does_not_hold_waits_for_it() {
+    let entries = standard();
+    let mut alice = host_with(&entries, Some((1, person(1))));
+    let sealed = sent(&mut alice, "todo.write", &write(1, 10));
+    let mut behind = host_with(&entries[..3], None);
+    let reason = behind.admit("x", "todo.write", &sealed).unwrap_err();
+    assert!(reason.contains("does not hold as it is"), "{reason}");
+    behind.append(&entries[3]).unwrap();
+    assert!(behind.admit("x", "todo.write", &sealed).is_ok());
 }
 
 #[test]
@@ -329,7 +513,7 @@ fn a_fork_of_the_log_freezes_the_host_that_sees_it() {
             node: 3,
             role: 2,
             key: person(3).public(),
-            from: 0,
+            final_seq: None,
         })
         .sign(&admin())
         .finish();
@@ -348,17 +532,7 @@ fn a_fork_of_the_log_freezes_the_host_that_sees_it() {
 fn the_roster_the_log_makes_is_what_the_machine_is_told() {
     let mut entries = standard();
     let scratch = host_with(&entries, None);
-    entries.push(
-        scratch
-            .draft(Body::Grant {
-                node: 3,
-                role: 0,
-                key: person(3).public(),
-                from: 0,
-            })
-            .sign(&admin())
-            .finish(),
-    );
+    entries.push(removal(&scratch, 3, 3, 0));
     let hub = host_with(&entries, None);
     let roles: Vec<(String, String)> = [(1, 2), (2, 2), (3, 0)]
         .iter()
@@ -373,7 +547,7 @@ fn the_roster_the_log_makes_is_what_the_machine_is_told() {
 }
 
 #[test]
-fn the_signatures_a_host_relays_with_survive_a_restart_when_they_are_still_true() {
+fn the_operations_a_host_relays_survive_a_restart_when_they_are_still_true() {
     let mut alice = host(Some((1, person(1))));
     let mut hub = host(None);
     let sealed = sent(&mut alice, "todo.write", &write(1, 10));
@@ -382,10 +556,12 @@ fn the_signatures_a_host_relays_with_survive_a_restart_when_they_are_still_true(
 
     let mut restarted = host(None);
     assert_eq!(restarted.restore_signatures_from_text(&kept), 1);
-    assert!(matches!(
-        send(&mut restarted, "todo.write", &for_the_machine),
-        Ok(Some(_))
-    ));
+    assert_eq!(
+        serde_json::from_str::<Value>(&sent(&mut restarted, "todo.write", &for_the_machine))
+            .unwrap(),
+        serde_json::from_str::<Value>(&sealed).unwrap(),
+        "the same operation again, with the same number"
+    );
 
     let signature = serde_json::from_str::<Value>(&sealed).unwrap()["sig"]
         .as_str()
@@ -398,6 +574,26 @@ fn the_signatures_a_host_relays_with_survive_a_restart_when_they_are_still_true(
     let mut again = host(None);
     assert_eq!(again.restore_signatures_from_text(&tampered), 0);
     assert!(send(&mut again, "todo.write", &for_the_machine).is_err());
+}
+
+/// A host that comes back from its store goes on with its person's chain where it was, and does
+/// not reuse a number.
+#[test]
+fn a_person_host_that_restarts_goes_on_with_the_next_number() {
+    let mut alice = host(Some((1, person(1))));
+    let first = sent(&mut alice, "todo.write", &write_at(1, 1, 1000));
+    let second = sent(&mut alice, "todo.write", &write_at(1, 2, 1001));
+    let kept = alice.signatures_to_text();
+
+    let mut restarted = host(Some((1, person(1))));
+    assert_eq!(restarted.restore_signatures_from_text(&kept), 2);
+    let third = sent(&mut restarted, "todo.write", &write_at(1, 3, 1002));
+    let value: Value = serde_json::from_str(&third).unwrap();
+    assert_eq!(value["seq"], "3");
+    let mut hub = host(None);
+    for op in [&first, &second, &third] {
+        assert!(hub.admit("x", "todo.write", op).is_ok());
+    }
 }
 
 #[test]
@@ -493,7 +689,7 @@ fn a_floor_is_taken_unsigned_once_the_host_was_told_to() {
 /// settled instant is taken as it comes, and a change to the profile is an entry like any other.
 #[test]
 fn the_log_says_whether_the_hub_is_trusted() {
-    let trusted = entries_of(CALENDAR, Profile::TrustedHub, &[(1, 2, 1, 0)]);
+    let trusted = entries_of(CALENDAR, Profile::TrustedHub, &[(1, 2, 1)]);
     let mut person_host = host_with(&trusted, None);
     assert_eq!(person_host.profile(), Profile::TrustedHub);
     let floor = r#"{"before":"30000","hash":"7"}"#;
@@ -510,51 +706,10 @@ fn the_log_says_whether_the_hub_is_trusted() {
     assert_eq!(untrusting.admit("server", "todo.floor", floor), Ok(None));
 }
 
-/// A member taken off from a time is still the writer of what they made before it, and not of
-/// what they made at or after it.
-#[test]
-fn a_member_taken_off_from_a_time_still_wrote_what_came_before() {
-    let entries = entries_of(
-        CALENDAR,
-        Profile::Untrusted,
-        &[(1, 2, 1, 0), (1, 0, 1, 1500)],
-    );
-    let mut alice = host(Some((1, person(1))));
-    let mut hub = host_with(&entries, None);
-    let before = sent(&mut alice, "todo.write", &write_at(1, 10, 1000));
-    let after = sent(&mut alice, "todo.write", &write_at(1, 10, 1600));
-    assert!(hub.admit("x", "todo.write", &before).is_ok());
-    let reason = hub.admit("x", "todo.write", &after).unwrap_err();
-    assert!(reason.contains("may not write"), "{reason}");
-    assert_eq!(hub.role(1), 0, "now they are off");
-}
-
-/// A new key judges what is made from its time, and the old key what was made before it.
-#[test]
-fn a_replaced_key_judges_only_what_is_made_from_its_time() {
-    let entries = entries_of(
-        CALENDAR,
-        Profile::Untrusted,
-        &[(1, 2, 1, 0), (1, 2, 11, 2000)],
-    );
-    let mut hub = host_with(&entries, None);
-    let mut old = host(Some((1, person(1))));
-    let mut new = host(Some((1, person(11))));
-
-    let old_then = sent(&mut old, "todo.write", &write_at(1, 1, 1000));
-    let old_later = sent(&mut old, "todo.write", &write_at(1, 1, 3000));
-    let new_then = sent(&mut new, "todo.write", &write_at(1, 1, 1000));
-    let new_later = sent(&mut new, "todo.write", &write_at(1, 1, 3000));
-    assert!(hub.admit("x", "todo.write", &old_then).is_ok());
-    assert!(hub.admit("x", "todo.write", &old_later).is_err());
-    assert!(hub.admit("x", "todo.write", &new_then).is_err());
-    assert!(hub.admit("x", "todo.write", &new_later).is_ok());
-}
-
-/// What a person's copy sends when it wrote over a value is signed with the time it was made
-/// at; the hub takes the note in without the host's fields, and when its machine sends the
-/// tombstone again (as itself, on a resync) the host puts back who wrote over it and their
-/// signature, so that a host that trusts nobody takes it from the hub.
+/// What a person's copy sends when it wrote over a value is its next operation; the hub takes it
+/// in without the host's fields, and when its machine sends the tombstone again (as itself, on a
+/// resync) the host puts back the operation of whoever really wrote over it, so that a host that
+/// trusts nobody takes it from the hub.
 #[test]
 fn a_note_that_a_write_was_written_over_keeps_who_wrote_over_it() {
     let mut alice = host(Some((1, person(1))));
@@ -567,14 +722,16 @@ fn a_note_that_a_write_was_written_over_keeps_who_wrote_over_it() {
         .unwrap()
         .unwrap();
     let admitted: Value = serde_json::from_str(&admitted).unwrap();
-    assert!(admitted.get("sig").is_none() && admitted.get("at").is_none());
+    for field in ["sig", "seq", "prev", "mh", "mhh", "at"] {
+        assert!(admitted.get(field).is_none(), "{field}");
+    }
     assert_eq!(admitted["by"], "1");
 
     // The hub's machine sends the tombstone again as itself, on a resync.
     let relayed = sent(&mut hub, "todo.supersede", &supersede(100));
     let relayed_value: Value = serde_json::from_str(&relayed).unwrap();
     assert_eq!(relayed_value["by"], "1", "who really wrote over it");
-    assert_eq!(relayed_value["at"], "2000");
+    assert_eq!(relayed_value["seq"], "1");
     assert!(bob.admit("server", "todo.supersede", &relayed).is_ok());
 
     // A note nobody made is not sent on, and one the host's person did not make is not signed.
@@ -584,29 +741,24 @@ fn a_note_that_a_write_was_written_over_keeps_who_wrote_over_it() {
     assert!(send(&mut carol, "todo.supersede", &supersede(1)).is_err());
 }
 
-/// A member taken off writes over a value no more than they write a value: a note made at a
-/// time after they were taken off is refused, and one made before it is not.
+/// A device's notes are in the chain of its writes, numbered with them, and are cut with them.
 #[test]
-fn a_member_taken_off_writes_no_notes_after_it() {
-    let entries = entries_of(
-        CALENDAR,
-        Profile::Untrusted,
-        &[(1, 2, 1, 0), (1, 0, 1, 1500)],
-    );
+fn a_note_is_numbered_in_the_chain_of_the_writes_and_cut_with_them() {
+    let entries = standard();
+    let mut alice = host_with(&entries, Some((1, person(1))));
+    let write_op = sent(&mut alice, "todo.write", &write_at(1, 1, 1000));
+    let note_op = sent(&mut alice, "todo.supersede", &supersede(1));
+    assert_eq!(serde_json::from_str::<Value>(&note_op).unwrap()["seq"], "2");
+
     let mut hub = host_with(&entries, None);
-    for (clock, taken_in) in [(1200, true), (2000, false)] {
-        let mut alice = host_with(&entries, Some((1, person(1))));
-        alice.set_clock(move || clock);
-        let sealed = sent(&mut alice, "todo.supersede", &supersede(1));
-        assert_eq!(
-            hub.admit("alice", "todo.supersede", &sealed).is_ok(),
-            taken_in,
-            "{clock}"
-        );
-    }
+    hub.admit("alice", "todo.write", &write_op).unwrap();
+    hub.append(&removal(&hub, 1, 1, 1)).unwrap();
+    let reason = hub.admit("alice", "todo.supersede", &note_op).unwrap_err();
+    assert!(reason.contains("past 1"), "{reason}");
 }
 
-/// What a host keeps of the notes comes back from its store when it is still true.
+/// What a host keeps of the operations comes back from its store when it is still true: against a
+/// log in which the device is no longer a writer at that entry, none of it does.
 #[test]
 fn the_notes_a_host_keeps_come_back_from_its_store() {
     let mut alice = host(Some((1, person(1))));
@@ -624,21 +776,19 @@ fn the_notes_a_host_keeps_come_back_from_its_store() {
 
     // A log in which node 1 was never a writer keeps none of it.
     let changed = host_with(
-        &entries_of(CALENDAR, Profile::Untrusted, &[(1, 0, 1, 0)]),
+        &entries_of(CALENDAR, Profile::Untrusted, &[(1, 1, 1)]),
         None,
     );
     assert_eq!(changed.restore_signatures_from_text(&text), 0);
 }
 
-/// The roster a hub's machine is told keeps a member who could write at some time a writer,
+/// The roster a hub's machine is told keeps a member who could write at some entry a writer,
 /// where a person's machine is told the role they have now.
 #[test]
 fn the_hub_machine_is_told_who_ever_wrote() {
-    let entries = entries_of(
-        CALENDAR,
-        Profile::Untrusted,
-        &[(1, 2, 1, 0), (1, 0, 1, 1500), (3, 1, 3, 0)],
-    );
+    let mut entries = standard();
+    let scratch = host_with(&entries, None);
+    entries.push(removal(&scratch, 1, 1, 0));
     let hub = host_with(&entries, None);
     let role_of = |events: Vec<(String, String)>, node: u64| {
         events

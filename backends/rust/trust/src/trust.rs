@@ -35,11 +35,8 @@ use serde_json::{json, Value};
 use crate::encoding;
 use crate::identity::{Identity, PublicKey};
 use crate::membership::{Body, Draft, Entry, Hash, Log, LogError, Profile, WRITER};
-use crate::message::{self, SIGNATURE_FIELD};
+use crate::message::{self, Link, SIGNATURE_FIELD};
 use crate::secrecy;
-
-/// The field under which a note carries the time its author made it at.
-const AT_FIELD: &str = "at";
 
 /// Why an attestation was not taken in.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -96,22 +93,38 @@ pub enum GrantError {
     EpochTaken,
 }
 
-/// Who wrote over a write, when, and the signature they made of it.
-#[derive(Clone, Copy)]
-struct Note {
-    by: u64,
-    at: i64,
-    signature: [u8; 64],
-}
-
-/// A write as it travels, and the signature its author made of it.
+/// An operation of a device as it travels: the event as its author made it (sealed, when the list
+/// keeps content from the hub), where it stands in the device's chain, and the signature the
+/// device made of all of it.
 #[derive(Clone)]
 struct Wire {
     data: String,
+    link: Link,
     signature: [u8; 64],
 }
 
-type Clock = Box<dyn Fn() -> i64 + Send>;
+impl Wire {
+    /// The data of the event as it goes on the wire: the event, its link and its signature.
+    fn to_json(&self) -> Option<String> {
+        let mut value: Value = serde_json::from_str(&self.data).ok()?;
+        self.link.write_into(&mut value)?;
+        value.as_object_mut()?.insert(
+            SIGNATURE_FIELD.to_string(),
+            Value::String(encoding::encode(&self.signature)),
+        );
+        Some(value.to_string())
+    }
+}
+
+/// What a host remembers of an operation of a device that it admitted: its id, the one it
+/// names before it, and, for a write, its stamp, so that a chain can be checked whatever order its
+/// operations arrive in.
+#[derive(Clone, Copy)]
+struct Held {
+    id: [u8; 32],
+    prev: [u8; 32],
+    stamp: Option<(i64, u64)>,
+}
 
 struct State {
     calendar: String,
@@ -122,32 +135,30 @@ struct State {
     /// administrator resolves it.
     forked: Option<u64>,
     own: Option<(u64, Identity)>,
-    /// The host's clock, the one it gives its machine as `now`: what a note this host's person
-    /// makes is made at.
-    clock: Option<Clock>,
     /// The floors an administrator attested, by the bytes they are signed as: what the hub's
     /// floor leaves with.
     signatures: BTreeMap<Vec<u8>, [u8; 64]>,
     /// Each write that was admitted or made here, by the bytes it is signed as when the machine
-    /// holds it: what the host that relays it sends it on as. It is the write as it travels
-    /// (sealed, when the host keeps content from the hub) and its author's signature.
+    /// holds it: what the host that relays it sends it on as. It is the operation as it travels.
     wires: BTreeMap<Vec<u8>, Wire>,
+    /// Who wrote over each write, by the note's subject: the operation of the person who did, as
+    /// it travels, so that a tombstone the machine sends again is sent as theirs.
+    notes: BTreeMap<Vec<u8>, Wire>,
+    /// The operations admitted from each device, by their number: what the chains are checked
+    /// against, in whatever order the operations came.
+    ops: BTreeMap<u64, BTreeMap<u64, Held>>,
+    /// The devices that signed two different operations at one number, and the number from which
+    /// this host takes nothing of theirs until an administrator removes them.
+    frozen: BTreeMap<u64, u64>,
     /// The keys of the epochs this host holds. A host that holds any keeps the content of every
     /// write from the hub, and takes no write that is not sealed.
     epoch_keys: BTreeMap<u32, secrecy::EpochKey>,
-    /// Who wrote over each write, by the note's subject.
-    notes: BTreeMap<Vec<u8>, Note>,
     /// The events that arrive with no signature and make a copy forget, which this host does
     /// not take ([`UNSIGNED_REFUSED`], and [`Trust::allow_unsigned`]).
     unsigned_refused: Vec<String>,
 }
 
 impl State {
-    /// What the log says of `node` at the time `at`.
-    fn era_at(&self, node: u64, at: i64) -> Option<&crate::membership::Era> {
-        self.log.era_at(node, at)
-    }
-
     /// Whether the list keeps the content of writes from the hub: from the entry of the log that
     /// begins its first epoch. What a host holds of keys decides what it can open, and the log
     /// alone decides that the content is sealed.
@@ -205,11 +216,12 @@ impl Trust {
                 log,
                 forked: None,
                 own: None,
-                clock: None,
                 signatures: BTreeMap::new(),
                 wires: BTreeMap::new(),
-                epoch_keys: BTreeMap::new(),
                 notes: BTreeMap::new(),
+                ops: BTreeMap::new(),
+                frozen: BTreeMap::new(),
+                epoch_keys: BTreeMap::new(),
                 unsigned_refused: UNSIGNED_REFUSED.iter().map(|e| e.to_string()).collect(),
             })),
         }
@@ -278,11 +290,25 @@ impl Trust {
         self.state().own = Some((node, identity));
     }
 
-    /// The host's clock, the one it gives its machine as the `now` of an edit: the time a note
-    /// is made at when this host's person writes over a value. A host with an identity and no
-    /// clock signs no note.
-    pub fn set_clock(&self, clock: impl Fn() -> i64 + Send + 'static) {
-        self.state().clock = Some(Box::new(clock));
+    /// The number of the last operation this host has admitted from the device of `node`, 0 when
+    /// it has none. What an administrator reads to say where a removed device's chain ends
+    /// (`Body::Grant::final_seq`): from this host, and from the checkpoints of the others.
+    pub fn last_seq(&self, node: u64) -> u64 {
+        self.state()
+            .ops
+            .get(&node)
+            .and_then(|ops| ops.keys().next_back().copied())
+            .unwrap_or(0)
+    }
+
+    /// The devices this host has caught signing two different operations at one number, and the
+    /// number: proof, held by any host that saw both, that the device's chain forked.
+    pub fn equivocating(&self) -> Vec<(u64, u64)> {
+        self.state()
+            .frozen
+            .iter()
+            .map(|(node, seq)| (*node, *seq))
+            .collect()
     }
 
     /// An administrator's attestation that the changes up to `before` are settled with the hash
@@ -537,34 +563,25 @@ impl Trust {
     }
 
     /// What this host holds, as one text for its store (the key-value feature): a JSON object
-    /// with the floors an administrator attested, as `[message, signature]`, the writes it
-    /// relays, as `[the write as it travels, signature]`, and who wrote over what, as
-    /// `[subject, by, at, signature]`, each bytes written as [`encoding`] writes them. It holds
-    /// no key: a host keeps those where it keeps its person's secret.
+    /// with the floors an administrator attested, as `[message, signature]`, and the operations it
+    /// holds (the writes it relays and the notes of who wrote over what), each as the data it goes
+    /// on the wire with. It holds no key: a host keeps those where it keeps its person's secret.
     pub fn signatures_to_text(&self) -> String {
         let state = self.state();
         json!({
             "signatures": state.signatures.iter()
                 .map(|(message, signature)| json!([encoding::encode(message), encoding::encode(signature)]))
                 .collect::<Vec<_>>(),
-            "wires": state.wires.values()
-                .map(|wire| json!([wire.data, encoding::encode(&wire.signature)]))
-                .collect::<Vec<_>>(),
-            "notes": state.notes.iter()
-                .map(|(subject, note)| json!([
-                    encoding::encode(subject),
-                    note.by.to_string(),
-                    note.at.to_string(),
-                    encoding::encode(&note.signature),
-                ]))
-                .collect::<Vec<_>>(),
+            "wires": state.wires.values().filter_map(Wire::to_json).collect::<Vec<_>>(),
+            "notes": state.notes.values().filter_map(Wire::to_json).collect::<Vec<_>>(),
         })
         .to_string()
     }
 
-    /// Take back what [`Self::signatures_to_text`] wrote: each signature and each note that a
-    /// key of today verifies is kept, and the rest are dropped, since what a host reads back
-    /// from its own storage is not taken for true. Returns how many were kept.
+    /// Take back what [`Self::signatures_to_text`] wrote: each floor and each operation that
+    /// today's log verifies is kept, and the rest are dropped, since what a host reads back from
+    /// its own storage is not taken for true. The chain of this host's own person is what was
+    /// kept of it, so that what it writes next is the next one. Returns how many were kept.
     pub fn restore_signatures_from_text(&self, text: &str) -> usize {
         let Ok(value) = serde_json::from_str::<Value>(text) else {
             return 0;
@@ -586,43 +603,19 @@ impl Trust {
             .collect();
         let mut kept = self.restore_signatures(&signatures);
         let mut state = self.state();
-        for row in rows("wires") {
-            let parsed = (|| {
-                let data = row.get(0)?.as_str()?.to_string();
-                let signature: [u8; 64] =
-                    encoding::decode(row.get(1)?.as_str()?)?.try_into().ok()?;
-                Some((data, signature))
-            })();
-            let Some((data, signature)) = parsed else {
-                continue;
-            };
-            let Ok(wire) = serde_json::from_str::<Value>(&data) else {
-                continue;
-            };
-            if let Ok((visible, _)) = verified_write(&state, &wire, &signature) {
-                state.wires.insert(visible, Wire { data, signature });
-                kept += 1;
-            }
-        }
-        for row in rows("notes") {
-            let parsed = (|| {
-                let subject = encoding::decode(row.get(0)?.as_str()?)?;
-                let by: u64 = row.get(1)?.as_str()?.parse().ok()?;
-                let at: i64 = row.get(2)?.as_str()?.parse().ok()?;
-                let signature: [u8; 64] =
-                    encoding::decode(row.get(3)?.as_str()?)?.try_into().ok()?;
-                Some((subject, by, at, signature))
-            })();
-            let Some((subject, by, at, signature)) = parsed else {
-                continue;
-            };
-            let signed = message::note_message(&state.calendar, &subject, by, at);
-            let true_then = state
-                .era_at(by, at)
-                .is_some_and(|era| era.role >= WRITER && era.key.verifies(&signed, &signature));
-            if true_then {
-                state.notes.insert(subject, Note { by, at, signature });
-                kept += 1;
+        for (name, event) in [("wires", "todo.write"), ("notes", "todo.supersede")] {
+            for row in rows(name) {
+                let Some(text) = row.as_str() else { continue };
+                let Ok(mut value) = serde_json::from_str::<Value>(text) else {
+                    continue;
+                };
+                let Ok(signature) = signature_of(&mut value, event) else {
+                    continue;
+                };
+                if let Ok(verified) = verify_operation(&state, event, value, &signature) {
+                    record(&mut state, event, verified, signature);
+                    kept += 1;
+                }
             }
         }
         kept
@@ -691,82 +684,251 @@ impl Admission for Trust {
         let mut value: Value =
             serde_json::from_str(data).map_err(|_| format!("{event}: the data is not JSON"))?;
         let signature = signature_of(&mut value, event)?;
-        if event == "todo.write" {
-            let (visible_message, visible) = verified_write(&state, &value, &signature)?;
-            state.wires.insert(
-                visible_message,
-                Wire {
-                    data: value.to_string(),
-                    signature,
-                },
-            );
-            return Ok(Some(visible.to_string()));
+        match verify_operation(&state, event, value, &signature) {
+            Ok(verified) => {
+                let visible = verified.visible.to_string();
+                record(&mut state, event, verified, signature);
+                Ok(Some(visible))
+            }
+            Err(Refusal::Refused(reason)) => Err(reason),
+            Err(Refusal::Equivocation { node, seq, reason }) => {
+                let from = state.frozen.get(&node).map_or(seq, |held| (*held).min(seq));
+                state.frozen.insert(node, from);
+                Err(reason)
+            }
         }
-        let signing = match message::signing(&state.calendar, event, &value) {
-            Some(Ok(signing)) => signing,
-            Some(Err(error)) => return Err(format!("{event}: {error:?}")),
-            None => return Ok(None),
-        };
-        check_author(&state, event, &signing, &signature)?;
-        state.notes.entry(signing.subject).or_insert(Note {
-            by: signing.author,
-            at: signing.at,
-            signature,
-        });
-        value.as_object_mut().map(|object| object.remove(AT_FIELD));
-        Ok(Some(value.to_string()))
     }
 }
 
-/// Whether the author of what was signed was a member who could write at the time they say they
-/// made it, and the signature is true under the key the log gave them for that time.
-fn check_author(
+/// Why an operation was not taken in.
+enum Refusal {
+    /// It does not hold: its reason.
+    Refused(String),
+    /// The device signed two different operations at one number: proof that its chain forked, which
+    /// freezes the device (`State::frozen`) from `seq`.
+    Equivocation { node: u64, seq: u64, reason: String },
+}
+
+impl From<String> for Refusal {
+    fn from(reason: String) -> Self {
+        Refusal::Refused(reason)
+    }
+}
+
+/// An operation that holds: who made it, where it stands, and the event as its author made it
+/// (`travelling`, sealed when the list keeps content) and as the machine is told it (`visible`).
+struct Verified {
+    author: u64,
+    link: Link,
+    id: [u8; 32],
+    stamp: Option<(i64, u64)>,
+    travelling: Value,
+    visible: Value,
+    /// What the host keeps it under: the bytes of the write the machine holds, or the subject of a
+    /// note.
+    key: Vec<u8>,
+}
+
+/// Whether an operation holds, as `event` with its link in the data and without its signature:
+/// the entry of the log it names is the one this host holds, its author was a writer under that
+/// entry, the administrators accepted the device's operations up to this number, the signature is
+/// the key's of that entry, it stands consistently among the device's operations this host holds
+/// (whatever order they came in), and its content opens. Nothing here reads a clock: the entry it
+/// names and the number it has are what are signed, and what a device claims of time decides
+/// nothing.
+fn verify_operation(
     state: &State,
     event: &str,
-    signing: &message::Signing,
+    mut value: Value,
     signature: &[u8; 64],
-) -> Result<(), String> {
-    let era = state.era_at(signing.author, signing.at).ok_or_else(|| {
+) -> Result<Verified, Refusal> {
+    let link = Link::take_from(&mut value).map_err(|why| format!("{event}: {why}"))?;
+    let signing = match message::signing(&state.calendar, event, &value) {
+        Some(Ok(signing)) => signing,
+        Some(Err(error)) => return Err(format!("{event}: {error:?}").into()),
+        None => return Err(format!("{event}: it is not an event that is signed").into()),
+    };
+    let author = signing.author;
+    let bytes = message::operation_bytes(&signing.message, &link);
+    let id = message::operation_id(&bytes);
+
+    if state.log.hash_at(link.log) != Some(link.log_hash) {
+        return Err(format!(
+            "{event}: it names entry {} of the membership log, which this host does not hold as it is",
+            link.log
+        )
+        .into());
+    }
+    let era = state.log.era_for(author, link.log).ok_or_else(|| {
         format!(
-            "{event}: node {} was not a member at {}",
-            signing.author, signing.at
+            "{event}: node {author} was not a member at entry {}",
+            link.log
         )
     })?;
     if era.role < WRITER {
         return Err(format!(
-            "{event}: node {} may not write (role {} at {})",
-            signing.author, era.role, signing.at
-        ));
+            "{event}: node {author} may not write (role {} at entry {})",
+            era.role, link.log
+        )
+        .into());
     }
-    if !era.key.verifies(&signing.message, signature) {
+    if let Some(cutoff) = state.log.cutoff_after(author, era) {
+        if link.seq > cutoff {
+            return Err(format!(
+                "{event}: operation {} of node {author} is past {cutoff}, the last the administrators accepted of it",
+                link.seq
+            )
+            .into());
+        }
+    }
+    if !era.key.verifies(&bytes, signature) {
+        return Err(format!("{event}: the signature is not node {author}'s").into());
+    }
+    if link.seq == 0 {
+        return Err(format!("{event}: a chain begins at 1").into());
+    }
+    let floor = state.log.floor_before(author, era);
+    if link.seq <= floor {
         return Err(format!(
-            "{event}: the signature is not node {}'s",
-            signing.author
-        ));
+            "{event}: number {} of node {author} belongs to the chain an earlier grant ended at {floor}",
+            link.seq
+        )
+        .into());
     }
-    Ok(())
+    // A chain begins at 1, and a new one (another key, or the device made a writer again) at the
+    // number after the end an earlier grant set: its first operation names no operation before
+    // it, and the checks of what follows and precedes stop at the edge.
+    let cutoffs = state.log.cutoffs(author);
+    let segment_start = cutoffs
+        .iter()
+        .rev()
+        .find(|cutoff| **cutoff < link.seq)
+        .map_or(1, |cutoff| cutoff + 1);
+    let segment_end = cutoffs
+        .iter()
+        .find(|cutoff| **cutoff >= link.seq)
+        .copied()
+        .unwrap_or(u64::MAX);
+    let begins = link.seq == segment_start;
+    if begins && link.prev != message::NO_OPERATION {
+        return Err(format!("{event}: it begins a chain and names an operation before it").into());
+    }
+    if let Some(from) = state.frozen.get(&author) {
+        if link.seq >= *from {
+            return Err(format!(
+                "{event}: node {author} signed two operations at {from}, and this host takes nothing of theirs from there"
+            )
+            .into());
+        }
+    }
+
+    let held = state.ops.get(&author);
+    let equivocation = |seq: u64, what: &str| Refusal::Equivocation {
+        node: author,
+        seq,
+        reason: format!("{event}: node {author} signed two different operations at {seq} ({what})"),
+    };
+    if let Some(held) = held {
+        if let Some(same) = held.get(&link.seq) {
+            if same.id != id {
+                return Err(equivocation(link.seq, "this and the one held"));
+            }
+        }
+        if !begins {
+            if let Some(before) = held.get(&(link.seq - 1)) {
+                if before.id != link.prev {
+                    return Err(equivocation(
+                        link.seq - 1,
+                        "the one held and the one this names before it",
+                    ));
+                }
+            }
+        }
+        if link.seq < segment_end {
+            if let Some(after) = held.get(&(link.seq + 1)) {
+                if after.prev != id {
+                    return Err(equivocation(
+                        link.seq,
+                        "this and the one the next names before it",
+                    ));
+                }
+            }
+        }
+    }
+
+    // A write's stamp is its author's clock when it wrote it, and along one chain it does not go
+    // back: a device cannot give a later write an earlier time than one it had already made.
+    let stamp = if event == "todo.write" {
+        Some(message::stamp_of(&value).map_err(|error| format!("{event}: {error:?}"))?)
+    } else {
+        None
+    };
+    if let (Some(stamp), Some(held)) = (stamp, held) {
+        let before = held
+            .range(segment_start..link.seq)
+            .rev()
+            .find_map(|(_, other)| other.stamp);
+        let after = if link.seq < segment_end {
+            held.range(link.seq + 1..=segment_end)
+                .find_map(|(_, other)| other.stamp)
+        } else {
+            None
+        };
+        if before.is_some_and(|earlier| stamp < earlier) || after.is_some_and(|later| stamp > later)
+        {
+            return Err(format!(
+                "{event}: its stamp goes back along node {author}'s chain at {}",
+                link.seq
+            )
+            .into());
+        }
+    }
+
+    let visible = if event == "todo.write" {
+        open_write(state, &value)?
+    } else {
+        value.clone()
+    };
+    let key = if event == "todo.write" {
+        message::signing(&state.calendar, event, &visible)
+            .and_then(Result::ok)
+            .ok_or_else(|| format!("{event}: what it holds is not a write"))?
+            .message
+    } else {
+        signing.subject
+    };
+    Ok(Verified {
+        author,
+        link,
+        id,
+        stamp,
+        travelling: value,
+        visible,
+        key,
+    })
 }
 
-/// A write as it traveled (`wire`, without its signature) and the signature: judged as a write
-/// is, and opened when this host keeps content from the hub. Gives the bytes the write is signed
-/// as when the machine holds it, and the write as the machine is told it.
-fn verified_write(
-    state: &State,
-    wire: &Value,
-    signature: &[u8; 64],
-) -> Result<(Vec<u8>, Value), String> {
-    let event = "todo.write";
-    let signing = match message::signing(&state.calendar, event, wire) {
-        Some(Ok(signing)) => signing,
-        Some(Err(error)) => return Err(format!("{event}: {error:?}")),
-        None => return Err(format!("{event}: it is not a write")),
+/// Keep an operation that holds: among its device's, and under the key the host finds it by.
+fn record(state: &mut State, event: &str, verified: Verified, signature: [u8; 64]) {
+    state.ops.entry(verified.author).or_default().insert(
+        verified.link.seq,
+        Held {
+            id: verified.id,
+            prev: verified.link.prev,
+            stamp: verified.stamp,
+        },
+    );
+    let wire = Wire {
+        data: verified.travelling.to_string(),
+        link: verified.link,
+        signature,
     };
-    check_author(state, event, &signing, signature)?;
-    let visible = open_write(state, wire)?;
-    let held = message::signing(&state.calendar, event, &visible)
-        .and_then(Result::ok)
-        .ok_or_else(|| format!("{event}: what it holds is not a write"))?;
-    Ok((held.message, visible))
+    let table = if event == "todo.write" {
+        &mut state.wires
+    } else {
+        &mut state.notes
+    };
+    table.entry(verified.key).or_insert(wire);
 }
 
 /// The write as the machine is told it: the content opened, when this host keeps content from
@@ -862,60 +1024,95 @@ fn seal_floor(state: &State, data: &str) -> Option<String> {
     Some(value.to_string())
 }
 
-/// A note leaves as who really wrote over the write and when, with their signature, when the
-/// host holds that; and as the host's own person's, made now, when it does not and the note
-/// names that person: a copy that holds a tombstone and sends it again vouches for it.
+/// Make the next operation of this host's person's chain out of `travelling`, the event as it
+/// goes on the wire: its number and the one it follows, the entry of the log it is made under, and
+/// the person's signature of all of it. Kept among the operations the host holds, so that the one
+/// after it follows it.
+fn make_operation(
+    state: &mut State,
+    event: &str,
+    travelling: Value,
+    author: u64,
+) -> Result<Wire, String> {
+    let (node, identity) = state
+        .own
+        .as_ref()
+        .ok_or_else(|| format!("{event}: this host has no person"))?;
+    if *node != author {
+        return Err(format!(
+            "{event}: this host's person is node {node}, and it signs none in node {author}'s name"
+        ));
+    }
+    let (log, log_hash) = state
+        .log
+        .tip()
+        .ok_or_else(|| format!("{event}: the membership log has not begun"))?;
+    // The next number is past what this device has made and past every chain an earlier grant
+    // ended; when it is past the end of one it begins a new chain and names nothing before it.
+    let floor = state.log.cutoffs(author).last().copied().unwrap_or(0);
+    let (seq, prev) = match state
+        .ops
+        .get(&author)
+        .and_then(|ops| ops.iter().next_back())
+    {
+        Some((last, held)) if *last >= floor => (last + 1, held.id),
+        _ => (floor + 1, message::NO_OPERATION),
+    };
+    let link = Link {
+        seq,
+        prev,
+        log,
+        log_hash,
+    };
+    let signing = message::signing(&state.calendar, event, &travelling)
+        .and_then(Result::ok)
+        .ok_or_else(|| format!("{event}: the data is not what it names"))?;
+    let bytes = message::operation_bytes(&signing.message, &link);
+    let signature = identity.sign(&bytes);
+    let stamp = if event == "todo.write" {
+        Some(message::stamp_of(&travelling).map_err(|error| format!("{event}: {error:?}"))?)
+    } else {
+        None
+    };
+    state.ops.entry(author).or_default().insert(
+        seq,
+        Held {
+            id: message::operation_id(&bytes),
+            prev,
+            stamp,
+        },
+    );
+    Ok(Wire {
+        data: travelling.to_string(),
+        link,
+        signature,
+    })
+}
+
+/// A note leaves as who really wrote over the write, with their operation as it was made, when
+/// the host holds that; and as the host's own person's next operation, when it does not and the
+/// note names that person: a copy that holds a tombstone and sends it again vouches for it by
+/// sending what the person signed, and a host that holds no author for it sends nothing.
 fn seal_note(state: &mut State, data: &str) -> Result<Option<String>, String> {
-    let malformed = || "todo.supersede: the data is not a note".to_string();
-    let mut value: Value = serde_json::from_str(data).map_err(|_| malformed())?;
-    let object = value.as_object_mut().ok_or_else(malformed)?;
-    // The subject is the same whoever wrote over and whenever, so a placeholder reads it.
-    object.insert(AT_FIELD.to_string(), Value::String("0".to_string()));
-    let placeholder = message::signing(&state.calendar, "todo.supersede", &value)
+    let event = "todo.supersede";
+    let malformed = || format!("{event}: the data is not a note");
+    let value: Value = serde_json::from_str(data).map_err(|_| malformed())?;
+    let signing = message::signing(&state.calendar, event, &value)
         .and_then(Result::ok)
         .ok_or_else(malformed)?;
-    let subject = placeholder.subject;
-    let (by, at, signature) = match state.notes.get(&subject) {
-        Some(note) => (note.by, note.at, note.signature),
-        None => {
-            let (node, identity) = state.own.as_ref().ok_or_else(|| {
-                "todo.supersede: this host holds no author for this note and signs none of its own"
-                    .to_string()
-            })?;
-            if placeholder.author != *node {
-                return Err(format!(
-                    "todo.supersede: this host holds no author for this note, which names node {}",
-                    placeholder.author
-                ));
-            }
-            let at = (state
-                .clock
-                .as_ref()
-                .ok_or("todo.supersede: this host has no clock to make a note at")?)(
-            );
-            let object = value.as_object_mut().ok_or_else(malformed)?;
-            object.insert(AT_FIELD.to_string(), Value::String(at.to_string()));
-            let signing = message::signing(&state.calendar, "todo.supersede", &value)
-                .and_then(Result::ok)
-                .ok_or_else(malformed)?;
-            let signature = identity.sign(&signing.message);
-            let note = Note {
-                by: *node,
-                at,
-                signature,
-            };
-            state.notes.insert(subject, note);
-            (note.by, note.at, signature)
-        }
-    };
-    let object = value.as_object_mut().ok_or_else(malformed)?;
-    object.insert("by".to_string(), Value::String(by.to_string()));
-    object.insert(AT_FIELD.to_string(), Value::String(at.to_string()));
-    object.insert(
-        SIGNATURE_FIELD.to_string(),
-        Value::String(encoding::encode(&signature)),
-    );
-    Ok(Some(value.to_string()))
+    if let Some(wire) = state.notes.get(&signing.subject) {
+        return wire.to_json().map(Some).ok_or_else(malformed);
+    }
+    if !matches!(&state.own, Some((node, _)) if *node == signing.author) {
+        return Err(format!(
+            "{event}: this host holds no author for this note, which names node {}",
+            signing.author
+        ));
+    }
+    let wire = make_operation(state, event, value, signing.author)?;
+    let sent = wire.to_json().ok_or_else(malformed)?;
+    state.notes.insert(signing.subject, wire);
+    Ok(Some(sent))
 }
 
 impl Sealer for Trust {
@@ -956,13 +1153,8 @@ fn seal_write(state: &mut State, data: &str) -> Result<String, String> {
     let held = signing.message;
     let own = matches!(&state.own, Some((node, _)) if *node == signing.author);
     // What was made or admitted before leaves as it did: one write is one set of bytes.
-    if let Some(wire) = state.wires.get(&held).cloned() {
-        let mut value: Value = serde_json::from_str(&wire.data).map_err(|_| malformed())?;
-        value.as_object_mut().ok_or_else(malformed)?.insert(
-            SIGNATURE_FIELD.to_string(),
-            Value::String(encoding::encode(&wire.signature)),
-        );
-        return Ok(value.to_string());
+    if let Some(wire) = state.wires.get(&held) {
+        return wire.to_json().ok_or_else(malformed);
     }
     if !own {
         return Err(format!(
@@ -994,24 +1186,8 @@ fn seal_write(state: &mut State, data: &str) -> Result<String, String> {
             )),
         );
     }
-    let travelling = message::signing(&state.calendar, event, &wire)
-        .and_then(Result::ok)
-        .ok_or_else(malformed)?;
-    let (_, identity) = state
-        .own
-        .as_ref()
-        .ok_or_else(|| format!("{event}: this host has no person"))?;
-    let signature = identity.sign(&travelling.message);
-    state.wires.insert(
-        held,
-        Wire {
-            data: wire.to_string(),
-            signature,
-        },
-    );
-    wire.as_object_mut().ok_or_else(malformed)?.insert(
-        SIGNATURE_FIELD.to_string(),
-        Value::String(encoding::encode(&signature)),
-    );
-    Ok(wire.to_string())
+    let operation = make_operation(state, event, wire, signing.author)?;
+    let sent = operation.to_json().ok_or_else(malformed)?;
+    state.wires.insert(held, operation);
+    Ok(sent)
 }

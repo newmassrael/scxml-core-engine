@@ -1,15 +1,25 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
-//! The bytes a write is signed as.
+//! The bytes a write is signed as, and what makes it an operation of a device's chain.
 //!
-//! They are written from the fields the event carries and the name of the list, in one fixed
-//! order and form, and not from the text of the event's data: a host that re-writes the data
-//! (a different order of keys, a number written as text) changes no byte of what is signed,
-//! and a signature does not move to another write, another kind of event, or another list.
-//! Each part is written with its length, so that no two different writes are the same bytes.
+//! What an event says is written from the fields it carries and the name of the list, in one
+//! fixed order and form, and not from the text of the event's data: a host that re-writes the data
+//! (a different order of keys, a number written as text) changes no byte of what is signed, and a
+//! signature does not move to another write, another kind of event, or another list. Each part is
+//! written with its length, so that no two different writes are the same bytes.
+//!
+//! An event a device sends is an **operation** of that device's chain: the event as it travels
+//! (its content sealed, when the list keeps it from the hub), the number it has among the
+//! device's operations (`seq`), the id of the one before it (`prev`), and the entry of the
+//! membership log it was made under (`mh`, and that entry's hash `mhh`). The device signs all of
+//! it ([`operation_bytes`]), so that an operation neither moves to another chain position, nor
+//! claims another entry of the log, nor leaves out what it follows.
 
 use serde_json::{Map, Value};
+use sha2::{Digest, Sha256};
+
+use crate::encoding;
 
 /// The events a signature is carried by: a write to a field of a to-do, which its author
 /// stamped, and the note that a write was seen and written over, which the person who wrote
@@ -19,7 +29,17 @@ pub const SIGNED_EVENTS: [&str; 2] = ["todo.write", "todo.supersede"];
 /// The key of the data under which the signature travels between hosts.
 pub const SIGNATURE_FIELD: &str = "sig";
 
+/// The keys of the data under which the operation's place in its chain travels.
+pub const SEQ_FIELD: &str = "seq";
+pub const PREV_FIELD: &str = "prev";
+pub const LOG_FIELD: &str = "mh";
+pub const LOG_HASH_FIELD: &str = "mhh";
+
 const DOMAIN: &str = "sce-trust/event/1";
+const OPERATION_DOMAIN: &str = "sce-trust/operation/1";
+
+/// The id an operation has before any: what the first operation of a chain names as `prev`.
+pub const NO_OPERATION: [u8; 32] = [0; 32];
 
 /// Why an event's data could not be read as the event it names.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -36,12 +56,8 @@ pub enum MessageError {
 pub struct Signing {
     /// The node of the person whose key signed it: `nodeId` of a write, `by` of a note.
     pub author: u64,
-    /// The time the author says it was made at, in the clock the machines stamp with: the
-    /// `wallTime` of a write, and the `at` a note carries. The author's key is judged as of
-    /// this time (a member who was taken off after it still wrote it).
-    pub at: i64,
     /// What the note is about, written from the fields that name the write it wrote over and
-    /// not from who wrote over it or when: two notes about one write have one subject.
+    /// not from who wrote over it: two notes about one write have one subject.
     pub subject: Vec<u8>,
     pub message: Vec<u8>,
 }
@@ -49,12 +65,25 @@ pub struct Signing {
 /// The bytes `event` with `data` is signed as in the list `calendar`, and its author. `None`
 /// when `event` is not one a signature is carried by.
 pub fn signing(calendar: &str, event: &str, data: &Value) -> Option<Result<Signing, MessageError>> {
-    let (fields, author, at): (&[Field], &str, &str) = match event {
-        "todo.write" => (WRITE, "nodeId", "wallTime"),
-        "todo.supersede" => (SUPERSEDE, "by", "at"),
+    let (fields, author): (&[Field], &str) = match event {
+        "todo.write" => (WRITE, "nodeId"),
+        "todo.supersede" => (SUPERSEDE, "by"),
         _ => return None,
     };
-    Some(build(calendar, event, data, fields, author, at))
+    Some(build(calendar, event, data, fields, author))
+}
+
+/// The stamp of a write: its time and its counter, which are the author's clock when they wrote
+/// it. Along one device's chain they do not go back.
+pub fn stamp_of(data: &Value) -> Result<(i64, u64), MessageError> {
+    let object = data.as_object().ok_or(MessageError::NotAnObject)?;
+    let wall = read(object, "wallTime", Kind::Signed(None))?
+        .parse::<i64>()
+        .map_err(|_| MessageError::Field("wallTime"))?;
+    let counter = read(object, "counter", Kind::Unsigned(None))?
+        .parse::<u64>()
+        .map_err(|_| MessageError::Field("counter"))?;
+    Ok((wall, counter))
 }
 
 /// The number and the text a write carries, which is what is sealed when a host keeps a
@@ -82,18 +111,88 @@ pub fn write_stamp(data: &Value) -> Result<Vec<u8>, MessageError> {
     Ok(stamp)
 }
 
-/// The bytes a `todo.supersede` is signed as, written again from what a host keeps of it: the
-/// subject of the note ([`Signing::subject`]), who wrote over and when. It is what [`signing`]
-/// writes for the note, so that a host that stored the three can check the signature again.
-pub fn note_message(calendar: &str, subject: &[u8], by: u64, at: i64) -> Vec<u8> {
-    let mut message = Vec::new();
-    part(&mut message, DOMAIN);
-    part(&mut message, calendar);
-    part(&mut message, "todo.supersede");
-    message.extend_from_slice(subject);
-    part(&mut message, &by.to_string());
-    part(&mut message, &at.to_string());
-    message
+/// Where an operation stands: its number among its device's operations, the id of the one before
+/// it, and the entry of the membership log it was made under.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Link {
+    /// The number of the operation in its device's chain, from 1.
+    pub seq: u64,
+    /// The id of the operation before it ([`NO_OPERATION`] for the first).
+    pub prev: [u8; 32],
+    /// The position of the entry of the membership log it was made under, and that entry's hash.
+    pub log: u64,
+    pub log_hash: [u8; 32],
+}
+
+impl Link {
+    /// Write the link into the data of an event, as the fields it travels in.
+    pub fn write_into(&self, data: &mut Value) -> Option<()> {
+        let object = data.as_object_mut()?;
+        object.insert(SEQ_FIELD.to_string(), Value::String(self.seq.to_string()));
+        object.insert(
+            PREV_FIELD.to_string(),
+            Value::String(encoding::encode(&self.prev)),
+        );
+        object.insert(LOG_FIELD.to_string(), Value::String(self.log.to_string()));
+        object.insert(
+            LOG_HASH_FIELD.to_string(),
+            Value::String(encoding::encode(&self.log_hash)),
+        );
+        Some(())
+    }
+
+    /// Take the link out of the data of an event (leaving the event as its author made it), or
+    /// say that a field of it is missing or not what it is written as.
+    pub fn take_from(data: &mut Value) -> Result<Self, String> {
+        let object = data
+            .as_object_mut()
+            .ok_or_else(|| "the data is not an object".to_string())?;
+        let mut text = |name: &str| -> Result<String, String> {
+            match object.remove(name) {
+                Some(Value::String(text)) => Ok(text),
+                _ => Err(format!("it carries no `{name}`")),
+            }
+        };
+        let seq = text(SEQ_FIELD)?;
+        let prev = text(PREV_FIELD)?;
+        let log = text(LOG_FIELD)?;
+        let log_hash = text(LOG_HASH_FIELD)?;
+        let hash = |name: &str, value: &str| -> Result<[u8; 32], String> {
+            encoding::decode(value)
+                .and_then(|bytes| bytes.try_into().ok())
+                .ok_or_else(|| format!("its `{name}` is not a hash"))
+        };
+        Ok(Self {
+            seq: seq
+                .parse()
+                .map_err(|_| "its `seq` is not a number".to_string())?,
+            prev: hash(PREV_FIELD, &prev)?,
+            log: log
+                .parse()
+                .map_err(|_| "its `mh` is not a number".to_string())?,
+            log_hash: hash(LOG_HASH_FIELD, &log_hash)?,
+        })
+    }
+}
+
+/// The bytes a device signs to make an event an operation of its chain: the event as it travels
+/// (`travelling`, which is [`Signing::message`] of the data that goes on the wire) and the
+/// link.
+pub fn operation_bytes(travelling: &[u8], link: &Link) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    part(&mut bytes, OPERATION_DOMAIN);
+    bytes.extend_from_slice(&(travelling.len() as u64).to_be_bytes());
+    bytes.extend_from_slice(travelling);
+    part(&mut bytes, &link.seq.to_string());
+    part(&mut bytes, &encoding::encode(&link.prev));
+    part(&mut bytes, &link.log.to_string());
+    part(&mut bytes, &encoding::encode(&link.log_hash));
+    bytes
+}
+
+/// What names an operation, and what the next one of its chain names as `prev`.
+pub fn operation_id(operation: &[u8]) -> [u8; 32] {
+    Sha256::digest(operation).into()
 }
 
 /// The event by which the hub says an instant is settled, which an administrator attests.
@@ -155,7 +254,6 @@ const SUPERSEDE: &[Field] = &[
     ("counter", Kind::Unsigned(None)),
     ("nodeId", Kind::Unsigned(None)),
     ("by", Kind::Unsigned(None)),
-    ("at", Kind::Signed(None)),
 ];
 
 fn build(
@@ -164,7 +262,6 @@ fn build(
     data: &Value,
     fields: &[Field],
     author: &'static str,
-    at: &'static str,
 ) -> Result<Signing, MessageError> {
     let object = data.as_object().ok_or(MessageError::NotAnObject)?;
     let mut message = Vec::new();
@@ -173,23 +270,18 @@ fn build(
     part(&mut message, event);
     let mut subject = Vec::new();
     let mut author_node = None;
-    let mut at_time = None;
     for (name, kind) in fields {
         let text = read(object, name, *kind)?;
         if *name == author {
             author_node = text.parse::<u64>().ok();
         }
-        if *name == at {
-            at_time = text.parse::<i64>().ok();
-        }
-        if *name != "by" && *name != "at" {
+        if *name != "by" {
             part(&mut subject, &text);
         }
         part(&mut message, &text);
     }
     Ok(Signing {
         author: author_node.ok_or(MessageError::Field(author))?,
-        at: at_time.ok_or(MessageError::Field(at))?,
         subject,
         message,
     })
@@ -250,15 +342,13 @@ mod tests {
     fn a_write_is_signed_by_the_node_that_stamped_it() {
         let signing = signing("home", "todo.write", &write()).unwrap().unwrap();
         assert_eq!(signing.author, 3);
-        assert_eq!(signing.at, 1000, "a write is made at its stamp");
-        let note = json!({"id":1,"field":2,"wallTime":5,"counter":0,"nodeId":3,"by":"4","at":"9"});
+        assert_eq!(stamp_of(&write()), Ok((1000, 0)));
+        let note = json!({"id":1,"field":2,"wallTime":5,"counter":0,"nodeId":3,"by":"4"});
         let signing = super::signing("home", "todo.supersede", &note)
             .unwrap()
             .unwrap();
         assert_eq!(signing.author, 4, "a note is signed by who wrote over");
-        assert_eq!(signing.at, 9, "a note is made at the time it carries");
-        let other =
-            json!({"id":1,"field":2,"wallTime":5,"counter":0,"nodeId":3,"by":"7","at":"20"});
+        let other = json!({"id":1,"field":2,"wallTime":5,"counter":0,"nodeId":3,"by":"7"});
         let other = super::signing("home", "todo.supersede", &other)
             .unwrap()
             .unwrap();
@@ -323,6 +413,62 @@ mod tests {
         assert_eq!(
             signing("home", "todo.write", &negative).unwrap(),
             Err(MessageError::Field("counter"))
+        );
+    }
+
+    #[test]
+    fn a_link_travels_in_the_data_and_is_taken_out_whole() {
+        let link = Link {
+            seq: 7,
+            prev: [3; 32],
+            log: 4,
+            log_hash: [5; 32],
+        };
+        let mut data = write();
+        link.write_into(&mut data).unwrap();
+        assert_eq!(Link::take_from(&mut data), Ok(link));
+        assert_eq!(
+            data,
+            write(),
+            "what is left is the event as its author made it"
+        );
+        assert!(Link::take_from(&mut data).is_err(), "it was taken out");
+        let mut bad = write();
+        link.write_into(&mut bad).unwrap();
+        bad["seq"] = json!("seven");
+        assert!(Link::take_from(&mut bad).is_err());
+    }
+
+    #[test]
+    fn an_operation_is_signed_as_it_stands_in_its_chain() {
+        let travelling = signing("home", "todo.write", &write())
+            .unwrap()
+            .unwrap()
+            .message;
+        let link = Link {
+            seq: 1,
+            prev: NO_OPERATION,
+            log: 3,
+            log_hash: [5; 32],
+        };
+        let base = operation_bytes(&travelling, &link);
+        for moved in [
+            Link { seq: 2, ..link },
+            Link {
+                prev: [1; 32],
+                ..link
+            },
+            Link { log: 4, ..link },
+            Link {
+                log_hash: [6; 32],
+                ..link
+            },
+        ] {
+            assert_ne!(operation_bytes(&travelling, &moved), base, "{moved:?}");
+        }
+        assert_ne!(
+            operation_id(&base),
+            operation_id(&operation_bytes(b"x", &link))
         );
     }
 }

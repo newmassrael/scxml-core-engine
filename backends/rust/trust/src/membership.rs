@@ -74,15 +74,22 @@ pub enum Body {
         quorum: u8,
         profile: Profile,
     },
-    /// From the time `from` (in the clock the machines stamp with) the device of `node` is a
-    /// member with `role` and signs with `key`; a role of 0 takes it off. Later entries for the
-    /// node win among those whose `from` has been reached, and every one is kept, so what a
-    /// device wrote before it was taken off is judged by the entry of that time.
+    /// From this position of the log the device of `node` is a member with `role` and signs with
+    /// `key`; a role of 0 takes it off. An operation names the entry of the log it was made under,
+    /// and is judged by the grant in force at that entry; and every grant is kept.
+    ///
+    /// A grant that takes writing away from a device that could write (a role below 2, or another
+    /// key) carries `final_seq`: the number of the last operation of that device the
+    /// administrators accept, which they read from what the hosts and the checkpoints have seen of
+    /// the device's chain. An operation of the device beyond it is refused by every host whatever
+    /// entry it names, so that a device cannot be removed by a time it alone can claim, and cannot
+    /// go back to an entry before its removal to keep writing. Operations the device made and had
+    /// not yet published are lost; that is the cost of a removal that nobody can talk round.
     Grant {
         node: u64,
         role: u8,
         key: PublicKey,
-        from: i64,
+        final_seq: Option<u64>,
     },
     /// The next epoch of the list's content key begins. Hosts seal under it from here on and a
     /// host that has no key of it does not write until it is given one.
@@ -124,13 +131,16 @@ impl Body {
                 node,
                 role,
                 key,
-                from,
+                final_seq,
             } => {
                 part(out, "grant");
                 part(out, &node.to_string());
                 part(out, &role.to_string());
                 part(out, &key.to_text());
-                part(out, &from.to_string());
+                part(
+                    out,
+                    &final_seq.map_or_else(|| "none".to_string(), |seq| seq.to_string()),
+                );
             }
             Body::Epoch { epoch } => {
                 part(out, "epoch");
@@ -215,13 +225,13 @@ impl Entry {
                 node,
                 role,
                 key,
-                from,
+                final_seq,
             } => serde_json::json!({
                 "kind": "grant",
                 "node": node.to_string(),
                 "role": role,
                 "key": key.to_text(),
-                "from": from.to_string(),
+                "final_seq": final_seq.map(|seq| seq.to_string()),
             }),
             Body::Epoch { epoch } => serde_json::json!({"kind": "epoch", "epoch": epoch}),
             Body::Administrators {
@@ -277,7 +287,11 @@ impl Entry {
                 node: text_of(body, "node")?.parse().ok()?,
                 role: small(body, "role")?,
                 key: PublicKey::from_text(&text_of(body, "key")?)?,
-                from: text_of(body, "from")?.parse().ok()?,
+                final_seq: match body.get("final_seq")? {
+                    serde_json::Value::Null => None,
+                    serde_json::Value::String(seq) => Some(seq.parse().ok()?),
+                    _ => return None,
+                },
             },
             "epoch" => Body::Epoch {
                 epoch: u32::try_from(body.get("epoch")?.as_u64()?).ok()?,
@@ -370,12 +384,16 @@ pub enum LogError {
     Invalid(&'static str),
 }
 
-/// What one grant says of a member from its time on.
+/// What one grant says of a member from the entry that made it on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Era {
-    pub from: i64,
+    /// The position of the entry of the log that made the grant.
+    pub index: u64,
     pub key: PublicKey,
     pub role: u8,
+    /// The last operation of the device before this grant that the administrators accept, when the
+    /// grant takes writing away or changes the key ([`Body::Grant`]).
+    pub cutoff: Option<u64>,
 }
 
 /// The state the entries of the log make, and the entries.
@@ -486,14 +504,70 @@ impl Log {
         }
     }
 
-    /// What the certificates of `node` say of it at the time `at`: the one with the latest entry
-    /// among those from a time at or before it. `None` when none applies.
-    pub fn era_at(&self, node: u64, at: i64) -> Option<&Era> {
+    /// The latest entry held and its hash: what an operation names as the log it was made under.
+    /// `None` when the log has no entry.
+    pub fn tip(&self) -> Option<(u64, Hash)> {
+        Some((
+            self.entries.len().checked_sub(1)? as u64,
+            *self.hashes.last()?,
+        ))
+    }
+
+    /// The hash of the entry at `index`, when the log holds it.
+    pub fn hash_at(&self, index: u64) -> Option<Hash> {
+        self.hashes.get(usize::try_from(index).ok()?).copied()
+    }
+
+    /// What the log says of `node` as of the entry at `entry`: the latest grant at or before it.
+    /// `None` when there is none, which is a device that was not yet a member.
+    pub fn era_for(&self, node: u64, entry: u64) -> Option<&Era> {
         self.members
             .get(&node)?
             .values()
             .rev()
-            .find(|era| era.from <= at)
+            .find(|era| era.index <= entry)
+    }
+
+    /// Every number at which a chain of `node`'s was ended by a grant, lowest first. A new chain of
+    /// the node (another key, or the same device made a writer again) begins at the number after
+    /// one of these, and names no operation before it.
+    pub fn cutoffs(&self, node: u64) -> Vec<u64> {
+        let mut cutoffs: Vec<u64> = self
+            .members
+            .get(&node)
+            .map(|eras| eras.values().filter_map(|era| era.cutoff).collect())
+            .unwrap_or_default();
+        cutoffs.sort_unstable();
+        cutoffs.dedup();
+        cutoffs
+    }
+
+    /// The number the operations judged by `era` must be past: the last of the chains that the
+    /// grants of `node` up to and including this one ended, 0 when none. An operation of the era
+    /// numbered at or below it would be a number an earlier chain used.
+    pub fn floor_before(&self, node: u64, era: &Era) -> u64 {
+        self.members
+            .get(&node)
+            .map(|eras| {
+                eras.values()
+                    .filter(|earlier| earlier.index <= era.index)
+                    .filter_map(|earlier| earlier.cutoff)
+                    .max()
+                    .unwrap_or(0)
+            })
+            .unwrap_or(0)
+    }
+
+    /// The last operation of `node`'s that is accepted when the operation is judged by `era`: the
+    /// lowest cutoff among the later grants of the node, `None` when no later grant sets one. An
+    /// operation with a number past it is refused whatever entry it names.
+    pub fn cutoff_after(&self, node: u64, era: &Era) -> Option<u64> {
+        self.members
+            .get(&node)?
+            .values()
+            .filter(|later| later.index > era.index)
+            .filter_map(|later| later.cutoff)
+            .min()
     }
 
     /// The latest grant of each node.
@@ -606,17 +680,33 @@ impl Log {
                 node,
                 role,
                 key,
-                from,
+                final_seq,
             } => {
                 if *role > 3 {
                     return Err(LogError::Invalid("a role is 0 to 3"));
                 }
+                // A grant that takes writing away from a device that could write, or gives it
+                // another key, says where its chain ends: without it the device could go on
+                // writing under the entry before, which no host could tell from a late arrival.
+                let takes_writing_away = self
+                    .members
+                    .get(node)
+                    .and_then(|eras| eras.values().next_back())
+                    .is_some_and(|latest| {
+                        latest.role >= WRITER && (*role < WRITER || latest.key != *key)
+                    });
+                if takes_writing_away && final_seq.is_none() {
+                    return Err(LogError::Invalid(
+                        "a grant that takes writing away carries the last operation accepted",
+                    ));
+                }
                 self.members.entry(*node).or_default().insert(
                     position,
                     Era {
-                        from: *from,
+                        index: position,
                         key: *key,
                         role: *role,
+                        cutoff: *final_seq,
                     },
                 );
             }
@@ -687,12 +777,16 @@ mod tests {
         log
     }
 
-    fn grant(log: &Log, node: u64, role: u8, from: i64, by: &Identity) -> Entry {
+    fn grant(log: &Log, node: u64, role: u8, by: &Identity) -> Entry {
+        grant_cut(log, node, role, None, by)
+    }
+
+    fn grant_cut(log: &Log, node: u64, role: u8, final_seq: Option<u64>, by: &Identity) -> Entry {
         log.draft(Body::Grant {
             node,
             role,
             key: admin(50 + node as u8).public(),
-            from,
+            final_seq,
         })
         .sign(by)
         .finish()
@@ -701,7 +795,7 @@ mod tests {
     #[test]
     fn an_entry_is_known_when_it_is_the_one_held_and_a_fork_when_it_is_not() {
         let mut log = started(2);
-        let first = grant(&log, 1, 2, 0, &admin(1));
+        let first = grant(&log, 1, 2, &admin(1));
         assert_eq!(log.append(&first), Ok(true));
         assert_eq!(log.append(&first), Ok(false), "taken in once");
 
@@ -710,7 +804,7 @@ mod tests {
                 node: 1,
                 role: 3,
                 key: admin(51).public(),
-                from: 0,
+                final_seq: None,
             })
             .sign(&admin(1))
             .finish();
@@ -726,7 +820,7 @@ mod tests {
     #[test]
     fn an_entry_that_skips_one_or_does_not_name_the_one_before_is_refused() {
         let mut log = started(1);
-        let mut skipping = grant(&log, 1, 2, 0, &admin(1));
+        let mut skipping = grant(&log, 1, 2, &admin(1));
         skipping.index = 5;
         assert_eq!(log.append(&skipping), Err(LogError::Gap { expected: 1 }));
 
@@ -739,7 +833,7 @@ mod tests {
     fn an_entry_needs_the_signatures_its_kind_needs() {
         let mut log = started(2);
         // A member's role needs one administrator.
-        let by_one = grant(&log, 1, 2, 0, &admin(2));
+        let by_one = grant(&log, 1, 2, &admin(2));
         assert_eq!(log.append(&by_one), Ok(true));
 
         // A change of administrators needs the quorum of two.
@@ -781,15 +875,15 @@ mod tests {
     #[test]
     fn a_signature_that_does_not_verify_refuses_the_entry() {
         let mut log = started(1);
-        let mut entry = grant(&log, 1, 2, 0, &admin(1));
+        let mut entry = grant(&log, 1, 2, &admin(1));
         entry.signatures[0].1[0] ^= 1;
         assert_eq!(log.append(&entry), Err(LogError::BadSignature));
-        let mut edited = grant(&log, 1, 2, 0, &admin(1));
+        let mut edited = grant(&log, 1, 2, &admin(1));
         edited.body = Body::Grant {
             node: 1,
             role: 3,
             key: admin(51).public(),
-            from: 0,
+            final_seq: None,
         };
         assert_eq!(log.append(&edited), Err(LogError::BadSignature));
     }
@@ -816,21 +910,64 @@ mod tests {
     }
 
     #[test]
-    fn what_a_grant_says_holds_from_its_time_and_the_latest_entry_wins() {
+    fn what_a_grant_says_holds_from_its_entry_and_an_operation_is_judged_by_the_one_it_names() {
         let mut log = started(1);
-        let on = grant(&log, 1, 2, 0, &admin(1));
+        let on = grant(&log, 1, 2, &admin(1));
         log.append(&on).unwrap();
-        let off = grant(&log, 1, 0, 1500, &admin(1));
+        let off = grant_cut(&log, 1, 0, Some(4), &admin(1));
         log.append(&off).unwrap();
-        assert_eq!(log.era_at(1, 1000).map(|era| era.role), Some(2));
-        assert_eq!(log.era_at(1, 1500).map(|era| era.role), Some(0));
+        // Entry 0 is the genesis, 1 the grant, 2 the removal.
         assert_eq!(
-            log.era_at(1, -1),
+            log.era_for(1, 0),
             None,
             "before the first grant is no member"
         );
-        assert_eq!(log.era_at(7, 0).map(|era| era.role), None);
+        assert_eq!(log.era_for(1, 1).map(|era| era.role), Some(2));
+        assert_eq!(log.era_for(1, 2).map(|era| era.role), Some(0));
+        assert_eq!(log.era_for(7, 2).map(|era| era.role), None);
         assert!(log.was_a_writer(&admin(51).public()));
+        let era = *log.era_for(1, 1).unwrap();
+        assert_eq!(
+            log.cutoff_after(1, &era),
+            Some(4),
+            "an operation under entry 1 past number 4 is refused, whatever entry it names"
+        );
+        assert_eq!(log.cutoff_after(1, log.era_for(1, 2).unwrap()), None);
+    }
+
+    #[test]
+    fn a_grant_that_takes_writing_away_says_where_the_devices_chain_ends() {
+        let mut log = started(1);
+        let on = grant(&log, 1, 2, &admin(1));
+        log.append(&on).unwrap();
+        let removal = grant(&log, 1, 0, &admin(1));
+        assert_eq!(
+            log.append(&removal),
+            Err(LogError::Invalid(
+                "a grant that takes writing away carries the last operation accepted"
+            ))
+        );
+        let new_key = log
+            .draft(Body::Grant {
+                node: 1,
+                role: 2,
+                key: admin(77).public(),
+                final_seq: None,
+            })
+            .sign(&admin(1))
+            .finish();
+        assert_eq!(
+            log.append(&new_key),
+            Err(LogError::Invalid(
+                "a grant that takes writing away carries the last operation accepted"
+            )),
+            "another key is the same: the old one's chain has to end somewhere"
+        );
+        // A reader may be made a writer, and a writer a writer of more, with no cutoff.
+        let reader = grant(&log, 2, 1, &admin(1));
+        log.append(&reader).unwrap();
+        let writer = grant(&log, 2, 2, &admin(1));
+        assert_eq!(log.append(&writer), Ok(true));
     }
 
     #[test]
@@ -867,7 +1004,13 @@ mod tests {
                 node: u64::MAX,
                 role: 3,
                 key: admin(51).public(),
-                from: -5,
+                final_seq: Some(u64::MAX),
+            },
+            Body::Grant {
+                node: 3,
+                role: 1,
+                key: admin(52).public(),
+                final_seq: None,
             },
             Body::Epoch { epoch: 7 },
             Body::Administrators {
