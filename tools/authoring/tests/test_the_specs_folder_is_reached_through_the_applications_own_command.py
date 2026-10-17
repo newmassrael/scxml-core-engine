@@ -725,6 +725,40 @@ class TheClientTakesTheOwnersRequestForAModel(unittest.TestCase):
         seen = self.request_of(request)
         self.assertEqual("failed", seen["state"])
         self.assertEqual("The text never says which cards open the door.", seen["note"])
+        # A client that says no kind is not guessed for.
+        self.assertEqual({"kind": "unclassified"}, seen["failure"])
+
+    def test_a_client_says_what_kind_of_failure_it_is_and_the_core_keeps_it(self):
+        request = self.begin()["generation"]["request"]
+
+        failed = call("specs_fail_generation", spec=self.spec, request=request,
+                      reason="The text contradicts itself about the door.",
+                      kind="specification", cause="contradiction")
+
+        self.assertFalse(failed.get("isError"), body(failed))
+        self.assertEqual({"kind": "specification", "cause": "contradiction"},
+                         self.request_of(request)["failure"])
+
+    def test_a_kind_the_core_does_not_have_is_refused_in_the_cores_words(self):
+        request = self.begin()["generation"]["request"]
+
+        refused = call("specs_fail_generation", spec=self.spec, request=request,
+                       reason="no", kind="my-fault")
+
+        self.assertTrue(refused.get("isError"))
+        self.assertIn("my-fault", body(refused))
+        # Nothing was written: the generation is still this client's to finish.
+        self.assertEqual("running", self.request_of(request)["state"])
+
+    def test_a_cause_without_a_kind_is_asked_for_a_kind(self):
+        request = self.begin()["generation"]["request"]
+
+        refused = call("specs_fail_generation", spec=self.spec, request=request,
+                       reason="no", cause="contradiction")
+
+        self.assertTrue(refused.get("isError"))
+        self.assertIn("kind", body(refused))
+        self.assertEqual("running", self.request_of(request)["state"])
 
     def test_the_decisions_the_draft_was_held_to_are_kept_beside_the_cores_check(self):
         specs.call_spec("save_answers", {

@@ -1816,7 +1816,8 @@ TOOLS = [
             "application and nothing is left running that is not. Use it when the "
             "specification does not let you write a model (a contradiction, a missing "
             "decision the owner has to make), not for a draft SCE refused: fix that and "
-            "finish again. Local servers only."
+            "finish again. Say what kind of failure it is with `kind`, so the application "
+            "can tell the owner whose to fix it is. Local servers only."
         ),
         "inputSchema": {
             "type": "object",
@@ -1827,6 +1828,15 @@ TOOLS = [
                     "The `request.id` specs_begin_generation returned.")},
                 "reason": {"type": "string", "description": (
                     "Why, in a sentence the owner reads.")},
+                "kind": {"type": "string", "description": (
+                    "What kind of failure: `specification` (the specification does not let a "
+                    "model be written), `installation` (a program the run needs is missing or "
+                    "crashed), `connection`, `time`, `size`, or `model`. The application "
+                    "refuses a word that is none of these. Left out, the failure is recorded "
+                    "as `unclassified`.")},
+                "cause": {"type": "string", "description": (
+                    "Optional, with `kind`: one lowercase word with hyphens for the cause "
+                    "(`output-limit`), not a sentence.")},
             },
         },
     },
@@ -4019,14 +4029,32 @@ def _specs_finish_generation_tool(args: dict, staging: _Staging) -> dict:
     return _text(json.dumps(answer, indent=2, ensure_ascii=False) + "\n")
 
 
+def _failure_given(args: dict) -> dict | None:
+    """How the caller says the generation failed: `kind` and `cause` as the core reads them, or
+    `None` when it said neither. Which words are kinds is the core's to say, so a word is passed on
+    unjudged and the core's refusal is what the caller reads; only the shape is held here."""
+    kind, cause = args.get("kind"), args.get("cause")
+    if kind is None and cause is None:
+        return None
+    if not isinstance(kind, str) or not kind.strip():
+        raise ToolArgumentError("'kind' has to be a word, as a string, when 'cause' is given")
+    failure = {"kind": kind.strip()}
+    if cause is not None:
+        if not isinstance(cause, str) or not cause.strip():
+            raise ToolArgumentError("'cause' has to be one word, as a string")
+        failure["cause"] = cause.strip()
+    return failure
+
+
 def _specs_fail_generation_tool(args: dict, staging: _Staging) -> dict:
     spec, request = _generation_of(args, "specs_fail_generation", staging)
     reason = args.get("reason")
     if not isinstance(reason, str) or not reason.strip():
         raise ToolArgumentError("'reason' has to be a sentence the owner reads, as a string")
+    failure = _failure_given(args)
     try:
         _generation_for(spec, request, None)
-        failed = specs.generations().fail(request, reason.strip())
+        failed = specs.generations().fail(request, reason.strip(), failure)
     except specs.SpecsError as exc:
         return _specs_refused(exc)
     return _text(json.dumps({"version": 1, "spec": spec, **failed}, indent=2,

@@ -463,10 +463,17 @@ class Generations:
         self._release(request)
         return done
 
-    def fail(self, request: str, reason: str) -> dict:
-        """Say the generation could not be done, and why, and let go of it."""
+    def fail(self, request: str, reason: str, failure: dict | None = None) -> dict:
+        """Say the generation could not be done, and why, and let go of it.
+
+        `failure` is how it failed (`{"kind": ..., "cause": ...}`), passed through unread: the
+        core holds the kinds and refuses one it does not have, in its own words. Left out, the
+        core records the failure as `unclassified` and nothing is guessed here."""
         generation = self.get(request)
-        failed = self._said(generation, "fail_request", {"reason": reason})
+        extra = {"reason": reason}
+        if failure is not None:
+            extra["failure"] = failure
+        failed = self._said(generation, "fail_request", extra)
         self._release(request)
         return failed
 

@@ -13,7 +13,7 @@ mod common;
 use std::sync::{Arc, Barrier};
 use std::thread;
 
-use sce_specs::requests::{Inputs, State};
+use sce_specs::requests::{Failure, Inputs, State};
 use sce_specs::{
     ConnectionId, ConnectionRef, ManualClock, Pin, Registration, Revision, SpecId, SpecStore,
     StoreError,
@@ -162,7 +162,14 @@ fn a_place_is_free_again_when_the_request_in_it_ends() {
 
     lanes
         .store
-        .fail_request(&first.spec, &first.request, "desktop", 1, "it could not")
+        .fail_request(
+            &first.spec,
+            &first.request,
+            "desktop",
+            1,
+            "it could not",
+            Failure::unclassified(),
+        )
         .unwrap();
 
     assert_eq!(lanes.claim(&second, "desktop", 1).unwrap(), State::Running);

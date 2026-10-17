@@ -15,7 +15,7 @@ use std::sync::{Arc, Barrier};
 use std::thread;
 
 use sce_specs::bundle::{BundleCheck, CheckedBy};
-use sce_specs::requests::{Inputs, State};
+use sce_specs::requests::{Failure, FailureKind, Inputs, State};
 use sce_specs::{
     CandidateWrite, ManualClock, Registration, RequestView, Revision, SpecId, SpecStore, StoreError,
 };
@@ -599,7 +599,14 @@ fn a_failure_is_kept_with_its_reason() {
 
     let failed = f
         .store
-        .fail_request(&f.id, &id, "adapter-a", 1, "the model was refused")
+        .fail_request(
+            &f.id,
+            &id,
+            "adapter-a",
+            1,
+            "the model was refused",
+            Failure::of(FailureKind::Model).because("draft-cut"),
+        )
         .unwrap();
 
     assert_eq!(failed.state, State::Failed);
@@ -607,6 +614,46 @@ fn a_failure_is_kept_with_its_reason() {
         failed.request.note.as_deref(),
         Some("the model was refused")
     );
+    assert_eq!(
+        failed.request.failure,
+        Some(Failure::of(FailureKind::Model).because("draft-cut"))
+    );
+    // What is kept is what is read back by a store opened on the folder afterwards.
+    let again = SpecStore::with_clock(f.store.root().to_path_buf(), Arc::clone(&f.clock));
+    let read = again.read_request(&f.id, &id).unwrap();
+    assert_eq!(
+        read.request.failure,
+        Some(Failure::of(FailureKind::Model).because("draft-cut"))
+    );
+}
+
+#[test]
+fn a_cause_that_is_a_sentence_is_refused_and_leaves_the_request_running() {
+    let f = fixture("request-failure-cause");
+    let id = f.register("press-1");
+    f.store
+        .claim_request(&f.id, &id, "adapter-a", None, false)
+        .unwrap();
+
+    let refused = f
+        .store
+        .fail_request(
+            &f.id,
+            &id,
+            "adapter-a",
+            1,
+            "the model was refused",
+            Failure::of(FailureKind::Model).because("it ran out of room"),
+        )
+        .unwrap_err();
+
+    assert!(
+        format!("{refused:?}").contains("bad-failure-cause"),
+        "{refused:?}"
+    );
+    let still = f.store.read_request(&f.id, &id).unwrap();
+    assert_eq!(still.state, State::Running);
+    assert_eq!(still.request.failure, None);
 }
 
 #[test]

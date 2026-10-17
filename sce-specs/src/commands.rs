@@ -27,7 +27,7 @@ use crate::clock::{utc_timestamp, Clock};
 use crate::error::StoreError;
 use crate::figures::{FigureRequest, RenderError};
 use crate::model_set::{Document, ModelError, ModelFiles};
-use crate::requests::{ConnectionRef, Inputs, Lease, Pin};
+use crate::requests::{ConnectionRef, Failure, FailureKind, Inputs, Lease, Pin};
 use crate::requirements::{Requirements, RequirementsError};
 use crate::review::{Product, Review, ReviewRequest, Verdict};
 use crate::revision::Revision;
@@ -668,6 +668,30 @@ struct FailRequest {
     holder: String,
     attempt: u32,
     reason: String,
+    /// How it failed. An executor that does not say is `unclassified`, as is every request that
+    /// failed before kinds existed; a kind that is none of the store's is refused.
+    #[serde(default)]
+    failure: Option<FailureWords>,
+}
+
+/// How a failure is said on the wire. It is not [`Failure`] itself: that is also what is kept, and
+/// a record read must not refuse a field a newer writer added, while a caller's word is held to
+/// what is read, as every other argument is.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FailureWords {
+    kind: FailureKind,
+    #[serde(default)]
+    cause: Option<String>,
+}
+
+impl From<FailureWords> for Failure {
+    fn from(words: FailureWords) -> Self {
+        Failure {
+            kind: words.kind,
+            cause: words.cause,
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -716,6 +740,7 @@ fn request_json(spec: &SpecId, view: &RequestView) -> Value {
         "fresh_ids": request.fresh_ids,
         "ended_at": request.ended_at,
         "note": request.note,
+        "failure": request.failure,
     })
 }
 
@@ -1888,9 +1913,11 @@ pub fn call_with<C: Clock>(
                 holder,
                 attempt,
                 reason,
+                failure,
             } = arguments(args)?;
             let id = spec_id(&id)?;
-            let view = store.fail_request(&id, &request, &holder, attempt, &reason)?;
+            let failure = failure.map_or_else(Failure::unclassified, Failure::from);
+            let view = store.fail_request(&id, &request, &holder, attempt, &reason, failure)?;
             Ok(json!({ "request": request_json(&id, &view) }))
         }
         "cancel_request" => {

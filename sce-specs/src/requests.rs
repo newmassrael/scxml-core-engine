@@ -330,6 +330,111 @@ pub struct Outcome {
     pub bundle: Revision,
 }
 
+/// What kind of thing a failed request met, as a word a screen branches on. It says whose to fix
+/// it is, which is what a person needs first; the words an executor gave (`Request::note`) say
+/// what happened.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum FailureKind {
+    /// The machine cannot do it: a program the run needs is missing or crashed, or the client
+    /// is not signed in. Nothing about the spec or the AI changes that.
+    Installation,
+    /// The AI's server cannot be reached, refused the key, or answered what is not an answer.
+    Connection,
+    /// The time the run was given ran out.
+    Time,
+    /// What the AI has to hold is longer than it can: the conversation, or the design.
+    Size,
+    /// The AI worked and did not write a design the checks accept.
+    Model,
+    /// The specification does not let a design be written, or the request is no longer about
+    /// the spec as it is.
+    Specification,
+    /// The executor said it failed and not what kind of failure. Every request that failed
+    /// before kinds existed reads as this, and so does one an executor ended without saying.
+    Unclassified,
+}
+
+impl FailureKind {
+    /// Every kind, in the order a person is offered them.
+    pub const ALL: [FailureKind; 7] = [
+        FailureKind::Installation,
+        FailureKind::Connection,
+        FailureKind::Time,
+        FailureKind::Size,
+        FailureKind::Model,
+        FailureKind::Specification,
+        FailureKind::Unclassified,
+    ];
+
+    /// The word a program branches on.
+    pub fn word(self) -> &'static str {
+        match self {
+            FailureKind::Installation => "installation",
+            FailureKind::Connection => "connection",
+            FailureKind::Time => "time",
+            FailureKind::Size => "size",
+            FailureKind::Model => "model",
+            FailureKind::Specification => "specification",
+            FailureKind::Unclassified => "unclassified",
+        }
+    }
+
+    /// The kind a word names, or `None` for a word that is none of them.
+    pub fn from_word(word: &str) -> Option<FailureKind> {
+        FailureKind::ALL
+            .into_iter()
+            .find(|kind| kind.word() == word)
+    }
+}
+
+const CAUSE_MAX: usize = 40;
+
+/// How a request failed: its kind, and the executor's own word for the cause when it has one.
+///
+/// The kinds are the store's, closed, so that every screen can branch on them. A cause is the
+/// executor's: a word such as `output-limit` or `reasoning-only` that the executor and the screens
+/// that know it agree on, so that a cause can be added without the store changing. A screen that
+/// does not know a cause says what the kind says.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Failure {
+    pub kind: FailureKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cause: Option<String>,
+}
+
+impl Failure {
+    /// A failure of `kind` with no cause worded.
+    pub fn of(kind: FailureKind) -> Self {
+        Failure { kind, cause: None }
+    }
+
+    /// The same failure, for `cause`.
+    pub fn because(self, cause: &str) -> Self {
+        Failure {
+            cause: Some(cause.to_string()),
+            ..self
+        }
+    }
+
+    /// A failure whose kind the executor did not say.
+    pub fn unclassified() -> Self {
+        Failure::of(FailureKind::Unclassified)
+    }
+
+    /// Whether `cause` is a word a cause may be: 1 to 40 lowercase letters, digits and hyphens,
+    /// none at either end. A cause is a word and not a sentence, so that it cannot carry what the
+    /// executor's words are for.
+    pub fn is_cause(cause: &str) -> bool {
+        (1..=CAUSE_MAX).contains(&cause.len())
+            && !cause.starts_with('-')
+            && !cause.ends_with('-')
+            && cause
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+    }
+}
+
 /// One generation request, as it is kept.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Request {
@@ -356,6 +461,10 @@ pub struct Request {
     /// Why it ended or was let go of, in a person's words.
     #[serde(default)]
     pub note: Option<String>,
+    /// How it failed, for a request that did; `None` for every other, and for one that failed
+    /// before failures were kinds, which reads as `unclassified` where it is shown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failure: Option<Failure>,
     /// What the executor has written for it so far; `None` until it writes something.
     #[serde(default)]
     pub candidate: Option<Candidate>,
@@ -403,6 +512,7 @@ impl Request {
             lease: None,
             ended_at: None,
             note: None,
+            failure: None,
             candidate: None,
             outcome: None,
             pin,
@@ -647,18 +757,23 @@ impl Request {
         }
     }
 
-    /// The executor says it could not, and why.
+    /// The executor says it could not, in what way (`failure`), and why in its own words
+    /// (`reason`).
     pub fn fail(
         &self,
         holder: &str,
         attempt: u32,
         reason: &str,
+        failure: Failure,
         now: &Moment,
     ) -> Result<Request, Refusal> {
         let answer = self.ask(Event::Fail { holder, attempt });
         match answer.verdict {
             Verdict::Ok if self.state == answer.state => Ok(self.clone()),
-            Verdict::Ok => Ok(self.ended(answer.state, Some(reason.to_string()), now)),
+            Verdict::Ok => Ok(Request {
+                failure: Some(failure),
+                ..self.ended(answer.state, Some(reason.to_string()), now)
+            }),
             refused => Err(self.refusal(refused)),
         }
     }
@@ -852,7 +967,13 @@ mod tests {
             Err(fenced.clone())
         );
         assert_eq!(
-            resumed.fail("adapter-a", 1, "late", &at(T0 + 101)),
+            resumed.fail(
+                "adapter-a",
+                1,
+                "late",
+                Failure::unclassified(),
+                &at(T0 + 101)
+            ),
             Err(fenced)
         );
         // The same holder under the old attempt number is fenced too: the number is the fence.
@@ -870,7 +991,7 @@ mod tests {
             held.heartbeat("adapter-b", 1, 60, &at(T0 + 1)),
             held.heartbeat("adapter-a", 2, 60, &at(T0 + 1)),
             held.publish("adapter-b", 1, &revision("bundle"), &at(T0 + 1)),
-            held.fail("adapter-a", 7, "no", &at(T0 + 1)),
+            held.fail("adapter-a", 7, "no", Failure::unclassified(), &at(T0 + 1)),
         ] {
             assert_eq!(
                 refused,
@@ -922,17 +1043,84 @@ mod tests {
     #[test]
     fn a_failure_says_why_and_is_said_once() {
         let failed = running()
-            .fail("adapter-a", 1, "the model was refused", &at(T0 + 5))
+            .fail(
+                "adapter-a",
+                1,
+                "the model was refused",
+                Failure::of(FailureKind::Model).because("reasoning-only"),
+                &at(T0 + 5),
+            )
             .unwrap();
 
         assert_eq!(failed.state, State::Failed);
         assert_eq!(failed.note.as_deref(), Some("the model was refused"));
         assert_eq!(
+            failed.failure,
+            Some(Failure {
+                kind: FailureKind::Model,
+                cause: Some("reasoning-only".to_string())
+            })
+        );
+        // Said again, in other words and of another kind, it is the same failure.
+        assert_eq!(
             failed
-                .fail("adapter-a", 1, "other words", &at(T0 + 6))
+                .fail(
+                    "adapter-a",
+                    1,
+                    "other words",
+                    Failure::of(FailureKind::Time),
+                    &at(T0 + 6)
+                )
                 .unwrap(),
             failed
         );
+    }
+
+    #[test]
+    fn only_a_request_that_failed_has_a_failure() {
+        let open = running();
+        assert_eq!(open.failure, None);
+        for ended in [
+            open.cancel(&at(T0 + 1)).unwrap(),
+            open.supersede("moved", &at(T0 + 1)).unwrap(),
+            open.publish("adapter-a", 1, &revision("bundle"), &at(T0 + 1))
+                .unwrap(),
+            open.normalized(&at(T0 + 100)).unwrap(),
+        ] {
+            assert_eq!(ended.failure, None, "{:?}", ended.state);
+        }
+    }
+
+    #[test]
+    fn a_kind_is_a_word_and_every_word_is_a_kind() {
+        for kind in FailureKind::ALL {
+            assert_eq!(FailureKind::from_word(kind.word()), Some(kind));
+            let said = serde_json::to_value(kind).unwrap();
+            assert_eq!(said, serde_json::json!(kind.word()));
+        }
+        assert_eq!(FailureKind::from_word("the model"), None);
+        assert_eq!(FailureKind::from_word(""), None);
+        // A request written before kinds existed has no failure, and reads and writes as it did.
+        let old = serde_json::to_value(queued()).unwrap();
+        assert!(old.get("failure").is_none(), "{old}");
+    }
+
+    #[test]
+    fn a_cause_is_a_word_and_not_a_sentence() {
+        for good in ["output-limit", "reasoning-only", "a", "draft-cut2"] {
+            assert!(Failure::is_cause(good), "{good}");
+        }
+        for bad in [
+            "",
+            "-lead",
+            "trail-",
+            "Upper",
+            "two words",
+            "dot.ted",
+            &"x".repeat(41),
+        ] {
+            assert!(!Failure::is_cause(bad), "{bad}");
+        }
     }
 
     #[test]

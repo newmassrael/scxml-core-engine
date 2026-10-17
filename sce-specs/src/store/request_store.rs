@@ -41,8 +41,8 @@ use crate::clock::{utc_timestamp, Clock};
 use crate::error::StoreError;
 use crate::lock;
 use crate::requests::{
-    lease_is_valid, ConnectionId, ConnectionRef, Inputs, Moment, Pin, Refusal, Request, State,
-    LEASE_DEFAULT_SECONDS,
+    lease_is_valid, ConnectionId, ConnectionRef, Failure, Inputs, Moment, Pin, Refusal, Request,
+    State, LEASE_DEFAULT_SECONDS,
 };
 use crate::revision::Revision;
 
@@ -860,7 +860,7 @@ impl<C: Clock> SpecStore<C> {
         })
     }
 
-    /// The executor says it could not, and why.
+    /// The executor says it could not, in what way, and why in its own words.
     pub fn fail_request(
         &self,
         id: &SpecId,
@@ -868,10 +868,21 @@ impl<C: Clock> SpecStore<C> {
         holder: &str,
         attempt: u32,
         reason: &str,
+        failure: Failure,
     ) -> Result<RequestView, StoreError> {
         checked_holder(holder)?;
+        if let Some(cause) = failure.cause.as_deref() {
+            if !Failure::is_cause(cause) {
+                return Err(bad(
+                    "bad-failure-cause",
+                    "a cause is 1 to 40 lowercase letters, digits and hyphens, none at either end: \
+                     a word, and the sentence is the reason",
+                    json!(cause),
+                ));
+            }
+        }
         self.change_request(id, request, |current, now| {
-            current.fail(holder, attempt, reason, now)
+            current.fail(holder, attempt, reason, failure, now)
         })
     }
 

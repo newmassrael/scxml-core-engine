@@ -1,0 +1,88 @@
+# Mutation cases for how a request that failed says what kind of failure it was.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/a_failed_request_keeps_the_kind_it_failed_with.cases`.
+#
+# A failed request keeps a kind (whose it is to fix) and a cause word beside the executor's own
+# words, and a screen branches on them. What can go wrong is that the kind is dropped on its way to
+# the record, that an executor that said none is given one, that a cause that is a sentence is let
+# in, that the answer a screen reads leaves it out, or that the word a command is given is read more
+# loosely than every other argument.
+#
+# Anchors are literal slices of the source, so a reformat can move one out from under a case. That
+# is reported as INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-specs --lib --test requests --test request_commands
+mutation_targets sce-specs/src/requests.rs sce-specs/src/store/request_store.rs sce-specs/src/commands.rs
+mutation_oracles sce-specs/tests/requests.rs sce-specs/tests/request_commands.rs
+
+# ── The record ─────────────────────────────────────────────────────
+
+mutation_case "a request that failed does not keep how it failed" <<'PY'
+edit("sce-specs/src/requests.rs",
+     '                failure: Some(failure),\n                ..self.ended(answer.state, Some(reason.to_string()), now)',
+     '                failure: None,\n                ..self.ended(answer.state, Some(reason.to_string()), now)')
+PY
+
+mutation_case "a word that is a kind is not found by its word" <<'PY'
+edit("sce-specs/src/requests.rs",
+     '            .find(|kind| kind.word() == word)',
+     '            .find(|_| true)')
+PY
+
+mutation_case "a cause may be empty" <<'PY'
+edit("sce-specs/src/requests.rs",
+     '        (1..=CAUSE_MAX).contains(&cause.len())\n            && !cause.starts_with',
+     '        (0..=CAUSE_MAX).contains(&cause.len())\n            && !cause.starts_with')
+PY
+
+mutation_case "a cause may be as long as a sentence" <<'PY'
+edit("sce-specs/src/requests.rs",
+     '        (1..=CAUSE_MAX).contains(&cause.len())\n            && !cause.starts_with',
+     '        (1..=CAUSE_MAX * 8).contains(&cause.len())\n            && !cause.starts_with')
+PY
+
+mutation_case "a cause may begin with a hyphen" <<'PY'
+edit("sce-specs/src/requests.rs",
+     "            && !cause.starts_with('-')\n            && !cause.ends_with('-')",
+     "            && !cause.ends_with('-')")
+PY
+
+mutation_case "a cause may carry capitals and spaces" <<'PY'
+edit("sce-specs/src/requests.rs",
+     "            && cause\n                .bytes()\n                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')",
+     "            && cause.bytes().all(|b| b.is_ascii())")
+PY
+
+# ── The store ──────────────────────────────────────────────────────
+
+mutation_case "the store lets a cause that is a sentence in" <<'PY'
+edit("sce-specs/src/store/request_store.rs",
+     '            if !Failure::is_cause(cause) {',
+     '            if false && !Failure::is_cause(cause) {')
+PY
+
+# ── The command ────────────────────────────────────────────────────
+
+mutation_case "an executor that said no kind is given one" <<'PY'
+edit("sce-specs/src/commands.rs",
+     '            let failure = failure.map_or_else(Failure::unclassified, Failure::from);',
+     '            let failure = failure.map_or_else(|| Failure::of(FailureKind::Model), Failure::from);')
+PY
+
+mutation_case "the answer a screen reads leaves the failure out" <<'PY'
+edit("sce-specs/src/commands.rs",
+     '        "note": request.note,\n        "failure": request.failure,\n',
+     '        "note": request.note,\n')
+PY
+
+mutation_case "the word a caller gives for a failure may carry more than is read" <<'PY'
+edit("sce-specs/src/commands.rs",
+     '#[serde(deny_unknown_fields)]\nstruct FailureWords {',
+     'struct FailureWords {')
+PY
+
+mutation_case "the cause a caller gives is dropped" <<'PY'
+edit("sce-specs/src/commands.rs",
+     '            kind: words.kind,\n            cause: words.cause,',
+     '            kind: words.kind,\n            cause: None,')
+PY

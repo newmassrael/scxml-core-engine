@@ -517,6 +517,72 @@ fn a_failure_is_said_with_its_reason() {
 
     assert_eq!(failed["request"]["state"], json!("failed"));
     assert_eq!(failed["request"]["note"], json!("SCE refused the model"));
+    // An executor that says no kind has not been guessed for.
+    assert_eq!(
+        failed["request"]["failure"],
+        json!({"kind": "unclassified"})
+    );
+}
+
+#[test]
+fn a_failure_says_its_kind_and_cause_and_a_read_gives_them_back() {
+    let f = fixture("request-commands-fail-kind");
+    let id = f.request_id("press-1");
+    f.claim(&id, "adapter-a");
+
+    let failed = f.run(
+        "fail_request",
+        json!({"id": f.spec, "request": id, "holder": "adapter-a", "attempt": 1,
+               "reason": "the server stopped it at its limit",
+               "failure": {"kind": "model", "cause": "output-limit"}}),
+    );
+
+    let expected = json!({"kind": "model", "cause": "output-limit"});
+    assert_eq!(failed["request"]["failure"], expected);
+    let read = f.run("read_request", json!({"id": f.spec, "request": id}));
+    assert_eq!(read["request"]["failure"], expected);
+}
+
+#[test]
+fn a_request_that_did_not_fail_says_no_failure() {
+    let f = fixture("request-commands-no-failure");
+    let id = f.request_id("press-1");
+
+    let queued = f.run("read_request", json!({"id": f.spec, "request": id}));
+    assert_eq!(queued["request"]["failure"], Value::Null);
+
+    f.run("cancel_request", json!({"id": f.spec, "request": id}));
+    let cancelled = f.run("read_request", json!({"id": f.spec, "request": id}));
+    assert_eq!(cancelled["request"]["state"], json!("cancelled"));
+    assert_eq!(cancelled["request"]["failure"], Value::Null);
+}
+
+#[test]
+fn a_kind_the_store_does_not_have_and_a_cause_that_is_not_a_word_are_refused() {
+    let f = fixture("request-commands-fail-refused");
+    let id = f.request_id("press-1");
+    f.claim(&id, "adapter-a");
+
+    for failure in [
+        json!({"kind": "my-fault"}),
+        json!({"kind": "model", "cause": "ran out of room"}),
+        json!({"cause": "output-limit"}),
+        json!({"kind": "model", "extra": 1}),
+    ] {
+        let refused = f.refuse(
+            "fail_request",
+            json!({"id": f.spec, "request": id, "holder": "adapter-a", "attempt": 1,
+                   "reason": "no", "failure": failure}),
+        );
+        let said = format!("{refused:?}");
+        assert!(
+            said.contains("failure") || said.contains("kind") || said.contains("cause"),
+            "{failure}: {said}"
+        );
+    }
+    // Nothing was written by any of them: the request is still the executor's.
+    let read = f.run("read_request", json!({"id": f.spec, "request": id}));
+    assert_eq!(read["request"]["state"], json!("running"));
 }
 
 #[test]
