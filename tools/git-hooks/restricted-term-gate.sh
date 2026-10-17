@@ -251,6 +251,11 @@ restricted_term_gate_staged() {
     local path attr value
     while IFS= read -r -d '' path && IFS= read -r -d '' attr && IFS= read -r -d '' value; do
         [[ "$value" == "unspecified" || "$value" == "unset" ]] && continue
+        # A gitlink (a submodule pointer) is checked out as an empty directory, has no blob to
+        # write, and holds no content this commit publishes: its own repository does. An
+        # attribute that names it (a catch-all `* text=auto`) must not make the write below
+        # fail, because under `set -e`, as a hook sources this file, that ends the gate.
+        [[ -d "$root/$path" ]] && continue
         git cat-file blob ":$path" > "$root/$path" 2>/dev/null || rm -f "$root/$path"
     done < <(printf '%s\0' "${staged[@]}" | git check-attr -z --cached --stdin filter text eol)
 

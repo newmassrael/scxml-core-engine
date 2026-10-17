@@ -81,10 +81,16 @@ impl Sandbox {
         self.git(&["add", "--", rel]);
     }
 
-    /// Source the gate and call it in the sandbox, the way `pre-commit` does.
+    /// Source the gate and call it in the sandbox, the way `pre-commit` does: in a shell with
+    /// `set -euo pipefail`, where a command of the gate that fails and is not tested ends it. It
+    /// was once sourced without, and a gate that only worked unless its shell was strict passed
+    /// here and refused the commit that mattered.
     fn run_gate(&self, terms: &Path, path_prefix: Option<&Path>) -> Output {
         let gate = common::repository::root().join("tools/git-hooks/restricted-term-gate.sh");
-        let script = format!("source '{}'\nrestricted_term_gate_staged\n", gate.display());
+        let script = format!(
+            "set -euo pipefail\nsource '{}'\nrestricted_term_gate_staged\n",
+            gate.display()
+        );
         let mut cmd = Command::new("bash");
         cmd.arg("-c")
             .arg(script)
@@ -312,7 +318,7 @@ impl Sandbox {
         let file = self.dir.join("COMMIT_EDITMSG");
         std::fs::write(&file, message).expect("write the message");
         let script = format!(
-            "source '{}'\nrestricted_term_gate_message '{}'\n",
+            "set -euo pipefail\nsource '{}'\nrestricted_term_gate_message '{}'\n",
             gate.display(),
             file.display()
         );
@@ -325,6 +331,41 @@ impl Sandbox {
             .output()
             .expect("bash runs the gate")
     }
+}
+
+/// A submodule pointer is staged by the commit that moves a pin, and a repository that sets
+/// `* text=auto` has an attribute that names it. The gate checked it out as an empty directory,
+/// failed to write a blob over it, and under `set -e` ended there: the workbench could not commit
+/// a pin until this was held (2026-10-17).
+#[test]
+fn a_staged_submodule_pointer_is_not_a_blob_to_scan_and_does_not_end_the_gate() {
+    let sb = Sandbox::new("gitlink");
+    let terms = sb.terms(TERMS);
+    sb.write(".gitattributes", b"* text=auto\n");
+    sb.git(&["add", ".gitattributes"]);
+    sb.git(&[
+        "update-index",
+        "--add",
+        "--cacheinfo",
+        "160000,0123456789012345678901234567890123456789,vendored",
+    ]);
+    sb.stage("beside.txt", b"nothing restricted\n");
+
+    let clean = sb.run_gate(&terms, None);
+    assert!(
+        clean.status.success(),
+        "a pointer beside clean files must pass:\n{}",
+        String::from_utf8_lossy(&clean.stderr)
+    );
+
+    sb.stage("beside.txt", b"a SCE_PROBE_TERM_8 line\n");
+    let dirty = sb.run_gate(&terms, None);
+    assert_eq!(
+        hit_lines(&dirty),
+        vec!["  beside.txt: line(s) 1 — term #0"],
+        "the files beside a pointer are still scanned:\n{}",
+        String::from_utf8_lossy(&dirty.stderr)
+    );
 }
 
 #[test]
