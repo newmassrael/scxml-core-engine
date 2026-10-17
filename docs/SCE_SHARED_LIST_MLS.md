@@ -69,10 +69,39 @@ opens.
 `Device::to_bytes` is the device's MLS state (the group, its secrets, the private halves of its key
 packages), secret, kept where the host keeps its person's secret; `Device::from_bytes` reads it back.
 
-## 6. What is not here
+## 6. The other lanes: the C ABI
 
-- The other lanes. The group is Rust; the lanes that are not reach it through a C ABI, which is the
-  next piece of this stage.
+There is one implementation of the group, in Rust, and the lanes that are not Rust call it through
+a C ABI (`backends/rust/mls-capi`, `sce-mls-capi`, header `include/sce_mls.h`, a shared and a static
+library): a second implementation in each language would be a second place for the same flaw. A lane
+holds a device (`SceMlsDevice`) and tells it **the membership log as data** (`SceMlsLog`: the members
+with their keys, the commit hash the log names for each epoch, the epoch the log is in). The lane's own
+verification of the log is what that data must be; the group applies a commit only when the data names
+it and refuses a roster that is not the data's, as it does for a Rust host that gives it a `Trust`
+(`LogView`, which `Trust` and `Roster` implement).
+
+Every function returns 0 or a status (`SCE_MLS_ERR_*`) and says why in `sce_mls_last_error()`; the
+buffers the library returns are given back with `sce_mls_buf_free`; a null pointer is a status, a
+pointer is read for exactly the length it comes with, and a panic is caught at the boundary. This is the
+one crate of the group that holds `unsafe` code. The header is written by hand and a test keeps it equal
+to the library's exports and its status numbers.
+
+MLS is randomised, so a known-answer vector cannot be computed from fixed inputs: it is a **recorded
+scenario** (`backends/rust/mls/tests/fixtures/join_and_remove.json`). One device is kept as it was
+before it joined (its state holds the private half of a key package), with the messages it is then
+given: the Welcome and the commit that made its epoch, the commit that adds a third member, the commit
+that removes it, each with the log as data and the keys it must derive (and a section's). A lane loads
+the device, joins, applies, and the keys are the recorded ones until the device is removed, after which
+it derives none. **Rust, C, Python (ctypes) and Go (cgo) replay the same file** and agree
+(`a_c_abi_is_what_the_lanes_call_and_replays_the_recorded_scenario`). The scenario is recorded again
+with `SCE_MLS_SCENARIO=write`; the leaves last ten years so that it does not go stale on a clock. The
+Kotlin and C++ lanes use the same header (JNA or the Panama API; a plain include) and have no replay
+yet.
+
+## 7. What is not here
+
+- The Kotlin and C++ replays of the scenario, and a membership log in any lane but Rust: a lane that
+  is not Rust builds the log data from its own verification, and none of them has one.
 - The machine's documents do not know of sections: a section's key is derived, and no write is yet
   in a section.
 - External joins, proposals by members other than the committer, and application messages are not

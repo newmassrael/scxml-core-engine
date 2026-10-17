@@ -2916,6 +2916,15 @@ name = "sce-link-runtime"
 version = "0.1.0"
 
 [[package]]
+name = "sce-mls-capi"
+version = "0.1.0"
+dependencies = [
+ "sce-rust-mls",
+ "sce-rust-trust",
+ "serde_json",
+]
+
+[[package]]
 name = "sce-portable-bytes"
 version = "0.1.0"
 dependencies = [

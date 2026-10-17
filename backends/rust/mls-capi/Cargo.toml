@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+
+[package]
+name = "sce-mls-capi"
+version.workspace = true
+edition.workspace = true
+rust-version = "1.91"
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "The C ABI of the group key agreement of a shared list: what the lanes that are not Rust call, with the membership log passed as data"
+publish = false
+
+# One implementation of MLS (ADR 0034, section 6) lives in `sce-rust-mls`; a lane in another language
+# reaches it here, through `include/sce_mls.h`, and does not implement it again. This is the one crate
+# of the group's that holds `unsafe` code, at the boundary: every pointer a caller gives is checked for
+# null and read for the length it is given with, and a panic never crosses it.
+
+[lib]
+name = "sce_mls_capi"
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+sce-rust-mls = { path = "../mls" }
+sce-rust-trust = { path = "../trust" }
+
+[dev-dependencies]
+serde_json = "1"

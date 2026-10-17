@@ -223,6 +223,7 @@ scan_exclusions = [
     # The group key agreement of a shared list (`sce-rust-mls`): it implements no clause of the
     # Recommendation and carries no `§` citation.
     "backends/rust/mls/",
+    "backends/rust/mls-capi/",
     "sce-build/examples/",
     "sce-build/tests/",
     "tests/",

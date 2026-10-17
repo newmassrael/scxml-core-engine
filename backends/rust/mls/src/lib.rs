@@ -55,6 +55,80 @@ const CREDENTIAL_PREFIX: &str = "sce-trust/mls/1";
 /// The key of one epoch (or of one section of it), as `sce_rust_trust::secrecy` takes it.
 pub type EpochKey = [u8; 32];
 
+/// What the group needs to know of the membership log: who the members are now and with which key,
+/// which commit the log names for each epoch, and which epoch the log is in. A host that holds the
+/// log in [`Trust`] gives it as it is; a lane that does not (the C ABI) gives it as data
+/// ([`Roster`]).
+pub trait LogView {
+    /// The nodes the log makes members now (a role of 1 or more), each with its Ed25519 key.
+    fn members(&self) -> Vec<(u64, [u8; 32])>;
+    /// The SHA-256 of the commit message the log names as the one that begins `epoch`.
+    fn commit_of(&self, epoch: u32) -> Option<Hash>;
+    /// The latest epoch the log begins.
+    fn epoch(&self) -> u32;
+}
+
+impl LogView for Trust {
+    fn members(&self) -> Vec<(u64, [u8; 32])> {
+        self.current_members()
+            .into_iter()
+            .map(|(node, key)| (node, key.to_bytes()))
+            .collect()
+    }
+
+    fn commit_of(&self, epoch: u32) -> Option<Hash> {
+        Trust::commit_of(self, epoch)
+    }
+
+    fn epoch(&self) -> u32 {
+        Trust::epoch(self)
+    }
+}
+
+/// The log as data: what a lane that does not hold the membership log itself tells the group of
+/// it. The lane is responsible for it being what the log verified to.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Roster {
+    members: BTreeMap<u64, [u8; 32]>,
+    commits: BTreeMap<u32, Hash>,
+    epoch: u32,
+}
+
+impl Roster {
+    pub fn new(epoch: u32) -> Self {
+        Self {
+            members: BTreeMap::new(),
+            commits: BTreeMap::new(),
+            epoch,
+        }
+    }
+
+    pub fn add_member(&mut self, node: u64, key: [u8; 32]) {
+        self.members.insert(node, key);
+    }
+
+    pub fn name_commit(&mut self, epoch: u32, commit: Hash) {
+        self.commits.insert(epoch, commit);
+    }
+}
+
+impl LogView for Roster {
+    fn members(&self) -> Vec<(u64, [u8; 32])> {
+        self.members
+            .iter()
+            .map(|(node, key)| (*node, *key))
+            .collect()
+    }
+
+    fn commit_of(&self, epoch: u32) -> Option<Hash> {
+        self.commits.get(&epoch).copied()
+    }
+
+    fn epoch(&self) -> u32 {
+        self.epoch
+    }
+}
+
 /// Why an MLS operation was not done.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MlsError {
@@ -266,13 +340,9 @@ impl Device {
     }
 
     /// Whether the group's members are the log's: the same nodes, each with the key the log gave it.
-    pub fn verify_roster(&self, trust: &Trust) -> Result<(), MlsError> {
+    pub fn verify_roster(&self, log: &impl LogView) -> Result<(), MlsError> {
         let have = self.members()?;
-        let want: BTreeMap<u64, [u8; 32]> = trust
-            .current_members()
-            .into_iter()
-            .map(|(node, key)| (node, key.to_bytes()))
-            .collect();
+        let want: BTreeMap<u64, [u8; 32]> = log.members().into_iter().collect();
         if have == want {
             return Ok(());
         }
@@ -291,12 +361,12 @@ impl Device {
     pub fn stage_add(
         &mut self,
         key_packages: &[Vec<u8>],
-        trust: &Trust,
+        log: &impl LogView,
     ) -> Result<Pending, MlsError> {
         if self.pending.is_some() {
             return Err(MlsError::PendingCommit);
         }
-        let members = trust.current_members();
+        let members = log.members();
         let mut packages = Vec::new();
         for bytes in key_packages {
             let package = KeyPackageIn::tls_deserialize_exact(bytes)
@@ -306,9 +376,9 @@ impl Device {
             let leaf = package.leaf_node();
             let node = node_of(&self.list, leaf.credential().serialized_content())
                 .ok_or_else(|| MlsError::NotInLog("a key package of another list".into()))?;
-            let listed = members.iter().any(|(held, key)| {
-                *held == node && key.to_bytes() == leaf.signature_key().as_slice()
-            });
+            let listed = members
+                .iter()
+                .any(|(held, key)| *held == node && key == leaf.signature_key().as_slice());
             if !listed {
                 return Err(MlsError::NotInLog(format!(
                     "node {node} is not a member of the log with this key"
@@ -331,11 +401,11 @@ impl Device {
 
     /// The commit that removes the devices of `nodes` from the group, made here and not merged. A
     /// node must already be off the log's roster: the entry that takes it off comes first.
-    pub fn stage_remove(&mut self, nodes: &[u64], trust: &Trust) -> Result<Pending, MlsError> {
+    pub fn stage_remove(&mut self, nodes: &[u64], log: &impl LogView) -> Result<Pending, MlsError> {
         if self.pending.is_some() {
             return Err(MlsError::PendingCommit);
         }
-        let members = trust.current_members();
+        let members = log.members();
         if let Some((node, _)) = members.iter().find(|(node, _)| nodes.contains(node)) {
             return Err(MlsError::StillAMember(*node));
         }
@@ -374,11 +444,11 @@ impl Device {
 
     /// Merge the commit made here, now that the log names it. The group's roster must then be the
     /// log's, and when it is not the commit is undone.
-    pub fn merge_pending(&mut self, trust: &Trust) -> Result<u64, MlsError> {
+    pub fn merge_pending(&mut self, log: &impl LogView) -> Result<u64, MlsError> {
         let pending = self.pending.clone().ok_or(MlsError::NoPendingCommit)?;
         let named = u32::try_from(pending.epoch)
             .ok()
-            .and_then(|epoch| trust.commit_of(epoch));
+            .and_then(|epoch| log.commit_of(epoch));
         if named != Some(pending.commit_hash) {
             return Err(MlsError::CommitNotNamed {
                 epoch: pending.epoch,
@@ -389,7 +459,7 @@ impl Device {
             let group = self.group.as_mut().ok_or(MlsError::NoGroup)?;
             group.merge_pending_commit(&self.provider).map_err(lib)
         };
-        let checked = merged.and_then(|()| self.verify_roster(trust));
+        let checked = merged.and_then(|()| self.verify_roster(log));
         if let Err(error) = checked {
             self.restore_snapshot(snapshot);
             return Err(error);
@@ -411,11 +481,11 @@ impl Device {
     /// Apply a commit another device made, when the log names it as the one that begins the next
     /// epoch. A commit the log did not name, one that fails, and one after which the group's roster
     /// is not the log's leave this device where it was.
-    pub fn apply_commit(&mut self, commit: &[u8], trust: &Trust) -> Result<Applied, MlsError> {
+    pub fn apply_commit(&mut self, commit: &[u8], log: &impl LogView) -> Result<Applied, MlsError> {
         let next = self.epoch()? + 1;
         let named = u32::try_from(next)
             .ok()
-            .and_then(|epoch| trust.commit_of(epoch));
+            .and_then(|epoch| log.commit_of(epoch));
         if named != Some(commit_hash(commit)) {
             return Err(MlsError::CommitNotNamed { epoch: next });
         }
@@ -424,8 +494,8 @@ impl Device {
         let outcome = match applied {
             Ok(()) if !self.is_active() => Ok(Applied::Removed),
             Ok(()) => {
-                if next == u64::from(trust.epoch()) {
-                    self.verify_roster(trust).map(|()| Applied::Epoch(next))
+                if next == u64::from(log.epoch()) {
+                    self.verify_roster(log).map(|()| Applied::Epoch(next))
                 } else {
                     Ok(Applied::Epoch(next))
                 }
@@ -460,19 +530,29 @@ impl Device {
     ///
     /// A Welcome that is refused leaves the device as it was, its key package still unused: the
     /// group a refused Welcome made is not kept.
-    pub fn join(&mut self, welcome: &[u8], commit: &[u8], trust: &Trust) -> Result<u64, MlsError> {
+    pub fn join(
+        &mut self,
+        welcome: &[u8],
+        commit: &[u8],
+        log: &impl LogView,
+    ) -> Result<u64, MlsError> {
         if self.group.is_some() {
             return Err(MlsError::InGroup);
         }
         let snapshot = self.snapshot();
-        let joined = self.try_join(welcome, commit, trust);
+        let joined = self.try_join(welcome, commit, log);
         if joined.is_err() {
             self.restore_snapshot(snapshot);
         }
         joined
     }
 
-    fn try_join(&mut self, welcome: &[u8], commit: &[u8], trust: &Trust) -> Result<u64, MlsError> {
+    fn try_join(
+        &mut self,
+        welcome: &[u8],
+        commit: &[u8],
+        log: &impl LogView,
+    ) -> Result<u64, MlsError> {
         let MlsMessageBodyIn::Welcome(welcome) = MlsMessageIn::tls_deserialize_exact(welcome)
             .map_err(lib)?
             .extract()
@@ -485,7 +565,7 @@ impl Device {
         let epoch = group.epoch().as_u64();
         let named = u32::try_from(epoch)
             .ok()
-            .and_then(|epoch| trust.commit_of(epoch));
+            .and_then(|epoch| log.commit_of(epoch));
         if named != Some(commit_hash(commit)) {
             return Err(MlsError::CommitNotNamed { epoch });
         }
@@ -499,8 +579,8 @@ impl Device {
             return Err(MlsError::WelcomeNotTheLogs);
         }
         self.group = Some(group);
-        if epoch == u64::from(trust.epoch()) {
-            self.verify_roster(trust)?;
+        if epoch == u64::from(log.epoch()) {
+            self.verify_roster(log)?;
         }
         Ok(epoch)
     }

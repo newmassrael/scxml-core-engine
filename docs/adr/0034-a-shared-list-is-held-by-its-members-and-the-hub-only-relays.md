@@ -278,7 +278,8 @@ given, and each can be revisited by a later ADR that names the reason.
 Stage 1 and the membership log of stage 2 have landed. Stage 2 as first landed removed a member
 by a time (`from`), which is not what section 4 says; it was corrected with stage 3, where the
 number of an operation that section 4 needs exists. Stages 3, 4 and 5 have landed with the
-refinements below, and stage 6 (the group key, `docs/SCE_SHARED_LIST_MLS.md`) in Rust. This ADR is Accepted with stage 3, since the log and the chains are what make
+refinements below, and stage 6 (the group key, `docs/SCE_SHARED_LIST_MLS.md`) in Rust, with a C ABI
+that C, Python and Go replay. This ADR is Accepted with stage 3, since the log and the chains are what make
 the rest binding.
 
 ## Revisions made in building it
@@ -369,3 +370,13 @@ the rest binding.
   helpers are test-only) as sorted length-prefixed rows and read back strictly.
 - **Sections** have a derived key (`Device::section_key`, an exporter label of its own); no write is
   yet assigned to a section, since that is a decision about the documents, not about keys.
+- **The C ABI takes the log as data.** The lanes have no membership log, so the group asks a
+  `LogView` (members and keys, the commit the log names for each epoch, the epoch) that `Trust` and a
+  plain `Roster` both give; a lane tells the group what its own verification of the log gave. The ABI
+  crate (`sce-mls-capi`) is the one place with `unsafe`, at the boundary, and its header is kept equal
+  to its exports by a test.
+- **A known-answer vector of MLS is a recorded scenario**, not a computation, because the protocol is
+  randomised. One device is stored as it was before it joined with the Welcome and the commits it is
+  then given; Rust, C, Python and Go replay the same file and derive the same keys, and none after the
+  removal. Kotlin and C++ share the header and have no replay yet, which is the part of "every lane"
+  this stage did not do.
