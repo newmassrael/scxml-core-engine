@@ -94,6 +94,35 @@ sealed class EngineCall {
     ) : EngineCall()
 }
 
+/** What an [EventAdmission] answers for an event that arrived. */
+sealed class Admit {
+    /** The event may reach the machine: as it arrived when [data] is `null`, and with [data] in place of what arrived otherwise. */
+    data class Allow(val data: String? = null) : Admit()
+
+    /** The event may not reach the machine; [reason] is told to the host. */
+    data class Refuse(val reason: String) : Admit()
+}
+
+/**
+ * What the host asks of an event that arrived before the machine is told of it: the link it came
+ * on (which the host authenticated), its name, and its data as the sender wrote it. It is where a
+ * rule that needs the event's content is kept, which a machine of the statically typed data model
+ * cannot keep for itself — it reads no `_event` but the payload, so it cannot tell who sent an event
+ * or check a signature the payload carries. The Kotlin twin of the Rust `Admission` (the name is
+ * taken here by the router's own admission of an envelope).
+ */
+fun interface EventAdmission {
+    fun admit(peer: String, event: String, data: String): Admit
+}
+
+/**
+ * What the host writes into an event as it leaves, after the machine sent it and before it is put
+ * in an envelope: the sending half of an [EventAdmission]. `null` when the event leaves as it is.
+ */
+fun interface Sealer {
+    fun seal(target: String, event: String, data: String): String?
+}
+
 /** One machine's Mesh endpoint on a host. */
 class Endpoint(
     private val router: Router,
@@ -105,11 +134,43 @@ class Endpoint(
     private val retries = mutableListOf<Retry>()
     private val toEngine = mutableListOf<EngineCall>()
     private val hostErrors = mutableListOf<RouterError>()
+    private val forbidden = mutableMapOf<String, Set<String>>()
+    private var admission: EventAdmission? = null
+    private var sealer: Sealer? = null
+
+    /**
+     * The events the link [peer] may not deliver to the machine: what arrives on it under one of
+     * these names is dropped before the machine is told, and the host is told instead
+     * ([RouterError.EventForbidden]). An empty collection lifts it.
+     *
+     * The link is what the host authenticated when it accepted the connection, and the envelope is
+     * whatever the peer wrote, its `source` among it: so what a link may say is decided here, where
+     * the link is known, and not by a machine that is told who sent an event by the event.
+     */
+    fun forbidEventsFrom(peer: String, events: Collection<String>) {
+        if (events.isEmpty()) forbidden.remove(peer) else forbidden[peer] = events.toSet()
+    }
+
+    /**
+     * Put [admission] in front of the machine: every event that arrives and is not already forbidden
+     * by its link is shown to it, and one it does not admit is dropped and told to the host as
+     * [RouterError.EventNotAdmitted]. Replaces the one set before.
+     */
+    fun setAdmission(admission: EventAdmission) {
+        this.admission = admission
+    }
+
+    /** Put [sealer] behind the machine: what it sends leaves with the data the sealer answers with. Replaces the one set before. */
+    fun setSealer(sealer: Sealer) {
+        this.sealer = sealer
+    }
 
     /** Perform a `<send type="sce:mesh">` the engine handed its host. */
     fun send(request: StateMachineEngine.HostSendRequest) {
         val id = environment.envelopeId()
-        apply(router.send(request, id, environment.nowMs()))
+        val sealed = sealer?.seal(request.target, request.eventName, request.eventData)
+        val leaving = if (sealed != null) request.copy(eventData = sealed) else request
+        apply(router.send(leaving, id, environment.nowMs()))
     }
 
     /**
@@ -143,7 +204,30 @@ class Endpoint(
 
     /** Envelope [bytes] the transport received from [peer]. */
     fun receive(peer: String, bytes: ByteArray) {
-        apply(router.receive(peer, bytes, environment.nowMs()))
+        when (val routed = router.receive(peer, bytes, environment.nowMs())) {
+            is Routed.Done -> apply(Routed.Done(screen(peer, routed.effects)))
+            is Routed.Refused -> apply(routed)
+        }
+    }
+
+    /** What a link may deliver, and what the host admits, applied to the events a receive released. */
+    private fun screen(peer: String, effects: List<Effect>): List<Effect> {
+        val refused = forbidden[peer]
+        return effects.mapNotNull { effect ->
+            if (effect !is Effect.Deliver) return@mapNotNull effect
+            if (refused?.contains(effect.event) == true) {
+                hostErrors += RouterError.EventForbidden(peer, effect.event)
+                return@mapNotNull null
+            }
+            when (val verdict = admission?.admit(peer, effect.event, effect.data)) {
+                null -> effect
+                is Admit.Allow -> if (verdict.data != null) effect.copy(data = verdict.data) else effect
+                is Admit.Refuse -> {
+                    hostErrors += RouterError.EventNotAdmitted(peer, effect.event, verdict.reason)
+                    null
+                }
+            }
+        }
     }
 
     /** [peer]'s transport became ready. */

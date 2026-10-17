@@ -119,6 +119,12 @@ sealed class RouterError {
 
     /** A reserved param's value is not what the build writes there. */
     data class BadParam(val name: String, val value: String) : RouterError()
+
+    /** An event arrived on a link that may not deliver it, and was dropped before the machine was told ([Endpoint.forbidEventsFrom]). */
+    data class EventForbidden(val peer: String, val event: String) : RouterError()
+
+    /** An event arrived that the host's [EventAdmission] did not admit, and was dropped before the machine was told; [reason] is its word for it. */
+    data class EventNotAdmitted(val peer: String, val event: String, val reason: String) : RouterError()
 }
 
 /** A router call's answer: the effects to perform, or why there are none. */

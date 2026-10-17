@@ -127,5 +127,8 @@ host keeps secrets.
   (a hub that does not run the machine).
 - A reader receives everything that is replicated: a read-only role stops writes, not reading.
   Content a member may not read goes in another list, or under a key that member is not given.
-- The Kotlin Mesh does not have the `Admission` and `Sealer` seams yet.
+- The Kotlin Mesh has the same three seams (`forbidEventsFrom`, `EventAdmission`, `Sealer`) and
+  no implementation behind them: the signatures, certificates and sealing of `sce-rust-trust`
+  are Rust, so a Kotlin host that must check what arrives implements `EventAdmission` itself
+  and has to agree with the byte formats of `message.rs`, `certificate.rs` and `secrecy.rs`.
 - Login itself (who a person is, and the token a host issues for it) is the application's.

@@ -100,6 +100,65 @@ class EndpointTest {
     }
 
     @Test
+    fun aLinkMayBeForbiddenEvents() {
+        val ecu = Host("ecu", "hmi", null)
+        ecu.endpoint.send(send("go", "s-1"))
+        val go = ecu.transport.sent.removeLast().second
+        ecu.endpoint.send(send("stop", "s-2"))
+        val stop = ecu.transport.sent.removeLast().second
+
+        val hmi = Host("hmi", "ecu", null)
+        hmi.endpoint.forbidEventsFrom("ecu", listOf("go"))
+        hmi.endpoint.receive("ecu", go)
+        hmi.endpoint.receive("ecu", stop)
+        assertEquals(listOf("stop"), hmi.endpoint.takeEvents().map { it.name })
+        assertEquals(listOf<RouterError>(RouterError.EventForbidden("ecu", "go")), hmi.endpoint.takeHostErrors())
+
+        hmi.endpoint.forbidEventsFrom("ecu", emptyList())
+        val again = Host("hmi", "ecu", null)
+        again.endpoint.receive("ecu", go)
+        assertEquals(1, again.endpoint.takeEvents().size)
+        assertTrue(again.endpoint.takeHostErrors().isEmpty())
+    }
+
+    /**
+     * What decides an event's admission is shown the link, the name and the data the sender wrote;
+     * one it does not admit never reaches the machine and the host is told why, one it admits goes
+     * through with what the sealer wrote taken out again.
+     */
+    @Test
+    fun anAdmissionDecidesWhatReachesTheMachine() {
+        val ecu = Host("ecu", "hmi", null)
+        ecu.endpoint.setSealer { target, _, data ->
+            assertEquals("#hmi", target)
+            "$data+seal"
+        }
+        ecu.endpoint.send(send("go", "s-1"))
+        val go = ecu.transport.sent.removeLast().second
+        ecu.endpoint.send(send("stop", "s-2"))
+        val stop = ecu.transport.sent.removeLast().second
+
+        val hmi = Host("hmi", "ecu", null)
+        hmi.endpoint.setAdmission { peer, event, data ->
+            assertEquals("ecu", peer)
+            if (event == "go") {
+                Admit.Allow(data.removeSuffix("+seal"))
+            } else {
+                Admit.Refuse("$event is not for this link")
+            }
+        }
+        hmi.endpoint.receive("ecu", go)
+        hmi.endpoint.receive("ecu", stop)
+        val events = hmi.endpoint.takeEvents()
+        assertEquals(listOf("go"), events.map { it.name })
+        assertEquals("""{"a":1}""", events.single().metadata.data)
+        assertEquals(
+            listOf<RouterError>(RouterError.EventNotAdmitted("ecu", "stop", "stop is not for this link")),
+            hmi.endpoint.takeHostErrors(),
+        )
+    }
+
+    @Test
     fun aSendWithoutAnIdArrivesWithoutOne() {
         val ecu = Host("ecu", "hmi", null)
         val hmi = Host("hmi", "ecu", null)
