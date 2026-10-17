@@ -43,6 +43,11 @@ project(":sce-kotlin-mesh").projectDir = file("backends/kotlin/mesh")
 // compile the 390 machines of `:sce-kotlin-tests`.
 include(":sce-kotlin-world")
 project(":sce-kotlin-world").projectDir = file("backends/kotlin/world")
+// The Kotlin replay of the group key agreement's C ABI (backends/rust/mls-capi): a JVM program
+// that loads the Rust library through JNA and replays the recorded scenario. Its own module so
+// a test of the Rust crate builds it without compiling anything else.
+include(":sce-kotlin-mls-replay")
+project(":sce-kotlin-mls-replay").projectDir = file("backends/kotlin/mls-replay")
 // The reference host of the standard host features (docs/SCE_HOST_FEATURES.md).
 include(":sce-kotlin-host-features")
 project(":sce-kotlin-host-features").projectDir = file("backends/kotlin/host-features")

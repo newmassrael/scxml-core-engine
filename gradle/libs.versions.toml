@@ -17,8 +17,12 @@ okhttp = "5.5.0"
 # The queue kind's third verification layer for Kotlin (SCE Protocol-Synthesis
 # RFC §synth-5-P): a model checker over the interleavings of the Kotlin queues.
 lincheck = "3.7"
+# The Kotlin replay of the group key agreement's C ABI (backends/kotlin/mls-replay) loads the Rust
+# library through JNA: a JVM 17 has no foreign function API, and JNA is what an Android app uses too.
+jna = "5.14.0"
 
 [libraries]
+jna = { module = "net.java.dev.jna:jna", version.ref = "jna" }
 lincheck = { module = "org.jetbrains.lincheck:lincheck", version.ref = "lincheck" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }

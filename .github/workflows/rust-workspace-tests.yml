@@ -367,6 +367,13 @@ jobs:
     - name: Build the Kotlin step server
       run: ./gradlew :sce-kotlin-world:installDist --console=plain
 
+    # The Kotlin replay of the group key agreement's C ABI
+    # (`backends/rust/mls-capi/tests/a_c_abi_is_what_the_lanes_call_and_replays_the_recorded_scenario.rs`):
+    # a JVM program that loads the Rust library through JNA. Without this build the Kotlin
+    # lane finds no distribution and, with `SCE_REQUIRE_TOOLS` set below, fails.
+    - name: Build the Kotlin replay of the group key agreement
+      run: ./gradlew :sce-kotlin-mls-replay:installDist --console=plain
+
     # Delegates to the gate runner rather than restating the command, so
     # the suite has one spelling for both callers. The gate also starts the
     # W3C BasicHTTP fixture server on :8080 that test_201 and the 5xx series

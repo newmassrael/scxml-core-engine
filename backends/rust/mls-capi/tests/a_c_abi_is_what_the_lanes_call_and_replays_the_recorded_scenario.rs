@@ -4,9 +4,10 @@
 // that the header declares exactly what the library exports; that the boundary refuses a null pointer, a
 // device with no group, and a message that is not one, with a status and a text, and never crosses with
 // a panic; and that the recorded scenario of the group (backends/rust/mls/tests/fixtures) is replayed
-// through the library by C, by Python (ctypes) and by Go (cgo) and each derives the recorded keys for
-// every epoch, until the device is removed and derives none. A lane whose tool is missing says so and
-// passes, unless `SCE_REQUIRE_TOOLS` is set, which is a lane's claim that it ran.
+// through the library by C, by C++, by Python (ctypes), by Go (cgo) and by Kotlin (JNA) and each
+// derives the recorded keys for every epoch, until the device is removed and derives none. A lane whose
+// tool is missing says so and passes, unless `SCE_REQUIRE_TOOLS` is set, which is a lane's claim that it
+// ran. The Kotlin lane needs the JVM program built (`./gradlew :sce-kotlin-mls-replay:installDist`).
 
 use std::ffi::{c_char, CStr};
 use std::path::{Path, PathBuf};
@@ -395,6 +396,75 @@ fn the_scenario_replays_from_c() {
     );
     replay_in(Command::new(&program).arg(&script), "the C replay");
     std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn the_scenario_replays_from_cpp() {
+    if !have("c++", "--version") {
+        return;
+    }
+    let library = library();
+    let dir = scratch("cpp");
+    let scenario: Value =
+        serde_json::from_str(&std::fs::read_to_string(scenario_path()).unwrap()).unwrap();
+    let script = dir.join("scenario.txt");
+    std::fs::write(&script, script_of(&scenario)).unwrap();
+    let program = dir.join("replay");
+    let compiled = Command::new("c++")
+        .arg("-std=c++17")
+        .arg("-Wall")
+        .arg("-Wextra")
+        .arg("-Werror")
+        .arg("-o")
+        .arg(&program)
+        .arg(Path::new(MANIFEST).join("tests/cpp/replay.cpp"))
+        .arg("-I")
+        .arg(Path::new(MANIFEST).join("include"))
+        .arg("-L")
+        .arg(library.parent().unwrap())
+        .arg("-lsce_mls_capi")
+        .arg(format!(
+            "-Wl,-rpath,{}",
+            library.parent().unwrap().display()
+        ))
+        .output()
+        .unwrap();
+    assert!(
+        compiled.status.success(),
+        "{}",
+        String::from_utf8_lossy(&compiled.stderr)
+    );
+    replay_in(Command::new(&program).arg(&script), "the C++ replay");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn the_scenario_replays_from_kotlin() {
+    if !have("java", "-version") {
+        return;
+    }
+    let lib =
+        Path::new(MANIFEST).join("../../kotlin/mls-replay/build/install/sce-kotlin-mls-replay/lib");
+    let built = std::fs::read_dir(&lib).is_ok_and(|entries| entries.count() > 0);
+    if !built {
+        assert!(
+            std::env::var_os("SCE_REQUIRE_TOOLS").is_none(),
+            "SCE_REQUIRE_TOOLS is set and {} is not built (`./gradlew :sce-kotlin-mls-replay:installDist`)",
+            lib.display()
+        );
+        eprintln!("skipped: {} is not built", lib.display());
+        return;
+    }
+    let library = library();
+    replay_in(
+        Command::new("java")
+            .arg("-cp")
+            .arg(lib.join("*"))
+            .arg("com.sce.mls.ReplayKt")
+            .arg(&library)
+            .arg(scenario_path()),
+        "the Kotlin replay",
+    );
 }
 
 #[test]
