@@ -278,7 +278,7 @@ given, and each can be revisited by a later ADR that names the reason.
 Stage 1 and the membership log of stage 2 have landed. Stage 2 as first landed removed a member
 by a time (`from`), which is not what section 4 says; it was corrected with stage 3, where the
 number of an operation that section 4 needs exists. Stages 3, 4 and 5 have landed with the
-refinements below. This ADR is Accepted with stage 3, since the log and the chains are what make
+refinements below, and stage 6 (the group key, `docs/SCE_SHARED_LIST_MLS.md`) in Rust. This ADR is Accepted with stage 3, since the log and the chains are what make
 the rest binding.
 
 ## Revisions made in building it
@@ -347,3 +347,25 @@ the rest binding.
   holds a member's keys; nothing in the relay changes.
 - **Not built:** compaction (a relay never forgets a record), hiding stamps from the relay, TLS, and
   rules for any list but the to-do list.
+- **The log names the MLS commit** (stage 6). Section 6 said commits are ordered by the relay as MLS
+  expects of a delivery service and that the ordering is the log's; what makes that binding is that
+  the administrators sign it: `Body::MlsEpoch { epoch, commit }` carries the SHA-256 of the commit
+  message, the group's epoch is the log's epoch, and a host applies no commit the log did not name.
+  A list's epochs are all MLS's or all a drawn key's. The static scheme of stage 1 stays for a list
+  that does not want a group, which is a deliberate second scheme, not a fallback.
+- **The roster is checked against the log after every commit**, and a commit that leaves it otherwise
+  is undone from a snapshot of the storage. A leaf's credential names the list and the node, and its
+  key is the one the log gave the device.
+- **A Welcome is tied to the list by the commit's confirmation tag.** Handshake messages are
+  plaintext, so the commit the log names carries the tag the group made from a Welcome must hold; a
+  Welcome of another group with the same members is refused, and the device is left as it was.
+- **Key packages and leaves last ten years** instead of MLS's three months: the log, not a clock,
+  says who is a member, and an invitation may wait.
+- **A key a host does not hold yet is not a refusal.** An operation sealed under an epoch whose key
+  the host lacks is `TakeError::NoKey`, which a courier parks and tries again each round; for an epoch
+  before a member joined (no history by default) it stays parked. This is the one place a courier
+  holds operations back, and it is bounded.
+- **MLS state is a device's own secret** (`Device::to_bytes`), serialised here (the library's own
+  helpers are test-only) as sorted length-prefixed rows and read back strictly.
+- **Sections** have a derived key (`Device::section_key`, an exporter label of its own); no write is
+  yet assigned to a section, since that is a decision about the documents, not about keys.

@@ -25,6 +25,7 @@ members = [
     "backends/rust/world",
     "backends/rust/trust",
     "backends/rust/relay",
+    "backends/rust/mls",
     "sce-revision",
     "sce-specs",
 ]

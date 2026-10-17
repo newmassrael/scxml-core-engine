@@ -184,6 +184,13 @@ holds no key of (it says which; after it is given the key, a `todo.resync` bring
 
 ### Keys
 
+Where the key of an epoch comes from is one of two things, and a list has one of them: a key an
+administrator draws and gives to the members (this section and the next), or the key of an MLS
+group the membership log names (`docs/SCE_SHARED_LIST_MLS.md`, `Body::MlsEpoch`), which gives
+forward secrecy and a new key that a removed member cannot derive on every change. Either way a
+host is given the key with `Trust::set_epoch_key`, and an operation sealed under an epoch whose key
+a host does not hold is not refused: it is `TakeError::NoKey`, which a courier parks and tries again.
+
 `Trust::set_epoch_key` takes a key the host drew from its own randomness; the crate draws none.
 A key is given to a member with `Trust::grant_key(epoch, member_key)`: sealed under what the
 giver's signing key and the member's agree on (X25519 over the same keys), so it travels over

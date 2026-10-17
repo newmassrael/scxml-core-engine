@@ -21,6 +21,7 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 use sce_rust_mesh::endpoint::Sealer;
+use sce_rust_trust::encoding;
 use sce_rust_trust::membership::{Entry, LogError};
 use sce_rust_trust::{TakeError, Trust};
 
@@ -98,6 +99,9 @@ pub struct Round {
     /// What the host or the relay refused and why: each is a record that is not taken, and the
     /// rest of the round goes on.
     pub refused: Vec<String>,
+    /// The key packages, commits and Welcomes of the list's MLS group that were read, in the order
+    /// the relay holds them: for the host's MLS device to take in.
+    pub messages: Vec<Record>,
     /// The round stopped before the end of what the relay holds: a record names an entry of the
     /// log the host does not have, or the device may not read yet. A later round goes on from there.
     pub stalled: bool,
@@ -112,9 +116,15 @@ pub struct Courier<L: Link> {
     roster_len: u64,
     /// Whether the machine is a hub's, which is told who ever wrote.
     hub: bool,
+    /// Operations that were read and that this host holds no key of the epoch of: tried again each
+    /// round, since the key may come.
+    parked: Vec<(String, String)>,
 }
 
 const FEED_BATCH: u32 = 200;
+
+/// The most operations a courier parks for want of a key.
+const MAX_PARKED: usize = 100_000;
 
 impl<L: Link> Courier<L> {
     pub fn new(trust: Trust, link: L) -> Self {
@@ -124,6 +134,26 @@ impl<L: Link> Courier<L> {
             cursor: 0,
             roster_len: 0,
             hub: false,
+            parked: Vec::new(),
+        }
+    }
+
+    /// How many operations this courier holds back for want of the key of their epoch.
+    pub fn parked(&self) -> usize {
+        self.parked.len()
+    }
+
+    /// Try again the operations that were held back for want of a key, and tell the machine those
+    /// that open now.
+    fn retry_parked(&mut self, round: &mut Round) {
+        let waiting = std::mem::take(&mut self.parked);
+        for (event, data) in waiting {
+            match self.trust.take_operation(&event, &data) {
+                Ok(taken) => round.events.push((event, taken.told)),
+                Err(TakeError::NoKey(_)) => self.parked.push((event, data)),
+                Err(TakeError::NotReached(_)) => self.parked.push((event, data)),
+                Err(TakeError::Refused(reason)) => round.refused.push(reason),
+            }
         }
     }
 
@@ -166,6 +196,7 @@ impl<L: Link> Courier<L> {
     fn round(&mut self, redeliver: bool) -> Result<Round, CourierError> {
         let mut round = Round::default();
         self.exchange_log(&mut round)?;
+        self.retry_parked(&mut round);
         if self.push(&mut round)? {
             self.pull(redeliver, &mut round)?;
         }
@@ -365,6 +396,14 @@ impl<L: Link> Courier<L> {
                     Taken::Done
                 }
                 Err(TakeError::NotReached(_)) => Taken::Behind,
+                Err(TakeError::NoKey(_)) => {
+                    // The key may come (the group's commit reaches this host) or never (an epoch
+                    // before it joined): park the operation, retry it each round, and go on.
+                    if self.parked.len() < MAX_PARKED {
+                        self.parked.push((event.clone(), data.clone()));
+                    }
+                    Taken::Done
+                }
                 Err(TakeError::Refused(reason)) => {
                     round.refused.push(reason);
                     Taken::Done
@@ -388,6 +427,48 @@ impl<L: Link> Courier<L> {
                     Taken::Done
                 }
             },
+            // The group's messages are for the host's MLS device to take in, in the order the log
+            // names the epochs; the courier hands them over as it read them.
+            Record::KeyPackage { .. } | Record::Commit { .. } | Record::Welcome { .. } => {
+                round.messages.push(record.clone());
+                Taken::Done
+            }
+        }
+    }
+
+    /// Leave a key package of this host's device for an administrator to add it with.
+    pub fn publish_key_package(&mut self, package: &[u8]) -> Result<(), CourierError> {
+        self.publish(Request::PublishKeyPackage {
+            data: encoding::encode(package),
+        })
+    }
+
+    /// Give the relay the commit that begins `epoch` (the log names its hash).
+    pub fn publish_commit(&mut self, epoch: u32, commit: &[u8]) -> Result<(), CourierError> {
+        self.publish(Request::PublishCommit {
+            epoch,
+            data: encoding::encode(commit),
+        })
+    }
+
+    /// Give the relay the Welcome for the device of `node` that the commit of `epoch` added.
+    pub fn publish_welcome(
+        &mut self,
+        epoch: u32,
+        node: u64,
+        welcome: &[u8],
+    ) -> Result<(), CourierError> {
+        self.publish(Request::PublishWelcome {
+            epoch,
+            node,
+            data: encoding::encode(welcome),
+        })
+    }
+
+    fn publish(&mut self, request: Request) -> Result<(), CourierError> {
+        match self.expect(request)? {
+            Response::Accepted { .. } => Ok(()),
+            other => Err(CourierError::Unexpected(format!("{other:?}"))),
         }
     }
 

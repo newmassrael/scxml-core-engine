@@ -151,6 +151,8 @@ scan_exclusions = [
     "backends/rust/trust/",
     # The relay of a shared list (`sce-rust-relay`): no citation of any ledger.
     "backends/rust/relay/",
+    # The group key agreement of a shared list (`sce-rust-mls`): no citation of any ledger.
+    "backends/rust/mls/",
     "sce-build/examples/",
     "tests/forge/expected/",
     # The works folder (`sce-specs/`), which the workbench (a repository of its own) links

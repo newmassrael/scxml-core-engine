@@ -26,6 +26,15 @@ pub enum Record {
     Operation { event: String, data: String },
     /// A member's checkpoint (`Checkpoint::to_json`).
     Checkpoint(String),
+    /// An MLS key package a device published for an administrator to add it with (`data` in the URL
+    /// alphabet). The relay does not read it.
+    KeyPackage { node: u64, data: String },
+    /// The MLS commit that begins `epoch`, which the membership log names by its hash: the relay
+    /// keeps only the one the log names.
+    Commit { epoch: u32, data: String },
+    /// The Welcome for the device of `node` added by the commit of `epoch`. It is sealed to that
+    /// device's key package, and the relay does not read it.
+    Welcome { epoch: u32, node: u64, data: String },
 }
 
 impl Record {
@@ -34,11 +43,20 @@ impl Record {
             Record::Entry(entry) => json!({"k": "entry", "d": entry}),
             Record::Operation { event, data } => json!({"k": "op", "e": event, "d": data}),
             Record::Checkpoint(checkpoint) => json!({"k": "cp", "d": checkpoint}),
+            Record::KeyPackage { node, data } => {
+                json!({"k": "kp", "n": node.to_string(), "d": data})
+            }
+            Record::Commit { epoch, data } => json!({"k": "commit", "p": epoch, "d": data}),
+            Record::Welcome { epoch, node, data } => {
+                json!({"k": "welcome", "p": epoch, "n": node.to_string(), "d": data})
+            }
         }
     }
 
     pub fn from_value(value: &Value) -> Option<Self> {
         let text = |name: &str| Some(value.get(name)?.as_str()?.to_string());
+        let node = || text("n")?.parse().ok();
+        let epoch = || u32::try_from(value.get("p")?.as_u64()?).ok();
         match value.get("k")?.as_str()? {
             "entry" => Some(Record::Entry(text("d")?)),
             "op" => Some(Record::Operation {
@@ -46,6 +64,19 @@ impl Record {
                 data: text("d")?,
             }),
             "cp" => Some(Record::Checkpoint(text("d")?)),
+            "kp" => Some(Record::KeyPackage {
+                node: node()?,
+                data: text("d")?,
+            }),
+            "commit" => Some(Record::Commit {
+                epoch: epoch()?,
+                data: text("d")?,
+            }),
+            "welcome" => Some(Record::Welcome {
+                epoch: epoch()?,
+                node: node()?,
+                data: text("d")?,
+            }),
             _ => None,
         }
     }
@@ -63,6 +94,13 @@ pub enum Request {
     Submit { event: String, data: String },
     /// A member's checkpoint.
     Checkpoint { checkpoint: String },
+    /// A key package of the session's own device, for an administrator to add it with. Any session
+    /// may publish its own: a device is invited before the log grants it anything.
+    PublishKeyPackage { data: String },
+    /// The MLS commit that begins `epoch`: taken when the log names its hash for that epoch.
+    PublishCommit { epoch: u32, data: String },
+    /// The Welcome for the device of `node` that the commit of `epoch` added.
+    PublishWelcome { epoch: u32, node: u64, data: String },
     /// Everything the relay holds after the first `cursor` records, in the order it arrived, at
     /// most `limit` of them.
     Feed { cursor: u64, limit: u32 },
@@ -77,7 +115,12 @@ impl Request {
     pub fn is_write(&self) -> bool {
         matches!(
             self,
-            Request::Append { .. } | Request::Submit { .. } | Request::Checkpoint { .. }
+            Request::Append { .. }
+                | Request::Submit { .. }
+                | Request::Checkpoint { .. }
+                | Request::PublishKeyPackage { .. }
+                | Request::PublishCommit { .. }
+                | Request::PublishWelcome { .. }
         )
     }
 
@@ -91,6 +134,16 @@ impl Request {
             Request::Checkpoint { checkpoint } => {
                 json!({"op": "checkpoint", "checkpoint": checkpoint})
             }
+            Request::PublishKeyPackage { data } => json!({"op": "key_package", "data": data}),
+            Request::PublishCommit { epoch, data } => {
+                json!({"op": "commit", "epoch": epoch, "data": data})
+            }
+            Request::PublishWelcome { epoch, node, data } => json!({
+                "op": "welcome",
+                "epoch": epoch,
+                "node": node.to_string(),
+                "data": data,
+            }),
             Request::Feed { cursor, limit } => {
                 json!({"op": "feed", "cursor": cursor.to_string(), "limit": limit})
             }
@@ -123,6 +176,13 @@ impl Request {
                 .parse()
                 .map_err(|_| format!("`{name}` is not a number"))
         };
+        let epoch = || -> Result<u32, String> {
+            value
+                .get("epoch")
+                .and_then(Value::as_u64)
+                .and_then(|epoch| u32::try_from(epoch).ok())
+                .ok_or_else(|| "it has no `epoch` number".to_string())
+        };
         match value.get("op").and_then(Value::as_str) {
             Some("entries") => Ok(Request::Entries {
                 from: number("from")?,
@@ -136,6 +196,18 @@ impl Request {
             }),
             Some("checkpoint") => Ok(Request::Checkpoint {
                 checkpoint: text_of("checkpoint")?,
+            }),
+            Some("key_package") => Ok(Request::PublishKeyPackage {
+                data: text_of("data")?,
+            }),
+            Some("commit") => Ok(Request::PublishCommit {
+                epoch: epoch()?,
+                data: text_of("data")?,
+            }),
+            Some("welcome") => Ok(Request::PublishWelcome {
+                epoch: epoch()?,
+                node: number("node")?,
+                data: text_of("data")?,
             }),
             Some("feed") => Ok(Request::Feed {
                 cursor: number("cursor")?,
@@ -409,6 +481,18 @@ mod tests {
             Request::Checkpoint {
                 checkpoint: "{}".to_string(),
             },
+            Request::PublishKeyPackage {
+                data: "AAAA".to_string(),
+            },
+            Request::PublishCommit {
+                epoch: 4,
+                data: "BBBB".to_string(),
+            },
+            Request::PublishWelcome {
+                epoch: 4,
+                node: 9,
+                data: "CCCC".to_string(),
+            },
             Request::Feed {
                 cursor: u64::MAX,
                 limit: 50,
@@ -444,6 +528,19 @@ mod tests {
                         data: "d".to_string(),
                     },
                     Record::Checkpoint("c".to_string()),
+                    Record::KeyPackage {
+                        node: 3,
+                        data: "k".to_string(),
+                    },
+                    Record::Commit {
+                        epoch: 2,
+                        data: "m".to_string(),
+                    },
+                    Record::Welcome {
+                        epoch: 2,
+                        node: 3,
+                        data: "w".to_string(),
+                    },
                 ],
                 next: 3,
                 more: true,

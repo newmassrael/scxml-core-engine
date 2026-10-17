@@ -94,6 +94,12 @@ pub enum Body {
     /// The next epoch of the list's content key begins. Hosts seal under it from here on and a
     /// host that has no key of it does not write until it is given one.
     Epoch { epoch: u32 },
+    /// The next epoch begins, and its key is the MLS group's (RFC 9420): `commit` is the SHA-256
+    /// of the commit message that moves the group to the epoch. The administrators sign that the
+    /// commit is the one, so that the order of the group's epochs is the log's and a relay that
+    /// reorders or makes up a commit is found out by the chain; a host applies no commit this log
+    /// did not name. A list's epochs are all of this kind or all of the kind above, not both.
+    MlsEpoch { epoch: u32, commit: Hash },
     /// Administrators are added and removed, and the quorum becomes `quorum`.
     Administrators {
         add: Vec<PublicKey>,
@@ -108,7 +114,10 @@ impl Body {
     /// How many administrators' signatures the entry needs, the log's quorum being `quorum`.
     fn required(&self, quorum: u8) -> usize {
         match self {
-            Body::Genesis { .. } | Body::Grant { .. } | Body::Epoch { .. } => 1,
+            Body::Genesis { .. }
+            | Body::Grant { .. }
+            | Body::Epoch { .. }
+            | Body::MlsEpoch { .. } => 1,
             Body::Administrators { .. } | Body::Profile(_) => usize::from(quorum),
         }
     }
@@ -145,6 +154,11 @@ impl Body {
             Body::Epoch { epoch } => {
                 part(out, "epoch");
                 part(out, &epoch.to_string());
+            }
+            Body::MlsEpoch { epoch, commit } => {
+                part(out, "mls-epoch");
+                part(out, &epoch.to_string());
+                part(out, &encoding::encode(commit));
             }
             Body::Administrators {
                 add,
@@ -234,6 +248,11 @@ impl Entry {
                 "final_seq": final_seq.map(|seq| seq.to_string()),
             }),
             Body::Epoch { epoch } => serde_json::json!({"kind": "epoch", "epoch": epoch}),
+            Body::MlsEpoch { epoch, commit } => serde_json::json!({
+                "kind": "mls_epoch",
+                "epoch": epoch,
+                "commit": encoding::encode(commit),
+            }),
             Body::Administrators {
                 add,
                 remove,
@@ -295,6 +314,12 @@ impl Entry {
             },
             "epoch" => Body::Epoch {
                 epoch: u32::try_from(body.get("epoch")?.as_u64()?).ok()?,
+            },
+            "mls_epoch" => Body::MlsEpoch {
+                epoch: u32::try_from(body.get("epoch")?.as_u64()?).ok()?,
+                commit: encoding::decode(&text_of(body, "commit")?)?
+                    .try_into()
+                    .ok()?,
             },
             "administrators" => Body::Administrators {
                 add: keys(body, "add")?,
@@ -409,6 +434,10 @@ pub struct Log {
     /// Each node's grants, by the position of the entry that made them.
     members: BTreeMap<u64, BTreeMap<u64, Era>>,
     epoch: u32,
+    /// The commit each epoch of an MLS list was begun by, and whether the list's epochs are MLS's
+    /// (`None` until the first epoch).
+    mls: Option<bool>,
+    commits: BTreeMap<u32, Hash>,
 }
 
 impl Log {
@@ -435,6 +464,8 @@ impl Log {
             profile: Profile::Untrusted,
             members: BTreeMap::new(),
             epoch: 0,
+            mls: None,
+            commits: BTreeMap::new(),
         }
     }
 
@@ -465,6 +496,17 @@ impl Log {
 
     pub fn profile(&self) -> Profile {
         self.profile
+    }
+
+    /// Whether the list's epochs are the MLS group's (and its key is the group's exporter), as
+    /// against a key an administrator drew; `false` while the list has had no epoch.
+    pub fn is_mls(&self) -> bool {
+        self.mls == Some(true)
+    }
+
+    /// The hash of the commit message that began `epoch` of an MLS list, when the log names one.
+    pub fn commit_of(&self, epoch: u32) -> Option<Hash> {
+        self.commits.get(&epoch).copied()
     }
 
     /// The latest epoch the log begins, 0 when none.
@@ -667,6 +709,27 @@ impl Log {
         Ok(())
     }
 
+    /// Begin epoch `epoch`, which must follow the one before it and be of the kind the list's
+    /// epochs are.
+    fn next_epoch(&mut self, epoch: u32, mls: bool) -> Result<(), LogError> {
+        if epoch
+            != self
+                .epoch
+                .checked_add(1)
+                .ok_or(LogError::Invalid("epochs run out"))?
+        {
+            return Err(LogError::Invalid("an epoch follows the one before it"));
+        }
+        if self.mls.is_some_and(|kind| kind != mls) {
+            return Err(LogError::Invalid(
+                "a list's epochs are all MLS's or all a drawn key's",
+            ));
+        }
+        self.mls = Some(mls);
+        self.epoch = epoch;
+        Ok(())
+    }
+
     fn admit(&mut self, entry: &Entry) -> Result<(), LogError> {
         let needed = entry.body.required(self.quorum);
         let had = Self::verified_signers(entry, &self.administrators)?;
@@ -711,15 +774,11 @@ impl Log {
                 );
             }
             Body::Epoch { epoch } => {
-                if *epoch
-                    != self
-                        .epoch
-                        .checked_add(1)
-                        .ok_or(LogError::Invalid("epochs run out"))?
-                {
-                    return Err(LogError::Invalid("an epoch follows the one before it"));
-                }
-                self.epoch = *epoch;
+                self.next_epoch(*epoch, false)?;
+            }
+            Body::MlsEpoch { epoch, commit } => {
+                self.next_epoch(*epoch, true)?;
+                self.commits.insert(*epoch, *commit);
             }
             Body::Administrators {
                 add,
@@ -968,6 +1027,69 @@ mod tests {
         log.append(&reader).unwrap();
         let writer = grant(&log, 2, 2, &admin(1));
         assert_eq!(log.append(&writer), Ok(true));
+    }
+
+    #[test]
+    fn an_mls_epoch_names_its_commit_and_a_list_does_not_mix_kinds_of_epoch() {
+        let mut log = started(1);
+        let first = log
+            .draft(Body::MlsEpoch {
+                epoch: 1,
+                commit: [7; 32],
+            })
+            .sign(&admin(1))
+            .finish();
+        assert_eq!(log.append(&first), Ok(true));
+        assert!(log.is_mls());
+        assert_eq!(log.commit_of(1), Some([7; 32]));
+        assert_eq!(log.commit_of(2), None);
+        assert_eq!(Entry::from_json(&first.to_json()), Some(first.clone()));
+
+        // The commit is part of what the administrators sign.
+        let other = Entry {
+            body: Body::MlsEpoch {
+                epoch: 1,
+                commit: [8; 32],
+            },
+            ..first.clone()
+        };
+        assert_ne!(other.signing_bytes(), first.signing_bytes());
+
+        let mixed = log.draft(Body::Epoch { epoch: 2 }).sign(&admin(1)).finish();
+        assert_eq!(
+            log.append(&mixed),
+            Err(LogError::Invalid(
+                "a list's epochs are all MLS's or all a drawn key's"
+            ))
+        );
+        let skipping = log
+            .draft(Body::MlsEpoch {
+                epoch: 3,
+                commit: [9; 32],
+            })
+            .sign(&admin(1))
+            .finish();
+        assert_eq!(
+            log.append(&skipping),
+            Err(LogError::Invalid("an epoch follows the one before it"))
+        );
+        assert_eq!(log.epoch(), 1, "a refused entry changes nothing");
+
+        let mut drawn = started(1);
+        let epoch = drawn
+            .draft(Body::Epoch { epoch: 1 })
+            .sign(&admin(1))
+            .finish();
+        drawn.append(&epoch).unwrap();
+        assert!(!drawn.is_mls());
+        let mls = drawn
+            .draft(Body::MlsEpoch {
+                epoch: 2,
+                commit: [1; 32],
+            })
+            .sign(&admin(1))
+            .finish();
+        assert!(drawn.append(&mls).is_err());
     }
 
     #[test]

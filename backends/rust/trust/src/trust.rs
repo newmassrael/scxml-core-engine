@@ -313,6 +313,17 @@ impl Trust {
         self.state().log.epoch()
     }
 
+    /// Whether the list's epochs are an MLS group's, whose key a host takes from the group's
+    /// exporter, and not a key an administrator drew (`Self::rotate_epoch`).
+    pub fn is_mls(&self) -> bool {
+        self.state().log.is_mls()
+    }
+
+    /// The hash of the commit message the log names as the one that began `epoch` of an MLS list.
+    pub fn commit_of(&self, epoch: u32) -> Option<Hash> {
+        self.state().log.commit_of(epoch)
+    }
+
     /// The administrators the log has now.
     pub fn administrators(&self) -> Vec<PublicKey> {
         self.state().log.administrators().to_vec()
@@ -983,7 +994,11 @@ impl Admission for Trust {
         };
         match take(&mut state, event, data) {
             Ok(taken) => Ok(Some(taken.told)),
-            Err(TakeError::NotReached(reason) | TakeError::Refused(reason)) => Err(reason),
+            Err(
+                TakeError::NotReached(reason)
+                | TakeError::NoKey(reason)
+                | TakeError::Refused(reason),
+            ) => Err(reason),
         }
     }
 }
@@ -1005,6 +1020,11 @@ pub enum TakeError {
     /// It names an entry of the membership log that this host has not reached yet: it holds once
     /// the host has the log up to there, and a host that is fed in order stops and asks for the log.
     NotReached(String),
+    /// It is sealed under an epoch whose key this host does not hold. It holds if the host comes to
+    /// hold the key (the group's commit reaches it, or a member gives it the key), and never if it
+    /// does not (an epoch before this host joined, which a new member is given no history of): a
+    /// host that is fed in order parks it and goes on.
+    NoKey(String),
     /// It does not hold, whenever it is looked at again.
     Refused(String),
 }
@@ -1030,6 +1050,7 @@ fn take(state: &mut State, event: &'static str, data: &str) -> Result<Taken, Tak
             })
         }
         Err(Refusal::NotReached(reason)) => Err(TakeError::NotReached(reason)),
+        Err(Refusal::NoKey(reason)) => Err(TakeError::NoKey(reason)),
         Err(Refusal::Refused(reason)) => Err(TakeError::Refused(reason)),
         Err(Refusal::Equivocation { node, seq, reason }) => {
             let from = state.frozen.get(&node).map_or(seq, |held| (*held).min(seq));
@@ -1043,6 +1064,8 @@ fn take(state: &mut State, event: &'static str, data: &str) -> Result<Taken, Tak
 enum Refusal {
     /// It names an entry of the log the host has not reached.
     NotReached(String),
+    /// It is sealed under an epoch whose key the host does not hold.
+    NoKey(String),
     /// It does not hold: its reason.
     Refused(String),
     /// The device signed two different operations at one number: proof that its chain forked, which
@@ -1280,43 +1303,50 @@ fn record(state: &mut State, event: &'static str, verified: Verified, signature:
 
 /// The write as the machine is told it: the content opened, when this host keeps content from
 /// the hub, and the write as it is otherwise.
-fn open_write(state: &State, wire: &Value) -> Result<Value, String> {
+fn open_write(state: &State, wire: &Value) -> Result<Value, Refusal> {
     if !state.keeps_content() {
         return Ok(wire.clone());
     }
+    let refused = |reason: String| Refusal::Refused(reason);
     let sealed = wire.get("text").and_then(Value::as_str).unwrap_or("");
     let Some(epoch) = secrecy::epoch_of(sealed) else {
-        return Err(
+        return Err(refused(
             "todo.write: its content is not sealed, and the list keeps content from the hub"
                 .to_string(),
-        );
+        ));
     };
     if epoch == 0 || epoch > state.log.epoch() {
-        return Err(format!(
+        return Err(refused(format!(
             "todo.write: it is sealed under epoch {epoch}, which the membership log has not begun"
-        ));
+        )));
     }
     if state.relays_sealed() {
         return Ok(wire.clone());
     }
-    let stamp = message::write_stamp(wire).map_err(|error| format!("todo.write: {error:?}"))?;
+    let stamp =
+        message::write_stamp(wire).map_err(|error| refused(format!("todo.write: {error:?}")))?;
     let (value, text) =
         secrecy::open(&state.calendar, &state.epoch_keys, &stamp, sealed).map_err(|error| {
             match error {
-            secrecy::OpenError::NotSealed => {
+            secrecy::OpenError::NotSealed => refused(
                 "todo.write: its content is not sealed, and this host keeps content from the hub"
-                    .to_string()
-            }
+                    .to_string(),
+            ),
+            // A key this host does not hold yet (the group's commit has not reached it) or never
+            // will (an epoch before it joined): the host asks again later, and does not take the
+            // write for one that cannot hold.
             secrecy::OpenError::NoKey { epoch } => {
-                format!("todo.write: this host holds no key of epoch {epoch}")
+                Refusal::NoKey(format!("todo.write: this host holds no key of epoch {epoch}"))
             }
-            secrecy::OpenError::Corrupt => "todo.write: its content does not open".to_string(),
+            secrecy::OpenError::Corrupt => {
+                refused("todo.write: its content does not open".to_string())
+            }
         }
         })?;
     let mut visible = wire.clone();
     let object = visible
         .as_object_mut()
-        .ok_or("todo.write: the data is not an object")?;
+        .ok_or_else(|| refused("todo.write: the data is not an object".to_string()))?;
     object.insert("value".to_string(), Value::String(value.to_string()));
     object.insert("text".to_string(), Value::String(text));
     Ok(visible)

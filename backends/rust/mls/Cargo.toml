@@ -1,0 +1,34 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+
+[package]
+name = "sce-rust-mls"
+version.workspace = true
+edition.workspace = true
+rust-version = "1.91"
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "The group key agreement of a shared list: MLS (RFC 9420) through openmls, bound to the list's membership log, with the group's exporter as the content key of each epoch"
+publish = false
+
+# One implementation of the group key agreement (ADR 0034, section 6): `openmls`, with the
+# mandatory cipher suite (X25519, AES-128-GCM, SHA-256, Ed25519), behind a small surface. A device's
+# leaf signs with the key the membership log gave it, so a person has one key; a commit is applied
+# only when the log names it (its hash is in an administrator-signed entry); and the group's roster
+# must be the log's members. What the other lanes get is `sce-mls-capi`, which wraps this crate.
+
+[dependencies]
+sce-rust-trust = { path = "../trust" }
+# What a relay carries (the records a host's MLS device takes in).
+sce-rust-relay = { path = "../relay" }
+openmls = "0.9.1"
+openmls_rust_crypto = "0.6.0"
+openmls_basic_credential = "0.6.0"
+openmls_traits = "0.6.0"
+sha2 = { version = "0.10", default-features = false }
+
+[dev-dependencies]
+# The seams a host puts its `Trust` behind, which the tests seal and open through.
+sce-rust-mesh = { path = "../mesh" }
+serde_json = "1"

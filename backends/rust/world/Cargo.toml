@@ -51,6 +51,9 @@ sce-rust-trust = { path = "../trust" }
 # What carries a member's operations to a host that keeps them and back
 # (a_shared_list_runs_through_a_relay_with_no_hub_machine).
 sce-rust-relay = { path = "../relay" }
+# The group key agreement that gives the list its key of each epoch
+# (a_shared_list_keys_its_content_with_mls_through_a_relay).
+sce-rust-mls = { path = "../mls" }
 
 # The machines under `machines/` are generated at build time, in-process, into
 # OUT_DIR (see build.rs); no generated code is committed for this crate.

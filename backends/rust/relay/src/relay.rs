@@ -16,11 +16,13 @@
 //! ask is decided by the log at the relay's head: a device reads when it is a member, and writes
 //! when it may write. Each request spends the session's allowance ([`Limits`]).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io;
 
+use sce_rust_trust::encoding;
 use sce_rust_trust::membership::{Entry, LogError};
 use sce_rust_trust::{Checkpoint, CheckpointError, TakeError, Trust};
+use sha2::{Digest, Sha256};
 
 use crate::limits::{Allowances, Limits};
 use crate::protocol::{Code, Record, Request, Response};
@@ -36,6 +38,11 @@ struct ListState {
     trust: Trust,
     /// What the relay was given, in the order it was given it.
     records: Vec<Record>,
+    /// The epochs whose commit the relay holds, and what it holds of the MLS messages by the hash
+    /// of their bytes, so that one is kept once.
+    commits: BTreeSet<u32>,
+    welcomes: BTreeSet<(u32, u64, [u8; 32])>,
+    key_packages: BTreeMap<u64, BTreeSet<[u8; 32]>>,
 }
 
 impl ListState {
@@ -43,8 +50,36 @@ impl ListState {
         Self {
             trust: Trust::open(list),
             records: Vec::new(),
+            commits: BTreeSet::new(),
+            welcomes: BTreeSet::new(),
+            key_packages: BTreeMap::new(),
         }
     }
+
+    /// Remember an MLS message that was kept, so that the same one is not kept twice.
+    fn note(&mut self, record: &Record) {
+        match record {
+            Record::Commit { epoch, .. } => {
+                self.commits.insert(*epoch);
+            }
+            Record::Welcome { epoch, node, data } => {
+                if let Some(hash) = digest_of(data) {
+                    self.welcomes.insert((*epoch, *node, hash));
+                }
+            }
+            Record::KeyPackage { node, data } => {
+                if let Some(hash) = digest_of(data) {
+                    self.key_packages.entry(*node).or_default().insert(hash);
+                }
+            }
+            Record::Entry(_) | Record::Operation { .. } | Record::Checkpoint(_) => {}
+        }
+    }
+}
+
+/// The SHA-256 of what `text` (in the URL alphabet) writes, when it is that.
+fn digest_of(text: &str) -> Option<[u8; 32]> {
+    Some(Sha256::digest(encoding::decode(text)?).into())
 }
 
 /// A relay over a store.
@@ -71,8 +106,11 @@ impl<S: Store> Relay<S> {
             let state = lists
                 .entry(list.clone())
                 .or_insert_with(|| ListState::new(&list));
-            match verify(&state.trust, &record) {
-                Ok(true) => state.records.push(record),
+            match verify(state, &record, &limits) {
+                Ok(true) => {
+                    state.note(&record);
+                    state.records.push(record);
+                }
                 Ok(false) => {
                     return Err(invalid_data(format!(
                         "record {index} of `{list}` is one the relay held already"
@@ -149,8 +187,13 @@ impl<S: Store> Relay<S> {
             .get(&session.list)
             .map_or(0, |state| state.trust.role(session.node));
         let needs = match &request {
-            Request::Entries { .. } | Request::Append { .. } => 0,
-            Request::Submit { .. } | Request::Checkpoint { .. } => WRITER,
+            Request::Entries { .. }
+            | Request::Append { .. }
+            | Request::PublishKeyPackage { .. } => 0,
+            Request::Submit { .. }
+            | Request::Checkpoint { .. }
+            | Request::PublishCommit { .. }
+            | Request::PublishWelcome { .. } => WRITER,
             Request::Feed { .. } | Request::Operations { .. } | Request::Heads => READER,
         };
         if role < needs {
@@ -173,11 +216,47 @@ impl<S: Store> Relay<S> {
                 Some(parsed) => self.checkpoint(&session.list, checkpoint, parsed),
                 None => Response::refused(Code::Invalid, "it is not a checkpoint"),
             },
+            Request::PublishKeyPackage { data } => self.publish_group(
+                &session.list,
+                Record::KeyPackage {
+                    node: session.node,
+                    data,
+                },
+            ),
+            Request::PublishCommit { epoch, data } => {
+                self.publish_group(&session.list, Record::Commit { epoch, data })
+            }
+            Request::PublishWelcome { epoch, node, data } => {
+                self.publish_group(&session.list, Record::Welcome { epoch, node, data })
+            }
             Request::Feed { cursor, limit } => self.feed(&session.list, cursor, limit),
             Request::Operations { node, from, to } => {
                 self.operations(&session.list, node, from, to)
             }
             Request::Heads => self.heads(&session.list),
+        }
+    }
+
+    /// Keep an MLS message of the list's group: a key package, the commit the log names for an
+    /// epoch, a Welcome. The relay reads none of them; it keeps each once, the commit only when its
+    /// hash is the one the log names, and bounds how many a device leaves.
+    fn publish_group(&mut self, list: &str, record: Record) -> Response {
+        if let Err(full) = self.room(list) {
+            return full;
+        }
+        let Some(state) = self.lists.get(list) else {
+            return Response::refused(Code::Behind, "the relay holds no log of this list");
+        };
+        match check_group_record(state, &record, &self.limits) {
+            Ok(false) => Response::Accepted {
+                new: false,
+                cursor: state.records.len() as u64,
+            },
+            Ok(true) => match self.keep(list, record) {
+                Ok(cursor) => Response::Accepted { new: true, cursor },
+                Err(response) => response,
+            },
+            Err((code, reason)) => Response::refused(code, reason),
         }
     }
 
@@ -215,6 +294,7 @@ impl<S: Store> Relay<S> {
             .lists
             .get_mut(list)
             .ok_or_else(|| Response::refused(Code::Unavailable, "the list is gone"))?;
+        state.note(&record);
         state.records.push(record);
         Ok(state.records.len() as u64)
     }
@@ -275,7 +355,9 @@ impl<S: Store> Relay<S> {
                 cursor: state.records.len() as u64,
             },
             Err(TakeError::NotReached(reason)) => Response::refused(Code::Behind, reason),
-            Err(TakeError::Refused(reason)) => Response::refused(Code::Invalid, reason),
+            Err(TakeError::Refused(reason) | TakeError::NoKey(reason)) => {
+                Response::refused(Code::Invalid, reason)
+            }
         }
     }
 
@@ -347,8 +429,12 @@ impl<S: Store> Relay<S> {
 
 /// Whether a record that was kept verifies against what a list holds before it: `Ok(true)` when it
 /// is new and holds, `Ok(false)` when the list held it already.
-fn verify(trust: &Trust, record: &Record) -> Result<bool, (Code, String)> {
+fn verify(state: &ListState, record: &Record, limits: &Limits) -> Result<bool, (Code, String)> {
+    let trust = &state.trust;
     match record {
+        Record::KeyPackage { .. } | Record::Commit { .. } | Record::Welcome { .. } => {
+            check_group_record(state, record, limits)
+        }
         Record::Entry(text) => {
             let entry = Entry::from_json(text)
                 .ok_or((Code::Invalid, "it is not an entry of a log".to_string()))?;
@@ -360,9 +446,9 @@ fn verify(trust: &Trust, record: &Record) -> Result<bool, (Code, String)> {
             .take_operation(event, data)
             .map(|taken| taken.new)
             .map_err(|error| match error {
-                TakeError::NotReached(reason) | TakeError::Refused(reason) => {
-                    (Code::Invalid, reason)
-                }
+                TakeError::NotReached(reason)
+                | TakeError::NoKey(reason)
+                | TakeError::Refused(reason) => (Code::Invalid, reason),
             }),
         Record::Checkpoint(text) => {
             let checkpoint = Checkpoint::from_json(text)
@@ -371,6 +457,81 @@ fn verify(trust: &Trust, record: &Record) -> Result<bool, (Code, String)> {
                 .take_checkpoint(&checkpoint)
                 .map_err(|error| (Code::Invalid, format!("{error:?}")))
         }
+    }
+}
+
+/// Whether an MLS message of a list holds against what the list has: `Ok(true)` when it is new and
+/// holds, `Ok(false)` when the relay holds it already. Nothing is read of it, only its hash taken: a
+/// commit must be the one the log names for its epoch, a Welcome must be for an epoch the log began,
+/// and a device leaves a bounded number of key packages.
+fn check_group_record(
+    state: &ListState,
+    record: &Record,
+    limits: &Limits,
+) -> Result<bool, (Code, String)> {
+    let too_large = || {
+        (
+            Code::TooLarge,
+            format!(
+                "an MLS message is at most {} bytes",
+                limits.max_group_message_bytes
+            ),
+        )
+    };
+    let bytes_of = |data: &String| -> Result<Vec<u8>, (Code, String)> {
+        let bytes = encoding::decode(data)
+            .ok_or((Code::Invalid, "it is not in the URL alphabet".to_string()))?;
+        if bytes.is_empty() {
+            return Err((Code::Invalid, "it is empty".to_string()));
+        }
+        if bytes.len() > limits.max_group_message_bytes {
+            return Err(too_large());
+        }
+        Ok(bytes)
+    };
+    match record {
+        Record::KeyPackage { node, data } => {
+            let hash: [u8; 32] = Sha256::digest(bytes_of(data)?).into();
+            let held = state.key_packages.get(node);
+            if held.is_some_and(|held| held.contains(&hash)) {
+                return Ok(false);
+            }
+            if held.map_or(0, BTreeSet::len) >= limits.max_key_packages_per_node {
+                return Err((
+                    Code::TooLarge,
+                    format!(
+                        "a device leaves at most {} key packages",
+                        limits.max_key_packages_per_node
+                    ),
+                ));
+            }
+            Ok(true)
+        }
+        Record::Commit { epoch, data } => {
+            let hash: [u8; 32] = Sha256::digest(bytes_of(data)?).into();
+            match state.trust.commit_of(*epoch) {
+                None => Err((
+                    Code::Behind,
+                    format!("the log the relay holds names no commit for epoch {epoch}"),
+                )),
+                Some(named) if named != hash => Err((
+                    Code::Invalid,
+                    format!("this is not the commit the log names for epoch {epoch}"),
+                )),
+                Some(_) => Ok(!state.commits.contains(epoch)),
+            }
+        }
+        Record::Welcome { epoch, node, data } => {
+            let hash: [u8; 32] = Sha256::digest(bytes_of(data)?).into();
+            if state.trust.commit_of(*epoch).is_none() {
+                return Err((
+                    Code::Behind,
+                    format!("the log the relay holds has not begun epoch {epoch}"),
+                ));
+            }
+            Ok(!state.welcomes.contains(&(*epoch, *node, hash)))
+        }
+        _ => Err((Code::Invalid, "it is not an MLS message".to_string())),
     }
 }
 

@@ -220,6 +220,9 @@ scan_exclusions = [
     # The relay of a shared list (`sce-rust-relay`): it implements no clause of the Recommendation
     # and carries no `§` citation.
     "backends/rust/relay/",
+    # The group key agreement of a shared list (`sce-rust-mls`): it implements no clause of the
+    # Recommendation and carries no `§` citation.
+    "backends/rust/mls/",
     "sce-build/examples/",
     "sce-build/tests/",
     "tests/",

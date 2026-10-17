@@ -29,6 +29,11 @@ pub struct Limits {
     /// The most records the relay keeps for one list; past it, writes are refused until the
     /// operator has made room.
     pub max_records_per_list: usize,
+    /// The largest MLS message (a key package, a commit, a Welcome) the relay keeps, in bytes: a
+    /// Welcome carries the group's tree, so a large group needs room.
+    pub max_group_message_bytes: usize,
+    /// How many key packages one device may have left with the relay at a time.
+    pub max_key_packages_per_node: usize,
 }
 
 impl Default for Limits {
@@ -41,6 +46,8 @@ impl Default for Limits {
             max_feed: 500,
             max_range: 500,
             max_records_per_list: 1_000_000,
+            max_group_message_bytes: 32 * 1024,
+            max_key_packages_per_node: 16,
         }
     }
 }
