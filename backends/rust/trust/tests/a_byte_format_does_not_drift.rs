@@ -9,9 +9,10 @@
 // a change shows as a difference here and is a decision, not an accident.
 
 use sce_rust_trust::encoding;
+use sce_rust_trust::membership::{Body, Log, Profile};
 use sce_rust_trust::message;
 use sce_rust_trust::secrecy;
-use sce_rust_trust::{Certificate, Identity};
+use sce_rust_trust::Identity;
 use serde_json::json;
 
 fn hex(bytes: &[u8]) -> String {
@@ -78,11 +79,48 @@ fn the_bytes_a_note_and_a_floor_are_signed_as_do_not_move() {
 }
 
 #[test]
-fn a_certificate_is_signed_as_it_always_was() {
-    let certificate = Certificate::issue(&alice(), "home", 2, 2, bob().public(), 1, 500);
+fn the_entries_of_the_membership_log_are_signed_and_named_as_they_always_were() {
+    let genesis = Log::genesis_draft(
+        "home",
+        Body::Genesis {
+            administrators: vec![alice().public()],
+            quorum: 1,
+            profile: Profile::Untrusted,
+        },
+    )
+    .sign(&alice())
+    .finish();
     assert_eq!(
-        certificate.to_json(),
-        r#"{"calendar":"home","from":"500","issuer":"iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w","key":"gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q","node":"2","role":2,"serial":"1","sig":"tf36tv3R8JuPmlHkRtrre_88ahh3Qonx-TbhGom4KAT7GZqofYrV3_u6uY38LwqUDdqVm5gTggdP9O-Zj5YQAA"}"#
+        genesis.to_json(),
+        r#"{"body":{"administrators":["iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w"],"kind":"genesis","profile":"untrusted","quorum":1},"index":"0","list":"home","prev":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","signatures":[["iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w","CvLbFDHup1OP4T_0XwUoVjFrcjndaK_r7GEX_KGOnJMa0CNwQ4E_QNpvahk9nhEUQslj43cL_XX98_9lAWrwCw"]]}"#
+    );
+    assert_eq!(
+        hex(&genesis.signing_bytes()),
+        "00000000000000167363652d74727573742f6d656d626572736869702f310000000000000004686f6d65000000000000000130000000000000002b41414141414141414141414141414141414141414141414141414141414141414141414141414141414141000000000000000767656e657369730000000000000001310000000000000009756e74727573746564000000000000002b696f6a6a3358514a385a583955747374504c70646373706e436238646c4249623833534941625150623177"
+    );
+    assert_eq!(
+        encoding::encode(&genesis.hash()),
+        "25wtRx2B5zlZ0VD19DLiMaDr7onv8f8-fbJ7yWLVnIU"
+    );
+
+    let mut log = Log::open("home");
+    log.append(&genesis).unwrap();
+    let grant = log
+        .draft(Body::Grant {
+            node: 2,
+            role: 2,
+            key: bob().public(),
+            from: 500,
+        })
+        .sign(&alice())
+        .finish();
+    assert_eq!(
+        grant.to_json(),
+        r#"{"body":{"from":"500","key":"gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q","kind":"grant","node":"2","role":2},"index":"1","list":"home","prev":"25wtRx2B5zlZ0VD19DLiMaDr7onv8f8-fbJ7yWLVnIU","signatures":[["iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w","_mb-Up_qN3vvPKqBwIFmGMp0PXCpdD20rdKUDnkhx3AUm_2DNmEFwWGdwKm2vytQhguvHxIFq51xIa3AZiaZDQ"]]}"#
+    );
+    assert_eq!(
+        encoding::encode(&grant.hash()),
+        "hzFbcfc6vTzCK1OtbUYnR8ZQZfAZMR04eueIeOwq1Kg"
     );
 }
 

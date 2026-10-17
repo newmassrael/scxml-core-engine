@@ -10,37 +10,38 @@
 //! whether a signature it carries is true. It is kept here, in the host of every copy, which is
 //! the one party each copy's user can trust: their own device.
 //!
-//! * [`identity`] — a person's key: it signs, and what it signed is checked by the public key.
-//! * [`certificate`] — what an administrator signs to make a person a member with a role. The
-//!   administrator's key is what a copy is told to trust when it is set up, and everything
-//!   else (who is a member, what each may do) follows from certificates that key signed, so
-//!   a host that relays them cannot make one.
-//! * [`message`] — the bytes a write is signed as, written from the event's own fields and the
+//! * [`identity`] - a person's key: it signs, and what it signed is checked by the public key.
+//! * [`membership`] - the list's log of who its administrators and members are, what each may do
+//!   from when, which epoch its content is sealed under, and whether its hub is trusted: an
+//!   append-only chain of entries signed by administrators, so that a host believes nothing a
+//!   hub says about who the members are, and two histories of one position are a fork it
+//!   reports.
+//! * [`message`] - the bytes a write is signed as, written from the event's own fields and the
 //!   list's name, so a signature neither moves to another write nor to another list.
-//! * [`secrecy`] — keeping the content of a write from the hub: a key for each epoch of the
+//! * [`secrecy`] - keeping the content of a write from the hub: a key for each epoch of the
 //!   list, held by its members, seals the number and the text of a write under its stamp, and is
 //!   given to a member sealed under what their key and the giver's agree on. What the hub holds
 //!   is the stamp and a text it cannot read.
-//! * [`trust`] — the rule a host puts in front of its machine and behind it: a write leaves
+//! * [`trust`] - the rule a host puts in front of its machine and behind it: a write leaves
 //!   with its author's signature, and one that arrives is admitted when its author is a member
 //!   who may write and the signature is true. The signature is written into an event as it
 //!   leaves and taken out as it arrives, so no machine holds one; a host that relays a write
 //!   it did not make keeps the signature it arrived with, to send it on.
 //!
-//! The roles a certificate carries are the ones the machine knows (1 may read, 2 may also
-//! write, 3 may also do what an owner does), and [`trust::Trust::role_events`] is how the host
-//! tells its machine the roster the certificates make, so that the machine's own refusal of an
-//! edit that its member may not make follows from the same source.
+//! The roles a grant carries are the ones the machine knows (1 may read, 2 may also write, 3 may
+//! also do what an owner does), and [`trust::Trust::role_events`] is how the host tells its
+//! machine the roster the log makes, so that the machine's own refusal of an edit that its member
+//! may not make follows from the same source.
 
 #![forbid(unsafe_code)]
 
-pub mod certificate;
 pub mod encoding;
 pub mod identity;
+pub mod membership;
 pub mod message;
 pub mod secrecy;
 pub mod trust;
 
-pub use certificate::Certificate;
 pub use identity::{Identity, PublicKey};
+pub use membership::{Body, Entry, Log, LogError, Profile};
 pub use trust::{GrantError, RotateError, Rotation, Trust, TrustError};

@@ -21,7 +21,8 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 
 use common::*;
-use sce_rust_trust::{Certificate, Identity, Trust};
+use sce_rust_trust::membership::{Body, Entry, Log, Profile};
+use sce_rust_trust::{Identity, Trust};
 use sce_rust_world::{Outcome, World};
 
 const CALENDAR: &str = "home";
@@ -40,26 +41,11 @@ fn key_of(node: u64) -> Identity {
     Identity::from_seed([node as u8; 32])
 }
 
-fn certificate(node: u64, role: u8, serial: u64) -> Certificate {
-    certificate_from(node, role, serial, 0)
-}
-
-fn certificate_from(node: u64, role: u8, serial: u64, from: i64) -> Certificate {
-    Certificate::issue(
-        &administrator(),
-        CALENDAR,
-        node,
-        role,
-        key_of(node).public(),
-        serial,
-        from,
-    )
-}
-
-/// The hosts of alice, bob and the hub, in that order. Each holds the certificates of alice
-/// (a writer) and bob (with `bob_role`), and is installed in front of and behind its machine;
-/// the machines of `told` are given the roster the certificates make. `now` is the clock the
-/// hosts of the persons sign a note at: the time the machine is given as the edit's `now`.
+/// The hosts of alice, bob and the hub, in that order. Each holds the membership log (alice a
+/// writer and bob with `bob_role`, the entries signed by the administrator), and is installed in
+/// front of and behind its machine; the machines of `told` are given the roster the log makes.
+/// `now` is the clock the hosts of the persons sign a note at: the time the machine is given as
+/// the edit's `now`.
 struct Hosts {
     alice: Trust,
     bob: Trust,
@@ -82,10 +68,30 @@ impl Hosts {
         }
     }
 
-    /// An administrator's certificate reaches every host.
-    fn certify(&self, certificate: &Certificate) {
+    /// An entry the administrator signs reaches every host.
+    fn publish(&self, body: Body) -> Entry {
+        let entry = self.hub.draft(body).sign(&administrator()).finish();
         for host in [&self.alice, &self.bob, &self.hub] {
-            host.accept(certificate).unwrap();
+            host.append(&entry).unwrap();
+        }
+        entry
+    }
+
+    /// The administrator gives the device of `node` the role `role` from the time `from`.
+    fn grant(&self, node: u64, role: u8, from: i64) {
+        self.publish(Body::Grant {
+            node,
+            role,
+            key: key_of(node).public(),
+            from,
+        });
+    }
+
+    /// The list begins epoch `epoch`, and the hosts of the persons hold its key `fill`.
+    fn begin_epoch(&self, epoch: u32, fill: u8) {
+        self.publish(Body::Epoch { epoch });
+        for person in [&self.alice, &self.bob] {
+            person.set_epoch_key(epoch, [fill; 32]);
         }
     }
 
@@ -106,19 +112,32 @@ impl Hosts {
 fn untrusting_world(seed: u64, bob_role: u8, told: &[&str]) -> (World, Hosts) {
     let mut world = todo_world(seed, 20);
     let hosts = Hosts {
-        alice: Trust::new(CALENDAR, &[administrator().public()]),
-        bob: Trust::new(CALENDAR, &[administrator().public()]),
-        hub: Trust::new(CALENDAR, &[administrator().public()]),
+        alice: Trust::open(CALENDAR),
+        bob: Trust::open(CALENDAR),
+        hub: Trust::open(CALENDAR),
         now: Arc::new(AtomicI64::new(0)),
     };
+    let genesis = Log::genesis_draft(
+        CALENDAR,
+        Body::Genesis {
+            administrators: vec![administrator().public()],
+            quorum: 1,
+            profile: Profile::Untrusted,
+        },
+    )
+    .sign(&administrator())
+    .finish();
+    for host in [&hosts.alice, &hosts.bob, &hosts.hub] {
+        host.append(&genesis).unwrap();
+    }
     hosts.alice.set_identity(ALICE, key_of(ALICE));
     hosts.bob.set_identity(BOB, key_of(BOB));
     for person in [&hosts.alice, &hosts.bob] {
         let now = hosts.now.clone();
         person.set_clock(move || now.load(Ordering::SeqCst));
     }
-    hosts.certify(&certificate(ALICE, 2, 1));
-    hosts.certify(&certificate(BOB, bob_role, 1));
+    hosts.grant(ALICE, 2, 0);
+    hosts.grant(BOB, bob_role, 0);
     for who in ["alice", "bob", "server"] {
         world.set_admission(who, Box::new(hosts.of(who).clone()));
         world.set_sealer(who, Box::new(hosts.of(who).clone()));
@@ -198,8 +217,8 @@ fn a_write_the_hub_made_up_in_a_members_name_reaches_no_copy() {
     assert!(
         errors
             .iter()
-            .any(|error| error.contains("carries no signature")),
-        "the hosts that checked refused it: {errors:?}"
+            .any(|error| error.contains("signs none in their name")),
+        "the hub's own host did not send what it holds no signature for: {errors:?}"
     );
 }
 
@@ -229,7 +248,7 @@ fn a_member_taken_off_by_a_later_certificate_is_refused_from_then_on() {
     quiet(&mut world);
     assert_eq!(agree(&mut world), 1);
 
-    hosts.certify(&certificate_from(BOB, 0, 2, world.now_ms()));
+    hosts.grant(BOB, 0, world.now_ms());
     todo_set(&mut world, "bob", 2, DUE, 2);
     quiet(&mut world);
 
@@ -350,9 +369,7 @@ fn an_instant_an_administrator_attested_is_settled_for_every_host() {
 #[test]
 fn the_hub_holds_what_its_members_wrote_without_being_able_to_read_it() {
     let (mut world, hosts) = untrusting_world(8, 2, &["alice", "bob", "server"]);
-    for person in [&hosts.alice, &hosts.bob] {
-        person.set_epoch_key(1, [5; 32]);
-    }
+    hosts.begin_epoch(1, 5);
     todo_title(&mut world, "alice", 1, "buy milk");
     hosts.edit(&mut world, "bob", 2, DUE, 987_654_321);
     todo_title(&mut world, "bob", 3, "call dad");
@@ -403,9 +420,7 @@ fn the_hub_holds_what_its_members_wrote_without_being_able_to_read_it() {
 #[test]
 fn a_member_taken_off_reads_nothing_written_after_the_next_epoch() {
     let (mut world, hosts) = untrusting_world(9, 2, &["alice", "bob", "server"]);
-    for person in [&hosts.alice, &hosts.bob] {
-        person.set_epoch_key(1, [5; 32]);
-    }
+    hosts.begin_epoch(1, 5);
     todo_title(&mut world, "alice", 1, "before");
     quiet(&mut world);
     assert_eq!(todos_of(&mut world, "bob").len(), 1);
@@ -413,15 +428,12 @@ fn a_member_taken_off_reads_nothing_written_after_the_next_epoch() {
 
     // The administrator's host takes bob off and begins epoch 2 for who is left.
     world.advance_ms(1_000);
-    hosts.certify(&certificate_from(BOB, 0, 2, world.now_ms()));
-    let administrator = Trust::new(CALENDAR, &[administrator().public()]);
-    administrator.set_epoch_key(1, [5; 32]);
-    for node in [ALICE, BOB] {
-        administrator.accept(&certificate(node, 2, 1)).unwrap();
+    hosts.grant(BOB, 0, world.now_ms());
+    let administrator = Trust::open(CALENDAR);
+    for entry in hosts.hub.entries() {
+        administrator.append(&entry).unwrap();
     }
-    administrator
-        .accept(&certificate_from(BOB, 0, 2, world.now_ms()))
-        .unwrap();
+    administrator.set_epoch_key(1, [5; 32]);
     let left: Vec<_> = administrator
         .current_members()
         .into_iter()
@@ -431,6 +443,9 @@ fn a_member_taken_off_reads_nothing_written_after_the_next_epoch() {
     let rotation = administrator
         .rotate_epoch(&self::administrator(), &left)
         .unwrap();
+    for host in [&hosts.alice, &hosts.bob, &hosts.hub] {
+        assert_eq!(host.append(&rotation.entry), Ok(true));
+    }
     assert_eq!(hosts.alice.receive_grant(&rotation.grants[0].1), Ok(2));
 
     world.advance_ms(1_000);
@@ -471,7 +486,7 @@ fn what_a_member_wrote_before_they_were_taken_off_still_reaches_every_copy() {
     world.host_errors();
 
     world.advance_ms(1_000);
-    hosts.certify(&certificate_from(BOB, 0, 2, world.now_ms()));
+    hosts.grant(BOB, 0, world.now_ms());
     for who in ["alice", "server"] {
         hosts.tell(&mut world, who);
     }

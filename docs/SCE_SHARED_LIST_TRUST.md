@@ -21,10 +21,12 @@ Two modes follow from who runs the hub:
 | Hub is | What the hosts of the members do |
 |---|---|
 | Trusted | Roles only: the hub's machine drops a write whose author is not a writer on its roster (`todo.role`), and a person's copy refuses its own member's edit when the member is a reader. |
-| Not trusted | The hosts of the members hold the administrators' keys and check everything: signatures, certificates, settled instants and, optionally, keep the content from the hub. |
+| Not trusted | The hosts of the members hold the membership log and check everything: signatures, the log's entries, settled instants and, optionally, keep the content from the hub. |
 
-The two are one mechanism with different settings, so a list can start in the first and move to
-the second.
+The two are one mechanism with different settings, and **which one a list is in is a fact of
+its membership log** (`Profile::Untrusted` or `Profile::TrustedHub`, set by the first entry and
+changed by an entry that needs the administrators' quorum), so that every host knows it and a
+list can move from one to the other by an entry every host sees.
 
 **Who is on a link** is not decided by a name. The name a client writes in the upgrade path is
 its own word, so a hub's host that only checks a name table lets in anyone who knows a machine's
@@ -34,22 +36,40 @@ the link only when the host says yes: the token is the host's, issued after its 
 a link may deliver once it is run is `Endpoint::forbid_events_from`, and what the members' hosts
 hold to whatever the link is, is this document.
 
-## 2. Members, roles and certificates
+## 2. The membership log
 
 A role is 0 (not a member), 1 (may read), 2 (may also write) or 3 (may also do what an owner
-does). An administrator holds a key the hosts are told to trust when they are set up, and signs
-a **certificate** for each member: the list, the member's node, the role, the key their writes
-are signed by, a `serial` and a time `from` (in the clock the machines stamp with).
+does). Who the members are, what each may do, who the administrators are, which epoch the
+content is sealed under and whether the hub is trusted is one **log** (`sce-rust-trust`,
+`membership`): an append-only chain of entries, each naming the hash of the one before it and
+signed by administrators. A person is invited with the hash of the first entry (`Trust::invited`),
+which is all they have to be told in a channel they trust; a host takes that genesis and no other,
+and checks every entry from there, so nothing a hub says about who the members are is believed on
+its word.
 
-Certificates of one node make its history. A write or a note made at a time *t* is judged by the
-certificate with the highest serial among those whose `from` is at or before *t*. So:
+| Entry | Does | Signatures it needs |
+|---|---|---|
+| Genesis | names the administrators, the quorum and the profile | one of the administrators it names |
+| Grant | from a time `from`, the device of a node is a member with a role and signs with a key (role 0 takes it off) | one administrator |
+| Epoch | the content key of the list changes | one administrator |
+| Administrators | add and remove administrators, set the quorum | the quorum |
+| Profile | the hub becomes trusted or not | the quorum |
+
+A change to who the administrators are needs the quorum so that one stolen administrator key
+cannot make another or take the list over. An entry is taken in only when it is the next position
+and names the head (`LogError::Gap` otherwise, so entries that arrive out of order wait), and an
+entry already held is taken in once. **Two different entries at one position are a fork**: the
+host that is shown both has proof that the chain was signed two ways, says where, and takes in no
+write, note or settled instant (and sends none) until an administrator resolves it.
+
+The grants of one node make its history. A write or a note made at a time *t* is judged by the
+latest grant among those whose `from` is at or before *t*. So:
 
 - A member taken off (role 0 from a time) still wrote what they wrote before it; what they sign
   from that time on is refused.
 - A replaced key (a lost device) judges only what is made from its time; the old key still
   judges what came before.
-- The same set of certificates gives the same answer in whatever order a host received them,
-  and a host that relays them cannot make one.
+- A host that relays entries cannot make one: it does not hold an administrator's key.
 
 A hub's machine is told, by `Trust::hub_role_events`, that anyone who could write at some time
 is a writer: it has no time to judge by, and must not refuse what its host let through. A
@@ -113,7 +133,12 @@ no scheme can take that back. What can be done is that nothing written afterward
 The administrator's host does it in one call: `Trust::rotate_epoch(administrator, recipients)`
 draws a new key from the operating system (never from the old one, never from the host's own
 source), takes the next epoch number, and gives back a grant for each recipient, which is
-`Trust::current_members()` after the removal's certificate was accepted. The members that are left
+`Trust::current_members()` after the removal's entry was appended. The call also makes the entry
+of the log that begins the epoch, appends it to the administrator's own log and returns it
+(`Rotation::entry`) for every other host to append: the log, and not a host's keys, says which
+epoch the list is in, so a host that holds the entry and not yet the key writes nothing, and a
+host does not take a write sealed under an epoch its log has not begun. A hub that holds no key
+checks that content is sealed under a begun epoch and hands it on as it is. The members that are left
 take the grant (`receive_grant`) and seal under the new epoch from then on; the removed member is
 given nothing and finds `no key of epoch N` on every write that follows. A host does not replace
 the key it holds for an epoch with another (`GrantError::EpochTaken`), so an administrator's host
@@ -131,8 +156,9 @@ where it shows.
 `Trust::signatures_to_text` is one text for the host's store (the key-value feature): the
 attested instants, the writes it relays (as they travel, with their signatures) and who wrote
 over what. It holds no key. `restore_signatures_from_text` verifies each row against today's
-certificates and keeps only what is still true. Keys and the person's secret are kept where the
-host keeps secrets.
+log and keeps only what is still true. The log itself is kept as its entries (`Trust::entries`, each
+`Entry::to_json`), and a host reads it back by appending them in order, which checks the chain again.
+Keys and the person's secret are kept where the host keeps secrets.
 
 ## 6. What is not here
 
@@ -141,7 +167,7 @@ host keeps secrets.
 - A reader receives everything that is replicated: a read-only role stops writes, not reading.
   Content a member may not read goes in another list, or under a key that member is not given.
 - The Kotlin Mesh has the same three seams (`forbidEventsFrom`, `EventAdmission`, `Sealer`) and
-  no implementation behind them: the signatures, certificates and sealing of `sce-rust-trust`
+  no implementation behind them: the signatures, log and sealing of `sce-rust-trust`
   are Rust, so a Kotlin host that must check what arrives implements `EventAdmission` itself
-  and has to agree with the byte formats of `message.rs`, `certificate.rs` and `secrecy.rs`.
+  and has to agree with the byte formats of `message.rs`, `membership.rs` and `secrecy.rs`.
 - Login itself (who a person is, and the token a host issues for it) is the application's.
