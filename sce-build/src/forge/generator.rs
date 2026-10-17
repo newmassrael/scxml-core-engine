@@ -28781,6 +28781,66 @@ impl<'a> AlgorithmTypes<'a> {
     }
 }
 
+/// The most bytes one list may take in the C11 backend where it crosses a call of an
+/// algorithm, a few copies of it at once.
+///
+/// C11 hands an algorithm's list back by value, in a struct with the whole bound of
+/// elements in it (`<symbol>_result_t { items[N]; … }`): the result, the buffer the
+/// algorithm builds it in, what its `_take` and `_within` return and the copy the machine
+/// makes of the argument it passes are each one such struct on the stack, five or so at a
+/// call. A bound that makes one of them megabytes is not a refusal the machine can
+/// report, it is a stack that is gone at the call (measured by reading the generated
+/// `todo_peer`: at the bound of a team's calendar, 65536 values of 88 bytes, a call needs
+/// about thirty megabytes of the eight a stack has). So it is refused where the bound is
+/// built in, naming what to do: build with a smaller one, or for a backend whose lists
+/// live on the heap (`sce:limit`, docs/SCE_ACCEPTED_SUBSET.md §2.15).
+///
+/// 256 KiB a list is about five megabytes of stack at a call, which an eight-megabyte
+/// stack holds with room for what calls it, and it holds the lists the repository builds
+/// as written (the largest, 1024 entries of 32 bytes, is 32 KiB).
+pub(crate) const C11_LIST_STACK_LIMIT_BYTES: u64 = 256 * 1024;
+
+/// What a field of type `ty` takes in a C11 record, rounded up to eight bytes: the
+/// natural size of the type, or the bytes of a string and its terminator. An upper
+/// bound of the struct the C compiler lays out, which pads a field to its alignment and
+/// no more, and the same number for every record the repository holds (`Entry` 32,
+/// `Value` 88, `Node` 24).
+pub(crate) fn c11_field_bytes(ty: &SceType, max_size: Option<u32>) -> u64 {
+    c11_scalar_bytes(ty, max_size).next_multiple_of(8)
+}
+
+/// What a value of type `ty` takes in C11: its natural size, or a string's bound and its
+/// terminator. An element of a list of numbers takes this and no more.
+pub(crate) fn c11_scalar_bytes(ty: &SceType, max_size: Option<u32>) -> u64 {
+    match ty {
+        SceType::Uint8 | SceType::Int8 | SceType::Bool => 1,
+        SceType::Uint16 | SceType::Int16 => 2,
+        SceType::Uint32 | SceType::Int32 | SceType::Float32 | SceType::Enum(_) => 4,
+        SceType::Uint64 | SceType::Int64 | SceType::Float64 => 8,
+        SceType::String => u64::from(max_size.unwrap_or(0)) + 1,
+        SceType::Bytes => 0,
+    }
+}
+
+/// The refusal of a list whose `bound` elements of `element_bytes` each are more than
+/// [`C11_LIST_STACK_LIMIT_BYTES`], or `None` when it is not.
+pub(crate) fn c11_list_too_large(
+    what: &str,
+    element_bytes: u64,
+    bound: u32,
+) -> Option<GenerateError> {
+    let bytes = element_bytes * u64::from(bound);
+    (bytes > C11_LIST_STACK_LIMIT_BYTES).then(|| {
+        GenerateError::unsupported(format!(
+            "{what} holds up to {bound} elements of {element_bytes} bytes, which the C11 \
+             backend passes by value on the stack at every call of an algorithm: {bytes} bytes \
+             a copy, more than the {C11_LIST_STACK_LIMIT_BYTES} it holds. Build it with a \
+             smaller bound (`sce-codegen --limit name=N`, docs/SCE_ACCEPTED_SUBSET.md §2.15) or \
+             for a backend whose lists live on the heap"
+        ))
+    })
+}
+
 fn render_algorithm(
     env: &minijinja::Environment,
     m: &AlgorithmModel,
@@ -28958,6 +29018,25 @@ fn render_algorithm(
         })?),
         None => None,
     };
+    // C11 returns the list by value, on the stack: a bound a stack cannot hold is refused
+    // here, where the bound is built in, and not at the call (`C11_LIST_STACK_LIMIT_BYTES`).
+    if let (Language::C11, Some(list), Some(cap)) = (lang, return_list.as_ref(), list_return_cap) {
+        let element_bytes = match list.elem {
+            ListElemType::Scalar(t) => c11_scalar_bytes(t, None),
+            ListElemType::Record { alias } => resolve_record(imports, alias, None, "<sce:return>")?
+                .fields
+                .iter()
+                .map(|f| c11_field_bytes(&f.ty, f.max_size))
+                .sum(),
+        };
+        if let Some(refusal) = c11_list_too_large(
+            &format!("the list algorithm `{}` returns", m.name),
+            element_bytes,
+            cap,
+        ) {
+            return Err(refusal.into());
+        }
+    }
     // A record return (SCE_FORGE.md §4.12) is the imported payload struct,
     // by value on every backend.
     let return_record = match declared_return.and_then(|t| t.record_alias()) {

@@ -4239,8 +4239,11 @@ bound refuses a write the larger one took and never catches up. A deployment
 therefore gives every copy of a list the same numbers. A bound moved far is a build
 for the backends whose lists live on the heap (Rust, Kotlin, Go, Python and the
 Interpreter): the C11 backend returns and passes an algorithm's list by value on the
-stack, a few copies of it at a call, so a bound past what a stack holds there is a
-crash and not a refusal.
+stack, a few copies of it at a call, so a bound past what a stack holds there would be
+a crash and not a refusal: a list that crosses a call of an algorithm and takes more
+than 256 KiB (its bound times the bytes of an element) is refused when the algorithm
+and the machine are generated for C11, naming the bound and what to do. The C++
+backend returns it in a `std::vector` and the others on the heap, and take the bound.
 `sce-build/tests/a_limit_moves_every_bound_that_names_it.rs`
 holds all of this, and that the repository's own bounds that share a name write
 one number.

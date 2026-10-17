@@ -831,6 +831,12 @@ pub trait StaticTarget {
     fn list_result_type(&self, _symbol: &str) -> Option<String> {
         None
     }
+    /// The most bytes one list may take where it crosses a call of an algorithm, for a
+    /// target that passes it by value on the stack. `None` for the others, whose lists
+    /// live on the heap.
+    fn list_stack_limit_bytes(&self) -> Option<u64> {
+        None
+    }
     /// The id the machine generates for a `<send idlocation>`, as an owned
     /// string expression evaluated where the send runs: `_auto_send_` and the
     /// number of ids this machine has generated, counted from one. The count is
@@ -2999,6 +3005,22 @@ pub fn lower(
             })?;
         }
     }
+    // A target that passes an algorithm's list by value on the stack is refused a list of
+    // numbers a stack cannot hold as well (the lists of records are judged below, with the
+    // adapters they are copied by).
+    if target.list_stack_limit_bytes().is_some() {
+        for callee in &scope.callees {
+            if let Some(returned) = &callee.list_return {
+                if let Some(refusal) = crate::forge::generator::c11_list_too_large(
+                    &format!("the list `{}(…)` returns", callee.alias),
+                    crate::forge::generator::c11_scalar_bytes(&returned.elem, None),
+                    returned.max_size,
+                ) {
+                    return Err(refusal);
+                }
+            }
+        }
+    }
     // A machine that takes a list an algorithm returns holds, in the code that
     // calls it, the type the algorithm returns it in, which a target may have to
     // be told it may use.
@@ -3073,6 +3095,58 @@ pub fn lower(
             payload_events: &payload_events_by_alias,
             record_list_bounds: &record_list_bounds,
         };
+        // A target that passes an algorithm's list by value on the stack is refused a list
+        // a stack cannot hold, here where the bound is built in and not at the call.
+        if target.list_stack_limit_bytes().is_some() {
+            let record_bytes = |alias: &str| -> u64 {
+                records
+                    .get(alias)
+                    .map(|schema| {
+                        schema
+                            .fields
+                            .iter()
+                            .map(|f| {
+                                crate::forge::generator::c11_field_bytes(&f.sce_type, f.max_size)
+                            })
+                            .sum()
+                    })
+                    .unwrap_or(0)
+            };
+            for slot in &value.params {
+                if let StaticSlot::RecordList(alias) = slot {
+                    let bound = record_list_bounds.get(alias).copied().unwrap_or(1);
+                    if let Some(refusal) = crate::forge::generator::c11_list_too_large(
+                        &format!(
+                            "`{}(…)` is handed a list of the records `{alias}`, which the machine \
+                             copies for it: the list",
+                            callee.alias
+                        ),
+                        record_bytes(alias),
+                        bound,
+                    ) {
+                        return Err(refusal);
+                    }
+                }
+            }
+            if let (Some(slot), Some(max)) = (value.ret.as_ref(), value.max_size) {
+                let element_bytes = match slot {
+                    StaticSlot::ScalarList(ty) => {
+                        Some(crate::forge::generator::c11_scalar_bytes(ty, None))
+                    }
+                    StaticSlot::RecordList(alias) => Some(record_bytes(alias)),
+                    _ => None,
+                };
+                if let Some(refusal) = element_bytes.and_then(|bytes| {
+                    crate::forge::generator::c11_list_too_large(
+                        &format!("the list `{}(…)` returns", callee.alias),
+                        bytes,
+                        max,
+                    )
+                }) {
+                    return Err(refusal);
+                }
+            }
+        }
         adapter_defs.push(target.state_adapter(&spec).ok_or_else(|| {
             GenerateError::unsupported(format!(
                 "`{}(…)`: an imported algorithm that takes or returns a record or a list has \
@@ -6017,6 +6091,10 @@ impl CTarget {
 impl StaticTarget for CTarget {
     fn name(&self) -> &'static str {
         "C11"
+    }
+    // An algorithm's list is passed and returned by value, a few copies of it at a call.
+    fn list_stack_limit_bytes(&self) -> Option<u64> {
+        Some(crate::forge::generator::C11_LIST_STACK_LIMIT_BYTES)
     }
     // A statement that fails is a block of its own that returns from the function: the
     // blocks follow one another.

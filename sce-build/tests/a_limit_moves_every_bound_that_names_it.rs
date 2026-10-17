@@ -215,6 +215,54 @@ fn what_a_build_gives_the_name_is_what_the_files_it_writes_hold() {
     assert_eq!(hash(&machine_moved), hash(&again));
 }
 
+/// The C11 backend returns an algorithm's list by value on the stack, a few copies of it at
+/// a call, so a bound a stack cannot hold is a crash at the call and not a refusal the
+/// machine could report. It is refused where the bound is built in, by the algorithm and by
+/// the machine that calls it, and the backends whose lists live on the heap take it.
+#[test]
+fn a_bound_the_c_stack_cannot_hold_is_refused_where_it_is_built_in() {
+    let (dir, path) = documents(&algorithm(4, ROOM), &machine(4, ROOM));
+    let algorithm_path = dir.path().join("copies.scxml");
+    let generate_c = |given: &str, document: &Path| -> (bool, String) {
+        let out = tempdir().expect("tempdir");
+        codegen(
+            &[
+                "--limit",
+                given,
+                "generate",
+                "-l",
+                "c",
+                "-o",
+                out.path().to_str().expect("utf-8"),
+            ],
+            document,
+        )
+    };
+    // A list of bytes holds a byte an element: 200000 of them are 200 KB, which a stack
+    // holds, and 300000 are more than the 256 KiB a list may take.
+    for document in [&path, &algorithm_path] {
+        let (ok, out) = generate_c("room=200000", document);
+        assert!(ok, "{}: a bound a stack holds:\n{out}", document.display());
+        let (ok, out) = generate_c("room=300000", document);
+        assert!(
+            !ok,
+            "{}: expected a refusal, got:\n{out}",
+            document.display()
+        );
+        assert!(
+            out.contains("stack") && out.contains("--limit"),
+            "{}: the refusal must say what to do:\n{out}",
+            document.display()
+        );
+    }
+    // The backends whose lists live on the heap take the same bound.
+    for language in ["rust", "kotlin", "cpp", "python"] {
+        let (_dir, path) = documents(&algorithm(4, ROOM), &machine(4, ROOM));
+        let (ok, out) = codegen(&["--limit", "room=300000", "check", "-l", language], &path);
+        assert!(ok, "{language} takes the bound:\n{out}");
+    }
+}
+
 #[test]
 fn what_is_not_a_limit_is_refused_with_its_reason() {
     for (given, says) in [
