@@ -99,10 +99,13 @@ went on signing itself. Both are fixed (`evict_past_the_cutoff`, `evict_from`, t
   keep to the list.
 - **An amendment needs one checkpoint of another writer**, and an administrator's signature. A stricter
   rule (two writers) is a one-line change if the reviewer thinks one is too few.
-- **No coverage-guided fuzzing.** The fuzz is a seeded mutator over each parser's corpus, not libFuzzer.
+- **The coverage-guided fuzzing is short.** Every parser is a target of libFuzzer (`scripts/fuzz/run.sh`),
+  and what has been run is minutes per target, not a night: the corpus it keeps is not evidence of much
+  yet, and a reviewer with a machine to spare should let it run.
 - **The MLS and crypto libraries are not audited here.** `openmls` has had its own audits; this project's use
   of it (plaintext handshake, the log's binding, the confirmation-tag check of a Welcome) has not.
-- **Kotlin and C++ have no replay** of the recorded MLS scenario, and no lane but Rust has a membership log.
+- **No lane but Rust has a membership log.** C, C++, Python, Go and Kotlin replay the recorded MLS
+  scenario through the C ABI with the log as data, so what verifies that log in those lanes is theirs.
 - **Machine documents are out of scope**, including whether `todo_peer` is a correct CRDT.
 - **Timing.** Verification is not constant-time where it does not need to be (it handles public data);
   the token tag comparison is constant-time; Argon2id is the library's.
@@ -110,18 +113,20 @@ went on signing itself. Both are fixed (`evict_past_the_cutoff`, `evict_from`, t
 ## 7. What the authors have done in place of a review
 
 - Known-answer vectors for every byte form that is signed or sealed (and a recorded MLS scenario that
-  Rust, C, Python and Go replay).
+  Rust, C, C++, Python, Go and Kotlin replay).
 - A seeded simulation that checks the safety properties against the code, and a TLA+ model of the
   convergence rule checked with TLC (one configuration that passes, one that fails as the history says).
-- A seeded mutation fuzz of every parser of the trust, relay and group-key code and of the C ABI, which found
-  no panic over the default run and over a run forty times longer, with a harness that is checked to find
-  planted defects of each kind.
-- A mutation round over the verification code (`sce-build/tests/mutations/
-  a_host_holds_only_what_its_log_admits_rust.cases`): 33 cases, each taking one check away, and the tests
-  must notice. Nine were not noticed the first time, which is how nine checks that nothing held in place
-  were found; they are held now (33 of 33). The round covers `trust.rs` and `membership.rs` (the log,
-  the operation and checkpoint checks); it does not cover the relay, `secrecy.rs`, `backup.rs` or the
-  MLS binding, which a reviewer should treat as unmeasured by this.
+- A fuzz of every parser of the trust, relay and group-key code and of the C ABI: a seeded mutator
+  (no panic over the default run and over a run forty times longer, with a harness that is checked to
+  find planted defects of each kind) and libFuzzer on the same 21 targets.
+- Four mutation rounds, 137 cases in all, each taking one check away and the tests having to notice:
+  the log and the operation and checkpoint checks of a host (33,
+  `a_host_holds_only_what_its_log_admits_rust.cases`), the relay (35), sealing, key agreement, backup,
+  audit and the checkpoint form (34), and the group key code with its binding to the log (35). 29 cases
+  survived the tests that existed; 28 of those checks are held now and one case was dropped (see
+  below). A round measures only the checks someone
+  thought to take away: the cases are the authors', and one kind of check is outside any round, the
+  wiping of a secret from memory, which safe code cannot observe.
 
 None of this is independent: the people who wrote the code wrote these. It finds what they thought to
 look for. It is the reason a reviewer's time can go to what they did not.

@@ -380,9 +380,8 @@ This ADR is Accepted with stage 3, since the log and the chains are what make th
   to its exports by a test.
 - **A known-answer vector of MLS is a recorded scenario**, not a computation, because the protocol is
   randomised. One device is stored as it was before it joined with the Welcome and the commits it is
-  then given; Rust, C, Python and Go replay the same file and derive the same keys, and none after the
-  removal. Kotlin and C++ share the header and have no replay yet, which is the part of "every lane"
-  this stage did not do.
+  then given; Rust, C, C++, Python, Go and Kotlin (JNA) replay the same file and derive the same keys,
+  and none after the removal. (Kotlin and C++ were first left without a replay, and added in stage 8.)
 - **Cross-signing is `Body::LinkedGrant`, and the administrator still signs.** Section 9 said an
   existing device signs for a new one and an administrator's entry makes the link a member. The entry
   carries both signatures over `link_bytes`, so the log proves a member vouched for the device and
@@ -431,11 +430,21 @@ This ADR is Accepted with stage 3, since the log and the chains are what make th
   every case is now caught. One of the nine was only visible because the dropping rule above stops an
   honest host from making a checkpoint that exceeds what it holds: the check is for the device that
   means to.
-- **Parsers are fuzzed by a seeded mutator, not by coverage.** Every parser of the trust, relay,
-  group-key and C ABI code is given its corpus and what a mutator makes of it (bytes, and JSON by
-  structure); none panicked, over the default run and a run forty times longer, and the harness is shown
-  to find planted defects of each kind. It does not follow coverage, which `cargo fuzz` would, and the
-  brief says so.
+  The rest of the verified code has rounds too: the relay (35 cases), the sealing, backup, audit, key
+  agreement and checkpoint code (34) and the group key code with its binding to the log (35). They
+  left twenty cases standing against the tests that existed (the range bound of operations, a stored checkpoint that does not
+  verify, every bound and check a relay makes of an MLS message, the commit looked up for the epoch a
+  device is in, a device the log still holds taken out of the group, a Welcome or commit the log has
+  not named yet, the padding of a sealed text, the key derivation a copy names, the small-order key,
+  the epochs an audit says were destroyed); tests were added and the 104 cases that remain are all
+  caught. One of the twenty was dropped, not closed: that a device's seed is wiped when its copy is
+  dropped, which no test of safe code can see.
+- **Parsers are fuzzed twice.** Every parser of the trust, relay, group-key and C ABI code is a named
+  target (`sce_rust_assurance::targets`, 21 of them, each with its corpus and what must hold of its
+  answer). A seeded mutator feeds them in the tests (bytes, and JSON by structure; none panicked, over
+  the default run and a run forty times longer, and the harness is shown to find planted defects of each
+  kind), and `scripts/fuzz/run.sh` feeds the same targets to libFuzzer through `cargo fuzz`, which keeps
+  the inputs that reach new code. A test holds the two lists to each other.
 - **The independent review is the one thing not done.** `docs/SCE_SHARED_LIST_REVIEW_BRIEF.md` is what
   a reviewer is given (claims, parties, primitives, code to read, evidence, known weaknesses, what to
   try). The authors cannot be that reviewer, and the stage is not complete until one has been.
