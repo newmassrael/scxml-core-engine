@@ -5,7 +5,7 @@
 name = "sce-rust-trust"
 version.workspace = true
 edition.workspace = true
-rust-version = "1.77"
+rust-version = "1.85"
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
@@ -36,4 +36,9 @@ sha2 = { version = "0.10", default-features = false }
 # A key of a new epoch is drawn here from the operating system's source of randomness, and not
 # handed in by a host: the one place a key can be made weak is the one place this crate owns.
 getrandom = "0.2"
+# A key the list had destroyed is zeroed in memory, not only forgotten.
+zeroize = "1"
+# What a passphrase is made into a key by, in a copy of a device's secrets: memory-hard, so that a
+# guess costs memory as well as time.
+argon2 = { version = "0.6", default-features = false, features = ["alloc"] }
 serde_json = "1"

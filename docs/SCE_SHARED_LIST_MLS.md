@@ -48,6 +48,18 @@ stays what it was: nothing takes back a key a member held. A new member is given
 default (it holds no key of the epochs before it joined, and the operations sealed under them are
 parked, not refused); an administrator may give it an older epoch's key (`Trust::grant_key`).
 
+### A person's devices
+
+A person's devices are separate leaves of the group, each with its own key and node. A new one is
+linked by a device the person has (`Member::add_linked_member`: the log records who vouched, then the
+group adds it), and is given no history; the device that vouched sends the keys of the epochs it holds
+(`Member::history_grants`). A lost device is taken off with its chain cut where the administrator saw it
+(and raised by an amendment if other writers' checkpoints show more), the group moves to an epoch it
+cannot derive, and the person's other devices go on; taking the whole person off is a removal for each
+device (`Member::remove_person`), each an epoch of its own. A device that is restored from a copy of its
+secrets (`sce_rust_trust::backup`, with `Device::to_bytes`) is the same device, in the epoch it was in,
+and applies the commits it missed in order.
+
 ## 4. What a relay carries
 
 A relay keeps three more kinds of record and reads none of them: a key package a device leaves for an

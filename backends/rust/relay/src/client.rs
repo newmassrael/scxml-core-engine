@@ -22,7 +22,7 @@ use std::sync::{Arc, Mutex};
 
 use sce_rust_mesh::endpoint::Sealer;
 use sce_rust_trust::encoding;
-use sce_rust_trust::membership::{Entry, LogError};
+use sce_rust_trust::membership::{Body, Entry, LogError};
 use sce_rust_trust::{TakeError, Trust};
 
 use crate::protocol::{Code, Record, Request, Response};
@@ -119,6 +119,8 @@ pub struct Courier<L: Link> {
     /// Operations that were read and that this host holds no key of the epoch of: tried again each
     /// round, since the key may come.
     parked: Vec<(String, String)>,
+    /// How many amendments of the log this courier has read the relay again for.
+    amendments_seen: usize,
 }
 
 const FEED_BATCH: u32 = 200;
@@ -135,7 +137,17 @@ impl<L: Link> Courier<L> {
             roster_len: 0,
             hub: false,
             parked: Vec::new(),
+            amendments_seen: 0,
         }
+    }
+
+    /// How many entries of the log amend the last operation accepted of a device taken off.
+    fn amendments(&self) -> usize {
+        self.trust
+            .entries()
+            .iter()
+            .filter(|entry| matches!(entry.body, Body::Amend { .. }))
+            .count()
     }
 
     /// How many operations this courier holds back for want of the key of their epoch.
@@ -199,6 +211,15 @@ impl<L: Link> Courier<L> {
         self.retry_parked(&mut round);
         if self.push(&mut round)? {
             self.pull(redeliver, &mut round)?;
+            // An amendment raised the last operation accepted of a device taken off: what the host
+            // refused of it before is true now, so it reads what the relay holds again from the
+            // start (the operations it already holds are not told to the machine twice).
+            let amends = self.amendments();
+            if amends > self.amendments_seen {
+                self.amendments_seen = amends;
+                self.cursor = 0;
+                self.pull(false, &mut round)?;
+            }
         }
         let len = self.trust.log_len();
         if len != self.roster_len || redeliver {

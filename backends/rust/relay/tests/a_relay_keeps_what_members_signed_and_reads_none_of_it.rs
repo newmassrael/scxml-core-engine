@@ -12,7 +12,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use sce_rust_mesh::endpoint::Sealer;
+use sce_rust_mesh::endpoint::{Admission, Sealer};
 use sce_rust_relay::{
     Authority, Code, Courier, DirectLink, FileStore, Limits, Link, LinkError, MemoryStore, Record,
     Relay, Request, Response, Store,
@@ -882,4 +882,91 @@ fn a_relay_that_withholds_is_seen_and_routed_around_by_a_second_relay() {
     assert_eq!(writes.len(), 1, "only the operation the host lacked");
     assert!(bob.divergences().is_empty());
     assert_eq!(bob.heads()[0].seq, 3);
+}
+
+/// An operation that a host refused because its device was taken off before it, and that an amendment
+/// then raised the last accepted to include, is taken in when the courier reads the relay again.
+#[test]
+fn an_amendment_makes_a_courier_read_again_what_it_refused() {
+    let relay_b = Arc::new(Mutex::new(relay()));
+    let clock: Arc<dyn Fn() -> u64 + Send + Sync> = Arc::new(|| 0);
+    {
+        // The relay that holds both of bob's operations has not heard of his removal yet.
+        let mut b = relay_b.lock().unwrap();
+        give_log(&mut b, 1);
+    }
+    let mut bob = host(Some(2));
+    let ops: Vec<(String, String)> = (1..=2)
+        .map(|n| operation(&mut bob, 2, n, 1000 + n as i64))
+        .collect();
+    for op in &ops {
+        let mut b = relay_b.lock().unwrap();
+        assert!(matches!(
+            submit(&mut b, 2, op),
+            Response::Accepted { new: true, .. }
+        ));
+    }
+
+    // Alice holds both too, and her checkpoint, made before the removal, names bob's chain to 2.
+    let mut alice = host(Some(1));
+    for (event, data) in &ops {
+        alice.admit("relay", event, data).unwrap();
+    }
+    let checkpoint = alice.checkpoint(30_000, 7).unwrap();
+
+    // The administrator takes bob off at his first operation; alice and carol hold that entry.
+    let carol = host(Some(3));
+    let removal = host(None)
+        .draft(Body::Grant {
+            node: 2,
+            role: 0,
+            key: person(2).public(),
+            final_seq: Some(1),
+        })
+        .sign(&admin())
+        .finish();
+    alice.append(&removal).unwrap();
+    carol.append(&removal).unwrap();
+
+    // Carol's courier gives that relay the removal, and reads: bob's first operation is taken in, and
+    // his second is refused, as past what the administrators accepted.
+    let mut courier = Courier::new(
+        carol.clone(),
+        DirectLink::new(relay_b.clone(), token(3), clock),
+    );
+    let round = courier.sync().unwrap();
+    assert_eq!(
+        round
+            .events
+            .iter()
+            .filter(|(event, _)| event == "todo.write")
+            .count(),
+        1
+    );
+    assert!(
+        round.refused.iter().any(|reason| reason.contains("past 1")),
+        "{:?}",
+        round.refused
+    );
+    assert_eq!(carol.last_seq(2), 1);
+
+    // The administrator amends the removal on the evidence of alice's checkpoint, and carol's courier
+    // reads the relay again and takes the second operation in.
+    let amendment = alice
+        .draft(Body::Amend {
+            node: 2,
+            final_seq: 2,
+            evidence: vec![checkpoint],
+        })
+        .sign(&admin())
+        .finish();
+    carol.append(&amendment).unwrap();
+    let round = courier.sync().unwrap();
+    let writes: Vec<&(String, String)> = round
+        .events
+        .iter()
+        .filter(|(event, _)| event == "todo.write")
+        .collect();
+    assert_eq!(writes.len(), 1, "{:?}", round.events);
+    assert_eq!(carol.last_seq(2), 2);
 }

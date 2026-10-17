@@ -279,8 +279,8 @@ Stage 1 and the membership log of stage 2 have landed. Stage 2 as first landed r
 by a time (`from`), which is not what section 4 says; it was corrected with stage 3, where the
 number of an operation that section 4 needs exists. Stages 3, 4 and 5 have landed with the
 refinements below, and stage 6 (the group key, `docs/SCE_SHARED_LIST_MLS.md`) in Rust, with a C ABI
-that C, Python and Go replay. This ADR is Accepted with stage 3, since the log and the chains are what make
-the rest binding.
+that C, Python and Go replay, and stage 7 (devices, recovery, history, backup, audit, destruction).
+This ADR is Accepted with stage 3, since the log and the chains are what make the rest binding.
 
 ## Revisions made in building it
 
@@ -380,3 +380,31 @@ the rest binding.
   then given; Rust, C, Python and Go replay the same file and derive the same keys, and none after the
   removal. Kotlin and C++ share the header and have no replay yet, which is the part of "every lane"
   this stage did not do.
+- **Cross-signing is `Body::LinkedGrant`, and the administrator still signs.** Section 9 said an
+  existing device signs for a new one and an administrator's entry makes the link a member. The entry
+  carries both signatures over `link_bytes`, so the log proves a member vouched for the device and
+  records the person each device belongs to (`person_of`, `devices_of`); the role is capped at the
+  parent's and the node must be new. Delegating the grant itself to members (no administrator online)
+  is not done: a stolen member key would then make devices that outlive its removal.
+- **Taking a person off is a removal for each device, not a rule of the log.** A cascade would need a
+  `final_seq` for each child that only each child's chain can give, so the log leaves it to the
+  administrator's tool (`Member::remove_person`) and keeps the linkage to say which devices to take off.
+- **`Amend` is a log entry with evidence** (decision 4). Other writers' checkpoints, made before the
+  removal and naming the chain to the new number, show that operations were seen; one that holds is
+  enough, an administrator signs it, and it only raises, only for a device that was taken off and has
+  no later grant (a later chain starts at the number after the cutoff, which a raise would overlap). A
+  courier that reads an amendment reads the relay again from the start, since what it refused is true now.
+- **History for a new device or member is sent, not given.** None by default (decision 3); a device
+  that holds older epochs' keys sends them as grants (`history_grants`, `receive_grant`), which works
+  for either key scheme because both end in `set_epoch_key`.
+- **Shredding is a log fact, the quorum's, and refuses for good.** `Body::Shred { epoch }` for an
+  epoch the list is past: every host zeroes the key and takes none; sealed content of that epoch is
+  refused, not parked. It is a request that obedient hosts honour; a copy a member made earlier is out
+  of its reach, and the documents say so.
+- **A copy of a device's secrets is Argon2id and XChaCha20-Poly1305** (the `backup` module): 64 MiB
+  and 3 passes by default, a cost the opener caps before paying it, the header authenticated, no key of
+  an epoch the list destroyed, the bytes pinned by a known-answer vector. The trust crate's declared
+  minimum Rust is now 1.85 (the KDF crate's).
+- **The audit checks with the code a host uses.** `audit::verify` builds a `Trust` from the genesis
+  hash and the exported log, operations and checkpoints and reports what holds and what does not, so
+  there is one judgement of a list; content stays sealed, and a changed record fails where it changed.

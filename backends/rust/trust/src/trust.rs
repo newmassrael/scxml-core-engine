@@ -35,6 +35,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use sce_rust_mesh::endpoint::{Admission, Sealer};
 use serde_json::{json, Value};
+use zeroize::Zeroize;
 
 use crate::checkpoint::{Checkpoint, Head, Settlement};
 use crate::encoding;
@@ -122,6 +123,8 @@ pub enum GrantError {
     CannotOpen,
     /// The host holds another key of that epoch already.
     EpochTaken,
+    /// The list has had the keys of that epoch destroyed, and no host that keeps to it takes one.
+    Shredded,
 }
 
 /// An operation of a device as it travels: the event as its author made it (sealed, when the list
@@ -277,7 +280,78 @@ impl Trust {
         if let Err(LogError::Fork { index }) = &appended {
             state.forked.get_or_insert(*index);
         }
+        // An epoch the list has had destroyed: what this host holds of its keys goes, and is zeroed.
+        if let (Ok(true), Body::Shred { epoch }) = (&appended, &entry.body) {
+            if let Some(mut key) = state.epoch_keys.remove(epoch) {
+                key.zeroize();
+            }
+        }
         appended
+    }
+
+    /// The keys of the epochs this host holds, for a copy of its device's secrets
+    /// ([`crate::backup`]). An epoch the list had destroyed is not here: its key was zeroed when the
+    /// entry came, and none is taken after.
+    pub fn keys_for_backup(&self) -> Vec<(u32, secrecy::EpochKey)> {
+        self.state()
+            .epoch_keys
+            .iter()
+            .map(|(epoch, key)| (*epoch, *key))
+            .collect()
+    }
+
+    /// What the log holds of each node: every grant of it, oldest first, with the entry that made it,
+    /// its role, its key and where the chain it ended was cut (a grant that took writing away).
+    pub fn member_history(&self) -> Vec<(u64, Vec<crate::membership::Era>)> {
+        self.state()
+            .log
+            .eras()
+            .map(|(node, eras)| (node, eras.into_iter().copied().collect()))
+            .collect()
+    }
+
+    /// Every operation this host holds, as the event and the data it travels with, device by device
+    /// and in the order of each chain: what an audit takes.
+    pub fn all_operations(&self) -> Vec<(String, String)> {
+        let state = self.state();
+        state
+            .ops
+            .values()
+            .flat_map(|ops| ops.values())
+            .filter_map(|held| Some((held.event.to_string(), held.wire.to_json()?)))
+            .collect()
+    }
+
+    /// How many operations this host holds of each device, and the highest number among them.
+    pub fn chains(&self) -> Vec<(u64, usize, u64)> {
+        self.state()
+            .ops
+            .iter()
+            .map(|(node, ops)| {
+                (
+                    *node,
+                    ops.len(),
+                    ops.keys().next_back().copied().unwrap_or(0),
+                )
+            })
+            .collect()
+    }
+
+    /// The epochs whose keys the list has had destroyed.
+    pub fn shredded(&self) -> Vec<u32> {
+        self.state().log.shredded().collect()
+    }
+
+    /// The node of the first device of the person whose device `node` is (itself, when it was not
+    /// linked by another).
+    pub fn person_of(&self, node: u64) -> u64 {
+        self.state().log.person_of(node)
+    }
+
+    /// Every device of the person whose device `node` is that the log holds: the first and those
+    /// linked from it, members now or taken off.
+    pub fn devices_of(&self, node: u64) -> Vec<u64> {
+        self.state().log.devices_of(node)
     }
 
     /// The position where the log forked, when this host was shown two histories of it.
@@ -497,8 +571,15 @@ impl Trust {
     /// grant. Whether the list keeps its content from the hub, and which epoch a write is sealed
     /// under, is the membership log's: a key opens what is sealed under its epoch, and a host
     /// holding none that it needs says so and takes or sends nothing in the clear.
-    pub fn set_epoch_key(&self, epoch: u32, key: secrecy::EpochKey) {
-        self.state().epoch_keys.insert(epoch, key);
+    ///
+    /// A key of an epoch the list has had destroyed is not kept: `false`.
+    pub fn set_epoch_key(&self, epoch: u32, key: secrecy::EpochKey) -> bool {
+        let mut state = self.state();
+        if state.log.is_shredded(epoch) {
+            return false;
+        }
+        state.epoch_keys.insert(epoch, key);
+        true
     }
 
     /// The epochs this host holds a key of.
@@ -629,6 +710,9 @@ impl Trust {
         let (_, identity) = state.own.as_ref().ok_or(GrantError::NotForThisHost)?;
         if identity.public() != to {
             return Err(GrantError::NotForThisHost);
+        }
+        if state.log.is_shredded(epoch) {
+            return Err(GrantError::Shredded);
         }
         let known = state.log.administrators().contains(&from) || state.log.was_a_writer(&from);
         if !known {
@@ -1318,6 +1402,13 @@ fn open_write(state: &State, wire: &Value) -> Result<Value, Refusal> {
     if epoch == 0 || epoch > state.log.epoch() {
         return Err(refused(format!(
             "todo.write: it is sealed under epoch {epoch}, which the membership log has not begun"
+        )));
+    }
+    // A hub that holds no key carries it as it is; a host that opens refuses what the list has had
+    // destroyed the keys of, for good (it is not parked: no key will come).
+    if state.log.is_shredded(epoch) && !state.relays_sealed() {
+        return Err(refused(format!(
+            "todo.write: it is sealed under epoch {epoch}, whose keys the list had destroyed"
         )));
     }
     if state.relays_sealed() {

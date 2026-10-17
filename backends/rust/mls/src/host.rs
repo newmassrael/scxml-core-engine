@@ -238,6 +238,95 @@ impl Member {
         self.finish(administrator, entries, pending)
     }
 
+    /// The administrator's change: add a new device of a person, **linked** by the device of
+    /// `parent`, which signed for it (`parent_signature`) as the new key did too (`signature`), both
+    /// over `sce_rust_trust::membership::link_bytes`. As [`Self::add_member`], with the entry of the log
+    /// that records who vouched.
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_linked_member(
+        &mut self,
+        administrator: &Identity,
+        node: u64,
+        role: u8,
+        key: PublicKey,
+        parent: u64,
+        parent_signature: [u8; 64],
+        signature: [u8; 64],
+        package: &[u8],
+    ) -> Result<Issued, MlsError> {
+        let entries = vec![self.append(
+            administrator,
+            Body::LinkedGrant {
+                node,
+                role,
+                key,
+                parent,
+                parent_signature,
+                signature,
+            },
+        )?];
+        let pending = self.device.stage_add(&[package.to_vec()], &self.trust)?;
+        self.finish(administrator, entries, pending)
+    }
+
+    /// The administrator's change: take every device of the person whose device `node` is off, one
+    /// removal each, since the log does not take a person's other devices off with one of them.
+    /// What it returns is one [`Issued`] for each device that was a member.
+    pub fn remove_person(
+        &mut self,
+        administrator: &Identity,
+        node: u64,
+    ) -> Result<Vec<Issued>, MlsError> {
+        let mut issued = Vec::new();
+        for device in self.trust.devices_of(node) {
+            if self.trust.role(device) > 0 {
+                issued.push(self.remove_member(administrator, device)?);
+            }
+        }
+        Ok(issued)
+    }
+
+    /// The keys of `epochs` that this host holds, each given to the device whose key is `to` (a new
+    /// device of the same person, or a new member the administrator means to give the history of the
+    /// list to): a grant for that device's host to take in with `Trust::receive_grant`. A new member is
+    /// given no history unless one of these is sent; an epoch this host holds no key of is left out.
+    pub fn history_grants(&self, to: &PublicKey, epochs: &[u32]) -> Vec<(u32, String)> {
+        epochs
+            .iter()
+            .filter_map(|epoch| Some((*epoch, self.trust.grant_key(*epoch, to)?)))
+            .collect()
+    }
+
+    /// The administrator's change: raise the last operation accepted of the device of `node`, which
+    /// was taken off, to `final_seq`, on the checkpoints this host holds that were made before the
+    /// removal and name that much of its chain. The entry is for the relay and for every host.
+    pub fn amend_removed(
+        &mut self,
+        administrator: &Identity,
+        node: u64,
+        final_seq: u64,
+    ) -> Result<Entry, MlsError> {
+        let evidence: Vec<_> = self
+            .trust
+            .checkpoints()
+            .into_iter()
+            .filter(|checkpoint| {
+                checkpoint
+                    .heads
+                    .iter()
+                    .any(|head| head.node == node && head.seq >= final_seq)
+            })
+            .collect();
+        self.append(
+            administrator,
+            Body::Amend {
+                node,
+                final_seq,
+                evidence,
+            },
+        )
+    }
+
     /// The administrator's change: take the device of `node` off, ending its chain at the last
     /// operation this host has seen of it, and move the group to an epoch without it.
     pub fn remove_member(

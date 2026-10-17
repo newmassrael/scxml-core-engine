@@ -16,6 +16,12 @@
 //!   append-only chain of entries signed by administrators, so that a host believes nothing a
 //!   hub says about who the members are, and two histories of one position are a fork it
 //!   reports.
+//! * [`backup`] - a device's secrets (its key, its MLS state, the keys of the epochs it holds) under a
+//!   passphrase: Argon2id and an authenticated cipher, a cost a copy cannot make a host pay without
+//!   limit, and no key of an epoch the list had destroyed.
+//! * [`audit`] - the record of a list that someone who is not in it checks with the hash of the
+//!   genesis and no key: the log, the operations as they travelled, the checkpoints, and a report of
+//!   what holds and what does not.
 //! * [`checkpoint`] - what a member's device says it holds (an instant, the digest of its copy up
 //!   to it, the head of every chain it has in full), signed; and the settlement the checkpoints
 //!   of every writer make together, which a host checks alone, with no administrator, and which
@@ -39,6 +45,8 @@
 
 #![forbid(unsafe_code)]
 
+pub mod audit;
+pub mod backup;
 pub mod checkpoint;
 pub mod encoding;
 pub mod identity;

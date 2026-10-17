@@ -19,10 +19,11 @@
 //! administrator (or whoever holds a key) signed two histories, and reports it. Whoever it
 //! concerns decides what to do; a host does not choose one.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use sha2::{Digest, Sha256};
 
+use crate::checkpoint::Checkpoint;
 use crate::encoding;
 use crate::identity::{Identity, PublicKey};
 
@@ -36,6 +37,20 @@ const DOMAIN: &str = "sce-trust/membership/1";
 
 /// The role from which a member may write.
 pub const WRITER: u8 = 2;
+
+const LINK_DOMAIN: &str = "sce-trust/link/1";
+
+/// What the device that links and the device that is linked both sign: the list, the node that
+/// vouches, and the node and key it vouches for.
+pub fn link_bytes(list: &str, parent: u64, node: u64, key: &PublicKey) -> Vec<u8> {
+    let mut out = Vec::new();
+    part(&mut out, LINK_DOMAIN);
+    part(&mut out, list);
+    part(&mut out, &parent.to_string());
+    part(&mut out, &node.to_string());
+    part(&mut out, &key.to_text());
+    out
+}
 
 /// Whether the hub of the list is trusted. It is a fact of the log so that every host knows
 /// which it is in, and nobody is surprised by it.
@@ -100,6 +115,39 @@ pub enum Body {
     /// reorders or makes up a commit is found out by the chain; a host applies no commit this log
     /// did not name. A list's epochs are all of this kind or all of the kind above, not both.
     MlsEpoch { epoch: u32, commit: Hash },
+    /// From this position a new device of a person is a member: the device of `node`, with `role`
+    /// and `key`, **linked by** the device of `parent`, which is a member and signed for it
+    /// ([`link_bytes`], `parent_signature`) as the new key did too (`signature`, proof that whoever
+    /// asks holds it). A person has several devices, each with its own key and its own node; this
+    /// is the entry that records that one vouched for another, so that the log says which devices
+    /// are one person's ([`Log::person_of`]) and an administrator who is shown a device by a relay
+    /// holds proof from a member and not the relay's word. A linked device has no more than its
+    /// parent's role, and is a node the log has not held before. Removing a person is one removal
+    /// for each of their devices; the log does not do it by itself.
+    LinkedGrant {
+        node: u64,
+        role: u8,
+        key: PublicKey,
+        parent: u64,
+        parent_signature: [u8; 64],
+        signature: [u8; 64],
+    },
+    /// The last operation accepted of a device that was taken off is raised to `final_seq`, because
+    /// members' checkpoints, made before it was taken off, name operations of its chain up to there:
+    /// what the device published to some and not yet to the administrator's host is not lost. The
+    /// log checks each checkpoint (a writer other than the device made it, under an entry before the
+    /// removal, and it names the device's chain to `final_seq`), and at least one is needed.
+    Amend {
+        node: u64,
+        final_seq: u64,
+        evidence: Vec<Checkpoint>,
+    },
+    /// The keys of epoch `epoch` are to be destroyed: every host that sees the entry destroys what it
+    /// holds of them and takes no more, so that what was sealed under the epoch opens for no one that
+    /// obeys it. It needs the quorum, since it cannot be undone, and it names an epoch before the one
+    /// the list is in. A member that keeps a copy of a key keeps what it could read; this is what a
+    /// list can ask of the hosts that mean to keep to it.
+    Shred { epoch: u32 },
     /// Administrators are added and removed, and the quorum becomes `quorum`.
     Administrators {
         add: Vec<PublicKey>,
@@ -116,9 +164,13 @@ impl Body {
         match self {
             Body::Genesis { .. }
             | Body::Grant { .. }
+            | Body::LinkedGrant { .. }
+            | Body::Amend { .. }
             | Body::Epoch { .. }
             | Body::MlsEpoch { .. } => 1,
-            Body::Administrators { .. } | Body::Profile(_) => usize::from(quorum),
+            Body::Administrators { .. } | Body::Profile(_) | Body::Shred { .. } => {
+                usize::from(quorum)
+            }
         }
     }
 
@@ -159,6 +211,39 @@ impl Body {
                 part(out, "mls-epoch");
                 part(out, &epoch.to_string());
                 part(out, &encoding::encode(commit));
+            }
+            Body::LinkedGrant {
+                node,
+                role,
+                key,
+                parent,
+                parent_signature,
+                signature,
+            } => {
+                part(out, "linked-grant");
+                part(out, &node.to_string());
+                part(out, &role.to_string());
+                part(out, &key.to_text());
+                part(out, &parent.to_string());
+                part(out, &encoding::encode(parent_signature));
+                part(out, &encoding::encode(signature));
+            }
+            Body::Amend {
+                node,
+                final_seq,
+                evidence,
+            } => {
+                part(out, "amend");
+                part(out, &node.to_string());
+                part(out, &final_seq.to_string());
+                part(out, &evidence.len().to_string());
+                for checkpoint in evidence {
+                    part(out, &checkpoint.to_json());
+                }
+            }
+            Body::Shred { epoch } => {
+                part(out, "shred");
+                part(out, &epoch.to_string());
             }
             Body::Administrators {
                 add,
@@ -253,6 +338,33 @@ impl Entry {
                 "epoch": epoch,
                 "commit": encoding::encode(commit),
             }),
+            Body::LinkedGrant {
+                node,
+                role,
+                key,
+                parent,
+                parent_signature,
+                signature,
+            } => serde_json::json!({
+                "kind": "linked_grant",
+                "node": node.to_string(),
+                "role": role,
+                "key": key.to_text(),
+                "parent": parent.to_string(),
+                "parent_sig": encoding::encode(parent_signature),
+                "sig": encoding::encode(signature),
+            }),
+            Body::Amend {
+                node,
+                final_seq,
+                evidence,
+            } => serde_json::json!({
+                "kind": "amend",
+                "node": node.to_string(),
+                "final_seq": final_seq.to_string(),
+                "evidence": evidence.iter().map(Checkpoint::to_value).collect::<Vec<_>>(),
+            }),
+            Body::Shred { epoch } => serde_json::json!({"kind": "shred", "epoch": epoch}),
             Body::Administrators {
                 add,
                 remove,
@@ -320,6 +432,29 @@ impl Entry {
                 commit: encoding::decode(&text_of(body, "commit")?)?
                     .try_into()
                     .ok()?,
+            },
+            "linked_grant" => Body::LinkedGrant {
+                node: text_of(body, "node")?.parse().ok()?,
+                role: small(body, "role")?,
+                key: PublicKey::from_text(&text_of(body, "key")?)?,
+                parent: text_of(body, "parent")?.parse().ok()?,
+                parent_signature: encoding::decode(&text_of(body, "parent_sig")?)?
+                    .try_into()
+                    .ok()?,
+                signature: encoding::decode(&text_of(body, "sig")?)?.try_into().ok()?,
+            },
+            "amend" => Body::Amend {
+                node: text_of(body, "node")?.parse().ok()?,
+                final_seq: text_of(body, "final_seq")?.parse().ok()?,
+                evidence: body
+                    .get("evidence")?
+                    .as_array()?
+                    .iter()
+                    .map(Checkpoint::from_value)
+                    .collect::<Option<Vec<_>>>()?,
+            },
+            "shred" => Body::Shred {
+                epoch: u32::try_from(body.get("epoch")?.as_u64()?).ok()?,
             },
             "administrators" => Body::Administrators {
                 add: keys(body, "add")?,
@@ -438,6 +573,10 @@ pub struct Log {
     /// (`None` until the first epoch).
     mls: Option<bool>,
     commits: BTreeMap<u32, Hash>,
+    /// The device each linked device was linked by.
+    parents: BTreeMap<u64, u64>,
+    /// The epochs whose keys the list has had destroyed.
+    shredded: BTreeSet<u32>,
 }
 
 impl Log {
@@ -466,6 +605,8 @@ impl Log {
             epoch: 0,
             mls: None,
             commits: BTreeMap::new(),
+            parents: BTreeMap::new(),
+            shredded: BTreeSet::new(),
         }
     }
 
@@ -502,6 +643,41 @@ impl Log {
     /// against a key an administrator drew; `false` while the list has had no epoch.
     pub fn is_mls(&self) -> bool {
         self.mls == Some(true)
+    }
+
+    /// The node of the first device of the person whose device `node` is: itself when it was not
+    /// linked by another.
+    pub fn person_of(&self, node: u64) -> u64 {
+        let mut root = node;
+        // Each link is to a node that was a member before it, so the chain is finite.
+        while let Some(parent) = self.parents.get(&root) {
+            root = *parent;
+        }
+        root
+    }
+
+    /// Every device the log holds of the person whose device `node` is, the first and the ones linked
+    /// from it, whether they are members now or were taken off.
+    pub fn devices_of(&self, node: u64) -> Vec<u64> {
+        let person = self.person_of(node);
+        let mut devices: Vec<u64> = self
+            .members
+            .keys()
+            .copied()
+            .filter(|held| self.person_of(*held) == person)
+            .collect();
+        devices.sort_unstable();
+        devices
+    }
+
+    /// Whether the keys of `epoch` have been destroyed by the list.
+    pub fn is_shredded(&self, epoch: u32) -> bool {
+        self.shredded.contains(&epoch)
+    }
+
+    /// The epochs whose keys the list has had destroyed.
+    pub fn shredded(&self) -> impl Iterator<Item = u32> + '_ {
+        self.shredded.iter().copied()
     }
 
     /// The hash of the commit message that began `epoch` of an MLS list, when the log names one.
@@ -709,6 +885,64 @@ impl Log {
         Ok(())
     }
 
+    /// Raise the last operation accepted of the device of `node`, which the latest grant of it took
+    /// off, to `final_seq`. The evidence is checkpoints of other writers, made under an entry before
+    /// that grant, each naming the device's chain in full to at least `final_seq`; one that holds is
+    /// enough, and the administrator who signs the entry answers for choosing it.
+    fn amend(
+        &mut self,
+        node: u64,
+        final_seq: u64,
+        evidence: &[Checkpoint],
+    ) -> Result<(), LogError> {
+        let (index, era) = self
+            .members
+            .get(&node)
+            .and_then(|eras| eras.iter().next_back())
+            .map(|(index, era)| (*index, *era))
+            .ok_or(LogError::Invalid("only a device taken off is amended"))?;
+        let Some(cutoff) = era.cutoff.filter(|_| era.role == 0) else {
+            return Err(LogError::Invalid("only a device taken off is amended"));
+        };
+        if final_seq <= cutoff {
+            return Err(LogError::Invalid("an amendment raises the last accepted"));
+        }
+        let held = |checkpoint: &Checkpoint| -> bool {
+            if checkpoint.list != self.list
+                || checkpoint.device == node
+                || checkpoint.log >= index
+                || self.hashes.get(checkpoint.log as usize) != Some(&checkpoint.log_hash)
+                || !checkpoint.is_canonical()
+            {
+                return false;
+            }
+            let Some(signer) = self.era_for(checkpoint.device, checkpoint.log) else {
+                return false;
+            };
+            signer.role >= WRITER
+                && signer
+                    .key
+                    .verifies(&checkpoint.signing_bytes(), &checkpoint.signature)
+                && checkpoint
+                    .heads
+                    .iter()
+                    .any(|head| head.node == node && head.seq >= final_seq)
+        };
+        if !evidence.iter().any(held) {
+            return Err(LogError::Invalid(
+                "an amendment is shown by a checkpoint of another writer, made before the removal",
+            ));
+        }
+        if let Some(era) = self
+            .members
+            .get_mut(&node)
+            .and_then(|eras| eras.get_mut(&index))
+        {
+            era.cutoff = Some(final_seq);
+        }
+        Ok(())
+    }
+
     /// Begin epoch `epoch`, which must follow the one before it and be of the kind the list's
     /// epochs are.
     fn next_epoch(&mut self, epoch: u32, mls: bool) -> Result<(), LogError> {
@@ -772,6 +1006,68 @@ impl Log {
                         cutoff: *final_seq,
                     },
                 );
+            }
+            Body::LinkedGrant {
+                node,
+                role,
+                key,
+                parent,
+                parent_signature,
+                signature,
+            } => {
+                if *role == 0 || *role > 3 {
+                    return Err(LogError::Invalid("a linked device has a role of 1 to 3"));
+                }
+                if self.members.contains_key(node) {
+                    return Err(LogError::Invalid(
+                        "a linked device is a node the log has not held before",
+                    ));
+                }
+                let linking = self
+                    .members
+                    .get(parent)
+                    .and_then(|eras| eras.values().next_back())
+                    .copied()
+                    .filter(|era| era.role >= 1)
+                    .ok_or(LogError::Invalid("a device is linked by a member"))?;
+                if *role > linking.role {
+                    return Err(LogError::Invalid(
+                        "a linked device has no more than its parent's role",
+                    ));
+                }
+                let statement = link_bytes(&self.list, *parent, *node, key);
+                if !linking.key.verifies(&statement, parent_signature)
+                    || !key.verifies(&statement, signature)
+                {
+                    return Err(LogError::BadSignature);
+                }
+                self.members.entry(*node).or_default().insert(
+                    position,
+                    Era {
+                        index: position,
+                        key: *key,
+                        role: *role,
+                        cutoff: None,
+                    },
+                );
+                self.parents.insert(*node, *parent);
+            }
+            Body::Amend {
+                node,
+                final_seq,
+                evidence,
+            } => {
+                self.amend(*node, *final_seq, evidence)?;
+            }
+            Body::Shred { epoch } => {
+                if *epoch == 0 || *epoch >= self.epoch {
+                    return Err(LogError::Invalid(
+                        "an epoch is destroyed after the list has moved past it",
+                    ));
+                }
+                if !self.shredded.insert(*epoch) {
+                    return Err(LogError::Invalid("an epoch is destroyed once"));
+                }
             }
             Body::Epoch { epoch } => {
                 self.next_epoch(*epoch, false)?;

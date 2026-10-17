@@ -53,7 +53,11 @@ its word.
 |---|---|---|
 | Genesis | names the administrators, the quorum and the profile | one of the administrators it names |
 | Grant | from this entry, the device of a node is a member with a role and signs with a key (role 0 takes it off); one that takes writing away or changes the key carries `final_seq`, where the device's chain ends | one administrator |
+| LinkedGrant | a new device of a person is a member, vouched for by one of their devices that is a member (both signed) | one administrator |
+| Amend | the last operation accepted of a device that was taken off is raised, on other writers' checkpoints made before the removal | one administrator |
 | Epoch | the content key of the list changes | one administrator |
+| MlsEpoch | the same, and the key is an MLS group's: names the commit by hash | one administrator |
+| Shred | the keys of an earlier epoch are destroyed | the quorum |
 | Administrators | add and remove administrators, set the quorum | the quorum |
 | Profile | the hub becomes trusted or not | the quorum |
 
@@ -81,6 +85,29 @@ by a time it alone can claim, and cannot go back to an entry before its removal 
 - The administrator reads `final_seq` from what the hosts have seen of the device's chain
   (`Trust::last_seq`).
 - A host that relays entries cannot make one: it does not hold an administrator's key.
+
+**An amendment** (`Body::Amend`) takes back part of that cost when the loss was not real: other
+writers' checkpoints, made under an entry before the removal, may show that the device's chain was
+whole to a later number than the administrator's host had seen. The entry raises the last accepted
+to that number and the log checks the evidence (a writer other than the device made it, before the
+removal, and it names the device's chain to at least the number); one checkpoint that holds is enough
+and the administrator who signs answers for choosing it. It raises and never lowers, and only for a
+device that was taken off and has no later grant. A host that refused those operations before reads
+the relay again (a courier does it when an amendment arrives), and the operations are taken in.
+
+### Devices
+
+A person has several devices, each with its own key and its own node (a node is a device's). A new
+device is linked by a device the person has already, which signs for it and which the new key signs
+with too (`Body::LinkedGrant`, over `link_bytes`: the list, the node that vouches, the node and the
+key): the log then says which devices are one person's (`Trust::person_of`, `devices_of`), an
+administrator who is shown a device by a relay holds proof from a member and not the relay's word,
+and a linked device has no more than its parent's role and is a node the log has not held before. A
+removal is for a device: **taking a person off is a removal for each of their devices**, which the
+log does not do by itself (`Member::remove_person` in `sce-rust-mls` does it), and a device that
+is lost is taken off while the person's others go on. A new device holds no key of the epochs before
+it joined; a device of the same person that holds them sends them (`Member::history_grants`, then
+`receive_grant`), which is the history policy: none unless someone sends it.
 
 A hub's machine is told, by `Trust::hub_role_events`, that anyone who could write at some entry
 is a writer: the machine has no log to judge by, and must not refuse what its host let through. A
@@ -217,6 +244,17 @@ must hold the keys of the epochs that exist, or it would begin a number already 
 administrator the host was told to trust begins an epoch. A lost key means lost content: the hub
 cannot recover it.
 
+### Destroying an epoch's keys
+
+A list may have the keys of an earlier epoch destroyed (`Body::Shred`, an epoch before the one the
+list is in; it needs the quorum, since it cannot be undone). Every host that sees the entry zeroes
+what it holds of those keys (`zeroize`) and takes no more (`set_epoch_key` is `false`,
+`receive_grant` is `GrantError::Shredded`, a copy of a device's secrets keeps none and puts none back),
+and what is sealed under the epoch is refused for good, not parked, since no key will come. A hub that
+holds no key carries it still, as ciphertext. What this is: the content is unreadable to every host
+that keeps to the list. What it is not: a member that copied a key before keeps what it could read,
+and nothing a list does reaches that.
+
 The bytes that are signed and sealed are pinned by known-answer vectors
 (`backends/rust/trust/tests/a_byte_format_does_not_drift.rs`): a change to any of them is a
 decision that makes every existing signature and sealed text stop verifying, and the vectors are
@@ -231,6 +269,31 @@ over what, as they travel, with their signatures and numbers). It holds no key.
 so that what a host knew to be withheld is still known after a restart. The log itself is kept as its entries (`Trust::entries`, each
 `Entry::to_json`), and a host reads it back by appending them in order, which checks the chain again.
 Keys and the person's secret are kept where the host keeps secrets.
+
+### A copy of a device's secrets
+
+What a person can keep for themselves against a lost device is a copy of its secrets under a
+passphrase (`sce_rust_trust::backup`): the seed of its key, named extras (its MLS state,
+`Device::to_bytes`) and the keys of the epochs it holds (none that the list had destroyed). The key
+is made from the passphrase by Argon2id (64 MiB, 3 passes by default, a salt drawn from the
+operating system) and the copy is sealed with XChaCha20-Poly1305 under a nonce drawn the same way,
+the header authenticated with the rest. A copy that asks for more than 1 GiB, 16 passes or 16 lanes
+is refused before it is paid for. A wrong passphrase and a changed copy look the same. The bytes are
+pinned by a known-answer vector. A device made from a copy still needs the administrator: a lost key is
+taken off and a new device is granted, and the copy is for the person who did not lose their
+passphrase and wants the same device back, with its MLS state and its epoch keys.
+
+### An audit of the list
+
+`sce_rust_trust::audit::export` writes the record of a list as one text (the log, every operation
+as it travelled, the checkpoints), and `audit::verify` checks it with the hash of the genesis and no
+key, by the same code a host uses: each entry signed by the administrators it needs, each operation
+made by a device that was a writer under the entry it names, within what the log accepted of the
+device, and signed. Content stays sealed. The report says who the administrators and members were
+and from which entry (a device taken off with where its chain was cut, an amendment, the person each
+device belongs to), the length of each chain and how far it is whole, the epochs destroyed, and what
+in the text does not hold. A record that was changed fails where it was changed: a changed entry
+stops the log there, a changed or removed operation is listed or leaves a gap the report shows.
 
 ## 6. What is not here
 
