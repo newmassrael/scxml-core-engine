@@ -1086,6 +1086,15 @@ impl World {
         self.with_actor(actor, |actor| actor.raise(event, data));
     }
 
+    /// The host of `actor` forbids the link `peer` to deliver the events `events` to the machine
+    /// (an empty list lifts it): what arrives on that link under one of those names is dropped
+    /// before the machine is told ([`Endpoint::forbid_events_from`]).
+    pub fn forbid_events_from(&mut self, actor: &str, peer: &str, events: &[&str]) {
+        self.with_actor(actor, |actor| {
+            actor.lock_endpoint().forbid_events_from(peer, events)
+        });
+    }
+
     /// The actor `name`, as the machine it was added as.
     pub fn actor<P: StatePolicy + 'static>(&mut self, name: &str) -> &mut Actor<P> {
         self.actors

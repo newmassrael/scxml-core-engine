@@ -119,6 +119,9 @@ pub struct Endpoint<T, E> {
     retries: Vec<Retry>,
     to_engine: Vec<EngineCall>,
     host_errors: Vec<RouterError>,
+    /// The events a link may not deliver to the machine, by link
+    /// ([`Self::forbid_events_from`]).
+    forbidden: std::collections::BTreeMap<String, Vec<String>>,
 }
 
 impl<T: Transport, E: Environment> Endpoint<T, E> {
@@ -130,6 +133,27 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
             retries: Vec::new(),
             to_engine: Vec::new(),
             host_errors: Vec::new(),
+            forbidden: std::collections::BTreeMap::new(),
+        }
+    }
+
+    /// The events the link `peer` may not deliver to the machine: what arrives on it under
+    /// one of these names is dropped before the machine is told, and the host is told
+    /// instead ([`RouterError::EventForbidden`]). An empty list lifts it.
+    ///
+    /// The link is what the host authenticated when it accepted the connection (the token it
+    /// checked, the certificate it verified), and the envelope is whatever the peer wrote,
+    /// its `source` among it: so what a link may say is decided here, where the link is known,
+    /// and not by a machine that is told who sent an event by the event. A hub that lets a
+    /// member write by its role forbids the writes on the links of the members that may not.
+    pub fn forbid_events_from(&mut self, peer: &str, events: &[&str]) {
+        if events.is_empty() {
+            self.forbidden.remove(peer);
+        } else {
+            self.forbidden.insert(
+                peer.to_string(),
+                events.iter().map(|event| (*event).to_string()).collect(),
+            );
         }
     }
 
@@ -182,7 +206,27 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
     /// Envelope `bytes` the transport received from `peer`.
     pub fn receive(&mut self, peer: &str, bytes: Vec<u8>) {
         let now = self.environment.now_ms();
-        let effects = self.router.receive(peer, bytes, now);
+        let mut effects = self.router.receive(peer, bytes, now);
+        let refused: Vec<String> = match (self.forbidden.get(peer), effects.as_mut()) {
+            (Some(forbidden), Ok(list)) => {
+                let mut refused = Vec::new();
+                list.retain(|effect| match effect {
+                    Effect::Deliver { event, .. } if forbidden.contains(event) => {
+                        refused.push(event.clone());
+                        false
+                    }
+                    _ => true,
+                });
+                refused
+            }
+            _ => Vec::new(),
+        };
+        for event in refused {
+            self.host_errors.push(RouterError::EventForbidden {
+                peer: peer.to_string(),
+                event,
+            });
+        }
         self.apply(effects);
     }
 
@@ -568,6 +612,43 @@ mod tests {
         assert_eq!(event.metadata.origin, "mesh://ecu");
         assert_eq!(event.metadata.origin_type, SCXML_EVENT_PROCESSOR_TYPE);
         assert_eq!(event.metadata.send_id, "s-7");
+    }
+
+    /// A link the host authenticated may be forbidden some events: they are dropped before the
+    /// machine is told, whatever source the envelope names, and the host is told instead; the
+    /// others go through, and a link that is not forbidden is untouched.
+    #[test]
+    fn a_link_may_be_forbidden_events() {
+        let mut ecu = endpoint("ecu", "hmi", None);
+        ecu.send(&send("go", "s-1"));
+        let (_, go) = ecu.transport.sent.pop().unwrap();
+        ecu.send(&send("stop", "s-2"));
+        let (_, stop) = ecu.transport.sent.pop().unwrap();
+
+        let mut hmi = endpoint("hmi", "ecu", None);
+        hmi.forbid_events_from("ecu", &["go"]);
+        hmi.receive("ecu", go.clone());
+        hmi.receive("ecu", stop.clone());
+        let events = raised(&mut hmi);
+        assert_eq!(
+            events.iter().map(|e| e.name.as_str()).collect::<Vec<_>>(),
+            ["stop"],
+            "what the link may not deliver never reaches the machine"
+        );
+        assert_eq!(
+            hmi.take_host_errors(),
+            vec![RouterError::EventForbidden {
+                peer: "ecu".to_string(),
+                event: "go".to_string()
+            }]
+        );
+
+        // Lifted, it is delivered; and a link nothing was forbidden on is not touched.
+        hmi.forbid_events_from("ecu", &[]);
+        let mut again = endpoint("hmi", "ecu", None);
+        again.receive("ecu", go);
+        assert_eq!(raised(&mut again).len(), 1);
+        assert!(again.take_host_errors().is_empty());
     }
 
     #[test]

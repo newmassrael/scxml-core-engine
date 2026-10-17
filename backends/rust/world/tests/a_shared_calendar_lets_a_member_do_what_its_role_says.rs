@@ -216,3 +216,41 @@ fn writers_agree_on_one_list_whatever_a_reader_tried() {
     agree(&mut world);
     assert!(world.host_errors().is_empty());
 }
+
+/// What a link may deliver is the host's to decide where the link is known: the host of the hub
+/// forbids a member's link the writes, and what that member's copy sends under those names is
+/// dropped before the hub's machine is told, whoever the envelope names as its source or the
+/// write names as its author. The member still reads: what the others wrote reaches its copy.
+/// Lifted, the member's copy walks the digest with the hub and its write is taken in.
+#[test]
+fn the_host_of_the_hub_drops_what_a_link_may_not_deliver() {
+    let mut world = todo_world(6, 20);
+    quiet(&mut world);
+    world.forbid_events_from("server", "bob", &["todo.write", "todo.supersede"]);
+    todo_set(&mut world, "alice", 1, DUE, 10);
+    todo_set(&mut world, "bob", 2, DUE, 20);
+    quiet(&mut world);
+
+    let hub = todos_of(&mut world, "server");
+    assert!(hub.contains_key(&(1, DUE)));
+    assert!(
+        !hub.contains_key(&(2, DUE)),
+        "the hub holds a write of a link that may not deliver it"
+    );
+    assert!(!todos_of(&mut world, "alice").contains_key(&(2, DUE)));
+    assert!(
+        todos_of(&mut world, "bob").contains_key(&(1, DUE)),
+        "the member still reads"
+    );
+    let errors = world.host_errors();
+    assert!(
+        errors.iter().any(|error| error.contains("EventForbidden")),
+        "the host is told what it dropped: {errors:?}"
+    );
+
+    world.forbid_events_from("server", "bob", &[]);
+    world.raise("bob", "todo.resync", "");
+    quiet(&mut world);
+    assert!(todos_of(&mut world, "server").contains_key(&(2, DUE)));
+    assert_eq!(agree(&mut world), 2);
+}

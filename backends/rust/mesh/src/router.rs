@@ -587,6 +587,9 @@ pub enum RouterError {
     MissingParam(&'static str),
     /// A reserved param's value is not what the build writes there.
     BadParam { name: &'static str, value: String },
+    /// An event arrived on a link that may not deliver it, and was dropped before the machine
+    /// was told ([`crate::endpoint::Endpoint::forbid_events_from`]).
+    EventForbidden { peer: String, event: String },
 }
 
 /// The peer a `<send target>` names, when it names one — the runtime's
