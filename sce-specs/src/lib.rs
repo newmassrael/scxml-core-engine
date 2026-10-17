@@ -35,6 +35,7 @@ pub mod commands;
 pub mod document_files;
 pub mod error;
 pub mod figures;
+pub mod journal;
 pub mod lock;
 pub mod model_set;
 mod request_life;

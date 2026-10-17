@@ -125,6 +125,85 @@ fn a_request_is_said_in_the_words_a_caller_branches_on() {
 }
 
 #[test]
+fn what_a_run_did_is_said_by_an_executor_one_event_at_a_time_and_read_back_added_up() {
+    let f = fixture("request-commands-journal");
+    let id = f.request_id("press-1");
+    f.claim(&id, "adapter-a");
+    let say = |event: Value| {
+        f.run(
+            "record_request_event",
+            json!({"id": f.spec, "request": id, "holder": "adapter-a", "attempt": 1, "event": event}),
+        )
+    };
+
+    assert_eq!(
+        say(json!({"kind": "try-begun", "n": 1}))["entries"],
+        json!(1)
+    );
+    say(json!({"kind": "turn-asked", "turn": 0}));
+    say(
+        json!({"kind": "tool-ran", "tool": "validate_scxml_set", "verdict": "refused",
+               "codes": ["validation/invalid-reference", "scxml/unreachable-state"]}),
+    );
+    say(json!({"kind": "not-the-draft", "cause": "output-limit"}));
+    f.clock.advance(90);
+    let read = f.run("read_request_journal", json!({"id": f.spec, "request": id}));
+
+    assert_eq!(
+        read["progress"],
+        json!({
+            "entries": 4, "tries": 1, "turns": 1, "checks": 1, "refused": 1,
+            "drafts_refused": 0, "not_drafts": 1, "handovers": 0,
+            "last_refusal": ["validation/invalid-reference", "scxml/unreachable-state"],
+            "started_at": "2026-10-05T09:00:00Z", "last_at": "2026-10-05T09:00:00Z",
+        })
+    );
+    assert_eq!(read["tail"].as_array().unwrap().len(), 4);
+    assert_eq!(
+        read["tail"][3],
+        json!({"at": "2026-10-05T09:00:00Z",
+               "event": {"kind": "not-the-draft", "cause": "output-limit"}})
+    );
+    assert_eq!(read["full"], json!(false));
+    // The moment the store reads the clock at, so that a screen measures by it and not its own.
+    assert_eq!(read["now"], json!("2026-10-05T09:01:30Z"));
+}
+
+#[test]
+fn an_event_nothing_reads_and_a_field_nothing_reads_are_refused_by_the_command() {
+    let f = fixture("request-commands-journal-refused");
+    let id = f.request_id("press-1");
+    f.claim(&id, "adapter-a");
+
+    for event in [
+        json!({"kind": "dreamed"}),
+        json!({"kind": "turn-asked", "turn": 0, "words": "hello"}),
+        json!({"kind": "draft-refused", "code": ["a/b"]}),
+        json!({"kind": "tool-ran", "tool": "x", "verdict": "fine"}),
+    ] {
+        let refused = f.refuse(
+            "record_request_event",
+            json!({"id": f.spec, "request": id, "holder": "adapter-a", "attempt": 1, "event": event}),
+        );
+        assert!(
+            format!("{refused:?}").contains("bad-request"),
+            "{event}: {refused:?}"
+        );
+    }
+    let refused = f.refuse(
+        "record_request_event",
+        json!({"id": f.spec, "request": id, "holder": "adapter-a", "attempt": 1,
+               "event": {"kind": "tool-ran", "tool": "ok", "verdict": "refused", "codes": ["Bad Code"]}}),
+    );
+    assert!(
+        format!("{refused:?}").contains("bad-journal-event"),
+        "{refused:?}"
+    );
+    let read = f.run("read_request_journal", json!({"id": f.spec, "request": id}));
+    assert_eq!(read["progress"]["entries"], json!(0));
+}
+
+#[test]
 fn a_request_can_ask_for_every_id_to_be_issued_afresh_through_the_command() {
     let f = fixture("request-commands-fresh");
 
@@ -795,6 +874,8 @@ fn the_new_commands_are_listed_so_a_screen_can_tell_a_core_that_has_them() {
         "report_adapter",
         "read_adapter_status",
         "read_host_status",
+        "record_request_event",
+        "read_request_journal",
         "read_bundle",
         "bundle_history",
     ] {

@@ -39,6 +39,7 @@ use super::{
 };
 use crate::clock::{utc_timestamp, Clock};
 use crate::error::StoreError;
+use crate::journal::{Entry, Event, Journal, ENTRIES_MAX};
 use crate::lock;
 use crate::requests::{
     lease_is_valid, ConnectionId, ConnectionRef, Failure, Inputs, Moment, Pin, Refusal, Request,
@@ -253,6 +254,36 @@ fn load_requests(dir: &Path) -> Result<Vec<Request>, StoreError> {
     }
     requests.sort_by_key(|r| r.seq);
     Ok(requests)
+}
+
+/// Where the events of a request are kept: beside its file, a line each, never rewritten. It is
+/// not a `.json` file, so listing the requests of a spec does not take it for one.
+fn journal_path(dir: &Path, id: &str) -> PathBuf {
+    dir.join(REQUESTS_DIR).join(format!("{id}.journal.ndjson"))
+}
+
+/// The events of the request, oldest first. A last line cut short by a process that stopped is
+/// left out, as it is for the history.
+fn read_journal_entries(dir: &Path, id: &str) -> Result<Vec<Entry>, StoreError> {
+    let path = journal_path(dir, id);
+    let text = match fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(StoreError::io(&path, e)),
+    };
+    let complete = match text.rfind('\n') {
+        Some(end) => &text[..=end],
+        None => "",
+    };
+    complete
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| {
+            serde_json::from_str(line).map_err(|e| {
+                StoreError::corrupt(&path, format!("a line of the journal is not an event: {e}"))
+            })
+        })
+        .collect()
 }
 
 fn write_request(dir: &Path, request: &Request) -> Result<(), StoreError> {
@@ -889,6 +920,75 @@ impl<C: Clock> SpecStore<C> {
     /// The owner calls the request off. Whoever holds it finds out at its next word.
     pub fn cancel_request(&self, id: &SpecId, request: &str) -> Result<RequestView, StoreError> {
         self.change_request(id, request, |current, now| current.cancel(now))
+    }
+
+    /// The executor says what its run just did, and the journal of the request keeps it. Returns how
+    /// many events the journal holds.
+    ///
+    /// Only the executor of the current attempt of a request that is open may say it, as with every
+    /// other word of an executor, and nothing here changes the request or moves a count a screen
+    /// compares (`requests.head`): an event is not a change of state, and a screen that read the
+    /// head every few seconds would otherwise find a change every time a tool ran. A journal that
+    /// holds [`ENTRIES_MAX`] events keeps no more and says so.
+    pub fn record_event(
+        &self,
+        id: &SpecId,
+        request: &str,
+        holder: &str,
+        attempt: u32,
+        event: Event,
+    ) -> Result<u64, StoreError> {
+        checked_holder(holder)?;
+        if let Err(why) = event.validate() {
+            return Err(bad("bad-journal-event", &why, json!(null)));
+        }
+        let dir = self.existing(id)?;
+        let _held = lock::exclusive(&dir.join(LOCK_FILE), LOCK_WAIT)?;
+        if is_removed(&dir) {
+            return Err(removed_spec(id));
+        }
+        let Some(stored) = find_request(&dir, request)? else {
+            return Err(not_found(id, request));
+        };
+        let now = Moment::of(&self.clock);
+        let current = heal(&dir, stored, &now)?;
+        current
+            .check_held_by(holder, attempt)
+            .map_err(|refusal| refusal_error(&current, refusal))?;
+        let path = journal_path(&dir, request);
+        drop_torn_tail(&path).map_err(|e| StoreError::io(&path, e))?;
+        let kept = read_journal_entries(&dir, request)?.len();
+        if kept >= ENTRIES_MAX {
+            return Err(bad(
+                "journal-full",
+                "the journal of the request holds the most events it keeps",
+                json!({ "request": request, "entries": kept }),
+            ));
+        }
+        let mut line = serde_json::to_string(&Entry {
+            at: now.epoch,
+            event,
+        })
+        .map_err(|e| StoreError::corrupt(&path, e.to_string()))?;
+        line.push('\n');
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+            .map_err(|e| StoreError::io(&path, e))?;
+        file.write_all(line.as_bytes())
+            .map_err(|e| StoreError::io(&path, e))?;
+        Ok(kept as u64 + 1)
+    }
+
+    /// What the run of the request did, as the journal keeps it and adds it up; for a request that
+    /// has ended as for one that is running. A request that never had an event has an empty journal.
+    pub fn read_journal(&self, id: &SpecId, request: &str) -> Result<Journal, StoreError> {
+        let dir = self.existing(id)?;
+        if find_request(&dir, request)?.is_none() {
+            return Err(not_found(id, request));
+        }
+        Ok(Journal::of(&read_journal_entries(&dir, request)?))
     }
 
     /// Apply `change` to the request, under the lock a save takes.

@@ -26,6 +26,7 @@ use crate::bundle::{BundleCheck, CheckedBy};
 use crate::clock::{utc_timestamp, Clock};
 use crate::error::StoreError;
 use crate::figures::{FigureRequest, RenderError};
+use crate::journal::{Event, Journal};
 use crate::model_set::{Document, ModelError, ModelFiles};
 use crate::requests::{ConnectionRef, Failure, FailureKind, Inputs, Lease, Pin};
 use crate::requirements::{Requirements, RequirementsError};
@@ -78,6 +79,8 @@ pub const COMMANDS: &[&str] = &[
     "read_adapter_status",
     "read_host_status",
     "read_queue",
+    "record_request_event",
+    "read_request_journal",
     "read_bundle",
     "bundle_history",
 ];
@@ -272,7 +275,16 @@ pub const COMMANDS: &[&str] = &[
 /// executor that claims with the places of its connection (the application does, in its own
 /// calls) is refused `lane-full` when none is free. A screen written for 26 does not ask for the
 /// queue, and a core of 26 would refuse it as `unknown-command`.
-pub const COMMAND_SET_VERSION: u32 = 27;
+///
+/// 28: a request that failed says how: `fail_request` takes a `failure` (a `kind` the store holds,
+/// and a `cause` word the executor chose) and every reply that is a request says it as `failure`
+/// (`null` for a request that did not fail, and for one that failed before kinds were kept, which
+/// reads as `unclassified`). What a run does is kept as a journal beside its request: an executor
+/// says it one event at a time (`record_request_event`) and anybody reads what it adds up to and its
+/// latest events (`read_request_journal`), for a request that ended as for one that runs. A screen
+/// written for 28 shows whose a failure is to fix and what a run has done so far; a core of 27
+/// would refuse the commands as `unknown-command` and the `failure` argument as `bad-request`.
+pub const COMMAND_SET_VERSION: u32 = 28;
 
 /// A command that did not do what was asked, in a shape every shell can pass on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -692,6 +704,44 @@ impl From<FailureWords> for Failure {
             cause: words.cause,
         }
     }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RecordEvent {
+    id: String,
+    request: String,
+    holder: String,
+    attempt: u32,
+    event: Event,
+}
+
+/// A journal as the screens read it: what it adds up to, with the moments as text, and the latest
+/// events. `now` is the store's moment, so that a screen measures a run that is going on by the
+/// clock that wrote its events and not by its own.
+fn journal_json(journal: &Journal, now: String) -> Value {
+    let progress = &journal.progress;
+    json!({
+        "progress": {
+            "entries": progress.entries,
+            "tries": progress.tries,
+            "turns": progress.turns,
+            "checks": progress.checks,
+            "refused": progress.refused,
+            "drafts_refused": progress.drafts_refused,
+            "not_drafts": progress.not_drafts,
+            "handovers": progress.handovers,
+            "last_refusal": progress.last_refusal,
+            "started_at": progress.started_at.map(utc_timestamp),
+            "last_at": progress.last_at.map(utc_timestamp),
+        },
+        "tail": journal.tail.iter().map(|entry| json!({
+            "at": utc_timestamp(entry.at),
+            "event": entry.event,
+        })).collect::<Vec<_>>(),
+        "full": journal.full,
+        "now": now,
+    })
 }
 
 #[derive(Deserialize)]
@@ -1919,6 +1969,24 @@ pub fn call_with<C: Clock>(
             let failure = failure.map_or_else(Failure::unclassified, Failure::from);
             let view = store.fail_request(&id, &request, &holder, attempt, &reason, failure)?;
             Ok(json!({ "request": request_json(&id, &view) }))
+        }
+        "record_request_event" => {
+            let RecordEvent {
+                id,
+                request,
+                holder,
+                attempt,
+                event,
+            } = arguments(args)?;
+            let id = spec_id(&id)?;
+            let entries = store.record_event(&id, &request, &holder, attempt, event)?;
+            Ok(json!({ "entries": entries }))
+        }
+        "read_request_journal" => {
+            let OneRequest { id, request } = arguments(args)?;
+            let id = spec_id(&id)?;
+            let journal = store.read_journal(&id, &request)?;
+            Ok(journal_json(&journal, store.now()))
         }
         "cancel_request" => {
             let OneRequest { id, request } = arguments(args)?;

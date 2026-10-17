@@ -15,6 +15,7 @@ use std::sync::{Arc, Barrier};
 use std::thread;
 
 use sce_specs::bundle::{BundleCheck, CheckedBy};
+use sce_specs::journal::{Event, ToolVerdict, ENTRIES_MAX, TAIL};
 use sce_specs::requests::{Failure, FailureKind, Inputs, State};
 use sce_specs::{
     CandidateWrite, ManualClock, Registration, RequestView, Revision, SpecId, SpecStore, StoreError,
@@ -994,4 +995,227 @@ fn a_cancel_and_a_heartbeat_that_race_leave_a_cancelled_request_the_executor_is_
             .kind(),
         "request-ended"
     );
+}
+
+// ---- the journal of a request ---------------------------------------------------------------
+
+fn tool(name: &str, verdict: ToolVerdict, codes: &[&str]) -> Event {
+    Event::ToolRan {
+        tool: name.to_string(),
+        verdict,
+        codes: codes.iter().map(|c| c.to_string()).collect(),
+    }
+}
+
+/// A request an executor holds, and the file its journal is kept in.
+fn held(label: &str) -> (Fixture, String, std::path::PathBuf) {
+    let f = fixture(label);
+    let id = f.register("press-1");
+    f.store
+        .claim_request(&f.id, &id, "adapter-a", None, false)
+        .unwrap();
+    let file = f
+        .store
+        .root()
+        .join(f.id.as_str())
+        .join("requests")
+        .join(format!("{id}.journal.ndjson"));
+    (f, id, file)
+}
+
+#[test]
+fn what_a_run_does_is_kept_in_the_order_it_was_said_and_added_up() {
+    let (f, id, _) = held("journal-keeps");
+    f.store
+        .record_event(&f.id, &id, "adapter-a", 1, Event::TryBegun { n: 1 })
+        .unwrap();
+    f.clock.advance(30);
+    f.store
+        .record_event(&f.id, &id, "adapter-a", 1, Event::TurnAsked { turn: 0 })
+        .unwrap();
+    f.clock.advance(30);
+    let kept = f
+        .store
+        .record_event(
+            &f.id,
+            &id,
+            "adapter-a",
+            1,
+            tool(
+                "validate_scxml_set",
+                ToolVerdict::Refused,
+                &["validation/invalid-reference"],
+            ),
+        )
+        .unwrap();
+
+    assert_eq!(kept, 3);
+    let journal = f.store.read_journal(&f.id, &id).unwrap();
+    assert_eq!(journal.progress.tries, 1);
+    assert_eq!(journal.progress.turns, 1);
+    assert_eq!((journal.progress.checks, journal.progress.refused), (1, 1));
+    assert_eq!(
+        journal.progress.last_refusal,
+        vec!["validation/invalid-reference".to_string()]
+    );
+    assert_eq!(journal.progress.started_at, Some(T0));
+    assert_eq!(journal.progress.last_at, Some(T0 + 60));
+    let said: Vec<&Event> = journal.tail.iter().map(|entry| &entry.event).collect();
+    assert_eq!(said[0], &Event::TryBegun { n: 1 });
+    assert_eq!(said[1], &Event::TurnAsked { turn: 0 });
+}
+
+#[test]
+fn a_request_nobody_said_anything_of_has_an_empty_journal() {
+    let f = fixture("journal-empty");
+    let id = f.register("press-1");
+
+    let journal = f.store.read_journal(&f.id, &id).unwrap();
+
+    assert_eq!(journal.progress.entries, 0);
+    assert!(journal.tail.is_empty());
+    assert!(!journal.full);
+}
+
+#[test]
+fn only_the_executor_of_the_current_attempt_of_an_open_request_adds_an_event() {
+    let (f, id, _) = held("journal-fence");
+    let event = || Event::TurnAsked { turn: 0 };
+
+    for (holder, attempt) in [("adapter-b", 1), ("adapter-a", 2)] {
+        let refused = f
+            .store
+            .record_event(&f.id, &id, holder, attempt, event())
+            .unwrap_err();
+        assert_eq!(refused.kind(), "not-holder", "{holder} {attempt}");
+    }
+    assert_eq!(
+        f.store.read_journal(&f.id, &id).unwrap().progress.entries,
+        0
+    );
+
+    // Nobody took this one, so nobody speaks for it.
+    let other = fixture("journal-fence-queued");
+    let queued = other.register("press-1");
+    let nobody = other
+        .store
+        .record_event(&other.id, &queued, "adapter-a", 1, event())
+        .unwrap_err();
+    assert_eq!(nobody.kind(), "not-holder");
+    assert_eq!(
+        other
+            .store
+            .read_journal(&other.id, &queued)
+            .unwrap()
+            .progress
+            .entries,
+        0
+    );
+}
+
+#[test]
+fn a_request_that_ended_takes_no_more_events_and_is_still_read() {
+    let (f, id, _) = held("journal-ended");
+    f.store
+        .record_event(&f.id, &id, "adapter-a", 1, Event::TurnAsked { turn: 0 })
+        .unwrap();
+    f.store.cancel_request(&f.id, &id).unwrap();
+
+    let refused = f
+        .store
+        .record_event(&f.id, &id, "adapter-a", 1, Event::TurnAsked { turn: 1 })
+        .unwrap_err();
+
+    assert_eq!(refused.kind(), "request-ended");
+    // What the run did is still there to read after it ended.
+    assert_eq!(f.store.read_journal(&f.id, &id).unwrap().progress.turns, 1);
+}
+
+#[test]
+fn an_event_is_not_a_change_of_the_request_and_moves_nothing_a_screen_compares() {
+    let (f, id, _) = held("journal-quiet");
+    let before = f.store.read_request(&f.id, &id).unwrap();
+    let history = f.store.request_history(&f.id).unwrap().len();
+
+    for turn in 0..5 {
+        f.store
+            .record_event(&f.id, &id, "adapter-a", 1, Event::TurnAsked { turn })
+            .unwrap();
+    }
+
+    assert_eq!(f.store.read_request(&f.id, &id).unwrap(), before);
+    assert_eq!(f.store.request_history(&f.id).unwrap().len(), history);
+    assert_eq!(f.store.list_requests(&f.id).unwrap().len(), 1);
+}
+
+#[test]
+fn an_event_that_is_not_one_is_refused_and_leaves_the_journal_as_it_was() {
+    let (f, id, file) = held("journal-bad");
+
+    for bad in [
+        Event::TryBegun { n: 0 },
+        tool("two words", ToolVerdict::Ran, &[]),
+        tool("ok", ToolVerdict::Refused, &["Has Capitals"]),
+        Event::NotTheDraft {
+            cause: Some("it ran out of room".to_string()),
+        },
+    ] {
+        let refused = f
+            .store
+            .record_event(&f.id, &id, "adapter-a", 1, bad)
+            .unwrap_err();
+        assert_eq!(refused.kind(), "bad-journal-event");
+    }
+    assert!(!file.exists(), "nothing was written");
+}
+
+#[test]
+fn a_journal_is_there_after_a_new_store_is_opened_and_a_cut_last_line_is_left_out() {
+    let (f, id, file) = held("journal-torn");
+    f.store
+        .record_event(&f.id, &id, "adapter-a", 1, Event::TurnAsked { turn: 0 })
+        .unwrap();
+    // A process that stopped in the middle of a line.
+    let mut text = std::fs::read_to_string(&file).unwrap();
+    text.push_str("{\"at\":1,\"event\":{\"kind\":\"turn-as");
+    std::fs::write(&file, text).unwrap();
+
+    let again = SpecStore::with_clock(f.store.root().to_path_buf(), Arc::clone(&f.clock));
+    assert_eq!(again.read_journal(&f.id, &id).unwrap().progress.turns, 1);
+
+    // The next event drops the cut line and is a line of its own.
+    again
+        .record_event(&f.id, &id, "adapter-a", 1, Event::TurnAsked { turn: 1 })
+        .unwrap();
+    let journal = again.read_journal(&f.id, &id).unwrap();
+    assert_eq!(journal.progress.turns, 2);
+    assert_eq!(journal.progress.entries, 2);
+}
+
+#[test]
+fn a_journal_that_holds_the_most_events_keeps_no_more_and_says_so() {
+    let (f, id, file) = held("journal-full");
+    let line = "{\"at\":1,\"event\":{\"kind\":\"turn-asked\",\"turn\":0}}\n";
+    std::fs::write(&file, line.repeat(ENTRIES_MAX)).unwrap();
+
+    let refused = f
+        .store
+        .record_event(&f.id, &id, "adapter-a", 1, Event::TurnAsked { turn: 1 })
+        .unwrap_err();
+
+    assert_eq!(refused.kind(), "journal-full");
+    let journal = f.store.read_journal(&f.id, &id).unwrap();
+    assert!(journal.full);
+    assert_eq!(journal.progress.entries as usize, ENTRIES_MAX);
+    assert_eq!(journal.tail.len(), TAIL);
+}
+
+#[test]
+fn a_journal_of_a_request_that_is_not_there_is_not_found() {
+    let f = fixture("journal-missing");
+
+    for request in ["req-0123456789ab", "../spec", ""] {
+        let refused = f.store.read_journal(&f.id, request).unwrap_err();
+        assert_eq!(refused.kind(), "not-found", "{request:?}");
+    }
 }

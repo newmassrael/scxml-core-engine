@@ -1,0 +1,145 @@
+# Mutation cases for the journal of a request.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/a_run_is_kept_as_the_events_it_said.cases`.
+#
+# An executor says what its run does, one event at a time, and the store keeps them beside the
+# request and adds them up in one place. What can go wrong is that a count is read wrongly (a tool
+# that only ran is taken for a check, an acceptance clears what the last refusal said), that
+# anybody but the executor of the current attempt of an open request can write, that an event
+# moves what a screen compares or changes the request, that a word that is not a word is kept, that
+# a cut line is read as an event, or that the most a journal keeps is not held.
+#
+# Anchors are literal slices of the source, so a reformat can move one out from under a case. That
+# is reported as INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-specs --lib --test requests --test request_commands
+mutation_targets sce-specs/src/journal.rs sce-specs/src/store/request_store.rs sce-specs/src/commands.rs
+mutation_oracles sce-specs/tests/requests.rs sce-specs/tests/request_commands.rs
+
+# ── The counts ─────────────────────────────────────────────────────
+
+mutation_case "a tool that only ran is counted as a check" <<'PY'
+edit("sce-specs/src/journal.rs",
+     '                    ToolVerdict::Ran | ToolVerdict::Failed | ToolVerdict::CannotJudge => {}',
+     '                    ToolVerdict::Ran | ToolVerdict::Failed | ToolVerdict::CannotJudge => {\n                        progress.checks += 1\n                    }')
+PY
+
+mutation_case "a refusal is not counted among the checks" <<'PY'
+edit("sce-specs/src/journal.rs",
+     '                    ToolVerdict::Refused => {\n                        progress.checks += 1;\n                        progress.refused += 1;',
+     '                    ToolVerdict::Refused => {\n                        progress.refused += 1;')
+PY
+
+mutation_case "an acceptance clears what the last refusal said" <<'PY'
+edit("sce-specs/src/journal.rs",
+     '                    ToolVerdict::Accepted => progress.checks += 1,',
+     '                    ToolVerdict::Accepted => {\n                        progress.checks += 1;\n                        progress.last_refusal.clear()\n                    }')
+PY
+
+mutation_case "a refusal of a draft is not among the codes of the last refusal" <<'PY'
+edit("sce-specs/src/journal.rs",
+     '                    progress.drafts_refused += 1;\n                    progress.last_refusal = codes.clone();',
+     '                    progress.drafts_refused += 1;')
+PY
+
+mutation_case "the first event is taken for when the run began only if it is a try" <<'PY'
+edit("sce-specs/src/journal.rs",
+     '            started_at: entries.first().map(|entry| entry.at),',
+     '            started_at: entries.last().map(|entry| entry.at),')
+PY
+
+mutation_case "a read gives the oldest events and not the latest" <<'PY'
+edit("sce-specs/src/journal.rs",
+     '        let from = entries.len().saturating_sub(TAIL);\n        Journal {\n            progress: Progress::of(entries),\n            tail: entries[from..].to_vec(),',
+     '        Journal {\n            progress: Progress::of(entries),\n            tail: entries[..entries.len().min(TAIL)].to_vec(),')
+PY
+
+mutation_case "a journal at the most it keeps does not say so" <<'PY'
+edit("sce-specs/src/journal.rs",
+     '            full: entries.len() >= ENTRIES_MAX,',
+     '            full: false,')
+PY
+
+# ── The words ──────────────────────────────────────────────────────
+
+mutation_case "a try may be counted from zero" <<'PY'
+edit("sce-specs/src/journal.rs",
+     '            Event::TryBegun { n } if *n == 0 => Err("a try is counted from 1".to_string()),',
+     '            Event::TryBegun { n } if *n > 1_000_000 => Err("a try is counted from 1".to_string()),')
+PY
+
+mutation_case "a code may carry capitals" <<'PY'
+edit("sce-specs/src/journal.rs",
+     "        && code.bytes().all(|b| {\n            b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'/' | b'_' | b'-' | b'.')\n        })",
+     "        && code.bytes().all(|b| b.is_ascii())")
+PY
+
+mutation_case "an event may name more codes than it is allowed" <<'PY'
+edit("sce-specs/src/journal.rs",
+     '    if codes.len() > CODES_MAX {',
+     '    if codes.len() > CODES_MAX * 100 {')
+PY
+
+mutation_case "a cause that is a sentence is let into the journal" <<'PY'
+edit("sce-specs/src/journal.rs",
+     '            Event::NotTheDraft { cause: Some(cause) } if !Failure::is_cause(cause) => Err(',
+     '            Event::NotTheDraft { cause: Some(cause) } if false && !Failure::is_cause(cause) => Err(')
+PY
+
+# ── The store ──────────────────────────────────────────────────────
+
+mutation_case "anybody can add an event to a request" <<'PY'
+edit("sce-specs/src/store/request_store.rs",
+     '        current\n            .check_held_by(holder, attempt)\n            .map_err(|refusal| refusal_error(&current, refusal))?;\n        let path = journal_path(&dir, request);',
+     '        let path = journal_path(&dir, request);')
+PY
+
+mutation_case "the journal keeps more than the most it keeps" <<'PY'
+edit("sce-specs/src/store/request_store.rs",
+     '        if kept >= ENTRIES_MAX {',
+     '        if kept >= ENTRIES_MAX * 1000 {')
+PY
+
+mutation_case "a cut last line is read as an event" <<'PY'
+edit("sce-specs/src/store/request_store.rs",
+     '    let complete = match text.rfind(\'\\n\') {\n        Some(end) => &text[..=end],\n        None => "",\n    };\n    complete\n        .lines()\n        .filter(|line| !line.trim().is_empty())\n        .map(|line| {\n            serde_json::from_str(line).map_err(|e| {\n                StoreError::corrupt(&path, format!("a line of the journal is not an event: {e}"))',
+     '    let complete = text.as_str();\n    complete\n        .lines()\n        .filter(|line| !line.trim().is_empty())\n        .map(|line| {\n            serde_json::from_str(line).map_err(|e| {\n                StoreError::corrupt(&path, format!("a line of the journal is not an event: {e}"))')
+PY
+
+mutation_case "a cut last line is not dropped before the next event is added" <<'PY'
+edit("sce-specs/src/store/request_store.rs",
+     '        drop_torn_tail(&path).map_err(|e| StoreError::io(&path, e))?;\n        let kept = read_journal_entries(&dir, request)?.len();',
+     '        let kept = read_journal_entries(&dir, request)?.len();')
+PY
+
+mutation_case "an event is written down with the moment of the first one" <<'PY'
+edit("sce-specs/src/store/request_store.rs",
+     '        let mut line = serde_json::to_string(&Entry {\n            at: now.epoch,',
+     '        let mut line = serde_json::to_string(&Entry {\n            at: 0,')
+PY
+
+mutation_case "the journal of a request that is not there is empty and not not-found" <<'PY'
+edit("sce-specs/src/store/request_store.rs",
+     '        if find_request(&dir, request)?.is_none() {\n            return Err(not_found(id, request));\n        }\n        Ok(Journal::of(',
+     '        if false && find_request(&dir, request)?.is_none() {\n            return Err(not_found(id, request));\n        }\n        Ok(Journal::of(')
+PY
+
+# ── The command ────────────────────────────────────────────────────
+
+mutation_case "a read leaves out the moment the store read the clock at" <<'PY'
+edit("sce-specs/src/commands.rs",
+     '        "full": journal.full,\n        "now": now,',
+     '        "full": journal.full,\n        "now": null,')
+PY
+
+mutation_case "a read gives the moments as seconds and not as text" <<'PY'
+edit("sce-specs/src/commands.rs",
+     '            "started_at": progress.started_at.map(utc_timestamp),',
+     '            "started_at": progress.started_at,')
+PY
+
+mutation_case "an event of a shape nothing reads is taken without being refused" <<'PY'
+edit("sce-specs/src/journal.rs",
+     '#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]\npub enum Event {',
+     '#[serde(tag = "kind", rename_all = "kebab-case")]\npub enum Event {')
+PY
