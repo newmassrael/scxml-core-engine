@@ -597,6 +597,13 @@ pub enum RouterError {
         event: String,
         reason: String,
     },
+    /// An event the machine sent was not sent: the host's [`crate::endpoint::Sealer`] said it
+    /// must not leave, and `reason` is its word for it.
+    EventNotSealed {
+        target: String,
+        event: String,
+        reason: String,
+    },
 }
 
 /// The peer a `<send target>` names, when it names one — the runtime's

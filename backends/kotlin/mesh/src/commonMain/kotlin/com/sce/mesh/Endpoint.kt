@@ -115,12 +115,22 @@ fun interface EventAdmission {
     fun admit(peer: String, event: String, data: String): Admit
 }
 
+/** What a [Sealer] answers for an event the machine sent. */
+sealed class Sealed {
+    /** The event leaves as it is when [data] is `null`, and with [data] in place of what the machine sent otherwise. */
+    data class Leave(val data: String? = null) : Sealed()
+
+    /** The event must not leave at all (a write the host cannot sign or seal as the list requires); [reason] is told to the host. */
+    data class Withhold(val reason: String) : Sealed()
+}
+
 /**
  * What the host writes into an event as it leaves, after the machine sent it and before it is put
- * in an envelope: the sending half of an [EventAdmission]. `null` when the event leaves as it is.
+ * in an envelope: the sending half of an [EventAdmission]. One it withholds is dropped, told to the
+ * host as [RouterError.EventNotSealed], and nothing else is sent in its place.
  */
 fun interface Sealer {
-    fun seal(target: String, event: String, data: String): String?
+    fun seal(target: String, event: String, data: String): Sealed
 }
 
 /** One machine's Mesh endpoint on a host. */
@@ -168,8 +178,14 @@ class Endpoint(
     /** Perform a `<send type="sce:mesh">` the engine handed its host. */
     fun send(request: StateMachineEngine.HostSendRequest) {
         val id = environment.envelopeId()
-        val sealed = sealer?.seal(request.target, request.eventName, request.eventData)
-        val leaving = if (sealed != null) request.copy(eventData = sealed) else request
+        val leaving = when (val sealed = sealer?.seal(request.target, request.eventName, request.eventData)) {
+            null -> request
+            is Sealed.Leave -> if (sealed.data != null) request.copy(eventData = sealed.data) else request
+            is Sealed.Withhold -> {
+                hostErrors += RouterError.EventNotSealed(request.target, request.eventName, sealed.reason)
+                return
+            }
+        }
         apply(router.send(leaving, id, environment.nowMs()))
     }
 

@@ -129,9 +129,9 @@ class EndpointTest {
     @Test
     fun anAdmissionDecidesWhatReachesTheMachine() {
         val ecu = Host("ecu", "hmi", null)
-        ecu.endpoint.setSealer { target, _, data ->
+        ecu.endpoint.setSealer { target, event, data ->
             assertEquals("#hmi", target)
-            "$data+seal"
+            if (event == "never") Sealed.Withhold("this one does not leave") else Sealed.Leave("$data+seal")
         }
         ecu.endpoint.send(send("go", "s-1"))
         val go = ecu.transport.sent.removeLast().second
@@ -155,6 +155,14 @@ class EndpointTest {
         assertEquals(
             listOf<RouterError>(RouterError.EventNotAdmitted("ecu", "stop", "stop is not for this link")),
             hmi.endpoint.takeHostErrors(),
+        )
+
+        // A send the sealer says must not leave is dropped, told to the host, and nothing goes in its place.
+        ecu.endpoint.send(send("never", "s-3"))
+        assertTrue(ecu.transport.sent.isEmpty())
+        assertEquals(
+            listOf<RouterError>(RouterError.EventNotSealed("#hmi", "never", "this one does not leave")),
+            ecu.endpoint.takeHostErrors(),
         )
     }
 

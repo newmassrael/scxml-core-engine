@@ -125,6 +125,9 @@ sealed class RouterError {
 
     /** An event arrived that the host's [EventAdmission] did not admit, and was dropped before the machine was told; [reason] is its word for it. */
     data class EventNotAdmitted(val peer: String, val event: String, val reason: String) : RouterError()
+
+    /** An event the machine sent was not sent: the host's [Sealer] said it must not leave; [reason] is its word for it. */
+    data class EventNotSealed(val target: String, val event: String, val reason: String) : RouterError()
 }
 
 /** A router call's answer: the effects to perform, or why there are none. */

@@ -149,9 +149,11 @@ pub trait Admission: Send {
 /// that does not carry a proof of its own sends (a signature, a token) leaves the host to add
 /// it, and the receiving host's admission takes it out again.
 pub trait Sealer: Send {
-    /// The data `event`, which the machine sent to `target` with `data`, leaves with, or `None`
-    /// when it leaves as it is.
-    fn seal(&mut self, target: &str, event: &str, data: &str) -> Option<String>;
+    /// `Ok(Some(data))` when `event`, which the machine sent to `target` with `data`, leaves with
+    /// other data; `Ok(None)` when it leaves as it is; and `Err` with the reason when it must not
+    /// leave at all (a write the host cannot sign or seal as the list requires): it is dropped,
+    /// told to the host as [`RouterError::EventNotSealed`], and nothing else is sent in its place.
+    fn seal(&mut self, target: &str, event: &str, data: &str) -> Result<Option<String>, String>;
 }
 
 impl<T: Transport, E: Environment> Endpoint<T, E> {
@@ -207,9 +209,22 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
     pub fn send(&mut self, request: &HostSendRequest) {
         let id = self.environment.envelope_id();
         let now = self.environment.now_ms();
-        let sealed = self.sealer.as_mut().and_then(|sealer| {
-            sealer.seal(&request.target, &request.event_name, &request.event_data)
-        });
+        let sealed = match self.sealer.as_mut() {
+            Some(sealer) => {
+                match sealer.seal(&request.target, &request.event_name, &request.event_data) {
+                    Ok(sealed) => sealed,
+                    Err(reason) => {
+                        self.host_errors.push(RouterError::EventNotSealed {
+                            target: request.target.clone(),
+                            event: request.event_name.clone(),
+                            reason,
+                        });
+                        return;
+                    }
+                }
+            }
+            None => None,
+        };
         let effects = match sealed {
             Some(event_data) => self.router.send(
                 &HostSendRequest {
@@ -748,9 +763,17 @@ mod tests {
         }
         struct Seal;
         impl Sealer for Seal {
-            fn seal(&mut self, target: &str, _event: &str, data: &str) -> Option<String> {
+            fn seal(
+                &mut self,
+                target: &str,
+                event: &str,
+                data: &str,
+            ) -> Result<Option<String>, String> {
                 assert_eq!(target, "#hmi");
-                Some(alloc::format!("{data}+seal"))
+                if event == "never" {
+                    return Err("this one does not leave".to_string());
+                }
+                Ok(Some(alloc::format!("{data}+seal")))
             }
         }
         let mut ecu = endpoint("ecu", "hmi", None);
@@ -779,6 +802,19 @@ mod tests {
                 peer: "ecu".to_string(),
                 event: "stop".to_string(),
                 reason: "stop is not for this link".to_string(),
+            }]
+        );
+
+        // A send the sealer says must not leave is dropped, told to the host, and nothing goes
+        // in its place.
+        ecu.send(&send("never", "s-3"));
+        assert!(ecu.transport.sent.is_empty());
+        assert_eq!(
+            ecu.take_host_errors(),
+            vec![RouterError::EventNotSealed {
+                target: "#hmi".to_string(),
+                event: "never".to_string(),
+                reason: "this one does not leave".to_string(),
             }]
         );
     }
