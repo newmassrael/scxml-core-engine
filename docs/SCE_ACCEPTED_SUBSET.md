@@ -7098,6 +7098,22 @@ every carrier value whatever the set, so their accessor is always the
 fallible form. The conformance harness pins the accessor against the
 document's names on all six backends.
 
+### §2.20 A transition table — `sce:transition-table="emit"`
+
+A statechart root may declare `<scxml sce:transition-table="emit">`, and the
+machine generated from it then carries its own transitions as constant data in
+every backend, with the `source_hash` of the run. The design says so, and not
+the command line: the declaration is inside the source set the machine's
+`source-hash` covers, so every way of generating the document produces the same
+machine, and a header that names a hash names the table that came with it.
+`docs/SCE_TRANSITION_TABLE.md` states what an entry holds and how each backend
+spells it.
+
+Nothing in a machine reads the table. A document that does not declare it
+generates byte-identical files to what it generated before the attribute
+existed. The only other value of the attribute is its absence; anything else is
+refused as `validation/attribute-rule-violated`. A forge root does not take it.
+
 ---
 
 ## Appendix — `DiagnosticCode` index (384 codes)

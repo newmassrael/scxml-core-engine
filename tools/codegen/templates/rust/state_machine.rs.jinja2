@@ -149,7 +149,7 @@ pub enum {{ machine_name }}Event {
 {% set _table = model.emitted_transition_table %}
 
 // ======================================================================
-// Transition table (§synth-6.2.6), because the build asked for it
+// Transition table (§synth-6.2.6), because the document declares it
 // ======================================================================
 
 /// One transition of this machine, as constant data. Nothing in the machine
@@ -161,13 +161,18 @@ pub enum {{ machine_name }}Event {
 /// `event` are `None` where a transition has no single id in those enums: a
 /// targetless transition, a first target that is a `<history>`, an eventless
 /// transition, a wildcard or prefix descriptor, or several descriptors.
-/// `sce-codegen transition-table` lists the same transitions in the same order
-/// with the whole target set and every descriptor.
+/// `targets` and `events` are the complete answer there: the whole target set
+/// and every descriptor as written, space-separated (`*`, a prefix such as
+/// `error.*` and a literal name alike, none resolved), empty when the
+/// transition has none. `sce-codegen transition-table` lists the same
+/// transitions in the same order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct {{ machine_name }}Transition {
     pub from: {{ machine_name }}State,
     pub to: Option<{{ machine_name }}State>,
     pub event: Option<{{ machine_name }}Event>,
+    pub targets: &'static str,
+    pub events: &'static str,
     pub index: u32,
     pub annotation: &'static str,
 }
@@ -180,7 +185,7 @@ impl {{ machine_name }}Transition {
     /// Every transition of the machine.
     pub const ALL: [{{ machine_name }}Transition; {{ _table.transitions | length }}] = [
 {% for t in _table.transitions %}
-        {{ machine_name }}Transition { from: {{ machine_name }}State::{{ t.from | to_state_variant }}, to: {% if t.to %}Some({{ machine_name }}State::{{ t.to | to_state_variant }}){% else %}None{% endif %}, event: {% if t.event %}Some({{ machine_name }}Event::{{ t.event | to_event_variant }}){% else %}None{% endif %}, index: {{ t.index }}, annotation: "{{ t.annotation | escape_rust }}" },
+        {{ machine_name }}Transition { from: {{ machine_name }}State::{{ t.from | to_state_variant }}, to: {% if t.to %}Some({{ machine_name }}State::{{ t.to | to_state_variant }}){% else %}None{% endif %}, event: {% if t.event %}Some({{ machine_name }}Event::{{ t.event | to_event_variant }}){% else %}None{% endif %}, targets: "{{ t.targets | escape_rust }}", events: "{{ t.events | escape_rust }}", index: {{ t.index }}, annotation: "{{ t.annotation | escape_rust }}" },
 {% endfor %}
     ];
 }

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 292d1fc77f53bcad0ebbbb1eba40e4d11668b8d3c883688041c67e32a9df108c
+// source-hash: 28cabab9febf446d1abb3eb5ae325b382374a8683804404e452d87dfbbb0500b
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/a_computed_event_name_is_matched_like_any_other/a_computed_event_name_is_matched_like_any_other.scxml
@@ -33,7 +33,7 @@ sealed interface AComputedEventNameIsMatchedLikeAnyOtherEvent : Event {
     }
     data object Request : AComputedEventNameIsMatchedLikeAnyOtherEvent
 }
-// --- Transition table (§synth-6.2.6), because the build asked for it ---
+// --- Transition table (§synth-6.2.6), because the document declares it ---
 
 /**
  * One transition of this machine, as constant data. Nothing in the machine
@@ -45,29 +45,34 @@ sealed interface AComputedEventNameIsMatchedLikeAnyOtherEvent : Event {
  * `event` are null where a transition has no single id in those hierarchies: a
  * targetless transition, a first target that is a `<history>`, an eventless
  * transition, a wildcard or prefix descriptor, or several descriptors.
- * `sce-codegen transition-table` lists the same transitions in the same order
- * with the whole target set and every descriptor.
+ * `targets` and `events` are the complete answer there: the whole target set
+ * and every descriptor as written, space-separated (`*`, a prefix such as
+ * `error.*` and a literal name alike, none resolved), empty when the
+ * transition has none. `sce-codegen transition-table` lists the same
+ * transitions in the same order.
  */
 data class AComputedEventNameIsMatchedLikeAnyOtherTransition(
     val from: AComputedEventNameIsMatchedLikeAnyOtherState,
     val to: AComputedEventNameIsMatchedLikeAnyOtherState?,
     val event: AComputedEventNameIsMatchedLikeAnyOtherEvent?,
+    val targets: String,
+    val events: String,
     val index: Int,
     val annotation: String,
 )
 
 object AComputedEventNameIsMatchedLikeAnyOtherTransitions {
     /** The digest of the source set this machine was generated from: the `source-hash` of the file's own header, as a value. */
-    const val SOURCE_HASH: String = "292d1fc77f53bcad0ebbbb1eba40e4d11668b8d3c883688041c67e32a9df108c"
+    const val SOURCE_HASH: String = "28cabab9febf446d1abb3eb5ae325b382374a8683804404e452d87dfbbb0500b"
 
     /** Every transition of the machine. */
     val all: List<AComputedEventNameIsMatchedLikeAnyOtherTransition> = listOf(
-        AComputedEventNameIsMatchedLikeAnyOtherTransition(AComputedEventNameIsMatchedLikeAnyOtherState.S1, AComputedEventNameIsMatchedLikeAnyOtherState.S2, AComputedEventNameIsMatchedLikeAnyOtherEvent.Request, 0, ""),
-        AComputedEventNameIsMatchedLikeAnyOtherTransition(AComputedEventNameIsMatchedLikeAnyOtherState.S2, AComputedEventNameIsMatchedLikeAnyOtherState.S3, null, 0, ""),
-        AComputedEventNameIsMatchedLikeAnyOtherTransition(AComputedEventNameIsMatchedLikeAnyOtherState.S3, AComputedEventNameIsMatchedLikeAnyOtherState.S4, AComputedEventNameIsMatchedLikeAnyOtherEvent.Request, 0, ""),
-        AComputedEventNameIsMatchedLikeAnyOtherTransition(AComputedEventNameIsMatchedLikeAnyOtherState.S4, AComputedEventNameIsMatchedLikeAnyOtherState.S5, null, 0, ""),
-        AComputedEventNameIsMatchedLikeAnyOtherTransition(AComputedEventNameIsMatchedLikeAnyOtherState.S5, AComputedEventNameIsMatchedLikeAnyOtherState.S6, AComputedEventNameIsMatchedLikeAnyOtherEvent.Request, 0, ""),
-        AComputedEventNameIsMatchedLikeAnyOtherTransition(AComputedEventNameIsMatchedLikeAnyOtherState.S6, AComputedEventNameIsMatchedLikeAnyOtherState.Pass, null, 0, ""),
+        AComputedEventNameIsMatchedLikeAnyOtherTransition(AComputedEventNameIsMatchedLikeAnyOtherState.S1, AComputedEventNameIsMatchedLikeAnyOtherState.S2, AComputedEventNameIsMatchedLikeAnyOtherEvent.Request, "s2", "request", 0, ""),
+        AComputedEventNameIsMatchedLikeAnyOtherTransition(AComputedEventNameIsMatchedLikeAnyOtherState.S2, AComputedEventNameIsMatchedLikeAnyOtherState.S3, null, "s3", "*", 0, ""),
+        AComputedEventNameIsMatchedLikeAnyOtherTransition(AComputedEventNameIsMatchedLikeAnyOtherState.S3, AComputedEventNameIsMatchedLikeAnyOtherState.S4, AComputedEventNameIsMatchedLikeAnyOtherEvent.Request, "s4", "request", 0, ""),
+        AComputedEventNameIsMatchedLikeAnyOtherTransition(AComputedEventNameIsMatchedLikeAnyOtherState.S4, AComputedEventNameIsMatchedLikeAnyOtherState.S5, null, "s5", "*", 0, ""),
+        AComputedEventNameIsMatchedLikeAnyOtherTransition(AComputedEventNameIsMatchedLikeAnyOtherState.S5, AComputedEventNameIsMatchedLikeAnyOtherState.S6, AComputedEventNameIsMatchedLikeAnyOtherEvent.Request, "s6", "request", 0, ""),
+        AComputedEventNameIsMatchedLikeAnyOtherTransition(AComputedEventNameIsMatchedLikeAnyOtherState.S6, AComputedEventNameIsMatchedLikeAnyOtherState.Pass, null, "pass", "*", 0, ""),
     )
 }
 
@@ -491,12 +496,12 @@ class AComputedEventNameIsMatchedLikeAnyOtherStateMachine(
     override fun onEntry(state: AComputedEventNameIsMatchedLikeAnyOtherState, isDefaultEntry: Boolean) {
         when (state) {
             is AComputedEventNameIsMatchedLikeAnyOtherState.Pass -> {
-                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:77 :: pass :: _state_body
+                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:78 :: pass :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is AComputedEventNameIsMatchedLikeAnyOtherState.S1 -> {
-                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:41 :: s1 :: _state_body
+                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:42 :: s1 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
@@ -533,7 +538,7 @@ class AComputedEventNameIsMatchedLikeAnyOtherStateMachine(
                 }
             }
             is AComputedEventNameIsMatchedLikeAnyOtherState.S2 -> {
-                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:47 :: s2 :: _state_body
+                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:48 :: s2 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
@@ -570,7 +575,7 @@ class AComputedEventNameIsMatchedLikeAnyOtherStateMachine(
                 }
             }
             is AComputedEventNameIsMatchedLikeAnyOtherState.S3 -> {
-                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:53 :: s3 :: _state_body
+                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:54 :: s3 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
@@ -608,7 +613,7 @@ class AComputedEventNameIsMatchedLikeAnyOtherStateMachine(
                 }
             }
             is AComputedEventNameIsMatchedLikeAnyOtherState.S4 -> {
-                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:59 :: s4 :: _state_body
+                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:60 :: s4 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
@@ -648,7 +653,7 @@ class AComputedEventNameIsMatchedLikeAnyOtherStateMachine(
                 }
             }
             is AComputedEventNameIsMatchedLikeAnyOtherState.S5 -> {
-                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:65 :: s5 :: _state_body
+                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:66 :: s5 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
@@ -757,7 +762,7 @@ sendEventName,
                 }
             }
             is AComputedEventNameIsMatchedLikeAnyOtherState.S6 -> {
-                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:71 :: s6 :: _state_body
+                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:72 :: s6 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
@@ -871,25 +876,25 @@ sendEventName,
     override fun onExit(state: AComputedEventNameIsMatchedLikeAnyOtherState) {
         when (state) {
             is AComputedEventNameIsMatchedLikeAnyOtherState.Pass -> {
-                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:77 :: pass :: _state_body
+                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:78 :: pass :: _state_body
             }
             is AComputedEventNameIsMatchedLikeAnyOtherState.S1 -> {
-                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:41 :: s1 :: _state_body
+                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:42 :: s1 :: _state_body
             }
             is AComputedEventNameIsMatchedLikeAnyOtherState.S2 -> {
-                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:47 :: s2 :: _state_body
+                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:48 :: s2 :: _state_body
             }
             is AComputedEventNameIsMatchedLikeAnyOtherState.S3 -> {
-                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:53 :: s3 :: _state_body
+                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:54 :: s3 :: _state_body
             }
             is AComputedEventNameIsMatchedLikeAnyOtherState.S4 -> {
-                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:59 :: s4 :: _state_body
+                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:60 :: s4 :: _state_body
             }
             is AComputedEventNameIsMatchedLikeAnyOtherState.S5 -> {
-                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:65 :: s5 :: _state_body
+                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:66 :: s5 :: _state_body
             }
             is AComputedEventNameIsMatchedLikeAnyOtherState.S6 -> {
-                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:71 :: s6 :: _state_body
+                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:72 :: s6 :: _state_body
             }
         }
     }

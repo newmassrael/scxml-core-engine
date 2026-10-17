@@ -179,7 +179,7 @@ _EVENT_BY_NAME: Dict[str, {{ machine_name }}Event] = {v: k for k, v in _EVENT_NA
 
 
 # ======================================================================
-# Transition table (§synth-6.2.6), because the build asked for it
+# Transition table (§synth-6.2.6), because the document declares it
 # ======================================================================
 
 # The digest of the source set this machine was generated from: the
@@ -199,21 +199,25 @@ class {{ machine_name }}Transition:
     uninterpreted. `to` and `event` are None where a transition has no single id
     in those enums: a targetless transition, a first target that is a
     <history>, an eventless transition, a wildcard or prefix descriptor, or
-    several descriptors. `sce-codegen transition-table` lists the same
-    transitions in the same order with the whole target set and every
-    descriptor.
+    several descriptors. `targets` and `events` are the complete answer there:
+    the whole target set and every descriptor as written, space-separated
+    (`*`, a prefix such as `error.*` and a literal name alike, none resolved),
+    empty when the transition has none. `sce-codegen transition-table` lists
+    the same transitions in the same order.
     """
 
     from_state: {{ machine_name }}State
     to: Optional[{{ machine_name }}State]
     event: Optional[{{ machine_name }}Event]
+    targets: str
+    events: str
     index: int
     annotation: str
 
 
 TRANSITIONS: Tuple[{{ machine_name }}Transition, ...] = (
 {% for t in _table.transitions %}
-    {{ machine_name }}Transition({{ machine_name }}State.{{ t.from | to_python_const }}, {% if t.to %}{{ machine_name }}State.{{ t.to | to_python_const }}{% else %}None{% endif %}, {% if t.event %}{{ machine_name }}Event.{{ t.event | to_python_const }}{% else %}None{% endif %}, {{ t.index }}, "{{ t.annotation | escape_python }}"),
+    {{ machine_name }}Transition({{ machine_name }}State.{{ t.from | to_python_const }}, {% if t.to %}{{ machine_name }}State.{{ t.to | to_python_const }}{% else %}None{% endif %}, {% if t.event %}{{ machine_name }}Event.{{ t.event | to_python_const }}{% else %}None{% endif %}, "{{ t.targets | escape_python }}", "{{ t.events | escape_python }}", {{ t.index }}, "{{ t.annotation | escape_python }}"),
 {% endfor %}
 )
 {# emitted-transition-table:end #}

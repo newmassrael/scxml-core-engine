@@ -274,6 +274,11 @@
        refuses any other value with its own diagnostic, which a schema type
        would pre-empt. -->
   <xs:attribute name="interface" type="xs:string"/>
+  <!-- `sce:transition-table="emit"` on a statechart's `<scxml>`: the generated
+       machine carries its own transitions as constant data (SCE Accepted
+       Subset §2.20). `xs:string` for the reason `sce:interface` is: the parser
+       refuses any other value with its own diagnostic. -->
+  <xs:attribute name="transition-table" type="xs:string"/>
   <xs:attribute name="direction" type="sce:directionType"/>
 
   <!-- NL→IR Item C1 Path A — `sce:underlying-type` on a

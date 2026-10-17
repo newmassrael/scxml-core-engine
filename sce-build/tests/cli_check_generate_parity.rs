@@ -247,16 +247,6 @@ const GENERATE_FLAGS: &[FlagFacts] = &[
          that asking for the emit does not move the verdict",
     ),
     f(
-        "--emit-transition-table",
-        Reach::Emission,
-        Some(&["--emit-transition-table"]),
-        "cpp",
-        "adds the machine's transitions to the generated source as constant \
-         data that no dispatch reads. The table is built from the model after \
-         the document was accepted, and a rejected document gets none, so \
-         asking for it cannot make a document pass or fail",
-    ),
-    f(
         "--error-format",
         Reach::Verdict,
         None,

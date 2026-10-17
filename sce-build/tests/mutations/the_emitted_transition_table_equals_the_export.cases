@@ -2,8 +2,8 @@
 #
 # Run with `scripts/mutate sce-build/tests/mutations/the_emitted_transition_table_equals_the_export.cases`.
 #
-# `sce-codegen generate --emit-transition-table` writes each transition of a machine into
-# the generated source of six backends, and `the_emitted_transition_table_equals_the_export`
+# A document that declares `sce:transition-table="emit"` is generated with each transition of
+# its machine in the source of six backends, and `the_emitted_transition_table_equals_the_export`
 # holds every one of them to the export of the same document. A test that has never been
 # made to fail says nothing about whether it could, so each backend's table is made wrong
 # here in the one place that is its own: the line of its template that writes an entry.
@@ -70,6 +70,25 @@ mutation_case "Python numbers a transition one past its place in the state" <<'P
 edit("tools/codegen/templates/python/state_machine.py.jinja2",
      '{{ t.index }}, "{{ t.annotation | escape_python }}"',
      '{{ t.index + 1 }}, "{{ t.annotation | escape_python }}"')
+PY
+
+# ── The complete answer where an id is absent: the target set and the descriptors ──
+#
+# `to` and `event` are absent for a first target that is a `<history>` and for a wildcard,
+# a prefix or several descriptors; `targets` and `events` are what a consumer reads there.
+# One case each, in the one backend, because the comparison that holds them is the same
+# code for all six.
+
+mutation_case "Rust writes the descriptors where the target set belongs" <<'PY'
+edit("tools/codegen/templates/rust/state_machine.rs.jinja2",
+     'targets: "{{ t.targets | escape_rust }}"',
+     'targets: "{{ t.events | escape_rust }}"')
+PY
+
+mutation_case "Rust writes the target set where the descriptors belong" <<'PY'
+edit("tools/codegen/templates/rust/state_machine.rs.jinja2",
+     'events: "{{ t.events | escape_rust }}"',
+     'events: "{{ t.targets | escape_rust }}"')
 PY
 
 # ── The `$` of an annotation: written as typed, so the compiler reads it ──

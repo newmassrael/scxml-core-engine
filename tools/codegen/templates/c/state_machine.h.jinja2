@@ -229,7 +229,7 @@ typedef enum {{ csym_prefix }}{{ model.name }}_event_e {{ csym_prefix }}{{ model
 {% if model.emitted_transition_table %}
 {# emitted-transition-table:begin #}
 {% set _table = model.emitted_transition_table %}
-/* ── §synth-6.2.6: transition table, because the build asked for it ── */
+/* ── §synth-6.2.6: transition table, because the document declares it ── */
 {# One definition in the `.c`, declared here, for the reason every other piece of
    this machine's data is: a `static const` array in a header is one copy per
    translation unit that includes it. A zero-length array is not C, so a machine
@@ -248,12 +248,17 @@ typedef enum {{ csym_prefix }}{{ model.name }}_event_e {{ csym_prefix }}{{ model
    `{{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE` where a transition has no single id in those
    enumerations: a targetless transition, a first target that is a <history>,
    an eventless transition, a wildcard or prefix descriptor, or several
-   descriptors. `sce-codegen transition-table` lists the same transitions in
-   the same order with the whole target set and every descriptor. */
+   descriptors. `targets` and `events` are the complete answer there: the
+   whole target set and every descriptor as written, space-separated (`*`, a
+   prefix such as `error.*` and a literal name alike, none resolved), the empty
+   string when the transition has none. `sce-codegen transition-table` lists
+   the same transitions in the same order. */
 typedef struct {{ csym_prefix }}{{ model.name }}_transition_s {
     {{ csym_prefix }}{{ model.name }}_state_t from;
     {{ csym_prefix }}{{ model.name }}_state_t to;
     {{ csym_prefix }}{{ model.name }}_event_t event;
+    const char *targets;
+    const char *events;
     uint32_t index;
     const char *annotation;
 } {{ csym_prefix }}{{ model.name }}_transition_t;

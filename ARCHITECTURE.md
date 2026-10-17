@@ -1444,7 +1444,7 @@ sce-forge-runtime/    Non-MCU Forge kinds: codec / filter / interpolation / look
 - Hand-authored sources next to generated files (test harnesses, integration drivers).
 - Build-system wrappers and shell scripts.
 
-**The transitions of a machine** are one fact with two surfaces, the `sce-codegen transition-table` export and the constant table `generate --emit-transition-table` puts into every backend, both rendered from one list (`transition_records`); see `docs/SCE_TRANSITION_TABLE.md`.
+**The transitions of a machine** are one fact with two surfaces, the `sce-codegen transition-table` export and the constant table a document that declares `sce:transition-table="emit"` is generated with in every backend, both rendered from one list (`transition_records`); see `docs/SCE_TRANSITION_TABLE.md`.
 
 **Why a boundary, not a recursive ownership chain.** A single-vendor traceability map for a multi-tool pipeline would couple SCE's release cadence to every upstream tool's output format. The textbook answer — established by the JavaScript source-maps spec over twenty years — is that each stage in a toolchain emits its own sourcemap, and integration happens via sourcemap chaining at the consumer side. Single-Responsibility Principle and Bounded Context (DDD) both point the same direction: SCE traces what SCE emits, external tools trace what they emit, and the consumer composes chains as needed.
 

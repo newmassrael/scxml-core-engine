@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 292d1fc77f53bcad0ebbbb1eba40e4d11668b8d3c883688041c67e32a9df108c
+// source-hash: 28cabab9febf446d1abb3eb5ae325b382374a8683804404e452d87dfbbb0500b
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -213,12 +213,12 @@ func (e AComputedEventNameIsMatchedLikeAnyOtherEvent) String() string {
 }
 
 // ======================================================================
-// Transition table (§synth-6.2.6), because the build asked for it
+// Transition table (§synth-6.2.6), because the document declares it
 // ======================================================================
 
 // AComputedEventNameIsMatchedLikeAnyOtherSourceHash is the digest of the source set this machine
 // was generated from: the `source-hash` of the file's own header, as a value.
-const AComputedEventNameIsMatchedLikeAnyOtherSourceHash = "292d1fc77f53bcad0ebbbb1eba40e4d11668b8d3c883688041c67e32a9df108c"
+const AComputedEventNameIsMatchedLikeAnyOtherSourceHash = "28cabab9febf446d1abb3eb5ae325b382374a8683804404e452d87dfbbb0500b"
 
 // AComputedEventNameIsMatchedLikeAnyOtherTransition is one transition of this machine, as constant
 // data. Nothing in the machine reads it: a host that draws the machine, or
@@ -229,26 +229,31 @@ const AComputedEventNameIsMatchedLikeAnyOtherSourceHash = "292d1fc77f53bcad0ebbb
 // Event hold a value only where HasTo and HasEvent say so: a targetless
 // transition, a first target that is a <history>, an eventless transition, a
 // wildcard or prefix descriptor, or several descriptors has no single id in
-// those tables. `sce-codegen transition-table` lists the same transitions in
-// the same order with the whole target set and every descriptor.
+// those tables. Targets and Events are the complete answer there: the whole
+// target set and every descriptor as written, space-separated (`*`, a prefix
+// such as `error.*` and a literal name alike, none resolved), empty when the
+// transition has none. `sce-codegen transition-table` lists the same
+// transitions in the same order.
 type AComputedEventNameIsMatchedLikeAnyOtherTransition struct {
 	From       AComputedEventNameIsMatchedLikeAnyOtherState
 	To         AComputedEventNameIsMatchedLikeAnyOtherState
 	HasTo      bool
 	Event      AComputedEventNameIsMatchedLikeAnyOtherEvent
 	HasEvent   bool
+	Targets    string
+	Events     string
 	Index      uint32
 	Annotation string
 }
 
 // AComputedEventNameIsMatchedLikeAnyOtherTransitions lists every transition of the machine.
 var AComputedEventNameIsMatchedLikeAnyOtherTransitions = [...]AComputedEventNameIsMatchedLikeAnyOtherTransition{
-	{From: AComputedEventNameIsMatchedLikeAnyOtherStateS1, To: AComputedEventNameIsMatchedLikeAnyOtherStateS2, HasTo: true, Event: AComputedEventNameIsMatchedLikeAnyOtherEventRequest, HasEvent: true, Index: 0, Annotation: ""},
-	{From: AComputedEventNameIsMatchedLikeAnyOtherStateS2, To: AComputedEventNameIsMatchedLikeAnyOtherStateS3, HasTo: true, Index: 0, Annotation: ""},
-	{From: AComputedEventNameIsMatchedLikeAnyOtherStateS3, To: AComputedEventNameIsMatchedLikeAnyOtherStateS4, HasTo: true, Event: AComputedEventNameIsMatchedLikeAnyOtherEventRequest, HasEvent: true, Index: 0, Annotation: ""},
-	{From: AComputedEventNameIsMatchedLikeAnyOtherStateS4, To: AComputedEventNameIsMatchedLikeAnyOtherStateS5, HasTo: true, Index: 0, Annotation: ""},
-	{From: AComputedEventNameIsMatchedLikeAnyOtherStateS5, To: AComputedEventNameIsMatchedLikeAnyOtherStateS6, HasTo: true, Event: AComputedEventNameIsMatchedLikeAnyOtherEventRequest, HasEvent: true, Index: 0, Annotation: ""},
-	{From: AComputedEventNameIsMatchedLikeAnyOtherStateS6, To: AComputedEventNameIsMatchedLikeAnyOtherStatePass, HasTo: true, Index: 0, Annotation: ""},
+	{From: AComputedEventNameIsMatchedLikeAnyOtherStateS1, To: AComputedEventNameIsMatchedLikeAnyOtherStateS2, HasTo: true, Event: AComputedEventNameIsMatchedLikeAnyOtherEventRequest, HasEvent: true, Targets: "s2", Events: "request", Index: 0, Annotation: ""},
+	{From: AComputedEventNameIsMatchedLikeAnyOtherStateS2, To: AComputedEventNameIsMatchedLikeAnyOtherStateS3, HasTo: true, Targets: "s3", Events: "*", Index: 0, Annotation: ""},
+	{From: AComputedEventNameIsMatchedLikeAnyOtherStateS3, To: AComputedEventNameIsMatchedLikeAnyOtherStateS4, HasTo: true, Event: AComputedEventNameIsMatchedLikeAnyOtherEventRequest, HasEvent: true, Targets: "s4", Events: "request", Index: 0, Annotation: ""},
+	{From: AComputedEventNameIsMatchedLikeAnyOtherStateS4, To: AComputedEventNameIsMatchedLikeAnyOtherStateS5, HasTo: true, Targets: "s5", Events: "*", Index: 0, Annotation: ""},
+	{From: AComputedEventNameIsMatchedLikeAnyOtherStateS5, To: AComputedEventNameIsMatchedLikeAnyOtherStateS6, HasTo: true, Event: AComputedEventNameIsMatchedLikeAnyOtherEventRequest, HasEvent: true, Targets: "s6", Events: "request", Index: 0, Annotation: ""},
+	{From: AComputedEventNameIsMatchedLikeAnyOtherStateS6, To: AComputedEventNameIsMatchedLikeAnyOtherStatePass, HasTo: true, Targets: "pass", Events: "*", Index: 0, Annotation: ""},
 }
 
 // ======================================================================
@@ -733,7 +738,7 @@ func (p *AComputedEventNameIsMatchedLikeAnyOtherPolicy) ExecuteEntryActions(stat
 	p.ensureScriptEngine()
 	switch state {
 	case AComputedEventNameIsMatchedLikeAnyOtherStateS1:
-		//line a_computed_event_name_is_matched_like_any_other.scxml:41
+		//line a_computed_event_name_is_matched_like_any_other.scxml:42
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -770,7 +775,7 @@ func (p *AComputedEventNameIsMatchedLikeAnyOtherPolicy) ExecuteEntryActions(stat
 	}
 		}()
 	case AComputedEventNameIsMatchedLikeAnyOtherStateS2:
-		//line a_computed_event_name_is_matched_like_any_other.scxml:47
+		//line a_computed_event_name_is_matched_like_any_other.scxml:48
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -811,7 +816,7 @@ func (p *AComputedEventNameIsMatchedLikeAnyOtherPolicy) ExecuteEntryActions(stat
 	}
 		}()
 	case AComputedEventNameIsMatchedLikeAnyOtherStateS3:
-		//line a_computed_event_name_is_matched_like_any_other.scxml:53
+		//line a_computed_event_name_is_matched_like_any_other.scxml:54
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -850,7 +855,7 @@ func (p *AComputedEventNameIsMatchedLikeAnyOtherPolicy) ExecuteEntryActions(stat
 	}
 		}()
 	case AComputedEventNameIsMatchedLikeAnyOtherStateS4:
-		//line a_computed_event_name_is_matched_like_any_other.scxml:59
+		//line a_computed_event_name_is_matched_like_any_other.scxml:60
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -889,7 +894,7 @@ func (p *AComputedEventNameIsMatchedLikeAnyOtherPolicy) ExecuteEntryActions(stat
 	}
 		}()
 	case AComputedEventNameIsMatchedLikeAnyOtherStateS5:
-		//line a_computed_event_name_is_matched_like_any_other.scxml:65
+		//line a_computed_event_name_is_matched_like_any_other.scxml:66
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -1012,7 +1017,7 @@ func (p *AComputedEventNameIsMatchedLikeAnyOtherPolicy) ExecuteEntryActions(stat
 	}
 		}()
 	case AComputedEventNameIsMatchedLikeAnyOtherStateS6:
-		//line a_computed_event_name_is_matched_like_any_other.scxml:71
+		//line a_computed_event_name_is_matched_like_any_other.scxml:72
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {

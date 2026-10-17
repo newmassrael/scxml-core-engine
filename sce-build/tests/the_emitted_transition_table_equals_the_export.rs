@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// `sce-codegen generate --emit-transition-table` puts the transitions of a
-// machine into the generated source of every backend, and
+// A document that declares `sce:transition-table="emit"` is generated with its
+// transitions as constant data in the source of every backend, and
 // `sce-codegen transition-table` lists the same transitions as an export. They
 // are one fact with two surfaces, and this file holds each backend's table to
 // the export of the document it was generated from: the same transitions, in
-// the same order, with the same owning state, first target, event, index and
-// annotation, and the same `source_hash` the file's own header carries.
+// the same order, with the same owning state, first target, event, whole target
+// set, every event descriptor, index and annotation, and the same `source_hash`
+// the file's own header carries.
 //
 // The first comparison reads the generated source back rather than compiling it, so it
 // runs on a host with no toolchain. Where a toolchain is found, the same output is
@@ -17,9 +18,9 @@
 // program against the real runtime and running it. A table that reads back right
 // and does not compile, or compiles to other values, is still wrong.
 //
-// Absent the flag, nothing changes: the generated files are held byte-identical
-// by the committed-tree drift gates, and this file checks that none of them names
-// the table.
+// Absent the declaration, nothing changes: the generated files are held
+// byte-identical by the committed-tree drift gates, and this file checks that none
+// of them names the table.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -42,7 +43,7 @@ const STEM: &str = "ttemit";
 /// several tokens carrying characters a string literal has to escape, and a state
 /// whose id is not lower case.
 const DOC: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
-       xmlns:sce="http://sce.dev/ext"
+       xmlns:sce="http://sce.dev/ext" sce:transition-table="emit"
        version="1.0" name="ttemit" initial="idle" datamodel="null">
   <state id="idle">
     <transition event="go" target="Busy_2" sce:req="12 REQ-&quot;Q&quot; a\b $x {y} 50%"/>
@@ -86,6 +87,10 @@ struct Entry {
     from: String,
     to: Option<String>,
     event: Option<String>,
+    /// The whole target set, space-separated.
+    targets: String,
+    /// Every descriptor as written, space-separated.
+    events: String,
     index: u64,
     annotation: String,
 }
@@ -156,6 +161,16 @@ fn expected_entries(rows: &[serde_json::Value]) -> Vec<Entry> {
                     .filter(|t| states.contains(t))
                     .map(str::to_string),
                 event,
+                targets: targets
+                    .iter()
+                    .map(|t| t.as_str().expect("a target is a string"))
+                    .collect::<Vec<_>>()
+                    .join(" "),
+                events: if descriptors == ["(eventless)"] {
+                    String::new()
+                } else {
+                    descriptors.join(" ")
+                },
                 index: r["index"].as_u64().unwrap(),
                 annotation: if source == "(none)" {
                     String::new()
@@ -217,33 +232,33 @@ fn read_table(lang: &str, source: &str, machine: &str) -> Vec<Entry> {
     let (pattern, group_count) = match lang {
         "cpp" => (
             format!(
-                r"TransitionRecord\{{\s*State::(\w+),\s*(?:State::(\w+)|std::nullopt),\s*(?:Event::(\w+)|std::nullopt),\s*(\d+)u,\s*{LITERAL}\s*\}}"
+                r"TransitionRecord\{{\s*State::(\w+),\s*(?:State::(\w+)|std::nullopt),\s*(?:Event::(\w+)|std::nullopt),\s*{LITERAL},\s*{LITERAL},\s*(\d+)u,\s*{LITERAL}\s*\}}"
             ),
-            5,
+            7,
         ),
         "rust" => (
             format!(
-                r"from:\s*{machine}State::(\w+),\s*to:\s*(?:Some\({machine}State::(\w+)\)|None),\s*event:\s*(?:Some\({machine}Event::(\w+)\)|None),\s*index:\s*(\d+),\s*annotation:\s*{LITERAL},?\s*\}}"
+                r"from:\s*{machine}State::(\w+),\s*to:\s*(?:Some\({machine}State::(\w+)\)|None),\s*event:\s*(?:Some\({machine}Event::(\w+)\)|None),\s*targets:\s*{LITERAL},\s*events:\s*{LITERAL},\s*index:\s*(\d+),\s*annotation:\s*{LITERAL},?\s*\}}"
             ),
-            5,
+            7,
         ),
         "go" => (
             format!(
-                r"\{{From:\s*{machine}State(\w+),\s*(?:To:\s*{machine}State(\w+),\s*HasTo:\s*true,\s*)?(?:Event:\s*{machine}Event(\w+),\s*HasEvent:\s*true,\s*)?Index:\s*(\d+),\s*Annotation:\s*{LITERAL},?\s*\}}"
+                r"\{{From:\s*{machine}State(\w+),\s*(?:To:\s*{machine}State(\w+),\s*HasTo:\s*true,\s*)?(?:Event:\s*{machine}Event(\w+),\s*HasEvent:\s*true,\s*)?Targets:\s*{LITERAL},\s*Events:\s*{LITERAL},\s*Index:\s*(\d+),\s*Annotation:\s*{LITERAL},?\s*\}}"
             ),
-            5,
+            7,
         ),
         "kotlin" => (
             format!(
-                r"{machine}Transition\(\s*{machine}State\.(\w+),\s*(?:{machine}State\.(\w+)|null),\s*(?:{machine}Event\.([\w.]+)|null),\s*(\d+),\s*{LITERAL},?\s*\)"
+                r"{machine}Transition\(\s*{machine}State\.(\w+),\s*(?:{machine}State\.(\w+)|null),\s*(?:{machine}Event\.([\w.]+)|null),\s*{LITERAL},\s*{LITERAL},\s*(\d+),\s*{LITERAL},?\s*\)"
             ),
-            5,
+            7,
         ),
         "python" => (
             format!(
-                r"{machine}Transition\(\s*{machine}State\.(\w+),\s*(?:{machine}State\.(\w+)|None),\s*(?:{machine}Event\.(\w+)|None),\s*(\d+),\s*{LITERAL},?\s*\)"
+                r"{machine}Transition\(\s*{machine}State\.(\w+),\s*(?:{machine}State\.(\w+)|None),\s*(?:{machine}Event\.(\w+)|None),\s*{LITERAL},\s*{LITERAL},\s*(\d+),\s*{LITERAL},?\s*\)"
             ),
-            5,
+            7,
         ),
         "c11" => {
             let prefix = Regex::new(r"#define\s+(\w+)_TRANSITION_COUNT\b")
@@ -253,9 +268,9 @@ fn read_table(lang: &str, source: &str, machine: &str) -> Vec<Entry> {
                 .expect("the header defines the transition count");
             (
                 format!(
-                    r"\{{\s*{prefix}_STATE_(\w+),\s*(?:{prefix}_STATE_(\w+)),\s*(?:{prefix}_EVENT_(\w+)),\s*(\d+)u,\s*{LITERAL}\s*\}}"
+                    r"\{{\s*{prefix}_STATE_(\w+),\s*(?:{prefix}_STATE_(\w+)),\s*(?:{prefix}_EVENT_(\w+)),\s*{LITERAL},\s*{LITERAL},\s*(\d+)u,\s*{LITERAL}\s*\}}"
                 ),
-                5,
+                7,
             )
         }
         other => panic!("no reader for {other}"),
@@ -270,8 +285,10 @@ fn read_table(lang: &str, source: &str, machine: &str) -> Vec<Entry> {
                 from: c[1].to_string(),
                 to: if none_state { None } else { opt(&c, 2) },
                 event: if none_event { None } else { opt(&c, 3) },
-                index: c[4].parse().unwrap(),
-                annotation: unescape(&c[5]),
+                targets: unescape(&c[4]),
+                events: unescape(&c[5]),
+                index: c[6].parse().unwrap(),
+                annotation: unescape(&c[7]),
             }
         })
         .collect()
@@ -306,13 +323,18 @@ fn generated_source(lang: &str, out: &Path) -> String {
         .join("\n")
 }
 
-fn generate(lang: &str, out: &Path, doc: &Path, flag: bool) {
-    let mut args = vec!["generate", "-l", lang, "-o", out.to_str().unwrap()];
-    if flag {
-        args.push("--emit-transition-table");
-    }
-    args.push(doc.to_str().unwrap());
-    run(&args, &format!("generate -l {lang}"));
+fn generate(lang: &str, out: &Path, doc: &Path) {
+    run(
+        &[
+            "generate",
+            "-l",
+            lang,
+            "-o",
+            out.to_str().unwrap(),
+            doc.to_str().unwrap(),
+        ],
+        &format!("generate -l {lang}"),
+    );
 }
 
 /// The machine's name as the Rust, Go, Kotlin and Python templates spell it.
@@ -365,6 +387,8 @@ fn expected_spelled(lang: &str, expected: &[Entry], all_events: &[String]) -> Ve
                     spelled
                 }
             }),
+            targets: e.targets.clone(),
+            events: e.events.clone(),
             index: e.index,
             annotation: e.annotation.clone(),
         })
@@ -400,7 +424,7 @@ fn every_backend_carries_the_table_the_export_lists() {
 
     for lang in BACKENDS {
         let out = dir.path().join(format!("out_{lang}"));
-        generate(lang, &out, &doc, true);
+        generate(lang, &out, &doc);
         let source = generated_source(lang, &out);
         let table = read_table(lang, &source, &machine_name());
         assert_eq!(
@@ -423,7 +447,7 @@ fn the_table_carries_the_hash_of_the_header_of_its_file() {
     let header_hash = Regex::new(r"source-hash:\s*([0-9a-f]{64})").unwrap();
     for lang in BACKENDS {
         let out = dir.path().join(format!("out_{lang}"));
-        generate(lang, &out, &doc, true);
+        generate(lang, &out, &doc);
         let source = generated_source(lang, &out);
         let header: BTreeMap<String, usize> =
             header_hash
@@ -446,12 +470,26 @@ fn the_table_carries_the_hash_of_the_header_of_its_file() {
     }
 }
 
-/// Without the flag a generated file does not mention the table, and with it
-/// every backend does: the option is what moves the output.
+/// A document that does not declare a table gets none, and one that does gets it
+/// in every backend: the declaration is what moves the output, and nothing on the
+/// command line.
 #[test]
-fn the_table_is_emitted_only_when_asked_for() {
+fn the_table_is_emitted_only_when_the_document_declares_it() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let doc = write_doc(dir.path(), DOC);
+    let undeclared = dir.path().join("undeclared");
+    let declared = dir.path().join("declared");
+    std::fs::create_dir_all(&undeclared).expect("create directory");
+    std::fs::create_dir_all(&declared).expect("create directory");
+    let without_doc = write_doc(
+        &undeclared,
+        &DOC.replace(r#" sce:transition-table="emit""#, ""),
+    );
+    assert_ne!(
+        std::fs::read_to_string(&without_doc).unwrap(),
+        DOC,
+        "the fixture must differ from DOC by the declaration alone"
+    );
+    let with_doc = write_doc(&declared, DOC);
     // The one value every backend's table carries and nothing else writes: the
     // hash as a named constant (`SOURCE_HASH`, `<Machine>SourceHash`, the C++
     // accessor `sourceHash`), distinct from the `source-hash` header comment.
@@ -459,17 +497,47 @@ fn the_table_is_emitted_only_when_asked_for() {
     for lang in BACKENDS {
         let without = dir.path().join(format!("without_{lang}"));
         let with = dir.path().join(format!("with_{lang}"));
-        generate(lang, &without, &doc, false);
-        generate(lang, &with, &doc, true);
+        generate(lang, &without, &without_doc);
+        generate(lang, &with, &with_doc);
         assert!(
             !marker.is_match(&generated_source(lang, &without)),
-            "[{lang}] a file generated without --emit-transition-table names the table"
+            "[{lang}] a document that declares no table was generated with one"
         );
         assert!(
             marker.is_match(&generated_source(lang, &with)),
-            "[{lang}] --emit-transition-table did not put a table into the output"
+            "[{lang}] sce:transition-table=\"emit\" did not put a table into the output"
         );
     }
+}
+
+/// The declaration has one value, and any other is refused with the attribute's
+/// name rather than read as a spelling of "no".
+#[test]
+fn a_value_other_than_emit_is_refused() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let doc = write_doc(
+        dir.path(),
+        &DOC.replace(
+            r#"sce:transition-table="emit""#,
+            r#"sce:transition-table="yes""#,
+        ),
+    );
+    let out = dir.path().join("out");
+    let output = Command::new(sce_codegen_bin())
+        .env("SCE_WORKSPACE_ROOT", repo_root())
+        .args(["generate", "-l", "rust", "-o", out.to_str().unwrap()])
+        .arg(&doc)
+        .output()
+        .expect("spawn sce-codegen");
+    assert!(
+        !output.status.success(),
+        "a refused declaration generated a machine"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("sce:transition-table"),
+        "the refusal does not name the attribute:\n{stderr}"
+    );
 }
 
 /// Each backend writes an annotation as the literal its language needs, and that
@@ -496,7 +564,7 @@ fn every_backend_writes_an_annotation_as_the_literal_its_language_needs() {
     );
     for lang in ["cpp", "c11", "rust", "go", "kotlin"] {
         let out = work.join(format!("out_{lang}"));
-        generate(lang, &out, &doc, true);
+        generate(lang, &out, &doc);
         let source = generated_source(lang, &out);
         for annotation in &annotations {
             let literal = literal_of(lang, annotation);
@@ -543,7 +611,7 @@ fn an_annotation_round_trips_through_every_backend_unread() {
     let events = literal_events(&expected);
     for lang in BACKENDS {
         let out = dir.path().join(format!("out_{lang}"));
-        generate(lang, &out, &doc, true);
+        generate(lang, &out, &doc);
         let table = read_table(lang, &generated_source(lang, &out), &machine_name());
         assert_eq!(
             table,
@@ -557,6 +625,7 @@ fn an_annotation_round_trips_through_every_backend_unread() {
 #[test]
 fn a_machine_without_transitions_has_an_empty_table() {
     let doc_text = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext" sce:transition-table="emit"
        version="1.0" name="ttemit" initial="only" datamodel="null">
   <final id="only"/>
 </scxml>
@@ -565,7 +634,7 @@ fn a_machine_without_transitions_has_an_empty_table() {
     let doc = write_doc(dir.path(), doc_text);
     for lang in BACKENDS {
         let out = dir.path().join(format!("out_{lang}"));
-        generate(lang, &out, &doc, true);
+        generate(lang, &out, &doc);
         let source = generated_source(lang, &out);
         assert!(
             read_table(lang, &source, &machine_name()).is_empty(),
@@ -656,7 +725,7 @@ fn the_cpp_table_compiles_and_holds_the_export() {
     let (_, rows) = export(&doc);
     let expected = expected_entries(&rows);
     let out = work.join("out");
-    generate("cpp", &out, &doc, true);
+    generate("cpp", &out, &doc);
 
     let names = names_of("cpp");
     let mut stub = format!(
@@ -688,6 +757,14 @@ fn the_cpp_table_compiles_and_holds_the_export() {
                 "static_assert(!P::transitions[{i}].event.has_value());\n"
             )),
         }
+        stub.push_str(&format!(
+            "static_assert(std::string_view(P::transitions[{i}].targets) == std::string_view({}));\n",
+            cpp_literal(&e.targets)
+        ));
+        stub.push_str(&format!(
+            "static_assert(std::string_view(P::transitions[{i}].events) == std::string_view({}));\n",
+            cpp_literal(&e.events)
+        ));
         stub.push_str(&format!(
             "static_assert(P::transitions[{i}].index == {}u);\n",
             e.index
@@ -754,7 +831,7 @@ fn the_python_table_imports_and_holds_the_export() {
     let expected = expected_entries(&rows);
     let events = literal_events(&expected);
     let out = work.join("out");
-    generate("python", &out, &doc, true);
+    generate("python", &out, &doc);
 
     let script = r#"
 import json, sys
@@ -767,6 +844,8 @@ table = [
         "from": t.from_state.name,
         "to": None if t.to is None else t.to.name,
         "event": None if t.event is None else t.event.name,
+        "targets": t.targets,
+        "events": t.events,
         "index": t.index,
         "annotation": t.annotation,
     }
@@ -797,6 +876,8 @@ print(json.dumps({"hash": module.SOURCE_HASH, "table": table}))
             from: e["from"].as_str().unwrap().to_string(),
             to: e["to"].as_str().map(str::to_string),
             event: e["event"].as_str().map(str::to_string),
+            targets: e["targets"].as_str().unwrap().to_string(),
+            events: e["events"].as_str().unwrap().to_string(),
             index: e["index"].as_u64().unwrap(),
             annotation: e["annotation"].as_str().unwrap().to_string(),
         })
@@ -838,7 +919,7 @@ fn field_conditions(
     let mut out = Vec::new();
     for (i, e) in spelled.iter().enumerate() {
         let at = format!("{table}[{i}]");
-        let (from, to, event, index, annotation);
+        let (from, to, event, targets, events, index, annotation);
         match lang {
             "rust" => {
                 from = format!("{at}.from == {machine}State::{}", e.from);
@@ -850,6 +931,8 @@ fn field_conditions(
                     Some(v) => format!("{at}.event == Some({machine}Event::{v})"),
                     None => format!("{at}.event.is_none()"),
                 };
+                targets = format!("{at}.targets == {}", literal_of(lang, &e.targets));
+                events = format!("{at}.events == {}", literal_of(lang, &e.events));
                 index = format!("{at}.index == {}", e.index);
                 annotation = format!("{at}.annotation == {}", literal_of(lang, &e.annotation));
             }
@@ -863,6 +946,8 @@ fn field_conditions(
                     Some(v) => format!("{at}.HasEvent && {at}.Event == tt.{machine}Event{v}"),
                     None => format!("!{at}.HasEvent"),
                 };
+                targets = format!("{at}.Targets == {}", literal_of(lang, &e.targets));
+                events = format!("{at}.Events == {}", literal_of(lang, &e.events));
                 index = format!("int({at}.Index) == {}", e.index);
                 annotation = format!("{at}.Annotation == {}", literal_of(lang, &e.annotation));
             }
@@ -876,6 +961,8 @@ fn field_conditions(
                     Some(v) => format!("{at}.event == {machine}Event.{v}"),
                     None => format!("{at}.event == null"),
                 };
+                targets = format!("{at}.targets == {}", literal_of(lang, &e.targets));
+                events = format!("{at}.events == {}", literal_of(lang, &e.events));
                 index = format!("{at}.index == {}", e.index);
                 annotation = format!("{at}.annotation == {}", literal_of(lang, &e.annotation));
             }
@@ -889,6 +976,11 @@ fn field_conditions(
                     Some(v) => format!("{at}.event == {upper}_EVENT_{v}"),
                     None => format!("{at}.event == {upper}_EVENT_NONE"),
                 };
+                targets = format!(
+                    "strcmp({at}.targets, {}) == 0",
+                    literal_of(lang, &e.targets)
+                );
+                events = format!("strcmp({at}.events, {}) == 0", literal_of(lang, &e.events));
                 index = format!("{at}.index == {}u", e.index);
                 annotation = format!(
                     "strcmp({at}.annotation, {}) == 0",
@@ -901,6 +993,8 @@ fn field_conditions(
             ("from", from),
             ("to", to),
             ("event", event),
+            ("targets", targets),
+            ("events", events),
             ("index", index),
             ("annotation", annotation),
         ] {
@@ -946,7 +1040,7 @@ fn the_rust_table_compiles_and_holds_the_export() {
     };
     let (header, spelled, work, doc) = held_to("rust");
     let out = work.join("out");
-    generate("rust", &out, &doc, true);
+    generate("rust", &out, &doc);
     let machine = machine_name();
 
     let mut program = format!(
@@ -998,7 +1092,7 @@ fn the_go_table_compiles_and_holds_the_export() {
     };
     let (header, spelled, work, doc) = held_to("go");
     let machine = machine_name();
-    generate("go", &work.join("project").join(STEM), &doc, true);
+    generate("go", &work.join("project").join(STEM), &doc);
 
     let mut program = format!(
         "package main\n\nimport (\n\t\"fmt\"\n\t\"os\"\n\n\ttt \"example.com/ttemitcheck/{STEM}\"\n)\n\n\
@@ -1068,7 +1162,7 @@ fn the_kotlin_table_compiles_and_holds_the_export() {
     };
     let (header, spelled, work, doc) = held_to("kotlin");
     let out = work.join("out");
-    generate("kotlin", &out, &doc, true);
+    generate("kotlin", &out, &doc);
     let machine = machine_name();
 
     let mut program = format!(
@@ -1121,7 +1215,7 @@ fn the_c_table_compiles_and_holds_the_export() {
     };
     let (header, spelled, work, doc) = held_to("c11");
     let out = work.join("out");
-    generate("c11", &out, &doc, true);
+    generate("c11", &out, &doc);
     let lower = STEM.to_lowercase();
     let upper = STEM.to_uppercase();
 

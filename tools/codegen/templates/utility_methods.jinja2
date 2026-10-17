@@ -139,7 +139,7 @@
 {# emitted-transition-table:begin #}
 {% set _table = model.emitted_transition_table %}
     // §synth-6.2.6: the machine's transitions, as constant data, because the
-    // build asked for them (`sce-codegen generate --emit-transition-table`).
+    // document declares them (`sce:transition-table="emit"`).
     //
     // Nothing in this machine reads it. A host that draws the machine, or
     // checks it against its own design, does: `from`, `to` and `event` are
@@ -149,13 +149,18 @@
     // uninterpreted. `to` and `event` are absent where a transition has no
     // single id in those tables: a targetless transition, a first target
     // that is a <history>, an eventless transition, a wildcard or prefix
-    // descriptor, or several descriptors. `sce-codegen transition-table`
-    // lists the same transitions in the same order with the whole target set
-    // and every descriptor.
+    // descriptor, or several descriptors. `targets` and `events` are the
+    // complete answer there: the whole target set and every descriptor as
+    // written, space-separated (`*`, a prefix such as `error.*` and a literal
+    // name alike, none resolved), empty when the transition has none.
+    // `sce-codegen transition-table` lists the same transitions in the same
+    // order.
     struct TransitionRecord {
         State from;
         std::optional<State> to;
         std::optional<Event> event;
+        const char* targets;
+        const char* events;
         std::uint32_t index;
         const char* annotation;
     };
@@ -173,7 +178,7 @@
 {% if _table.transitions %}
     static constexpr std::array<TransitionRecord, {{ _table.transitions | length }}> transitions = {{ '{{' }}
 {% for t in _table.transitions %}
-        TransitionRecord{State::{{ t.from | capitalize }}, {% if t.to %}State::{{ t.to | capitalize }}{% else %}std::nullopt{% endif %}, {% if t.event %}Event::{{ t.event | to_cpp_event_variant }}{% else %}std::nullopt{% endif %}, {{ t.index }}u, "{{ t.annotation | escape_cpp }}"},
+        TransitionRecord{State::{{ t.from | capitalize }}, {% if t.to %}State::{{ t.to | capitalize }}{% else %}std::nullopt{% endif %}, {% if t.event %}Event::{{ t.event | to_cpp_event_variant }}{% else %}std::nullopt{% endif %}, "{{ t.targets | escape_cpp }}", "{{ t.events | escape_cpp }}", {{ t.index }}u, "{{ t.annotation | escape_cpp }}"},
 {% endfor %}
     {{ '}}' }};
 {% else %}

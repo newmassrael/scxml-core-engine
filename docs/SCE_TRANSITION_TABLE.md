@@ -6,11 +6,16 @@ A machine's transitions are one fact with two surfaces, both rendered from one l
 | Surface | What it is | When to use it |
 |---|---|---|
 | `sce-codegen transition-table` | A design-time export: NDJSON, one row per node of the design that can carry a requirement. Registered wire surface, `schemas/sce-transition-table.v1.schema.json` (`SCE_WIRE_CONTRACTS.md`). | Drawing or reviewing a design; anything that reads the SCXML and not a running machine. |
-| `sce-codegen generate --emit-transition-table` | A constant table in the generated source of every backend, with the `source_hash` of the run. | A host that holds the compiled machine and wants to check or draw it without reading the SCXML. |
+| `<scxml sce:transition-table="emit">` | A constant table in the generated source of every backend, with the `source_hash` of the run. | A host that holds the compiled machine and wants to check or draw it without reading the SCXML. |
+
+The table is requested by the design and not by the command line (SCE Accepted Subset §2.20).
+The declaration is inside the source set the machine's `source-hash` covers, so every way of
+generating the document produces the same machine, and no flag has to be remembered at a
+build that someone else runs.
 
 Nothing in a machine reads either one. The generated table is constant data that no
-dispatch touches, and without the flag every generated file is byte-identical to what it was
-before the option existed.
+dispatch touches, and a document that does not declare it generates files byte-identical to
+what they were before the attribute existed.
 
 ## What an entry holds
 
@@ -19,17 +24,22 @@ before the option existed.
 | `from` | The owning state. |
 | `to` | The first target, when it names one of the machine's states. |
 | `event` | The event, when the transition names exactly one literal event the machine holds. |
+| `targets` | The whole target set as written, space-separated, a `<history>` id included. Empty for a targetless transition. |
+| `events` | Every descriptor as written, space-separated: `*`, a prefix such as `error.*` and a literal name alike, none resolved. Empty for an eventless transition. |
 | `index` | The transition's position within its state, in document order: the `N` of `states.<id>.transitions[N]`. |
 | `annotation` | The `sce:req` tokens as written, space-separated. Empty when there are none. |
 
-`to` and `event` are absent where a transition has no single id in the name tables:
+`to` and `event` are the typed ids a consumer compares with the machine it compiled, and they are
+absent where a transition has no single id in the name tables:
 
 - no target (a targetless transition), or a first target that is a `<history>`;
 - no event (an eventless transition), a wildcard `*`, a prefix such as `error.*`, or several descriptors.
 
-For those, and for the second and later targets, the export is the complete answer: its
-`transition` rows carry `targets` (the whole target set) and `event` (every descriptor as
-written), under the same `index`.
+For those, and for the second and later targets, `targets` and `events` are the complete answer,
+and they are the same fact the export states: its `transition` rows carry `targets` (the target
+set) and `event` (every descriptor as written, or `(eventless)`), under the same `index`. A
+consumer that splits `targets` and `events` on spaces has what the export has, without reading
+the SCXML.
 
 The annotation is an opaque token. The generator never reads its shape, so a step number
 `12` arrives as the text `12`, and the integer is the consumer's own parse of it.
@@ -38,12 +48,15 @@ The annotation is an opaque token. The generator never reads its shape, so a ste
 
 | Backend | Table | Hash | Entry |
 |---|---|---|---|
-| C++ | `Policy::transitions` (`std::array`), `Policy::transitionCount()` | `Policy::sourceHash()` | `Policy::TransitionRecord{from, to, event, index, annotation}`; `to` and `event` are `std::optional`. |
+| C++ | `Policy::transitions` (`std::array`), `Policy::transitionCount()` | `Policy::sourceHash()` | `Policy::TransitionRecord{from, to, event, targets, events, index, annotation}`; `to` and `event` are `std::optional`. |
 | C11 | `<prefix><name>_transitions[]`, `<PREFIX><NAME>_TRANSITION_COUNT` | `<PREFIX><NAME>_SOURCE_HASH` | `<prefix><name>_transition_t`; `to` is `<PREFIX><NAME>_STATE_COUNT` and `event` is `<PREFIX><NAME>_EVENT_NONE` when absent. No array is declared for a machine with no transition. |
 | Rust | `<Name>Transition::ALL` | `<Name>Transition::SOURCE_HASH` | `<Name>Transition`; `to` and `event` are `Option`. |
-| Go | `<Name>Transitions` | `<Name>SourceHash` | `<Name>Transition`; `HasTo` and `HasEvent` say whether `To` and `Event` hold a value. |
+| Go | `<Name>Transitions` | `<Name>SourceHash` | `<Name>Transition`; `HasTo` and `HasEvent` say whether `To` and `Event` hold a value; `Targets` and `Events` are strings. |
 | Kotlin | `<Name>Transitions.all` | `<Name>Transitions.SOURCE_HASH` | `<Name>Transition`; `to` and `event` are nullable. |
 | Python | `TRANSITIONS` | `SOURCE_HASH` | `<Name>Transition` (frozen dataclass); `from_state`, and `to` and `event` are `None` when absent. |
+
+`targets` and `events` are a string in every backend (`const char*` in C and C++), so the table is
+the same shape in six languages and needs no array of arrays.
 
 The states and events in an entry are that backend's own enumerators, so a consumer compares
 them with the machine it compiled and not with a string.
@@ -55,13 +68,15 @@ the `source-hash` of the file's own header, held as a value. The export states t
 when asked:
 
 ```
-sce-codegen generate -l cpp -o out --emit-transition-table machine.scxml
+sce-codegen generate -l cpp -o out machine.scxml
 sce-codegen transition-table --header machine.scxml > machine.transitions.ndjson
 ```
 
-The first line of the second is `{"record":"header","v":1,"generator":...,"machine":...,"source_hash":...}`.
-Compare its `source_hash` with the table's, then walk the table beside the `kind: "transition"`
-rows in order: the same count, and for each pair the same `from`, `index` and `annotation`.
+(`machine.scxml` declares `sce:transition-table="emit"`.) The first line of the second is
+`{"record":"header","v":1,"generator":...,"machine":...,"source_hash":...}`. Compare its
+`source_hash` with the table's, then walk the table beside the `kind: "transition"` rows in order:
+the same count, and for each pair the same `from`, `index`, `annotation`, `targets` (the row's
+`targets` joined by spaces) and `events` (the row's `event`, empty where it is `(eventless)`).
 
 Two flags matter when the document is not generated from its own directory. `transition-table`
 takes `--input-root` and `--deploy` and they mean what they mean to `generate`: pass the values
@@ -71,8 +86,8 @@ takes `--input-root` and `--deploy` and they mean what they mean to `generate`: 
 
 `sce-build/tests/the_emitted_transition_table_equals_the_export.rs` reads each backend's table back
 out of its generated source and compares it with the export of the same document, for all six
-backends, including the identifiers, the hash, and an annotation carrying characters a string
-literal has to escape. Where a toolchain is present each backend's table is also held to the export
+backends, including the identifiers, the whole target set and every descriptor, the hash, and an
+annotation carrying characters a string literal has to escape. Where a toolchain is present each backend's table is also held to the export
 by the language itself: C++ by a static assertion for every field of every entry, Python by importing
 the module, and Rust, Go, Kotlin and C by building a program against the real runtime, running it,
 and comparing every field of every entry. The same file asks each source for the annotation literal
@@ -82,9 +97,9 @@ in Kotlin reads back as a `$` and is read by the compiler as an interpolation).
 `sce-build/tests/mutations/the_emitted_transition_table_equals_the_export.cases` makes each backend's
 table wrong once in a mutation round, so the tests above are known to be able to fail.
 
-`a_computed_event_name_is_matched_like_any_other` is opted in (`EMIT_TRANSITION_TABLE` in its CMake
-registration, `--emit-transition-table` in its regeneration scripts), so each channel's own build
-compiles the table in a real machine; its Rust, Go and Kotlin trees are committed with it.
+`a_computed_event_name_is_matched_like_any_other` declares its table (`sce:transition-table="emit"` on
+its root), so each channel's own build compiles the table in a real machine; its Rust, Go and Kotlin
+trees are committed with it.
 
 `sce-build/tests/transition_table_closure.rs` holds the export to the two witnesses `generate`
 wrote for the same document: the `source_hash` of the sourcemap, and its `transition` symbols.

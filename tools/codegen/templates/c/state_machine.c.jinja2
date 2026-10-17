@@ -2338,7 +2338,7 @@ SCE_SM_FN const char *{{ csym_prefix }}{{ model.name }}_root_start_refusal(void)
 /* §synth-6.2.6: the transition table the header declares. */
 const {{ csym_prefix }}{{ model.name }}_transition_t {{ csym_prefix }}{{ model.name }}_transitions[{{ csym_prefix | upper }}{{ model.name | upper }}_TRANSITION_COUNT] = {
 {% for t in model.emitted_transition_table.transitions %}
-    { {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ t.from | to_c11_upper_ident }}, {% if t.to %}{{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ t.to | to_c11_upper_ident }}{% else %}{{ csym_prefix | upper }}{{ model.name | upper }}_STATE_COUNT{% endif %}, {% if t.event %}{{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ t.event | to_c11_upper_ident }}{% else %}{{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE{% endif %}, {{ t.index }}u, "{{ t.annotation | escape_c }}" },
+    { {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ t.from | to_c11_upper_ident }}, {% if t.to %}{{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ t.to | to_c11_upper_ident }}{% else %}{{ csym_prefix | upper }}{{ model.name | upper }}_STATE_COUNT{% endif %}, {% if t.event %}{{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ t.event | to_c11_upper_ident }}{% else %}{{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE{% endif %}, "{{ t.targets | escape_c }}", "{{ t.events | escape_c }}", {{ t.index }}u, "{{ t.annotation | escape_c }}" },
 {% endfor %}
 };
 {# emitted-transition-table:end #}

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 292d1fc77f53bcad0ebbbb1eba40e4d11668b8d3c883688041c67e32a9df108c
+// source-hash: 28cabab9febf446d1abb3eb5ae325b382374a8683804404e452d87dfbbb0500b
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -110,7 +110,7 @@ pub enum AComputedEventNameIsMatchedLikeAnyOtherEvent {
 }
 
 // ======================================================================
-// Transition table (§synth-6.2.6), because the build asked for it
+// Transition table (§synth-6.2.6), because the document declares it
 // ======================================================================
 
 /// One transition of this machine, as constant data. Nothing in the machine
@@ -122,13 +122,18 @@ pub enum AComputedEventNameIsMatchedLikeAnyOtherEvent {
 /// `event` are `None` where a transition has no single id in those enums: a
 /// targetless transition, a first target that is a `<history>`, an eventless
 /// transition, a wildcard or prefix descriptor, or several descriptors.
-/// `sce-codegen transition-table` lists the same transitions in the same order
-/// with the whole target set and every descriptor.
+/// `targets` and `events` are the complete answer there: the whole target set
+/// and every descriptor as written, space-separated (`*`, a prefix such as
+/// `error.*` and a literal name alike, none resolved), empty when the
+/// transition has none. `sce-codegen transition-table` lists the same
+/// transitions in the same order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AComputedEventNameIsMatchedLikeAnyOtherTransition {
     pub from: AComputedEventNameIsMatchedLikeAnyOtherState,
     pub to: Option<AComputedEventNameIsMatchedLikeAnyOtherState>,
     pub event: Option<AComputedEventNameIsMatchedLikeAnyOtherEvent>,
+    pub targets: &'static str,
+    pub events: &'static str,
     pub index: u32,
     pub annotation: &'static str,
 }
@@ -137,7 +142,7 @@ impl AComputedEventNameIsMatchedLikeAnyOtherTransition {
     /// The digest of the source set this machine was generated from: the
     /// `source-hash` of the file's own header, as a value.
     pub const SOURCE_HASH: &'static str =
-        "292d1fc77f53bcad0ebbbb1eba40e4d11668b8d3c883688041c67e32a9df108c";
+        "28cabab9febf446d1abb3eb5ae325b382374a8683804404e452d87dfbbb0500b";
 
     /// Every transition of the machine.
     pub const ALL: [AComputedEventNameIsMatchedLikeAnyOtherTransition; 6] = [
@@ -145,6 +150,8 @@ impl AComputedEventNameIsMatchedLikeAnyOtherTransition {
             from: AComputedEventNameIsMatchedLikeAnyOtherState::S1,
             to: Some(AComputedEventNameIsMatchedLikeAnyOtherState::S2),
             event: Some(AComputedEventNameIsMatchedLikeAnyOtherEvent::Request),
+            targets: "s2",
+            events: "request",
             index: 0,
             annotation: "",
         },
@@ -152,6 +159,8 @@ impl AComputedEventNameIsMatchedLikeAnyOtherTransition {
             from: AComputedEventNameIsMatchedLikeAnyOtherState::S2,
             to: Some(AComputedEventNameIsMatchedLikeAnyOtherState::S3),
             event: None,
+            targets: "s3",
+            events: "*",
             index: 0,
             annotation: "",
         },
@@ -159,6 +168,8 @@ impl AComputedEventNameIsMatchedLikeAnyOtherTransition {
             from: AComputedEventNameIsMatchedLikeAnyOtherState::S3,
             to: Some(AComputedEventNameIsMatchedLikeAnyOtherState::S4),
             event: Some(AComputedEventNameIsMatchedLikeAnyOtherEvent::Request),
+            targets: "s4",
+            events: "request",
             index: 0,
             annotation: "",
         },
@@ -166,6 +177,8 @@ impl AComputedEventNameIsMatchedLikeAnyOtherTransition {
             from: AComputedEventNameIsMatchedLikeAnyOtherState::S4,
             to: Some(AComputedEventNameIsMatchedLikeAnyOtherState::S5),
             event: None,
+            targets: "s5",
+            events: "*",
             index: 0,
             annotation: "",
         },
@@ -173,6 +186,8 @@ impl AComputedEventNameIsMatchedLikeAnyOtherTransition {
             from: AComputedEventNameIsMatchedLikeAnyOtherState::S5,
             to: Some(AComputedEventNameIsMatchedLikeAnyOtherState::S6),
             event: Some(AComputedEventNameIsMatchedLikeAnyOtherEvent::Request),
+            targets: "s6",
+            events: "request",
             index: 0,
             annotation: "",
         },
@@ -180,6 +195,8 @@ impl AComputedEventNameIsMatchedLikeAnyOtherTransition {
             from: AComputedEventNameIsMatchedLikeAnyOtherState::S6,
             to: Some(AComputedEventNameIsMatchedLikeAnyOtherState::Pass),
             event: None,
+            targets: "pass",
+            events: "*",
             index: 0,
             annotation: "",
         },
@@ -734,7 +751,7 @@ impl StatePolicy for AComputedEventNameIsMatchedLikeAnyOtherPolicy {
     ) {
         match state {
             AComputedEventNameIsMatchedLikeAnyOtherState::S1 => {
-                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:41 :: s1 :: _state_body
+                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:42 :: s1 :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -793,7 +810,7 @@ impl StatePolicy for AComputedEventNameIsMatchedLikeAnyOtherPolicy {
                 }
             }
             AComputedEventNameIsMatchedLikeAnyOtherState::S2 => {
-                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:47 :: s2 :: _state_body
+                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:48 :: s2 :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -856,7 +873,7 @@ impl StatePolicy for AComputedEventNameIsMatchedLikeAnyOtherPolicy {
                 }
             }
             AComputedEventNameIsMatchedLikeAnyOtherState::S3 => {
-                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:53 :: s3 :: _state_body
+                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:54 :: s3 :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -916,7 +933,7 @@ impl StatePolicy for AComputedEventNameIsMatchedLikeAnyOtherPolicy {
                 }
             }
             AComputedEventNameIsMatchedLikeAnyOtherState::S4 => {
-                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:59 :: s4 :: _state_body
+                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:60 :: s4 :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -978,7 +995,7 @@ impl StatePolicy for AComputedEventNameIsMatchedLikeAnyOtherPolicy {
                 }
             }
             AComputedEventNameIsMatchedLikeAnyOtherState::S5 => {
-                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:65 :: s5 :: _state_body
+                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:66 :: s5 :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -1151,7 +1168,7 @@ impl StatePolicy for AComputedEventNameIsMatchedLikeAnyOtherPolicy {
                 }
             }
             AComputedEventNameIsMatchedLikeAnyOtherState::S6 => {
-                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:71 :: s6 :: _state_body
+                // SCE-MAP: a_computed_event_name_is_matched_like_any_other.scxml:72 :: s6 :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {

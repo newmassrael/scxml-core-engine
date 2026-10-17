@@ -228,7 +228,7 @@ func (e {{ machine_name }}Event) String() string {
 {# emitted-transition-table:begin #}
 {% set _table = model.emitted_transition_table %}
 // ======================================================================
-// Transition table (§synth-6.2.6), because the build asked for it
+// Transition table (§synth-6.2.6), because the document declares it
 // ======================================================================
 
 // {{ machine_name }}SourceHash is the digest of the source set this machine
@@ -244,14 +244,19 @@ const {{ machine_name }}SourceHash = "{{ _table.source_hash }}"
 // Event hold a value only where HasTo and HasEvent say so: a targetless
 // transition, a first target that is a <history>, an eventless transition, a
 // wildcard or prefix descriptor, or several descriptors has no single id in
-// those tables. `sce-codegen transition-table` lists the same transitions in
-// the same order with the whole target set and every descriptor.
+// those tables. Targets and Events are the complete answer there: the whole
+// target set and every descriptor as written, space-separated (`*`, a prefix
+// such as `error.*` and a literal name alike, none resolved), empty when the
+// transition has none. `sce-codegen transition-table` lists the same
+// transitions in the same order.
 type {{ machine_name }}Transition struct {
 	From       {{ machine_name }}State
 	To         {{ machine_name }}State
 	HasTo      bool
 	Event      {{ machine_name }}Event
 	HasEvent   bool
+	Targets    string
+	Events     string
 	Index      uint32
 	Annotation string
 }
@@ -259,7 +264,7 @@ type {{ machine_name }}Transition struct {
 // {{ machine_name }}Transitions lists every transition of the machine.
 var {{ machine_name }}Transitions = [...]{{ machine_name }}Transition{
 {% for t in _table.transitions %}
-	{From: {{ machine_name }}State{{ t.from | to_state_variant }}, {% if t.to %}To: {{ machine_name }}State{{ t.to | to_state_variant }}, HasTo: true, {% endif %}{% if t.event %}Event: {{ machine_name }}Event{{ t.event | to_event_variant }}, HasEvent: true, {% endif %}Index: {{ t.index }}, Annotation: "{{ t.annotation | escape_go }}"},
+	{From: {{ machine_name }}State{{ t.from | to_state_variant }}, {% if t.to %}To: {{ machine_name }}State{{ t.to | to_state_variant }}, HasTo: true, {% endif %}{% if t.event %}Event: {{ machine_name }}Event{{ t.event | to_event_variant }}, HasEvent: true, {% endif %}Targets: "{{ t.targets | escape_go }}", Events: "{{ t.events | escape_go }}", Index: {{ t.index }}, Annotation: "{{ t.annotation | escape_go }}"},
 {% endfor %}
 }
 {# emitted-transition-table:end #}

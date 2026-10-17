@@ -110,6 +110,8 @@ impl EmittedTransitionTable {
                         .filter(|target| model.states.contains_key(*target))
                         .cloned(),
                     event: literal_event,
+                    targets: record.targets.join(" "),
+                    events: record.events.join(" "),
                     annotation: record.annotation.join(" "),
                     from: record.from,
                 }
@@ -293,6 +295,33 @@ mod tests {
                 Some("end"),
             ]
         );
+    }
+
+    #[test]
+    fn the_whole_target_set_and_every_descriptor_are_carried_as_written() {
+        let (table, records) = emitted();
+        let carried: Vec<(&str, &str)> = table
+            .transitions
+            .iter()
+            .map(|t| (t.targets.as_str(), t.events.as_str()))
+            .collect();
+        assert_eq!(
+            carried,
+            [
+                ("busy", "go"),
+                ("busy", "a b"),      // several descriptors
+                ("busy", "*"),        // the wildcard, unresolved
+                ("busy", "err.*"),    // a prefix family, unresolved
+                ("busy", ""),         // eventless
+                ("h", "back"),        // a history is a target as written
+                ("", "stop"),         // targetless
+                ("end idle", "done"), // the second target is not lost
+            ]
+        );
+        for (entry, record) in table.transitions.iter().zip(&records) {
+            assert_eq!(entry.targets, record.targets.join(" "));
+            assert_eq!(entry.events, record.events.join(" "));
+        }
     }
 
     #[test]

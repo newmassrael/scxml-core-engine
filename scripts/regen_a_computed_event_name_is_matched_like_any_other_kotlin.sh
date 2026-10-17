@@ -57,13 +57,9 @@ cp "$FIXTURE" "$TMP/$STEM.scxml"
 # fixture location instead of the transient $TMP path.
 # `--kotlin-package-prefix` flips the emitted `package` header from
 # the default `com.sce.generated.<stem>` to `<prefix>.<stem>`.
-# `--emit-transition-table`: this stem also carries the machine's transitions as
-# constant data, which nothing in the machine reads. The channel's own build is
-# what proves it compiles; every channel of the stem asks for it.
 "$CODEGEN" generate "$TMP/$STEM.scxml" -l kotlin -o "$TMP/" \
     --input-root "$INPUT_ROOT" \
-    --kotlin-package-prefix "$PACKAGE_PREFIX" \
-    --emit-transition-table
+    --kotlin-package-prefix "$PACKAGE_PREFIX"
 
 # Step 4: per-child generate. `--parent-stem` rewrites each child's
 # `package <prefix>.<child>` header to the parent's package

@@ -2565,6 +2565,33 @@ impl SCXMLParser {
             }
         };
 
+        // `<scxml sce:transition-table="emit">` declares that the generated
+        // machine carries its own transitions as constant data
+        // (`docs/SCE_TRANSITION_TABLE.md`). The design says it, and not the
+        // build's command line, so the request is part of the source set the
+        // machine's `source-hash` covers, and every way of generating the
+        // document produces the same machine. One value, for the reason
+        // `sce:interface` has one: the other is the attribute's absence.
+        let transition_table_declared = match crate::sce_attr::read(&root, "transition-table") {
+            None => false,
+            Some("emit") => true,
+            Some(raw) => {
+                return Err(crate::forge::error::Located::new(
+                    crate::forge::error::ValidationError::AttributeRuleViolated {
+                        element: "scxml".to_string(),
+                        attr: "sce:transition-table".to_string(),
+                        value: raw.to_string(),
+                        rule: "\"emit\", or absent for a machine that carries no transition table"
+                            .to_string(),
+                    }
+                    .into(),
+                    diag_label,
+                    None,
+                    None,
+                ));
+            }
+        };
+
         // SCE Protocol-Synthesis RFC §synth-5-O: anchor the model at the
         // `<scxml>` root element's post-preprocessor position. Codegen
         // templates lower this to the top-level SCE-MAP marker above
@@ -2631,6 +2658,7 @@ impl SCXMLParser {
                 .map_err(|e| crate::forge::error::Located::new(e.into(), diag_label, None, None))?,
             event_queue_capacity,
             interface_closed,
+            transition_table_declared,
             source_location: root_source_location,
             forge_imports,
             kind_basis,

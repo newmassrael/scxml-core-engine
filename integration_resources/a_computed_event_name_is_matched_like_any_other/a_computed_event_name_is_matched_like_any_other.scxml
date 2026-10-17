@@ -36,6 +36,7 @@
      `pass`. A name that is dropped does the same.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext" sce:transition-table="emit"
        version="1.0" datamodel="ecmascript" initial="s1"
        name="a_computed_event_name_is_matched_like_any_other">
     <state id="s1">

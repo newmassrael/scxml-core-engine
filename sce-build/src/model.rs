@@ -3184,9 +3184,10 @@ impl Datamodel {
 /// The record of [`crate::transition_records::TransitionRecord`] narrowed to
 /// what a compiled table can hold without the generator interpreting anything:
 /// the ids are the machine's own, and where a transition has no single id in a
-/// name table the field is absent rather than a made-up one. The full
-/// descriptors and target set are in the `transition-table` export, which
-/// carries the same `index`.
+/// name table the field is absent rather than a made-up one. `targets` and
+/// `events` are the complete answer where `to` and `event` are not: the whole
+/// target set and every descriptor, as the `transition-table` export states
+/// them under the same `index`.
 ///
 /// Defined here, beside the model the templates read it through, so the gate
 /// that holds every attribute a template reads to a declared one sees these
@@ -3207,22 +3208,29 @@ pub struct EmittedTransition {
     /// wildcard or prefix descriptor, and a transition naming several.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub event: Option<String>,
+    /// [`crate::transition_records::TransitionRecord::targets`] joined by
+    /// single spaces, as the export's `to` column writes a target set: a state
+    /// id holds no whitespace, so the join loses nothing. Empty for a
+    /// targetless transition. A `<history>` id stays the id as written.
+    pub targets: String,
+    /// [`crate::transition_records::TransitionRecord::events`] joined by single
+    /// spaces: the descriptors as written (`*`, a prefix such as `error.*`, a
+    /// literal name), none resolved. Empty for an eventless transition.
+    pub events: String,
     /// [`crate::transition_records::TransitionRecord::annotation`] joined by
     /// single spaces: the tokens hold no whitespace, so the join loses nothing.
     /// Empty when none.
     pub annotation: String,
 }
 
-/// The table a generated machine carries when it is asked to: the transitions
-/// of its document and the digest of the source set it was generated from.
+/// The table a generated machine carries when its document declares it
+/// ([`SCXMLModel::transition_table_declared`]): the transitions of the document
+/// and the digest of the source set it was generated from.
 ///
-/// A build input rather than a document fact, for the reason
-/// [`SCXMLModel::host_processor_types`] is: the same document generated with
-/// and without the table is two outputs. It rides on the model so that every
-/// backend reads one declaration, and an unset one leaves every generated file
-/// byte-identical to what it was. Built by [`EmittedTransitionTable::of`],
-/// which lives with the list of transitions it narrows
-/// (`crate::transition_records`).
+/// It rides on the model so that every backend reads one table, and an unset one
+/// leaves every generated file byte-identical to what it was. Built by
+/// [`EmittedTransitionTable::of`], which lives with the list of transitions it
+/// narrows (`crate::transition_records`).
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct EmittedTransitionTable {
     /// The §synth-6.2.6 digest the generated files of the same invocation
@@ -3357,6 +3365,16 @@ pub struct SCXMLModel {
     /// `_event.data` baseline for events no schema names.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub interface_closed: bool,
+
+    /// `<scxml sce:transition-table="emit">`: the generated machine carries
+    /// its own transitions as constant data (`docs/SCE_TRANSITION_TABLE.md`,
+    /// [`EmittedTransitionTable`]). A fact of the document and not of the
+    /// build, so the request is inside the source set the machine's
+    /// `source-hash` covers. Absent, nothing is emitted, and the generated
+    /// files are byte-identical to what they were before the declaration
+    /// existed.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub transition_table_declared: bool,
 
     pub states: BTreeMap<String, State>,
     pub events: BTreeSet<String>,
@@ -3637,14 +3655,13 @@ pub struct SCXMLModel {
     #[serde(default)]
     pub host_invoker_types: Vec<String>,
     /// The table of this document's transitions the generated machine carries,
-    /// when the build asked for it (`sce-codegen generate
-    /// --emit-transition-table`).
+    /// when the document declares it ([`Self::transition_table_declared`]).
     ///
-    /// A build input rather than a document fact, carried on the model for the
-    /// reason [`Self::host_processor_types`] is: every backend reads the one
-    /// declaration. `None`, the default, emits nothing, and a document
-    /// generated without it is byte-identical to what it was before the table
-    /// existed. Set by [`EmittedTransitionTable::of`] and read by the templates.
+    /// Built by the generator after the document was accepted, because the
+    /// table holds the digest of the source set the run read, which the model
+    /// does not know. Carried on the model so that every backend reads the one
+    /// table. `None`, the default, emits nothing. Set by
+    /// [`EmittedTransitionTable::of`] and read by the templates.
     ///
     /// Not part of the AST export's schema: the envelope is written before
     /// the build's inputs are applied, so it never carries this, and the wire
