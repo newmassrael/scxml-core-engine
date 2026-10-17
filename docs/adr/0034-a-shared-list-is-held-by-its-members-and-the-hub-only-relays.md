@@ -445,6 +445,22 @@ This ADR is Accepted with stage 3, since the log and the chains are what make th
   the default run and a run forty times longer, and the harness is shown to find planted defects of each
   kind), and `scripts/fuzz/run.sh` feeds the same targets to libFuzzer through `cargo fuzz`, which keeps
   the inputs that reach new code. A test holds the two lists to each other.
-- **The independent review is the one thing not done.** `docs/SCE_SHARED_LIST_REVIEW_BRIEF.md` is what
-  a reviewer is given (claims, parties, primitives, code to read, evidence, known weaknesses, what to
-  try). The authors cannot be that reviewer, and the stage is not complete until one has been.
+- **A first independent read found seven defects, and they are fixed** (2026-10-18). A reviewer who did not write the code read the trust, relay and group
+  key code and gave seven reproductions, each of which the existing tests had passed over. Three were
+  high: two writes of one device under one stamp are sealed under one nonce, which gives a relay that
+  knows one of them the other (a stamp now names one write, and a device does not sign a second content
+  under it); an entry nobody signed froze a host for good (a rival entry is a fork only when the
+  administrators signed it); and the proof that a device signed conflicting operations was dropped
+  where it was found, so it did not travel, was not stored and did not appear in an audit (the proof is
+  kept, given to the relay and to other hosts, stored, restored and exported). Four were medium: a write
+  whose time goes back, and the first epoch of a list that had plain writes, gave answers that depended
+  on the order things came in (what the machine is told of a device is now a function of the set of its
+  operations, `chain.rs`, and a write is judged by the epoch at the entry it names); a false MLS commit
+  given first kept a device from the true one (commits are kept by hash and the one the log names is
+  used); and a replacement key's first operation was refused by the host that signed it. All seven are
+  now tests (`what_an_independent_review_found_stays_fixed`, and one for the commit in the MLS crate),
+  the seeded simulation plays the same mischief in some seeds (a time that goes back, a repeated stamp, a
+  chain that does not follow itself, the first epoch in the middle of a run, a replaced key), and the
+  mutation round of the trust code has cases for each new check. **This is one read, not the review the
+  stage needs:** it covered the main trust, encryption and MLS-binding paths and says so, and a second
+  reviewer, with the brief, is still what the stage waits on.

@@ -64,9 +64,14 @@ its word.
 A change to who the administrators are needs the quorum so that one stolen administrator key
 cannot make another or take the list over. An entry is taken in only when it is the next position
 and names the head (`LogError::Gap` otherwise, so entries that arrive out of order wait), and an
-entry already held is taken in once. **Two different entries at one position are a fork**: the
-host that is shown both has proof that the chain was signed two ways, says where, and takes in no
-write, note or settled instant (and sends none) until an administrator resolves it.
+entry already held is taken in once. **Two different entries at one position, both signed by the
+administrators, are a fork**: the host that is shown both has proof that the chain was signed two
+ways, says where, and takes in no write, note or settled instant (and sends none) until an
+administrator resolves it. An entry nobody signed is no fork, however it differs from the one held:
+a hub that rewrote an entry and took its signatures off, or invented one, would else freeze every
+host that reads it. So a rival entry is judged as the log would have judged it at its place (the
+entries before it are replayed, and the administrators and quorum then in force must have signed
+it); one that does not hold there is refused for the reason it does not, and the log is as it was.
 
 The grants of one node make its history, and **a removal is a position, not a time**. An
 operation names the entry of the log it was made under, and is judged by the latest grant at or
@@ -92,12 +97,29 @@ before it was given the entry that ends the chain at 3 would otherwise hold what
 entry first refuses, and two hosts given the same objects would hold different lists for good. When
 such an entry arrives (a grant, a linked grant or an amendment) the host drops every operation it holds
 of that device past the number the log now accepts (`Trust::take_evicted` says which), and the same
-holds when a device is found to have signed two operations at one number: nothing of it from that number
-is held, and the device signs nothing more on its own host. A machine that was told those operations
-holds their effects and cannot take them back, so the host builds the machine again from what it holds
-and tells it the list (`Courier::resync`; `Round::evicted` says that it must). This was found by checking
-the rule against a model (`docs/formal`) and a simulation of every order of delivery; both fail
-without it.
+holds when a device's operations are found to conflict (below): nothing of it from the first conflict
+on is told to the machine, and the device signs nothing more on its own host. A machine that was told
+those operations holds their effects and cannot take them back, so the host builds the machine again
+from what it holds and tells it the list (`Courier::resync`; `Round::evicted` says that it must, and
+`Round::restored` says the same when a conflict went away and what it held back is told again). This
+was found by checking the rule against a model (`docs/formal`) and a simulation of every order of
+delivery; both fail without it.
+
+**A device's operations are a set, and what the machine is told of it is a function of the set.** A
+host holds every operation of a device that holds under the log (its author was a writer under the
+entry it names, the administrators accepted its number, its signature is the key's). Some of them
+conflict: two operations at one number, one that does not follow the one before it, a write whose
+time goes back along its chain, two writes sealed under one stamp. The position of a conflict is the
+lower number of the two operations in it, and **the machine is told the device's operations below the
+lowest position where any two conflict**. The proof (both operations of every conflict and everything
+of the device after the first) is kept: it is held, it is given to the relay and to hosts that were not
+given both (`Trust::evidence`, `Trust::signed_operations`), it is stored and restored with the rest
+(`Trust::to_text`) and it is in the record an auditor takes in (`audit::export`), where `equivocating`
+shows it. Because the position is a function of the set and the set does not depend on the order the
+operations came in, two hosts that were given the same operations hold the same of the device and
+freeze it at the same number. Before this was the rule, a host that refused what came after the first
+conflict it saw could lose the very operation that showed a lower one (`chain.rs`). The conflict goes
+when the log puts what made it past a cutoff, and what it held back is told again.
 
 **An amendment** (`Body::Amend`) takes back part of that cost when the loss was not real: other
 writers' checkpoints, made under an entry before the removal, may show that the device's chain was
@@ -141,10 +163,20 @@ host holds, **whatever order they came in** (the machine's merge is commutative,
 nothing back to wait for a predecessor):
 
 - two different operations at one number, or one that names a predecessor other than the one
-  held, are the device signing two histories. The host says so, takes nothing of the device from
-  that number on (`Trust::equivocating`), and goes on with everyone else;
+  held, are the device signing two histories. The host says so, holds both as proof, tells its
+  machine nothing of the device from that number on (`Trust::equivocating`), and goes on with
+  everyone else;
 - a write's stamp is its author's clock when it wrote it, and along one chain it does not go
-  back: a later write given an earlier stamp is refused;
+  back: a later write given an earlier stamp is a conflict of the same kind, held as proof by every
+  host whatever order the two came in (the device's own host does not sign one);
+- **a stamp names one write**: the nonce a write is sealed under is made from the fields of its stamp,
+  so two writes of one device under one stamp would be sealed under one nonce, and what a relay knows
+  of one gives it the other. The device's own host does not sign a second content under a stamp, and a
+  host that is given two holds them as a conflict;
+- a write is judged by the **entry it names**: the list keeps content from the hub from the entry that
+  begins its first epoch, so a write that names an entry before it is in the clear and holds, whether the
+  host was given the entry that began the epoch before it or after, and one that names that entry or a
+  later one is sealed under an epoch that entry has begun, or it is refused;
 - an operation that names an entry the host has not reached is refused until it has.
 
 - **A write** (`todo.write`) is an operation of the node that stamped it. A hub relays it as the
@@ -192,7 +224,9 @@ is connected to several relays has one `Trust`; what one of them did not pass on
 ### Limits
 
 A device's stamps and the time they say are its own claim, and nothing here reads them except to
-keep them from going back along one chain. What decides is the log and the number. A key that was
+keep them from going back along one chain and from being used twice. What decides is the log and the
+number. When the administrator replaces a device's key, the old chain ends at the number the entry
+gives and the new key's first operation is the number after it, naming nothing before it. A key that was
 leaked made valid operations until it was taken off, and the ones up to `final_seq` stay valid:
 undoing them is an operation of its own.
 

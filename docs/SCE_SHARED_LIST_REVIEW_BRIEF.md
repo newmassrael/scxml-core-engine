@@ -3,9 +3,13 @@
 This is what an independent reviewer is given before they read the code. The design is
 `docs/adr/0034-a-shared-list-is-held-by-its-members-and-the-hub-only-relays.md`; what each party can be
 trusted with is `docs/SCE_SHARED_LIST_TRUST.md`; the relay is `docs/SCE_SHARED_LIST_RELAY.md` and the
-group key `docs/SCE_SHARED_LIST_MLS.md`. **No independent review has been done.** This brief is what
-makes one possible, and what the authors have done in its place is listed in section 7 with what that
-does and does not show.
+group key `docs/SCE_SHARED_LIST_MLS.md`. **One independent read has been done (2026-10-18), and it found
+seven defects that the authors' own checks had not** (listed in the ADR, fixed, and held by
+`what_an_independent_review_found_stays_fixed`); it covered the main trust, encryption and MLS-binding
+paths and is not a review of the whole. This brief is what makes a review possible, and what the authors
+have done in its place is listed in section 7 with what that does and does not show. What that read found
+is the best evidence of what the authors' own checks miss: three of its seven were in the code the
+authors' simulation, model and mutation round were written against.
 
 ## 1. What is claimed
 
@@ -119,14 +123,15 @@ went on signing itself. Both are fixed (`evict_past_the_cutoff`, `evict_from`, t
 - A fuzz of every parser of the trust, relay and group-key code and of the C ABI: a seeded mutator
   (no panic over the default run and over a run forty times longer, with a harness that is checked to
   find planted defects of each kind) and libFuzzer on the same 21 targets.
-- Four mutation rounds, 137 cases in all, each taking one check away and the tests having to notice:
-  the log and the operation and checkpoint checks of a host (33,
-  `a_host_holds_only_what_its_log_admits_rust.cases`), the relay (35), sealing, key agreement, backup,
-  audit and the checkpoint form (34), and the group key code with its binding to the log (35). 29 cases
-  survived the tests that existed; 28 of those checks are held now and one case was dropped (see
-  below). A round measures only the checks someone
-  thought to take away: the cases are the authors', and one kind of check is outside any round, the
-  wiping of a secret from memory, which safe code cannot observe.
+- Four mutation rounds, 149 cases in all, each taking one check away and the tests having to notice:
+  the log and the operation and checkpoint checks of a host (42,
+  `a_host_holds_only_what_its_log_admits_rust.cases`), the relay and its courier (38), sealing, key
+  agreement, backup, audit and the checkpoint form (34), and the group key code with its binding to the
+  log (35). Cases survived the tests that existed in every round, which is how checks that nothing held in
+  place were found; they are held now, and two cases that no input reaches were dropped, with the reason
+  in the casefile. A round measures only the checks someone thought to take away: the cases are the
+  authors', and the independent read above found seven defects in code the rounds covered. One kind of
+  check is outside any round, the wiping of a secret from memory, which safe code cannot observe.
 
 None of this is independent: the people who wrote the code wrote these. It finds what they thought to
 look for. It is the reason a reviewer's time can go to what they did not.

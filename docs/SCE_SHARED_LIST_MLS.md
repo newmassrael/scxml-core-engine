@@ -69,7 +69,10 @@ log names for an epoch (kept only if its hash is the one the log names), and a W
 (`Member::absorb`), which does what the log allows in order (`Member::advance`): a device in no group
 joins from a Welcome addressed to it, a device in the group applies the commit the log names for the
 next epoch, and each gives its `Trust` the key of the epoch it reaches. A commit the log does not name
-yet waits.
+yet waits. A relay that is not trusted can give any number of commits for an epoch, and a false one
+first: the `Member` keeps them by their hash (a bounded number while the log names none), uses the one
+the log names whichever came first, and drops the rest once the log names it, so a relay cannot keep a
+device out of its group by giving a commit before the true one.
 
 An operation sealed under an epoch whose key a host does not hold is **parked**: the courier tries it
 again each round, since the key may come (the commit reaches the host), and goes on past it. It is not
