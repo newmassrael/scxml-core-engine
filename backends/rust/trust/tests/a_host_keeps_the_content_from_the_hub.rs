@@ -14,7 +14,8 @@
 
 use sce_rust_mesh::endpoint::{Admission, Sealer};
 use sce_rust_trust::membership::{Body, Entry, Log, Profile};
-use sce_rust_trust::{GrantError, Identity, RotateError, Trust};
+use sce_rust_trust::message::{self, Link};
+use sce_rust_trust::{encoding, GrantError, Identity, RotateError, Trust};
 use serde_json::{json, Value};
 
 const CALENDAR: &str = "home";
@@ -152,15 +153,39 @@ fn a_write_leaves_sealed_and_a_member_reads_it_where_the_hub_cannot() {
     assert_eq!(serde_json::from_str::<Value>(&told).unwrap()["value"], "-7");
 }
 
-/// The log decides that content is sealed. A hub that holds no key refuses a write in the clear
+/// A write of alice (node 1) in the clear that names the entry `host` is at, signed by `signer`: made
+/// by hand, since a host that keeps content from the hub does not make one.
+fn clear_write_naming_the_tip(host: &Trust, signer: &Identity) -> String {
+    let mut value = json!({"id": "1", "field": "1", "value": "0", "text": "buy milk",
+        "wallTime": "1000", "counter": "0", "nodeId": "1"});
+    let signing = message::signing(CALENDAR, "todo.write", &value)
+        .unwrap()
+        .unwrap();
+    let (next, log_hash) = host.head();
+    let link = Link {
+        seq: 1,
+        prev: message::NO_OPERATION,
+        log: next - 1,
+        log_hash,
+    };
+    let bytes = message::operation_bytes(&signing.message, &link);
+    link.write_into(&mut value).unwrap();
+    value[message::SIGNATURE_FIELD] = Value::String(encoding::encode(&signer.sign(&bytes)));
+    value.to_string()
+}
+
+/// The log decides that content is sealed, from the entry that begins the epoch: a host that keeps
+/// content refuses a write in the clear that names that entry or a later one, a hub that holds no key
 /// as a person's host does, and a person's host that holds no key of the epoch writes nothing.
 #[test]
 fn a_list_that_keeps_content_takes_and_sends_no_write_in_the_clear() {
     let none = list(0);
     let one = list(1);
 
-    // In a list that has begun no epoch a write is in the clear, and a list that has begun
-    // one refuses it, at the hub and at a member.
+    // In a list that has begun no epoch a write is in the clear. A list that has begun one takes
+    // it when it was made before: it names an entry from before the epoch, a device that had not yet
+    // heard of the epoch wrote it, and a host that has the entry that began the epoch judges it by the
+    // entry it names, as a host that took it first does.
     let mut alice_in_the_clear = host_in(&none, Some((1, 1)), &[]);
     let in_the_clear = send(&mut alice_in_the_clear, &titled(1, 1000, "buy milk"));
     assert_eq!(text_of(&in_the_clear), "buy milk");
@@ -169,9 +194,18 @@ fn a_list_that_keeps_content_takes_and_sends_no_write_in_the_clear() {
         host_in(&one, Some((2, 2)), &[(1, 5)]),
     ] {
         let mut host = host;
-        let reason = host
-            .admit("server", "todo.write", &in_the_clear)
-            .unwrap_err();
+        assert!(host.admit("server", "todo.write", &in_the_clear).is_ok());
+    }
+
+    // One that names the entry that began the epoch, or one after it, is sealed or it is refused, at
+    // the hub and at a member.
+    let after = clear_write_naming_the_tip(&host_in(&one, None, &[]), &person(1));
+    for host in [
+        host_in(&one, None, &[]),
+        host_in(&one, Some((2, 2)), &[(1, 5)]),
+    ] {
+        let mut host = host;
+        let reason = host.admit("server", "todo.write", &after).unwrap_err();
         assert!(reason.contains("not sealed"), "{reason}");
     }
 

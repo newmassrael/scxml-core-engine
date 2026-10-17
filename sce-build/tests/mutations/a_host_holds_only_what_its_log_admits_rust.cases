@@ -1,9 +1,11 @@
 # Mutation cases for what a host of a shared list checks before it takes anything in (ADR 0034):
 # an operation (the entry it names, its author's role under it, the last number the log accepted of
 # its device, the signature, its place in the device's chain, a fork of the chain, a stamp that goes
-# back), a checkpoint and the settlement the checkpoints make (the list, the entry, the writers and
-# no other, the instant and digest, the heads), and the entries of the log that decide those (a
-# linked device, an amendment, the destruction of an epoch's keys).
+# back or that two writes have, the epoch it is judged under), what a host tells its machine and keeps as
+# proof when a device's operations conflict, a checkpoint and the settlement the checkpoints make (the
+# list, the entry, the writers and no other, the instant and digest, the heads), and the entries of the
+# log that decide those (a linked device, an amendment, the destruction of an epoch's keys, a rival of an
+# entry that is a fork only when the administrators signed it).
 #
 # Each case takes one of those checks away or weakens it, and the tests under study must turn red.
 # A check no test notices is a check nothing holds in place.
@@ -13,9 +15,9 @@
 # Anchors are literal slices of the source; an edit that moves one is reported INCONCLUSIVE with the
 # anchor quoted, never as a pass.
 
-mutation_tests -p sce-rust-trust --lib --test a_host_admits_what_its_members_signed --test a_host_keeps_the_content_from_the_hub --test a_host_settles_on_the_checkpoints_of_its_members --test a_person_has_devices_and_the_log_keeps_track_of_them --test a_list_holds_its_safety_properties_under_every_order_of_delivery --test a_host_refuses_a_chain_a_settlement_or_an_amendment_that_does_not_hold_together
-mutation_targets backends/rust/trust/src/trust.rs backends/rust/trust/src/membership.rs
-mutation_oracles backends/rust/trust/tests/a_host_admits_what_its_members_signed.rs backends/rust/trust/tests/a_host_settles_on_the_checkpoints_of_its_members.rs backends/rust/trust/tests/a_person_has_devices_and_the_log_keeps_track_of_them.rs backends/rust/trust/tests/a_list_holds_its_safety_properties_under_every_order_of_delivery.rs backends/rust/trust/tests/a_host_refuses_a_chain_a_settlement_or_an_amendment_that_does_not_hold_together.rs
+mutation_tests -p sce-rust-trust --lib --test a_host_admits_what_its_members_signed --test a_host_keeps_the_content_from_the_hub --test a_host_settles_on_the_checkpoints_of_its_members --test a_person_has_devices_and_the_log_keeps_track_of_them --test a_list_holds_its_safety_properties_under_every_order_of_delivery --test a_host_refuses_a_chain_a_settlement_or_an_amendment_that_does_not_hold_together --test what_an_independent_review_found_stays_fixed
+mutation_targets backends/rust/trust/src/trust.rs backends/rust/trust/src/chain.rs backends/rust/trust/src/membership.rs
+mutation_oracles backends/rust/trust/tests/a_host_admits_what_its_members_signed.rs backends/rust/trust/tests/a_host_settles_on_the_checkpoints_of_its_members.rs backends/rust/trust/tests/a_person_has_devices_and_the_log_keeps_track_of_them.rs backends/rust/trust/tests/a_list_holds_its_safety_properties_under_every_order_of_delivery.rs backends/rust/trust/tests/a_host_refuses_a_chain_a_settlement_or_an_amendment_that_does_not_hold_together.rs backends/rust/trust/tests/what_an_independent_review_found_stays_fixed.rs
 
 # ── An operation: the entry it names, the role, the cutoff, the signature ─────────────────────
 
@@ -59,41 +61,53 @@ PY
 
 mutation_case "A host takes the first operation of a chain that names an operation before it" <<'PY'
 edit("backends/rust/trust/src/trust.rs",
-     "    if begins && link.prev != message::NO_OPERATION {",
+     "    if link.seq == segment_start && link.prev != message::NO_OPERATION {",
      "    if false {")
 PY
 
-mutation_case "A host takes an operation of a device from the number it was frozen at" <<'PY'
-edit("backends/rust/trust/src/trust.rs",
-     "        if link.seq >= *from {",
-     "        if false {")
+mutation_case "A host tells its machine what a device did from the number its chain conflicts at" <<'PY'
+edit("backends/rust/trust/src/chain.rs",
+     "        let below = self.frozen.unwrap_or(u64::MAX);\n        self.ops\n            .range(..below)",
+     "        let below = u64::MAX;\n        self.ops\n            .range(..below)")
 PY
 
 mutation_case "A host does not see two different operations at one number" <<'PY'
-edit("backends/rust/trust/src/trust.rs",
-     "            if same.id != id {",
-     "            if false {")
+edit("backends/rust/trust/src/chain.rs",
+     "            .is_some_and(|others| others.iter().any(|other| other.id != held.id))\n        {\n            note(seq, Why::Forked);",
+     "            .is_some_and(|others| others.iter().any(|other| other.id != held.id) && false)\n        {\n            note(seq, Why::Forked);")
 PY
 
 mutation_case "A host does not see an operation that names another one before it than it holds" <<'PY'
-edit("backends/rust/trust/src/trust.rs",
-     "                if before.id != link.prev {",
+edit("backends/rust/trust/src/chain.rs",
+     "                if !before.iter().any(|other| other.id == held.prev) {",
      "                if false {")
 PY
 
 mutation_case "A host does not see an operation that the one after it does not name" <<'PY'
-edit("backends/rust/trust/src/trust.rs",
-     "                if after.prev != id {",
+edit("backends/rust/trust/src/chain.rs",
+     "                if after.iter().any(|other| other.prev != held.id) {",
      "                if false {")
 PY
 
-mutation_case "A host takes a write whose stamp goes back along its device's chain" <<'PY'
-edit("backends/rust/trust/src/trust.rs",
-     "        if before.is_some_and(|earlier| stamp < earlier) || after.is_some_and(|later| stamp > later)\n        {",
-     "        if false\n        {")
+mutation_case "A host does not see a write whose stamp goes back along its device's chain, from before" <<'PY'
+edit("backends/rust/trust/src/chain.rs",
+     "            if self.highest.get(&start).is_some_and(|top| time < *top) {",
+     "            if false {")
 PY
 
-# ── What a host drops when the log or a conflict puts what it held out ────────────────────────
+mutation_case "A host does not see a write whose stamp goes back along its device's chain, from after" <<'PY'
+edit("backends/rust/trust/src/chain.rs",
+     "            if seq < end\n                && self.ops.range(seq + 1..=end)",
+     "            if false\n                && self.ops.range(seq + 1..=end)")
+PY
+
+mutation_case "A host does not see two writes sealed under one stamp" <<'PY'
+edit("backends/rust/trust/src/chain.rs",
+     "                if *other_id != held.id {",
+     "                if false {")
+PY
+
+# ── What a host drops, tells and keeps when the log or a conflict moves what it held ──────────
 
 mutation_case "A host keeps what it admitted of a device that an entry then took off at a lower number" <<'PY'
 edit("backends/rust/trust/src/trust.rs",
@@ -101,16 +115,62 @@ edit("backends/rust/trust/src/trust.rs",
      "            let _ = &mut state;")
 PY
 
-mutation_case "A host keeps what it admitted of a device it then found signed two things at one number" <<'PY'
-edit("backends/rust/trust/src/trust.rs",
-     "            evict_from(state, node, from);",
-     "            let _ = (&state, node, from);")
+mutation_case "A host finds a conflict of a device and does not freeze its chain" <<'PY'
+edit("backends/rust/trust/src/chain.rs",
+     "            self.frozen = Some(self.frozen.map_or(at, |from| from.min(at)));",
+     "            let _ = at;")
 PY
 
-mutation_case "A device whose chain forked goes on signing" <<'PY'
+mutation_case "A host that froze a device does not tell its machine to forget what it was told" <<'PY'
 edit("backends/rust/trust/src/trust.rs",
-     "    if let Some(from) = state.frozen.get(&author) {\n        return Err(format!(\n            \"{event}: this device's chain forked at",
-     "    if let Some(from) = state.frozen.get(&author).filter(|_| false) {\n        return Err(format!(\n            \"{event}: this device's chain forked at")
+     "        .extend(left.into_iter().map(|seq| (node, seq)));",
+     "        .extend(std::iter::empty::<(u64, u64)>().chain(left.into_iter().map(|_| (0, 0))).take(0));")
+PY
+
+mutation_case "A device whose chain conflicts goes on signing" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "    if let Some(from) = state.ops.get(&author).and_then(Chain::frozen) {",
+     "    if let Some(from) = state.ops.get(&author).and_then(Chain::frozen).filter(|_| false) {")
+PY
+
+mutation_case "A device signs a write whose stamp goes back or repeats" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "    if let Some((at, why)) = conflict {",
+     "    if let Some((at, why)) = conflict.filter(|_| false) {")
+PY
+
+mutation_case "A device with a new key numbers its first operation as the old chain's next" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "        Some(last) if last.seq() > floor => (last.seq() + 1, last.id),",
+     "        Some(last) if last.seq() >= floor => (last.seq() + 1, last.id),")
+PY
+
+# ── What a write is judged by: the entry it names, not how far this host's log has come ───────
+
+mutation_case "A write is judged by the log's latest epoch and not the one its entry names" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "    let epoch_then = state.log.epoch_at(entry);",
+     "    let epoch_then = state.log.epoch();")
+PY
+
+mutation_case "The epoch at an entry counts the entry after it" <<'PY'
+edit("backends/rust/trust/src/membership.rs",
+     "        self.epoch_began.partition_point(|began| *began <= index) as u32",
+     "        self.epoch_began.partition_point(|began| *began < index) as u32")
+PY
+
+# ── What a rival entry is: a fork only when the administrators signed it ──────────────────────
+
+mutation_case "An entry that replays at its place and does not hold is taken for a fork" <<'PY'
+edit("backends/rust/trust/src/membership.rs",
+     "                Ok(_) => LogError::Fork { index: entry.index },\n                Err(error) => error,",
+     "                Ok(_) => LogError::Fork { index: entry.index },\n                Err(_) => LogError::Fork { index: entry.index },")
+PY
+
+mutation_case "An entry that names an entry this log lacks and is under-signed is taken for a fork" <<'PY'
+edit("backends/rust/trust/src/membership.rs",
+     "            Ok(had) if had >= needed => LogError::Fork { index: entry.index },\n            Ok(had) => LogError::NotEnoughSignatures { needed, had },",
+     "            Ok(_) => LogError::Fork { index: entry.index },")
 PY
 
 # ── A checkpoint and a settlement ─────────────────────────────────────────────────────────────
@@ -165,8 +225,8 @@ PY
 
 mutation_case "A settlement is taken by a host that holds another operation than a checkpoint names" <<'PY'
 edit("backends/rust/trust/src/trust.rs",
-     "            if held.is_some_and(|held| held.id != head.id) {",
-     "            if false {")
+     "            if !here.is_empty() && here.iter().all(|held| held.id != head.id) {\n                return Err(format!(",
+     "            if false {\n                return Err(format!(")
 PY
 
 # ── The entries of the log: a linked device, an amendment, a destroyed epoch ──────────────────

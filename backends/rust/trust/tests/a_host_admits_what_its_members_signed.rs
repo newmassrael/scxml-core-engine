@@ -276,12 +276,13 @@ fn a_device_that_signed_two_things_at_one_number_is_frozen() {
     let mut hub = host(None);
     assert!(hub.admit("x", "todo.write", &first).is_ok());
     let reason = hub.admit("x", "todo.write", &other).unwrap_err();
-    assert!(reason.contains("two different operations at 1"), "{reason}");
+    assert!(reason.contains("conflicting operations"), "{reason}");
     assert_eq!(hub.equivocating(), vec![(1, 1)]);
+    assert_eq!(hub.evidence().len(), 2, "both are held as proof");
 
     // Nothing of node 1's from number 1 on, not even what was held, and nothing else is touched.
     let reason = hub.admit("x", "todo.write", &first).unwrap_err();
-    assert!(reason.contains("signed two operations at 1"), "{reason}");
+    assert!(reason.contains("conflicting operations"), "{reason}");
     let mut bob = host(Some((2, person(2))));
     assert!(hub
         .admit(
@@ -293,19 +294,19 @@ fn a_device_that_signed_two_things_at_one_number_is_frozen() {
 }
 
 /// A device's stamps do not go back along its chain: what it wrote later is not given an earlier
-/// time than what it had already written, whatever number order they came in.
+/// time than what it had already written. A device's own host does not sign such a write; one that was
+/// signed by other means is held as proof by every host, whatever order the operations come in
+/// (`what_an_independent_review_found_stays_fixed` has both orders side by side).
 #[test]
-fn a_stamp_that_goes_back_along_a_chain_is_refused() {
+fn a_stamp_that_goes_back_along_a_chain_is_not_signed_by_the_device_own_host() {
     let mut alice = host(Some((1, person(1))));
-    let early = sent(&mut alice, "todo.write", &write_at(1, 1, 2000));
-    let backdated = sent(&mut alice, "todo.write", &write_at(1, 2, 1500));
-    let later = sent(&mut alice, "todo.write", &write_at(1, 3, 3000));
-
-    let mut hub = host(None);
-    assert!(hub.admit("x", "todo.write", &later).is_ok());
-    assert!(hub.admit("x", "todo.write", &early).is_ok());
-    let reason = hub.admit("x", "todo.write", &backdated).unwrap_err();
+    sent(&mut alice, "todo.write", &write_at(1, 1, 2000));
+    let reason = send(&mut alice, "todo.write", &write_at(1, 2, 1500)).unwrap_err();
     assert!(reason.contains("stamp goes back"), "{reason}");
+    // What it had made is as it was, and the next it makes (a later time) is the second.
+    let second = sent(&mut alice, "todo.write", &write_at(1, 3, 3000));
+    let second: Value = serde_json::from_str(&second).unwrap();
+    assert_eq!(second["seq"], "2");
 }
 
 /// A device is taken off at the last operation of its chain that the administrators accept. What

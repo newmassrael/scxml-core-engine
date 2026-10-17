@@ -102,10 +102,16 @@ pub struct Round {
     /// The key packages, commits and Welcomes of the list's MLS group that were read, in the order
     /// the relay holds them: for the host's MLS device to take in.
     pub messages: Vec<Record>,
-    /// Operations (device, number) the host held and an entry of the log then put past the last
-    /// accepted of their device: the machine was told them and cannot take them back, so the host
-    /// builds it again and calls [`Courier::resync`]. Empty when nothing was.
+    /// Operations (device, number) the host told its machine and stopped holding: an entry of the log
+    /// put them past the last accepted of their device, or the device was found to have signed
+    /// conflicting operations and nothing of it is held from the first of them on. The machine was
+    /// told them and cannot take them back, so the host builds it again and calls
+    /// [`Courier::resync`]. Empty when nothing was.
     pub evicted: Vec<(u64, u64)>,
+    /// Operations (device, number) the host did not tell its machine and now does: the conflict that
+    /// held a device back went away with the operations that made it. The machine is built again as
+    /// for `evicted`.
+    pub restored: Vec<(u64, u64)>,
     /// The round stopped before the end of what the relay holds: a record names an entry of the
     /// log the host does not have, or the device may not read yet. A later round goes on from there.
     pub stalled: bool,
@@ -125,6 +131,8 @@ pub struct Courier<L: Link> {
     parked: Vec<(String, String)>,
     /// How many amendments of the log this courier has read the relay again for.
     amendments_seen: usize,
+    /// The proof of a conflict this courier has given the relay (by the data it travels as).
+    evidence_sent: std::collections::BTreeSet<String>,
 }
 
 const FEED_BATCH: u32 = 200;
@@ -142,6 +150,7 @@ impl<L: Link> Courier<L> {
             hub: false,
             parked: Vec::new(),
             amendments_seen: 0,
+            evidence_sent: std::collections::BTreeSet::new(),
         }
     }
 
@@ -165,7 +174,11 @@ impl<L: Link> Courier<L> {
         let waiting = std::mem::take(&mut self.parked);
         for (event, data) in waiting {
             match self.trust.take_operation(&event, &data) {
-                Ok(taken) => round.events.push((event, taken.told)),
+                Ok(taken) => {
+                    if taken.applied {
+                        round.events.push((event, taken.told));
+                    }
+                }
                 Err(TakeError::NoKey(_)) => self.parked.push((event, data)),
                 Err(TakeError::NotReached(_)) => self.parked.push((event, data)),
                 Err(TakeError::Refused(reason)) => round.refused.push(reason),
@@ -226,6 +239,7 @@ impl<L: Link> Courier<L> {
             }
         }
         round.evicted = self.trust.take_evicted();
+        round.restored = self.trust.take_restored();
         let len = self.trust.log_len();
         if len != self.roster_len || redeliver {
             self.roster_len = len;
@@ -333,6 +347,25 @@ impl<L: Link> Courier<L> {
                 }
             }
         }
+        // What shows that a device signed conflicting operations is given to the relay too, so that a
+        // host that was not given both of them is given them by the relay: the proof is no host's own
+        // knowledge. Each is given once from this courier; the relay holds it already when it was.
+        for (event, data) in self.trust.evidence() {
+            if self.evidence_sent.contains(&data) {
+                continue;
+            }
+            match self.ask(&Request::Submit {
+                event,
+                data: data.clone(),
+            })? {
+                Response::Accepted { new, .. } => {
+                    round.pushed += usize::from(new);
+                    self.evidence_sent.insert(data);
+                }
+                Response::Refused { reason, .. } => round.refused.push(reason),
+                other => return Err(CourierError::Unexpected(format!("{other:?}"))),
+            }
+        }
         for checkpoint in self.trust.checkpoints() {
             match self.ask(&Request::Checkpoint {
                 checkpoint: checkpoint.to_json(),
@@ -416,7 +449,8 @@ impl<L: Link> Courier<L> {
             },
             Record::Operation { event, data } => match self.trust.take_operation(event, data) {
                 Ok(taken) => {
-                    if taken.new || redeliver {
+                    // What is held as proof of a conflict is not told to the machine.
+                    if (taken.new || redeliver) && taken.applied {
                         round.events.push((event.clone(), taken.told));
                     }
                     Taken::Done

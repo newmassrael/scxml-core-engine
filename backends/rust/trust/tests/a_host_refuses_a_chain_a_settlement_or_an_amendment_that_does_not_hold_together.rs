@@ -153,11 +153,7 @@ fn a_chain_that_does_not_follow_itself_is_the_device_signing_two_histories() {
     let (first, first_id) = operation(&host_a, &key(1), 1, 1, NO_OPERATION, 1);
     host_a.take_operation("todo.write", &first).unwrap();
     let (wrong_prev, _) = operation(&host_a, &key(1), 1, 2, [7; 32], 2);
-    let reason = refused(&host_a, &wrong_prev);
-    assert!(
-        reason.contains("signed two different operations at 1"),
-        "{reason}"
-    );
+    assert!(held_as_proof(&host_a, &wrong_prev));
     assert_eq!(host_a.equivocating(), vec![(1, 1)]);
     let _ = first_id;
 
@@ -172,17 +168,23 @@ fn a_chain_that_does_not_follow_itself_is_the_device_signing_two_histories() {
     host_b.take_operation("todo.write", &one).unwrap();
     host_b.take_operation("todo.write", &three).unwrap();
     let (other_two, _) = operation(&host_b, &key(1), 1, 2, one_id, 9);
-    let reason = refused(&host_b, &other_two);
-    assert!(
-        reason.contains("signed two different operations at 2"),
-        "{reason}"
-    );
+    assert!(held_as_proof(&host_b, &other_two));
     assert_eq!(host_b.equivocating(), vec![(1, 2)]);
-    // The true second, given now, is refused too: the device is frozen from 2.
-    assert!(matches!(
-        host_b.take_operation("todo.write", &two),
-        Err(TakeError::Refused(_))
-    ));
+    // The true second, given now, is held as proof too, and nothing is told of the device from 2: it
+    // conflicts with the other second, and the one the host held before.
+    assert!(held_as_proof(&host_b, &two));
+    assert_eq!(host_b.equivocating(), vec![(1, 2)]);
+    assert_eq!(host_b.all_operations().len(), 1, "only the first is told");
+    assert_eq!(host_b.evidence().len(), 3);
+}
+
+/// An operation that holds and conflicts with what the host holds of its device is taken in as proof:
+/// it is held, and the machine is told nothing of the device from the first conflict on.
+fn held_as_proof(host: &Trust, data: &str) -> bool {
+    let taken = host
+        .take_operation("todo.write", data)
+        .expect("held as proof, not refused");
+    !taken.applied
 }
 
 /// A checkpoint of `device` under the entry at `log`, naming `heads`, signed by `signer`: made by

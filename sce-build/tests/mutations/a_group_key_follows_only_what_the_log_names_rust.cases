@@ -18,9 +18,9 @@
 # Anchors are literal slices of the source; an edit that moves one is reported INCONCLUSIVE with the
 # anchor quoted, never as a pass.
 
-mutation_tests -p sce-rust-mls --lib --test a_known_answer_scenario_is_what_every_lane_replays --test a_person_links_a_device_loses_one_and_is_taken_off_with_the_group_following --test an_mls_group_follows_the_log_and_cuts_off_the_removed --test a_member_waits_for_the_log_to_name_what_it_holds_and_then_takes_it -p sce-rust-world --test a_shared_list_keys_its_content_with_mls_through_a_relay
+mutation_tests -p sce-rust-mls --lib --test a_known_answer_scenario_is_what_every_lane_replays --test a_person_links_a_device_loses_one_and_is_taken_off_with_the_group_following --test an_mls_group_follows_the_log_and_cuts_off_the_removed --test a_member_waits_for_the_log_to_name_what_it_holds_and_then_takes_it --test a_relay_that_gives_a_false_commit_first_does_not_keep_a_device_out -p sce-rust-world --test a_shared_list_keys_its_content_with_mls_through_a_relay
 mutation_targets backends/rust/mls/src/lib.rs backends/rust/mls/src/host.rs
-mutation_oracles backends/rust/mls/tests/a_known_answer_scenario_is_what_every_lane_replays.rs backends/rust/mls/tests/a_person_links_a_device_loses_one_and_is_taken_off_with_the_group_following.rs backends/rust/mls/tests/an_mls_group_follows_the_log_and_cuts_off_the_removed.rs backends/rust/mls/tests/a_member_waits_for_the_log_to_name_what_it_holds_and_then_takes_it.rs backends/rust/world/tests/a_shared_list_keys_its_content_with_mls_through_a_relay.rs
+mutation_oracles backends/rust/mls/tests/a_known_answer_scenario_is_what_every_lane_replays.rs backends/rust/mls/tests/a_person_links_a_device_loses_one_and_is_taken_off_with_the_group_following.rs backends/rust/mls/tests/an_mls_group_follows_the_log_and_cuts_off_the_removed.rs backends/rust/mls/tests/a_member_waits_for_the_log_to_name_what_it_holds_and_then_takes_it.rs backends/rust/mls/tests/a_relay_that_gives_a_false_commit_first_does_not_keep_a_device_out.rs backends/rust/world/tests/a_shared_list_keys_its_content_with_mls_through_a_relay.rs
 
 # ── The keys the exporter gives: the labels and what they are asked with ──────────────────────
 
@@ -184,6 +184,20 @@ edit("backends/rust/mls/src/lib.rs",
      "MlsGroupJoinConfig::builder()\n        .use_ratchet_tree_extension(true)\n        .wire_format_policy(PURE_CIPHERTEXT_WIRE_FORMAT_POLICY)")
 PY
 
+# ── Which commit of an epoch a host uses: the one the log names, whichever a relay gave first ─
+
+mutation_case "A host uses the first commit a relay gave for an epoch and not the one the log names" <<'PY'
+edit("backends/rust/mls/src/host.rs",
+     "        let named = self.trust.commit_of(epoch)?;\n        self.commits.get(&epoch)?.get(&named).cloned()",
+     "        let _named = self.trust.commit_of(epoch)?;\n        self.commits.get(&epoch)?.values().next().cloned()")
+PY
+
+mutation_case "A host keeps a commit the log names another for" <<'PY'
+edit("backends/rust/mls/src/host.rs",
+     "            Some(named) if named != hash => {}",
+     "            Some(named) if named != hash && false => {}")
+PY
+
 # ── What a host's member writes to the log and gives its group ────────────────────────────────
 
 mutation_case "A member is added without the grant that makes it one" <<'PY'
@@ -234,14 +248,9 @@ edit("backends/rust/mls/src/host.rs",
      "                        steps.push(Step::Joined(joined));")
 PY
 
-mutation_case "A Welcome whose commit the log has not named yet is refused for good" <<'PY'
-edit("backends/rust/mls/src/host.rs",
-     "                    // The log does not name the commit yet: it may be given to this host later.\n                    Err(MlsError::CommitNotNamed { .. }) => {}\n",
-     "")
-PY
-
-mutation_case "A commit the log has not named yet is refused for good" <<'PY'
-edit("backends/rust/mls/src/host.rs",
-     "            // The log has not named the commit yet: wait for the entry.\n            Err(MlsError::CommitNotNamed { .. }) => false,\n",
-     "")
-PY
+# What is not here, and why: the arms of `try_join` and `try_apply` that wait when the device says the log
+# has not named a commit. A host gives a device only the commit the log names (`named_commit`), so the
+# device cannot answer that the log has not named it, and a mutation of an arm no input reaches survives
+# whatever the tests are. That a commit the log has not named waits, and is used when it is named, is held
+# by `a_member_waits_for_the_log_to_name_what_it_holds_and_then_takes_it` and by the mutation case of
+# `named_commit` above.

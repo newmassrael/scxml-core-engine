@@ -11,12 +11,19 @@
 // beyond a `final_seq`, in hindsight as well); and that no changed operation is ever taken in
 // (a relay that holds no key cannot make a host hold what no member wrote). A failing seed is printed:
 // the run is reproduced by it.
+//
+// Some seeds play what an honest device does not do, with its key, by hand: a write whose time goes
+// back along its chain, one under the stamp of another, one that names the wrong operation before it;
+// and some have the list begin to seal in the middle of the run, or the administrator replace a device's
+// key. What is asked of those is the same: that every host, however the operations and entries came,
+// holds the same operations, finds the same conflicts at the same numbers, and holds the same proof.
 
 use std::collections::BTreeSet;
 
 use sce_rust_mesh::endpoint::Sealer;
 use sce_rust_trust::membership::{Body, Entry, Log, Profile};
-use sce_rust_trust::{Identity, TakeError, Trust};
+use sce_rust_trust::message::{self, Link, SIGNATURE_FIELD};
+use sce_rust_trust::{encoding, Identity, TakeError, Trust};
 use serde_json::{json, Value};
 
 const LIST: &str = "home";
@@ -54,6 +61,51 @@ fn write(author: u64, id: u64, wall: i64) -> String {
     .to_string()
 }
 
+/// The id, time and write number of an operation as it travels.
+fn id_and_time_of(data: &str) -> ([u8; 32], i64, u64) {
+    let mut value: Value = serde_json::from_str(data).unwrap();
+    value.as_object_mut().unwrap().remove(SIGNATURE_FIELD);
+    let link = Link::take_from(&mut value).unwrap();
+    let signing = message::signing(LIST, "todo.write", &value)
+        .unwrap()
+        .unwrap();
+    let id = message::operation_id(&message::operation_bytes(&signing.message, &link));
+    let wall = value["wallTime"].as_str().unwrap().parse().unwrap();
+    let write = value["id"].as_str().unwrap().parse().unwrap();
+    (id, wall, write)
+}
+
+/// A write of `node` signed by `signer` by hand, numbered `seq`, naming `prev` before it and the entry
+/// `host` is at.
+#[allow(clippy::too_many_arguments)]
+fn forged_write(
+    host: &Trust,
+    signer: &Identity,
+    node: u64,
+    seq: u64,
+    prev: [u8; 32],
+    id: u64,
+    wall: i64,
+    value: i64,
+) -> String {
+    let mut data = json!({"id": id.to_string(), "field": "3", "value": value.to_string(), "text": "",
+        "wallTime": wall.to_string(), "counter": "0", "nodeId": node.to_string()});
+    let signing = message::signing(LIST, "todo.write", &data)
+        .unwrap()
+        .unwrap();
+    let (next, log_hash) = host.head();
+    let link = Link {
+        seq,
+        prev,
+        log: next - 1,
+        log_hash,
+    };
+    let bytes = message::operation_bytes(&signing.message, &link);
+    link.write_into(&mut data).unwrap();
+    data[SIGNATURE_FIELD] = Value::String(encoding::encode(&signer.sign(&bytes)));
+    data.to_string()
+}
+
 struct World {
     rng: Rng,
     /// Host 0 holds the administrator's log and no person; hosts 1.. are the devices.
@@ -69,6 +121,14 @@ struct World {
     removed: bool,
     /// Whether a device in this run signs two operations at one number somewhere.
     equivocating: bool,
+    /// Whether a device in this run signs, by hand, a write whose time goes back, one under a stamp
+    /// it used, or one that names the wrong operation before it.
+    forging: bool,
+    /// Whether the list begins to seal somewhere in this run.
+    sealing: bool,
+    sealed: bool,
+    /// The device whose key the administrator replaces in this run (with `person(node + 10)`).
+    replacing: Option<u64>,
 }
 
 impl World {
@@ -103,6 +163,10 @@ impl World {
             next_id: 1,
             removed: false,
             equivocating: seed % 3 == 0,
+            forging: seed % 4 == 1,
+            sealing: seed % 5 == 2,
+            sealed: false,
+            replacing: (seed % 7 == 3).then(|| DEVICES[(seed / 7) as usize % DEVICES.len()]),
         };
         for node in DEVICES {
             world.publish(Body::Grant {
@@ -129,14 +193,73 @@ impl World {
             4..=6 => self.give_entry(),
             7..=9 => self.give_op(),
             10 => self.remove(),
+            _ => self.mischief(),
+        }
+    }
+
+    /// What this seed has a device do that an honest one does not, when it has any.
+    fn mischief(&mut self) {
+        let mut kinds: Vec<u8> = Vec::new();
+        if self.equivocating {
+            kinds.push(0);
+        }
+        if self.forging {
+            kinds.push(1);
+        }
+        if self.sealing && !self.sealed {
+            kinds.push(2);
+        }
+        if kinds.is_empty() {
+            return self.give_op();
+        }
+        match kinds[self.rng.below(kinds.len())] {
+            0 => self.equivocate(),
+            1 => self.forge(),
             _ => {
-                if self.equivocating {
-                    self.equivocate();
-                } else {
-                    self.give_op();
-                }
+                // The list begins to seal: the devices hold no key, so they write nothing more, and
+                // what they wrote before names an entry before the epoch.
+                self.sealed = true;
+                self.publish(Body::Epoch { epoch: 1 });
             }
         }
+    }
+
+    /// A device signs by hand, with its key, what its own host does not: a write that goes back in
+    /// time along its chain, one under the stamp of the last, or one that names another operation than
+    /// the last before it. It is made from what the device's own host holds of it.
+    fn forge(&mut self) {
+        let device = self.rng.below(DEVICES.len());
+        let node = DEVICES[device];
+        let host = self.hosts[device + 1].clone();
+        let last = host.last_seq(node);
+        if last == 0 || host.role(node) < 2 {
+            return;
+        }
+        let Some((_, data)) = host.operations(node, last, last).into_iter().next() else {
+            return;
+        };
+        let (last_id, last_wall, last_write) = id_and_time_of(&data);
+        let id = self.next_id;
+        self.next_id += 1;
+        let (prev, wall, write_id) = match self.rng.below(3) {
+            // Its time goes back.
+            0 => (last_id, last_wall - 500, id),
+            // The same stamp as the last: another content under it.
+            1 => (last_id, last_wall, last_write),
+            // Another operation than the last before it.
+            _ => ([7; 32], last_wall + 1, id),
+        };
+        let forged = forged_write(
+            &host,
+            &person(node),
+            node,
+            last + 1,
+            prev,
+            write_id,
+            wall,
+            id as i64 + 1000,
+        );
+        self.ops.push(("todo.write".to_string(), forged));
     }
 
     /// A device signs two different operations at one number: its key is on two hosts that have not
@@ -193,9 +316,9 @@ impl World {
     fn give_entry(&mut self) {
         let host = self.rng.below(self.hosts.len());
         if self.given[host] < self.log.len() {
-            self.hosts[host]
-                .append(&self.log[self.given[host]])
-                .unwrap();
+            let entry = self.log[self.given[host]].clone();
+            self.hosts[host].append(&entry).unwrap();
+            self.follow_key(host, &entry);
             self.given[host] += 1;
         }
     }
@@ -216,6 +339,17 @@ impl World {
             return;
         }
         self.removed = true;
+        // In some runs the administrator does not take a device off but gives it another key, which
+        // ends its chain at the number the administrator's host has seen and begins another there.
+        if let Some(node) = self.replacing {
+            self.publish(Body::Grant {
+                node,
+                role: 2,
+                key: person(node + 10).public(),
+                final_seq: Some(self.hosts[0].last_seq(node)),
+            });
+            return;
+        }
         let node = DEVICES[self.rng.below(DEVICES.len())];
         self.publish(Body::Grant {
             node,
@@ -223,6 +357,23 @@ impl World {
             key: person(node).public(),
             final_seq: Some(self.hosts[0].last_seq(node)),
         });
+    }
+
+    /// A device's host that is given the entry that replaces its key signs with the new key from then on.
+    fn follow_key(&mut self, host: usize, entry: &Entry) {
+        let (
+            Some(node),
+            Body::Grant {
+                node: named, key, ..
+            },
+        ) = (self.replacing, &entry.body)
+        else {
+            return;
+        };
+        let identity = person(node + 10);
+        if node == *named && *key == identity.public() && host == node as usize {
+            self.hosts[host].set_identity(node, identity);
+        }
     }
 
     /// Give an operation to a host. One that names an entry the host has not been given yet waits.
@@ -256,16 +407,25 @@ impl World {
     }
 
     fn give_entry_to(&mut self, host: usize) {
-        self.hosts[host]
-            .append(&self.log[self.given[host]])
-            .unwrap();
+        let entry = self.log[self.given[host]].clone();
+        self.hosts[host].append(&entry).unwrap();
+        self.follow_key(host, &entry);
         self.given[host] += 1;
     }
 
-    /// The operations a host holds, as the text they travel with.
+    /// The operations a host tells its machine, as the text they travel with.
     fn held(&self, host: usize) -> BTreeSet<String> {
         self.hosts[host]
             .all_operations()
+            .into_iter()
+            .map(|(_, data)| data)
+            .collect()
+    }
+
+    /// Every operation a host holds, the proof of a conflict included.
+    fn signed(&self, host: usize) -> BTreeSet<String> {
+        self.hosts[host]
+            .signed_operations()
             .into_iter()
             .map(|(_, data)| data)
             .collect()
@@ -281,9 +441,18 @@ fn hosts_that_were_given_the_same_objects_hold_the_same_operations_whatever_the_
             world.step();
         }
         world.settle();
-        let first = world.held(0);
+        // What each host tells its machine, what it holds in all (the proof of a conflict included),
+        // and where it finds the devices' chains to conflict, are the same at every host.
+        let (first, all, conflicts) = (
+            world.held(0),
+            world.signed(0),
+            world.hosts[0].equivocating(),
+        );
         for host in 1..world.hosts.len() {
-            if world.held(host) != first {
+            if world.held(host) != first
+                || world.signed(host) != all
+                || world.hosts[host].equivocating() != conflicts
+            {
                 failures.push((
                     seed,
                     (0..world.hosts.len())
@@ -327,6 +496,12 @@ fn no_host_holds_an_operation_past_what_the_log_accepted_of_its_device_in_hindsi
         for host in 0..world.hosts.len() {
             for (node, count, last) in world.hosts[host].chains() {
                 let _ = count;
+                // A device that was given another key (some runs) goes on past the number its old chain
+                // ended at, with the new key: that is a new chain, not an operation past the cutoff,
+                // and what is asked of it is what the convergence test asks of every device.
+                if world.replacing == Some(node) {
+                    continue;
+                }
                 if let Some((_, Some(cutoff))) = cutoffs.iter().find(|(held, _)| *held == node) {
                     if last > *cutoff {
                         failures.push((seed, host, node, last, *cutoff));
@@ -390,7 +565,9 @@ fn a_fork_of_the_log_is_found_by_any_two_hosts_that_exchange_entries() {
         let position = world.log.len();
         // Two different entries at the next position, from the same head.
         let one = world.hosts[0]
-            .draft(Body::Epoch { epoch: 1 })
+            .draft(Body::Epoch {
+                epoch: world.hosts[0].epoch() + 1,
+            })
             .sign(&admin())
             .finish();
         let other = world.hosts[0]

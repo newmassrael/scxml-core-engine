@@ -100,13 +100,15 @@ pub struct Report {
     pub divergences: Vec<Divergence>,
 }
 
-/// The record `trust` holds, as one text: its log, its operations and its checkpoints.
+/// The record `trust` holds, as one text: its log, its operations and its checkpoints. The
+/// operations are every one the host holds, the proof of a device's conflicting operations included,
+/// so that an auditor who takes them in finds the conflict where the host did.
 pub fn export(trust: &Trust) -> String {
     json!({
         "v": 1,
         "list": trust.entries().first().map(|entry| entry.list.clone()).unwrap_or_default(),
         "entries": trust.entries().iter().map(Entry::to_json).collect::<Vec<_>>(),
-        "operations": trust.all_operations().iter().map(|(event, data)| json!([event, data])).collect::<Vec<_>>(),
+        "operations": trust.signed_operations().iter().map(|(event, data)| json!([event, data])).collect::<Vec<_>>(),
         "checkpoints": trust.checkpoints().iter().map(Checkpoint::to_json).collect::<Vec<_>>(),
     })
     .to_string()

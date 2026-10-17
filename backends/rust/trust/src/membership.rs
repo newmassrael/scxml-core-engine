@@ -569,6 +569,10 @@ pub struct Log {
     /// Each node's grants, by the position of the entry that made them.
     members: BTreeMap<u64, BTreeMap<u64, Era>>,
     epoch: u32,
+    /// The position of the entry that began each epoch, the first epoch first: what says which epoch
+    /// the list was in at an entry, so that an operation is judged by the entry it names and not by
+    /// how far this host's log has come since.
+    epoch_began: Vec<u64>,
     /// The commit each epoch of an MLS list was begun by, and whether the list's epochs are MLS's
     /// (`None` until the first epoch).
     mls: Option<bool>,
@@ -603,6 +607,7 @@ impl Log {
             profile: Profile::Untrusted,
             members: BTreeMap::new(),
             epoch: 0,
+            epoch_began: Vec::new(),
             mls: None,
             commits: BTreeMap::new(),
             parents: BTreeMap::new(),
@@ -688,6 +693,14 @@ impl Log {
     /// The latest epoch the log begins, 0 when none.
     pub fn epoch(&self) -> u32 {
         self.epoch
+    }
+
+    /// The epoch the list was in at the entry in position `index`: the latest epoch an entry at or
+    /// before it began, 0 when none had. An operation is judged by this and not by the log's latest
+    /// epoch, because what a device wrote it wrote knowing the log up to the entry it names, and two
+    /// hosts that were given the same entries in another order must judge it the same.
+    pub fn epoch_at(&self, index: u64) -> u32 {
+        self.epoch_began.partition_point(|began| *began <= index) as u32
     }
 
     /// Whether there is a first entry.
@@ -821,7 +834,7 @@ impl Log {
             return if self.hashes[entry.index as usize] == entry.hash() {
                 Ok(false)
             } else {
-                Err(LogError::Fork { index: entry.index })
+                Err(self.rival(entry))
             };
         }
         if entry.index > held {
@@ -829,7 +842,7 @@ impl Log {
         }
         let (_, prev) = self.head();
         if entry.prev != prev {
-            return Err(LogError::Fork { index: entry.index });
+            return Err(self.rival(entry));
         }
         if held == 0 {
             self.admit_genesis(entry)?;
@@ -839,6 +852,56 @@ impl Log {
         self.hashes.push(entry.hash());
         self.entries.push(entry.clone());
         Ok(true)
+    }
+
+    /// What an entry that is not the one this log holds at its place, and does not follow its head, is.
+    /// It is a fork only if the administrators signed it: an entry nobody signed (a hub rewrote one
+    /// and took the signatures off, or invented one) proves nothing, and a host that took it for a
+    /// fork would be frozen by anyone who can write to it. So the entry is judged as the log would
+    /// have judged it at its place, and it is a fork when it holds there; when it does not, it is
+    /// refused for the reason it does not, and the log is as it was.
+    fn rival(&self, entry: &Entry) -> LogError {
+        // An entry no key that was ever an administrator's signed is cheap to turn away: nothing
+        // is replayed for it.
+        let ever: Vec<PublicKey> = self
+            .entries
+            .iter()
+            .flat_map(Self::administrators_named)
+            .collect();
+        if !entry.signatures.iter().any(|(key, _)| ever.contains(key)) {
+            return LogError::NotEnoughSignatures { needed: 1, had: 0 };
+        }
+        let held = self.entries.len() as u64;
+        if entry.index < held {
+            // What the log was when the entry's place came: the entries before it, judged again.
+            let mut before = Self::empty(&self.list, self.expected_genesis);
+            for earlier in &self.entries[..entry.index as usize] {
+                if let Err(error) = before.append(earlier) {
+                    return error;
+                }
+            }
+            return match before.append(entry) {
+                Ok(_) => LogError::Fork { index: entry.index },
+                Err(error) => error,
+            };
+        }
+        // It names an entry before it that this log does not hold: it can be judged only by the
+        // administrators this log has, and when they signed it, there are two histories.
+        let needed = entry.body.required(self.quorum);
+        match Self::verified_signers(entry, &self.administrators) {
+            Ok(had) if had >= needed => LogError::Fork { index: entry.index },
+            Ok(had) => LogError::NotEnoughSignatures { needed, had },
+            Err(error) => error,
+        }
+    }
+
+    /// The administrators an entry names: the genesis's, and those an entry that changes them adds.
+    fn administrators_named(entry: &Entry) -> Vec<PublicKey> {
+        match &entry.body {
+            Body::Genesis { administrators, .. } => administrators.clone(),
+            Body::Administrators { add, .. } => add.clone(),
+            _ => Vec::new(),
+        }
     }
 
     fn verified_signers(entry: &Entry, administrators: &[PublicKey]) -> Result<usize, LogError> {
@@ -945,7 +1008,7 @@ impl Log {
 
     /// Begin epoch `epoch`, which must follow the one before it and be of the kind the list's
     /// epochs are.
-    fn next_epoch(&mut self, epoch: u32, mls: bool) -> Result<(), LogError> {
+    fn next_epoch(&mut self, epoch: u32, mls: bool, position: u64) -> Result<(), LogError> {
         if epoch
             != self
                 .epoch
@@ -961,6 +1024,7 @@ impl Log {
         }
         self.mls = Some(mls);
         self.epoch = epoch;
+        self.epoch_began.push(position);
         Ok(())
     }
 
@@ -1070,10 +1134,10 @@ impl Log {
                 }
             }
             Body::Epoch { epoch } => {
-                self.next_epoch(*epoch, false)?;
+                self.next_epoch(*epoch, false, position)?;
             }
             Body::MlsEpoch { epoch, commit } => {
-                self.next_epoch(*epoch, true)?;
+                self.next_epoch(*epoch, true, position)?;
                 self.commits.insert(*epoch, *commit);
             }
             Body::Administrators {
@@ -1167,9 +1231,36 @@ mod tests {
         let mut forked = other.clone();
         forked.index = 1;
         forked.prev = log.hashes[0];
-        let forked = Draft { entry: forked }.sign(&admin(1)).finish();
+        forked.signatures.clear();
+        // A rival the administrators did not sign (nobody, or a stranger) is no fork: it proves
+        // nothing, and whoever can write to a host could else freeze it.
+        let by_a_stranger = Draft {
+            entry: forked.clone(),
+        }
+        .sign(&admin(77))
+        .finish();
+        assert!(matches!(
+            log.append(&by_a_stranger),
+            Err(LogError::NotEnoughSignatures { .. })
+        ));
+        let mut unsigned = by_a_stranger.clone();
+        unsigned.signatures.clear();
+        assert!(matches!(
+            log.append(&unsigned),
+            Err(LogError::NotEnoughSignatures { .. })
+        ));
+        // One the administrators signed is two histories.
+        let forked = Draft { entry: forked }
+            .sign(&admin(1))
+            .sign(&admin(2))
+            .finish();
         assert_eq!(log.append(&forked), Err(LogError::Fork { index: 1 }));
         assert_eq!(log.entries().len(), 2, "the log did not change");
+        // The same changed after the administrators signed it does not hold at its place, and a
+        // rival that does not hold is no fork.
+        let mut changed = forked.clone();
+        changed.body = Body::Epoch { epoch: 1 };
+        assert_eq!(log.append(&changed), Err(LogError::BadSignature));
     }
 
     #[test]
@@ -1179,9 +1270,31 @@ mod tests {
         skipping.index = 5;
         assert_eq!(log.append(&skipping), Err(LogError::Gap { expected: 1 }));
 
-        let mut wrong_prev = log.draft(Body::Epoch { epoch: 1 }).sign(&admin(1)).finish();
-        wrong_prev.prev = [9; 32];
+        // One that names another entry before it, signed by the administrators, is a history this log
+        // does not hold; made by hand, signed after it was changed.
+        let mut draft = log.draft(Body::Epoch { epoch: 1 });
+        draft.entry.prev = [9; 32];
+        let wrong_prev = draft.sign(&admin(1)).finish();
         assert_eq!(log.append(&wrong_prev), Err(LogError::Fork { index: 1 }));
+        // The same changed after it was signed holds no signature, and is no fork.
+        let mut changed = log.draft(Body::Epoch { epoch: 1 }).sign(&admin(1)).finish();
+        changed.prev = [9; 32];
+        assert_eq!(log.append(&changed), Err(LogError::BadSignature));
+
+        // One that names another entry before it and has fewer of the administrators' signatures than
+        // its kind needs is no fork either: a change of administrators needs the quorum of two.
+        let mut log = started(2);
+        let mut draft = log.draft(Body::Administrators {
+            add: vec![admin(4).public()],
+            remove: vec![],
+            quorum: 2,
+        });
+        draft.entry.prev = [9; 32];
+        let under_signed = draft.sign(&admin(1)).finish();
+        assert_eq!(
+            log.append(&under_signed),
+            Err(LogError::NotEnoughSignatures { needed: 2, had: 1 })
+        );
     }
 
     #[test]

@@ -18,6 +18,7 @@ use sce_rust_relay::{
     Relay, Request, Response, Store,
 };
 use sce_rust_trust::membership::{Body, Entry, Log, Profile};
+use sce_rust_trust::message::{self, Link as OperationLink};
 use sce_rust_trust::{Identity, Trust};
 use serde_json::{json, Value};
 
@@ -618,11 +619,53 @@ fn a_relay_holds_sealed_content_of_one_size_and_refuses_plaintext_in_a_sealed_li
         assert!(!held.contains(secret), "the relay holds {secret}");
     }
 
-    // A write in the clear that bob signed before the epoch began, in a list that is sealed now,
-    // is refused whatever entry it names.
+    // A write in the clear that bob signed naming an entry from before the epoch began is taken, in a
+    // list that is sealed now: he wrote it before he heard of the epoch, and a relay that was given the
+    // epoch first judges it as one that was given it after.
+    let mut sealed_now = self::relay();
+    give_log(&mut sealed_now, 1);
+    assert!(matches!(
+        ask(
+            &mut sealed_now,
+            1,
+            Request::Append {
+                entry: epoch.to_json()
+            },
+            0
+        ),
+        Response::Appended { new: true, .. }
+    ));
     let mut before_the_epoch = host(Some(2));
     let plain = operation(&mut before_the_epoch, 2, 9, 2000);
-    let response = submit(&mut relay, 2, &plain);
+    let response = submit(&mut sealed_now, 2, &plain);
+    assert!(
+        matches!(response, Response::Accepted { new: true, .. }),
+        "{response:?}"
+    );
+
+    // One that names the entry that began the epoch, or a later one, is in the clear in a list that
+    // is sealed: refused.
+    let after_the_epoch = host(Some(2));
+    after_the_epoch.append(&epoch).unwrap();
+    let mut value: Value = serde_json::from_str(&write(2, 10, 3000)).unwrap();
+    let signing = message::signing(LIST, "todo.write", &value)
+        .unwrap()
+        .unwrap();
+    let (next, log_hash) = after_the_epoch.head();
+    let link = OperationLink {
+        seq: 1,
+        prev: message::NO_OPERATION,
+        log: next - 1,
+        log_hash,
+    };
+    let bytes = message::operation_bytes(&signing.message, &link);
+    link.write_into(&mut value).unwrap();
+    value["sig"] = Value::String(sce_rust_trust::encoding::encode(&person(2).sign(&bytes)));
+    let response = submit(
+        &mut relay,
+        2,
+        &("todo.write".to_string(), value.to_string()),
+    );
     assert_eq!(refused(&response), &Code::Invalid);
     let reason = match response {
         Response::Refused { reason, .. } => reason,
@@ -1078,6 +1121,59 @@ fn a_relay_that_restarts_does_not_start_from_a_checkpoint_that_was_changed() {
     .expect("a relay does not start from a checkpoint its device did not sign");
     assert!(error.to_string().contains("does not verify"), "{error}");
     std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// A device whose key is on two hosts that have not heard of each other signs two operations at one
+/// number. The host that finds out first gives the relay both, as proof, and a host that read only one
+/// of them from the relay finds out from the relay too: the proof is not any host's own knowledge.
+#[test]
+fn the_proof_that_a_device_signed_conflicting_operations_goes_through_a_relay_to_a_host_that_saw_one(
+) {
+    let relay = Arc::new(Mutex::new(relay()));
+    let clock: Arc<dyn Fn() -> u64 + Send + Sync> = Arc::new(|| 0);
+    let link = |node: u64| DirectLink::new(relay.clone(), token(node), clock.clone());
+
+    let first = host(Some(1));
+    let second = host(Some(1));
+    first
+        .clone()
+        .seal("#server", "todo.write", &write(1, 1, 1000))
+        .unwrap();
+    second
+        .clone()
+        .seal("#server", "todo.write", &write(1, 2, 1001))
+        .unwrap();
+    Courier::new(first.clone(), link(1)).sync().unwrap();
+
+    // The second host reads the relay and is given the first's operation: its own and that one
+    // conflict. The next round gives the relay the one the relay lacks, as proof.
+    let mut second_courier = Courier::new(second.clone(), link(1));
+    second_courier.sync().unwrap();
+    assert_eq!(second.equivocating(), vec![(1, 1)]);
+    second_courier.sync().unwrap();
+
+    // bob was given none of it by anyone else: the relay gives him both, and he finds it.
+    let bob = host(Some(2));
+    let mut bob_courier = Courier::new(bob.clone(), link(2));
+    let round = bob_courier.sync().unwrap();
+    assert_eq!(bob.equivocating(), vec![(1, 1)]);
+    assert!(
+        bob.all_operations().is_empty(),
+        "nothing of the device from 1"
+    );
+    assert_eq!(
+        round.evicted,
+        vec![(1, 1)],
+        "his machine was told the first, and forgets it"
+    );
+    // The machine was told the one that held when it was taken in, and is told nothing of the one that
+    // is held only as proof.
+    let told = round
+        .events
+        .iter()
+        .filter(|(event, _)| event == "todo.write")
+        .count();
+    assert_eq!(told, 1, "{:?}", round.events);
 }
 
 /// The relay reads none of the MLS messages and bounds what it keeps of them: how big one is, that it

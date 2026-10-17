@@ -47,6 +47,7 @@
 
 pub mod audit;
 pub mod backup;
+mod chain;
 pub mod checkpoint;
 pub mod encoding;
 pub mod identity;

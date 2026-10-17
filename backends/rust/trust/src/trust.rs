@@ -37,6 +37,7 @@ use sce_rust_mesh::endpoint::{Admission, Sealer};
 use serde_json::{json, Value};
 use zeroize::Zeroize;
 
+use crate::chain::{self, Chain, Held, Why, Wire};
 use crate::checkpoint::{Checkpoint, Head, Settlement};
 use crate::encoding;
 use crate::identity::{Identity, PublicKey};
@@ -127,42 +128,6 @@ pub enum GrantError {
     Shredded,
 }
 
-/// An operation of a device as it travels: the event as its author made it (sealed, when the list
-/// keeps content from the hub), where it stands in the device's chain, and the signature the
-/// device made of all of it.
-#[derive(Clone)]
-struct Wire {
-    data: String,
-    link: Link,
-    signature: [u8; 64],
-}
-
-impl Wire {
-    /// The data of the event as it goes on the wire: the event, its link and its signature.
-    fn to_json(&self) -> Option<String> {
-        let mut value: Value = serde_json::from_str(&self.data).ok()?;
-        self.link.write_into(&mut value)?;
-        value.as_object_mut()?.insert(
-            SIGNATURE_FIELD.to_string(),
-            Value::String(encoding::encode(&self.signature)),
-        );
-        Some(value.to_string())
-    }
-}
-
-/// What a host remembers of an operation of a device that it admitted: its id, the one it
-/// names before it, and, for a write, its stamp, so that a chain can be checked whatever order its
-/// operations arrive in; and the operation itself, as it travels, to give to a host that was
-/// not given it.
-#[derive(Clone)]
-struct Held {
-    id: [u8; 32],
-    prev: [u8; 32],
-    stamp: Option<(i64, u64)>,
-    event: &'static str,
-    wire: Wire,
-}
-
 struct State {
     calendar: String,
     /// Who the administrators and members are, from when, and the epoch: the chain of entries the
@@ -181,16 +146,19 @@ struct State {
     /// Who wrote over each write, by the note's subject: the operation of the person who did, as
     /// it travels, so that a tombstone the machine sends again is sent as theirs.
     notes: BTreeMap<Vec<u8>, Wire>,
-    /// The operations admitted from each device, by their number: what the chains are checked
-    /// against, in whatever order the operations came.
-    ops: BTreeMap<u64, BTreeMap<u64, Held>>,
-    /// The devices that signed two different operations at one number, and the number from which
-    /// this host takes nothing of theirs until an administrator removes them.
-    frozen: BTreeMap<u64, u64>,
-    /// Operations this host held that an entry of the log then put past the last accepted of their
-    /// device, and so no longer holds: for the host to rebuild its machine without them
-    /// ([`Trust::take_evicted`]).
+    /// Every operation held of each device, the proof of a conflict included: what the chains are
+    /// checked against, in whatever order the operations came, and what decides what the machine is
+    /// told of a device ([`crate::chain`]).
+    ops: BTreeMap<u64, Chain>,
+    /// Operations this host told its machine and then stopped holding of the device's chain: an
+    /// entry of the log put them past the last accepted of their device, or a conflict among the
+    /// device's operations froze its chain below them. For the host to rebuild its machine without
+    /// them ([`Trust::take_evicted`]).
     evicted: Vec<(u64, u64)>,
+    /// Operations that were not told to the machine and are now: a conflict that held a device's
+    /// chain below it went away with the operations that made it (an entry of the log put them past
+    /// a cutoff). The machine is built again as for `evicted` ([`Trust::take_restored`]).
+    restored: Vec<(u64, u64)>,
     /// The keys of the epochs this host holds. A host that holds any keeps the content of every
     /// write from the hub, and takes no write that is not sealed.
     epoch_keys: BTreeMap<u32, secrecy::EpochKey>,
@@ -261,8 +229,8 @@ impl Trust {
                 wires: BTreeMap::new(),
                 notes: BTreeMap::new(),
                 ops: BTreeMap::new(),
-                frozen: BTreeMap::new(),
                 evicted: Vec::new(),
+                restored: Vec::new(),
                 epoch_keys: BTreeMap::new(),
                 unsigned_refused: UNSIGNED_REFUSED.iter().map(|e| e.to_string()).collect(),
             })),
@@ -310,6 +278,14 @@ impl Trust {
         std::mem::take(&mut self.state().evicted)
     }
 
+    /// The operations (device and number) that this host did not tell its machine and now does,
+    /// since the last call: a conflict among a device's operations that held its chain below them
+    /// went away with an operation an entry of the log put past a cutoff. The machine is built again
+    /// as for [`Self::take_evicted`].
+    pub fn take_restored(&self) -> Vec<(u64, u64)> {
+        std::mem::take(&mut self.state().restored)
+    }
+
     /// The keys of the epochs this host holds, for a copy of its device's secrets
     /// ([`crate::backup`]). An epoch the list had destroyed is not here: its key was zeroed when the
     /// entry came, and none is taken after.
@@ -331,29 +307,57 @@ impl Trust {
             .collect()
     }
 
-    /// Every operation this host holds, as the event and the data it travels with, device by device
-    /// and in the order of each chain: what an audit takes.
+    /// The operations this host tells its machine, as the event and the data each travels with,
+    /// device by device and in the order of each chain: what the machine is built again from. A
+    /// device whose operations conflict has none of them from the first conflict on
+    /// ([`Self::evidence`]).
     pub fn all_operations(&self) -> Vec<(String, String)> {
         let state = self.state();
         state
             .ops
             .values()
-            .flat_map(|ops| ops.values())
+            .flat_map(Chain::view)
             .filter_map(|held| Some((held.event.to_string(), held.wire.to_json()?)))
             .collect()
     }
 
-    /// How many operations this host holds of each device, and the highest number among them.
+    /// The operations this host holds of conflicting devices and does not tell its machine: the
+    /// proof, both operations of every two that conflict and everything of the device after the first
+    /// of them. A host that is not given both learns of the conflict from them, so they go to the
+    /// relay and to other hosts as every operation does ([`Self::signed_operations`]).
+    pub fn evidence(&self) -> Vec<(String, String)> {
+        let state = self.state();
+        state
+            .ops
+            .values()
+            .flat_map(Chain::evidence)
+            .filter_map(|held| Some((held.event.to_string(), held.wire.to_json()?)))
+            .collect()
+    }
+
+    /// Every operation this host holds, the proof of a conflict included, as the event and the data
+    /// it travels with, device by device and in the order of each chain: what is stored, what an
+    /// audit takes, and what a host that was not given an operation can be given. A host that takes
+    /// all of it holds what this host does.
+    pub fn signed_operations(&self) -> Vec<(String, String)> {
+        let state = self.state();
+        state
+            .ops
+            .values()
+            .flat_map(Chain::all)
+            .filter_map(|held| Some((held.event.to_string(), held.wire.to_json()?)))
+            .collect()
+    }
+
+    /// How many operations this host tells its machine of each device, and the highest number among
+    /// them.
     pub fn chains(&self) -> Vec<(u64, usize, u64)> {
         self.state()
             .ops
             .iter()
-            .map(|(node, ops)| {
-                (
-                    *node,
-                    ops.len(),
-                    ops.keys().next_back().copied().unwrap_or(0),
-                )
+            .map(|(node, chain)| {
+                let numbers = chain.view_numbers();
+                (*node, numbers.len(), numbers.last().copied().unwrap_or(0))
             })
             .collect()
     }
@@ -437,17 +441,20 @@ impl Trust {
         self.state()
             .ops
             .get(&node)
-            .and_then(|ops| ops.keys().next_back().copied())
+            .and_then(|chain| chain.last().map(Held::seq))
             .unwrap_or(0)
     }
 
-    /// The devices this host has caught signing two different operations at one number, and the
-    /// number: proof, held by any host that saw both, that the device's chain forked.
+    /// The devices this host holds conflicting operations of, and the number of the first conflict:
+    /// two operations at one number, one that does not follow the one before it, a write whose time
+    /// goes back along the chain or whose stamp another write has. Proof that the device's chain
+    /// forked or that it used a nonce twice, which every host that holds the operations
+    /// ([`Self::evidence`]) finds at the same number.
     pub fn equivocating(&self) -> Vec<(u64, u64)> {
         self.state()
-            .frozen
+            .ops
             .iter()
-            .map(|(node, seq)| (*node, *seq))
+            .filter_map(|(node, chain)| Some((*node, chain.frozen()?)))
             .collect()
     }
 
@@ -516,18 +523,22 @@ impl Trust {
         let mut furthest: BTreeMap<u64, (u64, u64)> = BTreeMap::new();
         for checkpoint in state.checkpoints.values() {
             for head in &checkpoint.heads {
-                match state.ops.get(&head.node).and_then(|ops| ops.get(&head.seq)) {
-                    Some(held) if held.id != head.id => {
-                        let differs = Divergence::Differs {
-                            node: head.node,
-                            seq: head.seq,
-                            by: checkpoint.device,
-                        };
-                        if !found.contains(&differs) {
-                            found.push(differs);
-                        }
+                // The checkpoint names an operation this host holds none such of at that number: it
+                // holds others there (two, when the device signed two) and not that one.
+                let here: Vec<&Held> = state
+                    .ops
+                    .get(&head.node)
+                    .map(|chain| chain.range(head.seq, head.seq).collect())
+                    .unwrap_or_default();
+                if !here.is_empty() && here.iter().all(|held| held.id != head.id) {
+                    let differs = Divergence::Differs {
+                        node: head.node,
+                        seq: head.seq,
+                        by: checkpoint.device,
+                    };
+                    if !found.contains(&differs) {
+                        found.push(differs);
                     }
-                    _ => {}
                 }
                 let entry = furthest.entry(head.node).or_insert((0, checkpoint.device));
                 if head.seq > entry.0 {
@@ -580,11 +591,12 @@ impl Trust {
             return Vec::new();
         }
         let state = self.state();
-        let Some(ops) = state.ops.get(&node) else {
+        let Some(chain) = state.ops.get(&node) else {
             return Vec::new();
         };
-        ops.range(from..=to)
-            .filter_map(|(_, held)| Some((held.event.to_string(), held.wire.to_json()?)))
+        chain
+            .range(from, to)
+            .filter_map(|held| Some((held.event.to_string(), held.wire.to_json()?)))
             .collect()
     }
 
@@ -817,7 +829,7 @@ impl Trust {
         json!({
             "checkpoints": state.checkpoints.values().map(Checkpoint::to_value).collect::<Vec<_>>(),
             "operations": state.ops.values()
-                .flat_map(|ops| ops.values())
+                .flat_map(Chain::all)
                 .filter_map(|held| Some(json!([held.event, held.wire.to_json()?])))
                 .collect::<Vec<_>>(),
         })
@@ -862,7 +874,7 @@ impl Trust {
                 continue;
             };
             if let Ok(verified) = verify_operation(&state, event, value, &signature) {
-                record(&mut state, event, verified, signature);
+                hold_verified(&mut state, event, verified, signature);
                 kept += 1;
             }
         }
@@ -879,86 +891,179 @@ impl Trust {
     }
 }
 
-/// Drop every operation held that the log now puts past the last accepted of its device, judged as
-/// an operation is when it arrives (by the entry it names), and remember which.
-fn evict_past_the_cutoff(state: &mut State) {
-    let mut gone: Vec<(u64, u64, [u8; 64])> = Vec::new();
-    for (node, ops) in &state.ops {
-        for (seq, held) in ops {
-            let Some(era) = state.log.era_for(*node, held.wire.link.log) else {
-                continue;
-            };
-            if state
-                .log
-                .cutoff_after(*node, era)
-                .is_some_and(|cutoff| *seq > cutoff)
-            {
-                gone.push((*node, *seq, held.wire.signature));
-            }
-        }
-    }
-    remove_held(state, gone);
-}
-
-/// Drop every operation held of `node` numbered `from` or more.
-fn evict_from(state: &mut State, node: u64, from: u64) {
-    let gone: Vec<(u64, u64, [u8; 64])> = state
+/// What the machine is told of `node`: the number and id of each operation, in order.
+fn told_of(state: &State, node: u64) -> Vec<(u64, [u8; 32])> {
+    state
         .ops
         .get(&node)
-        .map(|ops| {
-            ops.range(from..)
-                .map(|(seq, held)| (node, *seq, held.wire.signature))
-                .collect()
-        })
-        .unwrap_or_default();
-    remove_held(state, gone);
+        .map(|chain| chain.view().map(|held| (held.seq(), held.id)).collect())
+        .unwrap_or_default()
 }
 
-/// Forget operations (device, number, signature), and what the host keeps them by.
-fn remove_held(state: &mut State, gone: Vec<(u64, u64, [u8; 64])>) {
-    if gone.is_empty() {
+/// Put what the host keeps writes and notes by in line with what the machine is told of `node`: an
+/// operation that is not told is not what the host sends a write on as, and one that is, is.
+fn sync_tables(state: &mut State, node: u64) {
+    let Some(chain) = state.ops.get(&node) else {
         return;
-    }
-    for (node, seq, _) in &gone {
-        if let Some(ops) = state.ops.get_mut(node) {
-            ops.remove(seq);
-        }
-        state.evicted.push((*node, *seq));
-    }
-    let signatures: Vec<[u8; 64]> = gone.iter().map(|(_, _, signature)| *signature).collect();
+    };
+    let signatures: Vec<[u8; 64]> = chain.all().map(|held| held.wire.signature).collect();
+    let told: Vec<(&'static str, Vec<u8>, Wire)> = chain
+        .view()
+        .map(|held| (held.event, held.key.clone(), held.wire.clone()))
+        .collect();
     state
         .wires
         .retain(|_, wire| !signatures.contains(&wire.signature));
     state
         .notes
         .retain(|_, wire| !signatures.contains(&wire.signature));
+    for (event, key, wire) in told {
+        let table = if event == "todo.write" {
+            &mut state.wires
+        } else {
+            &mut state.notes
+        };
+        table.entry(key).or_insert(wire);
+    }
 }
 
-/// The highest number `n` such that `node`'s operations 1 to `n` are all held.
-fn contiguous(state: &State, node: u64) -> u64 {
-    let Some(ops) = state.ops.get(&node) else {
-        return 0;
-    };
-    let mut head = 0;
-    while ops.contains_key(&(head + 1)) {
-        head += 1;
+/// What changed in what the machine is told of `node` between `before` and now: the operations that
+/// left it are for the host to rebuild its machine without, and those that entered, with. `new` is
+/// an operation that was just given and is told now: the machine is told it as it is taken in, and
+/// it is no change to what was told before.
+fn tell_what_changed(
+    state: &mut State,
+    node: u64,
+    before: &[(u64, [u8; 32])],
+    new: Option<(u64, [u8; 32])>,
+) {
+    let after = told_of(state, node);
+    let left: Vec<u64> = before
+        .iter()
+        .filter(|one| !after.contains(one))
+        .map(|(seq, _)| *seq)
+        .collect();
+    let entered: Vec<u64> = after
+        .iter()
+        .filter(|one| !before.contains(one) && Some(**one) != new)
+        .map(|(seq, _)| *seq)
+        .collect();
+    if left.is_empty() && entered.is_empty() {
+        return;
     }
-    head
+    state
+        .evicted
+        .extend(left.into_iter().map(|seq| (node, seq)));
+    state
+        .restored
+        .extend(entered.into_iter().map(|seq| (node, seq)));
+    sync_tables(state, node);
+}
+
+/// Drop every operation held that the log now puts past the last accepted of its device, judged as
+/// an operation is when it arrives (by the entry it names), and judge each device's operations
+/// again: the cutoffs the log has are where the segments of a chain begin and end, and the
+/// conflicts among them are as the set that is left has them. What the machine is told of a device
+/// is what its set says, whatever order the entries and the operations came in.
+fn evict_past_the_cutoff(state: &mut State) {
+    let nodes: Vec<u64> = state.ops.keys().copied().collect();
+    for node in nodes {
+        let before = told_of(state, node);
+        let cutoffs = state.log.cutoffs(node);
+        let Some(chain) = state.ops.get(&node) else {
+            continue;
+        };
+        let gone: Vec<(u64, [u8; 32], [u8; 64])> = chain
+            .all()
+            .filter(|held| {
+                state
+                    .log
+                    .era_for(node, held.wire.link.log)
+                    .and_then(|era| state.log.cutoff_after(node, era))
+                    .is_some_and(|cutoff| held.seq() > cutoff)
+            })
+            .map(|held| (held.seq(), held.id, held.wire.signature))
+            .collect();
+        if let Some(chain) = state.ops.get_mut(&node) {
+            chain.remove(
+                |held| {
+                    gone.iter()
+                        .any(|(seq, id, _)| *seq == held.seq() && *id == held.id)
+                },
+                &cutoffs,
+            );
+        }
+        // What was held and is not now is not what the host sends a write on as, told or not.
+        if !gone.is_empty() {
+            let signatures: Vec<[u8; 64]> = gone.iter().map(|(_, _, sig)| *sig).collect();
+            state
+                .wires
+                .retain(|_, wire| !signatures.contains(&wire.signature));
+            state
+                .notes
+                .retain(|_, wire| !signatures.contains(&wire.signature));
+        }
+        tell_what_changed(state, node, &before, None);
+    }
+}
+
+/// Put an operation among its device's: the one place that decides what the machine is told of a
+/// device. Returns whether the host did not hold it before, and whether the machine is told it now.
+fn hold(state: &mut State, node: u64, held: Held) -> (bool, bool) {
+    let (seq, id) = (held.seq(), held.id);
+    let cutoffs = state.log.cutoffs(node);
+    let before = told_of(state, node);
+    let inserted = state.ops.entry(node).or_default().insert(held, &cutoffs);
+    if !inserted.added {
+        let told = state
+            .ops
+            .get(&node)
+            .is_some_and(|chain| chain.at(seq).is_some_and(|one| one.id == id));
+        return (false, told);
+    }
+    // The chain froze lower than it was: what was told above the new place is told no more.
+    tell_what_changed(state, node, &before, Some((seq, id)));
+    let told = state
+        .ops
+        .get(&node)
+        .is_some_and(|chain| chain.at(seq).is_some_and(|one| one.id == id));
+    if told {
+        // The common case, an operation added at the end: its table entry, and no more.
+        let table_entry = state
+            .ops
+            .get(&node)
+            .and_then(|chain| chain.at(seq))
+            .map(|one| (one.event, one.key.clone(), one.wire.clone()));
+        if let Some((event, key, wire)) = table_entry {
+            let table = if event == "todo.write" {
+                &mut state.wires
+            } else {
+                &mut state.notes
+            };
+            table.entry(key).or_insert(wire);
+        }
+    }
+    (true, told)
 }
 
 fn heads_of(state: &State) -> Vec<Head> {
     state
         .ops
         .iter()
-        .filter_map(|(node, ops)| {
-            let seq = contiguous(state, *node);
+        .filter_map(|(node, chain)| {
+            let seq = chain.contiguous();
             Some(Head {
                 node: *node,
                 seq,
-                id: ops.get(&seq)?.id,
+                id: chain.at(seq)?.id,
             })
         })
         .collect()
+}
+
+/// The highest number `n` such that `node`'s operations 1 to `n` are all told to the machine.
+fn contiguous(state: &State, node: u64) -> u64 {
+    state.ops.get(&node).map_or(0, Chain::contiguous)
 }
 
 /// Whether `checkpoint` holds: it is for this list, names an entry of the log this host holds as
@@ -1101,8 +1206,12 @@ fn verify_settlement(
     }
     for checkpoint in &checkpoints {
         for head in &checkpoint.heads {
-            let held = state.ops.get(&head.node).and_then(|ops| ops.get(&head.seq));
-            if held.is_some_and(|held| held.id != head.id) {
+            let here: Vec<&Held> = state
+                .ops
+                .get(&head.node)
+                .map(|chain| chain.range(head.seq, head.seq).collect())
+                .unwrap_or_default();
+            if !here.is_empty() && here.iter().all(|held| held.id != head.id) {
                 return Err(format!(
                     "node {} names another operation than this host holds at number {} of node {}",
                     checkpoint.device, head.seq, head.node
@@ -1153,7 +1262,13 @@ impl Admission for Trust {
             return Ok(None);
         };
         match take(&mut state, event, data) {
-            Ok(taken) => Ok(Some(taken.told)),
+            Ok(taken) if taken.applied => Ok(Some(taken.told)),
+            // Held as proof that the device signed conflicting operations: the machine is told none
+            // of what the device did from the first of them on.
+            Ok(taken) => Err(format!(
+                "{event}: node {} signed conflicting operations at or before {}, and this host holds it as proof and tells its machine nothing of the device from there",
+                taken.node, taken.seq
+            )),
             Err(
                 TakeError::NotReached(reason)
                 | TakeError::NoKey(reason)
@@ -1164,13 +1279,15 @@ impl Admission for Trust {
 }
 
 /// An operation that was taken in: whose it is and the number it has, whether the host held it
-/// already (a relay or a mirror hands on what it was given before), and the event as the machine
-/// is told it.
+/// already (a relay or a mirror hands on what it was given before), whether the machine is told it
+/// (`applied`: it is not when it is held as proof that the device signed conflicting operations, from
+/// the first of them on), and the event as the machine is told it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Taken {
     pub node: u64,
     pub seq: u64,
     pub new: bool,
+    pub applied: bool,
     pub told: String,
 }
 
@@ -1196,31 +1313,45 @@ fn take(state: &mut State, event: &'static str, data: &str) -> Result<Taken, Tak
     match verify_operation(state, event, value, &signature) {
         Ok(verified) => {
             let (node, seq) = (verified.author, verified.link.seq);
-            let new = !state
-                .ops
-                .get(&node)
-                .is_some_and(|ops| ops.contains_key(&seq));
             let told = verified.visible.to_string();
-            record(state, event, verified, signature);
+            let (new, applied) = hold_verified(state, event, verified, signature);
             Ok(Taken {
                 node,
                 seq,
                 new,
+                applied,
                 told,
             })
         }
         Err(Refusal::NotReached(reason)) => Err(TakeError::NotReached(reason)),
         Err(Refusal::NoKey(reason)) => Err(TakeError::NoKey(reason)),
         Err(Refusal::Refused(reason)) => Err(TakeError::Refused(reason)),
-        Err(Refusal::Equivocation { node, seq, reason }) => {
-            let from = state.frozen.get(&node).map_or(seq, |held| (*held).min(seq));
-            state.frozen.insert(node, from);
-            // Nothing of the device from that number on is held, the one that was held included: a
-            // host that saw one of the two first and a host that saw the other first hold the same.
-            evict_from(state, node, from);
-            Err(TakeError::Refused(reason))
-        }
     }
+}
+
+/// Hold an operation that was verified, whoever made it: whether it was new to the host and whether
+/// the machine is told it.
+fn hold_verified(
+    state: &mut State,
+    event: &'static str,
+    verified: Verified,
+    signature: [u8; 64],
+) -> (bool, bool) {
+    let wire = Wire {
+        data: verified.travelling.to_string(),
+        link: verified.link,
+        signature,
+    };
+    let held = Held {
+        id: verified.id,
+        prev: verified.link.prev,
+        stamp: verified.stamp,
+        wid: verified.wid,
+        key: verified.key,
+        event,
+        wire,
+    };
+    hold(state, verified.author, held)
 }
 
 /// Why an operation was not taken in.
@@ -1231,9 +1362,6 @@ enum Refusal {
     NoKey(String),
     /// It does not hold: its reason.
     Refused(String),
-    /// The device signed two different operations at one number: proof that its chain forked, which
-    /// freezes the device (`State::frozen`) from `seq`.
-    Equivocation { node: u64, seq: u64, reason: String },
 }
 
 impl From<String> for Refusal {
@@ -1249,6 +1377,9 @@ struct Verified {
     link: Link,
     id: [u8; 32],
     stamp: Option<(i64, u64)>,
+    /// What a write is sealed under (its id, field, time, counter and device), so that two writes
+    /// under one stamp are seen as the nonce used twice that they are.
+    wid: Option<Vec<u8>>,
     travelling: Value,
     visible: Value,
     /// What the host keeps it under: the bytes of the write the machine holds, or the subject of a
@@ -1329,94 +1460,28 @@ fn verify_operation(
     // A chain begins at 1, and a new one (another key, or the device made a writer again) at the
     // number after the end an earlier grant set: its first operation names no operation before
     // it, and the checks of what follows and precedes stop at the edge.
-    let cutoffs = state.log.cutoffs(author);
-    let segment_start = cutoffs
-        .iter()
-        .rev()
-        .find(|cutoff| **cutoff < link.seq)
-        .map_or(1, |cutoff| cutoff + 1);
-    let segment_end = cutoffs
-        .iter()
-        .find(|cutoff| **cutoff >= link.seq)
-        .copied()
-        .unwrap_or(u64::MAX);
-    let begins = link.seq == segment_start;
-    if begins && link.prev != message::NO_OPERATION {
+    let (segment_start, _) = chain::segment(link.seq, &state.log.cutoffs(author));
+    if link.seq == segment_start && link.prev != message::NO_OPERATION {
         return Err(format!("{event}: it begins a chain and names an operation before it").into());
     }
-    if let Some(from) = state.frozen.get(&author) {
-        if link.seq >= *from {
-            return Err(format!(
-                "{event}: node {author} signed two operations at {from}, and this host takes nothing of theirs from there"
-            )
-            .into());
-        }
-    }
+    // Nothing is judged here of how the operation stands among the others of its device (a number
+    // two are signed at, a chain that does not follow itself, a stamp that goes back or repeats): that
+    // is what the set of them says, whatever order they were given in ([`Chain`]), and an operation
+    // that conflicts is held as proof and not refused.
 
-    let held = state.ops.get(&author);
-    let equivocation = |seq: u64, what: &str| Refusal::Equivocation {
-        node: author,
-        seq,
-        reason: format!("{event}: node {author} signed two different operations at {seq} ({what})"),
-    };
-    if let Some(held) = held {
-        if let Some(same) = held.get(&link.seq) {
-            if same.id != id {
-                return Err(equivocation(link.seq, "this and the one held"));
-            }
-        }
-        if !begins {
-            if let Some(before) = held.get(&(link.seq - 1)) {
-                if before.id != link.prev {
-                    return Err(equivocation(
-                        link.seq - 1,
-                        "the one held and the one this names before it",
-                    ));
-                }
-            }
-        }
-        if link.seq < segment_end {
-            if let Some(after) = held.get(&(link.seq + 1)) {
-                if after.prev != id {
-                    return Err(equivocation(
-                        link.seq,
-                        "this and the one the next names before it",
-                    ));
-                }
-            }
-        }
-    }
-
-    // A write's stamp is its author's clock when it wrote it, and along one chain it does not go
-    // back: a device cannot give a later write an earlier time than one it had already made.
-    let stamp = if event == "todo.write" {
-        Some(message::stamp_of(&value).map_err(|error| format!("{event}: {error:?}"))?)
+    // A write's stamp is its author's clock when it wrote it, and what a write is sealed under is
+    // the fields that make its stamp: both are the author's own claims, which the chain checks.
+    let (stamp, wid) = if event == "todo.write" {
+        (
+            Some(message::stamp_of(&value).map_err(|error| format!("{event}: {error:?}"))?),
+            Some(message::write_stamp(&value).map_err(|error| format!("{event}: {error:?}"))?),
+        )
     } else {
-        None
+        (None, None)
     };
-    if let (Some(stamp), Some(held)) = (stamp, held) {
-        let before = held
-            .range(segment_start..link.seq)
-            .rev()
-            .find_map(|(_, other)| other.stamp);
-        let after = if link.seq < segment_end {
-            held.range(link.seq + 1..=segment_end)
-                .find_map(|(_, other)| other.stamp)
-        } else {
-            None
-        };
-        if before.is_some_and(|earlier| stamp < earlier) || after.is_some_and(|later| stamp > later)
-        {
-            return Err(format!(
-                "{event}: its stamp goes back along node {author}'s chain at {}",
-                link.seq
-            )
-            .into());
-        }
-    }
 
     let visible = if event == "todo.write" {
-        open_write(state, &value)?
+        open_write(state, &value, link.log)?
     } else {
         value.clone()
     };
@@ -1433,54 +1498,41 @@ fn verify_operation(
         link,
         id,
         stamp,
+        wid,
         travelling: value,
         visible,
         key,
     })
 }
 
-/// Keep an operation that holds: among its device's, and under the key the host finds it by.
-fn record(state: &mut State, event: &'static str, verified: Verified, signature: [u8; 64]) {
-    let wire = Wire {
-        data: verified.travelling.to_string(),
-        link: verified.link,
-        signature,
-    };
-    state.ops.entry(verified.author).or_default().insert(
-        verified.link.seq,
-        Held {
-            id: verified.id,
-            prev: verified.link.prev,
-            stamp: verified.stamp,
-            event,
-            wire: wire.clone(),
-        },
-    );
-    let table = if event == "todo.write" {
-        &mut state.wires
-    } else {
-        &mut state.notes
-    };
-    table.entry(verified.key).or_insert(wire);
-}
-
 /// The write as the machine is told it: the content opened, when this host keeps content from
-/// the hub, and the write as it is otherwise.
-fn open_write(state: &State, wire: &Value) -> Result<Value, Refusal> {
-    if !state.keeps_content() {
-        return Ok(wire.clone());
-    }
+/// the hub, and the write as it is otherwise. Whether the list keeps content, and which epoch a
+/// write may be sealed under, is judged at the entry of the log the write names (`entry`): a device
+/// wrote it knowing the log up to there, and two hosts that were given the same entries in another
+/// order judge it the same. A write that names an entry before the list began to seal is plain, and
+/// holds whether the host took it before or after the entry that began the epoch.
+fn open_write(state: &State, wire: &Value, entry: u64) -> Result<Value, Refusal> {
+    let epoch_then = state.log.epoch_at(entry);
     let refused = |reason: String| Refusal::Refused(reason);
     let sealed = wire.get("text").and_then(Value::as_str).unwrap_or("");
+    if epoch_then == 0 {
+        if secrecy::epoch_of(sealed).is_some() {
+            return Err(refused(
+                "todo.write: it is sealed under an epoch, and the membership log it names has begun none"
+                    .to_string(),
+            ));
+        }
+        return Ok(wire.clone());
+    }
     let Some(epoch) = secrecy::epoch_of(sealed) else {
         return Err(refused(
             "todo.write: its content is not sealed, and the list keeps content from the hub"
                 .to_string(),
         ));
     };
-    if epoch == 0 || epoch > state.log.epoch() {
+    if epoch == 0 || epoch > epoch_then {
         return Err(refused(format!(
-            "todo.write: it is sealed under epoch {epoch}, which the membership log has not begun"
+            "todo.write: it is sealed under epoch {epoch}, which the membership log it names has not begun"
         )));
     }
     // A hub that holds no key carries it as it is; a host that opens refuses what the list has had
@@ -1572,6 +1624,7 @@ fn make_operation(
     event: &str,
     travelling: Value,
     author: u64,
+    key: Vec<u8>,
 ) -> Result<Wire, String> {
     let (node, identity) = state
         .own
@@ -1582,13 +1635,13 @@ fn make_operation(
             "{event}: this host's person is node {node}, and it signs none in node {author}'s name"
         ));
     }
-    // A device that was shown to have signed two things at one number signs nothing more: its chain
-    // forked, every other host refuses what follows, and a third version at the same number would
-    // only be a third way to be refused. An administrator takes the device off, and a new device is
-    // granted.
-    if let Some(from) = state.frozen.get(&author) {
+    // A device that was shown to have signed conflicting operations signs nothing more: its chain
+    // forked (or it used a nonce twice), every other host holds what follows as proof and tells its
+    // machine none of it, and one more operation would only be one more of them. An administrator
+    // takes the device off, and a new device is granted.
+    if let Some(from) = state.ops.get(&author).and_then(Chain::frozen) {
         return Err(format!(
-            "{event}: this device's chain forked at {from}, and it signs nothing more until an administrator has taken it off"
+            "{event}: this device's chain conflicts at {from}, and it signs nothing more until an administrator has taken it off"
         ));
     }
     let (log, log_hash) = state
@@ -1596,14 +1649,13 @@ fn make_operation(
         .tip()
         .ok_or_else(|| format!("{event}: the membership log has not begun"))?;
     // The next number is past what this device has made and past every chain an earlier grant
-    // ended; when it is past the end of one it begins a new chain and names nothing before it.
-    let floor = state.log.cutoffs(author).last().copied().unwrap_or(0);
-    let (seq, prev) = match state
-        .ops
-        .get(&author)
-        .and_then(|ops| ops.iter().next_back())
-    {
-        Some((last, held)) if *last >= floor => (last + 1, held.id),
+    // ended; when it is past the end of one it begins a new chain and names nothing before it. An
+    // operation numbered at the end an earlier grant set belongs to the chain that grant ended, and
+    // the new key's first one is the number after it.
+    let cutoffs = state.log.cutoffs(author);
+    let floor = cutoffs.last().copied().unwrap_or(0);
+    let (seq, prev) = match state.ops.get(&author).and_then(Chain::last) {
+        Some(last) if last.seq() > floor => (last.seq() + 1, last.id),
         _ => (floor + 1, message::NO_OPERATION),
     };
     let link = Link {
@@ -1617,10 +1669,13 @@ fn make_operation(
         .ok_or_else(|| format!("{event}: the data is not what it names"))?;
     let bytes = message::operation_bytes(&signing.message, &link);
     let signature = identity.sign(&bytes);
-    let stamp = if event == "todo.write" {
-        Some(message::stamp_of(&travelling).map_err(|error| format!("{event}: {error:?}"))?)
+    let (stamp, wid) = if event == "todo.write" {
+        (
+            Some(message::stamp_of(&travelling).map_err(|error| format!("{event}: {error:?}"))?),
+            Some(message::write_stamp(&travelling).map_err(|error| format!("{event}: {error:?}"))?),
+        )
     } else {
-        None
+        (None, None)
     };
     let wire = Wire {
         data: travelling.to_string(),
@@ -1628,16 +1683,36 @@ fn make_operation(
         signature,
     };
     let event = signed_name(event).ok_or_else(|| format!("{event}: it is not a signed event"))?;
-    state.ops.entry(author).or_default().insert(
-        seq,
-        Held {
-            id: message::operation_id(&bytes),
-            prev,
-            stamp,
-            event,
-            wire: wire.clone(),
-        },
-    );
+    let held = Held {
+        id: message::operation_id(&bytes),
+        prev,
+        stamp,
+        wid,
+        key,
+        event,
+        wire: wire.clone(),
+    };
+    // What this device signs it signs once and in order: a write whose stamp goes back along its
+    // chain, or that another write of it has, is not signed. The second would be sealed under the
+    // nonce of the first, and what a relay knows of the one gives it the other.
+    let conflict = state
+        .ops
+        .get(&author)
+        .and_then(|chain| chain.probe(&held, &cutoffs));
+    if let Some((at, why)) = conflict {
+        return Err(match why {
+            Why::Repeats => format!(
+                "{event}: its stamp names a write this device signed already (at {at}), and a stamp is sealed under once"
+            ),
+            Why::GoesBack => format!(
+                "{event}: its stamp goes back along this device's chain (a write at {at} has a later time)"
+            ),
+            Why::Forked => format!(
+                "{event}: it would not follow the chain this device has signed (conflict at {at})"
+            ),
+        });
+    }
+    hold(state, author, held);
     Ok(wire)
 }
 
@@ -1669,9 +1744,8 @@ fn seal_note(state: &mut State, data: &str) -> Result<Option<String>, String> {
             signing.author
         ));
     }
-    let wire = make_operation(state, event, value, signing.author)?;
+    let wire = make_operation(state, event, value, signing.author, signing.subject)?;
     let sent = wire.to_json().ok_or_else(malformed)?;
-    state.notes.insert(signing.subject, wire);
     Ok(Some(sent))
 }
 
@@ -1746,8 +1820,6 @@ fn seal_write(state: &mut State, data: &str) -> Result<String, String> {
             )),
         );
     }
-    let operation = make_operation(state, event, wire, signing.author)?;
-    let sent = operation.to_json().ok_or_else(malformed)?;
-    state.wires.insert(held, operation);
-    Ok(sent)
+    let operation = make_operation(state, event, wire, signing.author, held)?;
+    operation.to_json().ok_or_else(malformed)
 }

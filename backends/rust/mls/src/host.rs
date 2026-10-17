@@ -48,12 +48,20 @@ pub struct Issued {
     pub welcome: Option<Vec<u8>>,
 }
 
+/// The most commits a host keeps waiting for an epoch the log has not yet named a commit for. A relay
+/// that is not trusted can give as many as it likes; the true one is kept whatever the number
+/// ([`Member::absorb`]), so that a relay cannot fill the host with false ones before it.
+const MAX_CANDIDATES: usize = 64;
+
 /// A device and its log.
 pub struct Member {
     device: Device,
     trust: Trust,
     node: u64,
-    commits: BTreeMap<u32, Vec<u8>>,
+    /// The commits a relay gave for each epoch, by their hash. A relay can give any number of them
+    /// and none of them is believed for being first: the one the log names is the one used, and
+    /// until the log names one they wait (a bounded number, [`MAX_CANDIDATES`]).
+    commits: BTreeMap<u32, BTreeMap<[u8; 32], Vec<u8>>>,
     welcomes: BTreeMap<u32, Vec<Vec<u8>>>,
     packages: BTreeMap<u64, Vec<Vec<u8>>>,
     /// The Welcomes and commits that were refused, by their hash, so that they are not tried again.
@@ -105,7 +113,7 @@ impl Member {
                 }
                 Record::Commit { epoch, data } => {
                     if let Some(bytes) = encoding::decode(data) {
-                        self.commits.entry(*epoch).or_insert(bytes);
+                        self.keep_commit(*epoch, bytes);
                     }
                 }
                 Record::Welcome { epoch, node, data } if *node == self.node => {
@@ -119,6 +127,31 @@ impl Member {
                 _ => {}
             }
         }
+    }
+
+    /// Keep a commit a relay gave for `epoch`, unless the log names another for it, or the host
+    /// already waits on as many as it will for an epoch the log has not named a commit for. What the
+    /// log names is kept whatever else was kept before it, and the rest of the epoch's are dropped.
+    fn keep_commit(&mut self, epoch: u32, bytes: Vec<u8>) {
+        let hash: [u8; 32] = Sha256::digest(&bytes).into();
+        let held = self.commits.entry(epoch).or_default();
+        match self.trust.commit_of(epoch) {
+            Some(named) if named != hash => {}
+            Some(_) => {
+                held.retain(|kept, _| *kept == hash);
+                held.insert(hash, bytes);
+            }
+            None if held.len() < MAX_CANDIDATES => {
+                held.insert(hash, bytes);
+            }
+            None => {}
+        }
+    }
+
+    /// The commit of `epoch` the log names, when this host has been given it.
+    fn named_commit(&self, epoch: u32) -> Option<Vec<u8>> {
+        let named = self.trust.commit_of(epoch)?;
+        self.commits.get(&epoch)?.get(&named).cloned()
     }
 
     /// Do what the log lets this device do with what it holds, in order, and say what was done.
@@ -141,7 +174,7 @@ impl Member {
     fn try_join(&mut self, steps: &mut Vec<Step>) -> bool {
         let epochs: Vec<u32> = self.welcomes.keys().copied().collect();
         for epoch in epochs {
-            let Some(commit) = self.commits.get(&epoch).cloned() else {
+            let Some(commit) = self.named_commit(epoch) else {
                 continue;
             };
             for welcome in self.welcomes.get(&epoch).cloned().unwrap_or_default() {
@@ -177,7 +210,7 @@ impl Member {
         let Ok(next) = u32::try_from(next) else {
             return false;
         };
-        let Some(commit) = self.commits.get(&next).cloned() else {
+        let Some(commit) = self.named_commit(next) else {
             return false;
         };
         let id: [u8; 32] = Sha256::digest(&commit).into();

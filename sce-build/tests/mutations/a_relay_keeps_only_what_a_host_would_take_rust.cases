@@ -13,8 +13,28 @@
 # anchor quoted, never as a pass.
 
 mutation_tests -p sce-rust-relay --lib --test a_relay_keeps_what_members_signed_and_reads_none_of_it
-mutation_targets backends/rust/relay/src/relay.rs backends/rust/relay/src/token.rs backends/rust/relay/src/limits.rs backends/rust/relay/src/store.rs backends/rust/relay/src/protocol.rs
+mutation_targets backends/rust/relay/src/relay.rs backends/rust/relay/src/token.rs backends/rust/relay/src/limits.rs backends/rust/relay/src/store.rs backends/rust/relay/src/protocol.rs backends/rust/relay/src/client.rs
 mutation_oracles backends/rust/relay/tests/a_relay_keeps_what_members_signed_and_reads_none_of_it.rs
+
+# ── What a courier gives a relay that shows a device's conflict, and tells a machine ──────────
+
+mutation_case "A courier does not give the relay the proof of a device's conflict" <<'PY'
+edit("backends/rust/relay/src/client.rs",
+     "            if self.evidence_sent.contains(&data) {",
+     "            if true {")
+PY
+
+mutation_case "A courier tells the machine an operation that is held only as proof" <<'PY'
+edit("backends/rust/relay/src/client.rs",
+     "                    if (taken.new || redeliver) && taken.applied {",
+     "                    if taken.new || redeliver {")
+PY
+
+mutation_case "A courier does not say that the machine is to forget what the host stopped holding" <<'PY'
+edit("backends/rust/relay/src/client.rs",
+     "        round.evicted = self.trust.take_evicted();",
+     "        round.evicted = Vec::new();")
+PY
 
 # ── A token: the tag, the time, the audience, the list ────────────────────────────────────────
 
