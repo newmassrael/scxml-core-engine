@@ -45,6 +45,9 @@ tokio = { version = "1", default-features = false, features = ["net", "rt", "syn
 # the one convention every such test follows (`SCE_REQUIRE_TOOLS`).
 [dev-dependencies]
 sce-build = { path = "../../../sce-build" }
+# The host of a copy that does not trust the host beside it: what it admits and what it signs
+# (a_shared_calendar_holds_against_a_host_that_forges).
+sce-rust-trust = { path = "../trust" }
 
 # The machines under `machines/` are generated at build time, in-process, into
 # OUT_DIR (see build.rs); no generated code is committed for this crate.

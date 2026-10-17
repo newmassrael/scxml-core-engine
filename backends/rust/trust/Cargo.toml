@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+
+[package]
+name = "sce-rust-trust"
+version.workspace = true
+edition.workspace = true
+rust-version = "1.77"
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "What a host of a shared list keeps that its machines cannot: who may write it, by signatures it checks on what arrives and writes on what leaves"
+publish = false
+
+# A machine of the statically typed data model reads the payload of an event and no other
+# member of `_event`, so it cannot tell who sent an event or check a signature; and a copy of
+# a shared list that is run by someone other than the people who use it must not be able to
+# put a write in a member's name. The host of each copy is where that is kept: this crate is
+# the rule a host puts in front of its machine (`sce_rust_mesh::endpoint::Admission`) and
+# behind it (`Sealer`), with the signing of a write, the certificate by which an administrator
+# makes a person a member, and the table of what each member's key may do.
+#
+# The documents do not change: the signature is written into an event as it leaves a host and
+# taken out of it as it arrives at the next, so no machine holds one.
+
+[dependencies]
+sce-rust-mesh = { path = "../mesh" }
+ed25519-dalek = { version = "2", default-features = false, features = ["std", "fast"] }
+serde_json = "1"

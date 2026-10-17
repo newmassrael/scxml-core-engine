@@ -1,0 +1,265 @@
+// SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+// SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+//
+// A shared list whose hub is run by someone its members do not trust. Every copy's host holds
+// the administrator's certificates (sce-rust-trust): a write leaves its author's host with the
+// author's signature, and arrives at the next host only when its author is a member who may
+// write and the signature is true. The machines are the ones of every other test and know
+// nothing of it; the hosts put the rule in front of them and behind them.
+//
+// What is asked here is that members who are told nothing of signatures go on agreeing on one
+// list through a hub that signs nothing of its own; that a write the hub made up in a member's
+// name reaches no copy, though the hub holds it; that a write by a member the certificates
+// make a reader reaches no copy, though that member's own copy holds it; that a member taken
+// off by a later certificate is refused from then on; and that the word that an instant is
+// settled, which carries no signature and makes a copy forget, is not taken from the hub
+// unless a host was told to.
+
+mod common;
+
+use common::*;
+use sce_rust_trust::{Certificate, Identity, Trust};
+use sce_rust_world::{Outcome, World};
+
+const CALENDAR: &str = "home";
+const ALICE: u64 = 1;
+const BOB: u64 = 2;
+
+fn quiet(world: &mut World) {
+    assert_eq!(world.run_until_quiet(600_000), Outcome::Quiet);
+}
+
+fn administrator() -> Identity {
+    Identity::from_seed([9; 32])
+}
+
+fn key_of(node: u64) -> Identity {
+    Identity::from_seed([node as u8; 32])
+}
+
+fn certificate(node: u64, role: u8, serial: u64) -> Certificate {
+    Certificate::issue(
+        &administrator(),
+        CALENDAR,
+        node,
+        role,
+        key_of(node).public(),
+        serial,
+    )
+}
+
+/// The hosts of alice, bob and the hub, in that order. Each holds the certificates of alice
+/// (a writer) and bob (with `bob_role`), and is installed in front of and behind its machine;
+/// the machines of `told` are given the roster the certificates make.
+struct Hosts {
+    alice: Trust,
+    bob: Trust,
+    hub: Trust,
+}
+
+impl Hosts {
+    fn of(&self, who: &str) -> &Trust {
+        match who {
+            "alice" => &self.alice,
+            "bob" => &self.bob,
+            _ => &self.hub,
+        }
+    }
+
+    /// An administrator's certificate reaches every host.
+    fn certify(&self, certificate: &Certificate) {
+        for host in [&self.alice, &self.bob, &self.hub] {
+            host.accept(certificate).unwrap();
+        }
+    }
+
+    /// The host tells the machine of `who` the roster the certificates make.
+    fn tell(&self, world: &mut World, who: &str) {
+        for (event, data) in self.of(who).role_events() {
+            world.raise(who, &event, &data);
+        }
+    }
+}
+
+fn untrusting_world(seed: u64, bob_role: u8, told: &[&str]) -> (World, Hosts) {
+    let mut world = todo_world(seed, 20);
+    let hosts = Hosts {
+        alice: Trust::new(CALENDAR, &[administrator().public()]),
+        bob: Trust::new(CALENDAR, &[administrator().public()]),
+        hub: Trust::new(CALENDAR, &[administrator().public()]),
+    };
+    hosts.alice.set_identity(ALICE, key_of(ALICE));
+    hosts.bob.set_identity(BOB, key_of(BOB));
+    hosts.certify(&certificate(ALICE, 2, 1));
+    hosts.certify(&certificate(BOB, bob_role, 1));
+    for who in ["alice", "bob", "server"] {
+        world.set_admission(who, Box::new(hosts.of(who).clone()));
+        world.set_sealer(who, Box::new(hosts.of(who).clone()));
+    }
+    for who in told {
+        hosts.tell(&mut world, who);
+    }
+    quiet(&mut world);
+    (world, hosts)
+}
+
+fn refused(world: &mut World, what: &str) -> usize {
+    world
+        .host_errors()
+        .iter()
+        .filter(|error| error.contains(what))
+        .count()
+}
+
+/// What the copies of alice and bob hold, and that they hold one list and one digest.
+fn agree(world: &mut World) -> usize {
+    let list = agreed_todos(world);
+    let digest = todo_variables_of(world, "server")["digest"].clone();
+    for who in ["alice", "bob"] {
+        assert_eq!(todo_variables_of(world, who)["digest"], digest, "{who}");
+    }
+    list.len()
+}
+
+/// A write of a number to a field, in a member's name, as a hub that made it up would write it.
+fn forged_write(node: u64, id: u64, value: i64) -> String {
+    format!(
+        r#"{{"id":{id},"field":{DUE},"value":"{value}","text":"","wallTime":"5000","counter":0,"nodeId":"{node}"}}"#
+    )
+}
+
+/// Members who were told nothing of signatures agree on one list through a hub that signs
+/// nothing of its own, and the hub's machine, which is the only copy told what arrives,
+/// holds what it would hold with no host at all.
+#[test]
+fn members_agree_through_a_hub_that_signs_nothing() {
+    let (mut world, _hosts) = untrusting_world(1, 2, &["alice", "bob", "server"]);
+    todo_set(&mut world, "alice", 1, DUE, 10);
+    todo_set(&mut world, "bob", 2, DUE, 20);
+    todo_title(&mut world, "alice", 3, "write it down");
+    quiet(&mut world);
+    assert_eq!(agree(&mut world), 3);
+    assert!(world.host_errors().is_empty(), "nothing honest was refused");
+    assert!(todos_of(&mut world, "server").contains_key(&(2, DUE)));
+}
+
+/// A write the hub made up in a member's name is believed by the hub's own machine and by no
+/// copy: it leaves the hub with no signature, and a host that checks refuses it.
+#[test]
+fn a_write_the_hub_made_up_in_a_members_name_reaches_no_copy() {
+    let (mut world, _hosts) = untrusting_world(2, 2, &["alice", "bob", "server"]);
+    todo_set(&mut world, "alice", 1, DUE, 10);
+    quiet(&mut world);
+    world.host_errors();
+
+    world.raise("server", "todo.write", &forged_write(ALICE, 7, 99));
+    quiet(&mut world);
+
+    assert!(
+        todos_of(&mut world, "server").contains_key(&(7, DUE)),
+        "the hub's own machine believed it"
+    );
+    for who in ["alice", "bob"] {
+        let held = todos_of(&mut world, who);
+        assert!(
+            !held.contains_key(&(7, DUE)),
+            "{who} holds the made-up write"
+        );
+        assert!(held.contains_key(&(1, DUE)), "{who} lost a real one");
+    }
+    let errors = world.host_errors();
+    assert!(
+        errors
+            .iter()
+            .any(|error| error.contains("carries no signature")),
+        "the hosts that checked refused it: {errors:?}"
+    );
+}
+
+/// A member the certificates make a reader signs a write with the key their certificate
+/// gave, and the hub's host refuses it: the member's own copy, which was not told the roster,
+/// holds it, and no other does.
+#[test]
+fn a_write_by_a_reader_reaches_no_copy_but_the_readers_own() {
+    let (mut world, _hosts) = untrusting_world(3, 1, &["alice", "server"]);
+    todo_set(&mut world, "alice", 1, DUE, 10);
+    todo_set(&mut world, "bob", 2, DUE, 20);
+    quiet(&mut world);
+
+    assert!(todos_of(&mut world, "bob").contains_key(&(2, DUE)));
+    assert!(!todos_of(&mut world, "server").contains_key(&(2, DUE)));
+    assert!(!todos_of(&mut world, "alice").contains_key(&(2, DUE)));
+    assert!(todos_of(&mut world, "server").contains_key(&(1, DUE)));
+    assert!(refused(&mut world, "may not write") >= 1);
+}
+
+/// A later certificate takes a member off: what the member signs after it is refused by every
+/// host that holds it, and what was admitted before stays.
+#[test]
+fn a_member_taken_off_by_a_later_certificate_is_refused_from_then_on() {
+    let (mut world, hosts) = untrusting_world(4, 2, &["alice", "bob", "server"]);
+    todo_set(&mut world, "bob", 1, DUE, 1);
+    quiet(&mut world);
+    assert_eq!(agree(&mut world), 1);
+
+    hosts.certify(&certificate(BOB, 0, 2));
+    todo_set(&mut world, "bob", 2, DUE, 2);
+    quiet(&mut world);
+
+    let hub = todos_of(&mut world, "server");
+    assert!(hub.contains_key(&(1, DUE)), "what was admitted stays");
+    assert!(!hub.contains_key(&(2, DUE)), "bob was taken off");
+    assert!(!todos_of(&mut world, "alice").contains_key(&(2, DUE)));
+    assert!(
+        refused(&mut world, "may not write") >= 1,
+        "bob's certificate now says role 0"
+    );
+}
+
+/// The word that an instant is settled makes a copy forget, and carries no signature: a host
+/// that trusts nobody does not take it from the hub, so that the hub cannot have a copy forget
+/// a tombstone and take in again, with an old signed write, what was deleted. A host told to
+/// take it from the hub it trusts does.
+#[test]
+fn the_hub_cannot_settle_an_instant_for_a_host_that_trusts_nobody() {
+    let (mut world, hosts) = untrusting_world(5, 2, &["alice", "bob", "server"]);
+    todo_set(&mut world, "alice", 1, DUE, 10);
+    todo_set(&mut world, "bob", 2, DUE, 20);
+    quiet(&mut world);
+    world.advance_ms(60_000);
+    world.host_errors();
+
+    let settle = |world: &mut World, before: i64| {
+        world.raise(
+            "server",
+            "todo.settle",
+            &format!(r#"{{"before":"{before}","members":2}}"#),
+        );
+        quiet(world);
+    };
+    settle(&mut world, 30_000);
+    assert!(
+        refused(&mut world, "todo.floor") >= 2,
+        "both persons' hosts refused it"
+    );
+    for who in ["alice", "bob"] {
+        assert_eq!(
+            whole(&todo_variables_of(&mut world, who)["floor"]),
+            0,
+            "{who}"
+        );
+    }
+
+    // The hub settled it for itself; a later instant is a round of its own.
+    hosts.alice.allow_unsigned(&["todo.floor"]);
+    hosts.bob.allow_unsigned(&["todo.floor"]);
+    settle(&mut world, 40_000);
+    for who in ["alice", "bob"] {
+        assert_eq!(
+            whole(&todo_variables_of(&mut world, who)["floor"]),
+            40_000,
+            "{who}"
+        );
+    }
+    assert_eq!(agree(&mut world), 2);
+}

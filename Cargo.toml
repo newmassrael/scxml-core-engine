@@ -23,6 +23,7 @@ members = [
     "backends/rust/scenarios",
     "backends/rust/host-features",
     "backends/rust/world",
+    "backends/rust/trust",
     "sce-revision",
     "sce-specs",
 ]
