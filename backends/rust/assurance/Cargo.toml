@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+
+[package]
+name = "sce-rust-assurance"
+version.workspace = true
+edition.workspace = true
+rust-version = "1.91"
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "What is done to the shared list's code to find what its authors did not think of: seeded mutation of every parser's input, checked for no panic and a stable round trip"
+publish = false
+
+# ADR 0034, stage 8. No code that ships is here: a seeded mutator (bytes, and JSON by structure) and
+# the tests that feed what it makes to every parser of the trust, relay, MLS and C ABI crates. A
+# parser may refuse; it may not panic, and what it accepts it must write back as it read it.
+
+[dependencies]
+serde_json = "1"
+
+[dev-dependencies]
+sce-rust-trust = { path = "../trust" }
+sce-rust-relay = { path = "../relay" }
+sce-rust-mls = { path = "../mls" }
+sce-mls-capi = { path = "../mls-capi" }
+sce-rust-mesh = { path = "../mesh" }

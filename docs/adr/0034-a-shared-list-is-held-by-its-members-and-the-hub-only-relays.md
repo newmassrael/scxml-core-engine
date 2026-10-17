@@ -280,6 +280,9 @@ by a time (`from`), which is not what section 4 says; it was corrected with stag
 number of an operation that section 4 needs exists. Stages 3, 4 and 5 have landed with the
 refinements below, and stage 6 (the group key, `docs/SCE_SHARED_LIST_MLS.md`) in Rust, with a C ABI
 that C, Python and Go replay, and stage 7 (devices, recovery, history, backup, audit, destruction).
+Stage 8 has landed except what only a stranger can do: the model, the simulation, the fuzz and the
+mutation round are in, and the independent cryptographic review is **not done** (what a reviewer is
+given is `docs/SCE_SHARED_LIST_REVIEW_BRIEF.md`). Until it is, this is not called production.
 This ADR is Accepted with stage 3, since the log and the chains are what make the rest binding.
 
 ## Revisions made in building it
@@ -408,3 +411,31 @@ This ADR is Accepted with stage 3, since the log and the chains are what make th
 - **The audit checks with the code a host uses.** `audit::verify` builds a `Trust` from the genesis
   hash and the exported log, operations and checkpoints and reports what holds and what does not, so
   there is one judgement of a list; content stays sealed, and a changed record fails where it changed.
+- **The model and the simulation found two defects in the rule, and they were fixed** (stage 8).
+  Section 3 said an operation is admitted when it holds, and section 4 that every host refuses one past
+  a `final_head`; neither said what a host does with an operation it admitted *before* it knew. A host
+  kept it, so two hosts given the same objects held different lists for good, and the machine that was
+  told it could not take it back. The same held for a host that had taken in one of two operations a
+  device signed at one number, and for the device's own host, which went on signing. The rule is now that
+  an entry that puts held operations past a cutoff, and a conflict at one number, drop what the host
+  holds of the device from there (`Trust::take_evicted` tells the host to rebuild its machine), and a
+  device whose chain forked signs nothing more. A TLA+ model of the rule (`docs/formal`, checked whole
+  by TLC) holds for it and fails for the rule without the dropping; a seeded simulation of devices, a
+  network and an administrator, over 400 seeds and every order of delivery, checks the same of the code.
+- **A mutation round over the verification code**: 33 cases, each taking one check away
+  (`sce-build/tests/mutations/a_host_holds_only_what_its_log_admits_rust.cases`). Nine survived the tests
+  that existed, which was nine checks nothing held in place (the start of a chain, the numbers an
+  earlier key's chain used, a chain that does not follow itself, a settlement of checkpoints under
+  different entries or naming different operations, an amendment shown by the device taken off or by a
+  checkpoint made after the removal); tests that forge what an honest host cannot make were added, and
+  every case is now caught. One of the nine was only visible because the dropping rule above stops an
+  honest host from making a checkpoint that exceeds what it holds: the check is for the device that
+  means to.
+- **Parsers are fuzzed by a seeded mutator, not by coverage.** Every parser of the trust, relay,
+  group-key and C ABI code is given its corpus and what a mutator makes of it (bytes, and JSON by
+  structure); none panicked, over the default run and a run forty times longer, and the harness is shown
+  to find planted defects of each kind. It does not follow coverage, which `cargo fuzz` would, and the
+  brief says so.
+- **The independent review is the one thing not done.** `docs/SCE_SHARED_LIST_REVIEW_BRIEF.md` is what
+  a reviewer is given (claims, parties, primitives, code to read, evidence, known weaknesses, what to
+  try). The authors cannot be that reviewer, and the stage is not complete until one has been.

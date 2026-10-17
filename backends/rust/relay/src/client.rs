@@ -102,6 +102,10 @@ pub struct Round {
     /// The key packages, commits and Welcomes of the list's MLS group that were read, in the order
     /// the relay holds them: for the host's MLS device to take in.
     pub messages: Vec<Record>,
+    /// Operations (device, number) the host held and an entry of the log then put past the last
+    /// accepted of their device: the machine was told them and cannot take them back, so the host
+    /// builds it again and calls [`Courier::resync`]. Empty when nothing was.
+    pub evicted: Vec<(u64, u64)>,
     /// The round stopped before the end of what the relay holds: a record names an entry of the
     /// log the host does not have, or the device may not read yet. A later round goes on from there.
     pub stalled: bool,
@@ -221,6 +225,7 @@ impl<L: Link> Courier<L> {
                 self.pull(false, &mut round)?;
             }
         }
+        round.evicted = self.trust.take_evicted();
         let len = self.trust.log_len();
         if len != self.roster_len || redeliver {
             self.roster_len = len;

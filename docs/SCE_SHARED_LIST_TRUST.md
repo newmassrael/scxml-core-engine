@@ -86,6 +86,19 @@ by a time it alone can claim, and cannot go back to an entry before its removal 
   (`Trust::last_seq`).
 - A host that relays entries cannot make one: it does not hold an administrator's key.
 
+**What a host held before it knew is dropped.** An entry that takes a device off at a number reaches
+hosts in any order relative to the device's operations, so a host that admitted operation 5 of a device
+before it was given the entry that ends the chain at 3 would otherwise hold what a host that had the
+entry first refuses, and two hosts given the same objects would hold different lists for good. When
+such an entry arrives (a grant, a linked grant or an amendment) the host drops every operation it holds
+of that device past the number the log now accepts (`Trust::take_evicted` says which), and the same
+holds when a device is found to have signed two operations at one number: nothing of it from that number
+is held, and the device signs nothing more on its own host. A machine that was told those operations
+holds their effects and cannot take them back, so the host builds the machine again from what it holds
+and tells it the list (`Courier::resync`; `Round::evicted` says that it must). This was found by checking
+the rule against a model (`docs/formal`) and a simulation of every order of delivery; both fail
+without it.
+
 **An amendment** (`Body::Amend`) takes back part of that cost when the loss was not real: other
 writers' checkpoints, made under an entry before the removal, may show that the device's chain was
 whole to a later number than the administrator's host had seen. The entry raises the last accepted

@@ -224,6 +224,7 @@ scan_exclusions = [
     # Recommendation and carries no `§` citation.
     "backends/rust/mls/",
     "backends/rust/mls-capi/",
+    "backends/rust/assurance/",
     "sce-build/examples/",
     "sce-build/tests/",
     "tests/",

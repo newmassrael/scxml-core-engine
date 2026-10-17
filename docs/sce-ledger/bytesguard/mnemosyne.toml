@@ -154,6 +154,7 @@ scan_exclusions = [
     # The group key agreement of a shared list (`sce-rust-mls`): no citation of any ledger.
     "backends/rust/mls/",
     "backends/rust/mls-capi/",
+    "backends/rust/assurance/",
     "sce-build/examples/",
     "tests/forge/expected/",
     # The works folder (`sce-specs/`), which the workbench (a repository of its own) links

@@ -187,6 +187,10 @@ struct State {
     /// The devices that signed two different operations at one number, and the number from which
     /// this host takes nothing of theirs until an administrator removes them.
     frozen: BTreeMap<u64, u64>,
+    /// Operations this host held that an entry of the log then put past the last accepted of their
+    /// device, and so no longer holds: for the host to rebuild its machine without them
+    /// ([`Trust::take_evicted`]).
+    evicted: Vec<(u64, u64)>,
     /// The keys of the epochs this host holds. A host that holds any keeps the content of every
     /// write from the hub, and takes no write that is not sealed.
     epoch_keys: BTreeMap<u32, secrecy::EpochKey>,
@@ -258,6 +262,7 @@ impl Trust {
                 notes: BTreeMap::new(),
                 ops: BTreeMap::new(),
                 frozen: BTreeMap::new(),
+                evicted: Vec::new(),
                 epoch_keys: BTreeMap::new(),
                 unsigned_refused: UNSIGNED_REFUSED.iter().map(|e| e.to_string()).collect(),
             })),
@@ -286,7 +291,23 @@ impl Trust {
                 key.zeroize();
             }
         }
+        // An entry that takes a device off at a number: what this host admitted of it before it knew,
+        // past that number, goes, so that every host holds the same of the device whatever order the
+        // entry and the operations came in.
+        if let (Ok(true), Body::Grant { .. } | Body::LinkedGrant { .. } | Body::Amend { .. }) =
+            (&appended, &entry.body)
+        {
+            evict_past_the_cutoff(&mut state);
+        }
         appended
+    }
+
+    /// The operations (device and number) this host held and no longer does, because an entry of the
+    /// log put them past the last accepted of their device, since the last call. A machine that was
+    /// told them holds their effects, and cannot take them back: the host builds it again from what
+    /// the host holds ([`Self::all_operations`]) and tells it the list again.
+    pub fn take_evicted(&self) -> Vec<(u64, u64)> {
+        std::mem::take(&mut self.state().evicted)
     }
 
     /// The keys of the epochs this host holds, for a copy of its device's secrets
@@ -858,6 +879,61 @@ impl Trust {
     }
 }
 
+/// Drop every operation held that the log now puts past the last accepted of its device, judged as
+/// an operation is when it arrives (by the entry it names), and remember which.
+fn evict_past_the_cutoff(state: &mut State) {
+    let mut gone: Vec<(u64, u64, [u8; 64])> = Vec::new();
+    for (node, ops) in &state.ops {
+        for (seq, held) in ops {
+            let Some(era) = state.log.era_for(*node, held.wire.link.log) else {
+                continue;
+            };
+            if state
+                .log
+                .cutoff_after(*node, era)
+                .is_some_and(|cutoff| *seq > cutoff)
+            {
+                gone.push((*node, *seq, held.wire.signature));
+            }
+        }
+    }
+    remove_held(state, gone);
+}
+
+/// Drop every operation held of `node` numbered `from` or more.
+fn evict_from(state: &mut State, node: u64, from: u64) {
+    let gone: Vec<(u64, u64, [u8; 64])> = state
+        .ops
+        .get(&node)
+        .map(|ops| {
+            ops.range(from..)
+                .map(|(seq, held)| (node, *seq, held.wire.signature))
+                .collect()
+        })
+        .unwrap_or_default();
+    remove_held(state, gone);
+}
+
+/// Forget operations (device, number, signature), and what the host keeps them by.
+fn remove_held(state: &mut State, gone: Vec<(u64, u64, [u8; 64])>) {
+    if gone.is_empty() {
+        return;
+    }
+    for (node, seq, _) in &gone {
+        if let Some(ops) = state.ops.get_mut(node) {
+            ops.remove(seq);
+        }
+        state.evicted.push((*node, *seq));
+    }
+    let signatures: Vec<[u8; 64]> = gone.iter().map(|(_, _, signature)| *signature).collect();
+    state
+        .wires
+        .retain(|_, wire| !signatures.contains(&wire.signature));
+    state
+        .notes
+        .retain(|_, wire| !signatures.contains(&wire.signature));
+}
+
 /// The highest number `n` such that `node`'s operations 1 to `n` are all held.
 fn contiguous(state: &State, node: u64) -> u64 {
     let Some(ops) = state.ops.get(&node) else {
@@ -1139,6 +1215,9 @@ fn take(state: &mut State, event: &'static str, data: &str) -> Result<Taken, Tak
         Err(Refusal::Equivocation { node, seq, reason }) => {
             let from = state.frozen.get(&node).map_or(seq, |held| (*held).min(seq));
             state.frozen.insert(node, from);
+            // Nothing of the device from that number on is held, the one that was held included: a
+            // host that saw one of the two first and a host that saw the other first hold the same.
+            evict_from(state, node, from);
             Err(TakeError::Refused(reason))
         }
     }
@@ -1501,6 +1580,15 @@ fn make_operation(
     if *node != author {
         return Err(format!(
             "{event}: this host's person is node {node}, and it signs none in node {author}'s name"
+        ));
+    }
+    // A device that was shown to have signed two things at one number signs nothing more: its chain
+    // forked, every other host refuses what follows, and a third version at the same number would
+    // only be a third way to be refused. An administrator takes the device off, and a new device is
+    // granted.
+    if let Some(from) = state.frozen.get(&author) {
+        return Err(format!(
+            "{event}: this device's chain forked at {from}, and it signs nothing more until an administrator has taken it off"
         ));
     }
     let (log, log_hash) = state

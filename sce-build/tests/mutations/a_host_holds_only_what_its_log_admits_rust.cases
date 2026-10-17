@@ -1,0 +1,226 @@
+# Mutation cases for what a host of a shared list checks before it takes anything in (ADR 0034):
+# an operation (the entry it names, its author's role under it, the last number the log accepted of
+# its device, the signature, its place in the device's chain, a fork of the chain, a stamp that goes
+# back), a checkpoint and the settlement the checkpoints make (the list, the entry, the writers and
+# no other, the instant and digest, the heads), and the entries of the log that decide those (a
+# linked device, an amendment, the destruction of an epoch's keys).
+#
+# Each case takes one of those checks away or weakens it, and the tests under study must turn red.
+# A check no test notices is a check nothing holds in place.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/a_host_holds_only_what_its_log_admits_rust.cases`.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported INCONCLUSIVE with the
+# anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-trust --lib --test a_host_admits_what_its_members_signed --test a_host_keeps_the_content_from_the_hub --test a_host_settles_on_the_checkpoints_of_its_members --test a_person_has_devices_and_the_log_keeps_track_of_them --test a_list_holds_its_safety_properties_under_every_order_of_delivery --test a_host_refuses_a_chain_a_settlement_or_an_amendment_that_does_not_hold_together
+mutation_targets backends/rust/trust/src/trust.rs backends/rust/trust/src/membership.rs
+mutation_oracles backends/rust/trust/tests/a_host_admits_what_its_members_signed.rs backends/rust/trust/tests/a_host_settles_on_the_checkpoints_of_its_members.rs backends/rust/trust/tests/a_person_has_devices_and_the_log_keeps_track_of_them.rs backends/rust/trust/tests/a_list_holds_its_safety_properties_under_every_order_of_delivery.rs backends/rust/trust/tests/a_host_refuses_a_chain_a_settlement_or_an_amendment_that_does_not_hold_together.rs
+
+# ── An operation: the entry it names, the role, the cutoff, the signature ─────────────────────
+
+mutation_case "A host takes an operation that names an entry it does not hold as it is" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "    if state.log.hash_at(link.log) != Some(link.log_hash) {",
+     "    if false {")
+PY
+
+mutation_case "A host takes an operation of a device that was a reader under the entry it names" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "    if era.role < WRITER {\n        return Err(format!(\n            \"{event}: node {author} may not write",
+     "    if false {\n        return Err(format!(\n            \"{event}: node {author} may not write")
+PY
+
+mutation_case "A host takes an operation numbered past the last the log accepted of its device" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "        if link.seq > cutoff {",
+     "        if false {")
+PY
+
+mutation_case "A host takes an operation whose signature is not its author's key" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "    if !era.key.verifies(&bytes, signature) {",
+     "    if false {")
+PY
+
+mutation_case "A host takes an operation numbered 0" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "    if link.seq == 0 {",
+     "    if false {")
+PY
+
+mutation_case "A host takes an operation numbered inside the chain an earlier grant ended" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "    if link.seq <= floor {",
+     "    if false {")
+PY
+
+# ── An operation: its place in the device's chain ─────────────────────────────────────────────
+
+mutation_case "A host takes the first operation of a chain that names an operation before it" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "    if begins && link.prev != message::NO_OPERATION {",
+     "    if false {")
+PY
+
+mutation_case "A host takes an operation of a device from the number it was frozen at" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "        if link.seq >= *from {",
+     "        if false {")
+PY
+
+mutation_case "A host does not see two different operations at one number" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "            if same.id != id {",
+     "            if false {")
+PY
+
+mutation_case "A host does not see an operation that names another one before it than it holds" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "                if before.id != link.prev {",
+     "                if false {")
+PY
+
+mutation_case "A host does not see an operation that the one after it does not name" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "                if after.prev != id {",
+     "                if false {")
+PY
+
+mutation_case "A host takes a write whose stamp goes back along its device's chain" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "        if before.is_some_and(|earlier| stamp < earlier) || after.is_some_and(|later| stamp > later)\n        {",
+     "        if false\n        {")
+PY
+
+# ── What a host drops when the log or a conflict puts what it held out ────────────────────────
+
+mutation_case "A host keeps what it admitted of a device that an entry then took off at a lower number" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "            evict_past_the_cutoff(&mut state);",
+     "            let _ = &mut state;")
+PY
+
+mutation_case "A host keeps what it admitted of a device it then found signed two things at one number" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "            evict_from(state, node, from);",
+     "            let _ = (&state, node, from);")
+PY
+
+mutation_case "A device whose chain forked goes on signing" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "    if let Some(from) = state.frozen.get(&author) {\n        return Err(format!(\n            \"{event}: this device's chain forked at",
+     "    if let Some(from) = state.frozen.get(&author).filter(|_| false) {\n        return Err(format!(\n            \"{event}: this device's chain forked at")
+PY
+
+# ── A checkpoint and a settlement ─────────────────────────────────────────────────────────────
+
+mutation_case "A host takes a checkpoint of another list" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "    if checkpoint.list != state.calendar {",
+     "    if false {")
+PY
+
+mutation_case "A host takes a checkpoint that names an entry of the log it does not hold as it is" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "    if state.log.hash_at(checkpoint.log) != Some(checkpoint.log_hash) {",
+     "    if false {")
+PY
+
+mutation_case "A host takes a checkpoint of a device that was a reader" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "    if era.role < WRITER {\n        return Err(not_a_writer);",
+     "    if false {\n        return Err(not_a_writer);")
+PY
+
+mutation_case "A settlement is checked against no instant and no digest" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "        if checkpoint.before != before || checkpoint.digest != digest {",
+     "        if false {")
+PY
+
+mutation_case "A settlement is made of checkpoints under different entries of the log" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "        if checkpoint.log != first.log {",
+     "        if false {")
+PY
+
+mutation_case "A settlement may hold one device twice" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "    if devices.windows(2).any(|pair| pair[0] == pair[1]) {",
+     "    if false {")
+PY
+
+mutation_case "A settlement need not be from every writer" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "    if devices != writers {",
+     "    if devices.is_empty() {")
+PY
+
+mutation_case "A settlement may hold checkpoints that name different operations at one number" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "    if !heads_agree(&checkpoints) {",
+     "    if false {")
+PY
+
+mutation_case "A settlement is taken by a host that holds another operation than a checkpoint names" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "            if held.is_some_and(|held| held.id != head.id) {",
+     "            if false {")
+PY
+
+# ── The entries of the log: a linked device, an amendment, a destroyed epoch ──────────────────
+
+mutation_case "A device is linked with a higher role than its parent's" <<'PY'
+edit("backends/rust/trust/src/membership.rs",
+     "                if *role > linking.role {",
+     "                if false {")
+PY
+
+mutation_case "A device is linked as a node the log has held before" <<'PY'
+edit("backends/rust/trust/src/membership.rs",
+     "                if self.members.contains_key(node) {",
+     "                if false {")
+PY
+
+mutation_case "A device is linked without its parent's signature" <<'PY'
+edit("backends/rust/trust/src/membership.rs",
+     "                if !linking.key.verifies(&statement, parent_signature)",
+     "                if false")
+PY
+
+mutation_case "An amendment lowers the last accepted or leaves it" <<'PY'
+edit("backends/rust/trust/src/membership.rs",
+     "        if final_seq <= cutoff {",
+     "        if false {")
+PY
+
+mutation_case "An amendment is shown by the checkpoint of the device that was taken off" <<'PY'
+edit("backends/rust/trust/src/membership.rs",
+     "                || checkpoint.device == node\n",
+     "                || false\n")
+PY
+
+mutation_case "An amendment is shown by a checkpoint made after the removal" <<'PY'
+edit("backends/rust/trust/src/membership.rs",
+     "                || checkpoint.log >= index\n",
+     "                || false\n")
+PY
+
+mutation_case "An amendment is shown by a checkpoint that does not reach the number" <<'PY'
+edit("backends/rust/trust/src/membership.rs",
+     "                    .any(|head| head.node == node && head.seq >= final_seq)",
+     "                    .any(|head| head.node == node)")
+PY
+
+mutation_case "The keys of the epoch the list is in may be destroyed" <<'PY'
+edit("backends/rust/trust/src/membership.rs",
+     "                if *epoch == 0 || *epoch >= self.epoch {",
+     "                if *epoch == 0 {")
+PY
+
+mutation_case "An epoch may be destroyed twice" <<'PY'
+edit("backends/rust/trust/src/membership.rs",
+     "                if !self.shredded.insert(*epoch) {",
+     "                if false && !self.shredded.insert(*epoch) {")
+PY
