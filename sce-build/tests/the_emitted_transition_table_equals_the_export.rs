@@ -9,11 +9,13 @@
 // the same order, with the same owning state, first target, event, index and
 // annotation, and the same `source_hash` the file's own header carries.
 //
-// The comparison reads the generated source back rather than compiling it, so it
-// runs on a host with no toolchain; where a toolchain is found, the same output is
-// also compiled (C++ with static assertions over the table, C, Kotlin) or parsed
-// (Rust, Go, Python), because a table that parses to the right values and does
-// not compile is still wrong.
+// The first comparison reads the generated source back rather than compiling it, so it
+// runs on a host with no toolchain. Where a toolchain is found, the same output is
+// also built in the backend's own toolchain and the table it holds is compared with
+// the export at the level the language allows: C++ by static assertions over every
+// field, Python by importing the module, and Rust, Go, Kotlin and C by building a
+// program against the real runtime and running it. A table that reads back right
+// and does not compile, or compiles to other values, is still wrong.
 //
 // Absent the flag, nothing changes: the generated files are held byte-identical
 // by the committed-tree drift gates, and this file checks that none of them names
@@ -470,6 +472,42 @@ fn the_table_is_emitted_only_when_asked_for() {
     }
 }
 
+/// Each backend writes an annotation as the literal its language needs, and that
+/// literal is the one written here from the export.
+///
+/// Reading a table back unescapes what the template wrote, so a `$` left bare in
+/// Kotlin reads back as the `$` it should be: the round trip cannot tell `\$` from
+/// `$`, and only the compiler can, by reading `$x` as the interpolation of a name that
+/// is not there. This asks the source itself for the spelling the language requires.
+#[test]
+fn every_backend_writes_an_annotation_as_the_literal_its_language_needs() {
+    let work = scratch("annotation_spelling");
+    let doc = write_doc(&work, DOC);
+    let (_, rows) = export(&doc);
+    let expected = expected_entries(&rows);
+    let annotations: Vec<&str> = expected
+        .iter()
+        .map(|e| e.annotation.as_str())
+        .filter(|a| !a.is_empty())
+        .collect();
+    assert!(
+        annotations.iter().any(|a| a.contains('$')),
+        "the document must carry a `$` for this to ask about it"
+    );
+    for lang in ["cpp", "c11", "rust", "go", "kotlin"] {
+        let out = work.join(format!("out_{lang}"));
+        generate(lang, &out, &doc, true);
+        let source = generated_source(lang, &out);
+        for annotation in &annotations {
+            let literal = literal_of(lang, annotation);
+            assert!(
+                source.contains(&literal),
+                "[{lang}] the source does not hold the annotation as {literal}"
+            );
+        }
+    }
+}
+
 /// An annotation is opaque: whatever characters its tokens carry reach the table
 /// as the same text, in every backend.
 #[test]
@@ -684,88 +722,6 @@ fn the_cpp_table_compiles_and_holds_the_export() {
     );
 }
 
-/// The generated C compiles with its table.
-#[test]
-fn the_c_table_compiles() {
-    let Some(gcc) = toolchain::locate_any(&["gcc", "cc"]) else {
-        toolchain::skipped("the_c_table_compiles: gcc/cc not on PATH");
-        return;
-    };
-    let work = scratch("c11");
-    let doc = write_doc(&work, DOC);
-    let out = work.join("out");
-    generate("c11", &out, &doc, true);
-    let mut compiled = 0;
-    for entry in std::fs::read_dir(&out).expect("read out").flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("c") {
-            continue;
-        }
-        let output = Command::new(&gcc)
-            .args(["-std=c11", "-fsyntax-only", "-I"])
-            .arg(repo_root().join("backends/c/runtime/include"))
-            .arg("-I")
-            .arg(&out)
-            .arg(&path)
-            .output()
-            .expect("run gcc");
-        assert!(
-            output.status.success(),
-            "gcc rejected {}:\n{}",
-            path.display(),
-            String::from_utf8_lossy(&output.stderr),
-        );
-        compiled += 1;
-    }
-    assert!(compiled > 0, "no .c file was compiled");
-}
-
-/// The generated Rust parses with its table.
-#[test]
-fn the_rust_table_parses() {
-    let work = scratch("rust");
-    let doc = write_doc(&work, DOC);
-    let out = work.join("out");
-    generate("rust", &out, &doc, true);
-    let source = generated_source("rust", &out);
-    syn::parse_file(&source).unwrap_or_else(|e| panic!("the generated Rust does not parse: {e}"));
-}
-
-/// The generated Go parses with its table.
-#[test]
-fn the_go_table_parses() {
-    let Some(gofmt) = toolchain::locate("gofmt") else {
-        toolchain::skipped("the_go_table_parses: gofmt not on PATH");
-        return;
-    };
-    let work = scratch("go");
-    let doc = write_doc(&work, DOC);
-    let out = work.join("out");
-    generate("go", &out, &doc, true);
-    let mut checked = 0;
-    for entry in std::fs::read_dir(&out).expect("read out").flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("go") {
-            continue;
-        }
-        let output = Command::new(&gofmt)
-            .arg("-e")
-            .arg(&path)
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .output()
-            .expect("run gofmt");
-        assert!(
-            output.status.success(),
-            "gofmt -e rejected {}:\n{}",
-            path.display(),
-            String::from_utf8_lossy(&output.stderr),
-        );
-        checked += 1;
-    }
-    assert!(checked > 0, "no .go file was checked");
-}
-
 /// The generated Python imports, and the table it builds is the export's.
 ///
 /// Importing, not parsing: a module that parses can still fail the moment it is
@@ -777,6 +733,21 @@ fn the_python_table_imports_and_holds_the_export() {
         toolchain::skipped("the_python_table_imports_and_holds_the_export: python not on PATH");
         return;
     };
+    // The runtime every generated machine imports needs the Lua binding, and a host
+    // without it cannot import any machine at all: that is a missing tool, not a
+    // table that is wrong.
+    let has_lupa = Command::new(&python)
+        .args(["-I", "-c", "import lupa"])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    if !has_lupa {
+        toolchain::skipped(
+            "the_python_table_imports_and_holds_the_export: lupa is not importable \
+             (`python3 -m pip install lupa`)",
+        );
+        return;
+    }
     let work = scratch("python");
     let doc = write_doc(&work, DOC);
     let (header, rows) = export(&doc);
@@ -831,4 +802,357 @@ print(json.dumps({"hash": module.SOURCE_HASH, "table": table}))
         })
         .collect();
     assert_eq!(table, expected_spelled("python", &expected, &events));
+}
+
+// ── run the table in each backend's own toolchain ─────────────────────────
+//
+// Reading a table back from its source proves what was written, and compiling it
+// proves it is code. Neither proves what the compiled table IS: a string literal the
+// template escaped wrongly still compiles (Kotlin reads `$x` as an interpolation, and
+// `\x` is an escape in some languages and not in others), and an enumerator that
+// resolves to a different variant than the one spelled is no error. So each of
+// Rust, Go, Kotlin and C is built against its real runtime, the table is read at
+// run time, and every field of every entry is compared with the export. The
+// expectation is written here, in the language's own syntax, from the export and the
+// filters, and not by the template under test, the way the C++ assertions are.
+
+/// A literal of `text` in `lang`, written here and not by the templates.
+fn literal_of(lang: &str, text: &str) -> String {
+    let literal = cpp_literal(text);
+    if lang == "kotlin" {
+        literal.replace('$', "\\$")
+    } else {
+        literal
+    }
+}
+
+/// Every field of every entry of the table, as a list of `(what, condition)` in
+/// the syntax of `lang`. `table` is the expression naming the table.
+fn field_conditions(
+    lang: &str,
+    machine: &str,
+    table: &str,
+    spelled: &[Entry],
+) -> Vec<(String, String)> {
+    let upper = STEM.to_uppercase();
+    let mut out = Vec::new();
+    for (i, e) in spelled.iter().enumerate() {
+        let at = format!("{table}[{i}]");
+        let (from, to, event, index, annotation);
+        match lang {
+            "rust" => {
+                from = format!("{at}.from == {machine}State::{}", e.from);
+                to = match &e.to {
+                    Some(s) => format!("{at}.to == Some({machine}State::{s})"),
+                    None => format!("{at}.to.is_none()"),
+                };
+                event = match &e.event {
+                    Some(v) => format!("{at}.event == Some({machine}Event::{v})"),
+                    None => format!("{at}.event.is_none()"),
+                };
+                index = format!("{at}.index == {}", e.index);
+                annotation = format!("{at}.annotation == {}", literal_of(lang, &e.annotation));
+            }
+            "go" => {
+                from = format!("{at}.From == tt.{machine}State{}", e.from);
+                to = match &e.to {
+                    Some(s) => format!("{at}.HasTo && {at}.To == tt.{machine}State{s}"),
+                    None => format!("!{at}.HasTo"),
+                };
+                event = match &e.event {
+                    Some(v) => format!("{at}.HasEvent && {at}.Event == tt.{machine}Event{v}"),
+                    None => format!("!{at}.HasEvent"),
+                };
+                index = format!("int({at}.Index) == {}", e.index);
+                annotation = format!("{at}.Annotation == {}", literal_of(lang, &e.annotation));
+            }
+            "kotlin" => {
+                from = format!("{at}.from == {machine}State.{}", e.from);
+                to = match &e.to {
+                    Some(s) => format!("{at}.to == {machine}State.{s}"),
+                    None => format!("{at}.to == null"),
+                };
+                event = match &e.event {
+                    Some(v) => format!("{at}.event == {machine}Event.{v}"),
+                    None => format!("{at}.event == null"),
+                };
+                index = format!("{at}.index == {}", e.index);
+                annotation = format!("{at}.annotation == {}", literal_of(lang, &e.annotation));
+            }
+            "c11" => {
+                from = format!("{at}.from == {upper}_STATE_{}", e.from);
+                to = match &e.to {
+                    Some(s) => format!("{at}.to == {upper}_STATE_{s}"),
+                    None => format!("{at}.to == {upper}_STATE_COUNT"),
+                };
+                event = match &e.event {
+                    Some(v) => format!("{at}.event == {upper}_EVENT_{v}"),
+                    None => format!("{at}.event == {upper}_EVENT_NONE"),
+                };
+                index = format!("{at}.index == {}u", e.index);
+                annotation = format!(
+                    "strcmp({at}.annotation, {}) == 0",
+                    literal_of(lang, &e.annotation)
+                );
+            }
+            other => panic!("{other}"),
+        }
+        for (field, cond) in [
+            ("from", from),
+            ("to", to),
+            ("event", event),
+            ("index", index),
+            ("annotation", annotation),
+        ] {
+            out.push((format!("entry {i} {field}"), cond));
+        }
+    }
+    out
+}
+
+/// Run `command`, failing with everything it printed.
+fn run_ok(mut command: Command, what: &str) -> String {
+    let output = command
+        .output()
+        .unwrap_or_else(|e| panic!("run {what}: {e}"));
+    assert!(
+        output.status.success(),
+        "{what} failed:\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+    String::from_utf8_lossy(&output.stdout).into_owned()
+}
+
+/// What a backend's table is held to: the export's header and the entries spelled
+/// the way that backend spells them, with the scratch folder and the document.
+fn held_to(lang: &str) -> (serde_json::Value, Vec<Entry>, PathBuf, PathBuf) {
+    let work = scratch(&format!("{lang}_run"));
+    let doc = write_doc(&work, DOC);
+    let (header, rows) = export(&doc);
+    let expected = expected_entries(&rows);
+    let events = literal_events(&expected);
+    let spelled = expected_spelled(lang, &expected, &events);
+    (header, spelled, work, doc)
+}
+
+/// The generated Rust is built as a crate of its own against the real runtime, and
+/// its table is compared with the export when that program runs.
+#[test]
+fn the_rust_table_compiles_and_holds_the_export() {
+    let Some(cargo) = toolchain::locate("cargo") else {
+        toolchain::skipped("the_rust_table_compiles_and_holds_the_export: cargo not on PATH");
+        return;
+    };
+    let (header, spelled, work, doc) = held_to("rust");
+    let out = work.join("out");
+    generate("rust", &out, &doc, true);
+    let machine = machine_name();
+
+    let mut program = format!(
+        "#[path = {:?}]\nmod machine;\nuse machine::*;\n\nfn main() {{\n    let t = {machine}Transition::ALL;\n    assert_eq!(t.len(), {});\n    assert_eq!({machine}Transition::SOURCE_HASH, {:?});\n",
+        out.join(format!("{STEM}_sm.rs")).to_str().unwrap(),
+        spelled.len(),
+        header["source_hash"].as_str().unwrap(),
+    );
+    for (what, cond) in field_conditions("rust", &machine, "t", &spelled) {
+        program.push_str(&format!("    assert!({cond}, {what:?});\n"));
+    }
+    program.push_str("}\n");
+
+    let project = work.join("project");
+    std::fs::create_dir_all(project.join("src")).expect("create project");
+    std::fs::write(
+        project.join("Cargo.toml"),
+        format!(
+            "[package]\nname = \"ttemit-check\"\nversion = \"0.0.0\"\nedition = \"2021\"\npublish = false\n\n\
+             [dependencies]\nsce-rust-runtime = {{ path = {:?} }}\n\n[workspace]\n",
+            repo_root().join("backends/rust/runtime").to_str().unwrap()
+        ),
+    )
+    .expect("write manifest");
+    std::fs::write(project.join("src/main.rs"), program).expect("write program");
+    // The repo's own lock, so the runtime's dependencies resolve to the versions
+    // already fetched and the build needs no network.
+    std::fs::copy(repo_root().join("Cargo.lock"), project.join("Cargo.lock"))
+        .expect("copy the lock file");
+
+    let mut build = Command::new(&cargo);
+    build
+        .args(["run", "--quiet", "--offline", "--manifest-path"])
+        .arg(project.join("Cargo.toml"))
+        .env(
+            "CARGO_TARGET_DIR",
+            PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("emitted_transition_table_rust_target"),
+        );
+    run_ok(build, "the generated Rust table program");
+}
+
+/// The generated Go is built as a package of its own against the real runtime, and
+/// its table is compared with the export when that program runs.
+#[test]
+fn the_go_table_compiles_and_holds_the_export() {
+    let Some(go) = toolchain::locate("go") else {
+        toolchain::skipped("the_go_table_compiles_and_holds_the_export: go not on PATH");
+        return;
+    };
+    let (header, spelled, work, doc) = held_to("go");
+    let machine = machine_name();
+    generate("go", &work.join("project").join(STEM), &doc, true);
+
+    let mut program = format!(
+        "package main\n\nimport (\n\t\"fmt\"\n\t\"os\"\n\n\ttt \"example.com/ttemitcheck/{STEM}\"\n)\n\n\
+         func main() {{\n\tbad := 0\n\texpect := func(ok bool, what string) {{\n\t\tif !ok {{\n\t\t\tfmt.Println(\"MISMATCH:\", what)\n\t\t\tbad++\n\t\t}}\n\t}}\n\
+         \tt := tt.{machine}Transitions\n\texpect(len(t) == {}, \"entry count\")\n\texpect(tt.{machine}SourceHash == {}, \"source hash\")\n",
+        spelled.len(),
+        literal_of("go", header["source_hash"].as_str().unwrap()),
+    );
+    for (what, cond) in field_conditions("go", &machine, "t", &spelled) {
+        program.push_str(&format!("\texpect({cond}, {})\n", literal_of("go", &what)));
+    }
+    program.push_str("\tif bad > 0 {\n\t\tos.Exit(1)\n\t}\n}\n");
+
+    let project = work.join("project");
+    std::fs::write(
+        project.join("go.mod"),
+        format!(
+            "module example.com/ttemitcheck\n\ngo 1.22\n\nrequire github.com/newmassrael/sce-go-runtime v0.0.0\n\n\
+             replace github.com/newmassrael/sce-go-runtime => {}\n",
+            repo_root().join("backends/go/runtime").to_str().unwrap()
+        ),
+    )
+    .expect("write go.mod");
+    std::fs::write(project.join("main.go"), program).expect("write the program");
+
+    let mut build = Command::new(&go);
+    build
+        .args(["run", "."])
+        .current_dir(&project)
+        .env("GOFLAGS", "-mod=mod")
+        .env("GOWORK", "off");
+    run_ok(build, "the generated Go table program");
+}
+
+/// The generated Kotlin is compiled against the real runtime jar, and its table is
+/// compared with the export when that program runs.
+#[test]
+fn the_kotlin_table_compiles_and_holds_the_export() {
+    let Some(kotlinc) = toolchain::locate("kotlinc") else {
+        toolchain::skipped("the_kotlin_table_compiles_and_holds_the_export: kotlinc not on PATH");
+        return;
+    };
+    let Some(java) = toolchain::locate("java") else {
+        toolchain::skipped("the_kotlin_table_compiles_and_holds_the_export: java not on PATH");
+        return;
+    };
+    let libs = repo_root().join("backends/kotlin/runtime/build/libs");
+    let mut jars: Vec<PathBuf> = std::fs::read_dir(&libs)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| {
+            let name = p.file_name().and_then(|s| s.to_str()).unwrap_or("");
+            name.starts_with("sce-kotlin-runtime-jvm-")
+                && name.ends_with(".jar")
+                && !name.ends_with("-sources.jar")
+        })
+        .collect();
+    jars.sort();
+    let Some(runtime_jar) = jars.pop() else {
+        toolchain::skipped(
+            "the_kotlin_table_compiles_and_holds_the_export: runtime jar missing under \
+             backends/kotlin/runtime/build/libs (run `./gradlew :sce-kotlin-runtime:assemble`)",
+        );
+        return;
+    };
+    let (header, spelled, work, doc) = held_to("kotlin");
+    let out = work.join("out");
+    generate("kotlin", &out, &doc, true);
+    let machine = machine_name();
+
+    let mut program = format!(
+        "import com.sce.generated.{STEM}.*\n\nfun main() {{\n    var bad = 0\n    fun expect(ok: Boolean, what: String) {{\n        if (!ok) {{\n            System.err.println(\"MISMATCH: \" + what)\n            bad++\n        }}\n    }}\n\
+         \x20   val t = {machine}Transitions.all\n    expect(t.size == {}, \"entry count\")\n    expect({machine}Transitions.SOURCE_HASH == {}, \"source hash\")\n",
+        spelled.len(),
+        literal_of("kotlin", header["source_hash"].as_str().unwrap()),
+    );
+    for (what, cond) in field_conditions("kotlin", &machine, "t", &spelled) {
+        program.push_str(&format!(
+            "    expect({cond}, {})\n",
+            literal_of("kotlin", &what)
+        ));
+    }
+    program.push_str("    if (bad > 0) System.exit(1)\n}\n");
+    let main_path = work.join("Check.kt");
+    std::fs::write(&main_path, program).expect("write the program");
+
+    let jar = work.join("check.jar");
+    let mut compile = Command::new(&kotlinc);
+    compile
+        .arg("-nowarn")
+        .arg("-cp")
+        .arg(&runtime_jar)
+        .arg(out.join(format!("{STEM}Sm.kt")))
+        .arg(&main_path)
+        .arg("-include-runtime")
+        .arg("-d")
+        .arg(&jar);
+    run_ok(compile, "kotlinc over the generated machine and the check");
+
+    let mut run = Command::new(&java);
+    run.arg("-cp")
+        .arg(format!(
+            "{}:{}",
+            jar.to_str().unwrap(),
+            runtime_jar.to_str().unwrap()
+        ))
+        .arg("CheckKt");
+    run_ok(run, "the generated Kotlin table program");
+}
+
+/// The generated C is built with its own header and run, and its table is compared
+/// with the export. A machine that has no datamodel needs nothing beyond libc.
+#[test]
+fn the_c_table_compiles_and_holds_the_export() {
+    let Some(gcc) = toolchain::locate_any(&["gcc", "cc"]) else {
+        toolchain::skipped("the_c_table_compiles_and_holds_the_export: gcc/cc not on PATH");
+        return;
+    };
+    let (header, spelled, work, doc) = held_to("c11");
+    let out = work.join("out");
+    generate("c11", &out, &doc, true);
+    let lower = STEM.to_lowercase();
+    let upper = STEM.to_uppercase();
+
+    let mut program = format!(
+        "#include \"{STEM}_sm.h\"\n#include <stdio.h>\n#include <string.h>\n\nstatic int bad;\n\
+         #define EXPECT(cond, what) do {{ if (!(cond)) {{ fprintf(stderr, \"MISMATCH: %s\\n\", what); bad++; }} }} while (0)\n\n\
+         int main(void) {{\n    EXPECT({upper}_TRANSITION_COUNT == {}u, \"entry count\");\n    EXPECT(strcmp({upper}_SOURCE_HASH, {}) == 0, \"source hash\");\n",
+        spelled.len(),
+        literal_of("c11", header["source_hash"].as_str().unwrap()),
+    );
+    for (what, cond) in field_conditions("c11", "", &format!("{lower}_transitions"), &spelled) {
+        program.push_str(&format!(
+            "    EXPECT({cond}, {});\n",
+            literal_of("c11", &what)
+        ));
+    }
+    program.push_str("    return bad ? 1 : 0;\n}\n");
+    let main_path = work.join("check.c");
+    std::fs::write(&main_path, program).expect("write the program");
+
+    let binary = work.join("check");
+    let mut compile = Command::new(&gcc);
+    compile
+        .args(["-std=c11", "-I"])
+        .arg(repo_root().join("backends/c/runtime/include"))
+        .arg("-I")
+        .arg(&out)
+        .arg(&main_path)
+        .arg(out.join(format!("{STEM}_sm.c")))
+        .arg("-o")
+        .arg(&binary);
+    run_ok(compile, "gcc over the generated machine and the check");
+    run_ok(Command::new(&binary), "the generated C table program");
 }
