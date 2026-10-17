@@ -314,6 +314,16 @@ const GENERATE_FLAGS: &[FlagFacts] = &[
         "resolves `<xi:include>` / `<sce:use>` fragments by name; one that \
          resolves nowhere is a parse refusal",
     ),
+    f(
+        "--limit",
+        Reach::Verdict,
+        None,
+        "rust",
+        "moves every bound that carries the name it is given, so a list the \
+         machine holds can come out smaller than what an algorithm it calls \
+         returns, which is a refusal; global, so `check` carries it too — \
+         measured by `a_limit_moves_every_bound_that_names_it`",
+    ),
     // ⚠ Rooted at the fixture's own directory, not `.`: the source hash
     // covers every `*.scxml` under the root, and at the repository root
     // that set includes the documents other tests write while this one
