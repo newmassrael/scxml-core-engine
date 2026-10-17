@@ -36,18 +36,39 @@ pub enum MessageError {
 pub struct Signing {
     /// The node of the person whose key signed it: `nodeId` of a write, `by` of a note.
     pub author: u64,
+    /// The time the author says it was made at, in the clock the machines stamp with: the
+    /// `wallTime` of a write, and the `at` a note carries. The author's key is judged as of
+    /// this time (a member who was taken off after it still wrote it).
+    pub at: i64,
+    /// What the note is about, written from the fields that name the write it wrote over and
+    /// not from who wrote over it or when: two notes about one write have one subject.
+    pub subject: Vec<u8>,
     pub message: Vec<u8>,
 }
 
 /// The bytes `event` with `data` is signed as in the list `calendar`, and its author. `None`
 /// when `event` is not one a signature is carried by.
 pub fn signing(calendar: &str, event: &str, data: &Value) -> Option<Result<Signing, MessageError>> {
-    let (fields, author): (&[Field], &str) = match event {
-        "todo.write" => (WRITE, "nodeId"),
-        "todo.supersede" => (SUPERSEDE, "by"),
+    let (fields, author, at): (&[Field], &str, &str) = match event {
+        "todo.write" => (WRITE, "nodeId", "wallTime"),
+        "todo.supersede" => (SUPERSEDE, "by", "at"),
         _ => return None,
     };
-    Some(build(calendar, event, data, fields, author))
+    Some(build(calendar, event, data, fields, author, at))
+}
+
+/// The bytes a `todo.supersede` is signed as, written again from what a host keeps of it: the
+/// subject of the note ([`Signing::subject`]), who wrote over and when. It is what [`signing`]
+/// writes for the note, so that a host that stored the three can check the signature again.
+pub fn note_message(calendar: &str, subject: &[u8], by: u64, at: i64) -> Vec<u8> {
+    let mut message = Vec::new();
+    part(&mut message, DOMAIN);
+    part(&mut message, calendar);
+    part(&mut message, "todo.supersede");
+    message.extend_from_slice(subject);
+    part(&mut message, &by.to_string());
+    part(&mut message, &at.to_string());
+    message
 }
 
 /// The event by which the hub says an instant is settled, which an administrator attests.
@@ -109,6 +130,7 @@ const SUPERSEDE: &[Field] = &[
     ("counter", Kind::Unsigned(None)),
     ("nodeId", Kind::Unsigned(None)),
     ("by", Kind::Unsigned(None)),
+    ("at", Kind::Signed(None)),
 ];
 
 fn build(
@@ -117,22 +139,33 @@ fn build(
     data: &Value,
     fields: &[Field],
     author: &'static str,
+    at: &'static str,
 ) -> Result<Signing, MessageError> {
     let object = data.as_object().ok_or(MessageError::NotAnObject)?;
     let mut message = Vec::new();
     part(&mut message, DOMAIN);
     part(&mut message, calendar);
     part(&mut message, event);
+    let mut subject = Vec::new();
     let mut author_node = None;
+    let mut at_time = None;
     for (name, kind) in fields {
         let text = read(object, name, *kind)?;
         if *name == author {
             author_node = text.parse::<u64>().ok();
         }
+        if *name == at {
+            at_time = text.parse::<i64>().ok();
+        }
+        if *name != "by" && *name != "at" {
+            part(&mut subject, &text);
+        }
         part(&mut message, &text);
     }
     Ok(Signing {
         author: author_node.ok_or(MessageError::Field(author))?,
+        at: at_time.ok_or(MessageError::Field(at))?,
+        subject,
         message,
     })
 }
@@ -192,11 +225,23 @@ mod tests {
     fn a_write_is_signed_by_the_node_that_stamped_it() {
         let signing = signing("home", "todo.write", &write()).unwrap().unwrap();
         assert_eq!(signing.author, 3);
-        let note = json!({"id":1,"field":2,"wallTime":5,"counter":0,"nodeId":3,"by":"4"});
+        assert_eq!(signing.at, 1000, "a write is made at its stamp");
+        let note = json!({"id":1,"field":2,"wallTime":5,"counter":0,"nodeId":3,"by":"4","at":"9"});
         let signing = super::signing("home", "todo.supersede", &note)
             .unwrap()
             .unwrap();
         assert_eq!(signing.author, 4, "a note is signed by who wrote over");
+        assert_eq!(signing.at, 9, "a note is made at the time it carries");
+        let other =
+            json!({"id":1,"field":2,"wallTime":5,"counter":0,"nodeId":3,"by":"7","at":"20"});
+        let other = super::signing("home", "todo.supersede", &other)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            other.subject, signing.subject,
+            "two notes about one write have one subject"
+        );
+        assert_ne!(other.message, signing.message);
         assert!(super::signing("home", "todo.edit", &write()).is_none());
     }
 

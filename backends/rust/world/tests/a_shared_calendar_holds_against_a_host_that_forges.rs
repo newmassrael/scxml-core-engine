@@ -17,6 +17,9 @@
 
 mod common;
 
+use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::Arc;
+
 use common::*;
 use sce_rust_trust::{Certificate, Identity, Trust};
 use sce_rust_world::{Outcome, World};
@@ -38,6 +41,10 @@ fn key_of(node: u64) -> Identity {
 }
 
 fn certificate(node: u64, role: u8, serial: u64) -> Certificate {
+    certificate_from(node, role, serial, 0)
+}
+
+fn certificate_from(node: u64, role: u8, serial: u64, from: i64) -> Certificate {
     Certificate::issue(
         &administrator(),
         CALENDAR,
@@ -45,19 +52,28 @@ fn certificate(node: u64, role: u8, serial: u64) -> Certificate {
         role,
         key_of(node).public(),
         serial,
+        from,
     )
 }
 
 /// The hosts of alice, bob and the hub, in that order. Each holds the certificates of alice
 /// (a writer) and bob (with `bob_role`), and is installed in front of and behind its machine;
-/// the machines of `told` are given the roster the certificates make.
+/// the machines of `told` are given the roster the certificates make. `now` is the clock the
+/// hosts of the persons sign a note at: the time the machine is given as the edit's `now`.
 struct Hosts {
     alice: Trust,
     bob: Trust,
     hub: Trust,
+    now: Arc<AtomicI64>,
 }
 
 impl Hosts {
+    /// A person changes a number, with the hosts' clock reading the world's time.
+    fn edit(&self, world: &mut World, who: &str, id: u64, field: u64, value: i64) {
+        self.now.store(world.now_ms(), Ordering::SeqCst);
+        todo_set(world, who, id, field, value);
+    }
+
     fn of(&self, who: &str) -> &Trust {
         match who {
             "alice" => &self.alice,
@@ -74,8 +90,14 @@ impl Hosts {
     }
 
     /// The host tells the machine of `who` the roster the certificates make.
+    /// The hub's machine is told who ever wrote, a person's the role they have now.
     fn tell(&self, world: &mut World, who: &str) {
-        for (event, data) in self.of(who).role_events() {
+        let events = if who == "server" {
+            self.of(who).hub_role_events()
+        } else {
+            self.of(who).role_events()
+        };
+        for (event, data) in events {
             world.raise(who, &event, &data);
         }
     }
@@ -87,9 +109,14 @@ fn untrusting_world(seed: u64, bob_role: u8, told: &[&str]) -> (World, Hosts) {
         alice: Trust::new(CALENDAR, &[administrator().public()]),
         bob: Trust::new(CALENDAR, &[administrator().public()]),
         hub: Trust::new(CALENDAR, &[administrator().public()]),
+        now: Arc::new(AtomicI64::new(0)),
     };
     hosts.alice.set_identity(ALICE, key_of(ALICE));
     hosts.bob.set_identity(BOB, key_of(BOB));
+    for person in [&hosts.alice, &hosts.bob] {
+        let now = hosts.now.clone();
+        person.set_clock(move || now.load(Ordering::SeqCst));
+    }
     hosts.certify(&certificate(ALICE, 2, 1));
     hosts.certify(&certificate(BOB, bob_role, 1));
     for who in ["alice", "bob", "server"] {
@@ -202,7 +229,7 @@ fn a_member_taken_off_by_a_later_certificate_is_refused_from_then_on() {
     quiet(&mut world);
     assert_eq!(agree(&mut world), 1);
 
-    hosts.certify(&certificate(BOB, 0, 2));
+    hosts.certify(&certificate_from(BOB, 0, 2, world.now_ms()));
     todo_set(&mut world, "bob", 2, DUE, 2);
     quiet(&mut world);
 
@@ -315,4 +342,43 @@ fn an_instant_an_administrator_attested_is_settled_for_every_host() {
         );
     }
     assert_eq!(agree(&mut world), 2);
+}
+
+/// What a member wrote before they were taken off stays: when everyone resyncs afterwards, the
+/// hub sends their values to the copies and the tombstone of the one a person wrote over (as
+/// itself, which the host puts who really wrote over it back on), and no host refuses any of it,
+/// so that the copies still hold one list. What the member signs after they were taken off is
+/// refused.
+#[test]
+fn what_a_member_wrote_before_they_were_taken_off_still_reaches_every_copy() {
+    let (mut world, hosts) = untrusting_world(7, 2, &["alice", "server"]);
+    hosts.edit(&mut world, "bob", 1, DUE, 1);
+    quiet(&mut world);
+    world.advance_ms(1_000);
+    // Alice writes over bob's value: a note that carries her, and the time she made it at.
+    hosts.edit(&mut world, "alice", 1, DUE, 2);
+    hosts.edit(&mut world, "bob", 2, DUE, 5);
+    quiet(&mut world);
+    assert_eq!(agree(&mut world), 2);
+    world.host_errors();
+
+    world.advance_ms(1_000);
+    hosts.certify(&certificate_from(BOB, 0, 2, world.now_ms()));
+    for who in ["alice", "server"] {
+        hosts.tell(&mut world, who);
+    }
+    world.advance_ms(1_000);
+    for who in ["alice", "bob", "server"] {
+        world.raise(who, "todo.resync", "");
+    }
+    quiet(&mut world);
+    let errors = world.host_errors();
+    assert!(errors.is_empty(), "nothing true was refused: {errors:?}");
+    assert_eq!(agree(&mut world), 2);
+    assert!(todos_of(&mut world, "server").contains_key(&(2, DUE)));
+
+    hosts.edit(&mut world, "bob", 3, DUE, 9);
+    quiet(&mut world);
+    assert!(!todos_of(&mut world, "server").contains_key(&(3, DUE)));
+    assert!(refused(&mut world, "may not write") >= 1);
 }
