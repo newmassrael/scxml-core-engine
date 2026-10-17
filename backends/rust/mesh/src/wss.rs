@@ -78,6 +78,8 @@ pub fn deliver<T: Transport, E: Environment>(endpoint: &mut Endpoint<T, E>, even
 pub enum WssError {
     /// A machine name is not a path segment as it stands (§mesh-18.1).
     NotAPathSegment(String),
+    /// The token is not a value an HTTP header can carry.
+    BadToken,
     /// The WebSocket handshake failed.
     Handshake(tokio_tungstenite::tungstenite::Error),
 }
@@ -171,8 +173,37 @@ pub async fn accept<S>(
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
+    accept_authenticated(
+        stream,
+        |name, _token| is_bound(name),
+        transport,
+        events,
+        keepalive,
+    )
+    .await
+}
+
+/// [`accept`] for a host that knows who may be on the other end of a link: `admit` is given the
+/// name the client wrote in the path and the bearer token it sent (the `Authorization` header,
+/// without `Bearer `), and a link is run only when it says yes.
+///
+/// The name in the path is the client's own word, so a name table (`is_bound`) lets in anyone
+/// who knows a machine's name. Who a link is belongs to the host that accepted it (the token it
+/// issued after its own login, the certificate it verified), and `admit` is where it says so.
+/// What a link may then deliver is [`Endpoint::forbid_events_from`], and what the members' hosts
+/// hold to is `sce-rust-trust`.
+pub async fn accept_authenticated<S>(
+    stream: S,
+    admit: impl Fn(&str, Option<&str>) -> bool,
+    transport: WssTransport,
+    events: mpsc::UnboundedSender<LinkEvent>,
+    keepalive: Duration,
+) -> Result<(), WssError>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
     let mut peer = None;
-    let ws = tokio_tungstenite::accept_hdr_async(stream, route_upgrade(&is_bound, &mut peer))
+    let ws = tokio_tungstenite::accept_hdr_async(stream, route_upgrade(&admit, &mut peer))
         .await
         .map_err(WssError::Handshake)?;
     let peer = peer.expect("an upgrade completes only after the callback named the peer");
@@ -181,25 +212,30 @@ where
 }
 
 /// The upgrade's verdict (§mesh-18.1): the client named in the path, when it
-/// is one `is_bound` accepts, is written to `peer`; anything else is 404.
+/// is one `admit` accepts with the token it sent, is written to `peer`;
+/// anything else is 404, so that a name that is bound and one that is not
+/// cannot be told apart by asking.
 ///
 /// The callback's error is `ErrorResponse` because tungstenite's `Callback`
 /// contract says so; its size is the library's, not this crate's to box.
 #[allow(clippy::result_large_err)]
 fn route_upgrade<'a>(
-    is_bound: &'a impl Fn(&str) -> bool,
+    admit: &'a impl Fn(&str, Option<&str>) -> bool,
     peer: &'a mut Option<String>,
 ) -> impl FnOnce(&Request, Response) -> Result<Response, ErrorResponse> + 'a {
-    move |request: &Request, response: Response| match request
-        .uri()
-        .path()
-        .strip_prefix(PATH_PREFIX)
-    {
-        Some(name) if is_path_segment(name) && is_bound(name) => {
-            *peer = Some(name.to_string());
-            Ok(response)
+    move |request: &Request, response: Response| {
+        let token = request
+            .headers()
+            .get(http::header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.strip_prefix("Bearer "));
+        match request.uri().path().strip_prefix(PATH_PREFIX) {
+            Some(name) if is_path_segment(name) && admit(name, token) => {
+                *peer = Some(name.to_string());
+                Ok(response)
+            }
+            _ => Err(not_found()),
         }
-        _ => Err(not_found()),
     }
 }
 
@@ -214,11 +250,35 @@ pub async fn connect(
     events: mpsc::UnboundedSender<LinkEvent>,
     keepalive: Duration,
 ) -> Result<(), WssError> {
+    connect_authenticated(base, own, server, None, transport, events, keepalive).await
+}
+
+/// [`connect`] with the bearer token the server's host issued, sent as the `Authorization`
+/// header of the upgrade ([`accept_authenticated`] reads it).
+pub async fn connect_authenticated(
+    base: &str,
+    own: &str,
+    server: &str,
+    token: Option<&str>,
+    transport: WssTransport,
+    events: mpsc::UnboundedSender<LinkEvent>,
+    keepalive: Duration,
+) -> Result<(), WssError> {
+    use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+
     if !is_path_segment(own) {
         return Err(WssError::NotAPathSegment(own.to_string()));
     }
     let url = alloc::format!("{}{PATH_PREFIX}{own}", base.trim_end_matches('/'));
-    let (ws, _) = tokio_tungstenite::connect_async(url)
+    let mut request = url.into_client_request().map_err(WssError::Handshake)?;
+    if let Some(token) = token {
+        let value = http::HeaderValue::from_str(&alloc::format!("Bearer {token}"))
+            .map_err(|_| WssError::BadToken)?;
+        request
+            .headers_mut()
+            .insert(http::header::AUTHORIZATION, value);
+    }
+    let (ws, _) = tokio_tungstenite::connect_async(request)
         .await
         .map_err(WssError::Handshake)?;
     run(server.to_string(), ws, transport, events, keepalive).await;
@@ -490,6 +550,77 @@ mod tests {
             panic!("expected an HTTP refusal, got {refused:?}");
         };
         assert_eq!(response.status(), http::StatusCode::NOT_FOUND);
+    }
+
+    /// A client that knows a machine's name is not that machine: a host that authenticates its
+    /// links is told the token the client sent, and a link without the right one is refused at the
+    /// upgrade as a name nobody bound is.
+    #[tokio::test]
+    async fn a_link_is_run_only_for_the_token_the_host_admits() {
+        for (token, admitted) in [
+            (Some("secret"), true),
+            (Some("guess"), false),
+            (None, false),
+        ] {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let base = alloc::format!("ws://{}", listener.local_addr().unwrap());
+            let (server_tx, mut server_events) = mpsc::unbounded_channel();
+            tokio::spawn(async move {
+                let (stream, _) = listener.accept().await.unwrap();
+                let _ = accept_authenticated(
+                    stream,
+                    |name, token| name == "client" && token == Some("secret"),
+                    WssTransport::new(),
+                    server_tx,
+                    DEFAULT_KEEPALIVE,
+                )
+                .await;
+            });
+            let (client_tx, _client_events) = mpsc::unbounded_channel();
+            let dialing = async move {
+                connect_authenticated(
+                    &base,
+                    "client",
+                    "server",
+                    token,
+                    WssTransport::new(),
+                    client_tx,
+                    DEFAULT_KEEPALIVE,
+                )
+                .await
+            };
+            if admitted {
+                let link = tokio::spawn(dialing);
+                assert_eq!(
+                    next(&mut server_events).await,
+                    LinkEvent::Ready("client".to_string())
+                );
+                link.abort();
+            } else {
+                let Err(WssError::Handshake(tokio_tungstenite::tungstenite::Error::Http(response))) =
+                    dialing.await
+                else {
+                    panic!("expected an HTTP refusal for {token:?}");
+                };
+                assert_eq!(response.status(), http::StatusCode::NOT_FOUND);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn a_token_a_header_cannot_carry_is_refused_before_dialing() {
+        let (tx, _events) = mpsc::unbounded_channel();
+        let refused = connect_authenticated(
+            "ws://127.0.0.1:1",
+            "client",
+            "server",
+            Some("line\nbreak"),
+            WssTransport::new(),
+            tx,
+            DEFAULT_KEEPALIVE,
+        )
+        .await;
+        assert!(matches!(refused, Err(WssError::BadToken)), "{refused:?}");
     }
 
     #[tokio::test]

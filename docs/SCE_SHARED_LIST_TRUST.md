@@ -26,6 +26,14 @@ Two modes follow from who runs the hub:
 The two are one mechanism with different settings, so a list can start in the first and move to
 the second.
 
+**Who is on a link** is not decided by a name. The name a client writes in the upgrade path is
+its own word, so a hub's host that only checks a name table lets in anyone who knows a machine's
+name. A host that authenticates its links uses `wss::accept_authenticated`, which gives its
+callback the name and the bearer token the client sent (`wss::connect_authenticated`), and runs
+the link only when the host says yes: the token is the host's, issued after its own login. What
+a link may deliver once it is run is `Endpoint::forbid_events_from`, and what the members' hosts
+hold to whatever the link is, is this document.
+
 ## 2. Members, roles and certificates
 
 A role is 0 (not a member), 1 (may read), 2 (may also write) or 3 (may also do what an owner
@@ -119,5 +127,5 @@ host keeps secrets.
   (a hub that does not run the machine).
 - A reader receives everything that is replicated: a read-only role stops writes, not reading.
   Content a member may not read goes in another list, or under a key that member is not given.
-- The Kotlin Mesh does not have the `Admission` and `Sealer` seams yet, and the secure-socket
-  binding does not expose `forbid_events_from` on its control plane.
+- The Kotlin Mesh does not have the `Admission` and `Sealer` seams yet.
+- Login itself (who a person is, and the token a host issues for it) is the application's.
