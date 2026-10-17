@@ -1,0 +1,92 @@
+# Mutation cases for "a connection runs only as many requests as it has places".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_connection_runs_only_as_many_requests_as_it_has_places.cases`.
+#
+# A connection runs at most as many requests at once, across every spec, as it said it has places
+# for (ADR 0016, "a connection has places"). The request's own document refuses the claim of one
+# that would run it past that (`lane_full`); what the document cannot know is how many are running,
+# so the store counts them under a lock of the connection's own, and reads the same count back to
+# say who waits behind whom (`lane_waits`). Each case below takes one of those away and must make
+# a test of `sce-specs/tests/a_connection_runs_only_as_many_requests_as_it_has_places.rs` red.
+#
+# What the places are, a number a person says of a connection, is the application's: the store is
+# given it, and a caller that gives none is not limited.
+#
+# ⚠ A mutated tree is built under `-D warnings`, so every case keeps each binding it had in
+# use: a mutation that stops reading one is an unused-variable ERROR, the tree does not
+# compile, and the verdict is INCONCLUSIVE. The cases below widen or narrow a condition and keep
+# what it read.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported INCONCLUSIVE with
+# the anchor quoted, never as a pass.
+
+mutation_tests -p sce-specs --test a_connection_runs_only_as_many_requests_as_it_has_places
+mutation_targets sce-specs/src/store/request_store.rs sce-specs/src/request_life/mod.rs
+mutation_oracles sce-specs/tests/a_connection_runs_only_as_many_requests_as_it_has_places.rs
+
+mutation_case "a connection with no place free is told it has one" <<'PY'
+edit("sce-specs/src/store/request_store.rs",
+     "        let lane_open = running < places;",
+     "        let lane_open = running < places || places > 0;")
+PY
+
+mutation_case "the machine is told the lane is open whatever the store counted" <<'PY'
+edit("sce-specs/src/request_life/mod.rs",
+     "\"laneOpen\": lane_open,",
+     "\"laneOpen\": lane_open || true,")
+PY
+
+mutation_case "the requests of another connection take this connection's places" <<'PY'
+edit("sce-specs/src/store/request_store.rs",
+     ".is_some_and(|other| other.connection == pin.connection)",
+     ".is_some_and(|other| other.connection == pin.connection || true)")
+PY
+
+mutation_case "a request that asks again takes the place it already holds from itself" <<'PY'
+edit("sce-specs/src/store/request_store.rs",
+     "&& !(spec == id && view.request.id == request)",
+     "&& !(spec == id && view.request.id == request && false)")
+PY
+
+mutation_case "a request that has ended still holds its place" <<'PY'
+edit("sce-specs/src/store/request_store.rs",
+     "            .filter(|(spec, view)| {\n                view.state == State::Running\n",
+     "            .filter(|(spec, view)| {\n                (view.state == State::Running || view.state == State::Completed)\n")
+PY
+
+mutation_case "a connection with no places is counted as one that has some" <<'PY'
+edit("sce-specs/src/store/request_store.rs",
+     "        if places == 0 {",
+     "        if places == usize::MAX {")
+PY
+
+mutation_case "the places a connection said are not what the queue reads back" <<'PY'
+edit("sce-specs/src/store/request_store.rs",
+     "                places,\n                seen_epoch: self.clock.epoch(),",
+     "                places: places + 1,\n                seen_epoch: self.clock.epoch(),")
+PY
+
+mutation_case "a request waits though its connection has a place free" <<'PY'
+edit("sce-specs/src/store/request_store.rs",
+     "            if running >= places {",
+     "            if running >= places || places > 0 {")
+PY
+
+mutation_case "a request does not wait when its connection is exactly full" <<'PY'
+edit("sce-specs/src/store/request_store.rs",
+     "            if running >= places {",
+     "            if running > places {")
+PY
+
+mutation_case "a request that waits does not count the requests ahead of it" <<'PY'
+edit("sce-specs/src/store/request_store.rs",
+     "            *before += 1;",
+     "            *before += 0;")
+PY
+
+mutation_case "the queue counts the running requests of every connection" <<'PY'
+edit("sce-specs/src/store/request_store.rs",
+     ".is_some_and(|pin| &pin.connection == connection)",
+     ".is_some_and(|pin| &pin.connection == connection || true)")
+PY
