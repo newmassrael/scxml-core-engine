@@ -50,6 +50,36 @@ pub fn signing(calendar: &str, event: &str, data: &Value) -> Option<Result<Signi
     Some(build(calendar, event, data, fields, author))
 }
 
+/// The event by which the hub says an instant is settled, which an administrator attests.
+pub const FLOOR_EVENT: &str = "todo.floor";
+
+const FLOOR_DOMAIN: &str = "sce-trust/floor/1";
+
+/// The bytes an administrator signs to attest that the changes up to `before` are settled in
+/// `calendar` with the hash `hash` (todo_floor): not the event's own text, so that what is
+/// attested is the instant and what every copy held of it, and nothing the hub could write
+/// around it.
+pub fn floor_message(calendar: &str, before: i64, hash: u32) -> Vec<u8> {
+    let mut message = Vec::new();
+    part(&mut message, FLOOR_DOMAIN);
+    part(&mut message, calendar);
+    part(&mut message, &before.to_string());
+    part(&mut message, &hash.to_string());
+    message
+}
+
+/// The instant and the hash a `todo.floor` carries.
+pub fn floor_fields(data: &Value) -> Result<(i64, u32), MessageError> {
+    let object = data.as_object().ok_or(MessageError::NotAnObject)?;
+    let before = read(object, "before", Kind::Signed(None))?
+        .parse::<i64>()
+        .map_err(|_| MessageError::Field("before"))?;
+    let hash = read(object, "hash", Kind::Unsigned(None))?
+        .parse::<u32>()
+        .map_err(|_| MessageError::Field("hash"))?;
+    Ok((before, hash))
+}
+
 /// How a field is read: a whole number of the given sign, or text, with the value an event
 /// that leaves it out is read as (a write of a number leaves its `text` out, and a write of a
 /// text its `value`).

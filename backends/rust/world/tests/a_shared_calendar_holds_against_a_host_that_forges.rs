@@ -263,3 +263,56 @@ fn the_hub_cannot_settle_an_instant_for_a_host_that_trusts_nobody() {
     }
     assert_eq!(agree(&mut world), 2);
 }
+
+/// An instant is settled for hosts that trust nobody when an administrator attests it: the
+/// administrator's host signs the instant and the hash its own copy held of it, and the hub's
+/// host sends the hub's floor on with that signature. A signature of another hash, or of
+/// another instant, settles nothing. The run is deterministic, so a first run learns the
+/// hash the second is attested with.
+#[test]
+fn an_instant_an_administrator_attested_is_settled_for_every_host() {
+    let run = |attest: Option<(i64, u32)>| {
+        let (mut world, hosts) = untrusting_world(6, 2, &["alice", "bob", "server"]);
+        todo_set(&mut world, "alice", 1, DUE, 10);
+        todo_set(&mut world, "bob", 2, DUE, 20);
+        quiet(&mut world);
+        world.advance_ms(60_000);
+        world.host_errors();
+        if let Some((before, hash)) = attest {
+            hosts
+                .hub
+                .attest_floor(&administrator(), before, hash)
+                .unwrap();
+        }
+        world.raise("server", "todo.settle", r#"{"before":"30000","members":2}"#);
+        quiet(&mut world);
+        world
+    };
+
+    let mut first = run(None);
+    let hash = whole(&todo_variables_of(&mut first, "alice")["frozenHash"]) as u32;
+    for who in ["alice", "bob"] {
+        assert_eq!(whole(&todo_variables_of(&mut first, who)["floor"]), 0);
+    }
+
+    for (before, hash) in [(30_000, hash ^ 1), (20_000, hash)] {
+        let mut world = run(Some((before, hash)));
+        for who in ["alice", "bob"] {
+            assert_eq!(
+                whole(&todo_variables_of(&mut world, who)["floor"]),
+                0,
+                "{who} took a floor attested for {before} with {hash}"
+            );
+        }
+    }
+
+    let mut world = run(Some((30_000, hash)));
+    for who in ["alice", "bob"] {
+        assert_eq!(
+            whole(&todo_variables_of(&mut world, who)["floor"]),
+            30_000,
+            "{who}"
+        );
+    }
+    assert_eq!(agree(&mut world), 2);
+}

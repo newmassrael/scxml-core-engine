@@ -89,6 +89,47 @@ impl Trust {
         }
     }
 
+    /// An administrator's attestation that the changes up to `before` are settled with the hash
+    /// `hash`, made here by the host that holds the administrator's key and kept for the hub's
+    /// floor to leave with. The administrator's host reads the hash from its own copy, which
+    /// is a member's, so that what it attests is what its own copy held.
+    pub fn attest_floor(
+        &self,
+        administrator: &Identity,
+        before: i64,
+        hash: u32,
+    ) -> Result<(), TrustError> {
+        let mut state = self.state();
+        if !state.administrators.contains(&administrator.public()) {
+            return Err(TrustError::UnknownIssuer);
+        }
+        let message = message::floor_message(&state.calendar, before, hash);
+        let signature = administrator.sign(&message);
+        state.signatures.insert(message, signature);
+        Ok(())
+    }
+
+    /// Take an attestation another host made, for the floor of a hub that sends it on: held
+    /// when an administrator's key verifies it, and refused otherwise.
+    pub fn hold_floor_signature(
+        &self,
+        before: i64,
+        hash: u32,
+        signature: [u8; 64],
+    ) -> Result<(), TrustError> {
+        let mut state = self.state();
+        let message = message::floor_message(&state.calendar, before, hash);
+        if !state
+            .administrators
+            .iter()
+            .any(|administrator| administrator.verifies(&message, &signature))
+        {
+            return Err(TrustError::BadSignature);
+        }
+        state.signatures.insert(message, signature);
+        Ok(())
+    }
+
     /// Take `events` from a peer although they carry no signature, because this host trusts
     /// the peer that settles ([`UNSIGNED_REFUSED`]).
     pub fn allow_unsigned(&self, events: &[&str]) {
@@ -171,18 +212,52 @@ impl Trust {
             .collect()
     }
 
-    /// Take back signatures [`Self::signatures`] gave: each one that a member's key of today
+    /// The signatures as one text a host keeps in its store (the key-value feature): a JSON list
+    /// of `[message, signature]`, each written as [`encoding`] writes bytes.
+    pub fn signatures_to_text(&self) -> String {
+        Value::Array(
+            self.signatures()
+                .iter()
+                .map(|(message, signature)| {
+                    json!([encoding::encode(message), encoding::encode(signature)])
+                })
+                .collect(),
+        )
+        .to_string()
+    }
+
+    /// Take back what [`Self::signatures_to_text`] wrote, through [`Self::restore_signatures`]:
+    /// text that is not what it writes keeps nothing.
+    pub fn restore_signatures_from_text(&self, text: &str) -> usize {
+        let Ok(Value::Array(rows)) = serde_json::from_str::<Value>(text) else {
+            return 0;
+        };
+        let entries: Vec<(Vec<u8>, [u8; 64])> = rows
+            .iter()
+            .filter_map(|row| {
+                let message = encoding::decode(row.get(0)?.as_str()?)?;
+                let signature = encoding::decode(row.get(1)?.as_str()?)?.try_into().ok()?;
+                Some((message, signature))
+            })
+            .collect();
+        self.restore_signatures(&entries)
+    }
+
+    /// Take back signatures [`Self::signatures`] gave: each one that a key of today (a
+    /// member's, or an administrator's for a floor)
     /// verifies is kept, and the rest are dropped, since what a host reads back from its own
     /// storage is not taken for true. Returns how many were kept.
     pub fn restore_signatures(&self, entries: &[(Vec<u8>, [u8; 64])]) -> usize {
         let mut state = self.state();
         let mut kept = 0;
         for (message, signature) in entries {
-            let true_of_a_member = state
+            let true_of_a_key = state
                 .members
                 .values()
-                .any(|member| member.key.verifies(message, signature));
-            if true_of_a_member {
+                .map(|member| &member.key)
+                .chain(state.administrators.iter())
+                .any(|key| key.verifies(message, signature));
+            if true_of_a_key {
                 state.signatures.insert(message.clone(), *signature);
                 kept += 1;
             }
@@ -194,6 +269,9 @@ impl Trust {
 impl Admission for Trust {
     fn admit(&mut self, _peer: &str, event: &str, data: &str) -> Result<Option<String>, String> {
         let mut state = self.state();
+        if event == message::FLOOR_EVENT {
+            return admit_floor(&state, data);
+        }
         if state
             .unsigned_refused
             .iter()
@@ -243,8 +321,63 @@ impl Admission for Trust {
     }
 }
 
+/// A `todo.floor` is admitted when an administrator attested it: its `sig` is an administrator
+/// key's signature of the instant and the hash (`message::floor_message`). One with no
+/// signature is admitted only when the host was told to take it unsigned.
+fn admit_floor(state: &State, data: &str) -> Result<Option<String>, String> {
+    let event = message::FLOOR_EVENT;
+    let mut value: Value =
+        serde_json::from_str(data).map_err(|_| format!("{event}: the data is not JSON"))?;
+    let Some(signature) = value
+        .as_object_mut()
+        .and_then(|object| object.remove(SIGNATURE_FIELD))
+    else {
+        return if state.unsigned_refused.iter().any(|e| e == event) {
+            Err(format!(
+                "{event}: it carries no administrator's signature and this host does not take it on a peer's word"
+            ))
+        } else {
+            Ok(None)
+        };
+    };
+    let signature: [u8; 64] = signature
+        .as_str()
+        .and_then(encoding::decode)
+        .and_then(|bytes| bytes.try_into().ok())
+        .ok_or_else(|| format!("{event}: its signature is not a signature"))?;
+    let (before, hash) =
+        message::floor_fields(&value).map_err(|error| format!("{event}: {error:?}"))?;
+    let signed = message::floor_message(&state.calendar, before, hash);
+    if state
+        .administrators
+        .iter()
+        .any(|administrator| administrator.verifies(&signed, &signature))
+    {
+        Ok(Some(value.to_string()))
+    } else {
+        Err(format!("{event}: no administrator signed this instant"))
+    }
+}
+
+/// The floor leaves with the signature an administrator made of it, when the host holds one.
+fn seal_floor(state: &State, data: &str) -> Option<String> {
+    let mut value: Value = serde_json::from_str(data).ok()?;
+    let (before, hash) = message::floor_fields(&value).ok()?;
+    let signature = state
+        .signatures
+        .get(&message::floor_message(&state.calendar, before, hash))?;
+    value.as_object_mut()?.insert(
+        SIGNATURE_FIELD.to_string(),
+        Value::String(encoding::encode(signature)),
+    );
+    Some(value.to_string())
+}
+
 impl Sealer for Trust {
     fn seal(&mut self, _target: &str, event: &str, data: &str) -> Option<String> {
+        if event == message::FLOOR_EVENT {
+            return seal_floor(&self.state(), data);
+        }
         if !message::SIGNED_EVENTS.contains(&event) {
             return None;
         }

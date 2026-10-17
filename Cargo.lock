@@ -2049,6 +2049,7 @@ dependencies = [
  "sce-portable-bytes",
  "sce-rust-mesh",
  "sce-rust-runtime",
+ "sce-rust-trust",
  "serde_json",
  "tokio",
 ]

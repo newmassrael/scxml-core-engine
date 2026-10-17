@@ -206,3 +206,88 @@ fn the_signatures_a_host_relays_with_survive_a_restart_when_they_are_still_true(
     assert_eq!(again.restore_signatures(&tampered), 0);
     assert_eq!(send(&mut again, "todo.write", &for_the_machine), None);
 }
+
+#[test]
+fn the_signatures_a_host_keeps_in_its_store_read_back_as_text() {
+    let mut alice = host(Some((1, person(1))));
+    let mut hub = host(None);
+    let sealed = send(&mut alice, "todo.write", &write(1, 10)).unwrap();
+    let for_the_machine = hub.admit("alice", "todo.write", &sealed).unwrap().unwrap();
+    hub.attest_floor(&admin(), 30_000, 7).unwrap();
+    let text = hub.signatures_to_text();
+
+    let mut restarted = host(None);
+    assert_eq!(restarted.restore_signatures_from_text(&text), 2);
+    assert!(send(&mut restarted, "todo.write", &for_the_machine).is_some());
+    assert!(send(
+        &mut restarted,
+        "todo.floor",
+        r#"{"before":"30000","hash":"7"}"#
+    )
+    .is_some());
+
+    let other = host(None);
+    assert_eq!(other.restore_signatures_from_text("not json"), 0);
+    assert_eq!(other.restore_signatures_from_text(r#"[["x","y"]]"#), 0);
+}
+
+#[test]
+fn a_floor_is_admitted_when_an_administrator_signed_that_instant_and_hash() {
+    let mut hub = host(None);
+    let mut person_host = host(Some((1, person(1))));
+    let floor = r#"{"before":"30000","hash":"7"}"#;
+
+    // With nothing attested the hub's floor leaves as it is, and a host that trusts nobody
+    // refuses it.
+    assert_eq!(send(&mut hub, "todo.floor", floor), None);
+    assert!(person_host.admit("server", "todo.floor", floor).is_err());
+
+    hub.attest_floor(&admin(), 30_000, 7).unwrap();
+    let sealed = send(&mut hub, "todo.floor", floor).unwrap();
+    let admitted = person_host
+        .admit("server", "todo.floor", &sealed)
+        .unwrap()
+        .unwrap();
+    let admitted: Value = serde_json::from_str(&admitted).unwrap();
+    assert_eq!(admitted, serde_json::from_str::<Value>(floor).unwrap());
+
+    // The signature belongs to that instant and that hash.
+    for other in [
+        r#"{"before":"30001","hash":"7"}"#,
+        r#"{"before":"30000","hash":"8"}"#,
+    ] {
+        let moved = sealed.replace(floor, other);
+        let mut value: Value = serde_json::from_str(other).unwrap();
+        value["sig"] = serde_json::from_str::<Value>(&sealed).unwrap()["sig"].clone();
+        let reason = person_host
+            .admit("server", "todo.floor", &value.to_string())
+            .unwrap_err();
+        assert!(
+            reason.contains("no administrator signed"),
+            "{moved} {reason}"
+        );
+    }
+}
+
+#[test]
+fn only_a_key_the_host_trusts_attests_a_floor() {
+    let hub = host(None);
+    let stranger = person(66);
+    assert_eq!(
+        hub.attest_floor(&stranger, 30_000, 7),
+        Err(TrustError::UnknownIssuer)
+    );
+    assert_eq!(
+        hub.hold_floor_signature(30_000, 7, stranger.sign(b"anything")),
+        Err(TrustError::BadSignature)
+    );
+}
+
+#[test]
+fn a_floor_is_taken_unsigned_once_the_host_was_told_to() {
+    let mut person_host = host(None);
+    let floor = r#"{"before":"30000","hash":"7"}"#;
+    assert!(person_host.admit("server", "todo.floor", floor).is_err());
+    person_host.allow_unsigned(&["todo.floor"]);
+    assert_eq!(person_host.admit("server", "todo.floor", floor), Ok(None));
+}
