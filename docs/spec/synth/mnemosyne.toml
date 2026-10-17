@@ -166,6 +166,9 @@ scan_exclusions = [
     # The reference host of the standard host features (`sce-rust-host-features`).
     # Measured 2026-10-16 over its 7 Rust sources: no citation of any ledger.
     "backends/rust/host-features/",
+    # What a host of a shared list keeps that its machines cannot (`sce-rust-trust`).
+    # Measured 2026-10-17 over its 9 Rust sources: no citation of any ledger.
+    "backends/rust/trust/",
     "sce-build/examples/",
     "tests/forge/expected/",
     # The works folder (`sce-specs/`), which the workbench (a repository of its own) links
