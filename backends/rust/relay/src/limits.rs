@@ -149,6 +149,21 @@ mod tests {
     }
 
     #[test]
+    fn a_device_that_was_away_for_long_has_its_burst_and_not_more() {
+        let mut allowances = Allowances::default();
+        let limits = limits();
+        // It spends one of its four, and is away for a day: what it has is the four, not a day's worth.
+        allowances.take("home", 1, 1, 0, &limits).unwrap();
+        for _ in 0..4 {
+            allowances.take("home", 1, 1, 86_400_000, &limits).unwrap();
+        }
+        assert!(
+            allowances.take("home", 1, 1, 86_400_000, &limits).is_err(),
+            "the burst is the most it holds"
+        );
+    }
+
+    #[test]
     fn a_relay_that_refills_nothing_says_so_and_does_not_divide_by_zero() {
         let mut allowances = Allowances::default();
         let limits = Limits {

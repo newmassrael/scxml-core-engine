@@ -11,6 +11,10 @@
 # and in the header): a case that weakens one of the two is held by the known-answer vectors of
 # `a_byte_format_does_not_drift` and of the copy, and a case that weakens both is held by a behaviour.
 #
+# What is not here, and why: that a copy's contents wipe the device's seed when they are dropped. The
+# crate forbids unsafe code, and from safe code the bytes of a value that was dropped cannot be read, so
+# no test could notice a wipe taken away; a case for it would only ever survive.
+#
 # The memory a copy may ask is not weakened here: without its bound a copy asking for 4 GiB is opened,
 # and a round that pays for that is a round that exhausts the host it runs on.
 #
@@ -195,12 +199,6 @@ mutation_case "A copy's contents are read with bytes left over after the last ex
 edit("backends/rust/trust/src/backup.rs",
      "rest.is_empty().then_some(Self {",
      "(rest.len() < usize::MAX).then_some(Self {")
-PY
-
-mutation_case "A device's seed is not wiped when its contents are dropped" <<'PY'
-edit("backends/rust/trust/src/backup.rs",
-     "self.seed.zeroize();",
-     "let _ = &self.seed;")
 PY
 
 # ── The record an auditor checks ──────────────────────────────────────────────────────────────

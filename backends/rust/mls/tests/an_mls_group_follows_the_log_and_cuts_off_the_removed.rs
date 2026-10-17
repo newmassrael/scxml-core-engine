@@ -198,6 +198,84 @@ fn a_commit_the_log_did_not_name_is_applied_by_no_one() {
 }
 
 #[test]
+fn a_device_applies_the_commit_the_log_names_for_its_next_epoch_and_no_other() {
+    let (hosts, mut alice) = begun();
+    let mut bob = device(2);
+    let mut carol = device(3);
+    let (bob_package, carol_package) = (bob.key_package().unwrap(), carol.key_package().unwrap());
+    add(&hosts, &mut alice, &mut bob, 2, &bob_package);
+
+    // Epoch 2 adds carol; the log does not name its commit yet. Bob, handed it, does not apply it.
+    hosts.grant(3, 2);
+    let second = alice.stage_add(&[carol_package], hosts.of(1)).unwrap();
+    assert_eq!(
+        bob.apply_commit(&second.commit, hosts.of(2)),
+        Err(MlsError::CommitNotNamed { epoch: 2 })
+    );
+    // A log that names another commit for the epoch does not make this one the epoch's.
+    hosts.name(2, [4; 32]);
+    assert_eq!(
+        bob.apply_commit(&second.commit, hosts.of(2)),
+        Err(MlsError::CommitNotNamed { epoch: 2 })
+    );
+    assert_eq!(bob.epoch(), Ok(1), "nothing was applied");
+}
+
+#[test]
+fn a_device_looks_up_the_commit_of_the_epoch_it_is_in_and_not_the_logs_latest() {
+    let (hosts, mut alice) = begun();
+    let mut bob = device(2);
+    let mut carol = device(3);
+    let (bob_package, carol_package) = (bob.key_package().unwrap(), carol.key_package().unwrap());
+    add(&hosts, &mut alice, &mut bob, 2, &bob_package);
+
+    // Epoch 2 adds carol and epoch 3 takes her off again, both named by the log; bob has applied
+    // neither yet, so the epoch he is to reach next is 2 while the log's latest is 3.
+    hosts.grant(3, 2);
+    let second = alice.stage_add(&[carol_package], hosts.of(1)).unwrap();
+    hosts.name(2, second.commit_hash);
+    alice.merge_pending(hosts.of(1)).unwrap();
+    hosts.remove(3);
+    let third = alice.stage_remove(&[3], hosts.of(1)).unwrap();
+    hosts.name(3, third.commit_hash);
+    alice.merge_pending(hosts.of(1)).unwrap();
+
+    // The commit of epoch 3 is the log's latest, and it is not the one bob is to apply next.
+    assert_eq!(
+        bob.apply_commit(&third.commit, hosts.of(2)),
+        Err(MlsError::CommitNotNamed { epoch: 2 })
+    );
+    assert_eq!(bob.epoch(), Ok(1));
+    // In order they apply.
+    assert_eq!(
+        bob.apply_commit(&second.commit, hosts.of(2)),
+        Ok(Applied::Epoch(2))
+    );
+    assert_eq!(
+        bob.apply_commit(&third.commit, hosts.of(2)),
+        Ok(Applied::Epoch(3))
+    );
+    assert_eq!(bob.epoch_key().unwrap(), alice.epoch_key().unwrap());
+}
+
+#[test]
+fn a_device_the_log_still_holds_is_not_taken_out_of_the_group() {
+    let (hosts, mut alice) = begun();
+    let mut bob = device(2);
+    let package = bob.key_package().unwrap();
+    add(&hosts, &mut alice, &mut bob, 2, &package);
+
+    // The log has no entry that takes bob off, so a commit that removes him is not made.
+    assert_eq!(
+        alice.stage_remove(&[2], hosts.of(1)).map(|_| ()),
+        Err(MlsError::StillAMember(2))
+    );
+    // Once the administrator has taken him off it is.
+    hosts.remove(2);
+    assert!(alice.stage_remove(&[2], hosts.of(1)).is_ok());
+}
+
+#[test]
 fn a_device_the_log_has_no_grant_for_or_has_with_another_key_is_not_added() {
     let (hosts, mut alice) = begun();
 

@@ -121,6 +121,25 @@ mod tests {
     }
 
     #[test]
+    fn a_key_agrees_with_a_peer_of_the_curve_and_with_no_point_of_small_order() {
+        let alice = Identity::from_seed([1; 32]);
+        let bob = Identity::from_seed([2; 32]);
+        let shared = alice.agree(&bob.public()).unwrap();
+        assert_eq!(
+            bob.agree(&alice.public()),
+            Some(shared),
+            "the same from either side"
+        );
+        assert_ne!(shared, [0; 32]);
+
+        // The neutral point (y = 1) is a point of the curve of order one: whatever the secret, the
+        // product is zeros, which anyone can compute, so it is no key to agree on.
+        let mut neutral = [0u8; 32];
+        neutral[0] = 1;
+        assert_eq!(alice.agree(&PublicKey::from_bytes(neutral)), None);
+    }
+
+    #[test]
     fn a_key_reads_back_from_its_text_and_prints_no_seed() {
         let key = Identity::from_seed([7; 32]);
         let text = key.public().to_text();

@@ -18,9 +18,9 @@
 # Anchors are literal slices of the source; an edit that moves one is reported INCONCLUSIVE with the
 # anchor quoted, never as a pass.
 
-mutation_tests -p sce-rust-mls --lib --test a_known_answer_scenario_is_what_every_lane_replays --test a_person_links_a_device_loses_one_and_is_taken_off_with_the_group_following --test an_mls_group_follows_the_log_and_cuts_off_the_removed -p sce-rust-world --test a_shared_list_keys_its_content_with_mls_through_a_relay
+mutation_tests -p sce-rust-mls --lib --test a_known_answer_scenario_is_what_every_lane_replays --test a_person_links_a_device_loses_one_and_is_taken_off_with_the_group_following --test an_mls_group_follows_the_log_and_cuts_off_the_removed --test a_member_waits_for_the_log_to_name_what_it_holds_and_then_takes_it -p sce-rust-world --test a_shared_list_keys_its_content_with_mls_through_a_relay
 mutation_targets backends/rust/mls/src/lib.rs backends/rust/mls/src/host.rs
-mutation_oracles backends/rust/mls/tests/a_known_answer_scenario_is_what_every_lane_replays.rs backends/rust/mls/tests/a_person_links_a_device_loses_one_and_is_taken_off_with_the_group_following.rs backends/rust/mls/tests/an_mls_group_follows_the_log_and_cuts_off_the_removed.rs backends/rust/world/tests/a_shared_list_keys_its_content_with_mls_through_a_relay.rs
+mutation_oracles backends/rust/mls/tests/a_known_answer_scenario_is_what_every_lane_replays.rs backends/rust/mls/tests/a_person_links_a_device_loses_one_and_is_taken_off_with_the_group_following.rs backends/rust/mls/tests/an_mls_group_follows_the_log_and_cuts_off_the_removed.rs backends/rust/mls/tests/a_member_waits_for_the_log_to_name_what_it_holds_and_then_takes_it.rs backends/rust/world/tests/a_shared_list_keys_its_content_with_mls_through_a_relay.rs
 
 # ── The keys the exporter gives: the labels and what they are asked with ──────────────────────
 

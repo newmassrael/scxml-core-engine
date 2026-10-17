@@ -320,6 +320,19 @@ fn a_list_is_audited_with_the_hash_of_its_genesis_and_no_key() {
 }
 
 #[test]
+fn an_audit_names_the_epochs_the_list_destroyed() {
+    let hub = host(None);
+    let genesis = genesis();
+    publish(&[&hub], Body::Epoch { epoch: 1 });
+    publish(&[&hub], Body::Epoch { epoch: 2 });
+    publish(&[&hub], Body::Shred { epoch: 1 });
+
+    let report = audit::verify(genesis.hash(), &audit::export(&hub)).unwrap();
+    assert_eq!(report.shredded, vec![1]);
+    assert_eq!(report.epoch, 2);
+}
+
+#[test]
 fn a_record_that_was_changed_fails_where_it_was_changed() {
     let (hub, genesis, _) = recorded();
     let text = audit::export(&hub);

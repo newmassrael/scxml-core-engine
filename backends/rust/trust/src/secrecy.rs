@@ -294,6 +294,57 @@ mod tests {
         );
     }
 
+    /// A text sealed as `plain` is what a device that holds the key can make of any bytes: what
+    /// [`open`] takes is the one form [`seal`] writes, so that one write has one sealed form.
+    fn sealed_as(key: &EpochKey, plain: &[u8]) -> String {
+        let cipher = XChaCha20Poly1305::new(Key::from_slice(key));
+        let sealed = cipher
+            .encrypt(
+                XNonce::from_slice(&nonce_of("home", 1, b"s")),
+                Payload {
+                    msg: plain,
+                    aad: &aad_of("home", 1, b"s"),
+                },
+            )
+            .unwrap();
+        let mut bytes = 1u32.to_be_bytes().to_vec();
+        bytes.extend_from_slice(&sealed);
+        format!("{SEALED_PREFIX}{}", encoding::encode(&bytes))
+    }
+
+    fn plain_of(text: &str, total: usize) -> Vec<u8> {
+        let mut plain = 5i64.to_be_bytes().to_vec();
+        plain.extend_from_slice(&(text.len() as u16).to_be_bytes());
+        plain.extend_from_slice(text.as_bytes());
+        plain.resize(total, 0);
+        plain
+    }
+
+    #[test]
+    fn a_sealed_text_that_is_not_in_the_one_form_a_write_has_is_not_opened() {
+        let key = [7u8; 32];
+        let opens = |plain: &[u8]| open("home", &keys(1, key), b"s", &sealed_as(&key, plain));
+
+        // The form seal writes opens, and so does every byte of it as the test writes it.
+        assert_eq!(
+            opens(&plain_of("a", 10 + TEXT_CLASS)),
+            Ok((5, "a".to_string()))
+        );
+        // Padding is zeros: one non-zero byte after the text is another sealed form of the same write.
+        let mut dirty = plain_of("a", 10 + TEXT_CLASS);
+        dirty[10 + TEXT_CLASS - 1] = 1;
+        assert_eq!(opens(&dirty), Err(OpenError::Corrupt));
+        // And no more of it than the class takes, nor less.
+        assert_eq!(
+            opens(&plain_of("a", 10 + 2 * TEXT_CLASS)),
+            Err(OpenError::Corrupt)
+        );
+        assert_eq!(
+            opens(&plain_of("a", 10 + TEXT_CLASS - 1)),
+            Err(OpenError::Corrupt)
+        );
+    }
+
     #[test]
     fn a_generated_key_is_new_each_time() {
         let a = generate_key().unwrap();

@@ -421,6 +421,27 @@ mod tests {
     }
 
     #[test]
+    fn a_copy_that_names_another_key_derivation_is_refused_though_it_is_whole() {
+        let text = seal(b"pass", &contents(), WEAK).unwrap();
+        let renamed = text.replacen("\"kdf\":\"argon2id\"", "\"kdf\":\"argon2i\"", 1);
+        assert_ne!(
+            renamed, text,
+            "the copy names its derivation as written here"
+        );
+        assert_eq!(open(b"pass", &renamed), Err(BackupError::Malformed));
+        assert!(open(b"pass", &text).is_ok());
+    }
+
+    #[test]
+    fn contents_with_bytes_left_after_the_last_extra_are_not_read() {
+        let bytes = contents().to_bytes();
+        assert_eq!(Contents::from_bytes(&bytes), Some(contents()));
+        let mut longer = bytes;
+        longer.push(0);
+        assert_eq!(Contents::from_bytes(&longer), None);
+    }
+
+    #[test]
     fn extras_are_named_and_a_name_is_kept_once() {
         let kept = contents().with("mls", vec![4, 5]);
         assert_eq!(kept.extra("mls"), Some([4u8, 5].as_slice()));

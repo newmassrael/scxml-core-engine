@@ -970,3 +970,245 @@ fn an_amendment_makes_a_courier_read_again_what_it_refused() {
     assert_eq!(writes.len(), 1, "{:?}", round.events);
     assert_eq!(carol.last_seq(2), 2);
 }
+
+/// A range of operations is given up to the relay's bound, and a range of exactly the bound whole.
+#[test]
+fn a_range_of_operations_is_given_up_to_the_relays_bound_and_no_further() {
+    let limits = Limits {
+        max_range: 3,
+        ..Limits::default()
+    };
+    let mut relay = relay_over(MemoryStore::new(), limits);
+    give_log(&mut relay, 1);
+    let mut alice = host(Some(1));
+    for id in 1..=5u64 {
+        let op = operation(&mut alice, 1, id, 1000 + id as i64);
+        assert!(matches!(
+            submit(&mut relay, 1, &op),
+            Response::Accepted { new: true, .. }
+        ));
+    }
+    let count = |relay: &mut Relay<MemoryStore>, from: u64, to: u64| match ask(
+        relay,
+        2,
+        Request::Operations { node: 1, from, to },
+        0,
+    ) {
+        Response::Operations { operations } => operations.len(),
+        other => panic!("operations: {other:?}"),
+    };
+    assert_eq!(
+        count(&mut relay, 1, 5),
+        3,
+        "five were asked for, three is the bound"
+    );
+    assert_eq!(
+        count(&mut relay, 1, 3),
+        3,
+        "exactly the bound is given whole"
+    );
+    assert_eq!(
+        count(&mut relay, 2, 5),
+        3,
+        "a range that starts later is bounded the same"
+    );
+    assert_eq!(
+        count(&mut relay, 4, 5),
+        2,
+        "a range inside the bound is given as asked"
+    );
+}
+
+/// A checkpoint the relay kept is read back through the check it was taken in by: one that was
+/// changed on the disk does not start the relay.
+#[test]
+fn a_relay_that_restarts_does_not_start_from_a_checkpoint_that_was_changed() {
+    let dir = std::env::temp_dir().join(format!(
+        "sce-relay-checkpoint-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let alice = host(Some(1));
+    let checkpoint = alice.checkpoint(30_000, 7).unwrap();
+    {
+        let mut relay = relay_over(FileStore::open(&dir).unwrap(), Limits::default());
+        give_log(&mut relay, 1);
+        let response = ask(
+            &mut relay,
+            1,
+            Request::Checkpoint {
+                checkpoint: checkpoint.to_json(),
+            },
+            0,
+        );
+        assert!(
+            matches!(response, Response::Accepted { new: true, .. }),
+            "{response:?}"
+        );
+    }
+    // What it kept starts it again.
+    drop(relay_over(
+        FileStore::open(&dir).unwrap(),
+        Limits::default(),
+    ));
+
+    // One number of what alice signed is changed on the disk.
+    let file = std::fs::read_dir(&dir)
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let text = std::fs::read_to_string(&file).unwrap();
+    let tampered = text.replacen("\\\"digest\\\":\\\"7\\\"", "\\\"digest\\\":\\\"8\\\"", 1);
+    assert_ne!(
+        tampered, text,
+        "the checkpoint is in the store as it was sent"
+    );
+    std::fs::write(&file, tampered).unwrap();
+    let error = Relay::open(
+        FileStore::open(&dir).unwrap(),
+        authority(),
+        Limits::default(),
+    )
+    .err()
+    .expect("a relay does not start from a checkpoint its device did not sign");
+    assert!(error.to_string().contains("does not verify"), "{error}");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// The relay reads none of the MLS messages and bounds what it keeps of them: how big one is, that it
+/// says something, how many key packages a device leaves, that a package is kept once, that a commit
+/// is the one the log names, and that a Welcome is for an epoch the log began.
+#[test]
+fn a_relay_keeps_the_mls_messages_of_a_list_within_its_bounds_and_the_logs_word() {
+    use sce_rust_trust::encoding;
+    use sha2::{Digest, Sha256};
+
+    let limits = Limits {
+        max_group_message_bytes: 16,
+        max_key_packages_per_node: 2,
+        ..Limits::default()
+    };
+    let mut relay = relay_over(MemoryStore::new(), limits);
+    give_log(&mut relay, 1);
+    let commit = vec![7u8; 10];
+    let named: [u8; 32] = Sha256::digest(&commit).into();
+    let entry = host(None)
+        .draft(Body::MlsEpoch {
+            epoch: 1,
+            commit: named,
+        })
+        .sign(&admin())
+        .finish();
+    let response = ask(
+        &mut relay,
+        1,
+        Request::Append {
+            entry: entry.to_json(),
+        },
+        0,
+    );
+    assert!(
+        matches!(response, Response::Appended { new: true, .. }),
+        "{response:?}"
+    );
+
+    let package = |relay: &mut Relay<MemoryStore>, node: u64, bytes: &[u8]| {
+        ask(
+            relay,
+            node,
+            Request::PublishKeyPackage {
+                data: encoding::encode(bytes),
+            },
+            0,
+        )
+    };
+    let before = relay.records(LIST);
+
+    // A message is at most the bound, and says something.
+    assert!(matches!(
+        package(&mut relay, 3, &[1u8; 16]),
+        Response::Accepted { new: true, .. }
+    ));
+    assert_eq!(
+        refused(&package(&mut relay, 3, &[1u8; 17])),
+        &Code::TooLarge
+    );
+    assert_eq!(refused(&package(&mut relay, 3, &[])), &Code::Invalid);
+
+    // A device leaves at most two, and one it left is kept once.
+    assert!(matches!(
+        package(&mut relay, 3, &[2u8; 8]),
+        Response::Accepted { new: true, .. }
+    ));
+    assert_eq!(refused(&package(&mut relay, 3, &[3u8; 8])), &Code::TooLarge);
+    let held = relay.records(LIST);
+    assert_eq!(held, before + 2);
+    assert!(
+        matches!(
+            package(&mut relay, 3, &[2u8; 8]),
+            Response::Accepted { new: false, .. }
+        ),
+        "a package held already is not kept again, and is not counted against the device"
+    );
+    assert_eq!(relay.records(LIST), held);
+    // Another device's allowance of packages is its own.
+    assert!(matches!(
+        package(&mut relay, 2, &[4u8; 8]),
+        Response::Accepted { new: true, .. }
+    ));
+
+    // A commit is the one the log names for its epoch.
+    let commit_of = |relay: &mut Relay<MemoryStore>, epoch: u32, bytes: &[u8]| {
+        ask(
+            relay,
+            1,
+            Request::PublishCommit {
+                epoch,
+                data: encoding::encode(bytes),
+            },
+            0,
+        )
+    };
+    assert_eq!(
+        refused(&commit_of(&mut relay, 1, &[8u8; 10])),
+        &Code::Invalid,
+        "not the commit the log names"
+    );
+    assert_eq!(
+        refused(&commit_of(&mut relay, 2, &commit)),
+        &Code::Behind,
+        "the log names no commit for epoch 2"
+    );
+    assert!(matches!(
+        commit_of(&mut relay, 1, &commit),
+        Response::Accepted { new: true, .. }
+    ));
+    assert!(matches!(
+        commit_of(&mut relay, 1, &commit),
+        Response::Accepted { new: false, .. }
+    ));
+
+    // A Welcome is for an epoch the log began.
+    let welcome = |relay: &mut Relay<MemoryStore>, epoch: u32| {
+        ask(
+            relay,
+            1,
+            Request::PublishWelcome {
+                epoch,
+                node: 3,
+                data: encoding::encode(&[9u8; 12]),
+            },
+            0,
+        )
+    };
+    assert_eq!(refused(&welcome(&mut relay, 2)), &Code::Behind);
+    assert!(matches!(
+        welcome(&mut relay, 1),
+        Response::Accepted { new: true, .. }
+    ));
+}
