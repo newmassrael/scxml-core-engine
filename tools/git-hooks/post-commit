@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# post-commit hook: say so when the commit just made carries a restricted term.
+#
+# `pre-commit` and `commit-msg` hold a commit to the list, and `git commit
+# --no-verify` skips both. It does not skip this one, so a commit made past the
+# hooks is still told, in the terminal, that the push will refuse it, while it is
+# still local and amending it costs nothing. The push gate (`pre-push`) is what
+# refuses; this only warns, because a commit that exists cannot be refused.
+#
+# It never fails: git ignores the status of a post-commit hook, and a warning that
+# could break a commit would be a reason to unset it.
+
+set -uo pipefail
+
+# shellcheck source=tools/git-hooks/restricted-term-gate.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/restricted-term-gate.sh"
+restricted_term_gate_warn
+exit 0

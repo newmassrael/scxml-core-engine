@@ -1,0 +1,95 @@
+# Mutation cases for the restricted-term gate over a range of commits, the
+# post-commit warning and the override log.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/the_restricted_term_gate_reads_what_a_push_publishes.cases`.
+#
+# The gate and the hooks are shell scripts the tests execute rather than link, so
+# they are `mutation_runtime_targets` entries: the evidence that a mutation
+# reached what ran is the file on disk. See the header of `scripts/mutate`.
+#
+# Each case breaks one thing a push depends on to keep a term out of a public
+# history: that it reads the lines a commit ADDS and not the ones it takes out,
+# that the bypass meant for slow gates does not cover it, that a merge is read by
+# what it wrote itself, that a range git cannot read refuses, that a use of the
+# override is written down, and that a commit made past the hooks is told. The
+# first one was run by hand when the gate was written and turned
+# `a_range_is_held_to_what_each_commit_adds_even_when_a_later_commit_took_it_out`
+# red.
+#
+# Anchors are literal slices of the source, so a reformat can move one out from
+# under a case. That is reported as INCONCLUSIVE with the anchor quoted, never as
+# a pass — re-anchor the case against the current source.
+
+mutation_tests -p sce-build --features cli --test the_restricted_term_gate_runs_each_pattern_once
+mutation_runtime_targets tools/git-hooks/restricted-term-gate.sh tools/git-hooks/pre-push tools/git-hooks/post-commit
+
+# ── What a commit is read for ──────────────────────────────────────
+
+mutation_case "a line a commit takes out counts as one it adds" <<'PY'
+edit("tools/git-hooks/restricted-term-gate.sh",
+     '            if (index(prefix, "-") > 0) next\n'
+     '            if (index(prefix, "+") > 0) {',
+     '            if (index(prefix, "+") > 0 || index(prefix, "-") > 0) {')
+PY
+
+mutation_case "a merge is read against its first parent, so its side is read twice" <<'PY'
+edit("tools/git-hooks/restricted-term-gate.sh",
+     'log --cc -p -U0',
+     'log -m -p -U0')
+PY
+
+mutation_case "a loose hit on a line the strict tier named for the same pattern is named again" <<'PY'
+edit("tools/git-hooks/restricted-term-gate.sh",
+     '                else if (!((f[2] SUBSEP f[3]) in S)) L[f[3]] = L[f[3]] " L" f[2]',
+     '                else L[f[3]] = L[f[3]] " L" f[2]')
+PY
+
+# ── What refuses ───────────────────────────────────────────────────
+
+mutation_case "a range git cannot read is read as an empty one" <<'PY'
+edit("tools/git-hooks/restricted-term-gate.sh",
+     '    if ! git -c core.quotePath=false log --cc -p -U0 --no-color --no-ext-diff --no-renames \\\n'
+     '            --format=\'%x01%H%n%B%x02\' "$@" > "$work/log" 2>/dev/null; then',
+     '    git -c core.quotePath=false log --cc -p -U0 --no-color --no-ext-diff --no-renames \\\n'
+     '            --format=\'%x01%H%n%B%x02\' "$@" > "$work/log" 2>/dev/null || true\n'
+     '    if false; then')
+PY
+
+mutation_case "the push gate stands behind SKIP_PREPUSH" <<'PY'
+edit("tools/git-hooks/pre-push",
+     '        restricted_term_gate_range "pre-push" "$tlocal" --not --remotes || term_push_failed=1',
+     '        [[ "${SKIP_PREPUSH:-0}" == "1" ]] || restricted_term_gate_range "pre-push" "$tlocal" --not --remotes || term_push_failed=1')
+PY
+
+mutation_case "a ref the remote does not have is read from the remote ref it names" <<'PY'
+edit("tools/git-hooks/pre-push",
+     '        restricted_term_gate_range "pre-push" "$tlocal" --not --remotes || term_push_failed=1',
+     '        restricted_term_gate_range "pre-push" "${tremote}..${tlocal}" || term_push_failed=1')
+PY
+
+# ── The override, and the commit made past the hooks ───────────────
+
+mutation_case "a use of the override on a range is not written down" <<'PY'
+edit("tools/git-hooks/restricted-term-gate.sh",
+     '        _rt_log_override "$label"\n',
+     '')
+PY
+
+mutation_case "a use of the override at the commit is not written down" <<'PY'
+edit("tools/git-hooks/restricted-term-gate.sh",
+     '        _rt_log_override pre-commit\n',
+     '')
+PY
+
+mutation_case "a log that cannot be written is not said" <<'PY'
+edit("tools/git-hooks/restricted-term-gate.sh",
+     '    } 2>/dev/null || printf \'  (this use of the override could not be written to %s)\\n\' \\\n'
+     '        "$RESTRICTED_OVERRIDE_LOG" >&2',
+     '    } 2>/dev/null || true')
+PY
+
+mutation_case "a commit made past the hooks is not told it would be refused" <<'PY'
+edit("tools/git-hooks/restricted-term-gate.sh",
+     '    if (( rc != 0 )); then\n        printf \'%s\\n\' "$out" >&2',
+     '    if false; then\n        printf \'%s\\n\' "$out" >&2')
+PY

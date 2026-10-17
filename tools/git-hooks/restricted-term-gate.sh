@@ -3,7 +3,10 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
 # Refuse a commit whose staged content carries a restricted term. Sourced by
-# `pre-commit`, which calls `restricted_term_gate_staged`.
+# `pre-commit` (`restricted_term_gate_staged`), `commit-msg`
+# (`restricted_term_gate_message`), `pre-push` (`restricted_term_gate_range`, over
+# what the push publishes) and `post-commit` (`restricted_term_gate_warn`, the one
+# stage git still runs for a commit made with `--no-verify`).
 #
 # ⚠⚠ THE TERM LIST IS NOT IN THIS REPOSITORY, AND MUST NEVER BE.
 #
@@ -153,11 +156,31 @@ _rt_is_added() {
     return 1
 }
 
+# Where a use of the override is written down, outside every repository like the
+# list. It holds a time, the hook, the repository and the commit it ran at: no
+# text of the content, so it can never carry a term. Best effort: a log that
+# cannot be written is said, and the override still stands, because refusing an
+# owner who set it on purpose would only teach them to unset the gate.
+RESTRICTED_OVERRIDE_LOG="${SCE_RESTRICTED_OVERRIDE_LOG:-$HOME/.claude/restricted-override.log}"
+
+_rt_log_override() {
+    local hook="$1" top head
+    top="$(git rev-parse --show-toplevel 2>/dev/null || printf '?')"
+    head="$(git rev-parse --short HEAD 2>/dev/null || printf -- '-')"
+    {
+        printf '%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$hook" "$top" "$head" \
+            >> "$RESTRICTED_OVERRIDE_LOG"
+    } 2>/dev/null || printf '  (this use of the override could not be written to %s)\n' \
+        "$RESTRICTED_OVERRIDE_LOG" >&2
+    return 0
+}
+
 restricted_term_gate_staged() {
     if [[ "${SCE_RESTRICTED_OVERRIDE:-0}" == "1" ]]; then
         printf '\n⚠ pre-commit: SCE_RESTRICTED_OVERRIDE=1 — restricted-term gate DISABLED.\n' >&2
         printf '  The remote is public and a push does not un-publish. You are\n' >&2
         printf '  asserting that you have read the staged content yourself.\n\n' >&2
+        _rt_log_override pre-commit
         return 0
     fi
 
@@ -338,6 +361,7 @@ restricted_term_gate_message() {
         printf '\n⚠ commit-msg: SCE_RESTRICTED_OVERRIDE=1 — restricted-term gate DISABLED.\n' >&2
         printf '  The remote is public and a push does not un-publish. You are\n' >&2
         printf '  asserting that you have read the message yourself.\n\n' >&2
+        _rt_log_override commit-msg
         return 0
     fi
     if [[ ! -r "$RESTRICTED_TERMS_FILE" ]]; then
@@ -389,6 +413,187 @@ restricted_term_gate_message() {
         printf '  Term indexes refer to the non-comment lines of:\n    %s\n' "$RESTRICTED_TERMS_FILE" >&2
         printf '  Rewrite the message. SCE_RESTRICTED_OVERRIDE=1 covers this gate and says so.\n' >&2
         return 1
+    fi
+    return 0
+}
+
+# The commits of a range, held to the list: every line each one ADDS and the whole
+# of each message, strict and loose. `pre-push` calls it with what the push would
+# publish, and `post-commit` with the commit just made. Both exist because the two
+# gates above are hooks of `git commit`, which `--no-verify`, a cherry-pick, a
+# rebase, a merge, or a clone that never ran the installer reach the remote without
+# meeting. The push is the last place a local hook can stand before the text is
+# public, and this is the check that reads what the push carries rather than what a
+# commit staged.
+#
+# The arguments after the label are revision arguments for `git log`: `A..B`, or
+# `B --not --remotes` for a ref the remote does not have yet.
+#
+# What it reads is the lines each commit adds, not the files it leaves behind: a
+# commit that adds a term and a later one that removes it still published it, and a
+# check of the tip would call that clean. Cost follows the pattern count and the
+# size of the added text, not the number of commits: the text is gathered once and
+# each pattern is one `grep` over it. A merge shows only what its resolution wrote
+# itself (`--cc`), since the lines it brings in belong to commits that are in the
+# range or already published.
+#
+# Reports `  <commit> <path>: line(s) n — [loose ]term #i` with the line of the
+# file after the commit, and `(commit message)` for a message. Never the text.
+restricted_term_gate_range() {
+    local label="$1"
+    shift
+    if [[ "${SCE_RESTRICTED_OVERRIDE:-0}" == "1" ]]; then
+        printf '\n⚠ %s: SCE_RESTRICTED_OVERRIDE=1 — restricted-term gate DISABLED.\n' "$label" >&2
+        printf '  The remote is public and a push does not un-publish. You are\n' >&2
+        printf '  asserting that you have read what this range publishes yourself.\n\n' >&2
+        _rt_log_override "$label"
+        return 0
+    fi
+    if [[ ! -r "$RESTRICTED_TERMS_FILE" ]]; then
+        printf '\nERROR %s: restricted-term gate cannot read its term list.\n' "$label" >&2
+        printf '  Expected at: %s\n' "$RESTRICTED_TERMS_FILE" >&2
+        printf '  This gate FAILS CLOSED, as the one in pre-commit does.\n' >&2
+        return 1
+    fi
+    _rt_load
+    if [[ ${#RT_PATS[@]} -eq 0 ]]; then
+        printf '\nERROR %s: the restricted-term list is empty (%s).\n' "$label" "$RESTRICTED_TERMS_FILE" >&2
+        return 1
+    fi
+
+    local work
+    work="$(mktemp -d)" || return 1
+    # The log first, into a file: a range git cannot read must refuse, and a
+    # pipeline into awk would hand that failure to `pipefail` only if the caller
+    # set it.
+    if ! git -c core.quotePath=false log --cc -p -U0 --no-color --no-ext-diff --no-renames \
+            --format='%x01%H%n%B%x02' "$@" > "$work/log" 2>/dev/null; then
+        printf '\nERROR %s: the range (%s) could not be read, so it was not checked.\n' "$label" "$*" >&2
+        rm -rf "$work"
+        return 1
+    fi
+    # One line of text per added line, one line of `commit<TAB>path<TAB>line`
+    # beside it, so a hit on line N of the text is placed by line N of the map.
+    awk -v text="$work/text" -v where="$work/where" '
+        BEGIN { mode = 0; printf "" > text; printf "" > where }
+        /^\001/ { sha = substr($0, 2, 12); mode = 1; ml = 0; path = ""; next }
+        mode == 1 {
+            if ($0 == "\002") { mode = 2; next }
+            line = $0; last = 0
+            if (substr(line, length(line), 1) == "\002") { line = substr(line, 1, length(line) - 1); last = 1 }
+            ml++
+            print line > text
+            print sha "\t(commit message)\t" ml > where
+            if (last) mode = 2
+            next
+        }
+        mode == 2 && /^diff / { inhdr = 1; path = ""; next }
+        mode == 2 && inhdr && /^\+\+\+ / {
+            p = substr($0, 5); sub(/\t.*$/, "", p)
+            if (p == "/dev/null") path = ""
+            else if (substr(p, 1, 1) == "\"") path = "(a path git quotes)"
+            else { sub(/^b\//, "", p); path = p }
+            next
+        }
+        mode == 2 && /^@@/ {
+            inhdr = 0
+            cols = 0
+            while (substr($0, cols + 2, 1) == "@") cols++
+            if (cols < 1) cols = 1
+            if (match($0, / \+[0-9]+(,[0-9]+)?/)) {
+                s = substr($0, RSTART + 2, RLENGTH - 2); sub(/,.*$/, "", s); cur = s + 0
+            } else cur = 1
+            next
+        }
+        mode == 2 && !inhdr {
+            if (substr($0, 1, 1) == "\\") next
+            prefix = substr($0, 1, cols); body = substr($0, cols + 1)
+            if (index(prefix, "-") > 0) next
+            if (index(prefix, "+") > 0) {
+                print body > text
+                print sha "\t" path "\t" cur > where
+            }
+            cur++
+        }' "$work/log"
+    rm -f "$work/log"
+
+    local i j hit
+    : > "$work/hits"
+    for i in "${!RT_PATS[@]}"; do
+        while IFS= read -r hit; do
+            printf 'S %d %s\n' "$i" "${hit%%:*}" >> "$work/hits"
+        done < <(grep -n -E -- "${RT_PATS[$i]}" "$work/text" 2>/dev/null)
+    done
+    for j in "${!RT_LOOSE_PATS[@]}"; do
+        while IFS= read -r hit; do
+            printf 'L %d %s\n' "${RT_LOOSE_IDX[$j]}" "${hit%%:*}" >> "$work/hits"
+        done < <(grep -n -i -E -- "${RT_LOOSE_PATS[$j]}" "$work/text" 2>/dev/null)
+    done
+    # Place each hit; a loose hit on a line the strict tier named for the same
+    # pattern is not named twice.
+    awk -F'\t' -v hits="$work/hits" '
+        BEGIN {
+            while ((getline l < hits) > 0) {
+                split(l, f, " ")
+                if (f[1] == "S") { S[f[2] SUBSEP f[3]] = 1; L[f[3]] = L[f[3]] " S" f[2] }
+                else if (!((f[2] SUBSEP f[3]) in S)) L[f[3]] = L[f[3]] " L" f[2]
+            }
+        }
+        FNR in L {
+            n = split(L[FNR], items, " ")
+            for (k = 1; k <= n; k++)
+                print substr(items[k], 1, 1) "\t" substr(items[k], 2) "\t" $1 "\t" $2 "\t" $3
+        }' "$work/where" > "$work/placed"
+
+    local -A nums=()
+    local -a order=()
+    local tier idx sha path n key
+    while IFS=$'\t' read -r tier idx sha path n; do
+        key="$tier|$idx|$sha|$path"
+        [[ -z "${nums[$key]+x}" ]] && order+=("$key")
+        nums["$key"]+="$n,"
+    done < "$work/placed"
+    rm -rf "$work"
+
+    local hits_total=${#order[@]} shown=0 kind
+    for key in "${order[@]}"; do
+        (( shown >= 100 )) && break
+        IFS='|' read -r tier idx sha path <<<"$key"
+        kind="term"
+        [[ "$tier" == "L" ]] && kind="loose term"
+        printf '  %s %s: line(s) %s — %s #%d\n' "$sha" "$path" "${nums[$key]%,}" "$kind" "$idx" >&2
+        shown=$((shown + 1))
+    done
+    (( hits_total > shown )) && printf '  … and %d more\n' $((hits_total - shown)) >&2
+
+    if [[ $hits_total -gt 0 ]]; then
+        printf '\nERROR %s: commits in this range match the restricted-term list.\n' "$label" >&2
+        printf '  The matched text is deliberately NOT printed — see this gate.\n' >&2
+        printf '  Term indexes refer to the non-comment lines of:\n    %s\n' "$RESTRICTED_TERMS_FILE" >&2
+        printf '  The commit is named by the start of its hash; the line is the one of\n' >&2
+        printf '  the file as that commit left it, or of its message.\n' >&2
+        return 1
+    fi
+    return 0
+}
+
+# What `post-commit` says. A commit made with `--no-verify` never met the two
+# hooks above, and a post-commit hook is the one git still runs for it. The commit
+# exists by now, so this cannot refuse it: it says, loudly, that the commit as made
+# would be refused at the push, and how to take the text out while it is still
+# local. It always returns 0.
+restricted_term_gate_warn() {
+    local out rc=0
+    out="$(restricted_term_gate_range post-commit 'HEAD^!' 2>&1)" || rc=$?
+    if (( rc != 0 )); then
+        printf '%s\n' "$out" >&2
+        printf '\n⚠ post-commit: the commit just made would be REFUSED at the push.\n' >&2
+        printf '  It has not been pushed. Take the text out now: "git commit --amend"\n' >&2
+        printf '  for the message or a file, or "git reset --soft HEAD~1" and recommit.\n' >&2
+        printf '  A commit made past the hooks (--no-verify) reaches here and nowhere\n' >&2
+        printf '  before the push.\n' >&2
+    elif [[ "$out" == *DISABLED* ]]; then
+        printf '%s\n' "$out" >&2
     fi
     return 0
 }

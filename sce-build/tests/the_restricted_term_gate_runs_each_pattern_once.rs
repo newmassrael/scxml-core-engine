@@ -15,6 +15,11 @@
 //! file of pattern numbers that leaves a blunt pattern out of it, and the same
 //! list held to the commit message.
 //!
+//! The last part holds the same list to a range of commits, which is what a push
+//! publishes: the lines each commit adds and its message, a commit made past the
+//! commit hooks, the post-commit warning for such a commit, and the override
+//! that leaves a line in a log outside the repository.
+//!
 //! Every run here reads a synthetic term list through `SCE_RESTRICTED_TERMS`.
 //! The real list lives outside the repository and is never opened by a test:
 //! reading it would copy the terms it exists to keep out.
@@ -23,8 +28,9 @@
 
 mod common;
 
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 
 /// Two synthetic patterns: an anchored word and an unanchored token.
 const TERMS: &str = "# synthetic list for this suite\nSCE_PROBE_TERM_[0-9]+\n\\bneedle\\b\n";
@@ -587,4 +593,369 @@ fn the_commit_msg_hook_refuses_a_term_before_it_looks_at_the_format_and_past_its
         "{stderr}"
     );
     assert!(!stderr.contains("check skipped"), "{stderr}");
+}
+
+// ── A range of commits, which is what a push publishes ─────────────────────
+
+const ZERO: &str = "0000000000000000000000000000000000000000";
+
+impl Sandbox {
+    fn rev(&self, spec: &str) -> String {
+        let out = Command::new("git")
+            .arg("-C")
+            .arg(self.repo())
+            .args(["rev-parse", spec])
+            .output()
+            .expect("git runs");
+        assert!(out.status.success(), "rev-parse {spec} failed");
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    }
+
+    /// Run `script` in the sandbox in a strict shell, with the gate sourced.
+    fn bash(&self, script: &str, terms: &Path, env: &[(&str, &Path)]) -> Output {
+        let gate = common::repository::root().join("tools/git-hooks/restricted-term-gate.sh");
+        let script = format!("set -euo pipefail\nsource '{}'\n{script}\n", gate.display());
+        let mut cmd = Command::new("bash");
+        cmd.arg("-c")
+            .arg(script)
+            .current_dir(self.repo())
+            .env("SCE_RESTRICTED_TERMS", terms)
+            .env_remove("SCE_RESTRICTED_OVERRIDE")
+            .env("SCE_RESTRICTED_OVERRIDE_LOG", self.dir.join("override.log"));
+        for (key, value) in env {
+            cmd.env(key, value);
+        }
+        cmd.output().expect("bash runs the gate")
+    }
+
+    fn run_range(&self, terms: &Path, revs: &[&str]) -> Output {
+        let args: Vec<String> = revs.iter().map(|r| format!("'{r}'")).collect();
+        self.bash(
+            &format!("restricted_term_gate_range probe {}", args.join(" ")),
+            terms,
+            &[],
+        )
+    }
+
+    /// Run the real `pre-push` hook with `refs` on its standard input.
+    fn run_pre_push(&self, terms: &Path, refs: &str) -> Output {
+        let hook = common::repository::root().join("tools/git-hooks/pre-push");
+        let mut cmd = Command::new("bash");
+        cmd.arg(&hook)
+            .current_dir(self.repo())
+            .env("SCE_RESTRICTED_TERMS", terms)
+            .env_remove("SCE_RESTRICTED_OVERRIDE")
+            .env("SCE_RESTRICTED_OVERRIDE_LOG", self.dir.join("override.log"))
+            .env("SKIP_PREPUSH", "1")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        let mut child = cmd.spawn().expect("bash runs the hook");
+        child
+            .stdin
+            .take()
+            .expect("stdin is piped")
+            .write_all(refs.as_bytes())
+            .expect("write the refs");
+        child.wait_with_output().expect("the hook ends")
+    }
+
+    /// One git command with an identity of its own, for a merge or a branch switch.
+    fn as_probe(&self, args: &[&str]) {
+        let mut all = vec![
+            "-c",
+            "user.name=probe",
+            "-c",
+            "user.email=probe@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
+        ];
+        all.extend_from_slice(args);
+        self.git(&all);
+    }
+}
+
+/// The lines that name a hit of either tier.
+fn said_lines(out: &Output) -> Vec<String> {
+    String::from_utf8_lossy(&out.stderr)
+        .lines()
+        .filter(|l| l.starts_with("  ") && l.contains("term #"))
+        .map(str::to_string)
+        .collect()
+}
+
+fn stderr_of(out: &Output) -> String {
+    String::from_utf8_lossy(&out.stderr).into_owned()
+}
+
+#[test]
+fn a_range_is_held_to_what_each_commit_adds_even_when_a_later_commit_took_it_out() {
+    let sb = Sandbox::new("range-history");
+    let terms = sb.terms(TERMS);
+    sb.stage("notes.txt", b"one\nthe SCE_PROBE_TERM_7 is here\n");
+    sb.commit("first");
+    let dirty = sb.rev("HEAD");
+    sb.stage("notes.txt", b"one\nnothing\n");
+    sb.commit("second");
+
+    let out = sb.run_range(&terms, &["HEAD"]);
+    assert!(
+        !out.status.success(),
+        "the tip is clean and the history is not:\n{}",
+        stderr_of(&out)
+    );
+    assert_eq!(
+        said_lines(&out),
+        vec![format!("  {} notes.txt: line(s) 2 — term #0", &dirty[..12])],
+        "{}",
+        stderr_of(&out)
+    );
+    assert!(!stderr_of(&out).contains("SCE_PROBE_TERM_7"));
+
+    let after = sb.run_range(&terms, &[&format!("{dirty}..HEAD")]);
+    assert!(
+        after.status.success(),
+        "a range that starts after it does not carry it:\n{}",
+        stderr_of(&after)
+    );
+}
+
+#[test]
+fn a_range_names_the_message_and_the_loose_tier_and_names_a_line_once() {
+    let sb = Sandbox::new("range-tiers");
+    let terms = sb.terms(TERMS);
+    sb.stage("notes.txt", b"a SCE_PROBE_TERM_9 and a Needle\n");
+    sb.commit("fix: a Needle in the subject");
+    let at = sb.rev("HEAD")[..12].to_string();
+
+    let out = sb.run_range(&terms, &["HEAD"]);
+    assert!(!out.status.success());
+    assert_eq!(
+        said_lines(&out),
+        vec![
+            format!("  {at} (commit message): line(s) 1 — loose term #1"),
+            format!("  {at} notes.txt: line(s) 1 — term #0"),
+            format!("  {at} notes.txt: line(s) 1 — loose term #1"),
+        ],
+        "the strict hit is not named again as a loose one:\n{}",
+        stderr_of(&out)
+    );
+    let said = stderr_of(&out);
+    assert!(!said.contains("SCE_PROBE_TERM_9") && !said.contains("Needle"));
+}
+
+#[test]
+fn an_old_line_is_not_a_commit_s_and_a_merge_is_read_by_what_its_side_added() {
+    let sb = Sandbox::new("range-merge");
+    let terms = sb.terms(TERMS);
+    sb.stage("old.txt", b"an old SCE_PROBE_TERM_1 line\n");
+    sb.commit("base");
+    let base = sb.rev("HEAD");
+
+    sb.as_probe(&["switch", "-q", "-c", "side"]);
+    sb.stage("side.txt", b"a SCE_PROBE_TERM_2 on the side\n");
+    sb.commit("side");
+    let side = sb.rev("HEAD")[..12].to_string();
+    sb.as_probe(&["switch", "-q", "-"]);
+    sb.stage("main.txt", b"a clean line\n");
+    sb.commit("main");
+    sb.as_probe(&["merge", "--no-ff", "-q", "side", "-m", "merge the side"]);
+
+    let out = sb.run_range(&terms, &[&format!("{base}..HEAD")]);
+    assert_eq!(
+        said_lines(&out),
+        vec![format!("  {side} side.txt: line(s) 1 — term #0")],
+        "the old line (before the range) and the merge itself add nothing:\n{}",
+        stderr_of(&out)
+    );
+}
+
+#[test]
+fn a_range_git_cannot_read_and_a_list_it_cannot_read_both_refuse() {
+    let sb = Sandbox::new("range-refuses");
+    let terms = sb.terms(TERMS);
+    sb.stage("notes.txt", b"nothing restricted\n");
+    sb.commit("one");
+
+    let bad = sb.run_range(&terms, &["no-such-revision..HEAD"]);
+    assert!(!bad.status.success());
+    assert!(
+        stderr_of(&bad).contains("could not be read"),
+        "{}",
+        stderr_of(&bad)
+    );
+
+    let clean = sb.run_range(&terms, &["HEAD"]);
+    assert!(clean.status.success(), "{}", stderr_of(&clean));
+
+    let missing = sb.run_range(&sb.dir.join("absent.list"), &["HEAD"]);
+    assert!(!missing.status.success(), "no list is no check");
+    // `terms()` rewrites the one list file, so this is the last use of `terms`.
+    let hollow = sb.run_range(&sb.terms("# only a comment\n"), &["HEAD"]);
+    assert!(!hollow.status.success(), "an empty list refuses");
+}
+
+#[test]
+fn the_pre_push_hook_reads_the_range_it_publishes_and_the_bypass_does_not_cover_it() {
+    let sb = Sandbox::new("pre-push");
+    let terms = sb.terms(TERMS);
+    sb.stage("notes.txt", b"a SCE_PROBE_TERM_3 line\n");
+    sb.commit("old");
+    let published = sb.rev("HEAD");
+    sb.stage("notes.txt", b"a SCE_PROBE_TERM_3 line\nand a clean one\n");
+    sb.commit("clean");
+    let head = sb.rev("HEAD");
+
+    // Only the commits after the remote's are read: the old one is already public.
+    let update = format!("refs/heads/main {head} refs/heads/main {published}\n");
+    let clean = sb.run_pre_push(&terms, &update);
+    assert!(clean.status.success(), "{}", stderr_of(&clean));
+    assert!(stderr_of(&clean).contains("SKIP_PREPUSH=1"));
+
+    // A ref the remote does not have yet publishes all of it, and SKIP_PREPUSH does not skip that.
+    let new_ref = format!("refs/heads/main {head} refs/heads/main {ZERO}\n");
+    let dirty = sb.run_pre_push(&terms, &new_ref);
+    assert!(!dirty.status.success(), "{}", stderr_of(&dirty));
+    assert!(
+        stderr_of(&dirty).contains("term #0"),
+        "{}",
+        stderr_of(&dirty)
+    );
+    assert!(!stderr_of(&dirty).contains("SCE_PROBE_TERM_3"));
+
+    // A remote commit this clone does not hold is a force push: what no remote ref reaches is read.
+    let unknown = format!(
+        "refs/heads/main {head} refs/heads/main {}\n",
+        "1".repeat(40)
+    );
+    let forced = sb.run_pre_push(&terms, &unknown);
+    assert!(!forced.status.success(), "{}", stderr_of(&forced));
+
+    // A deletion publishes no commit.
+    let deletion = format!("(delete) {ZERO} refs/heads/main {head}\n");
+    let gone = sb.run_pre_push(&terms, &deletion);
+    assert!(gone.status.success(), "{}", stderr_of(&gone));
+}
+
+#[test]
+fn a_commit_made_past_the_hooks_is_warned_about_by_post_commit_and_a_clean_one_is_not() {
+    let sb = Sandbox::new("post-commit");
+    let terms = sb.terms(TERMS);
+    let hooks = common::repository::root().join("tools/git-hooks");
+    let commit = |message: &str| {
+        Command::new("git")
+            .arg("-C")
+            .arg(sb.repo())
+            .args([
+                "-c",
+                &format!("core.hooksPath={}", hooks.display()),
+                "-c",
+                "user.name=probe",
+                "-c",
+                "user.email=probe@example.invalid",
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "-q",
+                "--no-verify",
+                "-m",
+                message,
+            ])
+            .env("SCE_RESTRICTED_TERMS", &terms)
+            .env_remove("SCE_RESTRICTED_OVERRIDE")
+            .output()
+            .expect("git runs")
+    };
+
+    sb.stage("notes.txt", b"nothing restricted\n");
+    let clean = commit("a plain message");
+    assert!(clean.status.success(), "{}", stderr_of(&clean));
+    assert!(
+        !stderr_of(&clean).contains("REFUSED"),
+        "{}",
+        stderr_of(&clean)
+    );
+
+    sb.stage(
+        "notes.txt",
+        b"nothing restricted\na SCE_PROBE_TERM_5 here\n",
+    );
+    let dirty = commit("a plain message");
+    assert!(
+        dirty.status.success(),
+        "the commit exists and a post-commit hook cannot undo it:\n{}",
+        stderr_of(&dirty)
+    );
+    let said = stderr_of(&dirty);
+    assert!(said.contains("notes.txt: line(s) 2 — term #0"), "{said}");
+    assert!(said.contains("would be REFUSED at the push"), "{said}");
+    assert!(!said.contains("SCE_PROBE_TERM_5"), "{said}");
+}
+
+#[test]
+fn an_override_writes_itself_to_a_log_that_holds_no_text_and_an_unwritable_log_is_said() {
+    let sb = Sandbox::new("override-log");
+    let terms = sb.terms(TERMS);
+    sb.stage("notes.txt", b"a SCE_PROBE_TERM_6 line\n");
+    sb.commit("a plain message");
+    let log = sb.dir.join("override.log");
+    let one = Path::new("1");
+
+    let pushed = sb.bash(
+        "restricted_term_gate_range pre-push HEAD",
+        &terms,
+        &[("SCE_RESTRICTED_OVERRIDE", one)],
+    );
+    assert!(pushed.status.success(), "{}", stderr_of(&pushed));
+    assert!(stderr_of(&pushed).contains("DISABLED"));
+
+    let staged = sb.bash(
+        "restricted_term_gate_staged",
+        &terms,
+        &[("SCE_RESTRICTED_OVERRIDE", one)],
+    );
+    assert!(staged.status.success(), "{}", stderr_of(&staged));
+
+    let written = std::fs::read_to_string(&log).expect("the override wrote a log");
+    let rows: Vec<Vec<&str>> = written.lines().map(|l| l.split('\t').collect()).collect();
+    assert_eq!(rows.len(), 2, "one row per use:\n{written}");
+    assert_eq!(rows[0][1], "pre-push");
+    assert_eq!(rows[1][1], "pre-commit");
+    assert!(rows.iter().all(|r| r.len() == 4 && r[0].ends_with('Z')));
+    assert!(!written.contains("SCE_PROBE_TERM_6"));
+
+    let nowhere = sb.dir.join("no-such-folder/override.log");
+    let unlogged = sb.bash(
+        "restricted_term_gate_range pre-push HEAD",
+        &terms,
+        &[
+            ("SCE_RESTRICTED_OVERRIDE", one),
+            ("SCE_RESTRICTED_OVERRIDE_LOG", &nowhere),
+        ],
+    );
+    assert!(
+        unlogged.status.success(),
+        "a log that cannot be written does not turn the override into a refusal:\n{}",
+        stderr_of(&unlogged)
+    );
+    assert!(
+        stderr_of(&unlogged).contains("could not be written"),
+        "{}",
+        stderr_of(&unlogged)
+    );
+}
+
+#[test]
+fn every_hook_that_guards_the_list_carries_the_executable_bit() {
+    use std::os::unix::fs::PermissionsExt;
+    for hook in ["pre-commit", "commit-msg", "pre-push", "post-commit"] {
+        let path = common::repository::root()
+            .join("tools/git-hooks")
+            .join(hook);
+        let mode = std::fs::metadata(&path)
+            .unwrap_or_else(|e| panic!("{} is missing: {e}", path.display()))
+            .permissions()
+            .mode();
+        assert!(mode & 0o111 != 0, "{} is not executable", path.display());
+    }
 }
