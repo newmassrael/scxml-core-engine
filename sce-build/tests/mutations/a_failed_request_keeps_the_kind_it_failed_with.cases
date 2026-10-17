@@ -20,13 +20,13 @@ mutation_oracles sce-specs/tests/requests.rs sce-specs/tests/request_commands.rs
 mutation_case "a request that failed does not keep how it failed" <<'PY'
 edit("sce-specs/src/requests.rs",
      '                failure: Some(failure),\n                ..self.ended(answer.state, Some(reason.to_string()), now)',
-     '                failure: None,\n                ..self.ended(answer.state, Some(reason.to_string()), now)')
+     '                failure: {\n                    let _ = failure;\n                    None\n                },\n                ..self.ended(answer.state, Some(reason.to_string()), now)')
 PY
 
 mutation_case "a word that is a kind is not found by its word" <<'PY'
 edit("sce-specs/src/requests.rs",
      '            .find(|kind| kind.word() == word)',
-     '            .find(|_| true)')
+     '            .find(|kind| {\n                let _ = (kind, word);\n                true\n            })')
 PY
 
 mutation_case "a cause may be empty" <<'PY'
@@ -84,5 +84,5 @@ PY
 mutation_case "the cause a caller gives is dropped" <<'PY'
 edit("sce-specs/src/commands.rs",
      '            kind: words.kind,\n            cause: words.cause,',
-     '            kind: words.kind,\n            cause: None,')
+     '            kind: words.kind,\n            cause: words.cause.and(None::<String>),')
 PY

@@ -39,7 +39,7 @@ PY
 mutation_case "a refusal of a draft is not among the codes of the last refusal" <<'PY'
 edit("sce-specs/src/journal.rs",
      '                    progress.drafts_refused += 1;\n                    progress.last_refusal = codes.clone();',
-     '                    progress.drafts_refused += 1;')
+     '                    progress.drafts_refused += 1;\n                    let _ = codes;')
 PY
 
 mutation_case "the first event is taken for when the run began only if it is a try" <<'PY'
@@ -91,7 +91,7 @@ PY
 mutation_case "anybody can add an event to a request" <<'PY'
 edit("sce-specs/src/store/request_store.rs",
      '        current\n            .check_held_by(holder, attempt)\n            .map_err(|refusal| refusal_error(&current, refusal))?;\n        let path = journal_path(&dir, request);',
-     '        let path = journal_path(&dir, request);')
+     '        let _ = (&current, attempt);\n        let path = journal_path(&dir, request);')
 PY
 
 mutation_case "the journal keeps more than the most it keeps" <<'PY'
@@ -129,7 +129,7 @@ PY
 mutation_case "a read leaves out the moment the store read the clock at" <<'PY'
 edit("sce-specs/src/commands.rs",
      '        "full": journal.full,\n        "now": now,',
-     '        "full": journal.full,\n        "now": null,')
+     '        "full": journal.full,\n        "now": None::<String>.or(Some(now).filter(|_| false)),')
 PY
 
 mutation_case "a read gives the moments as seconds and not as text" <<'PY'

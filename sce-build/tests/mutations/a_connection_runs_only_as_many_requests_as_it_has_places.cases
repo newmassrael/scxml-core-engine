@@ -43,17 +43,26 @@ edit("sce-specs/src/store/request_store.rs",
      ".is_some_and(|other| other.connection == pin.connection || true)")
 PY
 
-mutation_case "a request that asks again takes the place it already holds from itself" <<'PY'
-edit("sce-specs/src/store/request_store.rs",
-     "&& !(spec == id && view.request.id == request)",
-     "&& !(spec == id && view.request.id == request && false)")
-PY
-
-mutation_case "a request that has ended still holds its place" <<'PY'
+mutation_case "a request that is only waiting holds a place" <<'PY'
 edit("sce-specs/src/store/request_store.rs",
      "            .filter(|(spec, view)| {\n                view.state == State::Running\n",
-     "            .filter(|(spec, view)| {\n                (view.state == State::Running || view.state == State::Completed)\n")
+     "            .filter(|(spec, view)| {\n                view.state.is_open()\n")
 PY
+
+# Two cases that were here are not cases, and are left out on purpose.
+#
+# - "a request that asks again takes the place it already holds from itself": the claim leaves the
+#   request itself out of the count, and a mutation that does not leave it out changes no answer a
+#   test can read. A request that is `Running` and could be asked again is one whose lease has not
+#   run out, which the machine refuses as held whatever the lane says; the one that has run out is
+#   read as interrupted and is not counted. The count of itself matters only if the clock passes the
+#   lease between the store's look at the requests and the machine's, which a test cannot make a
+#   clock do on purpose. The line stays as the defence of that window.
+# - "a request that has ended still holds its place": the count reads only the open requests, so a
+#   request that has ended is not in what is counted, and adding `Completed` to the states counted
+#   adds nothing. That an ended request frees its place is held where it happens, by
+#   `a_place_is_free_again_when_the_request_in_it_ends` and `a_request_that_is_called_off_frees_its_
+#   place_too`, which end a request and claim the place.
 
 mutation_case "a connection with no places is counted as one that has some" <<'PY'
 edit("sce-specs/src/store/request_store.rs",

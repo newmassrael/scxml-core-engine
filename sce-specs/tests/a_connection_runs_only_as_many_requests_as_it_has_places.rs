@@ -269,6 +269,28 @@ fn a_request_that_waits_for_a_place_is_told_what_it_waits_behind_and_how_far() {
 }
 
 #[test]
+fn what_a_request_waits_behind_is_counted_only_from_requests_of_its_own_connection() {
+    let lanes = lanes("lane-waits-own");
+    let running = lanes.made("Running", Some("qwen"));
+    lanes.clock.advance(1);
+    let next = lanes.made("Next", Some("qwen"));
+    lanes.clock.advance(1);
+    let elsewhere_one = lanes.made("Elsewhere one", Some("claude"));
+    lanes.clock.advance(1);
+    let elsewhere_two = lanes.made("Elsewhere two", Some("claude"));
+
+    lanes.claim(&running, "desktop", 1).unwrap();
+    // Another connection runs two requests of its own, with places enough for both.
+    lanes.claim(&elsewhere_one, "desktop", 3).unwrap();
+    lanes.claim(&elsewhere_two, "desktop", 3).unwrap();
+    assert_eq!(refused_as(lanes.claim(&next, "desktop", 1)), "lane-full");
+
+    // `qwen` runs one and `claude` runs two: what `next` waits behind is the one of its own, and
+    // a count over every connection would say three.
+    assert_eq!(waits(&lanes), vec![(next.spec.clone(), 1, 1, 0)]);
+}
+
+#[test]
 fn a_connection_with_a_place_free_keeps_nobody_waiting() {
     let lanes = lanes("lane-waits-free");
     let first = lanes.made("First", Some("claude"));
