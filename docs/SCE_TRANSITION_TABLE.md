@@ -72,8 +72,15 @@ takes `--input-root` and `--deploy` and they mean what they mean to `generate`: 
 `sce-build/tests/the_emitted_transition_table_equals_the_export.rs` reads each backend's table back
 out of its generated source and compares it with the export of the same document, for all six
 backends, including the identifiers, the hash, and an annotation carrying characters a string
-literal has to escape. Where a toolchain is present the output is also compiled (C++ with a static
-assertion for every field of every entry, C), imported (Python) or parsed (Rust, Go).
+literal has to escape. Where a toolchain is present each backend's table is also held to the export
+by the language itself: C++ by a static assertion for every field of every entry, Python by importing
+the module, and Rust, Go, Kotlin and C by building a program against the real runtime, running it,
+and comparing every field of every entry. The same file asks each source for the annotation literal
+its language needs, which a read-back cannot, since it unescapes what the template wrote (a bare `$`
+in Kotlin reads back as a `$` and is read by the compiler as an interpolation).
+
+`sce-build/tests/mutations/the_emitted_transition_table_equals_the_export.cases` makes each backend's
+table wrong once in a mutation round, so the tests above are known to be able to fail.
 
 `a_computed_event_name_is_matched_like_any_other` is opted in (`EMIT_TRANSITION_TABLE` in its CMake
 registration, `--emit-transition-table` in its regeneration scripts), so each channel's own build
