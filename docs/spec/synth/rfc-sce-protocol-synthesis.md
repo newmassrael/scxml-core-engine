@@ -3567,23 +3567,23 @@ that selects an SCQ row, and judges it as follows:
   `queue/wrap-bound-below-deploy-minimum`.
 - `platform.atomic_rmw_width` 0: no SCQ row is selected (see
   Backends), so there is nothing to bound.
-- No deploy file: generation cannot know the target. The C++ and Rust
-  output of an SCQ row asserts at compile time that 64-bit atomics are
-  lock-free (`static_assert(std::atomic<std::uint64_t>::is_always_lock_free)`,
-  `#[cfg(not(target_has_atomic = "64"))] compile_error!`), so a 32-bit
-  target cannot build it. C11 cannot assert this: its atomics are the
-  §5.I `sce_atomic_*` extern symbols, whose implementation the
-  compiler never sees. An SCQ row on C11 therefore requires
-  `platform.atomic_rmw_width`, and generating without it is
-  `queue/atomic-width-unstated`. Go implements 64-bit atomics with a
-  spinlock on some 32-bit architectures (`mips`, `mipsle`), so the Go
-  output of an SCQ row carries a `//go:build` constraint listing the
-  64-bit architectures, and a companion file under the negated
-  constraint that does not compile, naming the reason. The JVM
-  promises the semantics of `AtomicLong` but not that it is lock-free,
-  so the Kotlin output checks `os.arch` against the same list of
-  64-bit architectures when the queue is constructed, and fails
-  construction outside it. Python selects no SCQ row.
+- No deploy file: generation cannot know the target. The C++ and Rust output of an SCQ row asserts
+  at compile time that 64-bit atomics are lock-free (`static_assert(std::atomic<std::uint64_t>::is_always_lock_free)`,
+  `#[cfg(not(target_has_atomic = "64"))] compile_error!`), so a 32-bit target cannot build it; the
+  Rust output of the exchange list asserts `target_has_atomic = "32"` and that of the linked rings
+  `"8"` in the same way, since a target whose atomics are loads and stores alone (ARMv6-M) has no
+  such module in the runtime. A deploy that states `platform.atomic_rmw_width` lets Rust refuse at
+  generation (`queue/storage-runtime-missing`) a row its runtime has no module for there: the
+  exchange list and the linked rings at 0, SCQ and LSCQ below 64. C11 cannot assert this: its
+  atomics are the §5.I `sce_atomic_*` extern symbols, whose implementation the compiler never sees.
+  An SCQ row on C11 therefore requires `platform.atomic_rmw_width`, and generating without it is
+  `queue/atomic-width-unstated`. Go implements 64-bit atomics with a spinlock on some 32-bit
+  architectures (`mips`, `mipsle`), so the Go output of an SCQ row carries a `//go:build`
+  constraint listing the 64-bit architectures, and a companion file under the negated constraint
+  that does not compile, naming the reason. The JVM promises the semantics of `AtomicLong` but not
+  that it is lock-free, so the Kotlin output checks `os.arch` against the same list of 64-bit
+  architectures when the queue is constructed, and fails construction outside it. Python selects
+  no SCQ row.
 
 The Lamport rows run each index over `0..2N`, so it never wraps and
 equal or `N`-apart indices tell empty from full without a spare
