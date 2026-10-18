@@ -22,9 +22,11 @@
 // byte-identical by the committed-tree drift gates, and this file checks that none
 // of them names the table.
 
+mod common;
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Command, Output, Stdio};
 
 use regex::Regex;
 use sce_build::filters;
@@ -1009,6 +1011,11 @@ fn run_ok(mut command: Command, what: &str) -> String {
     let output = command
         .output()
         .unwrap_or_else(|e| panic!("run {what}: {e}"));
+    output_ok(output, what)
+}
+
+/// What a finished `what` printed, failing with all of it unless it succeeded.
+fn output_ok(output: Output, what: &str) -> String {
     assert!(
         output.status.success(),
         "{what} failed:\nstdout: {}\nstderr: {}",
@@ -1071,15 +1078,22 @@ fn the_rust_table_compiles_and_holds_the_export() {
     std::fs::copy(repo_root().join("Cargo.lock"), project.join("Cargo.lock"))
         .expect("copy the lock file");
 
-    let mut build = Command::new(&cargo);
-    build
-        .args(["run", "--quiet", "--offline", "--manifest-path"])
-        .arg(project.join("Cargo.toml"))
-        .env(
-            "CARGO_TARGET_DIR",
-            PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("emitted_transition_table_rust_target"),
-        );
-    run_ok(build, "the generated Rust table program");
+    // Offline first, through the helper every probe-crate build shares
+    // (`common::run_cargo_offline_first`): a cache that answers keeps the build
+    // off the network, and one that cannot, on a cold runner, reaches it rather
+    // than failing the push for a registry it never needed.
+    let manifest = project.join("Cargo.toml");
+    let target_dir =
+        PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("emitted_transition_table_rust_target");
+    let run = common::run_cargo_offline_first(|| {
+        let mut build = Command::new(&cargo);
+        build
+            .args(["run", "--quiet", "--manifest-path"])
+            .arg(&manifest)
+            .env("CARGO_TARGET_DIR", &target_dir);
+        build
+    });
+    output_ok(run.output, "the generated Rust table program");
 }
 
 /// The generated Go is built as a package of its own against the real runtime, and

@@ -121,10 +121,17 @@ edit("backends/rust/trust/src/chain.rs",
      "            let _ = at;")
 PY
 
+# Re-aimed 2026-10-18: `hold` gained the same `.extend(...)` line one level
+# deeper, so the bare line matched twice. The receiver above it is what names
+# `tell_what_changed`'s copy, at its own indentation.
 mutation_case "A host that froze a device does not tell its machine to forget what it was told" <<'PY'
 edit("backends/rust/trust/src/trust.rs",
-     "        .extend(left.into_iter().map(|seq| (node, seq)));",
-     "        .extend(std::iter::empty::<(u64, u64)>().chain(left.into_iter().map(|_| (0, 0))).take(0));")
+     """    state
+        .evicted
+        .extend(left.into_iter().map(|seq| (node, seq)));""",
+     """    state
+        .evicted
+        .extend(std::iter::empty::<(u64, u64)>().chain(left.into_iter().map(|_| (0, 0))).take(0));""")
 PY
 
 mutation_case "A device whose chain conflicts goes on signing" <<'PY'
