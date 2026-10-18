@@ -24,6 +24,7 @@
 #![forbid(unsafe_code)]
 
 pub mod client;
+pub mod hub;
 pub mod limits;
 pub mod protocol;
 pub mod relay;
@@ -34,6 +35,7 @@ pub mod token;
 pub mod serve;
 
 pub use client::{Courier, CourierError, DirectLink, Keep, Link, LinkError, Round};
+pub use hub::{slot_of, Hub, Shards};
 pub use limits::Limits;
 pub use protocol::{Code, Record, Request, Response};
 pub use relay::Relay;

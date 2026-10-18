@@ -30,7 +30,7 @@ use tokio::time::Instant;
 use tokio_tungstenite::tungstenite::handshake::server::{ErrorResponse, Request, Response};
 use tokio_tungstenite::tungstenite::http;
 use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
-use tokio_tungstenite::tungstenite::protocol::CloseFrame;
+use tokio_tungstenite::tungstenite::protocol::{CloseFrame, WebSocketConfig};
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::WebSocketStream;
 
@@ -202,13 +202,74 @@ pub async fn accept_authenticated<S>(
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
+    accept_authenticated_with(
+        stream,
+        admit,
+        transport,
+        events,
+        keepalive,
+        LinkConfig::default(),
+    )
+    .await
+}
+
+/// [`accept_authenticated`] with the sizes a link may use ([`LinkConfig`]): for a host that holds
+/// many links at once and chooses what each costs it.
+pub async fn accept_authenticated_with<S>(
+    stream: S,
+    admit: impl Fn(&str, Option<&str>) -> bool,
+    transport: WssTransport,
+    events: mpsc::UnboundedSender<LinkEvent>,
+    keepalive: Duration,
+    config: LinkConfig,
+) -> Result<(), WssError>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
     let mut peer = None;
-    let ws = tokio_tungstenite::accept_hdr_async(stream, route_upgrade(&admit, &mut peer))
-        .await
-        .map_err(WssError::Handshake)?;
+    let ws = tokio_tungstenite::accept_hdr_async_with_config(
+        stream,
+        route_upgrade(&admit, &mut peer),
+        Some(config.websocket()),
+    )
+    .await
+    .map_err(WssError::Handshake)?;
     let peer = peer.expect("an upgrade completes only after the callback named the peer");
     run(peer, ws, transport, events, keepalive).await;
     Ok(())
+}
+
+/// What a link may use. A field left `None` is the WebSocket library's own default, which is made
+/// for a connection or two and is large for a host that holds thousands: its read buffer is 128 KiB
+/// and its write buffer 128 KiB, for each link, whatever the link carries. An envelope is at most
+/// `max_message` bytes (a larger one closes the link), so a link needs no read buffer larger than
+/// the envelopes it is sent.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct LinkConfig {
+    /// The size the link reads in, in bytes.
+    pub read_buffer: Option<usize>,
+    /// The size the link's writes are gathered to before they go out, in bytes.
+    pub write_buffer: Option<usize>,
+    /// The largest message the link takes, in bytes.
+    pub max_message: Option<usize>,
+}
+
+impl LinkConfig {
+    fn websocket(&self) -> WebSocketConfig {
+        let mut config = WebSocketConfig::default();
+        if let Some(size) = self.read_buffer {
+            config = config.read_buffer_size(size);
+        }
+        if let Some(size) = self.write_buffer {
+            config = config.write_buffer_size(size);
+        }
+        if let Some(size) = self.max_message {
+            config = config
+                .max_message_size(Some(size))
+                .max_frame_size(Some(size));
+        }
+        config
+    }
 }
 
 /// The upgrade's verdict (§mesh-18.1): the client named in the path, when it

@@ -238,6 +238,13 @@ impl Inbound {
         Ok(out)
     }
 
+    /// Forget `source`: its dedup window and every envelope held behind a gap are dropped. What it
+    /// sends after this is taken as from a sender not heard from before, so an envelope it sent
+    /// earlier is delivered again if it is sent again. For a sender that has left for good.
+    pub fn forget(&mut self, source: &str) {
+        self.senders.remove(source);
+    }
+
     /// End every gap that has waited `gap_timeout_ms` by `now_ms`: signal the
     /// sequences lost and release what was held behind them. The host calls
     /// this on its own schedule, so a gap ends even when nothing else

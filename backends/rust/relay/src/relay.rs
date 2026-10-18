@@ -535,7 +535,7 @@ fn check_group_record(
     }
 }
 
-fn token_reason(error: TokenError) -> &'static str {
+pub(crate) fn token_reason(error: TokenError) -> &'static str {
     match error {
         TokenError::Malformed => "the token is not one this relay issues",
         TokenError::BadTag => "the token was not issued by this relay",

@@ -353,6 +353,22 @@ impl Router {
         Ok(effects)
     }
 
+    /// Whether `peer` is bound.
+    pub fn has_peer(&self, peer: &str) -> bool {
+        self.peers.contains_key(peer)
+    }
+
+    /// Unbind `peer`, which has left for good. What waited for its link is let go as when its link
+    /// is lost (each request waiting on it is §mesh-16.7 row 5, and what the outbound buffer held
+    /// is dropped), its receive state is forgotten, and a send to it afterwards is to a peer that
+    /// is not bound. The effects are what a link lost raises; none when `peer` was not bound.
+    pub fn remove_peer(&mut self, peer: &str) -> Vec<Effect> {
+        let effects = self.peer_not_ready(peer).unwrap_or_default();
+        self.peers.remove(peer);
+        self.inbound.forget(peer);
+        effects
+    }
+
     /// The retry policy the host applies when a transmission to `peer`
     /// fails (see [`crate::outbound::Attempts`]).
     pub fn retry_policy(&self, peer: &str) -> Option<RetryPolicy> {

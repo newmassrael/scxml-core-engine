@@ -21,6 +21,13 @@ path = "src/lib.rs"
 name = "wss_peer"
 required-features = ["wss"]
 
+# What the core does under the load of a shared-list server (many devices that come and go, a
+# write that must reach the others, a machine that holds them all): `cargo run --release
+# --features wss --example mesh_probe -- bench`.
+[[example]]
+name = "mesh_probe"
+required-features = ["wss"]
+
 [features]
 # The generated modules gate their heap-backed facades (`encode_to_vec`, the
 # growable sink) on the feature of the crate that holds them, spelled
@@ -51,4 +58,4 @@ tokio-tungstenite = { version = "0.30", optional = true, default-features = fals
 futures-util = { version = "0.3", optional = true, default-features = false, features = ["sink", "std"] }
 
 [dev-dependencies]
-tokio = { version = "1", default-features = false, features = ["net", "rt", "sync", "time", "macros"] }
+tokio = { version = "1", default-features = false, features = ["net", "rt", "rt-multi-thread", "sync", "time", "macros"] }

@@ -13,10 +13,11 @@
 //! already wrapped included, and the client dials `ws://` or `wss://`.
 //!
 //! The relay's work is short and takes a lock, so it runs on a blocking thread and never holds up
-//! the connections that are waiting.
+//! the connections that are waiting. What answers is a [`Hub`]: a relay behind one lock, or
+//! [`crate::hub::Shards`], whose requests for different lists run at once.
 
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use futures_util::{SinkExt, StreamExt};
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -28,9 +29,8 @@ use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
 use crate::client::{Link, LinkError};
+use crate::hub::Hub;
 use crate::protocol::{Request as RelayRequest, Response as RelayResponse};
-use crate::relay::Relay;
-use crate::store::Store;
 
 /// The path a device connects to.
 pub const PATH: &str = "/sce-relay/1";
@@ -51,15 +51,15 @@ fn refusal(status: http::StatusCode, why: &str) -> ErrorResponse {
 }
 
 /// Run one connection until it closes: answer each text message with the relay's response.
-pub async fn serve_connection<S, St>(
+pub async fn serve_connection<S, H>(
     stream: S,
-    relay: Arc<Mutex<Relay<St>>>,
+    hub: Arc<H>,
     clock: Clock,
     max_message: usize,
 ) -> Result<(), ServeError>
 where
     S: AsyncRead + AsyncWrite + Unpin,
-    St: Store + Send + 'static,
+    H: Hub,
 {
     let mut token: Option<String> = None;
     let config = WebSocketConfig::default()
@@ -80,11 +80,7 @@ where
         let Some(presented) = presented else {
             return Err(refusal(http::StatusCode::UNAUTHORIZED, "no token"));
         };
-        let accepted = relay
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .authenticate(presented, clock())
-            .is_ok();
+        let accepted = hub.authenticate(presented, clock()).is_ok();
         if !accepted {
             return Err(refusal(
                 http::StatusCode::UNAUTHORIZED,
@@ -107,14 +103,8 @@ where
             _ => break,
         };
         let answer = {
-            let (relay, clock, token) = (relay.clone(), clock.clone(), token.clone());
-            tokio::task::spawn_blocking(move || {
-                relay
-                    .lock()
-                    .unwrap_or_else(|poisoned| poisoned.into_inner())
-                    .handle(&token, &text, clock())
-            })
-            .await
+            let (hub, clock, token) = (hub.clone(), clock.clone(), token.clone());
+            tokio::task::spawn_blocking(move || hub.handle(&token, &text, clock())).await
         };
         let Ok(answer) = answer else { break };
         if ws.send(Message::Text(answer.into())).await.is_err() {
@@ -126,20 +116,20 @@ where
 }
 
 /// Accept connections on `listener` and run each as a task, for as long as the listener lives.
-pub async fn serve<St>(
+pub async fn serve<H>(
     listener: TcpListener,
-    relay: Arc<Mutex<Relay<St>>>,
+    hub: Arc<H>,
     clock: Clock,
     max_message: usize,
 ) -> std::io::Result<()>
 where
-    St: Store + Send + 'static,
+    H: Hub,
 {
     loop {
         let (stream, _peer): (TcpStream, SocketAddr) = listener.accept().await?;
-        let (relay, clock) = (relay.clone(), clock.clone());
+        let (hub, clock) = (hub.clone(), clock.clone());
         tokio::spawn(async move {
-            let _ = serve_connection(stream, relay, clock, max_message).await;
+            let _ = serve_connection(stream, hub, clock, max_message).await;
         });
     }
 }

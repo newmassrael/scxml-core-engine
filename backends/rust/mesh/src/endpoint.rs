@@ -330,6 +330,28 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
         self.apply(effects);
     }
 
+    /// Bind `peer` while the endpoint runs: a device a host learned of after it built its router (a
+    /// person who joined a list). Replaces the binding when `peer` is bound already, and with it
+    /// what that binding held.
+    pub fn add_peer(&mut self, peer: &str, config: crate::router::PeerConfig) {
+        self.router.add_peer(peer, config);
+    }
+
+    /// Unbind `peer`, which has left for good: its link's state, what waited for it, what it
+    /// forbids and what is queued to retry to it are let go, and the machine is told what a lost
+    /// link tells it. A peer that is not bound is left as it is.
+    pub fn remove_peer(&mut self, peer: &str) {
+        let effects = self.router.remove_peer(peer);
+        self.retries.retain(|retry| retry.peer != peer);
+        self.forbidden.remove(peer);
+        self.apply(Ok(effects));
+    }
+
+    /// Whether `peer` is bound.
+    pub fn has_peer(&self, peer: &str) -> bool {
+        self.router.has_peer(peer)
+    }
+
     /// End the ordering gaps that have waited out their timeout, and send
     /// again what has waited out its backoff. The host calls this on its own
     /// schedule; nothing else makes time pass for the core.
@@ -678,6 +700,106 @@ mod tests {
             retryable,
             message: Some("reset".to_string()),
         }
+    }
+
+    /// What the machine is told when it sends to `target` and no binding for it is held: one
+    /// `error.communication`, row 1 (`TRANSPORT_UNAVAILABLE`), that names the target and no
+    /// transport, because the deployment bound none.
+    fn assert_unbound(hub: &mut Endpoint<Recorder, Fixed>, target: &str) {
+        hub.send(&HostSendRequest {
+            target: format!("#{target}"),
+            ..send("note", "unbound")
+        });
+        let events = raised(hub);
+        let [event] = events.as_slice() else {
+            panic!("expected one error event, got {events:?}");
+        };
+        assert_eq!(event.name, "error.communication");
+        assert!(
+            event.metadata.data.contains("TRANSPORT_UNAVAILABLE")
+                && event
+                    .metadata
+                    .data
+                    .contains(&format!("\"target\":\"{target}\""))
+                && !event.metadata.data.contains("\"transport\""),
+            "{}",
+            event.metadata.data
+        );
+        assert!(hub.transport.sent.is_empty(), "nothing was transmitted");
+        assert!(hub.take_host_errors().is_empty());
+    }
+
+    /// A peer bound after the endpoint was built is one the machine can send to and hear from, and a
+    /// peer that was never bound is neither: a send to it is `error.communication`.
+    #[test]
+    fn a_peer_bound_while_the_endpoint_runs_is_one_it_can_send_to() {
+        let mut hub = endpoint("hub", "dev-0", None);
+        assert!(!hub.has_peer("dev-1"));
+        assert_unbound(&mut hub, "dev-1");
+
+        hub.add_peer("dev-1", config("dev-1", None));
+        assert!(hub.has_peer("dev-1"));
+        hub.peer_ready("dev-1");
+        hub.send(&HostSendRequest {
+            target: "#dev-1".to_string(),
+            ..send("note", "n-2")
+        });
+        assert!(hub.take_host_errors().is_empty());
+        assert!(raised(&mut hub).is_empty(), "nothing was raised");
+        let sent = hub.transport.sent.pop().unwrap();
+        assert_eq!(sent.0, "dev-1");
+    }
+
+    /// A peer that left is unbound: a send to it is `error.communication`, what it had sent is not
+    /// remembered (so the same envelope is delivered again if a peer of that name comes back),
+    /// and what the endpoint held to retry to it is dropped. Another peer is not touched.
+    #[test]
+    fn a_peer_that_left_is_forgotten_and_the_others_are_not() {
+        let mut ecu = endpoint("ecu", "hub", None);
+        ecu.send(&HostSendRequest {
+            target: "#hub".to_string(),
+            ..send("go", "s-1")
+        });
+        let (_, bytes) = ecu.transport.sent.pop().unwrap();
+
+        let mut hub = endpoint("hub", "ecu", None);
+        hub.add_peer("other", config("other", None));
+        hub.peer_ready("other");
+        hub.receive("ecu", bytes.clone());
+        hub.receive("ecu", bytes.clone());
+        assert_eq!(raised(&mut hub).len(), 1, "the second is a duplicate");
+
+        hub.remove_peer("ecu");
+        assert!(!hub.has_peer("ecu"));
+        assert!(hub.has_peer("other"));
+        // A link that was ready and is gone is the one edge a binding raises (§mesh-18.3), and the
+        // machine is told it once, as when the link is lost.
+        let edge = raised(&mut hub);
+        assert_eq!(edge.len(), 1, "{edge:?}");
+        assert_eq!(edge[0].name, "error.communication");
+        assert_unbound(&mut hub, "ecu");
+
+        // The peer is bound again by the host: what it sent before is new to the window.
+        hub.add_peer("ecu", config("ecu", None));
+        hub.receive("ecu", bytes);
+        assert_eq!(raised(&mut hub).len(), 1, "its window did not outlive it");
+
+        hub.send(&HostSendRequest {
+            target: "#other".to_string(),
+            ..send("note", "n-2")
+        });
+        assert!(hub.take_host_errors().is_empty(), "the other peer is bound");
+        assert!(raised(&mut hub).is_empty());
+        assert_eq!(hub.transport.sent.pop().unwrap().0, "other");
+    }
+
+    #[test]
+    fn removing_a_peer_that_is_not_bound_changes_nothing() {
+        let mut hub = endpoint("hub", "ecu", None);
+        hub.remove_peer("nobody");
+        assert!(hub.has_peer("ecu"));
+        assert!(hub.take_host_errors().is_empty());
+        assert!(hub.take_calls().is_empty());
     }
 
     #[test]
