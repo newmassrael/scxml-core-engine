@@ -345,6 +345,46 @@ fn a_conflict_goes_when_the_log_puts_what_made_it_past_a_cutoff_and_what_it_held
     assert!(second.equivocating().is_empty());
 }
 
+/// The log takes a device off after its first operation when the host has told its machine two: the
+/// second is past what the log accepted, and the host tells the machine to forget it. No conflict is
+/// involved, so this is the cutoff's own notice and not the freeze's: since a write that freezes a
+/// chain evicts in `hold`, the cutoff is the only path that reaches `tell_what_changed`.
+#[test]
+fn what_a_cutoff_takes_off_a_device_the_machine_is_told_to_forget() {
+    let log = entries();
+    let plain = host(&log, false);
+    let (first_op, id_first) = forged(&plain, &key(1), 1, NO_OPERATION, 1000, 0, "a");
+    let (second_op, _) = forged(&plain, &key(1), 2, id_first, 2000, 0, "b");
+    let removal = {
+        let scratch = host(&log, false);
+        publish(
+            &scratch,
+            Body::Grant {
+                node: 1,
+                role: 0,
+                key: key(1).public(),
+                final_seq: Some(1),
+            },
+        )
+    };
+
+    let one = host(&log, false);
+    take(&one, &first_op).unwrap();
+    take(&one, &second_op).unwrap();
+    assert!(one.equivocating().is_empty(), "two operations in order");
+    assert!(
+        one.take_evicted().is_empty(),
+        "nothing told was taken back yet"
+    );
+    one.append(&removal).unwrap();
+    assert_eq!(
+        one.take_evicted(),
+        vec![(1, 2)],
+        "the operation past the cutoff was told, and the machine is to forget it"
+    );
+    assert!(one.take_restored().is_empty());
+}
+
 #[test]
 fn a_replacement_key_begins_the_chain_where_the_cutoff_ended_the_old_one() {
     let log = entries();
