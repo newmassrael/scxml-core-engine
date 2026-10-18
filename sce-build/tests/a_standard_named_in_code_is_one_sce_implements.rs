@@ -233,16 +233,25 @@ const IMPLEMENTED: &[Implemented] = &[
             "sce-build/src/forge/generator.rs",
             "sce/include/mesh/",
             "tools/codegen/templates/mesh/",
+            "backends/rust/mesh/src/zenoh.rs",
+            "backends/rust/mesh/src/lib.rs",
+            "backends/rust/mesh/examples/zenoh_probe.rs",
         ],
         why: "SCE speaks Zenoh: transport/zenoh.rs plans the key \
               expressions and liveliness tokens, and templates/mesh/cpp \
               emits the session that publishes and queries over them. It is \
               admitted on the same argument as SOME/IP and DDS rather than \
               on having a standards body, which is the line a first draft \
-              drew and could not defend. The last two paths are one \
+              drew and could not defend. The two generator paths are one \
               diagnostic sentence each, not implementation: the generators \
               explain a liveliness rule and a deferral in prose the user \
-              reads at run time.",
+              reads at run time. The Rust Mesh binding is the same speech in \
+              another runtime: backends/rust/mesh/src/zenoh.rs opens the \
+              client session that carries a machine's envelopes and \
+              readiness, lib.rs declares that module \
+              behind its feature, and examples/zenoh_probe.rs measures the \
+              round trip over that same session. Three files, not the \
+              crate: the rest of it speaks WebSocket.",
     },
     Implemented {
         token: "RFC 4122",

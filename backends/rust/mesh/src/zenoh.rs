@@ -12,7 +12,8 @@
 //! on the inbox of the peer they name.
 //!
 //! The router the session connects to carries the bytes. Which one it is does not matter to this
-//! module: it speaks upstream's `zenoh` client, so it reaches any router of that protocol version.
+//! module: it speaks upstream's `zenoh` client, so it reaches any router of that protocol version
+//! (§mesh-20.4).
 
 use std::any::Any;
 use std::sync::mpsc;
@@ -121,8 +122,9 @@ impl Transport for ZenohTransport {
                 message: Some(format!("peer name {peer:?} is not a key chunk")),
             });
         }
-        // Block rather than drop under congestion: an envelope is the unit the core's delivery
-        // rules count, and one the network dropped silently is one the core would wait for.
+        // One envelope per put, and Block rather than drop under congestion (§mesh-20.2): an
+        // envelope is the unit the core's delivery rules count, and one the network dropped
+        // silently is one the core would wait for.
         self.session
             .put(inbox_key(peer, &self.machine), bytes.to_vec())
             .congestion_control(CongestionControl::Block)
@@ -170,7 +172,8 @@ pub struct ZenohBinding {
 
 /// Open the binding for `machine` on a session made from `config`.
 ///
-/// The inbox is subscribed before the presence token is declared, so that a machine which sees this
+/// Readiness is the presence token (§mesh-20.3). The inbox is subscribed before the token is
+/// declared, so that a machine which sees this
 /// one come up can send to it at once and not into a subscriber that does not exist yet. The
 /// presence subscriber asks for history, so a machine that opens after another learns it is up.
 pub fn open(config: Config, machine: &str) -> Result<ZenohBinding, ZenohError> {

@@ -3180,6 +3180,10 @@
         {
           "file": "backends/rust/mesh/src/zenoh.rs",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/mesh/tests/zenoh_through_a_wz_router.rs",
+          "kind": "verifies"
         }
       ]
     },
@@ -3187,19 +3191,49 @@
       "title": "Framing",
       "parent_doc": "mesh",
       "parent_section": "mesh-20",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "backends/rust/mesh/src/zenoh.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/mesh/tests/zenoh_through_a_wz_router.rs",
+          "kind": "verifies"
+        }
+      ]
     },
     "mesh-20.3": {
       "title": "Readiness and Faults",
       "parent_doc": "mesh",
       "parent_section": "mesh-20",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "backends/rust/mesh/src/zenoh.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/mesh/tests/zenoh_through_a_wz_router.rs",
+          "kind": "verifies"
+        }
+      ]
     },
     "mesh-20.4": {
       "title": "Implementations",
       "parent_doc": "mesh",
       "parent_section": "mesh-20",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "backends/rust/mesh/src/zenoh.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/mesh/tests/zenoh_through_a_wz_router.rs",
+          "kind": "verifies"
+        }
+      ]
     },
     "mesh-3": {
       "title": "Three Abstraction Axes",

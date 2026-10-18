@@ -13,9 +13,11 @@
 //! ```
 //!
 //! What it holds: two machines that only know each other's names learn each is up through the
-//! router, an envelope one sends reaches the other's engine, and a machine that goes away is told
-//! to the other as a lost link. Nothing here is a timing claim; every wait has a generous bound and
-//! the assertions are on what arrived.
+//! router (§mesh-20.3), an envelope one sends reaches the other's engine under the sender's name
+//! (§mesh-20.1, §mesh-20.2), and a machine that goes away is told to the other as a lost link
+//! (§mesh-20.3), all through a real watching-zenoh router with upstream's client (§mesh-20.4).
+//! Nothing here is a timing claim; every wait has a generous bound and the assertions are on what
+//! arrived.
 
 #![cfg(feature = "zenoh")]
 
