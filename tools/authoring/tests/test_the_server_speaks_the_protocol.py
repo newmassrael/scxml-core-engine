@@ -215,7 +215,12 @@ class TheServerSpeaksTheProtocol(unittest.TestCase):
         # every situation, which takes minutes for a few hundred of them: longer than a tool call is meant to run,
         # and a page of a few hundred kilobytes is not an answer a client reads. Whether and how an owner's client
         # should be handed these pages is not decided, so the command has no tool yet.
-        cli_only = {"revise-gate", "views"}
+        # `extract`, `convert` and `check-conversion` are the host's: a host that holds an original reads it
+        # into blocks, writes its Markdown by rule and counts a conversion against it (docs/adr/0026,
+        # 0036). A client of a run is not offered them, on purpose: a run that is handed an original to
+        # read gets the blocks it is to cite and nothing it could call to read a file of the machine, and
+        # a count of its own conversion is SCE's to make and not the maker's to ask for and report.
+        cli_only = {"revise-gate", "views", "extract", "convert", "check-conversion"}
         self.assertLessEqual(cli_only, commands, "a command-line-only name that is not a command")
         self.assertEqual(commands - cli_only, {t["name"] for t in mcp.TOOLS} - mcp_only)
 
