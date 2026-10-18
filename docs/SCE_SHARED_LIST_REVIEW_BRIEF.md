@@ -127,11 +127,11 @@ went on signing itself. Both are fixed (`evict_past_the_cutoff`, `evict_from`, t
 - A fuzz of every parser of the trust, relay and group-key code and of the C ABI: a seeded mutator
   (no panic over the default run and over a run forty times longer, with a harness that is checked to
   find planted defects of each kind) and libFuzzer on the same 21 targets.
-- Four mutation rounds, 152 cases in all, each taking one check away and the tests having to notice:
+- Four mutation rounds, 154 cases in all, each taking one check away and the tests having to notice:
   the log and the operation and checkpoint checks of a host (42,
   `a_host_holds_only_what_its_log_admits_rust.cases`), the relay and its courier (38), sealing, key
   agreement, backup, audit and the checkpoint form (34), and the group key code with its binding to the
-  log (38). Cases survived the tests that existed in every round, which is how checks that nothing held in
+  log (40). Cases survived the tests that existed in every round, which is how checks that nothing held in
   place were found; they are held now, and two cases that no input reaches were dropped, with the reason
   in the casefile. A round measures only the checks someone thought to take away: the cases are the
   authors', and the independent read above found seven defects in code the rounds covered. One kind of

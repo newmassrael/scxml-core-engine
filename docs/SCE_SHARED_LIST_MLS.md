@@ -73,11 +73,13 @@ yet waits. A relay that is not trusted can give any number of commits for an epo
 first: the `Member` keeps them by their hash (a bounded number while the log names none), uses the one
 the log names whichever came first, and drops the rest once the log names it. The bound has a cost: a
 relay that gives more false commits than it, before the log names one, can make the host drop the true
-commit, and a relay's feed does not give a record twice. The host is told this (`Member::commits_to_fetch`
-lists the epochs whose commit the log names and it does not hold) and reads the relay again from the start
-(`Courier::resync`): the log names the commit by then, so the true one is kept whatever came before it.
-A host that does not ask stays at its epoch, which is a loss of availability and never of
-confidentiality or integrity.
+commit, and a relay's feed does not give a record twice. The host notes the epochs it dropped a commit
+for, and `Member::commits_to_fetch` lists those whose commit the log names and it does not hold. A host
+that takes its rounds through `Member::follow` reads the relay again from the start (`Courier::reread`,
+which does not tell the machine the list again) when that list is not empty: the log names the commit by
+then, so the true one is kept whatever came before it, and the device goes on in the same call. A host
+that takes a round with `absorb` and `advance` alone stays at its epoch, which is a loss of availability
+and never of confidentiality or integrity.
 
 An operation sealed under an epoch whose key a host does not hold is **parked**: the courier tries it
 again each round, since the key may come (the commit reaches the host), and goes on past it. It is not

@@ -16,7 +16,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use sce_rust_relay::Record;
+use sce_rust_relay::{Courier, Link, Record, Round};
 use sce_rust_trust::encoding;
 use sce_rust_trust::membership::{Body, Entry};
 use sce_rust_trust::{Identity, PublicKey, Trust};
@@ -52,9 +52,20 @@ pub struct Issued {
 /// that is not trusted can give as many as it likes, and the host does not keep them all: once the log
 /// names a commit the true one is kept whatever the number given before, but one given while the
 /// host waited and over the limit was not kept. The host does not lose it for good: a log that names a
-/// commit the host does not hold is told by [`Member::commits_to_fetch`], and the courier's
-/// `resync` reads it again from the relay, which keeps the commit the log names.
+/// commit the host does not hold, for an epoch where it dropped one at the limit, is told by
+/// [`Member::commits_to_fetch`], and [`Member::follow`] reads the relay again (`Courier::reread`),
+/// which keeps the commit the log names.
 const MAX_CANDIDATES: usize = 64;
+
+/// What [`Member::follow`] did with a round.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Followed {
+    /// What the device did, in order, over the round and over the second read when there was one.
+    pub steps: Vec<Step>,
+    /// The second read of the relay, when the host had to make one for a commit it dropped. Its
+    /// events (operations the host did not hold) are for the machine, as a round's are.
+    pub reread: Option<Round>,
+}
 
 /// A device and its log.
 pub struct Member {
@@ -69,6 +80,9 @@ pub struct Member {
     packages: BTreeMap<u64, Vec<Vec<u8>>>,
     /// The Welcomes and commits that were refused, by their hash, so that they are not tried again.
     refused: BTreeSet<[u8; 32]>,
+    /// The epochs for which a commit was given and not kept, for the limit
+    /// ([`MAX_CANDIDATES`]) was reached before the log named one.
+    overflowed: BTreeSet<u32>,
 }
 
 impl Member {
@@ -81,6 +95,7 @@ impl Member {
             welcomes: BTreeMap::new(),
             packages: BTreeMap::new(),
             refused: BTreeSet::new(),
+            overflowed: BTreeSet::new(),
         }
     }
 
@@ -147,17 +162,20 @@ impl Member {
             None if held.len() < MAX_CANDIDATES => {
                 held.insert(hash, bytes);
             }
-            None => {}
+            None => {
+                self.overflowed.insert(epoch);
+            }
         }
     }
 
     /// The epochs whose commit the log names and this host does not hold, among the ones it would use
-    /// next: the epoch after its own, or, for a device in no group yet, the epoch of each Welcome it
-    /// holds. A commit given while the host waited can have been dropped at the limit
-    /// ([`MAX_CANDIDATES`]) and a relay's feed does not give a record twice, so [`Self::advance`] has
-    /// nothing to do for these epochs and would stay quiet. The host reads the relay again from the start
-    /// (`Courier::resync`) and [`Self::absorb`]s it: the log names the commit now, so the true one is kept.
-    /// Empty when nothing is missing.
+    /// next (the epoch after its own, or, for a device in no group yet, the epoch of each Welcome it
+    /// holds) and for which it dropped a commit at the limit ([`MAX_CANDIDATES`]) while the log named
+    /// none. A relay's feed does not give a record twice, so [`Self::advance`] has nothing to do for
+    /// these epochs and would stay quiet; [`Self::follow`] reads the relay again from the start, and the
+    /// log names the commit by then, so the true one is kept. A commit the relay has not given yet (the
+    /// log can name it before the relay holds it) is not in this list: that is waiting, and the next
+    /// round brings it. Empty when nothing was lost.
     pub fn commits_to_fetch(&self) -> Vec<u32> {
         let wanted: Vec<u32> = match self.device.epoch() {
             Err(_) => self.welcomes.keys().copied().collect(),
@@ -166,11 +184,36 @@ impl Member {
         wanted
             .into_iter()
             .filter(|epoch| {
-                self.trust
-                    .commit_of(*epoch)
-                    .is_some_and(|named| !self.has_commit(*epoch, &named))
+                self.overflowed.contains(epoch)
+                    && self
+                        .trust
+                        .commit_of(*epoch)
+                        .is_some_and(|named| !self.has_commit(*epoch, &named))
             })
             .collect()
+    }
+
+    /// Take in what a courier's round read and do what the log allows with it. When that leaves the
+    /// host without a commit it dropped at the limit ([`Self::commits_to_fetch`]), read the relay again
+    /// from the start once and do what the log allows with that too, so that a relay that gave false
+    /// commits before the log named the true one cannot keep a device at its epoch. A failure of the
+    /// second read is left to the next round: the commit is still named and still lacking, and the
+    /// host asks again.
+    pub fn follow<L: Link>(&mut self, courier: &mut Courier<L>, round: &Round) -> Followed {
+        self.absorb(&round.messages);
+        let mut followed = Followed {
+            steps: self.advance(),
+            reread: None,
+        };
+        if self.commits_to_fetch().is_empty() {
+            return followed;
+        }
+        if let Ok(again) = courier.reread() {
+            self.absorb(&again.messages);
+            followed.steps.extend(self.advance());
+            followed.reread = Some(again);
+        }
+        followed
     }
 
     fn has_commit(&self, epoch: u32, hash: &[u8; 32]) -> bool {

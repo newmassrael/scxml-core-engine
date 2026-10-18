@@ -151,7 +151,20 @@ fn a_copy_that_was_changed_or_asks_too_much_is_refused() {
     let contents = Contents::new(LIST, 3, [3; 32]);
     let text = backup::seal(b"pass", &contents, WEAK).unwrap();
     let mut value: Value = serde_json::from_str(&text).unwrap();
-    value["ct"] = json!(format!("A{}", &value["ct"].as_str().unwrap()[1..]));
+    // The first character becomes another one whatever it was: a copy sealed with a random nonce can
+    // begin with the character put there, and then nothing would have been changed.
+    let ciphertext = value["ct"].as_str().unwrap().to_string();
+    let other = if ciphertext.starts_with('A') {
+        'B'
+    } else {
+        'A'
+    };
+    value["ct"] = json!(format!("{other}{}", &ciphertext[1..]));
+    assert_ne!(
+        value["ct"].as_str().unwrap(),
+        ciphertext,
+        "the copy was changed"
+    );
     assert_eq!(
         backup::open(b"pass", &value.to_string()),
         Err(BackupError::Corrupt)

@@ -17,8 +17,10 @@ use sce_rust_mesh::endpoint::Admission;
 use sce_rust_mls::host::{Member, Step};
 use sce_rust_mls::Device;
 use sce_rust_relay::{
-    Authority, Courier, DirectLink, Keep, Limits, MemoryStore, Record, Relay, Request, Response,
+    Authority, Courier, DirectLink, Keep, Limits, Link, LinkError, MemoryStore, Record, Relay,
+    Request, Response,
 };
+use sce_rust_trust::encoding;
 use sce_rust_trust::membership::{Body, Log, Profile};
 use sce_rust_trust::{Identity, Trust};
 use sce_rust_world::{Outcome, World};
@@ -39,12 +41,69 @@ fn quiet(world: &mut World) {
 
 type Shared = Arc<Mutex<Relay<MemoryStore>>>;
 
+/// What a relay that is not trusted does to the answers one device reads: it keeps the log back, and
+/// gives commits nobody made before the first of what it holds. Off until a test turns it on.
+#[derive(Default)]
+struct Tamper {
+    /// Entries of the log are not given, whether asked for or in the feed.
+    withhold_log: bool,
+    /// The epoch of the false commits, and how many of them begin a feed read from the start.
+    false_commits: Option<(u32, usize)>,
+}
+
+/// A link that carries a device's requests to the relay and its answers back through [`Tamper`].
+struct Tampering {
+    inner: DirectLink<MemoryStore>,
+    tamper: Arc<Mutex<Tamper>>,
+}
+
+impl Link for Tampering {
+    fn call(&mut self, request: &Request) -> Result<Response, LinkError> {
+        let answer = self.inner.call(request)?;
+        let tamper = self.tamper.lock().unwrap();
+        Ok(match (request, answer) {
+            (Request::Entries { from }, Response::Entries { .. }) if tamper.withhold_log => {
+                Response::Entries {
+                    entries: Vec::new(),
+                    len: *from,
+                }
+            }
+            (
+                Request::Feed { cursor, .. },
+                Response::Feed {
+                    mut records,
+                    next,
+                    more,
+                },
+            ) => {
+                if tamper.withhold_log {
+                    records.retain(|record| !matches!(record, Record::Entry(_)));
+                }
+                if let (0, Some((epoch, count))) = (*cursor, tamper.false_commits) {
+                    let false_ones = (0..count).map(|n| Record::Commit {
+                        epoch,
+                        data: encoding::encode(format!("invented by the relay {n}").as_bytes()),
+                    });
+                    records.splice(0..0, false_ones);
+                }
+                Response::Feed {
+                    records,
+                    next,
+                    more,
+                }
+            }
+            (_, answer) => answer,
+        })
+    }
+}
+
 /// A device's machine (named `copy`), its MLS member and its courier to the relay.
 struct Party {
     copy: &'static str,
     node: u64,
     member: Member,
-    courier: Courier<DirectLink<MemoryStore>>,
+    courier: Courier<Tampering>,
+    tamper: Arc<Mutex<Tamper>>,
 }
 
 struct Group {
@@ -112,9 +171,13 @@ impl Group {
         let member = Member::new(Device::new(LIST, node, key_of(node)), trust.clone(), node);
         let clock: Arc<dyn Fn() -> u64 + Send + Sync> = Arc::new(|| 0);
         let token = self.authority.issue(LIST, node, u64::MAX);
+        let tamper = Arc::new(Mutex::new(Tamper::default()));
         let courier = Courier::new(
             trust.clone(),
-            DirectLink::new(self.relay.clone(), token, clock),
+            Tampering {
+                inner: DirectLink::new(self.relay.clone(), token, clock),
+                tamper: tamper.clone(),
+            },
         );
         self.world.set_sealer(copy, Box::new(Keep::new(trust)));
         self.parties.push(Party {
@@ -122,6 +185,7 @@ impl Group {
             node,
             member,
             courier,
+            tamper,
         });
     }
 
@@ -135,13 +199,20 @@ impl Group {
         for round in 0..30 {
             let mut moved = false;
             for party in &mut self.parties {
-                let result = party.courier.sync().unwrap();
-                moved |= result.pushed > 0 || !result.events.is_empty();
-                for (event, data) in result.events {
+                let mut result = party.courier.sync().unwrap();
+                moved |=
+                    result.pushed > 0 || !result.events.is_empty() || !result.messages.is_empty();
+                for (event, data) in std::mem::take(&mut result.events) {
                     self.world.raise(party.copy, &event, &data);
                 }
-                party.member.absorb(&result.messages);
-                moved |= !party.member.advance().is_empty() || !result.messages.is_empty();
+                let followed = party.member.follow(&mut party.courier, &result);
+                if let Some(again) = followed.reread {
+                    for (event, data) in again.events {
+                        self.world.raise(party.copy, &event, &data);
+                    }
+                    moved = true;
+                }
+                moved |= !followed.steps.is_empty();
             }
             quiet(&mut self.world);
             // What a machine sends to a hub it does not have is kept by its host and refused to the
@@ -348,4 +419,78 @@ fn a_member_taken_off_is_cut_off_at_the_next_epoch() {
     let mut bob_host = group.party(2).member.trust().clone();
     let reason = bob_host.admit("relay", "todo.write", newest).unwrap_err();
     assert!(reason.contains("no key of epoch 3"), "{reason}");
+}
+
+/// A relay that is not trusted keeps the log back from a device, gives it more false commits than it
+/// will wait on, and the true one after them. The device cannot take the commit when it comes (the log
+/// does not name it yet) and drops it at its limit; when the log is given at last, the host reads the
+/// relay again by itself, and the device joins the group.
+#[test]
+fn a_device_a_relay_gave_false_commits_before_the_log_joins_when_its_host_reads_again() {
+    let mut group = Group::begin(33);
+    group.attach("bob", 2, None);
+    let package = group.party(2).member.device_mut().key_package().unwrap();
+    group
+        .party(2)
+        .courier
+        .publish_key_package(&package)
+        .unwrap();
+    group.pump();
+
+    let package = group
+        .party(1)
+        .member
+        .key_packages_of(2)
+        .last()
+        .cloned()
+        .expect("alice read the key package from the relay");
+    let issued = group
+        .party(1)
+        .member
+        .add_member(&administrator(), 2, 2, key_of(2).public(), &package)
+        .unwrap();
+    {
+        let alice = group.party(1);
+        alice.courier.sync().unwrap();
+        alice
+            .courier
+            .publish_commit(issued.epoch, &issued.commit)
+            .unwrap();
+        alice
+            .courier
+            .publish_welcome(issued.epoch, 2, issued.welcome.as_ref().unwrap())
+            .unwrap();
+    }
+
+    // Bob's relay holds the log back, and gives seventy false commits before the true one.
+    {
+        let mut tamper = group.party(2).tamper.lock().unwrap();
+        tamper.withhold_log = true;
+        tamper.false_commits = Some((issued.epoch, 70));
+    }
+    {
+        let bob = group.party(2);
+        let round = bob.courier.sync().unwrap();
+        let followed = bob.member.follow(&mut bob.courier, &round);
+        assert!(followed.steps.is_empty(), "{:?}", followed.steps);
+        assert!(
+            followed.reread.is_none(),
+            "the log names nothing to ask for"
+        );
+        assert!(bob.member.device().epoch().is_err());
+    }
+
+    // The log reaches bob. He holds no commit the log names, and his host reads again and joins.
+    group.party(2).tamper.lock().unwrap().withhold_log = false;
+    let alices_key = group.party(1).member.device().epoch_key();
+    let bob = group.party(2);
+    let round = bob.courier.sync().unwrap();
+    let followed = bob.member.follow(&mut bob.courier, &round);
+    assert!(followed.reread.is_some(), "the host read the relay again");
+    assert_eq!(
+        followed.steps,
+        vec![Step::Joined(u64::from(issued.epoch))],
+        "{followed:?}"
+    );
+    assert_eq!(bob.member.device().epoch_key(), alices_key);
 }

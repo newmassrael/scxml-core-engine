@@ -194,5 +194,8 @@ fn a_host_that_waits_for_nothing_is_told_to_fetch_nothing() {
         "the log names no commit yet: there is nothing to ask for"
     );
     quiet.trust().append(named).unwrap();
-    assert_eq!(quiet.commits_to_fetch(), vec![issued.epoch]);
+    assert!(
+        quiet.commits_to_fetch().is_empty(),
+        "the log names a commit the relay has not given yet: that is waiting, and nothing was lost"
+    );
 }

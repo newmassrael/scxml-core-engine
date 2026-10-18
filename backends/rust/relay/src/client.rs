@@ -222,6 +222,14 @@ impl<L: Link> Courier<L> {
         self.round(true)
     }
 
+    /// A round that reads everything the relay holds from the start and tells the machine only what
+    /// the host did not hold: for a host's MLS device that was not given a commit the first time (a
+    /// feed does not give a record twice), and whose machine is not to be told the list again.
+    pub fn reread(&mut self) -> Result<Round, CourierError> {
+        self.cursor = 0;
+        self.round(false)
+    }
+
     fn round(&mut self, redeliver: bool) -> Result<Round, CourierError> {
         let mut round = Round::default();
         self.exchange_log(&mut round)?;
