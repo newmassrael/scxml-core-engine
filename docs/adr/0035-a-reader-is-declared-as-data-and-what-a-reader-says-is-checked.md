@@ -151,9 +151,10 @@ does not run it, rate with it or show its result (ADR 0029 rejected approving mo
 - Believing a reader's probabilities. They caught some of the wrong characters and warned on many right
   ones, and did not move at the look-alike characters at all.
 - Requiring a box for every block. It would exclude the reader that read best.
-- Borrowing the boxes of a cheap line detector for the words of a reader that gives none. It was tried
-  once against a truth that was too coarse to judge it, so it is not established either way; it is left to
-  the follow-up below and is not assumed to work.
+- Borrowing the boxes of a cheap line detector (a classic line OCR) for the words of a reader that gives
+  none. Tried against the ink of an untilted scan (see the follow-up below), it placed 7 of the 13 lines
+  that the reader gave, whatever offset was taken off, and its own boxes for the lines it read right were
+  right in all 8. Its words are too poor to pair with the reader's, which is what the pairing needs.
 - Checking a reader in the product by running the trial there. That is the benchmarking inside the product
   that ADR 0029 rejected.
 
@@ -167,10 +168,29 @@ does not run it, rate with it or show its result (ADR 0029 rejected approving mo
   over (ADR 0032's renditions) and a mark per page in the text of the original, so that the existing tool
   that hands over a marked picture serves a page. That tool refuses a picture larger than 4,000,000 bytes,
   so a page is reduced to what the tool takes and the review shows the reduced picture, as ADR 0032 says.
-- The trial's open questions are follow-ups and not decisions: whether boxes can be taken from one reader
-  for the words of another, with a truth that can judge it; how a reader that gives no boxes can be made to
-  show an omission; and the same trial on the owner's own documents, scans included, before the first
-  release, with nothing of those documents copied into a repository.
+- Follow-ups run on 2026-10-18, on the same synthetic document made as an untilted scan, so that a place
+  in the clean page is a place in the scan (the truth of a line is the ink of its band):
+  - Boxes for the words of a reader that gives none. The blocks of dots.ocr, matched to Claude's lines by
+    text, were right for 10 of 13 lines as they came, and for 13 of 13 once the median offset of their
+    top and bottom edges against the lines that matched exactly (7 and 8 pixels) was taken off; the
+    same offset is something a product can read off the lines it matches by text. The classic line OCR
+    could not be used this way (7 of 13). The same result held for each of Claude's three transcriptions.
+    One page size, one resolution and thirteen lines: it is a direction that holds on this sample and
+    is not yet a measure of how far a box can be trusted. The boxes of a reader are in the space of the
+    picture the runtime resized, and the box is `approximate` until a calibration like this one has been
+    made for the page.
+  - Showing an omission for a reader that gives no boxes. Ink with no box over it did not show the two
+    lines blurred on purpose, because the layout boxed them too (with words that are not words); it did
+    show a box taken away in 28 of 31 cases. The test that did work is a block of the layout whose text is
+    not found in what the reader wrote: of 16 lines taken out of the reader's text one at a time, 16 were
+    flagged as the missing block and no other block was, and with nothing taken out two blocks were
+    flagged, both the nonsense the layout read from the blurred lines, which is where a person is
+    to look. So an omission is shown by a layout and the reader's text together, and the layout's own
+    words are not believed (they are a hint that something is there).
+  - The same trial on documents of the owner's, scans included, is still to be made before the first
+    release, with nothing of those documents copied into a repository. Of the 289 PDFs over 50 kB found
+    under the owner's home, 286 have a text layer and 3 have none in their first three pages, so the
+    scan path is the rare one on this machine.
 - Where a manifest's licence is not a plain permissive one (a project licence with added conditions on the
   size of the user, or a licence on the weights different from the licence on the code) the manifest is not
   shipped until the terms have been read in the files and not in a summary of them.
