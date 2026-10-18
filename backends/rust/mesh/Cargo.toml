@@ -28,6 +28,12 @@ required-features = ["wss"]
 name = "mesh_probe"
 required-features = ["wss"]
 
+# What a Mesh envelope costs to cross a Zenoh network, through whatever routers lie between a device
+# and the server: `cargo run --release --features zenoh --example zenoh_probe -- server|client ...`.
+[[example]]
+name = "zenoh_probe"
+required-features = ["zenoh"]
+
 [features]
 # The generated modules gate their heap-backed facades (`encode_to_vec`, the
 # growable sink) on the feature of the crate that holds them, spelled
