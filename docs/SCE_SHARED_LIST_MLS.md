@@ -71,8 +71,13 @@ joins from a Welcome addressed to it, a device in the group applies the commit t
 next epoch, and each gives its `Trust` the key of the epoch it reaches. A commit the log does not name
 yet waits. A relay that is not trusted can give any number of commits for an epoch, and a false one
 first: the `Member` keeps them by their hash (a bounded number while the log names none), uses the one
-the log names whichever came first, and drops the rest once the log names it, so a relay cannot keep a
-device out of its group by giving a commit before the true one.
+the log names whichever came first, and drops the rest once the log names it. The bound has a cost: a
+relay that gives more false commits than it, before the log names one, can make the host drop the true
+commit, and a relay's feed does not give a record twice. The host is told this (`Member::commits_to_fetch`
+lists the epochs whose commit the log names and it does not hold) and reads the relay again from the start
+(`Courier::resync`): the log names the commit by then, so the true one is kept whatever came before it.
+A host that does not ask stays at its epoch, which is a loss of availability and never of
+confidentiality or integrity.
 
 An operation sealed under an epoch whose key a host does not hold is **parked**: the courier tries it
 again each round, since the key may come (the commit reaches the host), and goes on past it. It is not

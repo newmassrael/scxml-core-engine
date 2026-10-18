@@ -2,9 +2,11 @@
 //
 // A relay that is not trusted gives a host the commits of the group in whatever order it likes, and it
 // may give ones nobody made, before or after the one the log names for the epoch. The host keeps the
-// commit whose hash the log names, whichever arrives first and however many others there are, and does
-// not let what it was given stand in the way of the true one: a Welcome with the true commit joins the
-// device whether the log named the commit before the relay gave any, or after.
+// commit whose hash the log names, whichever arrives first, and does not let what it was given stand in
+// the way of the true one: a Welcome with the true commit joins the device whether the log named the
+// commit before the relay gave any, or after. A host waits on a bounded number of commits for an epoch
+// the log has not named one for; past the bound the true one can be dropped, and the host is told which
+// commit it lacks (`commits_to_fetch`) so that it reads the relay again, and takes it.
 
 use sce_rust_mls::host::{Issued, Member, Step};
 use sce_rust_mls::Device;
@@ -133,4 +135,64 @@ fn the_true_commit_among_many_false_ones_given_before_the_log_names_it_is_the_on
             "the true commit was among forty false ones"
         );
     }
+}
+
+/// A host that has the log up to its own grant is given `false_ones` false commits, the true one and
+/// the Welcome, then the entry that names the commit.
+fn waits_then_is_told(false_ones: usize) -> (Member, Vec<Record>, Issued) {
+    let (issued, log, bob) = invitation();
+    let (named, before) = log.split_last().unwrap();
+    let mut late = Member::new(bob, host(before, 2), 2);
+
+    let mut given: Vec<Record> = (0..false_ones)
+        .map(|n| commit(&issued, format!("invented {n}").as_bytes()))
+        .collect();
+    given.push(commit(&issued, &issued.commit));
+    given.push(welcome(&issued));
+    late.absorb(&given);
+    assert!(late.advance().is_empty());
+    late.trust().append(named).unwrap();
+    (late, given, issued)
+}
+
+#[test]
+fn a_true_commit_that_fell_past_the_waiting_limit_is_told_and_taken_when_read_again() {
+    // 63 false commits and the true one fill the limit exactly: the true one is kept.
+    let (mut within, _, issued) = waits_then_is_told(63);
+    assert!(within.commits_to_fetch().is_empty());
+    assert_eq!(
+        within.advance(),
+        vec![Step::Joined(u64::from(issued.epoch))]
+    );
+
+    // 64 false commits first: the true one was over the limit and is gone, and the host says so
+    // instead of staying quiet.
+    let (mut over, given, issued) = waits_then_is_told(64);
+    assert!(
+        over.advance().is_empty(),
+        "nothing is held that the log names"
+    );
+    assert!(over.device().epoch().is_err());
+    assert_eq!(over.commits_to_fetch(), vec![issued.epoch]);
+
+    // The relay is read again from the start: the log names the commit now, so the true one is kept
+    // whatever the false ones before it, and the device joins.
+    over.absorb(&given);
+    assert!(over.commits_to_fetch().is_empty());
+    assert_eq!(over.advance(), vec![Step::Joined(u64::from(issued.epoch))]);
+}
+
+#[test]
+fn a_host_that_waits_for_nothing_is_told_to_fetch_nothing() {
+    let (issued, log, bob) = invitation();
+    let (named, before) = log.split_last().unwrap();
+    let mut quiet = Member::new(bob, host(before, 2), 2);
+    assert!(quiet.commits_to_fetch().is_empty(), "no Welcome is held");
+    quiet.absorb(&[welcome(&issued)]);
+    assert!(
+        quiet.commits_to_fetch().is_empty(),
+        "the log names no commit yet: there is nothing to ask for"
+    );
+    quiet.trust().append(named).unwrap();
+    assert_eq!(quiet.commits_to_fetch(), vec![issued.epoch]);
 }

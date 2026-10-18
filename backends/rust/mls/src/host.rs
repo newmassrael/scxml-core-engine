@@ -49,8 +49,11 @@ pub struct Issued {
 }
 
 /// The most commits a host keeps waiting for an epoch the log has not yet named a commit for. A relay
-/// that is not trusted can give as many as it likes; the true one is kept whatever the number
-/// ([`Member::absorb`]), so that a relay cannot fill the host with false ones before it.
+/// that is not trusted can give as many as it likes, and the host does not keep them all: once the log
+/// names a commit the true one is kept whatever the number given before, but one given while the
+/// host waited and over the limit was not kept. The host does not lose it for good: a log that names a
+/// commit the host does not hold is told by [`Member::commits_to_fetch`], and the courier's
+/// `resync` reads it again from the relay, which keeps the commit the log names.
 const MAX_CANDIDATES: usize = 64;
 
 /// A device and its log.
@@ -146,6 +149,34 @@ impl Member {
             }
             None => {}
         }
+    }
+
+    /// The epochs whose commit the log names and this host does not hold, among the ones it would use
+    /// next: the epoch after its own, or, for a device in no group yet, the epoch of each Welcome it
+    /// holds. A commit given while the host waited can have been dropped at the limit
+    /// ([`MAX_CANDIDATES`]) and a relay's feed does not give a record twice, so [`Self::advance`] has
+    /// nothing to do for these epochs and would stay quiet. The host reads the relay again from the start
+    /// (`Courier::resync`) and [`Self::absorb`]s it: the log names the commit now, so the true one is kept.
+    /// Empty when nothing is missing.
+    pub fn commits_to_fetch(&self) -> Vec<u32> {
+        let wanted: Vec<u32> = match self.device.epoch() {
+            Err(_) => self.welcomes.keys().copied().collect(),
+            Ok(epoch) => u32::try_from(epoch + 1).into_iter().collect(),
+        };
+        wanted
+            .into_iter()
+            .filter(|epoch| {
+                self.trust
+                    .commit_of(*epoch)
+                    .is_some_and(|named| !self.has_commit(*epoch, &named))
+            })
+            .collect()
+    }
+
+    fn has_commit(&self, epoch: u32, hash: &[u8; 32]) -> bool {
+        self.commits
+            .get(&epoch)
+            .is_some_and(|held| held.contains_key(hash))
     }
 
     /// The commit of `epoch` the log names, when this host has been given it.

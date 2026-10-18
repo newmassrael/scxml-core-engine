@@ -198,6 +198,24 @@ edit("backends/rust/mls/src/host.rs",
      "            Some(named) if named != hash && false => {}")
 PY
 
+mutation_case "A host waits on one commit more than its limit for an epoch the log has not named" <<'PY'
+edit("backends/rust/mls/src/host.rs",
+     "            None if held.len() < MAX_CANDIDATES => {",
+     "            None if held.len() <= MAX_CANDIDATES => {")
+PY
+
+mutation_case "A host is told to fetch a commit it already holds" <<'PY'
+edit("backends/rust/mls/src/host.rs",
+     "                    .is_some_and(|named| !self.has_commit(*epoch, &named))",
+     "                    .is_some_and(|named| self.has_commit(*epoch, &named))")
+PY
+
+mutation_case "A device in no group is not told the commit of its Welcome is missing" <<'PY'
+edit("backends/rust/mls/src/host.rs",
+     "            Err(_) => self.welcomes.keys().copied().collect(),",
+     "            Err(_) => Vec::new(),")
+PY
+
 # ── What a host's member writes to the log and gives its group ────────────────────────────────
 
 mutation_case "A member is added without the grant that makes it one" <<'PY'
