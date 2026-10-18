@@ -175,6 +175,20 @@ class LinesBecomeBlocksByTheirOwnGeometry(Folder):
 
         self.assertEqual([b.text for b in done.blocks], ["- an item that is long and wraps here", "- next"])
 
+    def test_what_is_read_converts_by_rule_and_the_check_finds_it_complete(self):
+        # The whole route for a PDF that carries its text, with no model: read, convert, check.
+        from sce_author.conversion import check_conversion, convert_by_rules
+
+        done = builtin().extract(self.pdf([{"lines": LAMP}]))
+
+        made = convert_by_rules(done)
+
+        self.assertTrue(check_conversion(done, made).complete)
+        self.assertEqual(
+            made.markdown().splitlines()[0:3],
+            ["# Lamp controller", "", "The lamp is on while the supply is present. It turns off when the supply is lost."],
+        )
+
     def test_the_extraction_is_the_same_each_time_it_is_made(self):
         path = self.pdf([{"lines": LAMP}])
 

@@ -90,6 +90,32 @@ class TheReadersOfIngestAreTheFirstExtractors(Folder):
         self.assertEqual(done.member, "spec.md")
         self.assertEqual(done.extractor, "plain")
 
+    def test_the_delimiter_row_of_a_markdown_table_is_syntax_and_not_a_row(self):
+        path = self.write(
+            "spec.md", "| state | lamp |\n| :--- | ---: |\n| on | lit |\n| off | dark |\n\n| - | - |\n| x | y |\n"
+        )
+
+        done = builtin().extract(path)
+
+        first, second = done.blocks
+        self.assertEqual(first.cells, (("state", "lamp"), ("on", "lit"), ("off", "dark")))
+        # The row under the header is the delimiter only where it is the second row of the table:
+        # a table whose header is dashes keeps its header, and this one's second row is a delimiter.
+        self.assertEqual(second.cells, (("-", "-"), ("x", "y")))
+        # The text of the block is what the reader said, delimiter row included.
+        self.assertIn(":---", first.text)
+
+    def test_a_word_or_html_table_with_a_row_of_dashes_keeps_it_because_only_markdown_has_that_syntax(self):
+        path = self.write(
+            "spec.html",
+            "<table><tr><td>h</td><td>h</td></tr><tr><td>-</td><td>-</td></tr><tr><td>a</td><td>b</td></tr></table>",
+        )
+
+        done = builtin().extract(path)
+
+        table = next(b for b in done.blocks if b.kind == "table")
+        self.assertEqual(table.cells, (("h", "h"), ("-", "-"), ("a", "b")))
+
     def test_ids_are_stable_for_the_same_file_and_the_extraction_is_named_by_its_content(self):
         path = self.write("spec.md", "One.\n\nTwo.\n")
 

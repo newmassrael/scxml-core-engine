@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sce.dev/schemas/authoring/conversion.v1.schema.json",
+  "title": "Conversion",
+  "description": "Markdown made of an extraction, block by block, each Markdown block naming the blocks of the extraction it was made from (docs/adr/0026-a-conversion-is-held-to-the-original-block-by-block.md). SCE checks the citation: what matched, what is not in the original and what the conversion left out are SCE's counts, and the form has no field in which a conversion could say it is complete. The extraction it is of is named by its revision, the SHA-256 of its canonical text.",
+  "x-sce-schema-status": "pre-release",
+  "type": "object",
+  "required": ["v", "converter", "extraction", "blocks"],
+  "additionalProperties": false,
+  "properties": {
+    "v": { "const": 1 },
+    "converter": {
+      "type": "object",
+      "required": ["kind", "name", "version"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "enum": ["rules", "model"] },
+        "name": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 }
+      }
+    },
+    "extraction": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "blocks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "markdown", "cites"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "markdown": { "type": "string" },
+          "cites": {
+            "description": "The ids of the blocks of the extraction this block was made from, in the order they are read. A block that cites none is not in the original.",
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 },
+            "uniqueItems": true
+          }
+        }
+      }
+    }
+  }
+}

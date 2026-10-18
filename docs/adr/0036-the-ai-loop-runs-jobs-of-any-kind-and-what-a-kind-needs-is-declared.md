@@ -154,26 +154,39 @@ Each step lands with its tests and is useful before the next; none is a placehol
    read them. This comes before the job record because a job's inputs are hashes of these, and a record
    that names what the store cannot hold is a record with nothing behind it (found on 2026-10-18, when
    the request of today was read for what it would take to generalise it).
-4. **The job record.** What a request is today is tied to a spec's text: it is registered against the
+4. **The conversion and its check, with no model.** The form of a conversion (Markdown blocks, each
+   citing the blocks of an extraction it was made from), SCE's check of the citation (ADR 0026: what
+   matched, what is not in the original, what the conversion left out), and the converter for what an
+   extraction carries as text. This is on the way of every conversion and needs no job: an original that
+   carries its text (Markdown, HTML, a word file, a PDF with a text layer) is converted by rule, and 286
+   of the 289 PDFs over 50 kB on the owner's machine had a text layer. The check is the one a conversion
+   by a model is held to later, so it is written once, here, and the converter by rule is its first
+   client and its control: a conversion it makes must match every block.
+5. **The proposal and its accept.** ADR 0025's proposal pinned to the revision it was made from, the
+   accept that is the store's compare-and-set or is refused as `moved`, and the log of the owner's
+   decisions on blocks; then the workbench's import screen over them.
+6. **The job record.** What a request is today is tied to a spec's text: it is registered against the
    heads of the source and the answers, refused as `moved` when they move, one is open at most, and it
    publishes a model and a list. What is not tied to it (the life with its lease, attempts and fence,
    the places of a connection, the journal, the pin, the key that makes a repeated press one request) is
-   already one document and one store. So the request is generalised in place and not copied: it gains a
-   `kind`, a `unit`, inputs named by hash beyond the two heads, and artifacts named by hash beside the
-   candidate, all absent from the record of a request that has none, so that every record written before
-   reads and writes as it did. A table of kinds in the specs crate says, for each, what it is registered
-   against (the text head or not), how many may be open (one per spec, or one per unit), whether the move
-   of a head supersedes it, and what it must have made before it may publish. A name outside the table is
-   refused. Scope stays the spec: an import always belongs to one (ADR 0025), so a conversion job is a job
-   of a spec. Generating a model is the first kind and its existing tests hold it.
-5. **The loop split.** The runtime contract and the kind contract in the workbench's core; Claude Code,
+   already one document and one store. Reading the code for what generalising it takes (2026-10-18)
+   showed two things: its inputs are the two heads, and a spec that is new has no text and an import
+   must work for it, so the record has to stop requiring a text head for a kind that does not read one;
+   and its life, its pin, its lease and its outcome are fields of the request that a second record would
+   copy unless they become one core that the request and the job both carry (`#[serde(flatten)]`, so
+   that a record written before reads as it did). So it is a refactor of the request store and not an
+   addition to it, and it is done when a kind needs it, which is the page that is a picture, and not
+   before: nothing earlier on this list is a job. A table of kinds in the specs crate then says, for
+   each, what it is registered against, how many may be open (one per spec, or one per unit), whether
+   the move of a head supersedes it, and what it must have made before it may publish; generating a
+   model is the first kind and its existing tests hold it.
+7. **The loop split.** The runtime contract and the kind contract in the workbench's core; Claude Code,
    Codex and the model server behind the runtime contract with their tests and live tests unchanged;
    generating a model as a kind.
-6. **Conversion as a kind, for a text layer.** Blocks in, Markdown with citations out, ADR 0026's check,
-   the review queue; no picture.
-7. **Pictures.** The attachment path for each runtime, tried live one at a time; the reader manifests of
-   ADR 0035; conversion of a page that is a picture; the omission check from a layout and the reader's text.
-8. **Policy and the sheet.** The data classes, the workspace's policy, the line that says where pages go.
+8. **Pictures.** The attachment path for each runtime, tried live one at a time; the reader manifests of
+   ADR 0035; conversion of a page that is a picture as a kind of job, with its unit and its check from
+   step 4; the omission check from a layout and the reader's text.
+9. **Policy and the sheet.** The data classes, the workspace's policy, the line that says where pages go.
 
 ## Alternatives rejected
 

@@ -119,6 +119,7 @@ class Registry:
 _HEADING = re.compile(r"^(#{1,6})\s+(\S.*)$")
 _LIST_ITEM = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+\S")
 _ONLY_MARKS = re.compile(r"^(?:\[picture(?:: [^\]]+)?\]|\[\d+ pictures\])(?:\s+(?:\[picture(?:: [^\]]+)?\]))*$")
+_DELIMITER_CELL = re.compile(r":?-+:?")
 _ENCLOSED = re.compile(r"^\[enclosed object: [^\]]+\]$")
 
 
@@ -129,7 +130,9 @@ def _row_cells(line: str) -> list[str]:
     return [cell.strip() for cell in inner.split(" | ")] if " | " in inner else [inner.strip()]
 
 
-def blocks_of_text(text: str, member: str, line_is_block: bool) -> tuple[list[Block], list[NotCarried]]:
+def blocks_of_text(
+    text: str, member: str, line_is_block: bool, delimiter_row: bool = False
+) -> tuple[list[Block], list[NotCarried]]:
     """The blocks of a reader's text, and what putting them in blocks could not keep exact.
 
     The readers of `ingest` write a document as text (a table as one line per row beginning with `|`,
@@ -138,7 +141,8 @@ def blocks_of_text(text: str, member: str, line_is_block: bool) -> tuple[list[Bl
     text, because a reader that flattened a document cannot say where in the file each line sat.
 
     `line_is_block` is for a reader that writes one block to a line (a word document, HTML); a text
-    reader's lines are wrapped, so a run of lines is one paragraph.
+    reader's lines are wrapped, so a run of lines is one paragraph. `delimiter_row` is for text that is
+    Markdown, whose tables carry a delimiter row under the header that is syntax and not a row.
     """
     blocks: list[Block] = []
     notes: list[NotCarried] = []
@@ -169,6 +173,10 @@ def blocks_of_text(text: str, member: str, line_is_block: bool) -> tuple[list[Bl
         if not table:
             return
         rows = [_row_cells(line) for line in table]
+        # A Markdown table's second row says where the header ends (`| --- | :-: |`) and holds no
+        # words; kept as a row it would be a row of dashes in every table of every Markdown original.
+        if delimiter_row and len(rows) >= 2 and all(_DELIMITER_CELL.fullmatch(cell) for cell in rows[1]):
+            del rows[1]
         width = max(len(row) for row in rows)
         short_rows += sum(1 for row in rows if len(row) < width)
         grid = tuple(tuple(row + [""] * (width - len(row))) for row in rows)
@@ -222,10 +230,11 @@ class ReaderExtractor:
     declaration: Declaration
     read: Callable[[pathlib.Path], _ingest.Ingested]
     line_is_block: bool
+    delimiter_row: bool = False
 
     def extract(self, path: pathlib.Path) -> Extraction:
         ingested = self.read(path)
-        blocks, notes = blocks_of_text(ingested.text, path.name, self.line_is_block)
+        blocks, notes = blocks_of_text(ingested.text, path.name, self.line_is_block, self.delimiter_row)
         carried = [NotCarried(note) for note in ingested.notes] + notes
         return Extraction(
             extractor=self.declaration.name,
@@ -249,7 +258,10 @@ def builtin() -> Registry:
     return Registry(
         [
             ReaderExtractor(
-                Declaration("plain", "1", (".md", ".txt", ".text")), _ingest.READERS[".md"], line_is_block=False
+                Declaration("plain", "1", (".md", ".txt", ".text")),
+                _ingest.READERS[".md"],
+                line_is_block=False,
+                delimiter_row=True,
             ),
             ReaderExtractor(Declaration("html", "1", (".html", ".htm")), _ingest.READERS[".html"], line_is_block=True),
             ReaderExtractor(

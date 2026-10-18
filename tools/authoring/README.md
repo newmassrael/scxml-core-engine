@@ -1992,6 +1992,28 @@ not carried, never the document's words. A format nobody reads is a typed answer
 (`unread [format-unread]`) with exit 1 and no file. It is a command for a host and a person and is not
 among the tools a client of a run is offered.
 
+**A conversion is Markdown that cites the blocks it was made from, and SCE counts the citation**
+(`conversion.py`, schema `schema/conversion.v1.schema.json`, `pre-release`). Each Markdown block names the
+blocks of the extraction it came from; the check compares the words of the block with the words of the
+blocks it cites (heading marks, list markers, table pipes and escapes are taken off both sides, a table is
+compared by its cells, a letter or a syllable different is a difference) and reports *matched*, *to
+check*, *not in the original* (a block that cites nothing) and *missing* (a block of the original no
+block cites). The counts are the check's: the form has no field in which a conversion could say it is
+complete, and a field it does not know is refused. A block read from an image is queued for a person
+whatever its text says, because recognition is never exact.
+
+**convert** is the converter by rule, for an original that carries its text, with no model and no pack:
+`python3 -m sce_author convert --extraction EXTRACTION.json --out CONVERSION.json` writes each block as
+Markdown, cites it, runs the check on what it made, and exits 1 if the check does not find it complete
+(it is the check's control: a converter whose own work the check refuses is a defect and not a
+conversion handed on). `--markdown FILE` also writes the Markdown itself. **check-conversion** holds any
+conversion (a model's too) to its original: `python3 -m sce_author check-conversion --extraction
+EXTRACTION.json --conversion CONVERSION.json` prints the counts and what a person is asked about, in the
+order they are asked, and exits 1 unless it is complete; `--json` prints the counts and the ids and never
+the document's words. A conversion of another extraction than the one named is refused and counts nothing.
+The files `extract` and `convert` write are exactly their canonical text, so the SHA-256 of a file is
+its revision, and the specs folder (`save_extraction`) names it the same way.
+
 A PDF with a text layer is read by `extractors_pdf.py`, behind the pack `pdf-text` (`pip install
 pypdfium2`; not a dependency of this package, and without it the registry says so). Every line comes with
 the box it sits in, so a block is placed by its page and an exact box (points from the top-left of the

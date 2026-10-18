@@ -25,7 +25,9 @@ from .coverage import coverage as run_coverage
 from .decisions import cited_by_binding
 from .decisions import hold as hold_decisions
 from .decisions import summary as decisions_summary
+from .conversion import Conversion, check_conversion, convert_by_rules
 from .errors import AuthoringError, IngestError
+from .extraction import Extraction
 from .extractors import DEFAULT as DEFAULT_EXTRACTORS
 from .extractors import Unreadable
 from .gaps import ORDER as GAP_ORDER
@@ -105,6 +107,62 @@ def cmd_extract(args) -> int:
     for entry in done.not_carried:
         print(f"not carried: {entry.what}" + (f" ({entry.why})" if entry.why else ""))
     return 0
+
+
+def _read_extraction(path: str) -> Extraction:
+    try:
+        return Extraction.from_json(pathlib.Path(path).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError) as exc:
+        raise IngestError(f"{path}: not readable as an extraction ({exc})") from exc
+
+
+def _read_conversion(path: str) -> Conversion:
+    try:
+        return Conversion.from_json(pathlib.Path(path).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError) as exc:
+        raise IngestError(f"{path}: not readable as a conversion ({exc})") from exc
+
+
+def _summary(report) -> str:
+    said = report.to_dict()
+    return (
+        f"{'complete' if said['complete'] else 'not complete'}: {said['matched']} matched, "
+        f"{len(said['check'])} to check, {len(said['not_in_original'])} not in the original, "
+        f"{len(said['missing'])} missing, {len(said['recognised'])} read from an image"
+    )
+
+
+def cmd_convert(args) -> int:
+    """Write the Markdown of an extraction by rule, and say what SCE's check makes of it.
+
+    For an original that carries its text. The check is run on what was just made, so a converter that
+    ever wrote something its own check refuses is a failure here and not a conversion handed on.
+    """
+    extraction = _read_extraction(args.extraction)
+    made = convert_by_rules(extraction)
+    report = check_conversion(extraction, made)
+    out = pathlib.Path(args.out)
+    # Exactly the canonical text, as `extract` writes one: the file's hash is the conversion's revision.
+    out.write_text(made.to_json(), encoding="utf-8")
+    if args.markdown:
+        pathlib.Path(args.markdown).write_text(made.markdown(), encoding="utf-8")
+    print(f"conversion: {len(made.blocks)} block(s) by {made.converter.name} {made.converter.version}, "
+          f"revision {made.revision()} -> {out}")
+    print(f"check: {_summary(report)}")
+    return 0 if report.complete else 1
+
+
+def cmd_check_conversion(args) -> int:
+    """SCE's count of a conversion against the extraction it names. The exit code says whether it is complete."""
+    report = check_conversion(_read_extraction(args.extraction), _read_conversion(args.conversion))
+    if args.json:
+        # Ids and counts only: the blocks hold the document's own words.
+        print(json.dumps(report.to_dict(), sort_keys=True))
+    else:
+        print(f"check: {_summary(report)}")
+        for why, block_id in report.queue():
+            print(f"  ask: {why} {block_id}")
+    return 0 if report.complete else 1
 
 
 def cmd_questions(args) -> int:
@@ -579,6 +637,20 @@ def main(argv=None) -> int:
     ext.add_argument("file", help="the document: .md, .txt, .html, .docx, or a .pdf with a text layer")
     ext.add_argument("--out", required=True, help="where to write the extraction (JSON)")
     ext.set_defaults(fn=cmd_extract)
+
+    conv = sub.add_parser(
+        "convert", help="write the Markdown of an extraction by rule, and check it (no model, no pack)")
+    conv.add_argument("--extraction", required=True, help="the extraction (JSON) `extract` wrote")
+    conv.add_argument("--out", required=True, help="where to write the conversion (JSON)")
+    conv.add_argument("--markdown", help="also write the Markdown itself here")
+    conv.set_defaults(fn=cmd_convert)
+
+    chk = sub.add_parser(
+        "check-conversion", help="count what a conversion matched, left out and invented, against its original")
+    chk.add_argument("--extraction", required=True, help="the extraction the conversion names")
+    chk.add_argument("--conversion", required=True, help="the conversion (JSON) to hold to it")
+    chk.add_argument("--json", action="store_true", help="print the counts and ids as JSON")
+    chk.set_defaults(fn=cmd_check_conversion)
 
     q = with_pack(sub.add_parser("questions", help="what the specification does not answer"))
     q.add_argument("--prose", required=True, nargs="+")
