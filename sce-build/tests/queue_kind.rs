@@ -2147,3 +2147,128 @@ fn only_an_intrusive_queue_is_asked_for_a_link_field() {
     );
     compile(&xml, "frame_queue.scxml").expect("a resolvable element type is accepted");
 }
+
+// ─── Rust on a target whose atomics the deploy states ───
+
+/// The queue compiled for Rust by a deploy that states the target's `platform.atomic_rmw_width`.
+fn rust_on(width: u32, xml: &str) -> Result<Vec<(String, String)>, Located<ForgeError>> {
+    compile_files(
+        Language::Rust,
+        &c_options("frame_queue", Some(width), None, None),
+        xml,
+        "frame_queue.scxml",
+    )
+}
+
+/// The Rust forge runtime has no module for a row on a target that lacks the atomic the row needs, and
+/// has no critical-section form of one. A deploy that says the target is what lets the generator refuse
+/// at generation (`queue/storage-runtime-missing`), and a consumer that builds for an ARMv6-M or a 32-bit
+/// target is told which row and why instead of finding a module that is not there.
+#[test]
+fn a_target_the_rust_runtime_has_no_row_for_is_refused_when_the_deploy_states_it() {
+    let lamport = queue_doc(
+        "frame_queue",
+        "one",
+        "one",
+        "wait-free",
+        r#"<sce:bounded capacity="8"/>"#,
+    );
+    let scq = scq_doc("frame_queue", "lock-free");
+    let intrusive = intrusive_doc("frame_queue", "many");
+    let linked = segmented_doc("frame_queue", "one", "one", "lock-free", "lock-free", "");
+    let lscq = segmented_doc(
+        "frame_queue",
+        "many",
+        "many",
+        "lock-free",
+        "lock-free",
+        r#"<sce:participants const="3"/>"#,
+    );
+
+    // The Lamport ring loads and stores: on every target.
+    for width in [0, 32, 64] {
+        rust_on(width, &lamport)
+            .unwrap_or_else(|e| panic!("width {width}: a Lamport ring needs no atomic: {e:?}"));
+    }
+
+    // (document, storage, the width from which the runtime has the row, the widths refused)
+    for (name, xml, storage, refused) in [
+        ("SCQ", &scq, "bounded", &[0u32, 32][..]),
+        ("LSCQ", &lscq, "segmented", &[0, 32][..]),
+        ("an exchange list", &intrusive, "intrusive", &[0][..]),
+        ("linked rings", &linked, "segmented", &[0][..]),
+    ] {
+        for width in refused {
+            let located = rust_on(*width, xml).expect_err(&format!(
+                "{name} needs an atomic a target of width {width} does not have"
+            ));
+            match generate_error(located) {
+                GenerateError::QueueStorageRuntimeMissing {
+                    language,
+                    storage: refused_storage,
+                    status,
+                    ..
+                } => {
+                    assert_eq!(
+                        (language.as_str(), refused_storage.as_str()),
+                        ("rust", storage),
+                        "{name} at {width}"
+                    );
+                    assert!(
+                        status.contains(&format!("platform.atomic_rmw_width is {width}")),
+                        "{name} at {width}: {status}"
+                    );
+                }
+                other => {
+                    panic!("{name} at {width}: expected QueueStorageRuntimeMissing, got {other:?}")
+                }
+            }
+        }
+    }
+
+    // And each is built where the target has the atomic.
+    for (name, xml, width) in [
+        ("an exchange list", &intrusive, 32),
+        ("linked rings", &linked, 32),
+        ("SCQ", &scq, 64),
+        ("LSCQ", &lscq, 64),
+    ] {
+        rust_on(width, xml).unwrap_or_else(|e| panic!("{name} at width {width} is built: {e:?}"));
+    }
+}
+
+/// A deploy that says nothing of the target says nothing against any row: the generated Rust carries
+/// the refusal into the build for the target (the `compile_error!` of each row that needs an atomic).
+#[test]
+fn a_rust_queue_with_no_deploy_is_generated_and_guards_its_atomics_in_the_build() {
+    let intrusive = compile(&intrusive_doc("frame_queue", "many"), "frame_queue.scxml")
+        .expect("no deploy, no statement about the target");
+    assert!(
+        intrusive.contains("#[cfg(not(target_has_atomic = \"32\"))]")
+            && intrusive.contains("compile_error!"),
+        "an intrusive list says in the build which atomic it needs:\n{intrusive}"
+    );
+    let linked = compile(
+        &segmented_doc("frame_queue", "one", "one", "lock-free", "lock-free", ""),
+        "frame_queue.scxml",
+    )
+    .expect("no deploy, no statement about the target");
+    assert!(
+        linked.contains("#[cfg(not(target_has_atomic = \"8\"))]")
+            && linked.contains("compile_error!"),
+        "linked rings say in the build which atomic they need:\n{linked}"
+    );
+    // A Lamport ring needs none.
+    let lamport = compile(
+        &queue_doc(
+            "frame_queue",
+            "one",
+            "one",
+            "wait-free",
+            r#"<sce:bounded capacity="8"/>"#,
+        ),
+        "frame_queue.scxml",
+    )
+    .expect("a Lamport ring is generated");
+    assert!(!lamport.contains("target_has_atomic"), "{lamport}");
+}

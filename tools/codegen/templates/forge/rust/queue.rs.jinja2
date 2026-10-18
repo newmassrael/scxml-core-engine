@@ -50,6 +50,12 @@
 #![allow(unused_imports)]
 
 {% if intrusive %}
+// The list swaps the tail of its 32-bit links. A target whose atomics are loads and stores alone
+// (ARMv6-M) has no swap, the runtime has no `intrusive` module there, and this says so instead of
+// leaving the build to find an import that is not there.
+#[cfg(not(target_has_atomic = "32"))]
+compile_error!("this queue's list swaps 32-bit links, and the target has no read-modify-write atomic");
+
 use sce_forge_runtime::queue::intrusive::{Link, Mpsc};
 use super::{{ element_snake }}::{{ element_import }};
 
@@ -82,6 +88,14 @@ pub const ALGORITHM: &str = "{{ algorithm }}";
 /// allocates nothing.
 pub type {{ pascal }} = Mpsc<{{ element_stored }}, {{ pascal }}Link, MANY_CONSUMERS>;
 {% elif segmented %}
+{% if not ring_slots %}
+// The rings' two handles are each taken once by a compare-and-swap of a flag. A target whose atomics
+// are loads and stores alone (ARMv6-M) has none, the runtime has no `linked` module there, and this says
+// so instead of leaving the build to find an import that is not there.
+#[cfg(not(target_has_atomic = "8"))]
+compile_error!("this queue's rings take their handles with a compare-and-swap, and the target has none");
+
+{% endif %}
 use sce_forge_runtime::queue::{{ runtime_module }}::{{ runtime_type }};
 {% if hazard_slots %}
 use sce_forge_runtime::queue::hazard::HazardDomain;

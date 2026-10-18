@@ -28,7 +28,7 @@
 //! a `(kind, backend)` pair set.
 
 use crate::forge::error::GenerateError;
-use crate::forge::model::{ForgeKind, QueueProgress};
+use crate::forge::model::{ForgeKind, QueueAlgorithm, QueueProgress};
 use crate::generator::Language;
 
 /// Class of a kind per RFC §synth-5-J-4. Drives which `(kind, language)`
@@ -417,9 +417,66 @@ pub const fn queue_progress_ceiling(
     }
 }
 
+/// The read-modify-write atomic a row of the Rust forge runtime needs, as the
+/// widest `platform.atomic_rmw_width` the deploy can state that has it, and what the
+/// row does with it. The Rust runtime has no critical-section form of any row (C11 has
+/// one, for a single core), so a row it cannot build for a target is refused when the
+/// deploy states the target, and not left to be found as a module that is not there:
+///
+/// - the Lamport ring loads and stores, and is on every target;
+/// - the Vyukov list swaps the tail of a `u32` link, and the linked Lamport rings
+///   compare-and-swap the flag that hands out each of their two handles, which a target
+///   whose atomics are loads and stores alone (ARMv6-M, width 0) has neither of;
+/// - SCQ and LSCQ keep 64-bit entries, which a 32-bit target does not have.
+///
+/// A deploy that states no width says nothing about the target, and the generated Rust
+/// carries a `compile_error!` for each of these where the target lacks the atomic.
+pub const fn rust_runtime_row_atomics(algorithm: QueueAlgorithm) -> (u32, &'static str) {
+    match algorithm {
+        QueueAlgorithm::LamportRing => (0, ""),
+        QueueAlgorithm::VyukovMpsc | QueueAlgorithm::VyukovListWithConsumerFlag => (
+            32,
+            "the list swaps the tail of its 32-bit links, and a target whose atomics are loads and stores alone has no swap",
+        ),
+        QueueAlgorithm::LinkedLamportRings => (
+            32,
+            "the rings' two handles are each taken once by a compare-and-swap of a flag, which a target whose atomics are loads and stores alone does not have",
+        ),
+        QueueAlgorithm::Scq | QueueAlgorithm::Lscq => (
+            64,
+            "the ring's entries are 64-bit atomics, which a target whose widest read-modify-write atomic is smaller does not have",
+        ),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The Rust runtime's rows against the widths a deploy can state: every row but the Lamport
+    /// ring needs a read-modify-write atomic, and the ring-based rows need 64 bits.
+    #[test]
+    fn the_rust_runtime_says_what_atomic_each_row_needs() {
+        for width in [0u32, 32, 64] {
+            let ring = rust_runtime_row_atomics(QueueAlgorithm::LamportRing);
+            assert_eq!(ring.0, 0, "the Lamport ring loads and stores");
+            assert!(width >= ring.0, "{width}");
+        }
+        for algorithm in [
+            QueueAlgorithm::VyukovMpsc,
+            QueueAlgorithm::VyukovListWithConsumerFlag,
+            QueueAlgorithm::LinkedLamportRings,
+        ] {
+            let (needs, why) = rust_runtime_row_atomics(algorithm);
+            assert_eq!(needs, 32, "{algorithm:?}");
+            assert!(!why.is_empty(), "{algorithm:?}");
+        }
+        for algorithm in [QueueAlgorithm::Scq, QueueAlgorithm::Lscq] {
+            let (needs, why) = rust_runtime_row_atomics(algorithm);
+            assert_eq!(needs, 64, "{algorithm:?}");
+            assert!(!why.is_empty(), "{algorithm:?}");
+        }
+    }
 
     /// All 11 baseline kinds × all 6 backends emit at `758aea3f`.
     #[test]

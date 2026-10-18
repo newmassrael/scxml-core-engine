@@ -18679,6 +18679,43 @@ fn resolve_queue_render_inputs(
     let selection = m.selection();
     let is_c11 = language == crate::generator::Language::C11;
 
+    // The Rust runtime can see its target (`cfg(target_has_atomic)`), so it asks the deploy nothing it
+    // needs; but a deploy that states the target's atomics lets the generator say at generation, and not
+    // in a build for the target, that the runtime has no module for the row the document selects. Rust has
+    // no critical-section form of a row, as C11 has for a single core: a row it cannot build is refused.
+    if language == crate::generator::Language::Rust {
+        if let Some(width) = resolution.and_then(|r| r.atomic_rmw_width) {
+            let (needs, why) =
+                crate::forge::codegen_matrix::rust_runtime_row_atomics(selection.algorithm);
+            if width < needs {
+                let (storage, implemented) = match &m.storage {
+                    QueueStorage::Bounded { .. } => (
+                        "bounded",
+                        "bounded with one producer and one consumer (a Lamport ring)",
+                    ),
+                    QueueStorage::Intrusive { .. } => ("intrusive", "bounded"),
+                    QueueStorage::Segmented { .. } => (
+                        "segmented",
+                        "bounded, and, where the target has a compare-and-swap, intrusive and segmented with one producer and one consumer",
+                    ),
+                };
+                return Err(ForgeError::from(GenerateError::QueueStorageRuntimeMissing {
+                    queue_name: m.name.clone(),
+                    storage: storage.to_string(),
+                    language: crate::forge::codegen_matrix::language_wire_name(language)
+                        .to_string(),
+                    implemented: implemented.to_string(),
+                    status: format!(
+                        " for the {algorithm} on a target whose platform.atomic_rmw_width is {width}: {why}. \
+                         SCE Protocol-Synthesis RFC §5.P specifies the row; this document is valid and is refused rather than lowered to a queue that gives less",
+                        algorithm = selection.algorithm.name(),
+                    ),
+                })
+                .at_line(m.storage_line));
+            }
+        }
+    }
+
     // What the deploy says about the target, read only by the C11 backend: its
     // atomics are the platform's own `sce_atomic_*` symbols, whose
     // implementation the generated code cannot see, so the generator asks the
