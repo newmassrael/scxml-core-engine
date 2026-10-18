@@ -29,6 +29,7 @@
 pub mod acceptance;
 pub mod acceptance_run;
 pub mod answers;
+mod base64;
 pub mod bundle;
 pub mod clock;
 pub mod commands;
@@ -38,6 +39,7 @@ pub mod figures;
 pub mod journal;
 pub mod lock;
 pub mod model_set;
+pub mod original;
 mod request_life;
 pub mod requests;
 pub mod requirements;
@@ -59,6 +61,7 @@ pub use figures::{
     RenderError, SceCodegen, Sheet,
 };
 pub use model_set::{Document, ModelError, ModelFiles};
+pub use original::{Manifest, Member, MemberDraft, OriginalDraft, Role};
 pub use requests::{ConnectionId, ConnectionRef, Pin};
 pub use requirements::{Requirements, RequirementsError};
 pub use review::{
@@ -67,10 +70,11 @@ pub use review::{
 pub use revision::Revision;
 pub use store::{
     default_root, AcceptanceText, Adapter, AdapterListing, AdapterReport, AdapterStatus,
-    AnswersText, BundleRead, CandidateTexts, CandidateWrite, ClaimedHead, HistoryEntry, Host,
-    HostListing, HostReport, HostStatus, HostWaiting, LaneWait, Listing, ModelText, Published,
-    Registered, Registration, RequestHead, RequestView, RequirementsText, Saved, SourceText, Spec,
-    SpecHeads, SpecId, SpecSnapshot, SpecStore, Transition, Unreadable, ADAPTER_LIVE_SECONDS,
+    AnswersText, BundleRead, CandidateTexts, CandidateWrite, ClaimedHead, ExtractionEntry,
+    ExtractionSaved, HistoryEntry, Host, HostListing, HostReport, HostStatus, HostWaiting,
+    LaneWait, Listing, ModelText, OriginalAdded, OriginalEntry, Published, Registered,
+    Registration, RequestHead, RequestView, RequirementsText, Saved, SourceText, Spec, SpecHeads,
+    SpecId, SpecSnapshot, SpecStore, Transition, Unreadable, ADAPTER_LIVE_SECONDS,
     MAX_ACCEPTANCE_BYTES, MAX_ANSWERS_BYTES, MAX_BUNDLE_BYTES, MAX_MODEL_BYTES,
     MAX_REQUIREMENTS_BYTES, MAX_SOURCE_BYTES, WAITING_MAX,
 };

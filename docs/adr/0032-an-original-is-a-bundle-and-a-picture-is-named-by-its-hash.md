@@ -1,6 +1,8 @@
 # ADR 0032 — An original is a bundle, and a picture is named by its hash
 
-- Status: Accepted as the direction (the owner decided it on 2026-10-16); not yet implemented
+- Status: Accepted as the direction (the owner decided it on 2026-10-16); the store of the bundle, its
+  renditions and the extractions read out of its members is implemented (2026-10-18, see "As built");
+  the reading of pictures and the review are not
 - Date: 2026-10-16
 - Scope: what the original of an import is when it has pictures, how a picture is referred to and
   stored, what is derived from an original and kept apart from it, and when a picture may leave the
@@ -108,6 +110,42 @@ original's picture. What SCE draws of a model is called the model's picture. The
 - The review shows, for a figure, the original's picture, what the AI read and which provider, the
   picture the AI saw when it differs, and the decisions available. A list of pictures not brought, not
   shown and not carried is part of the review and of the import's states.
+
+## As built (2026-10-18)
+
+The store of a spec keeps originals (`sce-specs/src/original.rs`, `store/original_store.rs`; commands
+`add_original`, `read_original`, `list_originals`, `read_original_member`, `save_extraction`,
+`read_extraction`, `list_extractions`; command set 31).
+
+```text
+<spec-id>/
+  members/<hash>.bin          a member's bytes, named by their SHA-256, shared by every original that holds them
+  originals/<digest>.json     the manifest; its digest is the original's name
+  originals.log               one line per original added
+  extractions/<digest>.json   what an extractor read out of a member, named by its own SHA-256
+  extractions.log             one line per extraction: its original, the member, who made it
+```
+
+- There is no current original. A spec may be brought in from several documents, and a proposal names
+  the one it is made from, so what is kept is a set named by hash and a log of when each came.
+- The manifest is canonical (members and missing paths in path order, compact JSON): the same bundle is
+  the same original whatever order it was given in. A label is part of the manifest, so another label is
+  another original.
+- A path is relative, written with `/`, names no `.` or `..` and no empty segment, is at most 255 bytes,
+  and is unique ignoring case. A reference with no member is kept as `missing`.
+- A rendition names the member it was made from by hash and what drew it; a rendition of a rendition is
+  refused.
+- The bytes are written before the manifest, and a read checks each member is held at the size and hash
+  the manifest names, so a store that lost or changed bytes is `corrupt` and does not answer. A blob that
+  is there under a name and holds other bytes is refused when the same bytes are added again.
+- Limits: 2000 members, 64 MiB a member, 256 MiB an original, 16 MiB an extraction. The commands carry
+  bytes as base64; an application that links the crate adds an original through the Rust call.
+- An extraction is kept exactly as given, under the hash of those bytes. The store checks that it is a
+  JSON object that says its form (`v`) and its extractor (`extractor`, `extractor_version`), and that the
+  original and the member it is of are there; the rest of its form is the authoring tools' schema.
+
+Not built: renditions are accepted and nothing draws one yet; export and replicas do not carry originals
+yet; the review of pictures and the sending of a picture to a provider.
 
 ## Not decided here
 

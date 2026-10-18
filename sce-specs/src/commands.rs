@@ -28,6 +28,7 @@ use crate::error::StoreError;
 use crate::figures::{FigureRequest, RenderError};
 use crate::journal::{Event, Journal};
 use crate::model_set::{Document, ModelError, ModelFiles};
+use crate::original::{MemberDraft, OriginalDraft, Role};
 use crate::requests::{ConnectionRef, Failure, FailureKind, Inputs, Lease, Pin};
 use crate::requirements::{Requirements, RequirementsError};
 use crate::review::{Product, Review, ReviewRequest, Verdict};
@@ -83,6 +84,13 @@ pub const COMMANDS: &[&str] = &[
     "read_request_journal",
     "read_bundle",
     "bundle_history",
+    "add_original",
+    "read_original",
+    "list_originals",
+    "read_original_member",
+    "save_extraction",
+    "read_extraction",
+    "list_extractions",
 ];
 
 /// The version of this command set. It moves when a command's arguments or
@@ -295,7 +303,13 @@ pub const COMMANDS: &[&str] = &[
 /// (`running_since`, the moment the attempt that has run longest of the connection's running
 /// requests was taken), and `read_queue` says the store's `now`, so that a screen can say how long
 /// the one ahead has run. A screen written for 29 does not say it; a core of 29 gives it neither.
-pub const COMMAND_SET_VERSION: u32 = 30;
+///
+/// 31: a spec keeps the originals it was brought in from, as bundles of members named by hash
+/// (`add_original`, `read_original`, `list_originals`, `read_original_member`), and what an
+/// extractor read out of a member (`save_extraction`, `read_extraction`, `list_extractions`). A
+/// screen written for 31 imports a document and shows its blocks beside it; a core of 30 refuses
+/// the seven commands as `unknown-command`, and a screen written for 30 has no use for them.
+pub const COMMAND_SET_VERSION: u32 = 31;
 
 /// A command that did not do what was asked, in a shape every shell can pass on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -435,6 +449,74 @@ struct ReadSource {
     id: String,
     #[serde(default)]
     revision: Option<Revision>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OriginalMemberArgs {
+    path: String,
+    role: Role,
+    /// The member's bytes, as standard base64 with padding.
+    data: String,
+    /// For a rendition: the path of the member it was made from.
+    #[serde(default)]
+    of: Option<String>,
+    /// For a rendition: what drew it.
+    #[serde(default)]
+    renderer: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AddOriginal {
+    id: String,
+    #[serde(default)]
+    label: Option<String>,
+    members: Vec<OriginalMemberArgs>,
+    /// Paths the original refers to and was not brought with.
+    #[serde(default)]
+    missing: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OneOriginal {
+    id: String,
+    original: Revision,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OriginalMember {
+    id: String,
+    original: Revision,
+    path: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SaveExtraction {
+    id: String,
+    original: Revision,
+    /// The path of the member of the original the extraction was read from.
+    member: String,
+    /// The extraction, kept exactly as given.
+    text: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OneExtraction {
+    id: String,
+    digest: Revision,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ListExtractions {
+    id: String,
+    #[serde(default)]
+    original: Option<Revision>,
 }
 
 #[derive(Deserialize)]
@@ -1980,6 +2062,82 @@ pub fn call_with<C: Clock>(
         "bundle_history" => {
             let OneSpec { id } = arguments(args)?;
             Ok(json!({ "entries": store.bundle_history(&spec_id(&id)?)? }))
+        }
+        "add_original" => {
+            let AddOriginal {
+                id,
+                label,
+                members,
+                missing,
+            } = arguments(args)?;
+            let mut drafts = Vec::with_capacity(members.len());
+            for member in members {
+                let bytes = crate::base64::decode(&member.data).map_err(|why| {
+                    CommandError::bad_request(format!(
+                        "the data of the member `{}` is not base64: {why}",
+                        member.path
+                    ))
+                })?;
+                drafts.push(MemberDraft {
+                    path: member.path,
+                    role: member.role,
+                    bytes,
+                    of: member.of,
+                    renderer: member.renderer,
+                });
+            }
+            answer(&store.add_original(
+                &spec_id(&id)?,
+                OriginalDraft {
+                    label: label.unwrap_or_default(),
+                    members: drafts,
+                    missing,
+                },
+            )?)
+        }
+        "read_original" => {
+            let OneOriginal { id, original } = arguments(args)?;
+            let manifest = store.read_original(&spec_id(&id)?, &original)?;
+            Ok(json!({
+                "original": original,
+                "label": manifest.label,
+                "members": manifest.members,
+                "missing": manifest.missing,
+                "bytes": manifest.bytes(),
+            }))
+        }
+        "list_originals" => {
+            let OneSpec { id } = arguments(args)?;
+            Ok(json!({ "originals": store.list_originals(&spec_id(&id)?)? }))
+        }
+        "read_original_member" => {
+            let OriginalMember { id, original, path } = arguments(args)?;
+            let bytes = store.read_original_member(&spec_id(&id)?, &original, &path)?;
+            Ok(json!({
+                "path": path,
+                "size": bytes.len(),
+                "data": crate::base64::encode(&bytes),
+            }))
+        }
+        "save_extraction" => {
+            let SaveExtraction {
+                id,
+                original,
+                member,
+                text,
+            } = arguments(args)?;
+            answer(&store.save_extraction(&spec_id(&id)?, &original, &member, &text)?)
+        }
+        "read_extraction" => {
+            let OneExtraction { id, digest } = arguments(args)?;
+            let text = store.read_extraction(&spec_id(&id)?, &digest)?;
+            Ok(json!({ "digest": digest, "text": text }))
+        }
+        "list_extractions" => {
+            let ListExtractions { id, original } = arguments(args)?;
+            Ok(json!({
+                "extractions": store.list_extractions(&spec_id(&id)?, original.as_ref())?,
+            }))
         }
         "fail_request" => {
             let FailRequest {

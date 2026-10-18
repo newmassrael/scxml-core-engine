@@ -83,6 +83,7 @@ use crate::revision::Revision;
 mod adapter_store;
 mod bundle_store;
 mod host_store;
+mod original_store;
 mod request_store;
 mod soft_state;
 
@@ -91,6 +92,7 @@ pub use adapter_store::{
 };
 pub use bundle_store::{BundleRead, CandidateTexts, CandidateWrite, Published};
 pub use host_store::{Host, HostListing, HostReport, HostStatus, HostWaiting, WAITING_MAX};
+pub use original_store::{ExtractionEntry, ExtractionSaved, OriginalAdded, OriginalEntry};
 pub use request_store::{LaneWait, Registered, Registration, RequestHead, RequestView, Transition};
 
 /// The most a single source text may hold.
