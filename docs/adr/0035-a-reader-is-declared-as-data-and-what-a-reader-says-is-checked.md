@@ -41,9 +41,10 @@ What the trial measured, of the 52 readable units reproduced exactly:
 | GLM-OCR (MIT weights, Apache-2.0 code), GPU | 27 | 22 | no | no |
 | Classic line OCR, Korean (PP-OCR family), CPU | 27 | 29 | yes, per line | a score per line |
 
-Claude was not flawless either: in two of the three mild trials one table cell was written `닫는다` for
-`닫힌다`, a verb one syllable away, and the reader's own notes said it was transcribed exactly. No text
-was invented, and the two lines blurred on purpose were marked unreadable every time. The misses of the
+Claude was not flawless either: in two of the three mild trials one table cell had the active form of
+a verb (to close) where the page has its passive form, one syllable away, and the reader's own notes
+said it was transcribed exactly. No text was invented, and the two lines blurred on purpose were marked
+unreadable every time. The misses of the
 other readers are of the same kind and more frequent: a character or a syllable replaced by a look-alike
 one (a state name written as a different word one syllable away), which changes what a requirement says
 and is not marked. Native sources were read without any model: Docling (MIT) reproduced the text layer
