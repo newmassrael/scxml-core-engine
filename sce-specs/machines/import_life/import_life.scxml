@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  The life of one import proposal (ADR 0025, 0037): pending while the owner reviews it, and
+  ended three ways (accepted, rejected, superseded). The single source of the rules
+  `sce-specs/src/proposals.rs` applies; that file keeps the record and asks this machine what an
+  event comes to.
+
+  An event the proposal cannot take leaves it where it was and says why in `verdict`. The host
+  keeps what is not a rule (what the proposal is made of, its questions, its decisions, the
+  moments) and tells the machine only what a rule reads: whether the spec's text head is still the
+  one the proposal was made against, and how many of the questions it asked have no decision.
+
+  Accepting is refused for the head before it is refused for an open question: a spec that moved
+  is a spec the owner has to look at again whatever was decided, and the question that is still
+  open is one to answer against the text that is there now.
+
+  Regenerate with `sce-specs/machines/generate.sh`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="proposal" datamodel="sce-static" sce:interface="closed"
+       name="import_life">
+  <sce:import kind="enum" src="enum_verdict.scxml" as="Verdict"/>
+  <sce:import kind="event-schema" src="schema_accept.scxml" as="Accept"/>
+  <sce:import kind="event-schema" src="schema_decide.scxml" as="Decide"/>
+  <sce:import kind="event-schema" src="schema_reject.scxml" as="Reject"/>
+  <sce:import kind="event-schema" src="schema_supersede.scxml" as="Supersede"/>
+  <datamodel>
+    <data id="verdict" sce:type="enum:Verdict" expr="Verdict.unanswered" sce:direction="out"/>
+  </datamodel>
+
+  <state id="proposal" initial="pending">
+    <state id="pending">
+      <transition event="accept" cond="!_event.data.headMatches" type="internal">
+        <assign location="verdict" expr="Verdict.moved"/>
+      </transition>
+      <transition event="accept" cond="_event.data.undecided &gt; 0" type="internal">
+        <assign location="verdict" expr="Verdict.undecided"/>
+      </transition>
+      <transition event="accept" target="accepted" type="internal">
+        <assign location="verdict" expr="Verdict.ok"/>
+      </transition>
+      <!-- A decision is taken while the proposal is open, and it changes nothing of its life. -->
+      <transition event="decide" type="internal">
+        <assign location="verdict" expr="Verdict.ok"/>
+      </transition>
+      <transition event="reject" target="rejected" type="internal">
+        <assign location="verdict" expr="Verdict.ok"/>
+      </transition>
+      <transition event="supersede" target="superseded" type="internal">
+        <assign location="verdict" expr="Verdict.ok"/>
+      </transition>
+    </state>
+
+    <state id="ended">
+      <!-- What ended takes no other word. Saying the same one again is the same word. -->
+      <transition event="accept" type="internal">
+        <assign location="verdict" expr="Verdict.ended"/>
+      </transition>
+      <transition event="reject" type="internal">
+        <assign location="verdict" expr="Verdict.ended"/>
+      </transition>
+      <transition event="decide" type="internal">
+        <assign location="verdict" expr="Verdict.ended"/>
+      </transition>
+      <transition event="supersede" type="internal">
+        <assign location="verdict" expr="Verdict.nothing"/>
+      </transition>
+
+      <state id="accepted">
+        <transition event="accept" type="internal">
+          <assign location="verdict" expr="Verdict.ok"/>
+        </transition>
+      </state>
+      <state id="rejected">
+        <transition event="reject" type="internal">
+          <assign location="verdict" expr="Verdict.ok"/>
+        </transition>
+      </state>
+      <state id="superseded"/>
+    </state>
+  </state>
+</scxml>

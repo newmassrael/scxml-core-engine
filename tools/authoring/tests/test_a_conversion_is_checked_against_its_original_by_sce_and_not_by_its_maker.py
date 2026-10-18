@@ -310,8 +310,11 @@ class ACheckIsOfTheExtractionTheConversionNames(unittest.TestCase):
     def test_the_report_says_its_counts_as_data(self):
         extraction = original()
 
-        said = check_conversion(extraction, conversion(extraction, *FAITHFUL[:3])).to_dict()
+        made = conversion(extraction, *FAITHFUL[:3])
+        said = check_conversion(extraction, made).to_dict()
 
+        self.assertEqual(said["extraction"], extraction.revision())
+        self.assertEqual(said["conversion"], made.revision())
         self.assertEqual(said["complete"], False)
         self.assertEqual(said["matched"], 3)
         self.assertEqual(said["missing"], ["b4"])

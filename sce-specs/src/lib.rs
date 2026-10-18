@@ -36,10 +36,12 @@ pub mod commands;
 pub mod document_files;
 pub mod error;
 pub mod figures;
+mod import_life;
 pub mod journal;
 pub mod lock;
 pub mod model_set;
 pub mod original;
+pub mod proposals;
 mod request_life;
 pub mod requests;
 pub mod requirements;
@@ -62,6 +64,7 @@ pub use figures::{
 };
 pub use model_set::{Document, ModelError, ModelFiles};
 pub use original::{Manifest, Member, MemberDraft, OriginalDraft, Role};
+pub use proposals::{Ask, Converter, Decision, DecisionKind, Proposal, ProposalState};
 pub use requests::{ConnectionId, ConnectionRef, Pin};
 pub use requirements::{Requirements, RequirementsError};
 pub use review::{
@@ -69,12 +72,13 @@ pub use review::{
 };
 pub use revision::Revision;
 pub use store::{
-    default_root, AcceptanceText, Adapter, AdapterListing, AdapterReport, AdapterStatus,
+    default_root, AcceptanceText, Accepted, Adapter, AdapterListing, AdapterReport, AdapterStatus,
     AnswersText, BundleRead, CandidateTexts, CandidateWrite, ClaimedHead, ExtractionEntry,
     ExtractionSaved, HistoryEntry, Host, HostListing, HostReport, HostStatus, HostWaiting,
-    LaneWait, Listing, ModelText, OriginalAdded, OriginalEntry, Published, Registered,
-    Registration, RequestHead, RequestView, RequirementsText, Saved, SourceText, Spec, SpecHeads,
-    SpecId, SpecSnapshot, SpecStore, Transition, Unreadable, ADAPTER_LIVE_SECONDS,
-    MAX_ACCEPTANCE_BYTES, MAX_ANSWERS_BYTES, MAX_BUNDLE_BYTES, MAX_MODEL_BYTES,
-    MAX_REQUIREMENTS_BYTES, MAX_SOURCE_BYTES, WAITING_MAX,
+    LaneWait, Listing, ModelText, OriginalAdded, OriginalEntry, ProposalDocuments,
+    ProposalRegistered, ProposalRegistration, ProposalView, Published, Registered, Registration,
+    RequestHead, RequestView, RequirementsText, Saved, SourceText, Spec, SpecHeads, SpecId,
+    SpecSnapshot, SpecStore, Transition, Unreadable, ADAPTER_LIVE_SECONDS, MAX_ACCEPTANCE_BYTES,
+    MAX_ANSWERS_BYTES, MAX_BUNDLE_BYTES, MAX_MODEL_BYTES, MAX_REQUIREMENTS_BYTES, MAX_SOURCE_BYTES,
+    WAITING_MAX,
 };

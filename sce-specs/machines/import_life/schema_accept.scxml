@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!-- The owner accepts the proposal. `headMatches` is the host's answer to whether the spec's text
+     head is still the revision the proposal was made against (a comparison of two digests, which
+     no rule reads into); `undecided` is how many of the questions the proposal asked have no
+     decision. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="schema_accept"
+       sce:event-name="accept">
+  <datamodel>
+    <data id="headMatches" sce:type="bool" sce:direction="in"/>
+    <data id="undecided" sce:type="uint32" sce:direction="in"/>
+  </datamodel>
+</scxml>

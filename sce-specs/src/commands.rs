@@ -29,13 +29,15 @@ use crate::figures::{FigureRequest, RenderError};
 use crate::journal::{Event, Journal};
 use crate::model_set::{Document, ModelError, ModelFiles};
 use crate::original::{MemberDraft, OriginalDraft, Role};
+use crate::proposals::DecisionKind;
 use crate::requests::{ConnectionRef, Failure, FailureKind, Inputs, Lease, Pin};
 use crate::requirements::{Requirements, RequirementsError};
 use crate::review::{Product, Review, ReviewRequest, Verdict};
 use crate::revision::Revision;
 use crate::store::{
-    AdapterReport, AdapterStatus, AnswersText, CandidateWrite, HostStatus, ModelText, Published,
-    Registration, RequestView, RequirementsText, SourceText, SpecId, SpecStore,
+    AdapterReport, AdapterStatus, AnswersText, CandidateWrite, HostStatus, ModelText,
+    ProposalRegistration, Published, Registration, RequestView, RequirementsText, SourceText,
+    SpecId, SpecStore,
 };
 
 /// Every command on the specs, in the order a person would meet them.
@@ -91,6 +93,14 @@ pub const COMMANDS: &[&str] = &[
     "save_extraction",
     "read_extraction",
     "list_extractions",
+    "propose_import",
+    "read_proposal",
+    "list_proposals",
+    "read_proposal_documents",
+    "decide_block",
+    "accept_proposal",
+    "reject_proposal",
+    "rebase_proposal",
 ];
 
 /// The version of this command set. It moves when a command's arguments or
@@ -309,7 +319,15 @@ pub const COMMANDS: &[&str] = &[
 /// extractor read out of a member (`save_extraction`, `read_extraction`, `list_extractions`). A
 /// screen written for 31 imports a document and shows its blocks beside it; a core of 30 refuses
 /// the seven commands as `unknown-command`, and a screen written for 30 has no use for them.
-pub const COMMAND_SET_VERSION: u32 = 31;
+///
+/// 32: what was imported is kept as a proposal to be reviewed (ADR 0025, 0037): `propose_import`,
+/// `read_proposal`, `list_proposals`, `read_proposal_documents`, the owner's decisions
+/// (`decide_block`), and the ways it ends (`accept_proposal`, `reject_proposal`, and
+/// `rebase_proposal`, which carries one whose text moved forward). Accepting is refused as `moved`,
+/// `undecided`, `decisions-moved` or `proposal-ended`, and a proposal is refused as `bad-proposal` or
+/// `active-proposal`. A screen written for 32 reviews an import; a core of 31 refuses the eight
+/// commands as `unknown-command`, and a screen written for 31 has no use for them.
+pub const COMMAND_SET_VERSION: u32 = 32;
 
 /// A command that did not do what was asked, in a shape every shell can pass on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -517,6 +535,66 @@ struct ListExtractions {
     id: String,
     #[serde(default)]
     original: Option<Revision>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ProposeImport {
+    id: String,
+    /// What makes the same call sent again the proposal it already made.
+    key: String,
+    /// Where it is asked from: `gui`, or the name of a client.
+    origin: String,
+    original: Revision,
+    extraction: Revision,
+    /// The conversion and the check of it, as the authoring tools wrote them.
+    conversion: String,
+    report: String,
+    /// The text head the caller read; absent for a spec that has no text.
+    #[serde(default)]
+    expect: Option<Revision>,
+    /// Replace the open proposal of the spec, if there is one.
+    #[serde(default)]
+    supersede: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OneProposal {
+    id: String,
+    proposal: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DecideBlock {
+    id: String,
+    proposal: String,
+    block: String,
+    what: DecisionKind,
+    /// The owner's words, for a correction and for nothing else.
+    #[serde(default)]
+    text: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AcceptProposal {
+    id: String,
+    proposal: String,
+    /// The text that becomes the spec's, assembled from the conversion and the decisions.
+    text: String,
+    /// How many decisions it was assembled from.
+    decisions: u64,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RejectProposal {
+    id: String,
+    proposal: String,
+    #[serde(default)]
+    note: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -2138,6 +2216,74 @@ pub fn call_with<C: Clock>(
             Ok(json!({
                 "extractions": store.list_extractions(&spec_id(&id)?, original.as_ref())?,
             }))
+        }
+        "propose_import" => {
+            let ProposeImport {
+                id,
+                key,
+                origin,
+                original,
+                extraction,
+                conversion,
+                report,
+                expect,
+                supersede,
+            } = arguments(args)?;
+            answer(&store.propose_import(
+                &spec_id(&id)?,
+                ProposalRegistration {
+                    key: &key,
+                    origin: &origin,
+                    original,
+                    extraction,
+                    conversion: &conversion,
+                    report: &report,
+                    expect,
+                    supersede,
+                },
+            )?)
+        }
+        "read_proposal" => {
+            let OneProposal { id, proposal } = arguments(args)?;
+            answer(&store.read_proposal(&spec_id(&id)?, &proposal)?)
+        }
+        "list_proposals" => {
+            let OneSpec { id } = arguments(args)?;
+            Ok(json!({ "proposals": store.list_proposals(&spec_id(&id)?)? }))
+        }
+        "read_proposal_documents" => {
+            let OneProposal { id, proposal } = arguments(args)?;
+            answer(&store.read_proposal_documents(&spec_id(&id)?, &proposal)?)
+        }
+        "decide_block" => {
+            let DecideBlock {
+                id,
+                proposal,
+                block,
+                what,
+                text,
+            } = arguments(args)?;
+            let decision =
+                store.decide_block(&spec_id(&id)?, &proposal, &block, what, text.as_deref())?;
+            Ok(json!({ "decision": decision }))
+        }
+        "accept_proposal" => {
+            let AcceptProposal {
+                id,
+                proposal,
+                text,
+                decisions,
+            } = arguments(args)?;
+            answer(&store.accept_proposal(&spec_id(&id)?, &proposal, &text, decisions)?)
+        }
+        "reject_proposal" => {
+            let RejectProposal { id, proposal, note } = arguments(args)?;
+            let rejected = store.reject_proposal(&spec_id(&id)?, &proposal, note.as_deref())?;
+            Ok(json!({ "proposal": rejected }))
+        }
+        "rebase_proposal" => {
+            let OneProposal { id, proposal } = arguments(args)?;
+            answer(&store.rebase_proposal(&spec_id(&id)?, &proposal)?)
         }
         "fail_request" => {
             let FailRequest {

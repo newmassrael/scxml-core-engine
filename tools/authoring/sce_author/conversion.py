@@ -271,6 +271,9 @@ class Report:
     recognised: tuple[str, ...]
     carried_text: int = 0
     notes: tuple[str, ...] = field(default_factory=tuple)
+    # What the count was made of, each by revision: a proposal is kept only when its parts name each other.
+    extraction: str = ""
+    conversion: str = ""
 
     def ids(self, status: str) -> list[str]:
         return [verdict.id for verdict in self.verdicts if verdict.status == status]
@@ -296,6 +299,8 @@ class Report:
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "extraction": self.extraction,
+            "conversion": self.conversion,
             "complete": self.complete,
             "matched": self.matched,
             "check": self.ids(CHECK),
@@ -342,7 +347,14 @@ def check_conversion(extraction: Extraction, conversion: Conversion) -> Report:
         block.id for block in extraction.blocks if block.id not in cited and plain_of_block(block)
     )
     recognised = tuple(block.id for block in extraction.blocks if block.id in cited and block.how_read != "text-layer")
-    return Report(tuple(verdicts), missing, recognised, carried_text=sum(1 for b in extraction.blocks if plain_of_block(b)))
+    return Report(
+        tuple(verdicts),
+        missing,
+        recognised,
+        carried_text=sum(1 for b in extraction.blocks if plain_of_block(b)),
+        extraction=extraction.revision(),
+        conversion=conversion.revision(),
+    )
 
 
 # ------------------------------------------------------------------------- the converter by rule

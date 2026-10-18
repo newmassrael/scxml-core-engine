@@ -115,7 +115,7 @@ fn extraction_path(dir: &Path, digest: &Revision) -> PathBuf {
 /// The lines of a log, in the order they were appended. A line that is not one (a torn tail, a file
 /// edited by hand) is skipped and not read as an entry: the log says what was saved, and a fragment
 /// says nothing.
-fn read_log<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<Vec<T>, StoreError> {
+pub(super) fn read_log<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<Vec<T>, StoreError> {
     let text = match fs::read_to_string(path) {
         Ok(text) => text,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
@@ -127,7 +127,7 @@ fn read_log<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<Vec<T>, StoreEr
         .collect())
 }
 
-fn append_line<T: Serialize>(path: &Path, entry: &T) -> Result<(), StoreError> {
+pub(super) fn append_line<T: Serialize>(path: &Path, entry: &T) -> Result<(), StoreError> {
     let mut text =
         serde_json::to_string(entry).map_err(|e| StoreError::corrupt(path, e.to_string()))?;
     text.push('\n');
@@ -145,7 +145,12 @@ fn append_line<T: Serialize>(path: &Path, entry: &T) -> Result<(), StoreError> {
 /// Keep `bytes` under `hash` in `folder`, unless the bytes are already there. A file that is there
 /// under the name and is not those bytes is a store that was damaged, and is refused as such rather than
 /// trusted because it has the right name.
-fn keep(folder: &Path, path: &Path, hash: &Revision, bytes: &[u8]) -> Result<(), StoreError> {
+pub(super) fn keep(
+    folder: &Path,
+    path: &Path,
+    hash: &Revision,
+    bytes: &[u8],
+) -> Result<(), StoreError> {
     match fs::read(path) {
         Ok(held) => {
             if Revision::of(&held) == *hash {

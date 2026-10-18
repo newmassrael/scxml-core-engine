@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!-- What the proposal's last event came to: taken (`ok`), refused (`moved`: the spec's text is not
+     the one the proposal was made against; `undecided`: a question it asked has no decision;
+     `ended`: the proposal ended and takes no other word), or nothing to do (`nothing`).
+     `unanswered` is what a machine holds before any event: every transition sets another, so a
+     host that still reads it knows the machine took no event. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="enum"
+       name="verdict"
+       sce:underlying-type="uint8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="ok" value="0"/>
+      <sce:variant name="moved" value="1"/>
+      <sce:variant name="undecided" value="2"/>
+      <sce:variant name="ended" value="3"/>
+      <sce:variant name="nothing" value="4"/>
+      <sce:variant name="unanswered" value="5"/>
+    </data>
+  </datamodel>
+</scxml>
