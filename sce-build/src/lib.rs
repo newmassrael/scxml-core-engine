@@ -4080,7 +4080,7 @@ fn compile_document_set(
                     .scheduler
                     .as_ref()
                     .and_then(|s| s.per_link_budget_us);
-                let files = forge::generator::render_machine_concurrency_artifacts(
+                let mut files = forge::generator::render_machine_concurrency_artifacts(
                     &template_base,
                     language,
                     machine_name,
@@ -4089,6 +4089,20 @@ fn compile_document_set(
                     per_link_budget_us,
                 )
                 .map_err(|e| Located::new(e, "deploy.yaml", None, None))?;
+                // §synth-5-K: the session drive is the host runtime's
+                // configuration, emitted whether or not the machine has links.
+                files.extend(
+                    forge::generator::render_machine_session_drive_artifacts(
+                        &template_base,
+                        language,
+                        machine_name,
+                        machine
+                            .scheduler
+                            .as_ref()
+                            .and_then(|s| s.session_drive_profile()),
+                    )
+                    .map_err(|e| Located::new(e, "deploy.yaml", None, None))?,
+                );
                 if !files.is_empty() {
                     // Per-machine scheduler artifacts are
                     // synthesised from `deploy.yaml`, not the SCXML

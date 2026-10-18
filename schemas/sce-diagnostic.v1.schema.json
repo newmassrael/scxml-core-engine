@@ -389,6 +389,8 @@
         "deploy/worker-slot-budget-missing",
         "deploy/keepalive-jitter-budget-missing",
         "deploy/scheduler-incompatible-with-worker-count",
+        "deploy/scheduler-drive-not-applicable",
+        "deploy/scheduler-worker-threads-invalid",
         "deploy/link-driver-unknown",
         "deploy/link-mtu-missing-on-fragmenting-link",
         "deploy/link-mtu-below-driver-floor",

@@ -19,7 +19,7 @@
 // to know every key.
 
 use crate::forge::model::LinkClass;
-use crate::mesh::error::{DeployError, PartitionTransportBindingFailure};
+use crate::mesh::error::{DeployError, PartitionTransportBindingFailure, WorkerThreadsFault};
 use crate::mesh::target::TargetId;
 use crate::mesh::transport::ServerDeadlineNotice;
 use serde::{Deserialize, Serialize};
@@ -1345,6 +1345,79 @@ pub struct MachineSchedulerConfig {
     /// don't consume the slot accounting.
     #[serde(default)]
     pub per_link_budget_us: Option<u32>,
+    /// How a `kind: tokio` host drives this machine's session runtime
+    /// (SCE Protocol-Synthesis RFC §synth-5-K, Session drive): on one
+    /// drive thread, or on a worker pool. The host's runtime reads it as a
+    /// generated const ([`SessionDrive`]); the choice is the host runtime's
+    /// configuration, not a statechart or pool figure, and `cooperative` /
+    /// `rt` have no such choice to make
+    /// (`deploy/scheduler-drive-not-applicable`).
+    ///
+    /// ```yaml
+    /// scheduler:
+    ///   kind: tokio
+    ///   drive: worker-pool
+    ///   worker_threads: 2
+    /// ```
+    ///
+    /// Absent ⇒ the deploy states no drive model and nothing is emitted for
+    /// it.
+    #[serde(default)]
+    pub drive: Option<SessionDrive>,
+    /// Worker threads of a `drive: worker-pool` runtime. REQUIRED, and at
+    /// least 1, when `drive: worker-pool`; refused otherwise
+    /// (`deploy/scheduler-worker-threads-invalid`). The count is stated, not
+    /// defaulted, so the generated const never carries a figure the deploy
+    /// did not write.
+    #[serde(default)]
+    pub worker_threads: Option<u32>,
+}
+
+/// How a `kind: tokio` host drives a machine's session runtime (see
+/// [`MachineSchedulerConfig::drive`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SessionDrive {
+    /// The session runtime runs on the one thread that drives the machine; it
+    /// has no workers, so a task waits behind a blocking callback.
+    OwnThread,
+    /// The session runtime is a multi-threaded runtime with
+    /// [`MachineSchedulerConfig::worker_threads`] workers.
+    WorkerPool,
+}
+
+impl SessionDrive {
+    /// The spelling the deploy writes.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SessionDrive::OwnThread => "own-thread",
+            SessionDrive::WorkerPool => "worker-pool",
+        }
+    }
+}
+
+/// A machine's session drive with its worker count resolved, the value the
+/// generated `SESSION_DRIVE` const carries. Unlike [`SessionDrive`] it cannot
+/// state a worker pool without a count.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SessionDriveProfile {
+    OwnThread,
+    WorkerPool { worker_threads: u32 },
+}
+
+impl MachineSchedulerConfig {
+    /// The resolved session drive, or `None` when the deploy states none.
+    /// [`validate_scheduler_session_drive`] refuses a worker pool with no
+    /// count at parse time, so a validated deploy never meets that case here.
+    pub fn session_drive_profile(&self) -> Option<SessionDriveProfile> {
+        match (self.drive?, self.worker_threads) {
+            (SessionDrive::OwnThread, _) => Some(SessionDriveProfile::OwnThread),
+            (SessionDrive::WorkerPool, Some(worker_threads)) => {
+                Some(SessionDriveProfile::WorkerPool { worker_threads })
+            }
+            (SessionDrive::WorkerPool, None) => None,
+        }
+    }
 }
 
 /// Per-machine scheduler kind axis (SCE Mesh §mesh-14, SCE Protocol-Synthesis RFC
@@ -3567,6 +3640,7 @@ pub fn parse_deploy_str(content: &str) -> Result<DeployConfig, DeployError> {
     validate_scheduler_cooperative_stack_budget(&cfg)?;
     validate_worker_slot_budget_required_when_cooperative(&cfg)?;
     validate_keepalive_jitter_required_when_cooperative(&cfg)?;
+    validate_scheduler_session_drive(&cfg)?;
     validate_machine_scheduler_worker_capacity(&cfg)?;
     validate_machine_scheduler_link_concurrency(&cfg)?;
     validate_machine_timer_wheel_capacity(&cfg)?;
@@ -4913,6 +4987,55 @@ fn validate_keepalive_jitter_required_when_cooperative(
                         machine: machine_name.clone(),
                     },
                 );
+            }
+        }
+    }
+    Ok(())
+}
+
+/// SCE Protocol-Synthesis RFC §synth-5-K (Session drive) — `drive` and
+/// `worker_threads` describe how a `tokio` host runs the session runtime.
+///
+/// - `cooperative` and `rt` own their dispatch, so writing either key under
+///   them is refused (`deploy/scheduler-drive-not-applicable`).
+/// - `drive: worker-pool` needs `worker_threads` of at least 1, and
+///   `worker_threads` is meaningless without `drive: worker-pool`
+///   (`deploy/scheduler-worker-threads-invalid`).
+///
+/// A scheduler that writes neither key is not looked at: the keys are
+/// optional, and absence emits nothing.
+fn validate_scheduler_session_drive(cfg: &DeployConfig) -> Result<(), DeployError> {
+    for device in cfg.topology.values() {
+        for (machine_name, machine) in device.machines.iter() {
+            let Some(sched) = machine.scheduler.as_ref() else {
+                continue;
+            };
+            if !matches!(sched.kind, SchedulerKind::Tokio) {
+                let key = match (sched.drive, sched.worker_threads) {
+                    (Some(_), _) => "drive",
+                    (None, Some(_)) => "worker_threads",
+                    (None, None) => continue,
+                };
+                return Err(DeployError::SchedulerDriveNotApplicable {
+                    machine: machine_name.clone(),
+                    kind: sched.kind.as_str(),
+                    key,
+                });
+            }
+            let fault = match (sched.drive, sched.worker_threads) {
+                (Some(SessionDrive::WorkerPool), None) => Some(WorkerThreadsFault::Missing),
+                (Some(SessionDrive::WorkerPool), Some(0)) => Some(WorkerThreadsFault::BelowOne),
+                (Some(SessionDrive::OwnThread) | None, Some(_)) => {
+                    Some(WorkerThreadsFault::WithoutWorkerPool)
+                }
+                (Some(SessionDrive::WorkerPool), Some(_)) | (_, None) => None,
+            };
+            if let Some(fault) = fault {
+                return Err(DeployError::SchedulerWorkerThreadsInvalid {
+                    machine: machine_name.clone(),
+                    fault,
+                    worker_threads: sched.worker_threads,
+                });
             }
         }
     }

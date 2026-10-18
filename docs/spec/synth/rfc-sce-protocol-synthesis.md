@@ -2416,6 +2416,18 @@ are added here. Existing precedent: SCE Mesh already has
 *integration*; this RFC adds only generic embedded-networking
 *deploy schema*, a strictly weaker dependency.
 
+**Session drive.** A `kind: tokio` scheduler states how the host drives the
+machine's session runtime with `drive: own-thread | worker-pool`; a
+`worker-pool` also states `worker_threads` (at least 1). `own-thread` puts
+the runtime on the one thread that drives the machine, with no workers;
+`worker-pool` is a multi-threaded runtime with that many workers. The choice
+is the host runtime's configuration, so `cooperative` and `rt` refuse both
+keys. Rust codegen emits `{machine}_session_drive.rs`, a `SessionDrive` enum
+and a `SESSION_DRIVE` const the host reads where it builds the runtime; a
+deploy that states no `drive` emits nothing, so existing output is unchanged.
+The count is stated, never defaulted, so the const holds only a figure the
+deploy wrote.
+
 **Diagnostics:**
 - `deploy/platform-class-missing`
 - `deploy/link-driver-unknown`
@@ -2429,6 +2441,10 @@ are added here. Existing precedent: SCE Mesh already has
   `worker_slot_budget_us` declared
 - `deploy/keepalive-jitter-budget-missing` — `scheduler.kind: cooperative` without
   `keepalive_jitter_budget_us` declared
+- `deploy/scheduler-drive-not-applicable` — `drive` or `worker_threads` under a
+  `scheduler.kind` other than `tokio`
+- `deploy/scheduler-worker-threads-invalid` — `drive: worker-pool` without
+  `worker_threads` or with 0, or `worker_threads` without `drive: worker-pool`
 - `worker/slot-budget-exceeded` — algorithm/procedure static (or measured) WCET
   exceeds `worker_slot_budget_us`; refactor (split into multiple slots, lower the
   bounded-loop cap, or pre-compute) before the build will succeed

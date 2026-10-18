@@ -287,6 +287,39 @@ impl std::fmt::Display for EventSchemaMismatchReason {
     }
 }
 
+/// Which way a `scheduler.worker_threads` figure fails (see
+/// [`DeployError::SchedulerWorkerThreadsInvalid`]). The `Display` impl
+/// emits the clause spliced into that variant's `{fault}` placeholder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkerThreadsFault {
+    /// `drive: worker-pool` without `worker_threads`.
+    Missing,
+    /// `drive: worker-pool` with `worker_threads: 0`, a pool with no worker.
+    BelowOne,
+    /// `worker_threads` written without `drive: worker-pool`, so no pool
+    /// reads it.
+    WithoutWorkerPool,
+}
+
+impl std::fmt::Display for WorkerThreadsFault {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Missing => write!(
+                f,
+                "`drive: worker-pool` needs `worker_threads`, and none is declared"
+            ),
+            Self::BelowOne => write!(
+                f,
+                "`drive: worker-pool` needs at least one worker thread, and `worker_threads` is 0"
+            ),
+            Self::WithoutWorkerPool => write!(
+                f,
+                "`worker_threads` is declared without `drive: worker-pool`, so no pool reads it"
+            ),
+        }
+    }
+}
+
 /// Errors from deploy.yaml deserialization.
 #[derive(Debug, thiserror::Error)]
 pub enum DeployError {
@@ -1476,6 +1509,49 @@ pub enum DeployError {
              change `kind:` to `tokio` / `rt` to inherit host runtime jitter."
     )]
     SchedulerCooperativeMissingKeepaliveJitterBudget { machine: String },
+
+    /// A machine wrote `scheduler.drive` or `scheduler.worker_threads` under a
+    /// `kind` other than `tokio` (SCE Protocol-Synthesis RFC §synth-5-K,
+    /// Session drive; `deploy/scheduler-drive-not-applicable`). The keys
+    /// configure the runtime a `tokio` host creates for the session;
+    /// `cooperative` is the SCE-built single-thread tick loop and `rt` runs in
+    /// an RTOS task, and neither has a drive model to choose. Rejected at
+    /// parse time.
+    #[error(
+        "machine '{machine}': scheduler.{key} is not applicable to scheduler.kind '{kind}'. \
+             SCE Protocol-Synthesis RFC §5.K (Session drive, \
+             `deploy/scheduler-drive-not-applicable`) — `drive` and `worker_threads` \
+             configure the runtime a `tokio` host creates for the session, and \
+             a '{kind}' scheduler has no such choice. \
+             Repair: remove `{key}` from `scheduler:`, or change `kind:` to `tokio`."
+    )]
+    SchedulerDriveNotApplicable {
+        machine: String,
+        /// The scheduler kind as the deploy spells it.
+        kind: &'static str,
+        /// The offending key: `drive`, or `worker_threads` when `drive` is
+        /// absent.
+        key: &'static str,
+    },
+
+    /// A `tokio` machine whose `scheduler.worker_threads` contradicts its
+    /// `scheduler.drive` (SCE Protocol-Synthesis RFC §synth-5-K, Session
+    /// drive; `deploy/scheduler-worker-threads-invalid`). A worker pool needs
+    /// a stated count of at least 1, and a count with no worker pool is read
+    /// by nothing. Rejected at parse time.
+    #[error(
+        "machine '{machine}': {fault}. \
+             SCE Protocol-Synthesis RFC §5.K (Session drive, \
+             `deploy/scheduler-worker-threads-invalid`). \
+             Repair: write `drive: worker-pool` with `worker_threads: <n>` (n >= 1), \
+             or write `drive: own-thread` and remove `worker_threads`."
+    )]
+    SchedulerWorkerThreadsInvalid {
+        machine: String,
+        fault: WorkerThreadsFault,
+        /// The figure the deploy states, when it states one.
+        worker_threads: Option<u32>,
+    },
 
     /// A machine declared more workers (entries under `machines.<m>.workers`)
     /// than the cooperative scheduler can host in one tick window
@@ -3603,6 +3679,29 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
                 key_fragments: vec![machine.clone()],
             }
         }
+        DeployError::SchedulerDriveNotApplicable { machine, kind, key } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeploySchedulerDriveNotApplicable,
+            stage: Stage::MeshDeploy,
+            actual: Some((*key).to_string()),
+            // The only kind the keys apply to is a closed fact; whether the
+            // author wants `tokio` or no key is theirs, so it is metadata and
+            // not a `Fix`.
+            expected: Some(vec!["tokio".to_string()]),
+            fix: None,
+            key_fragments: vec![machine.clone(), (*kind).to_string(), (*key).to_string()],
+        },
+        DeployError::SchedulerWorkerThreadsInvalid {
+            machine,
+            fault,
+            worker_threads,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeploySchedulerWorkerThreadsInvalid,
+            stage: Stage::MeshDeploy,
+            actual: worker_threads.map(|n| n.to_string()),
+            expected: None,
+            fix: None,
+            key_fragments: vec![machine.clone(), format!("{fault:?}")],
+        },
         DeployError::SchedulerIncompatibleWithWorkerCount {
             machine,
             worker_count,

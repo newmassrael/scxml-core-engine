@@ -111,6 +111,11 @@ pub enum RustDeriveCategory {
     /// `link_bus.rs.jinja2` — `pub enum LinkBusEvent`. Outbound
     /// envelope enum carrying `Vec<u8>` per declared `<sce:link>`.
     LinkBusEvent,
+    /// `session_drive.rs.jinja2` — `pub enum SessionDrive`. How a `tokio`
+    /// host drives the machine's session runtime, read by the host from a
+    /// generated const. Plain data a host copies out of the const and
+    /// compares, so `Copy` and `Eq` besides.
+    SessionDrive,
     /// `rust/state_machine.rs.jinja2` — `pub enum {{ machine_name }}State`.
     /// Statechart lifecycle enum. Repr-untagged C-like enum used as a
     /// `HashMap` key across the generated transition tables, so `Hash`
@@ -183,6 +188,7 @@ impl RustDeriveCategory {
             Self::BoundedCollectionHandle => &["Clone", "Copy", "PartialEq", "Eq", "Debug", "Hash"],
             Self::BoundedCollectionOverflowError => &["Clone", "Copy", "PartialEq", "Eq", "Debug"],
             Self::LinkBusEvent => &["Debug", "Clone"],
+            Self::SessionDrive => &["Debug", "Clone", "Copy", "PartialEq", "Eq"],
             // `Default` marks the initial-state variant (`#[default]`) so a
             // generated statechart's `Default` is its `<scxml initial>` state.
             // The event enum deliberately omits it (no default event).
@@ -330,6 +336,7 @@ mod tests {
             RustDeriveCategory::BoundedCollectionHandle,
             RustDeriveCategory::BoundedCollectionOverflowError,
             RustDeriveCategory::LinkBusEvent,
+            RustDeriveCategory::SessionDrive,
             RustDeriveCategory::StatechartState,
             RustDeriveCategory::StatechartEvent,
             RustDeriveCategory::ProcedureState,
@@ -404,6 +411,17 @@ mod tests {
         assert_eq!(declared.last(), Some(&"Default"));
         assert_eq!(declared.len(), forge.len() + 1);
         assert!(!forge.contains(&"Default"));
+    }
+
+    #[test]
+    fn session_drive_is_plain_copyable_data() {
+        // The host copies the drive out of a const and compares it, so the
+        // category is the forge enum's set: the derive set of every plain,
+        // payload-free-or-Copy-field value SCE emits.
+        assert_eq!(
+            RustDeriveCategory::SessionDrive.derives(),
+            RustDeriveCategory::ForgeEnum.derives()
+        );
     }
 
     #[test]

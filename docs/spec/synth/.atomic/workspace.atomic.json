@@ -4000,6 +4000,28 @@
           "file": "sce-build/src/lib.rs",
           "symbol": "compile_document_set",
           "kind": "implements"
+        },
+        {
+          "file": "tools/codegen/templates/forge/rust/session_drive.rs.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/scheduler_session_drive.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "MachineSchedulerConfig",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "validate_scheduler_session_drive",
+          "kind": "implements"
         }
       ]
     },
