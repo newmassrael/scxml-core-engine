@@ -1986,6 +1986,12 @@ install) and `sniff-mismatch`. ⚠ **A suffix is a claim and the bytes decide**:
 is not a zip is refused as such and not handed to the word reader, which would read it wrongly and
 read clean. The readers above are the first extractors and say what they said before.
 
+**extract** is the command: `python3 -m sce_author extract FILE --out EXTRACTION.json` writes one
+file's extraction and prints counts, the extraction's revision (its name) and every entry of what was
+not carried, never the document's words. A format nobody reads is a typed answer
+(`unread [format-unread]`) with exit 1 and no file. It is a command for a host and a person and is not
+among the tools a client of a run is offered.
+
 A PDF with a text layer is read by `extractors_pdf.py`, behind the pack `pdf-text` (`pip install
 pypdfium2`; not a dependency of this package, and without it the registry says so). Every line comes with
 the box it sits in, so a block is placed by its page and an exact box (points from the top-left of the

@@ -26,6 +26,8 @@ from .decisions import cited_by_binding
 from .decisions import hold as hold_decisions
 from .decisions import summary as decisions_summary
 from .errors import AuthoringError, IngestError
+from .extractors import DEFAULT as DEFAULT_EXTRACTORS
+from .extractors import Unreadable
 from .gaps import ORDER as GAP_ORDER
 from .ingest import picture_names_held, read_pictures
 from .gaps import report as gap_report
@@ -74,6 +76,32 @@ def cmd_picture(args) -> int:
     out = pathlib.Path(args.out)
     out.write_bytes(found[0].data)
     print(f"picture: {len(found[0].data)} bytes -> {out}")
+    return 0
+
+
+def cmd_extract(args) -> int:
+    """Read one file into an extraction (ADR 0026, 0036) and say what it could not carry.
+
+    Not a tool a client of a run is offered: a host that holds an original calls it, and a person may.
+    """
+    path = pathlib.Path(args.file)
+    done = DEFAULT_EXTRACTORS.try_extract(path)
+    if isinstance(done, Unreadable):
+        # A typed answer and not a crash: the words name what would read it, the code says which kind.
+        print(f"unread [{done.code}]: {done.words(path)}", file=sys.stderr)
+        return 1
+    out = pathlib.Path(args.out)
+    out.write_text(done.to_json() + "\n", encoding="utf-8")
+    kinds = collections.Counter(block.kind for block in done.blocks)
+    # Counts and the revision only: the blocks hold the document's own words, and a general tool does not
+    # decide that they may be printed.
+    print(
+        f"extraction: {len(done.blocks)} block(s) "
+        f"({', '.join(f'{n} {kind}' for kind, n in sorted(kinds.items())) or 'none'}) "
+        f"by {done.extractor} {done.extractor_version}, revision {done.revision()} -> {out}"
+    )
+    for entry in done.not_carried:
+        print(f"not carried: {entry.what}" + (f" ({entry.why})" if entry.why else ""))
     return 0
 
 
@@ -543,6 +571,12 @@ def main(argv=None) -> int:
     pic.add_argument("--name", required=True, help="the NAME in the mark, e.g. image3.png")
     pic.add_argument("--out", required=True, help="where to write the picture")
     pic.set_defaults(fn=cmd_picture)
+
+    ext = sub.add_parser(
+        "extract", help="read one file into blocks, and say what could not be carried (no pack needed)")
+    ext.add_argument("file", help="the document: .md, .txt, .html, .docx, or a .pdf with a text layer")
+    ext.add_argument("--out", required=True, help="where to write the extraction (JSON)")
+    ext.set_defaults(fn=cmd_extract)
 
     q = with_pack(sub.add_parser("questions", help="what the specification does not answer"))
     q.add_argument("--prose", required=True, nargs="+")

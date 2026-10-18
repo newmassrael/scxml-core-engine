@@ -146,17 +146,34 @@ Each step lands with its tests and is useful before the next; none is a placehol
    extractor contract and registry, the readers of `ingest.py` behind the contract, and a PDF extractor
    for a document with a text layer whose dependency is a named, optional pack. A format or a pack that is
    missing says so with a typed reason. Needs no model and no store change beyond the manifest of ADR 0032.
-2. **The job record.** The store's job generalised from a request: a kind, inputs by hash, the lease, a
-   life written once as a document (ADR 0016). Generating a model becomes the first kind with no change
-   in what it does, which is held by its existing tests.
-3. **The loop split.** The runtime contract and the kind contract in the workbench's core; Claude Code,
+2. **Extraction as a command.** `extract` in the authoring tools writes the extraction of one file and
+   names it by its revision, so a host that has no store for originals yet can already show an original's
+   blocks beside it. Not an AI tool: a client of a run is never offered it.
+3. **The original and its extraction in the store.** ADR 0032's bundle (a manifest of members named by
+   hash) and the extraction kept by hash, as blobs of the specs folder, with the commands that add and
+   read them. This comes before the job record because a job's inputs are hashes of these, and a record
+   that names what the store cannot hold is a record with nothing behind it (found on 2026-10-18, when
+   the request of today was read for what it would take to generalise it).
+4. **The job record.** What a request is today is tied to a spec's text: it is registered against the
+   heads of the source and the answers, refused as `moved` when they move, one is open at most, and it
+   publishes a model and a list. What is not tied to it (the life with its lease, attempts and fence,
+   the places of a connection, the journal, the pin, the key that makes a repeated press one request) is
+   already one document and one store. So the request is generalised in place and not copied: it gains a
+   `kind`, a `unit`, inputs named by hash beyond the two heads, and artifacts named by hash beside the
+   candidate, all absent from the record of a request that has none, so that every record written before
+   reads and writes as it did. A table of kinds in the specs crate says, for each, what it is registered
+   against (the text head or not), how many may be open (one per spec, or one per unit), whether the move
+   of a head supersedes it, and what it must have made before it may publish. A name outside the table is
+   refused. Scope stays the spec: an import always belongs to one (ADR 0025), so a conversion job is a job
+   of a spec. Generating a model is the first kind and its existing tests hold it.
+5. **The loop split.** The runtime contract and the kind contract in the workbench's core; Claude Code,
    Codex and the model server behind the runtime contract with their tests and live tests unchanged;
    generating a model as a kind.
-4. **Conversion as a kind, for a text layer.** Blocks in, Markdown with citations out, ADR 0026's check,
+6. **Conversion as a kind, for a text layer.** Blocks in, Markdown with citations out, ADR 0026's check,
    the review queue; no picture.
-5. **Pictures.** The attachment path for each runtime, tried live one at a time; the reader manifests of
+7. **Pictures.** The attachment path for each runtime, tried live one at a time; the reader manifests of
    ADR 0035; conversion of a page that is a picture; the omission check from a layout and the reader's text.
-6. **Policy and the sheet.** The data classes, the workspace's policy, the line that says where pages go.
+8. **Policy and the sheet.** The data classes, the workspace's policy, the line that says where pages go.
 
 ## Alternatives rejected
 
