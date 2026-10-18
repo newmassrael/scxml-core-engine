@@ -3572,7 +3572,7 @@ that selects an SCQ row, and judges it as follows:
   `#[cfg(not(target_has_atomic = "64"))] compile_error!`), so a 32-bit target cannot build it; the
   Rust output of the exchange list asserts `target_has_atomic = "32"` and that of the linked rings
   `"8"` in the same way, since a target whose atomics are loads and stores alone (ARMv6-M) has no
-  such module in the runtime. A deploy that states `platform.atomic_rmw_width`, or the device's `target` triple
+  such module in the runtime; the C++ runtime asserts the same of each (`std::atomic<std::uint32_t>` and `std::atomic<bool>` `is_always_lock_free`), where a compare-and-swap that is not lock-free would otherwise be a libatomic call left for the link. A deploy that states `platform.atomic_rmw_width`, or the device's `target` triple
   (whose atomics the generator knows), lets Rust refuse at generation (`queue/storage-runtime-missing`) a row
   its runtime has no module for there: the exchange list and the linked rings at 0, SCQ and LSCQ below 64. A stated width the triple contradicts (on Rust any other width, on C11 a wider one) is `queue/atomic-width-contradicts-target`, and a Rust row that needs an atomic on a triple the generator does not know, with no width stated, is `queue/target-atomics-unknown`; a deploy that says neither leaves the judgement to the build for the target.
   C11 cannot assert this: its atomics are the §5.I `sce_atomic_*` extern symbols, whose implementation the

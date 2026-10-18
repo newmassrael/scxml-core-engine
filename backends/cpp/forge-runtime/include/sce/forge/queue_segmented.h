@@ -386,6 +386,12 @@ template <typename T, std::size_t N, typename A, Progress Required> class Linked
     static_assert(A::kProgress >= Required, "the allocator gives less progress than the document declared for it");
     static_assert(std::is_nothrow_move_constructible_v<T> && std::is_nothrow_destructible_v<T>,
                   "a queue's element must be nothrow-move-constructible and nothrow-destructible");
+    // Each handle is taken once by a compare-and-swap of a flag. A target whose
+    // atomics are loads and stores alone (ARMv6-M) has none, and the compiler
+    // would leave a libatomic call the link cannot resolve; this says so here.
+    static_assert(std::atomic<bool>::is_always_lock_free,
+                  "the two handles are each taken by a compare-and-swap of a flag, which this target does not have "
+                  "lock-free");
 
     /// One segment: `N` slots filled once.
     struct Segment {
