@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sce.dev/schemas/authoring/extraction.v1.schema.json",
+  "title": "Extraction",
+  "description": "What one extractor made of one member of an original document: the blocks in the order they sit, and the list of what it could not carry. Every format is read into this one form, so that the comparison, the review and the coverage count read blocks and nothing else (docs/adr/0026-a-conversion-is-held-to-the-original-block-by-block.md, docs/adr/0036-the-ai-loop-runs-jobs-of-any-kind-and-what-a-kind-needs-is-declared.md). A block read from the document's own text carries no confidence, and a block read from an image always carries one: recognition is never reported as exact.",
+  "x-sce-schema-status": "pre-release",
+  "type": "object",
+  "required": ["v", "extractor", "extractor_version", "member", "blocks"],
+  "additionalProperties": false,
+  "properties": {
+    "v": { "const": 1 },
+    "extractor": { "type": "string", "minLength": 1 },
+    "extractor_version": { "type": "string", "minLength": 1 },
+    "member": { "type": "string", "minLength": 1 },
+    "blocks": { "type": "array", "items": { "$ref": "#/$defs/block" } },
+    "not_carried": { "type": "array", "items": { "$ref": "#/$defs/notCarried" } }
+  },
+  "$defs": {
+    "place": {
+      "type": "object",
+      "required": ["member", "precision"],
+      "additionalProperties": false,
+      "properties": {
+        "member": { "type": "string", "minLength": 1 },
+        "part": { "type": "string", "minLength": 1 },
+        "ordinal": { "type": "integer" },
+        "page": { "type": "integer", "minimum": 1 },
+        "box": {
+          "type": "array",
+          "items": { "type": "number" },
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "precision": { "enum": ["exact", "approximate", "none"] }
+      },
+      "if": { "required": ["box"] },
+      "then": { "properties": { "precision": { "enum": ["exact", "approximate"] } } },
+      "else": { "properties": { "precision": { "const": "none" } } }
+    },
+    "block": {
+      "type": "object",
+      "required": ["id", "kind", "text", "place", "how_read"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "kind": { "enum": ["heading", "paragraph", "list_item", "table", "figure", "attachment"] },
+        "text": { "type": "string" },
+        "place": { "$ref": "#/$defs/place" },
+        "how_read": { "enum": ["text-layer", "ocr", "vision"] },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "level": { "type": "integer" },
+        "cells": {
+          "type": "array",
+          "items": { "type": "array", "items": { "type": "string" } }
+        },
+        "picture": { "type": "string", "minLength": 1 }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "how_read": { "const": "text-layer" } }, "required": ["how_read"] },
+          "then": { "not": { "required": ["confidence"] } },
+          "else": { "required": ["confidence"] }
+        },
+        { "if": { "required": ["level"] }, "then": { "properties": { "kind": { "const": "heading" } } } },
+        { "if": { "required": ["cells"] }, "then": { "properties": { "kind": { "const": "table" } } } },
+        { "if": { "required": ["picture"] }, "then": { "properties": { "kind": { "const": "figure" } } } }
+      ]
+    },
+    "notCarried": {
+      "type": "object",
+      "required": ["what"],
+      "additionalProperties": false,
+      "properties": {
+        "what": { "type": "string", "minLength": 1 },
+        "why": { "type": "string" },
+        "count": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}
