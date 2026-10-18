@@ -53,7 +53,9 @@ class Place:
     A word-processor file or a page-less format is placed by `part` and `ordinal`; a page-layout
     document is placed by its `page` and, when the extractor knows one, a `box` on it. The page is
     required of a page-layout block and the box is not (ADR 0035): a reader chosen for how well it
-    reads cannot also be required to say where. A box says how exact it is.
+    reads cannot also be required to say where. A box says how exact it is, and is `(left, top,
+    right, bottom)` in points measured from the top-left corner of the page, the way a picture of
+    the page is laid out, so that a reviewer's overlay needs no flip.
     """
 
     member: str

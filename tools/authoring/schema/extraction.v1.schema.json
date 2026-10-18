@@ -26,6 +26,7 @@
         "ordinal": { "type": "integer" },
         "page": { "type": "integer", "minimum": 1 },
         "box": {
+          "description": "left, top, right, bottom, in points from the top-left corner of the page",
           "type": "array",
           "items": { "type": "number" },
           "minItems": 4,

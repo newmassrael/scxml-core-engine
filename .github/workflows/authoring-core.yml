@@ -75,7 +75,14 @@ jobs:
           python-version: '3.x'
       - name: Install the two libraries a pack is parsed and validated with
         run: python3 -m pip install --upgrade pyyaml jsonschema
+      - name: Install the PDF text pack
+        # The extractor of a PDF with a text layer needs it (docs/adr/0035). The cases that read a
+        # real PDF are skipped where it is absent, and a skip reads as a pass, so this lane says it
+        # requires the pack and fails when it is missing.
+        run: python3 -m pip install pypdfium2
       - name: Authoring core gate
+        env:
+          SCE_REQUIRE_PDF_PACK: '1'
         run: scripts/gate authoring-core
 
   verify-with-codegen:
@@ -129,5 +136,9 @@ jobs:
         # Without it every such case failed on its import (the first run of
         # this job, 2026-09-24) — the way w3c-tests.yml installs it too.
         run: python3 -m pip install lupa
+      - name: Install the PDF text pack
+        run: python3 -m pip install pypdfium2
       - name: Authoring core gate, run-driven cases included
+        env:
+          SCE_REQUIRE_PDF_PACK: '1'
         run: scripts/gate authoring-core

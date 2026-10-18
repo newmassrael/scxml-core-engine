@@ -1967,6 +1967,35 @@ every instance passes says nothing. And a document with no numbering says so
 rather than reporting "no clause hands its content to a picture", which would
 be true of it trivially and read as reassurance.
 
+### One form for every format: the extraction, and the extractor that reads a format into it
+
+A conversion is held to its original block by block (`docs/adr/0026`), so everything after reading
+a document reads one form and nothing else: an **extraction** (`extraction.py`, schema
+`schema/extraction.v1.schema.json`, `pre-release`). It is the blocks of one member of the original in
+the order they sit (heading, paragraph, list item, table with its grid, figure, attachment), each
+placed by where it came from, and **the list of what the extractor could not carry**, which travels
+with the blocks and is never dropped. Two rules are held by the form and not left to each extractor:
+a block read from an image always says how sure the reader was and a block read from the document's own
+text never does, so recognition cannot report itself as fact; and a place says how exact its box is.
+
+A format is **an extractor and its declaration** (`extractor_contract.py`, `extractors.py`; ADR 0036).
+The declaration says the suffixes it reads, the signature a file begins with, the ways of reading it
+gives, and the pack it needs. The registry picks by what a file is and what is installed, and the answer
+when none reads it is typed and is not an error: `format-unread`, `pack-missing` (it names the pack to
+install) and `sniff-mismatch`. ⚠ **A suffix is a claim and the bytes decide**: a file called `.docx` that
+is not a zip is refused as such and not handed to the word reader, which would read it wrongly and
+read clean. The readers above are the first extractors and say what they said before.
+
+A PDF with a text layer is read by `extractors_pdf.py`, behind the pack `pdf-text` (`pip install
+pypdfium2`; not a dependency of this package, and without it the registry says so). Every line comes with
+the box it sits in, so a block is placed by its page and an exact box (points from the top-left of the
+page). It gathers lines into paragraphs, headings and list items by their own spacing and type size,
+and it says what it does not do on every document: **it does not recover a table's cells** (a decision
+table read as lines loses which value goes with which condition), does not place pictures (it counts
+them) and does not untangle columns. A page that carries no text is listed by number and is not read as
+an empty page: reading pixels is a reader's work (`docs/adr/0035`). A file or page count past the
+limits, and a page larger than any sheet, is refused with its numbers.
+
 ### What "precision" means here, and where it can actually go wrong
 
 Most of these classes are not empirical claims. `ambiguous-name` fires exactly
