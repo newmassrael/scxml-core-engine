@@ -22,7 +22,7 @@
 # the anchor quoted, never as a pass.
 
 mutation_tests -p sce-specs --test a_connection_runs_only_as_many_requests_as_it_has_places
-mutation_targets sce-specs/src/store/request_store.rs sce-specs/src/request_life/mod.rs
+mutation_targets sce-specs/src/store/request_store.rs sce-specs/src/request_life/mod.rs sce-specs/src/commands.rs
 mutation_oracles sce-specs/tests/a_connection_runs_only_as_many_requests_as_it_has_places.rs
 
 mutation_case "a connection with no place free is told it has one" <<'PY'
@@ -92,6 +92,24 @@ mutation_case "a request that waits does not count the requests ahead of it" <<'
 edit("sce-specs/src/store/request_store.rs",
      "            *before += 1;",
      "            *before += 0;")
+PY
+
+mutation_case "a place is said to be held since the latest request that holds one and not the longest" <<'PY'
+edit("sce-specs/src/store/request_store.rs",
+     "                .filter_map(|view| view.request.lease.as_ref().map(|lease| lease.granted_at))\n                .min();",
+     "                .filter_map(|view| view.request.lease.as_ref().map(|lease| lease.granted_at))\n                .max();")
+PY
+
+mutation_case "the queue leaves out since when the place a request waits for has been held" <<'PY'
+edit("sce-specs/src/commands.rs",
+     '"running_since": wait.running_since.map(utc_timestamp),',
+     '"running_since": wait.running_since.and(None::<String>),')
+PY
+
+mutation_case "the queue leaves out the moment the store read the clock at" <<'PY'
+edit("sce-specs/src/commands.rs",
+     'Ok(json!({ "waiting": waiting, "now": store.now() }))',
+     'Ok(json!({ "waiting": waiting, "now": Some(store.now()).filter(|_| false) }))')
 PY
 
 mutation_case "the queue counts the running requests of every connection" <<'PY'

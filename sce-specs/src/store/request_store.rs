@@ -115,6 +115,9 @@ pub struct LaneWait {
     pub places: usize,
     /// How many queued requests of the connection will be taken before this one: 0 is the next.
     pub ahead: usize,
+    /// When the attempt that has run longest of the connection's running requests was taken, in
+    /// seconds since the Unix epoch: how long the place this request waits for has been held.
+    pub running_since: Option<u64>,
 }
 
 /// What registering a request made.
@@ -835,8 +838,10 @@ impl<C: Clock> SpecStore<C> {
             .collect();
         let open = self.open_requests()?;
         let running_of = |connection: &ConnectionId| {
-            open.iter()
-                .filter(|(_, view)| {
+            let running: Vec<&RequestView> = open
+                .iter()
+                .map(|(_, view)| view)
+                .filter(|view| {
                     view.state == State::Running
                         && view
                             .request
@@ -844,7 +849,12 @@ impl<C: Clock> SpecStore<C> {
                             .as_ref()
                             .is_some_and(|pin| &pin.connection == connection)
                 })
-                .count()
+                .collect();
+            let since = running
+                .iter()
+                .filter_map(|view| view.request.lease.as_ref().map(|lease| lease.granted_at))
+                .min();
+            (running.len(), since)
         };
         let mut waits = Vec::new();
         let mut ahead: BTreeMap<&ConnectionId, usize> = BTreeMap::new();
@@ -858,7 +868,7 @@ impl<C: Clock> SpecStore<C> {
             let Some(&places) = places.get(pin.connection.as_str()) else {
                 continue;
             };
-            let running = running_of(&pin.connection);
+            let (running, running_since) = running_of(&pin.connection);
             let before = ahead.entry(&pin.connection).or_insert(0);
             if running >= places {
                 waits.push(LaneWait {
@@ -868,6 +878,7 @@ impl<C: Clock> SpecStore<C> {
                     running,
                     places,
                     ahead: *before,
+                    running_since,
                 });
             }
             *before += 1;

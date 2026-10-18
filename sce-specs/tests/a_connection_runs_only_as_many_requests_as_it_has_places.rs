@@ -319,15 +319,52 @@ fn the_queue_is_a_command_every_host_reads_the_same_way() {
 
     assert_eq!(
         answer,
-        serde_json::json!({ "waiting": [{
-            "spec": second.spec.as_str(),
-            "request": second.request,
-            "connection": "qwen",
-            "running": 1,
-            "places": 1,
-            "ahead": 0,
-        }] })
+        serde_json::json!({
+            "waiting": [{
+                "spec": second.spec.as_str(),
+                "request": second.request,
+                "connection": "qwen",
+                "running": 1,
+                "places": 1,
+                "ahead": 0,
+                "running_since": sce_specs::clock::utc_timestamp(T0),
+            }],
+            "now": sce_specs::clock::utc_timestamp(T0),
+        })
     );
+}
+
+#[test]
+fn a_request_that_waits_is_told_since_when_the_place_it_waits_for_has_been_held() {
+    let lanes = lanes("lane-waits-since");
+    let first = lanes.made("First", Some("qwen"));
+    let second = lanes.made("Second", Some("qwen"));
+    let third = lanes.made("Third", Some("qwen"));
+    let fourth = lanes.made("Fourth", Some("qwen"));
+
+    lanes.claim(&first, "desktop", 2).unwrap();
+    lanes.clock.advance(20);
+    lanes.claim(&second, "desktop", 2).unwrap();
+    lanes.clock.advance(10);
+    assert_eq!(refused_as(lanes.claim(&third, "desktop", 2)), "lane-full");
+
+    // Two places are held, and what the third waits for is the one that has been held the
+    // longest: the first, taken twenty seconds before the second.
+    let waits = lanes.store.lane_waits().unwrap();
+    assert_eq!(waits.len(), 2);
+    assert!(waits.iter().all(|wait| wait.running_since == Some(T0)));
+
+    // When that place is free again the third takes it, and what the fourth waits for is the
+    // place that is left: the second's, taken at T0 + 20.
+    lanes
+        .store
+        .cancel_request(&first.spec, &first.request)
+        .unwrap();
+    lanes.claim(&third, "desktop", 2).unwrap();
+    let waits = lanes.store.lane_waits().unwrap();
+    assert_eq!(waits.len(), 1);
+    assert_eq!(waits[0].spec, fourth.spec);
+    assert_eq!(waits[0].running_since, Some(T0 + 20));
 }
 
 #[test]

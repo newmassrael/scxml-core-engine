@@ -290,7 +290,12 @@ pub const COMMANDS: &[&str] = &[
 /// does not read as a model), so that a screen can show the last design a run that failed was
 /// holding as the documents it is and not as the text it was kept in. A screen written for 28 reads
 /// the `text` and shows a model of several documents as a blob; a core of 28 gives it no documents.
-pub const COMMAND_SET_VERSION: u32 = 29;
+///
+/// 30: a request that waits for a place says since when the place it waits for has been held
+/// (`running_since`, the moment the attempt that has run longest of the connection's running
+/// requests was taken), and `read_queue` says the store's `now`, so that a screen can say how long
+/// the one ahead has run. A screen written for 29 does not say it; a core of 29 gives it neither.
+pub const COMMAND_SET_VERSION: u32 = 30;
 
 /// A command that did not do what was asked, in a shape every shell can pass on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -2054,10 +2059,13 @@ pub fn call_with<C: Clock>(
                         "running": wait.running,
                         "places": wait.places,
                         "ahead": wait.ahead,
+                        "running_since": wait.running_since.map(utc_timestamp),
                     })
                 })
                 .collect();
-            Ok(json!({ "waiting": waiting }))
+            // `now` is the store's moment, as the journal's is, so that a screen measures how long
+            // a place has been held by the clock that wrote when it was taken.
+            Ok(json!({ "waiting": waiting, "now": store.now() }))
         }
         "remove_spec" => {
             let OneSpec { id } = arguments(args)?;
