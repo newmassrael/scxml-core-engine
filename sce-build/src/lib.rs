@@ -309,6 +309,10 @@ pub mod std_imports;
 /// An author's JSON read the way they meant it: an object that writes a key
 /// twice is refused, not resolved to the last. See [`strict_json::from_str`].
 pub mod strict_json;
+/// What a build target has of read-modify-write atomics, from its triple: the width a deploy's
+/// `devices.<d>.target` says, so that a width typed beside it (`platform.atomic_rmw_width`) is a
+/// statement to check and not a second place the fact is kept.
+pub mod target_atomics;
 /// `sce:template` / `sce:use` / `sce:param` preprocessing —
 /// parameterised composition adjacent to XInclude. AOT-only;
 /// runs immediately after XInclude expansion
@@ -2777,6 +2781,10 @@ pub struct QueueResolution {
     /// atomics are the platform's own and cannot be asserted about by the
     /// generated code (RFC §synth-5-P, Counter width).
     pub atomic_rmw_width: Option<u32>,
+    /// The build target triple of the device the machine is on (`devices.<d>.target`), when the
+    /// deploy names one. The Rust backend reads what atomics the target has from it
+    /// ([`target_atomics::rmw_width`]); a stated `atomic_rmw_width` that disagrees with it is refused.
+    pub target: Option<String>,
     /// `platform.core_count` of the target machine. With an
     /// `atomic_rmw_width` of 0 only one core is supported.
     pub core_count: Option<u32>,
@@ -5470,9 +5478,8 @@ pub fn resolve_queue_deploy_limits(
         .map(|source| resolve("participants", source))
         .transpose()?
         .flatten();
-    let machine = cfg
-        .device_for_machine(machine_name)
-        .and_then(|device| device.machines.get(machine_name));
+    let device = cfg.device_for_machine(machine_name);
+    let machine = device.and_then(|device| device.machines.get(machine_name));
     let platform = machine.and_then(|machine| machine.platform.as_ref());
     Ok(QueueResolution {
         capacity,
@@ -5480,6 +5487,7 @@ pub fn resolve_queue_deploy_limits(
         atomic_rmw_width: platform
             .and_then(|platform| platform.atomic_rmw_width)
             .map(mesh::deploy::AtomicRmwWidth::bits),
+        target: device.and_then(|device| device.target.clone()),
         core_count: platform.and_then(|platform| platform.core_count),
         min_wrap_ops: machine
             .and_then(|machine| machine.queues.get(&queue.name))

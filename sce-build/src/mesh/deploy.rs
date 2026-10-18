@@ -1516,7 +1516,8 @@ pub struct MemoryConfig {
 pub struct DeviceConfig {
     /// Target platform (e.g. "linux-x86_64", "qnx-aarch64").
     pub platform: Option<String>,
-    /// Build target triple.
+    /// Build target triple. The generator reads the atomics the Rust runtime has on it
+    /// (`target_atomics`), so a queue row the triple cannot build is refused at generation.
     pub target: Option<String>,
     /// Device-shared transport configuration — one entry per transport type
     /// that has session-level state (e.g. zenoh). Omit the block entirely

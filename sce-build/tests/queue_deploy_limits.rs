@@ -372,6 +372,150 @@ fn the_platforms_atomic_width_chooses_the_ring_a_c11_queue_is_built_on() {
     assert!(code.contains("sce_queue_irq_t core;"), "{code}");
 }
 
+// ─── Rust: the atomics come from the target the device is built for ───
+
+/// A deploy whose device `ecu1` is built for `target` (and states `platform_extra` of the machine).
+fn targeted_deploy_yaml(target: &str, platform_extra: &str) -> String {
+    format!(
+        r##"
+version: "1.0"
+topology:
+  ecu1:
+    target: {target}
+    machines:
+      mcu_node:
+        source: mcu_node.scxml
+        platform:
+          class: mcu
+          os: bare_metal
+{platform_extra}
+"##
+    )
+}
+
+/// The Rust source for the queue on the machine of that deploy, or why the compile refused.
+fn compile_rust(scxml: &str, yaml: &str) -> Result<String, Located<ForgeError>> {
+    let deploy = parse_deploy_str(yaml).expect("deploy parses");
+    let output = compile_forge_with_deploy(
+        scxml,
+        DocumentLabel::symmetric("rx_events"),
+        Language::Rust,
+        Some(&deploy),
+        Some("mcu_node"),
+    )?;
+    Ok(output
+        .files
+        .iter()
+        .map(|(_, content)| content.as_str())
+        .collect::<Vec<_>>()
+        .join("\n"))
+}
+
+fn generate_error_of(located: Located<ForgeError>) -> GenerateError {
+    match located.error {
+        ForgeError::Generate(boxed) => *boxed,
+        other => panic!("expected a generate error, got {other:?}"),
+    }
+}
+
+fn exchange_list() -> String {
+    queue_doc(
+        "many",
+        "one",
+        "blocking",
+        r#"<sce:intrusive link-field="next"/>"#,
+    )
+}
+
+/// The triple a device is built for says what atomics the runtime has there, and nothing is typed
+/// beside it: an SCQ row is refused for a 32-bit target and for ARMv6-M and built for a 64-bit one; the
+/// exchange list is refused for ARMv6-M and built for a Cortex-M4.
+#[test]
+fn the_target_triple_of_a_device_decides_which_rust_queue_rows_it_can_have() {
+    let scq = scq_queue();
+    for (target, built) in [
+        ("thumbv6m-none-eabi", false),
+        ("thumbv7em-none-eabihf", false),
+        ("x86_64-unknown-linux-gnu", true),
+    ] {
+        let result = compile_rust(&scq, &targeted_deploy_yaml(target, ""));
+        match (built, result) {
+            (true, Ok(_)) => {}
+            (false, Err(located)) => match generate_error_of(located) {
+                GenerateError::QueueStorageRuntimeMissing {
+                    language, status, ..
+                } => {
+                    assert_eq!(language, "rust", "{target}");
+                    assert!(
+                        status.contains(&format!("({target})")),
+                        "the refusal names the triple that decided it: {status}"
+                    );
+                }
+                other => panic!("{target}: expected QueueStorageRuntimeMissing, got {other:?}"),
+            },
+            (built, other) => panic!("{target}: built {built}, got {other:?}"),
+        }
+    }
+
+    let list = exchange_list();
+    assert!(compile_rust(&list, &targeted_deploy_yaml("thumbv6m-none-eabi", "")).is_err());
+    compile_rust(&list, &targeted_deploy_yaml("thumbv7em-none-eabihf", ""))
+        .expect("a Cortex-M4 has the 32-bit swap the list needs");
+}
+
+/// A width typed beside the triple is a second statement of one fact: the same one is accepted, a
+/// different one is refused, and the deploy is told to remove it.
+#[test]
+fn a_width_that_disagrees_with_the_target_triple_is_refused() {
+    let list = exchange_list();
+    compile_rust(
+        &list,
+        &targeted_deploy_yaml("thumbv7em-none-eabihf", "          atomic_rmw_width: 32"),
+    )
+    .expect("the stated width is what the triple says");
+
+    let located = compile_rust(
+        &list,
+        &targeted_deploy_yaml("thumbv6m-none-eabi", "          atomic_rmw_width: 32"),
+    )
+    .expect_err("ARMv6-M has no atomic of 32 bits, whatever the deploy says");
+    match generate_error_of(located) {
+        GenerateError::InvalidConfig(message) => {
+            assert!(
+                message.contains("thumbv6m-none-eabi") && message.contains("remove"),
+                "{message}"
+            );
+        }
+        other => panic!("expected InvalidConfig, got {other:?}"),
+    }
+}
+
+/// A triple the generator has no table row for (a custom target) says nothing: a row that needs an atomic
+/// asks the deploy to state the width, and the Lamport ring, which needs none, is built.
+#[test]
+fn a_triple_the_generator_does_not_know_asks_for_the_width_only_a_row_that_needs_one() {
+    let custom = "my-board-none-elf";
+    let located = compile_rust(&scq_queue(), &targeted_deploy_yaml(custom, ""))
+        .expect_err("the SCQ row cannot be judged for a target nobody described");
+    match generate_error_of(located) {
+        GenerateError::InvalidConfig(message) => {
+            assert!(
+                message.contains(custom) && message.contains("platform.atomic_rmw_width"),
+                "{message}"
+            );
+        }
+        other => panic!("expected InvalidConfig, got {other:?}"),
+    }
+    compile_rust(
+        &scq_queue(),
+        &targeted_deploy_yaml(custom, "          atomic_rmw_width: 64"),
+    )
+    .expect("a stated width stands alone for a triple the table lacks");
+    let lamport = queue_doc("one", "one", "wait-free", r#"<sce:bounded capacity="8"/>"#);
+    compile_rust(&lamport, &targeted_deploy_yaml(custom, ""))
+        .expect("a Lamport ring needs no atomic");
+}
+
 #[test]
 fn a_deploy_that_states_no_atomic_width_leaves_an_scq_row_on_c11_refused() {
     let yaml = platform_deploy_yaml("          core_count: 4", "");

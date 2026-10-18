@@ -18679,14 +18679,47 @@ fn resolve_queue_render_inputs(
     let selection = m.selection();
     let is_c11 = language == crate::generator::Language::C11;
 
-    // The Rust runtime can see its target (`cfg(target_has_atomic)`), so it asks the deploy nothing it
-    // needs; but a deploy that states the target's atomics lets the generator say at generation, and not
-    // in a build for the target, that the runtime has no module for the row the document selects. Rust has
-    // no critical-section form of a row, as C11 has for a single core: a row it cannot build is refused.
+    // The Rust runtime can see its target (`cfg(target_has_atomic)`), so the build for the target is
+    // always the last word; but the deploy names the triple a device is built for, the generator reads
+    // what atomics that triple has (`target_atomics`), and says at generation, and not in the build,
+    // that the runtime has no module for the row the document selects. A width typed beside the triple
+    // (`platform.atomic_rmw_width`) is a second statement of the same fact: it is checked against the
+    // triple and refused when they differ, and it stands alone only for a triple the table does not
+    // know. Rust has no critical-section form of a row, as C11 has for a single core: a row it cannot
+    // build is refused.
     if language == crate::generator::Language::Rust {
-        if let Some(width) = resolution.and_then(|r| r.atomic_rmw_width) {
-            let (needs, why) =
-                crate::forge::codegen_matrix::rust_runtime_row_atomics(selection.algorithm);
+        let (needs, why) =
+            crate::forge::codegen_matrix::rust_runtime_row_atomics(selection.algorithm);
+        let stated = resolution.and_then(|r| r.atomic_rmw_width);
+        let triple = resolution.and_then(|r| r.target.as_deref());
+        let known = triple.and_then(crate::target_atomics::rmw_width);
+        let width = match (stated, known) {
+            (Some(stated), Some(known)) if stated != known => {
+                return Err(ForgeError::from(GenerateError::InvalidConfig(format!(
+                    "queue '{name}': the deploy states platform.atomic_rmw_width {stated} for a target `{triple}` whose widest read-modify-write atomic is {known} bits (what rustc reports of it). \
+                     Repair: remove platform.atomic_rmw_width, which the target already says, or correct the target.",
+                    name = m.name,
+                    triple = triple.unwrap_or_default(),
+                )))
+                .at_line(m.storage_line));
+            }
+            (Some(stated), _) => Some(stated),
+            (None, Some(known)) => Some(known),
+            // A triple the table does not know says nothing, and a row that needs an atomic cannot be
+            // judged: the deploy is asked to state the width (the build still has the last word).
+            (None, None) if needs > 0 && triple.is_some() => {
+                return Err(ForgeError::from(GenerateError::InvalidConfig(format!(
+                    "queue '{name}': the {algorithm} needs a read-modify-write atomic, and the target `{triple}` is not one whose atomics the generator knows. \
+                     Repair: state platform.atomic_rmw_width (64, 32, or 0 for a target with none) for this machine in deploy.yaml.",
+                    name = m.name,
+                    algorithm = selection.algorithm.name(),
+                    triple = triple.unwrap_or_default(),
+                )))
+                .at_line(m.storage_line));
+            }
+            (None, None) => None,
+        };
+        if let Some(width) = width {
             if width < needs {
                 let (storage, implemented) = match &m.storage {
                     QueueStorage::Bounded { .. } => (
@@ -18706,9 +18739,13 @@ fn resolve_queue_render_inputs(
                         .to_string(),
                     implemented: implemented.to_string(),
                     status: format!(
-                        " for the {algorithm} on a target whose platform.atomic_rmw_width is {width}: {why}. \
+                        " for the {algorithm} on a target whose widest read-modify-write atomic is {width} bits{from}: {why}. \
                          SCE Protocol-Synthesis RFC §5.P specifies the row; this document is valid and is refused rather than lowered to a queue that gives less",
                         algorithm = selection.algorithm.name(),
+                        from = match triple {
+                            Some(triple) if known.is_some() => format!(" ({triple})"),
+                            _ => format!(" (platform.atomic_rmw_width is {width})"),
+                        },
                     ),
                 })
                 .at_line(m.storage_line));
