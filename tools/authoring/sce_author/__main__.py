@@ -91,7 +91,9 @@ def cmd_extract(args) -> int:
         print(f"unread [{done.code}]: {done.words(path)}", file=sys.stderr)
         return 1
     out = pathlib.Path(args.out)
-    out.write_text(done.to_json() + "\n", encoding="utf-8")
+    # Exactly the canonical text and nothing after it, so that the SHA-256 of the file is the revision
+    # printed below, which is also the name the specs folder keeps an extraction under (`save_extraction`).
+    out.write_text(done.to_json(), encoding="utf-8")
     kinds = collections.Counter(block.kind for block in done.blocks)
     # Counts and the revision only: the blocks hold the document's own words, and a general tool does not
     # decide that they may be printed.

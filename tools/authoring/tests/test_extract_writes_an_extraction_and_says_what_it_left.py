@@ -9,6 +9,7 @@ code has to be able to see it. Each case is paired with the nearest one that mus
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import io
 import json
 import pathlib
@@ -50,6 +51,17 @@ class ExtractWritesTheExtractionAndNamesIt(Folder):
         self.assertEqual([b.kind for b in written.blocks], ["heading", "paragraph"])
         self.assertIn(f"revision {written.revision()}", said)
         self.assertIn("2 block(s)", said)
+
+    def test_the_hash_of_the_file_is_the_revision_so_the_specs_folder_names_it_the_same(self):
+        # The specs folder keeps an extraction under the SHA-256 of the bytes it is given, and the
+        # extraction is named by its revision: the file must be exactly the bytes that are hashed.
+        source = self.write("spec.md", "# Lamp\n\nThe lamp is on.\n")
+        out = self.root / "x.json"
+
+        _, said, _ = run("extract", str(source), "--out", str(out))
+
+        revision = said.split("revision ")[1].split(" ")[0]
+        self.assertEqual(hashlib.sha256(out.read_bytes()).hexdigest(), revision)
 
     def test_what_is_printed_is_counts_and_never_the_words_of_the_document(self):
         source = self.write("spec.md", "A sentence nobody should find on a terminal.\n")
