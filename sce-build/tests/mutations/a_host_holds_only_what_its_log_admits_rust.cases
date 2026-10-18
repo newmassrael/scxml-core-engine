@@ -121,17 +121,22 @@ edit("backends/rust/trust/src/chain.rs",
      "            let _ = at;")
 PY
 
-# Re-aimed 2026-10-18: `hold` gained the same `.extend(...)` line one level
-# deeper, so the bare line matched twice. The receiver above it is what names
-# `tell_what_changed`'s copy, at its own indentation.
+# Re-aimed 2026-10-18 at `hold`. A write that freezes a chain lower used to
+# reach the machine through `tell_what_changed`; since e2b0a30ab5 `hold` reads
+# only what lies above the frozen place and evicts it itself, so that is where
+# the machine is told to forget. The case first moved to `tell_what_changed`'s
+# copy of the line, which only the cutoff path still reaches, and SURVIVED
+# there (0/109): the eviction this case names is no longer made at that site.
 mutation_case "A host that froze a device does not tell its machine to forget what it was told" <<'PY'
 edit("backends/rust/trust/src/trust.rs",
-     """    state
-        .evicted
-        .extend(left.into_iter().map(|seq| (node, seq)));""",
-     """    state
-        .evicted
-        .extend(std::iter::empty::<(u64, u64)>().chain(left.into_iter().map(|_| (0, 0))).take(0));""")
+     """    if !left.is_empty() {
+        state
+            .evicted
+            .extend(left.into_iter().map(|seq| (node, seq)));""",
+     """    if !left.is_empty() {
+        state
+            .evicted
+            .extend(std::iter::empty::<(u64, u64)>().chain(left.into_iter().map(|_| (0, 0))).take(0));""")
 PY
 
 mutation_case "A device whose chain conflicts goes on signing" <<'PY'
