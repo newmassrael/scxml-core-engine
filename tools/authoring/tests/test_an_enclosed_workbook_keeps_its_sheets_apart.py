@@ -171,6 +171,19 @@ class AnEnclosedWorkbookKeepsItsSheetsApart(unittest.TestCase):
         said = " ".join(self.read(blob).notes)
         self.assertIn('sheet "Limits"', said)
 
+    def test_a_cell_of_several_lines_keeps_its_row_on_one_line(self):
+        """A list in a spreadsheet cell broke its row into pieces, only the first of which looked
+        like a row. The row is one line, and the items of the list are kept apart on it."""
+        blob = workbook({"sheet1.xml": sheet_xml("first\n- second\r\n- third")},
+                        [("Limits", "sheet1.xml", "")])
+        lines = self.lines(blob)
+        at = lines.index("--- sheet: Limits")
+        self.assertEqual("| first / - second / - third |", lines[at + 1])
+        self.assertEqual([], lines[at + 2:])
+        # The nearest case that must not change: a cell of one line is written as it was.
+        one = self.lines(workbook({"sheet1.xml": sheet_xml("  just one  ")}, [("Limits", "sheet1.xml", "")]))
+        self.assertEqual("| just one |", one[one.index("--- sheet: Limits") + 1])
+
     def test_a_name_that_is_not_ascii_is_kept_as_written(self):
         """The name needs a value that is not ASCII and is several UTF-8 bytes wide, not a
         particular script, so it is written as escapes: this source stays ASCII and the

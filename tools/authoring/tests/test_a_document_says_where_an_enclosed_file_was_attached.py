@@ -167,9 +167,13 @@ class ADocumentSaysWhereAnEnclosedFileWasAttached(unittest.TestCase):
         self.assertGreater(at, lines.index("[enclosed object: Book.xlsx (Excel.Sheet.12)]"))
         self.assertIn("| CONDITION | SHOWS |", lines[at:])
 
-    def test_a_document_that_attaches_nothing_reads_exactly_as_before(self):
+    def test_a_document_that_attaches_nothing_reads_as_it_did_apart_from_the_table_text_written_twice(self):
+        """Marks for enclosed files change nothing in a document that encloses none. What this case
+        held as "exactly as before" included the paragraphs of a table written a second time after its
+        row ("a", "b"), which was a defect and not a behaviour to keep: a paragraph in a table is part
+        of its row and is written there only."""
         lines = self.lines(para("One.") + table(["a", "b"]) + para("Two."), {})
-        self.assertEqual(["One.", "| a | b |", "a", "b", "Two."], lines)
+        self.assertEqual(["One.", "| a | b |", "Two."], lines)
 
 
 if __name__ == "__main__":

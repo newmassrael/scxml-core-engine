@@ -73,13 +73,26 @@ _ROW = re.compile(r"<tr\b.*?</tr>", re.S | re.I)
 _CELL = re.compile(r"<t[dh]\b[^>]*>(.*?)</t[dh]>", re.S | re.I)
 
 
+def _one_line(text: str) -> str:
+    """A cell's text on one line.
+
+    ⚠ A table is written as one line per row, and everything downstream reads it that way. A cell that
+    holds several lines (a list in a spreadsheet cell, a pretty-printed HTML cell) broke its row into
+    pieces, only the first of which looked like a row: in one real document 35% of the rows from
+    enclosed workbooks came out as several lines. A line break inside a cell is written as ` / `, so
+    that the items of a list stay apart and the row stays whole.
+    """
+    pieces = [piece.strip() for piece in text.replace("\r\n", "\n").replace("\r", "\n").split("\n")]
+    return " / ".join(piece for piece in pieces if piece)
+
+
 def _read_html(path: pathlib.Path) -> Ingested:
     raw = path.read_text(encoding="utf-8", errors="replace")
     raw = _SCRIPTISH.sub(" ", raw)
     # Tables first, and as rows: a table flattened into a paragraph loses which
     # value went with which condition, which is the entire content.
     def row(match):
-        cells = [_TAG.sub("", c).strip() for c in _CELL.findall(match.group(0))]
+        cells = [_one_line(_TAG.sub("", c)) for c in _CELL.findall(match.group(0))]
         return "\n| " + " | ".join(cells) + " |\n"
 
     raw = _ROW.sub(row, raw)
@@ -163,6 +176,49 @@ SHOWABLE = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
 # The most one picture that is handed over may weigh. A result a client cannot hold is refused by
 # name and size rather than truncated: half an image reads as a different image.
 MAX_PICTURE_BYTES = 4_000_000
+
+# What a package may expand to before any of it is read. A word document is a zip, and a file of a
+# few megabytes can expand to gigabytes (a zip bomb) while every reader below holds a whole part in
+# memory. The limits are set against a measured corpus of real specifications, whose largest part
+# was 52 MB expanded and whose largest whole was 199 MB in 816 members: a part may be 128 MiB
+# (2.5 times the largest), a package 1 GiB (5 times), and a package may hold 10,000 members.
+MEMBER_MAX_BYTES = 128 * 1024 * 1024
+ARCHIVE_MAX_BYTES = 1024 * 1024 * 1024
+ARCHIVE_MAX_MEMBERS = 10_000
+
+
+def _label_of(archive: zipfile.ZipFile) -> str:
+    return str(archive.filename) if archive.filename else "an enclosed file"
+
+
+def _check_archive(archive: zipfile.ZipFile) -> None:
+    """Refuse a package whose members, taken together, are more than a reader should open.
+
+    The sizes are the ones the package declares, and the library reads no more than a member
+    declares, so a package that lies about them fails when it is read and does not expand past them.
+    """
+    infos = archive.infolist()
+    label = _label_of(archive)
+    if len(infos) > ARCHIVE_MAX_MEMBERS:
+        raise IngestError(
+            f"{label}: it holds {len(infos):,} parts and the most read is {ARCHIVE_MAX_MEMBERS:,}. "
+            "A word document holds a few hundred; open it in a word processor and save it again.")
+    total = sum(info.file_size for info in infos)
+    if total > ARCHIVE_MAX_BYTES:
+        raise IngestError(
+            f"{label}: its parts expand to {total:,} bytes and the most read is {ARCHIVE_MAX_BYTES:,}. "
+            "A file this small on disk and this large open is how a file that exhausts memory is made; "
+            "open it in a word processor and save it again.")
+
+
+def _member(archive: zipfile.ZipFile, name: str) -> bytes:
+    """One part of a package, refused by name and size when it expands past what a reader holds."""
+    info = archive.getinfo(name)
+    if info.file_size > MEMBER_MAX_BYTES:
+        raise IngestError(
+            f"{_label_of(archive)}: its part {name} expands to {info.file_size:,} bytes and the most "
+            f"read is {MEMBER_MAX_BYTES:,}. Open it in a word processor and save it again.")
+    return archive.read(info)
 
 
 def pictured_in(archive: zipfile.ZipFile) -> dict[str, str]:
@@ -327,7 +383,7 @@ def _related(archive: zipfile.ZipFile, part: str) -> _Related:
     declared = posixpath.join(folder, "_rels", name + ".rels")
     out = _Related()
     try:
-        root = ET.parse(io.BytesIO(archive.read(declared))).getroot()
+        root = ET.parse(io.BytesIO(_member(archive, declared))).getroot()
     except KeyError:
         return out
     except ET.ParseError:
@@ -364,7 +420,7 @@ def _sheets_in_order(book: zipfile.ZipFile, inner: set[str]) -> list[tuple[str, 
     listed: list[tuple[str, str, bool]] = []
     if "xl/workbook.xml" in inner:
         try:
-            root = ET.parse(io.BytesIO(book.read("xl/workbook.xml"))).getroot()
+            root = ET.parse(io.BytesIO(_member(book, "xl/workbook.xml"))).getroot()
         except ET.ParseError:
             root = None
         if root is not None:
@@ -454,7 +510,7 @@ def _drawn_on(book: zipfile.ZipFile, inner: set[str], sheet: str, root) -> _Draw
             drawn.unreadable += 1
             continue
         try:
-            root = ET.parse(io.BytesIO(book.read(part))).getroot()
+            root = ET.parse(io.BytesIO(_member(book, part))).getroot()
         except ET.ParseError:
             drawn.unreadable += 1
             continue
@@ -501,7 +557,7 @@ def _picture_values(book: zipfile.ZipFile, inner: set[str]) -> set[int]:
     if not all(part in inner for part in parts):
         return set()
     try:
-        metadata, values, structures = (ET.parse(io.BytesIO(book.read(p))).getroot() for p in parts)
+        metadata, values, structures = (ET.parse(io.BytesIO(_member(book, p))).getroot() for p in parts)
         types = [(s.get("t") or "").lower() for s in structures.iter(f"{_RD}s")]
         value_types = [int(v.get("s")) for v in values.iter(f"{_RD}rv")]
         kinds = [m.get("name") for m in metadata.iter(f"{_XL}metadataType")]
@@ -544,10 +600,11 @@ def _read_enclosed_sheet(blob: bytes) -> tuple[list[str], list[str]]:
     notes: list[str] = []
     try:
         book = zipfile.ZipFile(io.BytesIO(blob))
+        _check_archive(book)
         inner = set(book.namelist())
         shared: list[str] = []
         if "xl/sharedStrings.xml" in inner:
-            root = ET.parse(io.BytesIO(book.read("xl/sharedStrings.xml"))).getroot()
+            root = ET.parse(io.BytesIO(_member(book, "xl/sharedStrings.xml"))).getroot()
             shared = ["".join(t.text or "" for t in si.iter(f"{_XL}t"))
                       for si in root.iter(f"{_XL}si")]
         lines: list[str] = []
@@ -555,7 +612,7 @@ def _read_enclosed_sheet(blob: bytes) -> tuple[list[str], list[str]]:
         unreadable_on: list[str] = []
         in_cell = _picture_values(book, inner)
         for name, sheet, hidden in _sheets_in_order(book, inner):
-            root = ET.parse(io.BytesIO(book.read(sheet))).getroot()
+            root = ET.parse(io.BytesIO(_member(book, sheet))).getroot()
             rows: list[str] = []
             grid: dict[int, dict[int, str]] = {}
             # ⚠ A merged cell holds its value in the top-left of the range and
@@ -605,7 +662,7 @@ def _read_enclosed_sheet(blob: bytes) -> tuple[list[str], list[str]]:
                     elif value is not None:
                         text = value.text or ""
                     if text.strip():
-                        cells[_column(cell.get("r") or "")] = text.strip()
+                        cells[_column(cell.get("r") or "")] = _one_line(text)
             drawn = _drawn_on(book, inner, sheet, root)
             loose += drawn.loose
             other += drawn.other
@@ -665,7 +722,7 @@ def _read_enclosed_sheet(blob: bytes) -> tuple[list[str], list[str]]:
                 f"be parsed, or the sheet's links to it cannot be read). Pictures on those "
                 f"sheets were not seen, and a cell that reads as empty there may have held one")
         return lines, notes
-    except (zipfile.BadZipFile, ET.ParseError, KeyError) as exc:
+    except (zipfile.BadZipFile, ET.ParseError, KeyError, IngestError) as exc:
         return [], [f"an enclosed workbook could not be opened ({exc})"]
 
 
@@ -673,18 +730,19 @@ def _read_enclosed_deck(blob: bytes) -> tuple[list[str], list[str]]:
     """An embedded presentation as its slides' text, in slide order."""
     try:
         deck = zipfile.ZipFile(io.BytesIO(blob))
+        _check_archive(deck)
         slides = sorted((n for n in deck.namelist()
                          if n.startswith("ppt/slides/slide")),
                         key=lambda n: int("".join(c for c in n if c.isdigit()) or 0))
         lines: list[str] = []
         for slide in slides:
-            root = ET.parse(io.BytesIO(deck.read(slide))).getroot()
+            root = ET.parse(io.BytesIO(_member(deck, slide))).getroot()
             for para in root.iter(f"{_A}p"):
                 said = "".join(t.text or "" for t in para.iter(f"{_A}t")).strip()
                 if said:
                     lines.append(said)
         return lines, []
-    except (zipfile.BadZipFile, ET.ParseError, KeyError) as exc:
+    except (zipfile.BadZipFile, ET.ParseError, KeyError, IngestError) as exc:
         return [], [f"an enclosed presentation could not be opened ({exc})"]
 
 
@@ -763,8 +821,14 @@ def read_enclosed(archive: zipfile.ZipFile) -> Enclosed:
         if not part.lower().endswith((".xlsx", ".pptx")):
             continue
         name = names[part]
-        opened, trouble = (_read_enclosed_sheet(archive.read(part)) if part.lower().endswith(".xlsx")
-                           else _read_enclosed_deck(archive.read(part)))
+        try:
+            blob = _member(archive, part)
+        except IngestError as exc:
+            # An enclosed file too large to hold is said to be unopened, as one that cannot be parsed is.
+            notes.append(f"{name}: could not be opened ({exc})")
+            continue
+        opened, trouble = (_read_enclosed_sheet(blob) if part.lower().endswith(".xlsx")
+                           else _read_enclosed_deck(blob))
         notes.extend(f"{name}: {t}" for t in trouble)
         if opened:
             rows[name] = opened
@@ -772,14 +836,94 @@ def read_enclosed(archive: zipfile.ZipFile) -> Enclosed:
     return Enclosed(attached, rows, unopened, notes)
 
 
+def _int_val(parent, tag: str, default: int) -> int:
+    """The `w:val` of the child `tag` of `parent` as a whole number, or `default` when it is not there."""
+    if parent is None:
+        return default
+    child = parent.find(f"{_W}{tag}")
+    if child is None:
+        return default
+    try:
+        return int(child.get(f"{_W}val", str(default)))
+    except ValueError:
+        return default
+
+
+def _table_lines(table, attached: dict[str, str], pictured: dict[str, str]) -> list[str]:
+    """A table as one line per row, every cell in the column it sits in.
+
+    ⚠ A merged cell is written once in the file and covers several columns or rows, so a reader that
+    writes the cells it finds shifts every later value of the row one column left (a cell that spans
+    two columns) and leaves the cells under a vertical merge empty. In a requirements table that is
+    where the header bands are and where a condition continues down several rows, and the shift does
+    not announce itself: the row still looks like a row. So a cell that spans columns is written in
+    each column it covers, and a cell that continues the one above is written with that cell's text,
+    which makes every row as wide as the table.
+    """
+    rows: list[list[str]] = []
+    carried: dict[int, str] = {}  # column -> the text of the cell a vertical merge goes on from
+    for tr in table.findall(f"{_W}tr"):
+        row_props = tr.find(f"{_W}trPr")
+        cells: list[str] = [""] * _int_val(row_props, "gridBefore", 0)
+        for tc in tr.findall(f"{_W}tc"):
+            props = tc.find(f"{_W}tcPr")
+            span = max(1, _int_val(props, "gridSpan", 1))
+            merge = props.find(f"{_W}vMerge") if props is not None else None
+            text = _one_line(" ".join(_docx_text(p, attached, pictured) for p in tc.iter(f"{_W}p")))
+            column = len(cells)
+            if merge is not None and merge.get(f"{_W}val") != "restart":
+                text = carried.get(column, text)
+            elif merge is not None:
+                for covered in range(column, column + span):
+                    carried[covered] = text
+            else:
+                for covered in range(column, column + span):
+                    carried.pop(covered, None)
+            cells.extend([text] * span)
+        cells.extend([""] * _int_val(row_props, "gridAfter", 0))
+        if cells:
+            rows.append(cells)
+    return ["| " + " | ".join(cells) + " |" for cells in rows]
+
+
+def _docx_lines(body, attached: dict[str, str], pictured: dict[str, str]) -> list[str]:
+    """The lines of a document body in reading order: a paragraph is a line, a table is a line per row.
+
+    A paragraph inside a table is part of its row and is written there and nowhere else. (The first
+    version of this reader walked every node, which wrote each such paragraph twice, once bare and once
+    in its row; in a corpus of real specifications 93% of the paragraphs are in tables, so the text came
+    out nearly doubled and a name search found every name twice.)
+    """
+    lines: list[str] = []
+
+    def walk(parent) -> None:
+        for child in parent:
+            if child.tag == f"{_W}p":
+                lines.append(_docx_text(child, attached, pictured))
+            elif child.tag == f"{_W}tbl":
+                lines.extend(_table_lines(child, attached, pictured))
+            else:
+                # A wrapper (a content control, a section) holds blocks of its own.
+                walk(child)
+
+    walk(body)
+    return lines
+
+
 def _read_docx(path: pathlib.Path) -> Ingested:
     notes: list[str] = []
     try:
         with zipfile.ZipFile(path) as zf:
+            _check_archive(zf)
             names = set(zf.namelist())
             if "word/document.xml" not in names:
                 raise IngestError(f"{path}: a zip, but not a word document")
-            body = ET.parse(io.BytesIO(zf.read("word/document.xml"))).getroot()
+            try:
+                body = ET.parse(io.BytesIO(_member(zf, "word/document.xml"))).getroot()
+            except ET.ParseError as exc:
+                # An entity that names a file or expands without end is refused by the parser; what
+                # reaches the caller is a refusal that names the document, not a traceback.
+                raise IngestError(f"{path}: its text part is not well-formed XML ({exc})") from exc
             # Named rather than counted: "3 embedded objects" tells a reader
             # nothing they can act on, and the name is what they search for.
             #
@@ -804,24 +948,8 @@ def _read_docx(path: pathlib.Path) -> Ingested:
     except zipfile.BadZipFile as exc:
         raise IngestError(f"{path}: not a readable document ({exc})") from exc
 
-    lines: list[str] = []
-    for node in body.iter():
-        if node.tag == f"{_W}p":
-            # A paragraph inside a table cell is emitted by the table branch.
-            lines.append(_docx_text(node, enclosed.attached, pictured))
-        elif node.tag == f"{_W}tbl":
-            for tr in node.iter(f"{_W}tr"):
-                cells = [
-                    " ".join(_docx_text(p, enclosed.attached, pictured) for p in tc.iter(f"{_W}p")).strip()
-                    for tc in tr.iter(f"{_W}tc")
-                ]
-                lines.append("| " + " | ".join(cells) + " |")
+    lines = _docx_lines(body, enclosed.attached, pictured)
 
-    # ⚠ The loop above walks every node, so a paragraph inside a table is
-    # emitted twice -- once bare, once as part of its row. Dropping the bare
-    # one would lose a paragraph that merely looks like a cell, so the rows
-    # are kept and the duplicates are left: a reader of the brief sees the
-    # table, and a name search is unaffected by a repeated line.
     # ⚠ What a document ENCLOSES is read, not merely named. The note this
     # replaces was right about the danger and wrong about what to do: an
     # embedded workbook is a zip of XML, so its rows come out mechanically --

@@ -962,6 +962,189 @@ class TheReaderSaysWhatItCouldNotCarry(Fixture):
         self.assertIn("| Fig_Lamp_stat | ON |", got.text)
         self.assertEqual([], got.notes)
 
+    def cell(self, text="", props=""):
+        body = self.para(text) if text else "<w:p/>"
+        return f"<w:tc><w:tcPr>{props}</w:tcPr>{body}</w:tc>"
+
+    def row(self, *cells, props=""):
+        return f"<w:tr><w:trPr>{props}</w:trPr>{''.join(cells)}</w:tr>"
+
+    def test_a_cell_that_spans_columns_is_written_in_each_column(self):
+        """A merged header band is one cell in the file. Written once, it shifts
+        every value after it one column left and the row still looks like a row."""
+        from sce_author.ingest import ingest
+
+        span = '<w:gridSpan w:val="2"/>'
+        body = ("<w:tbl>"
+                + self.row(self.cell("Band", span), self.cell("Remark"))
+                + self.row(self.cell("A"), self.cell("B"), self.cell("C"))
+                + "</w:tbl>")
+        lines = ingest(self.docx("spec.docx", body)).text.splitlines()
+        self.assertIn("| Band | Band | Remark |", lines)
+        self.assertIn("| A | B | C |", lines)
+        # Every row is as wide as the table.
+        widths = {line.count("|") for line in lines if line.startswith("|")}
+        self.assertEqual(1, len(widths))
+
+    def test_a_cell_that_continues_the_one_above_carries_its_text(self):
+        """The cells under a vertical merge are empty in the file. A reader that
+        writes them as found loses which group a condition row belongs to."""
+        from sce_author.ingest import ingest
+
+        body = ("<w:tbl>"
+                + self.row(self.cell("Group", '<w:vMerge w:val="restart"/>'), self.cell("x1"))
+                + self.row(self.cell("", "<w:vMerge/>"), self.cell("x2"))
+                + self.row(self.cell("Solo"), self.cell("x3"))
+                + "</w:tbl>")
+        lines = ingest(self.docx("spec.docx", body)).text.splitlines()
+        self.assertEqual(["| Group | x1 |", "| Group | x2 |", "| Solo | x3 |"], lines)
+
+    def test_a_merge_that_ends_does_not_carry_its_text_on(self):
+        from sce_author.ingest import ingest
+
+        body = ("<w:tbl>"
+                + self.row(self.cell("Group", '<w:vMerge w:val="restart"/>'), self.cell("x1"))
+                + self.row(self.cell("Own"), self.cell("x2"))
+                + self.row(self.cell("", "<w:vMerge/>"), self.cell("x3"))
+                + "</w:tbl>")
+        lines = ingest(self.docx("spec.docx", body)).text.splitlines()
+        self.assertEqual("| Own | x2 |", lines[1])
+        # A continuation with nothing above it that is still a merge reads as empty, as it is.
+        self.assertEqual("|  | x3 |", lines[2])
+
+    def test_a_row_that_starts_late_or_ends_early_keeps_its_columns(self):
+        from sce_author.ingest import ingest
+
+        body = ("<w:tbl>"
+                + self.row(self.cell("B"), props='<w:gridBefore w:val="1"/>')
+                + self.row(self.cell("A"), props='<w:gridAfter w:val="1"/>')
+                + "</w:tbl>")
+        lines = ingest(self.docx("spec.docx", body)).text.splitlines()
+        self.assertEqual(["|  | B |", "| A |  |"], lines)
+
+    def test_a_line_break_inside_a_cell_keeps_the_row_on_one_line(self):
+        from sce_author.ingest import ingest
+
+        body = "<w:tbl>" + self.row(self.cell("one\ntwo"), self.cell("v")) + "</w:tbl>"
+        lines = ingest(self.docx("spec.docx", body)).text.splitlines()
+        self.assertEqual(["| one / two | v |"], lines)
+
+    def test_a_paragraph_in_a_table_is_written_once(self):
+        """Walking every node wrote each such paragraph twice, once bare and once
+        in its row, so a name search found every name in a table twice."""
+        from sce_author.ingest import ingest
+
+        body = (self.para("Outside_Name")
+                + "<w:tbl>" + self.row(self.cell("Inside_Name"), self.cell("v")) + "</w:tbl>")
+        text = ingest(self.docx("spec.docx", body)).text
+        self.assertEqual(1, text.count("Inside_Name"))
+        self.assertEqual(1, text.count("Outside_Name"))
+        self.assertEqual(["Outside_Name", "| Inside_Name | v |"], text.splitlines())
+
+    def test_a_table_inside_a_cell_is_written_once_inside_that_cell(self):
+        from sce_author.ingest import ingest
+
+        inner = "<w:tbl>" + self.row(self.cell("Deep_Name")) + "</w:tbl>"
+        body = ("<w:tbl>"
+                + self.row(f"<w:tc><w:tcPr></w:tcPr>{self.para('Outer')}{inner}<w:p/></w:tc>", self.cell("v"))
+                + "</w:tbl>")
+        text = ingest(self.docx("spec.docx", body)).text
+        self.assertEqual(1, text.count("Deep_Name"))
+        self.assertEqual(1, len(text.strip().splitlines()))
+
+    def test_a_package_that_expands_past_the_limit_is_refused(self):
+        """A zip a few megabytes on disk can expand to gigabytes, and the readers
+        hold a whole part in memory. The nearest case that must NOT be refused is
+        the same document under the limit."""
+        from unittest import mock
+
+        from sce_author import ingest as module
+        from sce_author.ingest import IngestError, ingest
+
+        body = "".join(self.para(f"line {n}") for n in range(200))
+        path = self.docx("spec.docx", body)
+        with mock.patch.object(module, "MEMBER_MAX_BYTES", 1000):
+            with self.assertRaises(IngestError) as caught:
+                ingest(path)
+        self.assertIn("expands to", str(caught.exception))
+        self.assertIn("word/document.xml", str(caught.exception))
+        with mock.patch.object(module, "MEMBER_MAX_BYTES", 10_000_000):
+            self.assertIn("line 199", ingest(path).text)
+
+    def test_a_package_with_too_many_parts_is_refused(self):
+        from unittest import mock
+
+        from sce_author import ingest as module
+        from sce_author.ingest import IngestError, ingest
+
+        many = self.docx("many.docx", self.para("x"), {f"word/extra{n}.xml": "<a/>" for n in range(5)})
+        few = self.docx("few.docx", self.para("x"))
+        with mock.patch.object(module, "ARCHIVE_MAX_MEMBERS", 3):
+            with self.assertRaises(IngestError) as caught:
+                ingest(many)
+            self.assertIn("parts", str(caught.exception))
+            self.assertIn("x", ingest(few).text)
+
+    def test_a_package_whose_parts_together_expand_too_far_is_refused(self):
+        from unittest import mock
+
+        from sce_author import ingest as module
+        from sce_author.ingest import IngestError, ingest
+
+        path = self.docx("spec.docx", self.para("x"), {"word/extra.xml": "<a>" + "b" * 3000 + "</a>"})
+        with mock.patch.object(module, "ARCHIVE_MAX_BYTES", 2000):
+            with self.assertRaises(IngestError) as caught:
+                ingest(path)
+        self.assertIn("expand to", str(caught.exception))
+        with mock.patch.object(module, "ARCHIVE_MAX_BYTES", 1_000_000):
+            self.assertIn("x", ingest(path).text)
+
+    def test_an_enclosed_file_too_large_to_hold_is_said_to_be_unopened(self):
+        """An enclosed workbook that is not opened is the loss that looks most like
+        success, so one that is too large to hold is named as unopened, with why,
+        and the document is still read."""
+        from unittest import mock
+
+        from sce_author import ingest as module
+        from sce_author.ingest import ingest
+
+        big = self.docx("spec.docx", self.para("see the sheet"), {"word/embeddings/book1.xlsx": "x" * 3000})
+        with mock.patch.object(module, "MEMBER_MAX_BYTES", 2000):
+            oversize = ingest(big)
+        self.assertIn("see the sheet", oversize.text)
+        self.assertTrue(any("book1.xlsx" in n and "expands to" in n for n in oversize.notes), oversize.notes)
+        # Not a zip at all: unopened too, but for another reason, which is the one said.
+        small = self.docx("small.docx", self.para("see the sheet"), {"word/embeddings/book1.xlsx": "not a zip"})
+        broken = ingest(small)
+        self.assertTrue(any("book1.xlsx" in n for n in broken.notes))
+        self.assertFalse(any("expands to" in n for n in broken.notes))
+
+    def test_a_text_part_that_is_not_well_formed_is_a_refusal_naming_the_document(self):
+        """An entity that names a file, or one that expands without end, is refused
+        by the parser. What reaches the caller must be a refusal and not a traceback,
+        and what the entity pointed at must not be in it."""
+        from sce_author.ingest import IngestError, ingest
+
+        secret = self.root / "secret.txt"
+        secret.write_text("SECRET_MARKER", encoding="utf-8")
+        import zipfile
+
+        path = self.root / "entity.docx"
+        with zipfile.ZipFile(path, "w") as zf:
+            zf.writestr("word/document.xml",
+                        '<?xml version="1.0"?>'
+                        f'<!DOCTYPE d [<!ENTITY x SYSTEM "file://{secret}">]>'
+                        '<w:document xmlns:w="http://schemas.openxmlformats.org/'
+                        'wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>a &x; b</w:t></w:r></w:p>'
+                        "</w:body></w:document>")
+        with self.assertRaises(IngestError) as caught:
+            ingest(path)
+        self.assertIn("not well-formed", str(caught.exception))
+        self.assertIn("entity.docx", str(caught.exception))
+        self.assertNotIn("SECRET_MARKER", str(caught.exception))
+        # The nearest case that must NOT be refused: the same document without the entity.
+        self.assertIn("a b", ingest(self.docx("plain.docx", self.para("a b"))).text)
+
     def test_an_embedded_object_is_named_not_swallowed(self):
         from sce_author.ingest import ingest
 
@@ -1019,6 +1202,15 @@ class TheReaderSaysWhatItCouldNotCarry(Fixture):
             "<html><body><table><tr><td>Fig_Lamp_stat</td><td>ON</td></tr>"
             "</table></body></html>", encoding="utf-8")
         self.assertIn("| Fig_Lamp_stat | ON |", ingest(path).text)
+
+    def test_a_pretty_printed_html_cell_keeps_its_row_on_one_line(self):
+        from sce_author.ingest import ingest
+
+        path = self.root / "spec.html"
+        path.write_text(
+            "<html><body><table><tr><td>Fig_Lamp_stat\n   split</td><td>ON</td></tr>"
+            "</table></body></html>", encoding="utf-8")
+        self.assertIn("| Fig_Lamp_stat / split | ON |", ingest(path).text)
 
 
 class ThePackRefuses(Fixture):
