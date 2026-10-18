@@ -36,6 +36,7 @@ extern crate alloc;
 pub mod endpoint;
 pub mod generated;
 pub mod inbound;
+pub mod link;
 pub mod outbound;
 pub mod peers;
 pub mod router;
@@ -43,3 +44,5 @@ pub mod rpc;
 pub mod signal;
 #[cfg(feature = "wss")]
 pub mod wss;
+#[cfg(feature = "zenoh")]
+pub mod zenoh;

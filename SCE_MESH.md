@@ -4247,3 +4247,39 @@ How a machine generated for a backend other than C++ reaches a Mesh core. C++ ke
 - **Peer table.** For a backend with a host core (`--lang rust`, `--lang kotlin`), `sce-codegen generate --deploy` emits the machine's peer table instead of a transport header: `<document>_mesh_peers.rs` (a `sce_rust_mesh::peers::Machine` const) or `<Document>MeshPeers.kt` (a `com.sce.mesh.MeshMachine`). It holds the machine's name as deploy.yaml keys it — the `source` its envelopes carry — its §10.5 window and §10.6.1 gap timeout, and one entry per bound peer. Each entry has the peer's `PeerConfig` and a `PeerLink` saying whether this side dials the peer's `url` or accepts it (§18.1). The `PeerConfig` is decided from the binding by the same function the C++ router's per-target members are decided by: dedup, ordering and its sequence stamps, the §10.10 buffer when the machine declares one and the transport has a readiness edge, and the retry policy. The two cores therefore cannot read one binding two ways. A host builds its router with `router()` and opens one connection per `PeerLink`. The table is data only; every rule stays in the core. The templates live under `templates/mesh_router/<lang>/`, not `templates/mesh/<lang>/`, because the latter is what gives a backend a generated router (§9.5's `generated` route), and a backend has one route for a request, not two.
 - **What a host core refuses.** Every transport the machine is bound over must be one the §10.4.2 registry marks `served_by: HostCore` (`mesh/codegen-unsupported-transport`, offering the ones that are). A deployment feature only the generated C++ router has is refused by name (`mesh/codegen-host-core-unsupported`) rather than left out of a table that would still build: a `server:` block, a device `transports.custom_tcp.listen:` endpoint, `partitions:` routes, or a remote `<invoke type="scxml">` peer.
 
+## 20. Zenoh Binding
+
+The binding a host-level Mesh core uses to join machines over a Zenoh network instead of one WebSocket per pair: every machine opens one client session to a Zenoh router and reaches every other machine through it. It exists because a server that holds thousands of devices needs a router that can be scaled out by adding routers, and Zenoh's routers do that; the owner chose the watching-zenoh router as the Mesh backend on 2026-10-18. The binding is a Zenoh client and does not depend on which router answers: any router of the protocol version the implementation pins (§20.4) carries it.
+
+It is a host-core binding, like §18, and not a generated C++ transport: `mesh_transport.h.jinja2` has no arm for it. Unlike §18 it is not yet a `transport:` value a deploy.yaml may name, so the §10.4.2 registry does not list it and the peer table of §19 has no `PeerLink` for it; a host that wants it builds its endpoint and hands it the Zenoh transport itself. What this section fixes is the keys and the readiness rule, so that two implementations of it interoperate.
+
+### 20.1 Key Space and Peer Identity
+
+- Every key of the binding starts `sce-mesh/1`, where `1` is the version of this binding.
+- A machine's inbox for what machine `S` sends it is `sce-mesh/1/to/<R>/<S>`, where `<R>` is the receiving machine's name and `<S>` the sender's. The sender's name is in the key because the core must be told who an envelope came from (`receive(peer, bytes)`), and a name in the payload is whatever the sender wrote.
+- A machine subscribes `sce-mesh/1/to/<R>/*` and nothing wider. It learns the sender's name from the last chunk of the key. A key whose last chunk is not a name, or a name the machine has no binding for, is the core's to refuse, as in §18.1.
+- A machine name is a Zenoh key chunk as it stands: RFC 3986's unreserved characters, the same rule §18.1 states for a path segment, so a name that can use one binding can use the other. A name a chunk cannot carry cannot use this binding.
+- Who may publish under a given `<S>` is authentication, which the router decides: an access-control rule on the publisher's session for `sce-mesh/1/to/*/<S>`. The binding does not ask the network whether a sender is who its key says.
+
+### 20.2 Framing
+
+- Each `put` carries exactly one envelope: its CBOR bytes (§7.5), with nothing before or after them. The payload has no encoding the receiver must read; it is bytes.
+- Congestion control is `Block`, not `Drop`: an envelope is the unit the core's delivery rules count, and one the network dropped without telling the sender is one the core would wait for. Reliability is the session's default, reliable.
+- An envelope that does not decode is the core's to report (§16.7 row 4, `codec: "cbor"`); nothing is closed, because there is no connection to close.
+
+### 20.3 Readiness and Faults
+
+- A machine declares a liveliness token on `sce-mesh/1/up/<R>` and subscribes to `sce-mesh/1/up/*` with history, so a machine that opens after another still learns it is up. The inbox is subscribed before the token is declared: a machine that sees another come up can send to it at once.
+- A token that appears for a machine other than the observer is that machine's readiness (§10.10), which releases what the core held for it. A token that ends is the end of readiness: §16.7 row 1 `TRANSPORT_UNAVAILABLE`, once per ready-to-not-ready edge. A machine's own token is not an event for it.
+- The token ends when the machine's session closes or the router's lease on it expires, so a crashed machine is reported by the network and not by a keepalive of this binding's own.
+- A put the session refuses is §16.7 row 2 `SEND_FAILED`, or under the binding's retry policy is sent again and at worst becomes row 3 `DELIVERY_EXHAUSTED` (§10.10).
+- A put to a machine whose subscriber is not there is not an error to the sender: Zenoh delivers to subscribers and has no acknowledgement. Readiness is what keeps the core from sending before the receiver is up; an envelope in flight when the receiver goes away is lost, which is what §10.5's duplicate suppression and the request deadline of §9.5 already exist for.
+
+### 20.4 Implementations
+
+| Core | Client |
+|------|--------|
+| Rust `sce-rust-mesh`, feature `zenoh` | upstream `zenoh` crate, pinned to the version the router implements |
+
+The adapter is the only code per language that this binding adds: it publishes the core's bytes, subscribes the inbox and the presence, and turns what arrives into `receive`, `peer_ready` and `peer_not_ready`. Its test runs two machines through a real watching-zenoh router (`WZ_ROUTER_BIN`, a `wz-ap-demo` built with `router-hat-router` and `routing-token-tables`, the latter being the liveliness plane §20.3 rides on).
+

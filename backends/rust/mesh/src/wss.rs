@@ -34,7 +34,7 @@ use tokio_tungstenite::tungstenite::protocol::{CloseFrame, WebSocketConfig};
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::WebSocketStream;
 
-use crate::endpoint::{Endpoint, Environment, Transport, TransportFailure};
+use crate::endpoint::{Transport, TransportFailure};
 
 /// The path a client opens, before its own machine name (§mesh-18.1).
 pub const PATH_PREFIX: &str = "/sce-mesh/1/";
@@ -42,36 +42,7 @@ pub const PATH_PREFIX: &str = "/sce-mesh/1/";
 /// The keepalive interval when the deployment sets none (§mesh-18.3).
 pub const DEFAULT_KEEPALIVE: Duration = Duration::from_secs(30);
 
-/// What a link tells its host.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum LinkEvent {
-    /// The upgrade completed: `peer`'s binding is ready.
-    Ready(String),
-    /// A binary message from `peer`: one envelope's bytes.
-    Received(String, Vec<u8>),
-    /// An envelope queued for `peer` that the link closed before writing.
-    Unsent(String, Vec<u8>),
-    /// The link to `peer` closed, failed, or stopped answering pings; the
-    /// words say which.
-    Lost(String, String),
-}
-
-/// Hand a link's event to the endpoint it concerns.
-pub fn deliver<T: Transport, E: Environment>(endpoint: &mut Endpoint<T, E>, event: LinkEvent) {
-    match event {
-        LinkEvent::Ready(peer) => endpoint.peer_ready(&peer),
-        LinkEvent::Received(peer, bytes) => endpoint.receive(&peer, bytes),
-        LinkEvent::Unsent(peer, bytes) => endpoint.transmit_failed(
-            &peer,
-            bytes,
-            TransportFailure {
-                retryable: true,
-                message: Some("the link closed before the envelope was written".to_string()),
-            },
-        ),
-        LinkEvent::Lost(peer, _) => endpoint.peer_not_ready(&peer),
-    }
-}
+pub use crate::link::{deliver, is_path_segment, LinkEvent};
 
 /// Why a link could not be opened.
 #[derive(Debug)]
@@ -82,15 +53,6 @@ pub enum WssError {
     BadToken,
     /// The WebSocket handshake failed.
     Handshake(tokio_tungstenite::tungstenite::Error),
-}
-
-/// Whether `name` is a path segment as it stands: RFC 3986's unreserved
-/// characters, so no encoding can make two names one.
-pub fn is_path_segment(name: &str) -> bool {
-    !name.is_empty()
-        && name
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~'))
 }
 
 type LinkId = u64;
@@ -423,6 +385,7 @@ async fn run<S>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::endpoint::{Endpoint, Environment};
     use crate::inbound::Delivery;
     use crate::router::{PeerConfig, Router};
     use sce_rust_runtime::HostSendRequest;

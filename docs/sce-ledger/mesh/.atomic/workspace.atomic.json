@@ -3148,6 +3148,59 @@
       "decision_status": "active",
       "coverage_expectation": "informational"
     },
+    "mesh-20": {
+      "title": "Zenoh Binding",
+      "parent_doc": "mesh",
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "backends/rust/mesh/src/zenoh.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/mesh/src/link.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/mesh/tests/zenoh_through_a_wz_router.rs",
+          "kind": "verifies"
+        },
+        {
+          "file": "backends/rust/mesh/Cargo.toml",
+          "kind": "references"
+        }
+      ]
+    },
+    "mesh-20.1": {
+      "title": "Key Space and Peer Identity",
+      "parent_doc": "mesh",
+      "parent_section": "mesh-20",
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "backends/rust/mesh/src/zenoh.rs",
+          "kind": "implements"
+        }
+      ]
+    },
+    "mesh-20.2": {
+      "title": "Framing",
+      "parent_doc": "mesh",
+      "parent_section": "mesh-20",
+      "decision_status": "active"
+    },
+    "mesh-20.3": {
+      "title": "Readiness and Faults",
+      "parent_doc": "mesh",
+      "parent_section": "mesh-20",
+      "decision_status": "active"
+    },
+    "mesh-20.4": {
+      "title": "Implementations",
+      "parent_doc": "mesh",
+      "parent_section": "mesh-20",
+      "decision_status": "active"
+    },
     "mesh-3": {
       "title": "Three Abstraction Axes",
       "parent_doc": "mesh",
