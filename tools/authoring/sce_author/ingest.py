@@ -71,6 +71,14 @@ _TAG = re.compile(r"<[^>]+>")
 _SCRIPTISH = re.compile(r"<(script|style)\b.*?</\1>", re.S | re.I)
 _ROW = re.compile(r"<tr\b.*?</tr>", re.S | re.I)
 _CELL = re.compile(r"<t[dh]\b[^>]*>(.*?)</t[dh]>", re.S | re.I)
+_CELL_ATTRS = re.compile(r"<t[dh]\b([^>]*)>(.*?)</t[dh]>", re.S | re.I)
+# A table with no table inside it: nested tables are read from the inside out.
+_TABLE = re.compile(r"<table\b(?:(?!<table\b).)*?</table>", re.S | re.I)
+_SPAN_ATTR = {name: re.compile(name + r"""\s*=\s*["']?(\d+)""", re.I) for name in ("colspan", "rowspan")}
+# The most columns or rows one cell is taken to cover. A page that says a cell spans a billion columns
+# is not describing a table, and writing it out would fill the memory.
+MAX_SPAN = 1000
+MAX_NESTING = 50
 
 
 def _one_line(text: str) -> str:
@@ -86,9 +94,60 @@ def _one_line(text: str) -> str:
     return " / ".join(piece for piece in pieces if piece)
 
 
+def _span_of(attrs: str, name: str) -> int:
+    found = _SPAN_ATTR[name].search(attrs)
+    return min(MAX_SPAN, max(1, int(found.group(1)))) if found else 1
+
+
+def _html_table_rows(table_html: str) -> list[list[str]]:
+    """The rows of one HTML table with every cell in the column it sits in.
+
+    A cell with `colspan` is written in each column it covers and a cell with `rowspan` in the rows it
+    covers, as the cells of a merged word-processor table are (`_table_lines`), so that every row is as
+    wide as the table and the cells under a vertical merge are not empty.
+    """
+    pending: dict[int, tuple[int, str]] = {}  # column -> (rows it still covers, its text)
+    rows: list[list[str]] = []
+    for row_html in _ROW.findall(table_html):
+        cells: list[str] = []
+
+        def fill_covered() -> None:
+            while len(cells) in pending:
+                left, text = pending[len(cells)]
+                column = len(cells)
+                cells.append(text)
+                if left <= 1:
+                    del pending[column]
+                else:
+                    pending[column] = (left - 1, text)
+
+        for attrs, inner in _CELL_ATTRS.findall(row_html):
+            fill_covered()
+            text = _one_line(_TAG.sub("", inner))
+            rows_covered = _span_of(attrs, "rowspan")
+            for _ in range(_span_of(attrs, "colspan")):
+                if rows_covered > 1:
+                    pending[len(cells)] = (rows_covered - 1, text)
+                cells.append(text)
+        fill_covered()
+        rows.append(cells)
+    return rows
+
+
+def _html_table(match: "re.Match[str]") -> str:
+    rows = _html_table_rows(match.group(0))
+    return "\n" + "\n".join("| " + " | ".join(cells) + " |" for cells in rows if cells) + "\n"
+
+
 def _read_html(path: pathlib.Path) -> Ingested:
     raw = path.read_text(encoding="utf-8", errors="replace")
     raw = _SCRIPTISH.sub(" ", raw)
+    # Tables with a table inside are read from the inside out: the inner one becomes lines of text
+    # that sit in the cell of the outer one.
+    for _ in range(MAX_NESTING):
+        raw, changed = _TABLE.subn(_html_table, raw)
+        if not changed:
+            break
     # Tables first, and as rows: a table flattened into a paragraph loses which
     # value went with which condition, which is the entire content.
     def row(match):

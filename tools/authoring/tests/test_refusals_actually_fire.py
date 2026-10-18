@@ -1212,6 +1212,54 @@ class TheReaderSaysWhatItCouldNotCarry(Fixture):
             "</table></body></html>", encoding="utf-8")
         self.assertIn("| Fig_Lamp_stat / split | ON |", ingest(path).text)
 
+    def html_lines(self, body):
+        from sce_author.ingest import ingest
+
+        path = self.root / "spec.html"
+        path.write_text(f"<html><body>{body}</body></html>", encoding="utf-8")
+        return [line for line in ingest(path).text.splitlines() if line.startswith("|")]
+
+    def test_an_html_cell_that_spans_columns_is_written_in_each_column(self):
+        lines = self.html_lines(
+            "<table><tr><td colspan='2'>Band</td><td>Remark</td></tr>"
+            "<tr><td>A</td><td>B</td><td>C</td></tr></table>")
+        self.assertEqual(["| Band | Band | Remark |", "| A | B | C |"], lines)
+
+    def test_an_html_cell_that_spans_rows_is_written_in_each_row(self):
+        lines = self.html_lines(
+            '<table><tr><th rowspan="2">Group</th><td>x1</td></tr>'
+            "<tr><td>x2</td></tr><tr><td>Solo</td><td>x3</td></tr></table>")
+        self.assertEqual(["| Group | x1 |", "| Group | x2 |", "| Solo | x3 |"], lines)
+
+    def test_an_html_cell_that_spans_both_covers_the_block(self):
+        lines = self.html_lines(
+            '<table><tr><td rowspan="2" colspan="2">Block</td><td>r1</td></tr>'
+            "<tr><td>r2</td></tr><tr><td>a</td><td>b</td><td>c</td></tr></table>")
+        self.assertEqual(["| Block | Block | r1 |", "| Block | Block | r2 |", "| a | b | c |"], lines)
+
+    def test_an_html_table_without_merges_reads_as_it_did(self):
+        self.assertEqual(["| a | b |", "| c | d |"],
+                         self.html_lines("<table><tr><td>a</td><td>b</td></tr><tr><td>c</td><td>d</td></tr></table>"))
+        # Rows with no table around them (a slice of a page) are still rows.
+        self.assertEqual(["| a | b |"], self.html_lines("<tr><td>a</td><td>b</td></tr>"))
+
+    def test_an_html_table_inside_a_cell_is_written_once(self):
+        lines = self.html_lines(
+            "<table><tr><td>Out<table><tr><td>in1</td><td>in2</td></tr></table></td><td>v</td></tr></table>")
+        self.assertEqual(1, len(lines))
+        self.assertEqual(1, lines[0].count("in1"))
+        self.assertIn("Out", lines[0])
+
+    def test_an_html_span_that_is_not_a_table_is_capped(self):
+        """A page that says a cell covers a billion columns would otherwise fill the memory. The
+        nearest case that must NOT be capped is a span of a few columns."""
+        from sce_author.ingest import MAX_SPAN
+
+        wide = self.html_lines('<table><tr><td colspan="999999999">w</td><td>z</td></tr></table>')
+        self.assertEqual(MAX_SPAN + 1, wide[0].count("|") - 1)
+        few = self.html_lines('<table><tr><td colspan="3">w</td></tr></table>')
+        self.assertEqual(["| w | w | w |"], few)
+
 
 class ThePackRefuses(Fixture):
     def test_an_empty_model_is_not_a_clean_one(self):
