@@ -681,6 +681,9 @@ fn a_casefile_too_large_for_one_job_is_expanded_into_all_of_them() {
 ///
 /// The whole corpus is named explicitly to make a selection past the ceiling,
 /// since the cap keys on the event and not on how the selection was reached.
+/// For the uncapped events it is narrowed to one sweep slice, which is still
+/// past a push's ceiling and is inside the matrix limit the whole corpus is
+/// refused for.
 #[test]
 fn a_push_runs_a_bounded_number_of_jobs_and_names_what_it_left_out() {
     let workflow = fs::read_to_string(repo_root().join(".github/workflows/mutation-rounds.yml"))
@@ -745,11 +748,14 @@ fn a_push_runs_a_bounded_number_of_jobs_and_names_what_it_left_out() {
         "⚠ the step does not say in its log which casefiles it left out:\n{log}"
     );
 
+    let slices = sweep_slices(&env);
     for event in ["schedule", "workflow_dispatch", "pull_request"] {
         let uncapped = [
             ("SCE_ROUND_EVENT", event),
             ("SCE_PUSH_ROUND_JOBS", ceiling_text.as_str()),
             ("SCE_MUTATION_ROUNDS", "all"),
+            ("SCE_SWEEP_SLICES", slices.as_str()),
+            ("SCE_SWEEP_SLICE", "0"),
         ];
         let (outputs, log) = lane_selection_with(&script, "", &uncapped);
         assert_eq!(
@@ -777,6 +783,21 @@ fn lane_selection_with(
     changed: &str,
     extra_env: &[(&str, &str)],
 ) -> (BTreeMap<String, String>, String) {
+    let (succeeded, outputs, log) = lane_selection_status(script, changed, extra_env);
+    assert!(
+        succeeded,
+        "the lane's selection step failed for change set `{changed}`:\n{log}"
+    );
+    (outputs, log)
+}
+
+/// [`lane_selection_with`] for a run the step may refuse: whether it exited
+/// zero, the outputs it recorded, and its combined log.
+fn lane_selection_status(
+    script: &str,
+    changed: &str,
+    extra_env: &[(&str, &str)],
+) -> (bool, BTreeMap<String, String>, String) {
     let dir = tempdir().expect("tempdir");
     let changed_file = dir.path().join("changed.txt");
     fs::write(&changed_file, format!("{changed}\n")).expect("write change set");
@@ -811,17 +832,178 @@ fn lane_selection_with(
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr)
     );
-    assert!(
-        out.status.success(),
-        "the lane's selection step failed for change set `{changed}`:\n{log}"
-    );
     let recorded = fs::read_to_string(&github_output).expect("read the outputs file");
     let outputs = recorded
         .lines()
         .filter_map(|line| line.split_once('='))
         .map(|(key, value)| (key.to_string(), value.to_string()))
         .collect();
-    (outputs, log)
+    (out.status.success(), outputs, log)
+}
+
+/// The most jobs GitHub expands from one matrix. A larger one is not run at
+/// all: the job that would carry it is never created, and the run ends
+/// `failure` with every job it does have green.
+const GITHUB_MATRIX_LIMIT: usize = 256;
+
+/// The selection step's `SCE_SWEEP_SLICES`, the number of slices the sweep
+/// cuts the corpus into.
+fn sweep_slices(env: &BTreeMap<String, String>) -> String {
+    let slices = env
+        .get("SCE_SWEEP_SLICES")
+        .unwrap_or_else(|| {
+            panic!(
+                "⚠ the selection step sets no `SCE_SWEEP_SLICES`, so the sweep has \
+                 nothing to cut the corpus by"
+            )
+        })
+        .trim_matches('\'')
+        .to_string();
+    let count: usize = slices
+        .parse()
+        .expect("⚠ `SCE_SWEEP_SLICES` is a whole number of slices");
+    assert!(count > 0, "⚠ a sweep of zero slices runs nothing");
+    slices
+}
+
+/// The sweep reaches the whole corpus, a slice at a time, and no slice is a
+/// matrix GitHub refuses to expand.
+///
+/// The sweep used to be the whole corpus in one run. GitHub expands at most
+/// [`GITHUB_MATRIX_LIMIT`] jobs from one matrix, and by 2026-10-18 the corpus
+/// was 401 casefiles in 513 jobs, so from 2026-09-20 every weekly run ended
+/// `failure` with the selection job green and no round job created. No test
+/// asked how big the sweep's matrix was: the one beside this one asserted only
+/// that it was bigger than a push's.
+///
+/// So this drives the selection step once per slice and holds three things:
+/// every slice is inside the limit, no casefile is in two slices, and the
+/// slices together are the corpus — a casefile in no slice would never be swept
+/// and nothing would say so. The clock fires daily, which is what makes
+/// `SCE_SWEEP_SLICES` days one pass over the corpus, so the cron is held to
+/// daily as well. And what the step must not do is let a matrix past the limit
+/// through to the runner: the whole corpus asked for by name is refused, with
+/// the reason in the log.
+#[test]
+fn the_weekly_sweep_runs_the_corpus_in_slices_the_platform_can_expand() {
+    let workflow = fs::read_to_string(repo_root().join(".github/workflows/mutation-rounds.yml"))
+        .expect("read the mutation-rounds workflow");
+    let script = run_body(&workflow, "select");
+    let env = step_env(&workflow, "Which casefiles does this change reach");
+    let slices = sweep_slices(&env);
+    let count: usize = slices.parse().expect("checked by sweep_slices");
+
+    let cron = workflow
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("- cron: "))
+        .unwrap_or_else(|| panic!("⚠ the workflow carries no `cron:` entry, so nothing sweeps"))
+        .trim_matches('\'');
+    let fields: Vec<&str> = cron.split_whitespace().collect();
+    assert_eq!(
+        fields.get(2..),
+        Some(&["*", "*", "*"][..]),
+        "⚠ the cron `{cron}` does not fire every day, so {count} slices are not one pass \
+         over the corpus in {count} days"
+    );
+
+    let mut swept: BTreeMap<String, usize> = BTreeMap::new();
+    let mut corpus_jobs = 0;
+    for slice in 0..count {
+        let slice_text = slice.to_string();
+        let sweep = [
+            ("SCE_ROUND_EVENT", "schedule"),
+            ("SCE_MUTATION_ROUNDS", "all"),
+            ("SCE_SWEEP_SLICES", slices.as_str()),
+            ("SCE_SWEEP_SLICE", slice_text.as_str()),
+        ];
+        let (outputs, log) = lane_selection_with(&script, "", &sweep);
+        let matrix = matrix_of(&outputs, &log);
+        assert!(
+            matrix.len() <= GITHUB_MATRIX_LIMIT,
+            "⚠ slice {slice} is {} job(s), past the {GITHUB_MATRIX_LIMIT} GitHub expands \
+             from one matrix, so its run would start no round:\n{log}",
+            matrix.len()
+        );
+        corpus_jobs += matrix.len();
+        for (casefile, _) in matrix {
+            if let Some(other) = swept.insert(casefile.clone(), slice) {
+                assert_eq!(
+                    other, slice,
+                    "⚠ `{casefile}` is in slice {other} and in slice {slice}"
+                );
+            }
+        }
+    }
+    let everything: BTreeSet<String> = casefiles().into_iter().collect();
+    let missed: Vec<&String> = everything
+        .iter()
+        .filter(|casefile| !swept.contains_key(*casefile))
+        .collect();
+    assert!(
+        missed.is_empty(),
+        "⚠ {} casefile(s) are in no slice, so the sweep never runs them: {missed:?}",
+        missed.len()
+    );
+
+    // The clock's own spelling: the day picks the slice, and the step says which.
+    let (outputs, log) = lane_selection_with(
+        &script,
+        "",
+        &[
+            ("SCE_ROUND_EVENT", "schedule"),
+            ("SCE_MUTATION_ROUNDS", "all"),
+            ("SCE_SWEEP_SLICES", slices.as_str()),
+            ("SCE_SWEEP_SLICE", "today"),
+        ],
+    );
+    assert!(
+        log.contains(&format!("of {count} — ")),
+        "⚠ a sweep for `today` does not say which slice it took:\n{log}"
+    );
+    assert!(matrix_of(&outputs, &log).len() <= GITHUB_MATRIX_LIMIT);
+
+    // A slice that does not exist is refused rather than read as some other one.
+    let (succeeded, _, log) = lane_selection_status(
+        &script,
+        "",
+        &[
+            ("SCE_ROUND_EVENT", "workflow_dispatch"),
+            ("SCE_MUTATION_ROUNDS", "all"),
+            ("SCE_SWEEP_SLICES", slices.as_str()),
+            ("SCE_SWEEP_SLICE", slices.as_str()),
+        ],
+    );
+    assert!(
+        !succeeded && log.contains("is not a slice"),
+        "⚠ slice {slices} of {slices} was accepted:\n{log}"
+    );
+
+    // The whole corpus in one run: refused by name while it is past the limit,
+    // and run as one matrix only once it fits.
+    let (succeeded, outputs, log) = lane_selection_status(
+        &script,
+        "",
+        &[
+            ("SCE_ROUND_EVENT", "workflow_dispatch"),
+            ("SCE_MUTATION_ROUNDS", "all"),
+        ],
+    );
+    if corpus_jobs > GITHUB_MATRIX_LIMIT {
+        assert!(
+            !succeeded && log.contains(&format!("at most {GITHUB_MATRIX_LIMIT}")),
+            "⚠ the whole corpus, {corpus_jobs} job(s), was handed to the runner as one \
+             matrix:\n{log}"
+        );
+        assert!(
+            !outputs.contains_key("matrix"),
+            "⚠ the refused selection still recorded a matrix for the rounds job:\n{log}"
+        );
+    } else {
+        assert!(
+            succeeded,
+            "⚠ the whole corpus, {corpus_jobs} job(s), fits one matrix and was refused:\n{log}"
+        );
+    }
 }
 
 /// The lane configures a CMake tree exactly when the selection needs one.

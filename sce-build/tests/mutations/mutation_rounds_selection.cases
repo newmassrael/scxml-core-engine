@@ -511,3 +511,25 @@ edit("scripts/gates/mutation-rounds.sh",
      """    if ! declared="$(scripts/mutate --declares "${CASEFILES[@]}" 2>&1)"; then""",
      """    if ! declared="$(for _f in "${CASEFILES[@]}"; do printf 'casefile\\t%s\\n' "$_f"; scripts/mutate --declares "$_f" 2>&1; done)"; then""")
 PY
+
+# ── The sweep stops fitting the platform ───────────────────────────
+#
+# GitHub expands at most 256 jobs from one matrix, and a larger one is not an
+# error anyone sees: the rounds job is never created and the run ends
+# `failure` with every job it has green. That is how the weekly sweep went a
+# month without a verdict. Both cases below put such a matrix back in front of
+# the runner, and only
+# `the_weekly_sweep_runs_the_corpus_in_slices_the_platform_can_expand` reads
+# its size.
+
+mutation_case "a matrix past the platform's limit is handed to the runner" <<'PY'
+edit(".github/workflows/mutation-rounds.yml",
+     """        if [ "$jobs" -gt "$matrix_limit" ]; then""",
+     """        if false; then""")
+PY
+
+mutation_case "a sweep slice keeps the whole corpus" <<'PY'
+edit(".github/workflows/mutation-rounds.yml",
+     """            if [ $(( ${crc%% *} % slices )) -eq "$slice" ]; then""",
+     """            if [ $(( ${crc%% *} % slices )) -ge 0 ]; then""")
+PY

@@ -65,12 +65,28 @@ on:
   # Anchors are cheap and say nothing about whether a mutation is still
   # evidence.
   #
-  # Weekly rather than nightly because the corpus is the expensive answer and
-  # the debt it catches accrues in weeks, not hours; Sunday 03:17 UTC to sit
-  # away from the weekday push traffic this lane shares runners with. The
-  # minute is deliberate — GitHub schedules cluster on the hour.
+  # The corpus is judged once a week, a seventh of it each day.
+  #
+  # It used to be the whole corpus every Sunday, and that run could not exist.
+  # GitHub expands at most 256 jobs from one matrix, and by 2026-10-18 the
+  # corpus was 401 casefiles in 513 jobs: every Sunday run from 2026-09-20 on
+  # ended `failure` with the selection job green and no round job at all, so
+  # the sweep reached no verdict for a month while the push path kept naming it
+  # as where its deferred casefiles go. Nor would a run of that size answer in
+  # a day: 513 jobs at the eight below and the ~68 minutes a job averages is
+  # about three days on the shared pool.
+  #
+  # So the clock fires daily and each firing runs one slice
+  # (`SCE_SWEEP_SLICE` below): a casefile's slice is the CRC of its path modulo
+  # `SCE_SWEEP_SLICES`, a property of that casefile alone, so a casefile added
+  # or removed moves no other casefile to another day.
+  # `the_weekly_sweep_runs_the_corpus_in_slices_the_platform_can_expand` holds
+  # every slice under the limit and their union to the corpus. 17:17 UTC is
+  # 02:17 in Korea, so the slice runs while the pushes it shares runners with
+  # do not; the minute is deliberate, since GitHub schedules cluster on the
+  # hour.
   schedule:
-    - cron: '17 3 * * 0'
+    - cron: '17 17 * * *'
   # A dispatch can name the casefiles to run, because otherwise the only way
   # to exercise a given round in CI is to wait for a push that happens to
   # touch its declared target — and waiting is what let the ctest path sit
@@ -87,11 +103,24 @@ on:
   # The promise in the input's own description was therefore a lie for as long
   # as it had been written down, and a dispatch asking for everything quietly
   # measured nothing.
+  #
+  # Empty now runs a slice of the sweep, as the clock does: today's, or the one
+  # `slice` names, which is how a slice whose day was missed is run again. The
+  # whole corpus in one run is past the 256-job matrix limit, and `all` asks
+  # for it by name so that the refusal below says so instead of the run ending
+  # with no round job.
   workflow_dispatch:
     inputs:
       casefiles:
         description: >-
-          Casefiles to run, comma-separated (or `all`). Empty runs the corpus.
+          Casefiles to run, comma-separated (or `all`). Empty runs a slice of
+          the weekly sweep.
+        required: false
+        default: ''
+      slice:
+        description: >-
+          The sweep slice an empty `casefiles` runs (0 to SCE_SWEEP_SLICES - 1).
+          Empty runs today's.
         required: false
         default: ''
 
@@ -300,6 +329,16 @@ jobs:
         # of the mapping, directly above `run: |`.
         SCE_PUSH_ROUND_JOBS: '16'
         SCE_ROUND_EVENT: ${{ github.event_name }}
+        # ## The sweep runs one slice a day
+        #
+        # How many slices the corpus is cut into, and which one this run takes:
+        # see `schedule:` above for why. Seven, with the clock firing daily, is
+        # the whole corpus once a week. The clock and an empty dispatch say
+        # `today`, which the body turns into the day number modulo the count;
+        # a dispatch can name a slice instead. A push and a pull request get
+        # `''` and are not sliced: they are selected by change set.
+        SCE_SWEEP_SLICES: '7'
+        SCE_SWEEP_SLICE: ${{ (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.casefiles == '')) && (inputs.slice != '' && inputs.slice || 'today') || '' }}
         # The dispatch's subset, read by the gate ahead of any change set. In
         # the step's `env:` rather than its body: a `${{ }}` inside the body is
         # a string bash never expands, and the test that executes this step
@@ -356,6 +395,38 @@ jobs:
         selected="${RUNNER_TEMP:?}/selected.txt"
         SCE_MUTATION_ROUNDS_DRY_RUN=1 scripts/gate mutation-rounds > "$selected"
         cat "$selected"
+        # A sweep keeps the casefiles of its slice and leaves the rest to the
+        # other days (`SCE_SWEEP_SLICE`, above). A casefile's slice is the CRC
+        # of its path, so it depends on that casefile alone; the day is the
+        # count of days since the epoch, so seven consecutive days are seven
+        # different slices whichever day the week starts on.
+        if [ -n "${SCE_SWEEP_SLICE:-}" ]; then
+          slices="${SCE_SWEEP_SLICES:?a sweep names a slice but not how many slices there are}"
+          case "$SCE_SWEEP_SLICE" in
+            today) slice=$(( $(date -u +%s) / 86400 % slices )) ;;
+            '' | *[!0-9]*) slice="$slices" ;;
+            *) slice=$(( 10#$SCE_SWEEP_SLICE )) ;;
+          esac
+          if [ "$slice" -ge "$slices" ]; then
+            echo "::error title=Mutation sweep slice::'$SCE_SWEEP_SLICE' is not a slice: name one from 0 to $(( slices - 1 )), or leave it empty for today's"
+            exit 1
+          fi
+          in_slice="${RUNNER_TEMP:?}/in-slice.txt"
+          : > "$in_slice"
+          kept=0
+          total=0
+          while IFS= read -r line; do
+            casefile="${line%%$'\t'*}"
+            total=$(( total + 1 ))
+            crc="$(printf '%s' "$casefile" | cksum)"
+            if [ $(( ${crc%% *} % slices )) -eq "$slice" ]; then
+              printf '%s\n' "$line" >> "$in_slice"
+              kept=$(( kept + 1 ))
+            fi
+          done < "$selected"
+          mv "$in_slice" "$selected"
+          echo "sweep: slice $slice of $slices — $kept of $total casefile(s); the other slices run on the other days"
+        fi
         # The same three columns, as the matrix the rounds job expands. Built
         # here rather than in a second scan of the corpus, so a casefile can
         # only be run by a job the selection above actually named.
@@ -405,6 +476,17 @@ jobs:
           }
           END { printf "]}\n" }
         ' "$selected")"
+        # GitHub expands at most 256 jobs from one matrix. Past that the rounds
+        # job is never created and the run ends `failure` with every job it has
+        # green, which is how the weekly sweep went a month without a verdict
+        # (see `schedule:`). So the selection refuses here, by name, with what
+        # to ask for instead.
+        matrix_limit=256
+        jobs="$( { grep -o '"shard":"' <<< "$matrix" || true; } | wc -l)"
+        if [ "$jobs" -gt "$matrix_limit" ]; then
+          echo "::error title=Mutation rounds past the matrix limit::$jobs job(s) selected, and GitHub expands at most $matrix_limit from one matrix, so no round would start. Name fewer casefiles, or run the sweep a slice at a time (a dispatch with an empty casefiles and a slice)."
+          exit 1
+        fi
         echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
         echo "matrix: $matrix"
         # `count` is the casefiles THIS run runs: the matrix and the count answer
