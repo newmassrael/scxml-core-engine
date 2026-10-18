@@ -23,6 +23,13 @@ publish = false
 # The core is transport-free (a request text goes in and a response text comes out), like the Mesh
 # core; the `serve` feature adds the WebSocket binding that carries those texts.
 
+# A load for the relay over a socket (`cargo run --release --features serve --example load`): what
+# one costs and how it grows with the cores it may use.
+[[example]]
+name = "load"
+path = "examples/load.rs"
+required-features = ["serve"]
+
 [[test]]
 name = "a_relay_is_reached_over_a_websocket"
 path = "tests/a_relay_is_reached_over_a_websocket.rs"

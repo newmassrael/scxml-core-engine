@@ -146,6 +146,16 @@ impl Chain {
             .flat_map(|(_, held)| held.first().into_iter())
     }
 
+    /// The operations told to the machine that are numbered `from` or higher. It reads what lies there
+    /// and no more, so that asking about the end of a long chain costs the end and not the chain.
+    pub fn view_from(&self, from: u64) -> impl Iterator<Item = &Held> {
+        let below = self.frozen.unwrap_or(u64::MAX);
+        let told = (from < below).then(|| self.ops.range(from..below));
+        told.into_iter()
+            .flatten()
+            .flat_map(|(_, held)| held.first().into_iter())
+    }
+
     /// The operations held that are not told to the machine: from the first conflict on, both of every
     /// two that conflict included.
     pub fn evidence(&self) -> impl DoubleEndedIterator<Item = &Held> {

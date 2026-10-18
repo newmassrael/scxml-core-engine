@@ -906,7 +906,8 @@ fn sync_tables(state: &mut State, node: u64) {
     let Some(chain) = state.ops.get(&node) else {
         return;
     };
-    let signatures: Vec<[u8; 64]> = chain.all().map(|held| held.wire.signature).collect();
+    let signatures: std::collections::BTreeSet<[u8; 64]> =
+        chain.all().map(|held| held.wire.signature).collect();
     let told: Vec<(&'static str, Vec<u8>, Wire)> = chain
         .view()
         .map(|held| (held.event, held.key.clone(), held.wire.clone()))
@@ -1012,17 +1013,33 @@ fn evict_past_the_cutoff(state: &mut State) {
 fn hold(state: &mut State, node: u64, held: Held) -> (bool, bool) {
     let (seq, id) = (held.seq(), held.id);
     let cutoffs = state.log.cutoffs(node);
-    let before = told_of(state, node);
-    let inserted = state.ops.entry(node).or_default().insert(held, &cutoffs);
+    let chain = state.ops.entry(node).or_default();
+    // An operation can only freeze its chain lower than it was, never raise it, so what the machine
+    // was told and is told no more is what lies from the place the chain freezes at. That place is
+    // known before the operation goes in, and only what lies from it is read: a write at the end of a
+    // long chain, which freezes nothing, costs the chain nothing.
+    let told_above: Vec<(u64, [u8; 32])> = match chain.probe(&held, &cutoffs) {
+        Some((at, _)) if chain.frozen().is_none_or(|from| at < from) => {
+            chain.view_from(at).map(|one| (one.seq(), one.id)).collect()
+        }
+        _ => Vec::new(),
+    };
+    let inserted = chain.insert(held, &cutoffs);
     if !inserted.added {
-        let told = state
-            .ops
-            .get(&node)
-            .is_some_and(|chain| chain.at(seq).is_some_and(|one| one.id == id));
+        let told = chain.at(seq).is_some_and(|one| one.id == id);
         return (false, told);
     }
-    // The chain froze lower than it was: what was told above the new place is told no more.
-    tell_what_changed(state, node, &before, Some((seq, id)));
+    let left: Vec<u64> = told_above
+        .into_iter()
+        .filter(|(at, held_id)| !chain.at(*at).is_some_and(|one| one.id == *held_id))
+        .map(|(at, _)| at)
+        .collect();
+    if !left.is_empty() {
+        state
+            .evicted
+            .extend(left.into_iter().map(|seq| (node, seq)));
+        sync_tables(state, node);
+    }
     let told = state
         .ops
         .get(&node)
