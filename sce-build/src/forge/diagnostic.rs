@@ -1342,6 +1342,18 @@ pub enum DiagnosticCode {
     /// count the deploy states.
     #[serde(rename = "queue/no-atomics-across-cores")]
     QueueNoAtomicsAcrossCores,
+    /// A queue whose deploy states a `platform.atomic_rmw_width` the device
+    /// target triple contradicts: on Rust any other width, on C11 a wider one.
+    /// `expected` carries the widths the deploy may state for the triple,
+    /// `actual` the width it states.
+    #[serde(rename = "queue/atomic-width-contradicts-target")]
+    QueueAtomicWidthContradictsTarget,
+    /// A Rust queue row built on a read-modify-write atomic, for a target
+    /// triple the generator has no width for, and the deploy states no
+    /// `platform.atomic_rmw_width`. `expected` carries the three widths the
+    /// platform can state.
+    #[serde(rename = "queue/target-atomics-unknown")]
+    QueueTargetAtomicsUnknown,
     /// An SCQ row over 32-bit entries and the deploy states no
     /// `queues.<q>.min_wrap_ops`. `expected` carries the queue's wrap bound.
     #[serde(rename = "queue/wrap-bound-unstated")]
@@ -3617,6 +3629,8 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         QueueProgressUnreachableOnBackend,
         QueueAtomicWidthUnstated,
         QueueNoAtomicsAcrossCores,
+        QueueAtomicWidthContradictsTarget,
+        QueueTargetAtomicsUnknown,
         QueueWrapBoundUnstated,
         QueueWrapBoundBelowDeployMinimum,
         QueueProgressInsufficientForIsr,
@@ -4404,6 +4418,8 @@ impl DiagnosticCode {
             | QueueProgressUnreachableOnBackend
             | QueueAtomicWidthUnstated
             | QueueNoAtomicsAcrossCores
+            | QueueAtomicWidthContradictsTarget
+            | QueueTargetAtomicsUnknown
             | QueueWrapBoundUnstated
             | QueueWrapBoundBelowDeployMinimum
             | QueueProgressInsufficientForIsr
@@ -5187,6 +5203,8 @@ impl DiagnosticCode {
             QueueProgressUnreachableOnBackend => "queue/progress-unreachable-on-backend",
             QueueAtomicWidthUnstated => "queue/atomic-width-unstated",
             QueueNoAtomicsAcrossCores => "queue/no-atomics-across-cores",
+            QueueAtomicWidthContradictsTarget => "queue/atomic-width-contradicts-target",
+            QueueTargetAtomicsUnknown => "queue/target-atomics-unknown",
             QueueWrapBoundUnstated => "queue/wrap-bound-unstated",
             QueueWrapBoundBelowDeployMinimum => "queue/wrap-bound-below-deploy-minimum",
             QueueProgressInsufficientForIsr => "queue/progress-insufficient-for-isr",
@@ -10076,6 +10094,46 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![queue_name.clone(), core_count.to_string()],
         },
+        GenerateError::QueueAtomicWidthContradictsTarget {
+            queue_name,
+            target,
+            stated,
+            known,
+            platform_may_offer_fewer,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::QueueAtomicWidthContradictsTarget,
+            stage: Stage::Generate,
+            // The widths the deploy may state for this triple: the triple's own,
+            // and on a backend whose platform may offer fewer atomics also each
+            // width below it. The repair is a choice between those and
+            // correcting the target, so it is not a `Fix`.
+            expected: Some(if *platform_may_offer_fewer {
+                [0u32, 32, 64]
+                    .into_iter()
+                    .filter(|width| width <= known)
+                    .map(|width| width.to_string())
+                    .collect()
+            } else {
+                vec![known.to_string()]
+            }),
+            actual: Some(stated.to_string()),
+            fix: None,
+            key_fragments: vec![queue_name.clone(), target.clone(), stated.to_string()],
+        },
+        GenerateError::QueueTargetAtomicsUnknown {
+            queue_name,
+            algorithm,
+            target,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::QueueTargetAtomicsUnknown,
+            stage: Stage::Generate,
+            // As `queue/atomic-width-unstated`: which width the target has is
+            // the author's to say.
+            expected: Some(vec!["0".into(), "32".into(), "64".into()]),
+            actual: None,
+            fix: None,
+            key_fragments: vec![queue_name.clone(), algorithm.clone(), target.clone()],
+        },
         GenerateError::QueueWrapBoundUnstated { queue_name, bound } => DiagnosticPayload {
             code: DiagnosticCode::QueueWrapBoundUnstated,
             stage: Stage::Generate,
@@ -13534,6 +13592,28 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:5740a75d248b9939","code":"queue/no-atomics-across-cores","stage":"generate","spec":"SCE Protocol-Synthesis RFC §5.P","message":"queue 'rx_events': platform.atomic_rmw_width is 0 and platform.core_count is 2. SCE Protocol-Synthesis RFC §5.P: a target with no read-modify-write atomics runs its queue under an interrupt-masked critical section, which excludes nothing on another core. Repair: use a target with read-modify-write atomics (platform.atomic_rmw_width 32 or 64), or run the queue's participants on one core (platform.core_count 1).","expected":["1"],"actual":"2"}"#,
             ),
             (
+                "forge/queue-atomic-width-contradicts-target",
+                GenerateError::QueueAtomicWidthContradictsTarget {
+                    queue_name: "rx_events".into(),
+                    target: "thumbv6m-none-eabi".into(),
+                    stated: 32,
+                    known: 0,
+                    platform_may_offer_fewer: false,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:9c46ed78f70dc6fb","code":"queue/atomic-width-contradicts-target","stage":"generate","spec":"SCE Protocol-Synthesis RFC §5.P","message":"queue 'rx_events': the deploy states platform.atomic_rmw_width 32 for a target `thumbv6m-none-eabi` whose widest read-modify-write atomic is 0 bits (what rustc reports of it). SCE Protocol-Synthesis RFC §5.P: the target's atomics decide which queue rows it can have, and two statements of them that differ cannot both hold. Repair: remove platform.atomic_rmw_width, which the target already says, or correct the target.","expected":["0"],"actual":"32"}"#,
+            ),
+            (
+                "forge/queue-target-atomics-unknown",
+                GenerateError::QueueTargetAtomicsUnknown {
+                    queue_name: "rx_events".into(),
+                    algorithm: "SCQ data queue".into(),
+                    target: "my-board-none-elf".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:3b8c76a68b4c3c4a","code":"queue/target-atomics-unknown","stage":"generate","spec":"SCE Protocol-Synthesis RFC §5.P","message":"queue 'rx_events': the SCQ data queue needs a read-modify-write atomic, and the target `my-board-none-elf` is not one whose atomics the generator knows. SCE Protocol-Synthesis RFC §5.P: a row is judged against the target's atomics before it is generated. Repair: state platform.atomic_rmw_width (64, 32, or 0 for a target with none) for this machine in deploy.yaml.","expected":["0","32","64"]}"#,
+            ),
+            (
                 "forge/queue-wrap-bound-unstated",
                 GenerateError::QueueWrapBoundUnstated {
                     queue_name: "rx_events".into(),
@@ -16859,6 +16939,8 @@ mod tests {
             | QueueProgressUnreachableOnBackend
             | QueueAtomicWidthUnstated
             | QueueNoAtomicsAcrossCores
+            | QueueAtomicWidthContradictsTarget
+            | QueueTargetAtomicsUnknown
             | QueueWrapBoundUnstated
             | QueueWrapBoundBelowDeployMinimum
             | QueueProgressInsufficientForIsr
@@ -17981,6 +18063,8 @@ mod tests {
                 | QueueProgressUnreachableOnBackend
                 | QueueAtomicWidthUnstated
                 | QueueNoAtomicsAcrossCores
+                | QueueAtomicWidthContradictsTarget
+                | QueueTargetAtomicsUnknown
                 | QueueWrapBoundUnstated
                 | QueueWrapBoundBelowDeployMinimum
                 | QueueAllocInIsr
@@ -18181,9 +18265,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            436,
+            438,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 436 distinct variants to match the DiagnosticCode \
+             expected 438 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -18968,6 +19052,8 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | QueueProgressUnreachableOnBackend
             | QueueAtomicWidthUnstated
             | QueueNoAtomicsAcrossCores
+            | QueueAtomicWidthContradictsTarget
+            | QueueTargetAtomicsUnknown
             | QueueWrapBoundUnstated
             | QueueWrapBoundBelowDeployMinimum
             | QueueAllocInIsr

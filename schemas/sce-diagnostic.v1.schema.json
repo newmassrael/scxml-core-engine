@@ -197,6 +197,8 @@
         "queue/progress-unreachable-on-backend",
         "queue/atomic-width-unstated",
         "queue/no-atomics-across-cores",
+        "queue/atomic-width-contradicts-target",
+        "queue/target-atomics-unknown",
         "queue/wrap-bound-unstated",
         "queue/wrap-bound-below-deploy-minimum",
         "queue/progress-insufficient-for-isr",

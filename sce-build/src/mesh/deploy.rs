@@ -642,9 +642,13 @@ pub struct PlatformConfig {
     /// deploy must state `queues.<q>.min_wrap_ops`), and 0 gets the ring under
     /// an interrupt-masked critical section, which gives `blocking` and is
     /// supported only with `core_count` 1. Optional at parse time; an SCQ row on
-    /// the C11 backend requires it (`queue/atomic-width-unstated`), because the
-    /// `sce_atomic_*` symbols it is built on are implemented by the platform
-    /// where the generator cannot see them.
+    /// the C11 backend requires it or a device `target` triple the generator
+    /// knows (`queue/atomic-width-unstated`), because the `sce_atomic_*` symbols
+    /// it is built on are implemented by the platform where the generator
+    /// cannot see them. A known triple is the hardware's width, and a stated one
+    /// it contradicts is refused (`queue/atomic-width-contradicts-target`): on
+    /// Rust, whose atomics are the hardware's, any other width; on C11, whose
+    /// platform may offer fewer, a wider one.
     #[serde(default)]
     pub atomic_rmw_width: Option<AtomicRmwWidth>,
     /// Core clock frequency in MHz (SCE Protocol-Synthesis RFC §synth-5-K line 2185).

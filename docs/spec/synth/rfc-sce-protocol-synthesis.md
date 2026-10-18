@@ -3574,7 +3574,7 @@ that selects an SCQ row, and judges it as follows:
   `"8"` in the same way, since a target whose atomics are loads and stores alone (ARMv6-M) has no
   such module in the runtime. A deploy that states `platform.atomic_rmw_width`, or the device's `target` triple
   (whose atomics the generator knows), lets Rust refuse at generation (`queue/storage-runtime-missing`) a row
-  its runtime has no module for there: the exchange list and the linked rings at 0, SCQ and LSCQ below 64.
+  its runtime has no module for there: the exchange list and the linked rings at 0, SCQ and LSCQ below 64. A stated width the triple contradicts (on Rust any other width, on C11 a wider one) is `queue/atomic-width-contradicts-target`, and a Rust row that needs an atomic on a triple the generator does not know, with no width stated, is `queue/target-atomics-unknown`; a deploy that says neither leaves the judgement to the build for the target.
   C11 cannot assert this: its atomics are the §5.I `sce_atomic_*` extern symbols, whose implementation the
   compiler never sees. An SCQ row on C11 therefore needs `platform.atomic_rmw_width` or a known `target`, and
   with neither it is `queue/atomic-width-unstated`. Go implements 64-bit atomics with a spinlock on some 32-bit
@@ -3723,7 +3723,7 @@ pub enum QueueStorage {
 - `queue/participants-unresolved` — an SCQ row or a domain needs `<sce:participants>` and it is absent; a `source="deploy"` capacity or participants key naming an undeclared limit is `queue/deploy-limit-unresolved`, with the declared limits as its fix candidates
 - `queue/progress-insufficient-for-isr` — an ISR-side operation below `lock-free`
 - `queue/alloc-in-isr` — an ISR producer on a `segmented` queue
-- `queue/atomic-width-unstated` — an SCQ row generated for C11 without `platform.atomic_rmw_width` or a known `target`
+- `queue/atomic-width-unstated` — an SCQ row generated for C11 without `platform.atomic_rmw_width` or a known `target`; and `queue/atomic-width-contradicts-target` — a stated `platform.atomic_rmw_width` the device's `target` triple contradicts (on Rust any other width, on C11 a wider one); and `queue/target-atomics-unknown` — a Rust row that needs a read-modify-write atomic, on a triple the generator has no width for and no width stated
 - `queue/no-atomics-across-cores` — `platform.atomic_rmw_width` 0 with `platform.core_count` above 1
 - `queue/wrap-bound-unstated` — an SCQ row on a 32-bit target whose deploy states no `min_wrap_ops`
 - `queue/wrap-bound-below-deploy-minimum` — `WRAP_BOUND_OPS` below `min_wrap_ops`

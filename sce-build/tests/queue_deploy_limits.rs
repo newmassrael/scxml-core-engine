@@ -480,13 +480,25 @@ fn a_width_that_disagrees_with_the_target_triple_is_refused() {
     )
     .expect_err("ARMv6-M has no atomic of 32 bits, whatever the deploy says");
     match generate_error_of(located) {
-        GenerateError::InvalidConfig(message) => {
-            assert!(
-                message.contains("thumbv6m-none-eabi") && message.contains("remove"),
-                "{message}"
+        GenerateError::QueueAtomicWidthContradictsTarget {
+            queue_name,
+            target,
+            stated,
+            known,
+            platform_may_offer_fewer,
+        } => {
+            assert_eq!(
+                (
+                    queue_name.as_str(),
+                    target.as_str(),
+                    stated,
+                    known,
+                    platform_may_offer_fewer
+                ),
+                ("rx_events", "thumbv6m-none-eabi", 32, 0, false)
             );
         }
-        other => panic!("expected InvalidConfig, got {other:?}"),
+        other => panic!("expected QueueAtomicWidthContradictsTarget, got {other:?}"),
     }
 }
 
@@ -498,13 +510,17 @@ fn a_triple_the_generator_does_not_know_asks_for_the_width_only_a_row_that_needs
     let located = compile_rust(&scq_queue(), &targeted_deploy_yaml(custom, ""))
         .expect_err("the SCQ row cannot be judged for a target nobody described");
     match generate_error_of(located) {
-        GenerateError::InvalidConfig(message) => {
-            assert!(
-                message.contains(custom) && message.contains("platform.atomic_rmw_width"),
-                "{message}"
+        GenerateError::QueueTargetAtomicsUnknown {
+            queue_name,
+            algorithm,
+            target,
+        } => {
+            assert_eq!(
+                (queue_name.as_str(), algorithm.as_str(), target.as_str()),
+                ("rx_events", "SCQ data queue", custom)
             );
         }
-        other => panic!("expected InvalidConfig, got {other:?}"),
+        other => panic!("expected QueueTargetAtomicsUnknown, got {other:?}"),
     }
     compile_rust(
         &scq_queue(),
@@ -592,13 +608,19 @@ fn a_c11_width_stated_above_what_the_target_has_is_refused() {
     )
     .expect_err("a Cortex-M4 has no 64-bit atomic for the platform to offer");
     match generate_error_of(located) {
-        GenerateError::InvalidConfig(message) => {
-            assert!(
-                message.contains("thumbv7em-none-eabihf") && message.contains("never more"),
-                "{message}"
+        GenerateError::QueueAtomicWidthContradictsTarget {
+            target,
+            stated,
+            known,
+            platform_may_offer_fewer,
+            ..
+        } => {
+            assert_eq!(
+                (target.as_str(), stated, known, platform_may_offer_fewer),
+                ("thumbv7em-none-eabihf", 64, 32, true)
             );
         }
-        other => panic!("expected InvalidConfig, got {other:?}"),
+        other => panic!("expected QueueAtomicWidthContradictsTarget, got {other:?}"),
     }
 }
 

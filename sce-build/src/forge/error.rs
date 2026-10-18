@@ -5302,6 +5302,31 @@ fn unread_sce_summary(unread: &[crate::read_ledger::Unread]) -> String {
 
 /// The message of [`ValidationError::ExactlyOneAttribute`]: which attributes
 /// the element takes one of, and whether it carries none or one too many.
+fn atomic_width_contradiction_message(
+    queue_name: &str,
+    target: &str,
+    stated: u32,
+    known: u32,
+    platform_may_offer_fewer: bool,
+) -> String {
+    let (rule, repair) = if platform_may_offer_fewer {
+        (
+            "a platform can offer fewer atomics than its hardware has, never more".to_string(),
+            format!("state a platform.atomic_rmw_width of {known} or less, or correct the target"),
+        )
+    } else {
+        (
+            "the target's atomics decide which queue rows it can have, and two statements of them that differ cannot both hold".to_string(),
+            "remove platform.atomic_rmw_width, which the target already says, or correct the target".to_string(),
+        )
+    };
+    format!(
+        "queue '{queue_name}': the deploy states platform.atomic_rmw_width {stated} for a target `{target}` whose widest read-modify-write atomic is {known} bits (what rustc reports of it). \
+         SCE Protocol-Synthesis RFC §5.P: {rule}. \
+         Repair: {repair}."
+    )
+}
+
 fn exactly_one_attribute_message(
     element: &str,
     alternatives: &[String],
@@ -5543,6 +5568,58 @@ pub enum GenerateError {
         queue_name: String,
         /// The `platform.core_count` the deploy states.
         core_count: u32,
+    },
+
+    /// SCE Protocol-Synthesis RFC §synth-5-P
+    /// (`queue/atomic-width-contradicts-target`) — a queue whose deploy states
+    /// `platform.atomic_rmw_width` beside a device target triple that says
+    /// otherwise. The triple is a fact of the hardware (what rustc reports of
+    /// it, `target_atomics`). Rust's atomics are the hardware's, so a stated
+    /// width is a second statement of the same fact and any other width is
+    /// refused. C11's are the platform's own `sce_atomic_*` set, which may offer
+    /// fewer than the hardware has and never more, so only a wider one is.
+    #[error(
+        "{}",
+        atomic_width_contradiction_message(
+            .queue_name,
+            .target,
+            *.stated,
+            *.known,
+            *.platform_may_offer_fewer
+        )
+    )]
+    QueueAtomicWidthContradictsTarget {
+        /// Queue name from `<scxml sce:kind="queue" name="...">`.
+        queue_name: String,
+        /// The device's target triple.
+        target: String,
+        /// The `platform.atomic_rmw_width` the deploy states.
+        stated: u32,
+        /// The width the triple has.
+        known: u32,
+        /// Whether the backend's atomics are a platform's set that may offer
+        /// fewer than the hardware has (C11), rather than the hardware's own
+        /// (Rust).
+        platform_may_offer_fewer: bool,
+    },
+
+    /// SCE Protocol-Synthesis RFC §synth-5-P (`queue/target-atomics-unknown`)
+    /// — a Rust queue row built on a read-modify-write atomic, on a device whose
+    /// target triple the generator has no width for (a custom target), and the
+    /// deploy states no `platform.atomic_rmw_width`. The row cannot be judged
+    /// against the target at generation, and is not guessed.
+    #[error(
+        "queue '{queue_name}': the {algorithm} needs a read-modify-write atomic, and the target `{target}` is not one whose atomics the generator knows. \
+         SCE Protocol-Synthesis RFC §5.P: a row is judged against the target's atomics before it is generated. \
+         Repair: state platform.atomic_rmw_width (64, 32, or 0 for a target with none) for this machine in deploy.yaml."
+    )]
+    QueueTargetAtomicsUnknown {
+        /// Queue name from `<scxml sce:kind="queue" name="...">`.
+        queue_name: String,
+        /// The selected algorithm, as the RFC names it.
+        algorithm: String,
+        /// The device's target triple.
+        target: String,
     },
 
     /// SCE Protocol-Synthesis RFC §synth-5-P (`queue/wrap-bound-unstated`) — an

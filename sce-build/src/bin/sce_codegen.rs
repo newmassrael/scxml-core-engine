@@ -1518,9 +1518,11 @@ struct GenerateArgs {
     transport_only: bool,
     /// The machine of `--deploy` this forge document is generated for.
     /// A `sce:kind="queue"` document resolves its `source="deploy"` capacity
-    /// and participants against that machine's `limits:`, and the C11 backend
+    /// and participants against that machine's `limits:`, the C11 backend
     /// reads the machine's `platform.atomic_rmw_width`, `platform.core_count`
-    /// and `queues.<q>.min_wrap_ops` (SCE Protocol-Synthesis RFC §synth-5-P).
+    /// and `queues.<q>.min_wrap_ops`, and the C11 and Rust backends read the
+    /// atomics of its device's `target` triple (SCE Protocol-Synthesis RFC
+    /// §synth-5-P).
     /// Without it a document with a `deploy` key is refused rather than
     /// guessed, and an SCQ row on C11 is refused with
     /// `queue/atomic-width-unstated`. Ignored for a statechart.

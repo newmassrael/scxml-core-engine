@@ -18695,26 +18695,27 @@ fn resolve_queue_render_inputs(
         let known = triple.and_then(crate::target_atomics::rmw_width);
         let width = match (stated, known) {
             (Some(stated), Some(known)) if stated != known => {
-                return Err(ForgeError::from(GenerateError::InvalidConfig(format!(
-                    "queue '{name}': the deploy states platform.atomic_rmw_width {stated} for a target `{triple}` whose widest read-modify-write atomic is {known} bits (what rustc reports of it). \
-                     Repair: remove platform.atomic_rmw_width, which the target already says, or correct the target.",
-                    name = m.name,
-                    triple = triple.unwrap_or_default(),
-                )))
-                .at_line(m.storage_line));
+                return Err(
+                    ForgeError::from(GenerateError::QueueAtomicWidthContradictsTarget {
+                        queue_name: m.name.clone(),
+                        target: triple.unwrap_or_default().to_string(),
+                        stated,
+                        known,
+                        platform_may_offer_fewer: false,
+                    })
+                    .at_line(m.storage_line),
+                );
             }
             (Some(stated), _) => Some(stated),
             (None, Some(known)) => Some(known),
             // A triple the table does not know says nothing, and a row that needs an atomic cannot be
             // judged: the deploy is asked to state the width (the build still has the last word).
             (None, None) if needs > 0 && triple.is_some() => {
-                return Err(ForgeError::from(GenerateError::InvalidConfig(format!(
-                    "queue '{name}': the {algorithm} needs a read-modify-write atomic, and the target `{triple}` is not one whose atomics the generator knows. \
-                     Repair: state platform.atomic_rmw_width (64, 32, or 0 for a target with none) for this machine in deploy.yaml.",
-                    name = m.name,
-                    algorithm = selection.algorithm.name(),
-                    triple = triple.unwrap_or_default(),
-                )))
+                return Err(ForgeError::from(GenerateError::QueueTargetAtomicsUnknown {
+                    queue_name: m.name.clone(),
+                    algorithm: selection.algorithm.name().to_string(),
+                    target: triple.unwrap_or_default().to_string(),
+                })
                 .at_line(m.storage_line));
             }
             (None, None) => None,
@@ -18767,14 +18768,16 @@ fn resolve_queue_render_inputs(
         let known = triple.and_then(crate::target_atomics::rmw_width);
         match (stated, known) {
             (Some(stated), Some(known)) if stated > known => {
-                return Err(ForgeError::from(GenerateError::InvalidConfig(format!(
-                    "queue '{name}': the deploy states platform.atomic_rmw_width {stated} for a target `{triple}` whose widest read-modify-write atomic is {known} bits (what rustc reports of it). \
-                     A platform can offer fewer atomics than its hardware has, never more. \
-                     Repair: state a platform.atomic_rmw_width of {known} or less, or correct the target.",
-                    name = m.name,
-                    triple = triple.unwrap_or_default(),
-                )))
-                .at_line(m.storage_line));
+                return Err(
+                    ForgeError::from(GenerateError::QueueAtomicWidthContradictsTarget {
+                        queue_name: m.name.clone(),
+                        target: triple.unwrap_or_default().to_string(),
+                        stated,
+                        known,
+                        platform_may_offer_fewer: true,
+                    })
+                    .at_line(m.storage_line),
+                );
             }
             (Some(stated), _) => Some(stated),
             (None, known) => known,

@@ -393,8 +393,17 @@ pub const fn language_wire_name(lang: Language) -> &'static str {
 ///   atomic, so every row runs in an interrupt-masked critical section and gives
 ///   `blocking`.
 ///
+/// Rust, C++, Kotlin and Go take nothing from the platform here, because none of
+/// them lowers a row on the deploy's width: C11 alone has a critical-section form,
+/// chosen when `platform.atomic_rmw_width` is 0. Their output checks the atomics a
+/// row needs where the target is built or run (the RFC's Backends paragraph), so
+/// a row they give is the row the selection table already judged. A Rust row its
+/// target has no atomic for is refused at generation by
+/// [`rust_runtime_row_atomics`] (`queue/storage-runtime-missing`), not weakened
+/// here.
+///
 /// `atomic_rmw_width` is the deploy's `platform.atomic_rmw_width` in bits, `None`
-/// when the deploy states none (or there is no deploy), and is read only for C11.
+/// when the deploy states none (or there is no deploy), and only C11 lowers on it.
 pub const fn queue_progress_ceiling(
     lang: Language,
     atomic_rmw_width: Option<u32>,
