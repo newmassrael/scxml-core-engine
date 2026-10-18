@@ -71,12 +71,18 @@ impl Drop for RouterProcess {
     }
 }
 
-fn start_router() -> RouterProcess {
+/// Start a router, federated with the router listening on `connect_to` when one is named.
+fn start_router(connect_to: Option<u16>) -> RouterProcess {
     let binary = std::env::var("WZ_ROUTER_BIN").expect(
         "WZ_ROUTER_BIN names a wz-ap-demo built with `router-hat-router,routing-token-tables`",
     );
+    let mut args = vec!["--router-hat".to_string(), "127.0.0.1:0".to_string()];
+    if let Some(port) = connect_to {
+        args.push("--connect".to_string());
+        args.push(format!("127.0.0.1:{port}"));
+    }
     let mut child = Command::new(binary)
-        .args(["--router-hat", "127.0.0.1:0"])
+        .args(&args)
         .env("RUST_LOG", "info")
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
@@ -180,18 +186,37 @@ fn pump_until(
 #[test]
 #[ignore = "needs WZ_ROUTER_BIN: a built wz-ap-demo with router-hat-router and routing-token-tables"]
 fn two_machines_meet_through_a_wz_router_and_one_reaches_the_others_engine() {
+    let router = start_router(None);
+    two_machines_meet(router.port, router.port);
+}
+
+/// The scaling claim, as far as one host can hold it: the machines are on DIFFERENT routers, joined
+/// by a federation link, and still see each other up, reach each other's engine, and see each other
+/// go. A device connects to whichever router it is assigned and the server to its own; nothing in
+/// the binding says which.
+#[test]
+#[ignore = "needs WZ_ROUTER_BIN: a built wz-ap-demo with router-hat-router and routing-token-tables"]
+fn two_machines_on_two_federated_wz_routers_meet_as_if_on_one() {
+    let first = start_router(None);
+    let second = start_router(Some(first.port));
+    two_machines_meet(first.port, second.port);
+}
+
+/// A machine "server" on the router at `server_port` and a machine "phone" on the one at
+/// `phone_port` (the same router, or two federated).
+fn two_machines_meet(server_port: u16, phone_port: u16) {
     let started = Instant::now();
-    let router = start_router();
-    let config = || client_config(&[&format!("tcp/127.0.0.1:{}", router.port)]).expect("a config");
+    let config_on =
+        |port: u16| client_config(&[&format!("tcp/127.0.0.1:{port}")]).expect("a config");
 
     let ZenohBinding {
         transport: server_transport,
         events: server_events,
-    } = open(config(), "server").expect("the server's binding opens");
+    } = open(config_on(server_port), "server").expect("the server's binding opens");
     let ZenohBinding {
         transport: phone_transport,
         events: phone_events,
-    } = open(config(), "phone").expect("the phone's binding opens");
+    } = open(config_on(phone_port), "phone").expect("the phone's binding opens");
 
     // Each learns the other is up, from the router's liveliness plane and nothing it was told. The
     // events are read here to prove it and the core is told the readiness by hand, as a host's pump
@@ -210,8 +235,8 @@ fn two_machines_meet_through_a_wz_router_and_one_reaches_the_others_engine() {
     assert!(server_ready, "the server learned the phone is up");
     assert!(phone_ready, "the phone learned the server is up");
     eprintln!(
-        "both machines saw the other up through the router on port {} after {:?}",
-        router.port,
+        "server on router {server_port}, phone on router {phone_port}: both saw the other up \
+         after {:?}",
         started.elapsed()
     );
 
