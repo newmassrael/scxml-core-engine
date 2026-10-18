@@ -516,6 +516,92 @@ fn a_triple_the_generator_does_not_know_asks_for_the_width_only_a_row_that_needs
         .expect("a Lamport ring needs no atomic");
 }
 
+// ─── C11: the platform's word, and the triple's where the platform says nothing ───
+
+/// A device whose triple the generator knows needs no width typed for a C11 queue: the triple's stands
+/// in, and the row is built for what the hardware has. A triple with no atomic (ARMv6-M) gives the irq
+/// ring on one core, where an unstated width was refused.
+#[test]
+fn the_target_triple_stands_in_for_a_width_a_c11_deploy_does_not_state() {
+    let code = compile_c(
+        &scq_queue(),
+        &targeted_deploy_yaml("x86_64-unknown-linux-gnu", ""),
+    )
+    .expect("a 64-bit target builds SCQ with no width stated");
+    assert!(code.contains("sce_queue_scq64_t core;"), "{code}");
+
+    let blocking = queue_doc(
+        "many",
+        "many",
+        "blocking",
+        r#"<sce:bounded capacity="6"/><sce:participants const="3"/>"#,
+    );
+    let code = compile_c(
+        &blocking,
+        &targeted_deploy_yaml("thumbv6m-none-eabi", "          core_count: 1"),
+    )
+    .expect("ARMv6-M has no atomic: one core gets the irq ring");
+    assert!(code.contains("sce_queue_irq_t core;"), "{code}");
+
+    // Two cores on that target are refused as a stated 0 is.
+    let located = compile_c(
+        &blocking,
+        &targeted_deploy_yaml("thumbv6m-none-eabi", "          core_count: 2"),
+    )
+    .expect_err("interrupt masking excludes nothing on another core");
+    assert!(
+        matches!(
+            generate_error_of(located),
+            GenerateError::QueueNoAtomicsAcrossCores { core_count: 2, .. }
+        ),
+        "the width came from the triple"
+    );
+
+    // A triple the table does not know says nothing, and the deploy is asked as before.
+    let located = compile_c(&scq_queue(), &targeted_deploy_yaml("my-board-none-elf", ""))
+        .expect_err("an unknown triple gives no width");
+    assert!(matches!(
+        generate_error_of(located),
+        GenerateError::QueueAtomicWidthUnstated { .. }
+    ));
+}
+
+/// A platform can offer fewer atomics than its hardware has and never more: a stated width at or below
+/// the triple's is the platform's word, one above it is refused.
+#[test]
+fn a_c11_width_stated_above_what_the_target_has_is_refused() {
+    let blocking = queue_doc(
+        "many",
+        "many",
+        "blocking",
+        r#"<sce:bounded capacity="6"/><sce:participants const="3"/>"#,
+    );
+    let code = compile_c(
+        &blocking,
+        &targeted_deploy_yaml(
+            "x86_64-unknown-linux-gnu",
+            "          atomic_rmw_width: 0\n          core_count: 1",
+        ),
+    )
+    .expect("a platform may offer no atomic on hardware that has them");
+    assert!(code.contains("sce_queue_irq_t core;"), "{code}");
+
+    let located = compile_c(
+        &scq_queue(),
+        &targeted_deploy_yaml("thumbv7em-none-eabihf", "          atomic_rmw_width: 64"),
+    )
+    .expect_err("a Cortex-M4 has no 64-bit atomic for the platform to offer");
+    match generate_error_of(located) {
+        GenerateError::InvalidConfig(message) => {
+            assert!(
+                message.contains("thumbv7em-none-eabihf") && message.contains("never more"),
+                "{message}"
+            );
+        }
+        other => panic!("expected InvalidConfig, got {other:?}"),
+    }
+}
+
 #[test]
 fn a_deploy_that_states_no_atomic_width_leaves_an_scq_row_on_c11_refused() {
     let yaml = platform_deploy_yaml("          core_count: 4", "");

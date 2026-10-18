@@ -18756,9 +18756,29 @@ fn resolve_queue_render_inputs(
     // What the deploy says about the target, read only by the C11 backend: its
     // atomics are the platform's own `sce_atomic_*` symbols, whose
     // implementation the generated code cannot see, so the generator asks the
-    // platform and does not guess (RFC §synth-5-P, Counter width).
+    // platform and does not guess (RFC §synth-5-P, Counter width). The platform's word is
+    // `platform.atomic_rmw_width`. A build target triple the generator knows
+    // (`target_atomics`) gives the width the hardware has, and stands in when the deploy
+    // states none; a platform may offer fewer atomics than its hardware has (its own
+    // `sce_atomic_*` set), never more, so a stated width above the triple's is refused.
     let atomic_rmw_width = if is_c11 {
-        resolution.and_then(|r| r.atomic_rmw_width)
+        let stated = resolution.and_then(|r| r.atomic_rmw_width);
+        let triple = resolution.and_then(|r| r.target.as_deref());
+        let known = triple.and_then(crate::target_atomics::rmw_width);
+        match (stated, known) {
+            (Some(stated), Some(known)) if stated > known => {
+                return Err(ForgeError::from(GenerateError::InvalidConfig(format!(
+                    "queue '{name}': the deploy states platform.atomic_rmw_width {stated} for a target `{triple}` whose widest read-modify-write atomic is {known} bits (what rustc reports of it). \
+                     A platform can offer fewer atomics than its hardware has, never more. \
+                     Repair: state a platform.atomic_rmw_width of {known} or less, or correct the target.",
+                    name = m.name,
+                    triple = triple.unwrap_or_default(),
+                )))
+                .at_line(m.storage_line));
+            }
+            (Some(stated), _) => Some(stated),
+            (None, known) => known,
+        }
     } else {
         None
     };

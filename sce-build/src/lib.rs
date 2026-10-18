@@ -2782,8 +2782,9 @@ pub struct QueueResolution {
     /// generated code (RFC §synth-5-P, Counter width).
     pub atomic_rmw_width: Option<u32>,
     /// The build target triple of the device the machine is on (`devices.<d>.target`), when the
-    /// deploy names one. The Rust backend reads what atomics the target has from it
-    /// ([`target_atomics::rmw_width`]); a stated `atomic_rmw_width` that disagrees with it is refused.
+    /// deploy names one. The backends read what atomics the target has from it
+    /// ([`target_atomics::rmw_width`]): the Rust one refuses a stated `atomic_rmw_width` that
+    /// disagrees with it, the C11 one takes it when none is stated and refuses a stated width above it.
     pub target: Option<String>,
     /// `platform.core_count` of the target machine. With an
     /// `atomic_rmw_width` of 0 only one core is supported.
