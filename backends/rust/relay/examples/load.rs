@@ -5,10 +5,14 @@
 //! costs it, over a real WebSocket, as the cores it may use grow.
 //!
 //! ```text
-//! load server --listen 127.0.0.1:7100 [--store DIR] [--workers N] [--seed N]
+//! load server --listen 127.0.0.1:7100 [--store DIR] [--workers N] [--slots S] [--seed N]
 //! load client --url ws://127.0.0.1:7100 [--lists L] [--devices D] [--writes W] [--threads T] [--seed N]
-//! load bench  --cores 1,2,4,8 [--lists L] [--devices D] [--writes W] [--threads T] [--store DIR]
+//! load bench  --cores 1,2,4,8 [--lists L] [--devices D] [--writes W] [--threads T] [--store DIR] [--slots S]
 //! ```
+//!
+//! `--slots S` runs the relay as `S` slots of its own, each with its own lock, so that the requests of
+//! different lists run at once (`sce_rust_relay::Shards`); `0`, the default, is one relay behind one
+//! lock, as it was before slots existed.
 //!
 //! `bench` starts the server as a child process pinned to the first `n` cores with `taskset`, runs
 //! the client against it from this process, reads the child's peak resident memory, and prints one
@@ -28,7 +32,8 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use sce_rust_mesh::endpoint::Sealer;
 use sce_rust_relay::serve::{serve, WssLink};
 use sce_rust_relay::{
-    Authority, Code, Courier, FileStore, Limits, Link, MemoryStore, Relay, Request, Response, Store,
+    Authority, Code, Courier, FileStore, Hub, Limits, Link, MemoryStore, Relay, Request, Response,
+    Shards,
 };
 use sce_rust_trust::membership::{Body, Log, Profile};
 use sce_rust_trust::{Identity, Trust};
@@ -76,27 +81,54 @@ fn run_server(args: &[String]) {
     let listen = flag(args, "--listen").unwrap_or_else(|| "127.0.0.1:7100".to_string());
     let workers = number(args, "--workers", 0);
     let seed = number(args, "--seed", 4) as u8;
-    match flag(args, "--store") {
-        Some(dir) => serve_on(
-            FileStore::open(&dir).expect("the store directory opens"),
-            &listen,
-            workers,
-            seed,
-        ),
-        None => serve_on(MemoryStore::new(), &listen, workers, seed),
-    }
-}
-
-fn serve_on<St: Store + Send + 'static>(store: St, listen: &str, workers: usize, seed: u8) {
+    let slots = number(args, "--slots", 0);
     let limits = Limits {
         burst: u32::MAX / 4,
         refill_per_second: u32::MAX / 4,
         max_records_per_list: 100_000_000,
         ..Limits::default()
     };
-    let relay = Arc::new(Mutex::new(
-        Relay::open(store, authority(seed), limits).expect("the relay opens"),
-    ));
+    let open = |dir: &str| FileStore::open(dir).expect("the store directory opens");
+    match (flag(args, "--store"), slots) {
+        (Some(dir), 0) => serve_on(
+            Arc::new(Mutex::new(
+                Relay::open(open(&dir), authority(seed), limits).expect("the relay opens"),
+            )),
+            &listen,
+            workers,
+        ),
+        (None, 0) => serve_on(
+            Arc::new(Mutex::new(
+                Relay::open(MemoryStore::new(), authority(seed), limits).expect("the relay opens"),
+            )),
+            &listen,
+            workers,
+        ),
+        (Some(dir), slots) => serve_on(
+            Arc::new(
+                Shards::open(
+                    slots,
+                    |slot| Ok(open(&format!("{dir}/slot-{slot}"))),
+                    authority(seed),
+                    limits,
+                )
+                .expect("the slots open"),
+            ),
+            &listen,
+            workers,
+        ),
+        (None, slots) => serve_on(
+            Arc::new(
+                Shards::open(slots, |_| Ok(MemoryStore::new()), authority(seed), limits)
+                    .expect("the slots open"),
+            ),
+            &listen,
+            workers,
+        ),
+    }
+}
+
+fn serve_on<H: Hub>(relay: Arc<H>, listen: &str, workers: usize) {
     let mut builder = tokio::runtime::Builder::new_multi_thread();
     if workers > 0 {
         builder.worker_threads(workers);
@@ -381,10 +413,16 @@ fn run_bench(args: &[String]) {
     let writes = number(args, "--writes", 200);
     let threads = number(args, "--threads", 16);
     let store = flag(args, "--store");
+    let slots = number(args, "--slots", 0);
     let exe = std::env::current_exe().expect("this program's path");
     println!(
-        "bench: {lists} lists x {devices} devices x {writes} writes, {threads} client threads, store {}",
-        store.as_deref().unwrap_or("memory")
+        "bench: {lists} lists x {devices} devices x {writes} writes, {threads} client threads, store {}, {}",
+        store.as_deref().unwrap_or("memory"),
+        if slots == 0 {
+            "one lock".to_string()
+        } else {
+            format!("{slots} slots")
+        }
     );
     for (round, n) in cores.iter().enumerate() {
         let mut command = Command::new("taskset");
@@ -396,7 +434,9 @@ fn run_bench(args: &[String]) {
             .arg("--listen")
             .arg("127.0.0.1:0")
             .arg("--workers")
-            .arg(n.to_string());
+            .arg(n.to_string())
+            .arg("--slots")
+            .arg(slots.to_string());
         if let Some(dir) = &store {
             let dir = format!("{dir}/cores-{n}-{round}");
             std::fs::create_dir_all(&dir).expect("a store directory");
