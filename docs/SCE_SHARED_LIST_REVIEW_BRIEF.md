@@ -3,13 +3,14 @@
 This is what an independent reviewer is given before they read the code. The design is
 `docs/adr/0034-a-shared-list-is-held-by-its-members-and-the-hub-only-relays.md`; what each party can be
 trusted with is `docs/SCE_SHARED_LIST_TRUST.md`; the relay is `docs/SCE_SHARED_LIST_RELAY.md` and the
-group key `docs/SCE_SHARED_LIST_MLS.md`. **One independent read has been done (2026-10-18), and it found
-seven defects that the authors' own checks had not** (listed in the ADR, fixed, and held by
-`what_an_independent_review_found_stays_fixed`); it covered the main trust, encryption and MLS-binding
-paths and is not a review of the whole. This brief is what makes a review possible, and what the authors
-have done in its place is listed in section 7 with what that does and does not show. What that read found
-is the best evidence of what the authors' own checks miss: three of its seven were in the code the
-authors' simulation, model and mutation round were written against.
+group key `docs/SCE_SHARED_LIST_MLS.md`. **One preliminary review has been done (2026-10-18), by an
+AI-assisted reader that did not write the code, and it found seven defects that the authors' own checks had
+not** (listed in the ADR, fixed, and held by `what_an_independent_review_found_stays_fixed`); it covered
+the main trust, encryption and MLS-binding paths and is neither a review of the whole nor an independent
+human security audit. This brief is what makes a review possible, and what the authors have done in its
+place is listed in section 7 with what that does and does not show. What that review found is the best
+evidence of what the authors' own checks miss: three of its seven were in the code the authors'
+simulation, model and mutation round were written against.
 
 ## 1. What is claimed
 
@@ -120,7 +121,7 @@ went on signing itself. Both are fixed (`evict_past_the_cutoff`, `evict_from`, t
   Rust, C, C++, Python, Go and Kotlin replay).
 - A seeded simulation that checks the safety properties against the code, and two TLA+ models of the
   convergence rule checked with TLC, each with a configuration that passes and one that fails as the
-  history says: the dropping of what a later entry puts out, and, since the independent read, the
+  history says: the dropping of what a later entry puts out, and, since the preliminary review, the
   conflicts of a device (two operations at a number, a write whose time goes back) held as a set. The
   models are of the rule and not of the code, and they have no stamp repeats, replaced keys or first
   epoch: the simulation is what plays those against the code.
@@ -134,7 +135,7 @@ went on signing itself. Both are fixed (`evict_past_the_cutoff`, `evict_from`, t
   log (40). Cases survived the tests that existed in every round, which is how checks that nothing held in
   place were found; they are held now, and two cases that no input reaches were dropped, with the reason
   in the casefile. A round measures only the checks someone thought to take away: the cases are the
-  authors', and the independent read above found seven defects in code the rounds covered. One kind of
+  authors', and the preliminary review above found seven defects in code the rounds covered. One kind of
   check is outside any round, the wiping of a secret from memory, which safe code cannot observe.
 
 None of this is independent: the people who wrote the code wrote these. It finds what they thought to

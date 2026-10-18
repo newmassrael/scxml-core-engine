@@ -445,7 +445,8 @@ This ADR is Accepted with stage 3, since the log and the chains are what make th
   the default run and a run forty times longer, and the harness is shown to find planted defects of each
   kind), and `scripts/fuzz/run.sh` feeds the same targets to libFuzzer through `cargo fuzz`, which keeps
   the inputs that reach new code. A test holds the two lists to each other.
-- **A first independent read found seven defects, and they are fixed** (2026-10-18). A reviewer who did not write the code read the trust, relay and group
+- **A first preliminary review found seven defects, and they are fixed** (2026-10-18). An AI-assisted reader
+  that did not write the code read the trust, relay and group
   key code and gave seven reproductions, each of which the existing tests had passed over. Three were
   high: two writes of one device under one stamp are sealed under one nonce, which gives a relay that
   knows one of them the other (a stamp now names one write, and a device does not sign a second content
