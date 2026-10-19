@@ -87,14 +87,22 @@ that is a state the screen shows (*2 of 3 proposed*, from `read_intake`) and wal
 step is the same when it is said twice.
 
 **An AI draws a draft of the ledger and the owner owns it.** Dividing a document is a job of a kind
-(ADR 0036), given the outline (each part's id, title, size and its first words) and answering with
-allotments by part id. What it answers is a claim, read the way a conversion's answer is: an id the outline
-does not have is an unreadable answer, a part it did not place is left *unplaced* and named by the check,
-and nothing it says is placed on its authority. The draft is saved as a ledger marked as a model's, which
-confirming is not refused for: the owner is shown all of it before they confirm, and a wrong allotment
-costs a proposal that is reviewed paragraph by paragraph and written to no spec's text until accepted.
-That is the reason a draft needs no gate of its own, and it is what would have to change if accepting ever
-stopped being the last step. The draft is a suggestion to divide and is never a refusal of the document.
+(ADR 0036, `divide-document`), given the outline (each part's id, title, size and its first words, never the
+whole text) and the destinations the owner has, and answering with, for each part it is sure of, a destination
+by its key or a new one by a title. What it answers is a claim, read item by item: an item that names a part
+the outline does not have, a destination nobody offered, a part already placed, or a new title that is blank
+is refused with a typed reason and the others are kept, so that one slip costs one item; a part it did not
+place is left *unplaced*, which is an answer (it may decline), and nothing it says is placed on its
+authority. **It is never offered *left out*:** whether a part is a requirement is the owner's, and an item
+that says it by any name is refused as `left-out`. The draft is suggestions shown on the screen, marked as the
+model's until the owner moves or confirms a part, and it is not saved as a ledger: what is saved, and counted
+by the check, is the plan the owner confirms. A wrong suggestion costs a proposal that is reviewed paragraph
+by paragraph and written to no spec's text until accepted, which is the reason a draft needs no gate of its
+own, and it is what would have to change if accepting ever stopped being the last step. The draft is a
+suggestion to divide and is never a refusal of the document. The unit is the whole outline, listed by first
+words: one that does not fit one prompt is refused with a typed reason (`too-many-parts`) and the parts are
+placed by hand, since a cut into batches would have to tell each batch the destinations the earlier ones
+invented, and whether it is worth building is for the measured number to say (`eval/divide_draft.py`).
 
 **A revised document carries the ledger by what is the same, and asks about the rest.** `carry-ledger`
 takes the old extraction with its ledger and the new extraction, and writes a draft for the new one.
@@ -136,8 +144,14 @@ Each step lands with its tests and is useful before the next.
 4. **Carrying a revision**: `carry-ledger` (built: `carry.py`, and `make-ledger`'s plan takes paragraphs by id,
    which is what a revision is divided by), then the host's read of the revised document and its draft, and the
    screen that shows what was carried, what is asked and what is gone.
-5. **The AI draft**, last, because it needs the AI loop's product wiring (ADR 0036) that is not built, and
-   because what it is worth is a number to be measured on public documents before anyone relies on it.
+5. **The AI draft**, last, because what it is worth is a number to be measured on public documents before anyone
+   relies on it. Built in the order that keeps that number honest: the kind with no model in it
+   (`divide_by_model.py`, `prepare-division`, `finish-division`), then the measure (`eval/divide_draft.py`),
+   then a runtime that asks a model server the person runs (the workbench's `draft_division`; a client that
+   brings its own tool loop, Claude Code and Codex, declares nothing until it has been tried, as ADR 0036 says
+   of a runtime), then the button. The loop of ADR 0036 (a job record, a lease, a journal) is not built for it:
+   a draft is one question a person waits for, bounded by the connection's time, and what a job record buys
+   (a request that outlives the screen) is not needed until a kind takes minutes of a model for each of many units.
 
 ## Alternatives rejected
 

@@ -55,6 +55,10 @@ from .revision_gate import judge as judge_revision
 from .scaffold import KINDS
 from .scaffold import write as write_scaffold
 from .carry import carry_ledger
+from .divide_by_model import KIND as DIVIDE_KIND
+from .divide_by_model import RECIPE_VERSION as DIVIDE_RECIPE_VERSION
+from .divide_by_model import Prepared as DividePrepared
+from .divide_by_model import offered_from, prepare as prepare_division, read_answer as read_division_answer
 from .ledger import Ledger, check_ledger, make_ledger, scopes_of
 from .scope import OUTLINES, Scope, outline as outline_of, scope_of
 from .verify import product_findings_of_binding
@@ -318,6 +322,78 @@ def cmd_carry_ledger(args) -> int:
         for gone in carried.gone:
             print(f"  note: gone {gone.block}")
     return 0
+
+
+def _destinations_of(path: str):
+    try:
+        raw = json.loads(pathlib.Path(path).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
+        raise IngestError(f"{path}: not readable as destinations ({exc})") from exc
+    return offered_from(raw)
+
+
+def cmd_prepare_division(args) -> int:
+    """Write what a model is told to draw a division of an extraction, and the parts it is told of.
+
+    `prompt.txt` is the whole text for the model, and `parts.json` keeps what only `finish-division` reads: the
+    parts listed, the destinations offered and the extraction they are of. A host takes the prompt to the
+    model it chose, writes the answer beside it (`answer.txt`) and runs `finish-division`. Nothing here
+    reaches a model, and what is printed is counts: the document's words are in the prompt file and nowhere else.
+    """
+    extraction = _read_extraction(args.extraction)
+    destinations = _destinations_of(args.destinations)
+    prepared = prepare_division(extraction, destinations, args.by)
+    out = pathlib.Path(args.out_dir)
+    try:
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "prompt.txt").write_text(prepared.prompt, encoding="utf-8")
+        (out / "parts.json").write_text(json.dumps({
+            "v": 1,
+            "recipe": f"{DIVIDE_KIND} {DIVIDE_RECIPE_VERSION}",
+            "extraction": extraction.revision(),
+            "parts": list(prepared.parts),
+            "destinations": [{"key": d.key, "kind": d.kind, "title": d.title} for d in destinations],
+        }, sort_keys=True), encoding="utf-8")
+    except OSError as exc:
+        raise IngestError(f"{out}: cannot be written ({exc})") from exc
+    print(json.dumps({
+        "recipe": f"{DIVIDE_KIND} {DIVIDE_RECIPE_VERSION}", "parts": len(prepared.parts),
+        "characters": len(prepared.prompt), "destinations": len(destinations),
+    }, sort_keys=True))
+    return 0
+
+
+def cmd_finish_division(args) -> int:
+    """Read the model's answer to a prepared division, and say what it placed, what was not taken and what is left.
+
+    Exit 0 when the answer could be read, even when some of its items were refused (they are named, by item and
+    a typed reason, and the others are kept); exit 1 when no suggestion could be read at all. Ids and counts
+    only: nothing of the document's words is printed.
+    """
+    extraction = _read_extraction(args.extraction)
+    directory = pathlib.Path(args.dir)
+    try:
+        listing = json.loads((directory / "parts.json").read_text(encoding="utf-8"))
+        named = listing["extraction"]
+        parts = tuple(str(p) for p in listing["parts"])
+        destinations = offered_from({"v": 1, "destinations": listing["destinations"]})
+    except (OSError, UnicodeDecodeError, ValueError, KeyError, TypeError) as exc:
+        raise IngestError(f"{directory / 'parts.json'}: not what `prepare-division` writes ({exc})") from exc
+    if named != extraction.revision():
+        raise IngestError("the division was prepared from another extraction than this one")
+    try:
+        answer = (directory / "answer.txt").read_text(encoding="utf-8")
+    except FileNotFoundError:
+        answer = None
+    except (OSError, UnicodeDecodeError) as exc:
+        raise IngestError(f"{directory / 'answer.txt'}: not readable ({exc})") from exc
+    draft = read_division_answer(extraction, DividePrepared("", parts), destinations, answer)
+    try:
+        (directory / "draft.json").write_text(json.dumps(draft.to_dict(), sort_keys=True), encoding="utf-8")
+    except OSError as exc:
+        raise IngestError(f"{directory}: cannot be written ({exc})") from exc
+    print(json.dumps(draft.to_dict(), sort_keys=True))
+    return 1 if draft.unreadable is not None else 0
 
 
 def cmd_convert(args) -> int:
@@ -1010,6 +1086,22 @@ def main(argv=None) -> int:
     cal.add_argument("--out", required=True, help="where to write the draft ledger (JSON) of the revised document")
     cal.add_argument("--json", action="store_true", help="print what was carried and what is asked, as JSON")
     cal.set_defaults(fn=cmd_carry_ledger)
+
+    pdv = sub.add_parser(
+        "prepare-division",
+        help="write what a model is told to draw a division of a document among specs (no model)")
+    pdv.add_argument("--extraction", required=True, help="the extraction (JSON) `extract` wrote")
+    pdv.add_argument("--destinations", required=True,
+                     help="the destinations (JSON) the owner has: `{\"v\": 1, \"destinations\": [{key, kind, title}]}`")
+    pdv.add_argument("--by", choices=OUTLINES, help="the division `outline` was asked for, when it was asked")
+    pdv.add_argument("--out-dir", required=True, help="where to write `prompt.txt` and `parts.json`")
+    pdv.set_defaults(fn=cmd_prepare_division)
+
+    fdv = sub.add_parser(
+        "finish-division", help="read a model's answer to a prepared division as suggestions (no model)")
+    fdv.add_argument("--extraction", required=True, help="the extraction the division was prepared from")
+    fdv.add_argument("--dir", required=True, help="the folder `prepare-division` wrote, with `answer.txt` beside the prompt")
+    fdv.set_defaults(fn=cmd_finish_division)
 
     chk = sub.add_parser(
         "check-conversion", help="count what a conversion matched, left out and invented, against its original")

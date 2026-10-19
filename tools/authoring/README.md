@@ -2087,6 +2087,29 @@ with no old one at its place), `gone` (an old paragraph nothing stands for, with
 `destinations` (those of the old ledger, kept even when nothing was carried to one). A ledger of another
 extraction than `--old-extraction` is refused. The report is `pre-release`.
 
+**prepare-division** and **finish-division** are the route for a division that a model draws (`divide_by_model.py`,
+ADR 0040), the same route `prepare-conversion` and `finish-conversion` are for a conversion: nothing here reaches
+a model, a host does. `prepare-division --extraction EXTRACTION.json --destinations DESTINATIONS.json --out-dir
+DIR [--by headings|pages|whole]` writes `prompt.txt`, the whole text a model is given (the recipe, the
+destinations the owner has by key and title, and the parts of the outline by id, level, title, size and first
+words, never the whole text), and `parts.json`, which only `finish-division` reads. `DESTINATIONS.json` is `{"v":
+1, "destinations": [{"key": "d0", "kind": "spec", "title": "..."}, ...]}`, `kind` being `spec` (one that exists)
+or `new` (one to be made). A part that is only its heading is listed (a heading is a paragraph the check of a
+ledger asks a place for); an outline too long for one prompt is refused as `too-many-parts` and is not cut, and
+fewer than two parts is nothing to divide. A host writes the model's text to `DIR/answer.txt` and runs
+`finish-division --extraction EXTRACTION.json --dir DIR`, which prints, by id and never by words, `suggestions`
+(a part with the destination key it was placed at, or the title of a new one), `refused` (each item of the
+answer that was not taken, with a typed `code`: `unknown-part`, `unknown-destination`, `placed-twice`,
+`bad-title`, `bad-shape`, `left-out`) and `unplaced` (the parts the model did not place). It exits 0 when the
+answer could be read, even with refused items, and 1 when none could (`no-answer`, `not-json`, `empty`). The
+model may decline a part, and that is an answer. It is **never** offered *left out*: whether a part is a
+requirement is the owner's, and an item that says it by any name (`"spec": "out"`, `"new": "Skip"`, an
+`"out"` key) is refused as `left-out`. Nothing it says is placed on its authority: the draft is suggestions the
+owner confirms part by part, and what they confirm is counted by `check-ledger` as a division they drew. A
+title that is one of the destinations' own, in any case, is that destination; two new titles that differ only
+in case are one new destination. `eval/divide_draft.py` measures how well a model draws one, on public
+documents cut and laid together so that every part has a right answer. The text and the form are `pre-release`.
+
 **assemble** makes the text a review ends in (`assembly.py`, ADR 0037): `python3 -m sce_author assemble
 --extraction EXTRACTION.json --conversion CONVERSION.json --decisions DECISIONS.json --out TEXT.md`, where
 `DECISIONS.json` is the list `read_proposal` gives. The conversion is not changed by a review: the latest
