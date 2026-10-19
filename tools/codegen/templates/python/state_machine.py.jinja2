@@ -36,6 +36,9 @@ from typing import Any, Dict, List, Optional, Tuple
 {% endif %}
 
 from sce_runtime import (
+{% if has_native_duties %}
+    ActionRealization,
+{% endif %}
     EnabledTransition,
     Engine,
     EventMetadata,
@@ -375,7 +378,30 @@ class {{ machine_name }}Policy(StatePolicy[{{ machine_name }}State, {{ machine_n
     `self._session_id`.
     """
 
-{% if has_native_actions %}
+{% if accepts_simulated_host %}
+    def __init__(self, actions: {{ native_actions_interface }}, *, accept_simulated_host: bool = False) -> None:
+{% if has_native_duties %}
+        # docs/adr/0038: this machine states a duty, so a host that only
+        # simulates the duties is refused unless the caller says, by name, that
+        # it means to run the machine on one. A host with no `realization` at all
+        # has declared nothing, which is refused as a simulating one is.
+        if not accept_simulated_host and getattr(actions, "realization", None) is not ActionRealization.PERFORMS:
+            raise ValueError(
+                "{{ machine_name }} states a duty and its host declares that it only simulates the duties "
+                "(or declares nothing): pass accept_simulated_host=True to run it on a recorder or a "
+                "test double on purpose"
+            )
+{% endif %}
+        # docs/adr/0038: held, so the children this machine builds with a host
+        # are built under the statement the caller gave it.
+        self._accept_simulated_host = accept_simulated_host
+        # W3C SCXML G.7: the host implementation every `<sce:action>` in this
+        # document calls directly (`self._actions.<op>(…)`) instead of the
+        # script engine. A constructor parameter rather than a setter, because
+        # the initial state's `<onentry>` can already perform an act — a host
+        # installed afterwards would arrive one act too late.
+        self._actions = actions
+{% elif has_native_actions %}
     def __init__(self, actions: {{ native_actions_interface }}) -> None:
         # W3C SCXML G.7: the host implementation every `<sce:action>` in this
         # document calls directly (`self._actions.<op>(…)`) instead of the
@@ -750,7 +776,7 @@ _HISTORY_DEFAULT_TARGETS: Dict[str, Tuple[Any, ...]] = {
 # Convenience factory
 # ======================================================================
 
-def create_engine({% if has_native_actions %}actions: {{ native_actions_interface }}, {% endif %}script_engine=None) -> Engine[{{ machine_name }}State, {{ machine_name }}Event]:
+def create_engine({% if has_native_actions %}actions: {{ native_actions_interface }}, {% endif %}script_engine=None{% if accepts_simulated_host %}, *, accept_simulated_host: bool = False{% endif %}) -> Engine[{{ machine_name }}State, {{ machine_name }}Event]:
     """Construct a runnable engine bound to a fresh policy instance.
 
     Engine DI Parity RFC (Path B+): every Engine instance owns its script
@@ -764,8 +790,16 @@ def create_engine({% if has_native_actions %}actions: {{ native_actions_interfac
     has no default, because the initial state's `<onentry>` may already
     perform an act — a host arriving later would arrive one act too late.
 {% endif %}
+{% if accepts_simulated_host %}
+
+    docs/adr/0038: `accept_simulated_host=True` states that the machine is built
+    for a host that only simulates its duties (a recorder, a test double) on
+    purpose. The statement covers the children the machine builds with a host.
+{% endif %}
     """
-{% if has_native_actions %}
+{% if accepts_simulated_host %}
+    policy = {{ machine_name }}Policy(actions, accept_simulated_host=accept_simulated_host)
+{% elif has_native_actions %}
     policy = {{ machine_name }}Policy(actions)
 {% else %}
     policy = {{ machine_name }}Policy()

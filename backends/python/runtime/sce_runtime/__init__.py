@@ -10,6 +10,7 @@ through the C++ Interpreter via pybind11, not through this AOT runtime.
 """
 
 from . import scripting
+from .action_realization import ActionRealization
 from .configuration import ConfigurationRejection, validate_configuration
 from .engine import Engine
 from .event import Event, EventMetadata, EventWithMetadata
@@ -61,6 +62,7 @@ from .scripting import (
 )
 
 __all__ = [
+    "ActionRealization",
     "ChildSession",
     "ConfigurationRejection",
     "EnabledTransition",

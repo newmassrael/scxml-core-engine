@@ -40,7 +40,7 @@ sys.path.insert(0, str(_HERE.parents[1]))
 sys.path.insert(0, str(_HERE.parents[2] / "runtime"))
 sys.path.insert(0, str(_HERE.parents[2] / "forge-runtime"))
 
-from sce_runtime import EventMetadata  # noqa: E402 -- path inserted above
+from sce_runtime import ActionRealization, EventMetadata  # noqa: E402 -- path inserted above
 
 # Where the scenarios live, from this file's directory.
 _SCENARIOS = _HERE.parents[4] / "sce-build" / "tests" / "fixtures" / "static_datamodel" / "scenarios"
@@ -104,13 +104,29 @@ def _holds(got, want) -> bool:
 class _ScenarioHost:
     """What a machine asked of its host, as a scenario's ``host_calls`` writes it:
     the name the document gives the action, and its arguments in the order the
-    document gives them."""
+    document gives them.
+
+    It records and performs nothing, so it declares that it only simulates: a
+    machine that states a duty (docs/adr/0038) takes it only when built with
+    ``accept_simulated_host=True``, which :func:`replay` does. A machine with no
+    duty has no ``realization`` in its protocol and never reads it."""
+
+    realization = ActionRealization.SIMULATES
 
     def __init__(self) -> None:
         self._calls: list[dict] = []
 
     def show_attempts(self, count: int, exhausted: bool) -> None:
         self._calls.append({"action": "showAttempts", "args": [count, exhausted]})
+
+    def start_keepalive(self) -> None:
+        self._calls.append({"action": "start_keepalive", "args": []})
+
+    def note_engaged(self) -> None:
+        self._calls.append({"action": "note_engaged", "args": []})
+
+    def stop_keepalive(self) -> None:
+        self._calls.append({"action": "stop_keepalive", "args": []})
 
     def take(self) -> list[dict]:
         """The calls made since this was last called, oldest first."""
@@ -268,7 +284,10 @@ def replay(name: str, machine: str | None = None) -> None:
             host = _ParentHost(children)
         else:
             host = _ScenarioHost()
-    engine = module.create_engine() if host is None else module.create_engine(host)
+    # The host here records and so only simulates: a machine that states a duty,
+    # or builds a child that does, takes it by being told so (docs/adr/0038).
+    opt_in = {"accept_simulated_host": True} if "accept_simulated_host" in parameters else {}
+    engine = module.create_engine() if host is None else module.create_engine(host, **opt_in)
     # Every machine is given the router that records, before it starts, so that
     # what its start sends is recorded too: one with no send to a Mesh peer never
     # calls it.
@@ -694,6 +713,13 @@ def test_a_cancel_removes_the_send_its_id_names() -> None:
 # from records them: one call per entry of `idle`, with the datamodel as it stood.
 def test_a_host_action_tells_its_host_what_the_datamodel_held() -> None:
     replay("static_host_call")
+
+
+# A duty is taken on entering `engaged` and given back on leaving it, beside a
+# notice. The driver's host records, so it simulates, and the machine is built for
+# it on purpose (docs/adr/0038): its calls are what `host_calls` is read from.
+def test_a_host_duty_is_taken_on_entry_and_given_back_on_exit() -> None:
+    replay("static_host_duty")
 
 
 # A child that declares `<sce:action>`s is built with the host its parent's host

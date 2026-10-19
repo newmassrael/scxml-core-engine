@@ -216,6 +216,17 @@
    acts of its own — asked here, where the invocation starts, and not for a
    candidate the value did not name. A candidate that declares none is built as
    it was. #}
+{% set duty_stems = inv.candidates | selectattr("child_states_duties") | map(attribute="stem") | list %}
+{% if duty_stems %}
+{# docs/adr/0038: a candidate that states a duty is built through the check that
+   refuses a host that only simulates, so it is handed the statement the caller
+   gave this machine; a candidate that states none takes no such argument. #}
+                _child_opt_in_{{ inv.invoke_id | to_python_const }} = (
+                    {"accept_simulated_host": self._accept_simulated_host}
+                    if __sce_selected_{{ inv.invoke_id | to_python_const }} in ({% for stem in duty_stems %}{{ stem | py_string_literal }}, {% endfor %})
+                    else {}
+                )
+{% endif %}
                 _child_host_{{ inv.invoke_id | to_python_const }} = {
 {% for candidate in inv.candidates if candidate.child_host_call %}
                     {{ candidate.stem | py_string_literal }}: lambda: {{ candidate.child_host_call }},
@@ -223,7 +234,8 @@
                 }.get(__sce_selected_{{ inv.invoke_id | to_python_const }})
                 _child_policy = (
                     _child_module_{{ inv.invoke_id | to_python_const }}.Policy(
-                        _child_host_{{ inv.invoke_id | to_python_const }}()
+                        _child_host_{{ inv.invoke_id | to_python_const }}(){% if duty_stems %}, **_child_opt_in_{{ inv.invoke_id | to_python_const }}{% endif %}
+
                     )
                     if _child_host_{{ inv.invoke_id | to_python_const }} is not None
                     else _child_module_{{ inv.invoke_id | to_python_const }}.Policy()
@@ -243,7 +255,11 @@
 {# The host the child performs its acts through leads its policy's parameters, as
    the machine's own does, and is asked of the parent's host each time the
    invocation starts (docs/adr/0005, decision 6). #}
+{% if inv.child_states_duties %}
+                _child_policy = _child_module_{{ inv.invoke_id | to_python_const }}.Policy({{ inv.child_host_call }}, accept_simulated_host=self._accept_simulated_host)
+{% else %}
                 _child_policy = _child_module_{{ inv.invoke_id | to_python_const }}.Policy({{ inv.child_host_call }})
+{% endif %}
 {% endif %}
                 # Engine DI Parity RFC (Path B+): forward the parent's
                 # script engine so the child shares the same Lua VM /
