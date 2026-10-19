@@ -17750,7 +17750,7 @@ pub fn render_machine_concurrency_artifacts(
 }
 
 /// Per-machine session runtime on the Rust (AP, tokio host) backend (SCE
-/// Protocol-Synthesis RFC §synth-5-K, Session runtime). Emits the
+/// Protocol-Synthesis RFC §synth-5-Q, Session runtime). Emits the
 /// `SessionDrive` enum, the `SessionRuntime` struct, the `SESSION_RUNTIME`
 /// const a host reads where it builds the machine's session runtime, and the
 /// `build_session_runtime()` that builds the one the const declares. The
@@ -17788,7 +17788,7 @@ pub fn render_machine_session_runtime_rust(
 }
 
 /// Per-machine session-runtime emission entry point used by the orchestrator
-/// (SCE Protocol-Synthesis RFC §synth-5-K, Session runtime). Independent of
+/// (SCE Protocol-Synthesis RFC §synth-5-Q, Session runtime). Independent of
 /// [`render_machine_concurrency_artifacts`]: a machine's session runtime does
 /// not depend on it having links, and a deploy that states none emits
 /// nothing, so every existing output stays byte-identical.

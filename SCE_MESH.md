@@ -2936,7 +2936,7 @@ topology:
         scheduler:
           kind: tokio | cooperative | rt
           worker_stack_budget: <integer>     # bytes; required when kind=cooperative
-          session_runtime:                   # optional; kind=tokio only (RFC §5.K, Session runtime)
+          session_runtime:                   # optional; kind=tokio only (RFC §5.Q, Session runtime)
             drive: own-thread | worker-pool  # required in the block
             worker_threads: <integer>        # >=1; required with, and only with, drive=worker-pool
             rx_busy_poll_us: <integer>       # optional; >=1, <= tick_period_us when declared

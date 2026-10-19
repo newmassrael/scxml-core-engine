@@ -117,8 +117,8 @@ paths = [
     # were scanned under `forge-runtime` and carry a bound §synth-5-B cite.
     "backends/rust/forge-conformance",
     # The Rust artifacts SCE writes from a deploy (LinkBus, cooperative scheduler,
-    # session runtime), compiled and run. Its tests carry §synth-5-K and
-    # §synth-5-N cites, bound to those sections.
+    # session runtime), compiled and run. Its tests carry §synth-5-K, §synth-5-N
+    # and §synth-5-Q cites, bound to those sections.
     "backends/rust/deploy-conformance",
     "backends/c/runtime/include",
     "tests/forge/resources",

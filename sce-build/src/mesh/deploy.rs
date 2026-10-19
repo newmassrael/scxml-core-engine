@@ -1348,7 +1348,7 @@ pub struct MachineSchedulerConfig {
     #[serde(default)]
     pub per_link_budget_us: Option<u32>,
     /// How a `kind: tokio` host configures the runtime it creates for this
-    /// machine's sessions (SCE Protocol-Synthesis RFC §synth-5-K, Session
+    /// machine's sessions (SCE Protocol-Synthesis RFC §synth-5-Q, Session
     /// runtime). The host reads it as a generated const
     /// ([`SessionRuntimeProfile`]); it is the host runtime's configuration,
     /// not a statechart or pool figure, and `cooperative` / `rt` have no such
@@ -3871,7 +3871,7 @@ fn validate_pool_defaults(cfg: &DeployConfig) -> Result<(), DeployError> {
 ///
 /// Single source of truth for the driver allowlist. Each core driver
 /// implements exactly one protocol class (per RFC §synth-5-C lines 765-771 +
-/// §synth-8 Q8 line 4129); co-locating the class with the driver name
+/// §synth-8 Q8 line 4173); co-locating the class with the driver name
 /// keeps `KNOWN_DRIVERS` the authoritative source — no parallel map
 /// to drift against.
 ///
@@ -3882,7 +3882,7 @@ fn validate_pool_defaults(cfg: &DeployConfig) -> Result<(), DeployError> {
 ///     encapsulation floor as `lwip_tcp`; the per-frame
 ///     WebSocket header is application-protocol framing
 ///     carried by the §synth-5-B framer codec, not by the driver
-///     MTU floor. Spec §synth-8 Q8 line 4129 names the driver;
+///     MTU floor. Spec §synth-8 Q8 line 4173 names the driver;
 ///     spec §synth-5-C row 4 (line 770) names the class).
 ///
 /// Non-IP drivers carry floor `0` to mark "skip floor check"
@@ -4241,7 +4241,7 @@ pub fn validate_links_cross_doc(
     Ok(())
 }
 
-/// SCE Protocol-Synthesis RFC §synth-5-C lines 765-771 + §synth-8 Q8 line 4129 cross-
+/// SCE Protocol-Synthesis RFC §synth-5-C lines 765-771 + §synth-8 Q8 line 4173 cross-
 /// doc consistency check between forge `<sce:link-class>` and the
 /// deploy.yaml `driver:` allowlist entry.
 ///
@@ -5037,7 +5037,7 @@ fn validate_keepalive_jitter_required_when_cooperative(
     Ok(())
 }
 
-/// SCE Protocol-Synthesis RFC §synth-5-K (Session runtime) — the
+/// SCE Protocol-Synthesis RFC §synth-5-Q (Session runtime) — the
 /// `session_runtime:` block configures the runtime a `tokio` host creates for
 /// the machine's sessions.
 ///

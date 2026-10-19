@@ -1561,7 +1561,7 @@ pub enum DeployError {
     SchedulerCooperativeMissingKeepaliveJitterBudget { machine: String },
 
     /// A machine wrote a `scheduler.session_runtime:` block under a `kind`
-    /// other than `tokio` (SCE Protocol-Synthesis RFC §synth-5-K, Session
+    /// other than `tokio` (SCE Protocol-Synthesis RFC §synth-5-Q, Session
     /// runtime; `deploy/scheduler-session-runtime-not-applicable`). The block
     /// configures the runtime a `tokio` host creates for the machine's
     /// sessions; `cooperative` is the SCE-built single-thread tick loop and
@@ -1569,7 +1569,7 @@ pub enum DeployError {
     /// time.
     #[error(
         "machine '{machine}': scheduler.session_runtime is not applicable to scheduler.kind '{kind}'. \
-             SCE Protocol-Synthesis RFC §5.K (Session runtime, \
+             SCE Protocol-Synthesis RFC §5.Q (Session runtime, \
              `deploy/scheduler-session-runtime-not-applicable`) — the block \
              configures the runtime a `tokio` host creates for the session, and \
              a '{kind}' scheduler creates none. \
@@ -1582,13 +1582,13 @@ pub enum DeployError {
     },
 
     /// A `tokio` machine whose `session_runtime.worker_threads` contradicts its
-    /// `session_runtime.drive` (SCE Protocol-Synthesis RFC §synth-5-K, Session
+    /// `session_runtime.drive` (SCE Protocol-Synthesis RFC §synth-5-Q, Session
     /// runtime; `deploy/scheduler-worker-threads-invalid`). A worker pool needs
     /// a stated count of at least 1, and a count with no worker pool is read
     /// by nothing. Rejected at parse time.
     #[error(
         "machine '{machine}': {fault}. \
-             SCE Protocol-Synthesis RFC §5.K (Session runtime, \
+             SCE Protocol-Synthesis RFC §5.Q (Session runtime, \
              `deploy/scheduler-worker-threads-invalid`). \
              Repair: write `drive: worker-pool` with `worker_threads: <n>` (n >= 1), \
              or write `drive: own-thread` and remove `worker_threads`."
@@ -1601,13 +1601,13 @@ pub enum DeployError {
     },
 
     /// A `tokio` machine whose `session_runtime.rx_busy_poll_us` cannot be a
-    /// wait budget (SCE Protocol-Synthesis RFC §synth-5-K, Session runtime;
+    /// wait budget (SCE Protocol-Synthesis RFC §synth-5-Q, Session runtime;
     /// `deploy/scheduler-rx-busy-poll-invalid`): 0, which is the spelling of
     /// leaving it off twice, or longer than the scheduler's own
     /// `tick_period_us`. Rejected at parse time.
     #[error(
         "machine '{machine}': {fault}. \
-             SCE Protocol-Synthesis RFC §5.K (Session runtime, \
+             SCE Protocol-Synthesis RFC §5.Q (Session runtime, \
              `deploy/scheduler-rx-busy-poll-invalid`). \
              Repair: write `rx_busy_poll_us: <us>` of at least 1 and, when `tick_period_us` \
              is declared, no more than it, or remove `rx_busy_poll_us` to leave it off."
@@ -1757,7 +1757,7 @@ pub enum DeployError {
         driver_floor: u32,
     },
 
-    /// SCE Protocol-Synthesis RFC §synth-5-C lines 765-771 + §synth-8 Q8 line 4129 —
+    /// SCE Protocol-Synthesis RFC §synth-5-C lines 765-771 + §synth-8 Q8 line 4173 —
     /// the forge `<sce:link-class>` value declared on the link doc
     /// does not match the protocol class implied by the deploy.yaml
     /// `driver:` allowlist entry. Each core driver implements
@@ -1774,7 +1774,7 @@ pub enum DeployError {
              `<sce:link-class>{}</sce:link-class>` but \
              deploy.yaml binds `driver: {}` which implements \
              class '{}'. SCE Protocol-Synthesis RFC §5.C lines \
-             765-771 + §8 Q8 line 4129 \
+             765-771 + §8 Q8 line 4173 \
              (`deploy/link-driver-class-mismatch`) — each core \
              driver implements exactly one protocol class. Repair: \
              change `driver:` to the entry matching the declared \

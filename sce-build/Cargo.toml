@@ -1249,7 +1249,7 @@ path = "tests/the_emitted_transition_table_equals_the_export.rs"
 required-features = ["cli"]
 
 # `machines.<m>.scheduler.session_runtime` (SCE Protocol-Synthesis RFC
-# §synth-5-K, Session runtime). It runs `sce-codegen orchestrate` against a
+# §synth-5-Q, Session runtime of a tokio host). It runs `sce-codegen orchestrate` against a
 # deploy with and without the block, so it carries the `cli` gate.
 [[test]]
 name = "scheduler_session_runtime"

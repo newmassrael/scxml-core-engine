@@ -68,8 +68,10 @@ const SPEC_DOCS: &[&str] = &["SCE_MESH.md"];
 /// (`line 3382` named a testing-requirements heading when the item it
 /// described was at 3551).
 ///
-/// History: 4053 until `8c74ee9cf8` added the queue-kind section (+387 lines).
-const SYNTH_RFC_LINES: usize = 4440;
+/// History: 4053 until `8c74ee9cf8` added the queue-kind section (+387 lines);
+/// 4440 until section 5.Q (the session runtime of a tokio host) went in after
+/// 5.P, past the last line any citation names, so none was re-pointed (+44).
+const SYNTH_RFC_LINES: usize = 4484;
 
 /// The document the exclusion above is granted to.
 const SYNTH_RFC: &str = "docs/spec/synth/rfc-sce-protocol-synthesis.md";

@@ -2416,38 +2416,6 @@ are added here. Existing precedent: SCE Mesh already has
 *integration*; this RFC adds only generic embedded-networking
 *deploy schema*, a strictly weaker dependency.
 
-**Session runtime.** A `kind: tokio` scheduler states how the host configures
-the runtime it creates for the machine's sessions in one block,
-`session_runtime:`, so that applicability is judged once and a further
-host-runtime key joins the block and not the scheduler's own list (which also
-carries the cooperative budgets):
-
-```yaml
-scheduler:
-  kind: tokio
-  session_runtime:
-    drive: own-thread | worker-pool   # required in the block
-    worker_threads: <n>               # >= 1; required with, and only with, worker-pool
-    rx_busy_poll_us: <us>             # optional; >= 1, and <= tick_period_us when declared
-```
-
-`own-thread` puts the runtime on the one thread that drives the machine, with
-no workers; `worker-pool` is a multi-threaded runtime with that many workers.
-`rx_busy_poll_us` is how long a read that has to wait reads the socket
-directly before it sleeps on the reactor: a wait that ends inside the budget
-is answered without the sleep and wake-up, at the cost of that much CPU per
-wait and a longer tail. To leave it off, omit it; `0` is refused, being a
-second spelling of the same thing. It is not `SO_BUSY_POLL`, and it is not
-`per_link_budget_us`, which is the work a link may do in one cooperative tick
-and is the scheduler itself where this is a wait the runtime could do without.
-The block is the host runtime's configuration, so `cooperative` and `rt`
-refuse it. Rust codegen emits `{machine}_session_runtime.rs`: a `SessionDrive`
-enum, a `SessionRuntime` struct, the `SESSION_RUNTIME` const the host reads,
-and `build_session_runtime()`, the one place the drive is turned into a tokio
-runtime. A deploy that states no block emits nothing, so existing output is
-unchanged. Counts and budgets are stated, never defaulted, so the const holds
-only figures the deploy wrote.
-
 **Diagnostics:**
 - `deploy/platform-class-missing`
 - `deploy/link-driver-unknown`
@@ -2461,12 +2429,6 @@ only figures the deploy wrote.
   `worker_slot_budget_us` declared
 - `deploy/keepalive-jitter-budget-missing` — `scheduler.kind: cooperative` without
   `keepalive_jitter_budget_us` declared
-- `deploy/scheduler-session-runtime-not-applicable` — a `session_runtime:` block
-  under a `scheduler.kind` other than `tokio`
-- `deploy/scheduler-worker-threads-invalid` — `drive: worker-pool` without
-  `worker_threads` or with 0, or `worker_threads` without `drive: worker-pool`
-- `deploy/scheduler-rx-busy-poll-invalid` — `rx_busy_poll_us` of 0, or longer
-  than the `tick_period_us` the same scheduler declares
 - `worker/slot-budget-exceeded` — algorithm/procedure static (or measured) WCET
   exceeds `worker_slot_budget_us`; refactor (split into multiple slots, lower the
   bounded-loop cap, or pre-compute) before the build will succeed
@@ -3776,6 +3738,50 @@ layer-7 casefiles. Then the per-language runtime algorithms; then the
 parser, model, XSD, kind catalog, `codegen_matrix` and templates.
 The worker migration and the mesh migration come last, in that
 order.
+
+### 5.Q Session runtime of a tokio host
+
+Extends the deploy model of §5.K. A `kind: tokio` scheduler states how the
+host configures the runtime it creates for the machine's sessions in one
+block, `session_runtime:`, so that applicability is judged once and a further
+host-runtime key joins the block and not the scheduler's own list (which also
+carries the cooperative budgets):
+
+```yaml
+scheduler:
+  kind: tokio
+  session_runtime:
+    drive: own-thread | worker-pool   # required in the block
+    worker_threads: <n>               # >= 1; required with, and only with, worker-pool
+    rx_busy_poll_us: <us>             # optional; >= 1, and <= tick_period_us when declared
+```
+
+`own-thread` puts the runtime on the one thread that drives the machine, with
+no workers; `worker-pool` is a multi-threaded runtime with that many workers.
+`rx_busy_poll_us` is how long a read that has to wait reads the socket
+directly before it sleeps on the reactor: a wait that ends inside the budget
+is answered without the sleep and wake-up, at the cost of that much CPU per
+wait and a longer tail. To leave it off, omit it; `0` is refused, being a
+second spelling of the same thing. It is not `SO_BUSY_POLL`, and it is not
+`per_link_budget_us`, which is the work a link may do in one cooperative tick
+and is the scheduler itself where this is a wait the runtime could do without.
+The block is the host runtime's configuration, so `cooperative` and `rt`
+refuse it.
+
+Rust codegen emits `{machine}_session_runtime.rs`: a `SessionDrive` enum, a
+`SessionRuntime` struct, the `SESSION_RUNTIME` const the host reads, and
+`build_session_runtime()`, the one place the drive is turned into a tokio
+runtime. A deploy that states no block emits nothing, so existing output is
+unchanged. Counts and budgets are stated, never defaulted, so the const holds
+only figures the deploy wrote.
+
+**Diagnostics:**
+- `deploy/scheduler-session-runtime-not-applicable` — a `session_runtime:` block
+  under a `scheduler.kind` other than `tokio`
+- `deploy/scheduler-worker-threads-invalid` — `drive: worker-pool` without
+  `worker_threads` or with 0, or `worker_threads` without `drive: worker-pool`
+- `deploy/scheduler-rx-busy-poll-invalid` — `rx_busy_poll_us` of 0, or longer
+  than the `tick_period_us` the same scheduler declares
 
 ---
 

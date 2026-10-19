@@ -2837,19 +2837,19 @@ pub enum DiagnosticCode {
     /// fires at deploy.yaml parse time.
     #[serde(rename = "deploy/keepalive-jitter-budget-missing")]
     MeshDeploySchedulerCooperativeMissingKeepaliveJitterBudget,
-    /// SCE Protocol-Synthesis RFC §synth-5-K (Session runtime). A
+    /// SCE Protocol-Synthesis RFC §synth-5-Q (Session runtime). A
     /// `session_runtime:` block under a scheduler `kind` other than `tokio`,
     /// which creates no session runtime to configure. `expected` carries the
     /// kind the block applies to, `actual` the block the deploy wrote.
     #[serde(rename = "deploy/scheduler-session-runtime-not-applicable")]
     MeshDeploySchedulerSessionRuntimeNotApplicable,
-    /// SCE Protocol-Synthesis RFC §synth-5-K (Session runtime). A `tokio`
+    /// SCE Protocol-Synthesis RFC §synth-5-Q (Session runtime). A `tokio`
     /// machine whose `worker_threads` contradicts its `drive`: a worker pool
     /// with no count or a count of 0, or a count with no worker pool. `actual`
     /// carries the figure the deploy states, when it states one.
     #[serde(rename = "deploy/scheduler-worker-threads-invalid")]
     MeshDeploySchedulerWorkerThreadsInvalid,
-    /// SCE Protocol-Synthesis RFC §synth-5-K (Session runtime). A `tokio`
+    /// SCE Protocol-Synthesis RFC §synth-5-Q (Session runtime). A `tokio`
     /// machine whose `rx_busy_poll_us` is 0, or longer than the
     /// `tick_period_us` the same scheduler declares. `actual` carries the
     /// figure the deploy states.
@@ -2922,7 +2922,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "deploy/link-mtu-below-driver-floor")]
     MeshDeployLinkMtuBelowDriverFloor,
 
-    /// SCE Protocol-Synthesis RFC §synth-5-C lines 765-771 + §synth-8 Q8 line 4129
+    /// SCE Protocol-Synthesis RFC §synth-5-C lines 765-771 + §synth-8 Q8 line 4173
     /// (`deploy/link-driver-class-mismatch`). The forge
     /// `<sce:link-class>` value on the link doc does not match the
     /// protocol class implied by the deploy.yaml `driver:` allowlist
@@ -3888,7 +3888,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshDeploySchedulerCooperativeMissingSlotBudget,
         MeshDeploySchedulerCooperativeMissingKeepaliveJitterBudget,
         MeshDeploySchedulerIncompatibleWithWorkerCount,
-        // Session runtime axis (SCE Protocol-Synthesis RFC §synth-5-K)
+        // Session runtime axis (SCE Protocol-Synthesis RFC §synth-5-Q)
         MeshDeploySchedulerSessionRuntimeNotApplicable,
         MeshDeploySchedulerWorkerThreadsInvalid,
         MeshDeploySchedulerRxBusyPollInvalid,
@@ -4590,9 +4590,6 @@ impl DiagnosticCode {
             | MeshDeploySchedulerCooperativeMissingSlotBudget
             | MeshDeploySchedulerCooperativeMissingKeepaliveJitterBudget
             | MeshDeploySchedulerIncompatibleWithWorkerCount
-            | MeshDeploySchedulerSessionRuntimeNotApplicable
-            | MeshDeploySchedulerWorkerThreadsInvalid
-            | MeshDeploySchedulerRxBusyPollInvalid
             // §synth-5-K `links:` block (RFC §synth-5-K lines 2232-2540) +
             // cross-doc RX-pool burst invariants (RFC §synth-5-K
             // lines 2489-2500).
@@ -4623,6 +4620,11 @@ impl DiagnosticCode {
             | MeshDeploySessionArmingQuotaVsPeerTableInvariantViolated
             | MeshDeployStatelessAcceptExternNotWhitelisted
                 => Some("SCE Protocol-Synthesis RFC §5.K"),
+
+            // ── Session runtime of a tokio host (RFC §synth-5-Q) ──
+            MeshDeploySchedulerSessionRuntimeNotApplicable
+            | MeshDeploySchedulerWorkerThreadsInvalid
+            | MeshDeploySchedulerRxBusyPollInvalid => Some("SCE Protocol-Synthesis RFC §5.Q"),
 
             // ── Mesh rule 12 — parallel root designation (SCE_MESH.md §14 rule 12) ──
             MeshPartitionParallelRootUndesignated
@@ -15413,7 +15415,7 @@ mod tests {
                     kind: "cooperative",
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:d30d87b6b0c48c10","code":"deploy/scheduler-session-runtime-not-applicable","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.K","message":"machine 'mcu_node': scheduler.session_runtime is not applicable to scheduler.kind 'cooperative'. SCE Protocol-Synthesis RFC §5.K (Session runtime, `deploy/scheduler-session-runtime-not-applicable`) — the block configures the runtime a `tokio` host creates for the session, and a 'cooperative' scheduler creates none. Repair: remove `session_runtime` from `scheduler:`, or change `kind:` to `tokio`.","expected":["tokio"],"actual":"session_runtime"}"#,
+                r#"{"v":1,"id":"fnv1a:d30d87b6b0c48c10","code":"deploy/scheduler-session-runtime-not-applicable","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.Q","message":"machine 'mcu_node': scheduler.session_runtime is not applicable to scheduler.kind 'cooperative'. SCE Protocol-Synthesis RFC §5.Q (Session runtime, `deploy/scheduler-session-runtime-not-applicable`) — the block configures the runtime a `tokio` host creates for the session, and a 'cooperative' scheduler creates none. Repair: remove `session_runtime` from `scheduler:`, or change `kind:` to `tokio`.","expected":["tokio"],"actual":"session_runtime"}"#,
             ),
             (
                 "deploy/scheduler-rx-busy-poll-invalid",
@@ -15425,7 +15427,7 @@ mod tests {
                     rx_busy_poll_us: 5000,
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:c4a429f9a60b8de3","code":"deploy/scheduler-rx-busy-poll-invalid","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.K","message":"machine 'ap_node': `rx_busy_poll_us` is longer than `tick_period_us` (1000), so a wait would spin through a whole tick. SCE Protocol-Synthesis RFC §5.K (Session runtime, `deploy/scheduler-rx-busy-poll-invalid`). Repair: write `rx_busy_poll_us: <us>` of at least 1 and, when `tick_period_us` is declared, no more than it, or remove `rx_busy_poll_us` to leave it off.","actual":"5000"}"#,
+                r#"{"v":1,"id":"fnv1a:c4a429f9a60b8de3","code":"deploy/scheduler-rx-busy-poll-invalid","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.Q","message":"machine 'ap_node': `rx_busy_poll_us` is longer than `tick_period_us` (1000), so a wait would spin through a whole tick. SCE Protocol-Synthesis RFC §5.Q (Session runtime, `deploy/scheduler-rx-busy-poll-invalid`). Repair: write `rx_busy_poll_us: <us>` of at least 1 and, when `tick_period_us` is declared, no more than it, or remove `rx_busy_poll_us` to leave it off.","actual":"5000"}"#,
             ),
             (
                 "deploy/scheduler-worker-threads-invalid",
@@ -15435,7 +15437,7 @@ mod tests {
                     worker_threads: Some(0),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:4c263c309109f5c6","code":"deploy/scheduler-worker-threads-invalid","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.K","message":"machine 'ap_node': `drive: worker-pool` needs at least one worker thread, and `worker_threads` is 0. SCE Protocol-Synthesis RFC §5.K (Session runtime, `deploy/scheduler-worker-threads-invalid`). Repair: write `drive: worker-pool` with `worker_threads: <n>` (n >= 1), or write `drive: own-thread` and remove `worker_threads`.","actual":"0"}"#,
+                r#"{"v":1,"id":"fnv1a:4c263c309109f5c6","code":"deploy/scheduler-worker-threads-invalid","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.Q","message":"machine 'ap_node': `drive: worker-pool` needs at least one worker thread, and `worker_threads` is 0. SCE Protocol-Synthesis RFC §5.Q (Session runtime, `deploy/scheduler-worker-threads-invalid`). Repair: write `drive: worker-pool` with `worker_threads: <n>` (n >= 1), or write `drive: own-thread` and remove `worker_threads`.","actual":"0"}"#,
             ),
             // ── §synth-5-K `links:` block (RFC §synth-5-K lines 2232-2540) ──
             (
@@ -15489,7 +15491,7 @@ mod tests {
                     },
                 ))
                 .into(),
-                r#"{"v":1,"id":"fnv1a:4ac5fbe980bb4938","code":"deploy/link-driver-class-mismatch","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.K","message":"machine 'mcu_node': link 'ws_control' declares forge `<sce:link-class>websocket</sce:link-class>` but deploy.yaml binds `driver: lwip_tcp` which implements class 'tcp'. SCE Protocol-Synthesis RFC §5.C lines 765-771 + §8 Q8 line 4129 (`deploy/link-driver-class-mismatch`) — each core driver implements exactly one protocol class. Repair: change `driver:` to the entry matching the declared class, or change `<sce:link-class>` to match the bound driver.","actual":"lwip_tcp","fix":{"kind":"replace_one_of","candidates":["websocket_tcp"]}}"#,
+                r#"{"v":1,"id":"fnv1a:4ac5fbe980bb4938","code":"deploy/link-driver-class-mismatch","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.K","message":"machine 'mcu_node': link 'ws_control' declares forge `<sce:link-class>websocket</sce:link-class>` but deploy.yaml binds `driver: lwip_tcp` which implements class 'tcp'. SCE Protocol-Synthesis RFC §5.C lines 765-771 + §8 Q8 line 4173 (`deploy/link-driver-class-mismatch`) — each core driver implements exactly one protocol class. Repair: change `driver:` to the entry matching the declared class, or change `<sce:link-class>` to match the bound driver.","actual":"lwip_tcp","fix":{"kind":"replace_one_of","candidates":["websocket_tcp"]}}"#,
             ),
             (
                 "deploy/link-expected-p99-exceeds-mtu",

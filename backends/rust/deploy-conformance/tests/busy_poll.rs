@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
 //! The wait budget a deploy declares (`session_runtime.rx_busy_poll_us`, SCE
-//! Protocol-Synthesis RFC §synth-5-K), consumed by the code SCE owns for it:
+//! Protocol-Synthesis RFC §synth-5-Q), consumed by the code SCE owns for it:
 //! the generated `rx_busy_poll()` carries the figure and
 //! `sce_link_runtime::busy_poll::read_within` spends it reading the socket
 //! with `read(2)`.

@@ -4002,34 +4002,14 @@
           "kind": "implements"
         },
         {
-          "file": "sce-build/src/forge/generator.rs",
-          "kind": "references"
-        },
-        {
           "file": "sce-build/src/mesh/deploy.rs",
           "symbol": "MachineSchedulerConfig",
           "kind": "implements"
         },
         {
-          "file": "tools/codegen/templates/forge/rust/session_runtime.rs.jinja2",
-          "kind": "references"
-        },
-        {
-          "file": "sce-build/tests/scheduler_session_runtime.rs",
-          "kind": "references"
-        },
-        {
           "file": "sce-build/src/mesh/deploy.rs",
           "symbol": "validate_scheduler_session_runtime",
           "kind": "implements"
-        },
-        {
-          "file": "backends/rust/deploy-conformance/tests/busy_poll.rs",
-          "kind": "references"
-        },
-        {
-          "file": "backends/rust/deploy-conformance/tests/session_runtime.rs",
-          "kind": "references"
         }
       ]
     },
@@ -5603,6 +5583,50 @@
         }
       ]
     },
+    "synth-5-Q": {
+      "title": "Session runtime of a tokio host",
+      "parent_doc": "synth",
+      "parent_section": "synth-5",
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/error.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/scheduler_session_runtime.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/deploy-conformance/tests/busy_poll.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/deploy-conformance/tests/session_runtime.rs",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/rust/session_runtime.rs.jinja2",
+          "kind": "references"
+        }
+      ]
+    },
     "synth-6": {
       "title": "Cross-cutting concerns",
       "parent_doc": "synth",
@@ -6449,6 +6473,36 @@
       "target_kind": "section",
       "target_id": "synth-5-K",
       "reason": "renamed with the session runtime block"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-K",
+      "reason": "the session runtime text moved to RFC section 5.Q and the file no longer cites 5.K"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-K",
+      "reason": "the session runtime text moved to RFC section 5.Q and the file no longer cites 5.K"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-K",
+      "reason": "the session runtime text moved to RFC section 5.Q and the file no longer cites 5.K"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-K",
+      "reason": "the session runtime text moved to RFC section 5.Q and the file no longer cites 5.K"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-K",
+      "reason": "the session runtime text moved to RFC section 5.Q and the file no longer cites 5.K"
     }
   ],
   "frames": {},

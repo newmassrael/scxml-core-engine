@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
 //! Reading a socket directly before sleeping on the reactor (SCE
-//! Protocol-Synthesis RFC §synth-5-K, Session runtime).
+//! Protocol-Synthesis RFC §synth-5-Q, Session runtime of a tokio host).
 //!
 //! `machines.<m>.scheduler.session_runtime.rx_busy_poll_us` is how long a read
 //! that has to wait reads the socket with `read(2)` before it gives up the

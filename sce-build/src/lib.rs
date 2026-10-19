@@ -4089,7 +4089,7 @@ fn compile_document_set(
                     per_link_budget_us,
                 )
                 .map_err(|e| Located::new(e, "deploy.yaml", None, None))?;
-                // §synth-5-K: the session runtime is the host runtime's
+                // §synth-5-Q: the session runtime is the host runtime's
                 // configuration, emitted whether or not the machine has links.
                 files.extend(
                     forge::generator::render_machine_session_runtime_artifacts(

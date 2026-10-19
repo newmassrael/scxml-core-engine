@@ -1,6 +1,6 @@
 //! `machines.<m>.scheduler.session_runtime` — how a `tokio` host configures the
 //! runtime it creates for a machine's sessions (SCE Protocol-Synthesis RFC
-//! §synth-5-K, Session runtime): `drive`, `worker_threads`, `rx_busy_poll_us`.
+//! §synth-5-Q, Session runtime of a tokio host): `drive`, `worker_threads`, `rx_busy_poll_us`.
 //!
 //! What this file holds the deploy to:
 //! - the block parses on a `tokio` scheduler and resolves to a profile, and the

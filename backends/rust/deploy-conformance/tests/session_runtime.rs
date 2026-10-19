@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
-//! The session runtime a deploy declares (SCE Protocol-Synthesis RFC §synth-5-K,
-//! Session runtime), as the host that reads it sees it: the const says what was
+//! The session runtime a deploy declares (SCE Protocol-Synthesis RFC §synth-5-Q,
+//! Session runtime of a tokio host), as the host that reads it sees it: the const says what was
 //! declared, and the runtime the generated constructor builds is the one the
 //! declaration names.
 
