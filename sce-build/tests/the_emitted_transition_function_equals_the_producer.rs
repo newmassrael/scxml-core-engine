@@ -1360,6 +1360,808 @@ fn the_generated_machine_and_the_generated_function_agree_on_every_pair() {
     }
 }
 
+// ── The other engines, driven against the function beside them ─────────────
+//
+// The same drive as the Rust program above, in each language: a fresh machine
+// per pair, the shortest event path the function gives to the state, then the
+// event. A program prints `pairs <n>` and nothing else when every pair agrees,
+// and a `MISMATCH:` line per disagreement otherwise. The configuration is
+// compared as a set of ids — a state's ancestors are fixed by the document, so
+// the set says what the ordered list says — because not every engine hands its
+// configuration out in an order.
+
+/// What a drive over every pair of `function` prints when they all agree.
+fn every_pair(function: &TransitionFunction) -> String {
+    format!("pairs {}", function.states.len() * function.events.len())
+}
+
+/// The Go drive: the machine's package, built against the real runtime, and
+/// the function's package inside it.
+const GO_EQUIVALENCE: &str = r#"package main
+
+import (
+	"fmt"
+	"os"
+	"sort"
+
+	machine "example.com/tfequivalence/@STEM@"
+	tf "example.com/tfequivalence/@STEM@/@PACKAGE@"
+	sce "github.com/newmassrael/sce-go-runtime"
+)
+
+type engine = sce.Engine[machine.@MACHINE@State, machine.@MACHINE@Event]
+
+func fresh() *engine {
+	policy := machine.New@MACHINE@Policy()
+	started := sce.NewEngine[machine.@MACHINE@State, machine.@MACHINE@Event](&policy)
+	started.Initialize()
+	return started
+}
+
+func send(running *engine, event tf.Event) {
+	running.RaiseExternalByName(event.String(), "")
+	running.Step()
+}
+
+func active(running *engine) []string {
+	names := []string{}
+	for _, state := range running.GetActiveStates() {
+		names = append(names, state.String())
+	}
+	sort.Strings(names)
+	return names
+}
+
+func sorted(ids []string) []string {
+	names := append([]string{}, ids...)
+	sort.Strings(names)
+	return names
+}
+
+func same(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func terminal(running *engine) string {
+	state, ended := running.TerminalState()
+	if !ended {
+		return ""
+	}
+	return state.String()
+}
+
+type step struct {
+	state tf.State
+	path  []tf.Event
+}
+
+func pathTo(target tf.State) ([]tf.Event, bool) {
+	frontier := []step{{tf.Initial, nil}}
+	seen := map[tf.State]bool{tf.Initial: true}
+	for next := 0; next < len(frontier); next++ {
+		current := frontier[next]
+		if current.state == target {
+			return current.path, true
+		}
+		for _, event := range tf.AllEvents {
+			if to, ok := tf.Transition(current.state, event); ok && !seen[to] {
+				seen[to] = true
+				longer := append(append([]tf.Event{}, current.path...), event)
+				frontier = append(frontier, step{to, longer})
+			}
+		}
+	}
+	return nil, false
+}
+
+func main() {
+	bad := 0
+	expect := func(ok bool, what string) {
+		if !ok {
+			fmt.Println("MISMATCH:", what)
+			bad++
+		}
+	}
+	expect(same(active(fresh()), sorted(tf.Configuration(tf.Initial))), "the machine does not start where the function does")
+	pairs := 0
+	for _, state := range tf.AllStates {
+		path, reached := pathTo(state)
+		if !reached {
+			expect(false, state.String()+" is not reached from Initial")
+			continue
+		}
+		for _, event := range tf.AllEvents {
+			running := fresh()
+			for _, taken := range path {
+				send(running, taken)
+			}
+			pairs++
+			pair := "(" + state.String() + ", " + event.String() + ")"
+			if tf.IsFinal(state) {
+				expect(terminal(running) == state.String(), pair+": the path does not end the machine there")
+				continue
+			}
+			expect(same(active(running), sorted(tf.Configuration(state))), pair+": the path leaves the machine elsewhere")
+			discarded := running.DiscardedExternalEvents()
+			send(running, event)
+			to, ok := tf.Transition(state, event)
+			if !ok {
+				expect(running.DiscardedExternalEvents() == discarded+1, pair+": the function refuses it and the machine took it")
+				expect(same(active(running), sorted(tf.Configuration(state))), pair+": the machine moved on an event it discarded")
+				continue
+			}
+			expect(running.DiscardedExternalEvents() == discarded, pair+": the function takes it and the machine discarded it")
+			if tf.IsFinal(to) {
+				expect(terminal(running) == to.String(), pair+": the machine did not end where the function says")
+			} else {
+				expect(same(active(running), sorted(tf.Configuration(to))), pair+": the machine is not where the function says")
+			}
+		}
+	}
+	fmt.Printf("pairs %d\n", pairs)
+	if bad > 0 {
+		os.Exit(1)
+	}
+}
+"#;
+
+/// The generated Go machine, built against the real Go runtime, and the Go
+/// function generated beside it agree on every pair.
+#[test]
+fn the_go_machine_and_the_go_function_agree_on_every_pair() {
+    let Some(go) = toolchain::locate("go") else {
+        toolchain::skipped(
+            "the_go_machine_and_the_go_function_agree_on_every_pair: go not on PATH",
+        );
+        return;
+    };
+    for stem in FIXTURES {
+        let work = scratch(&format!("go_engine_{stem}"));
+        let project = work.join("project");
+        let out = project.join(stem);
+        generate("go", &fixture(stem), &out);
+        let function = produced(
+            &fixture(stem),
+            &header_hash(&read(&function_file("go", &out, stem))),
+        );
+        std::fs::write(
+            project.join("go.mod"),
+            format!(
+                "module example.com/tfequivalence\n\ngo 1.22\n\nrequire github.com/newmassrael/sce-go-runtime v0.0.0\n\n\
+                 replace github.com/newmassrael/sce-go-runtime => {}\n",
+                repo_root().join("backends/go/runtime").to_str().unwrap()
+            ),
+        )
+        .expect("write go.mod");
+        std::fs::write(
+            project.join("main.go"),
+            GO_EQUIVALENCE
+                .replace("@STEM@", stem)
+                .replace("@PACKAGE@", &go_package(stem))
+                .replace("@MACHINE@", &filters::to_pascal_case(stem.to_string())),
+        )
+        .expect("write the program");
+        let mut run = Command::new(&go);
+        run.args(["run", "."])
+            .current_dir(&project)
+            .env("GOFLAGS", "-mod=mod")
+            .env("GOWORK", "off");
+        assert_eq!(
+            run_ok(run, &format!("[{stem}] the Go equivalence program")).trim(),
+            every_pair(&function),
+            "[{stem}] the Go program did not check every pair"
+        );
+    }
+}
+
+/// The C drive. `@M@` is the machine's symbol prefix and `@UM@` the same in
+/// upper case; `@p@` and `@P@` are the function's.
+const C_EQUIVALENCE: &str = r#"#include "@M@_sm.h"
+#include "@M@_transition_function.h"
+
+#include <stdio.h>
+#include <string.h>
+
+typedef @M@_t machine_t;
+
+static int bad;
+
+static void expect_that(int ok, const char *what, const char *state, const char *event) {
+    if (!ok) {
+        printf("MISMATCH: (%s, %s): %s\n", state, event, what);
+        bad++;
+    }
+}
+
+static void deliver(machine_t *sm, @p@_event_t event) {
+    @M@_event_t member;
+    if (!@M@_resolve_event_by_name(@p@_event_name(event), &member)) {
+        return;
+    }
+    @M@_event_with_meta_t carrier;
+    memset(&carrier, 0, sizeof carrier);
+    carrier.event = member;
+    @M@_raise_external(sm, &carrier);
+    @M@_step(sm);
+}
+
+/* Whether the machine's active states are exactly the ids `configuration` names. */
+static int holds_configuration(const machine_t *sm, @p@_configuration_t configuration) {
+    size_t active = 0;
+    for (int s = 0; s < (int)@UM@_STATE_COUNT; ++s) {
+        if (@M@_in_state(sm, (@M@_state_t)s)) {
+            active++;
+        }
+    }
+    if (active != configuration.count) {
+        return 0;
+    }
+    for (size_t k = 0; k < configuration.count; ++k) {
+        @M@_state_t state;
+        if (!@M@_state_from_name(configuration.ids[k], &state) || !@M@_in_state(sm, state)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static const char *terminal_name(const machine_t *sm) {
+    @M@_state_t state;
+    if (!@M@_terminal_state(sm, &state)) {
+        return "";
+    }
+    return @M@_state_name(state);
+}
+
+/* The shortest sequence of events from the initial state to `target`, read
+   from the function alone, written to `path`; its length, or -1. */
+static int shortest_path(@p@_state_t target, @p@_event_t *path) {
+    @p@_state_t frontier[@P@_NUM_STATES];
+    int parent[@P@_NUM_STATES];
+    @p@_event_t via[@P@_NUM_STATES];
+    int seen[@P@_NUM_STATES];
+    const @p@_event_t *events = @p@_all_events();
+    int head = 0;
+    int tail = 0;
+    memset(seen, 0, sizeof seen);
+    frontier[tail] = @P@_INITIAL;
+    parent[tail] = -1;
+    via[tail] = (@p@_event_t)0;
+    tail++;
+    seen[@P@_INITIAL] = 1;
+    while (head < tail) {
+        int at = head++;
+        if (frontier[at] == target) {
+            int length = 0;
+            for (int k = at; parent[k] >= 0; k = parent[k]) {
+                length++;
+            }
+            int position = length;
+            for (int k = at; parent[k] >= 0; k = parent[k]) {
+                path[--position] = via[k];
+            }
+            return length;
+        }
+        for (size_t j = 0; j < (size_t)@P@_NUM_EVENTS; ++j) {
+            @p@_state_t to = frontier[at];
+            if (@p@_transition(frontier[at], events[j], &to) && !seen[to]) {
+                seen[to] = 1;
+                frontier[tail] = to;
+                parent[tail] = at;
+                via[tail] = events[j];
+                tail++;
+            }
+        }
+    }
+    return -1;
+}
+
+int main(void) {
+    const @p@_state_t *states = @p@_all_states();
+    const @p@_event_t *events = @p@_all_events();
+    int pairs = 0;
+    {
+        machine_t sm;
+        @M@_init(&sm);
+        expect_that(holds_configuration(&sm, @p@_configuration(@P@_INITIAL)),
+                    "the machine does not start where the function does", "", "");
+        @M@_destroy(&sm);
+    }
+    for (size_t i = 0; i < (size_t)@P@_NUM_STATES; ++i) {
+        @p@_state_t state = states[i];
+        const char *state_name = @p@_state_name(state);
+        @p@_event_t path[@P@_NUM_STATES];
+        int length = shortest_path(state, path);
+        if (length < 0) {
+            expect_that(0, "the state is not reached from the initial state", state_name, "");
+            continue;
+        }
+        for (size_t j = 0; j < (size_t)@P@_NUM_EVENTS; ++j) {
+            @p@_event_t event = events[j];
+            const char *event_name = @p@_event_name(event);
+            machine_t sm;
+            @M@_init(&sm);
+            for (int k = 0; k < length; ++k) {
+                deliver(&sm, path[k]);
+            }
+            pairs++;
+            if (@p@_is_final(state)) {
+                expect_that(strcmp(terminal_name(&sm), state_name) == 0,
+                            "the path does not end the machine there", state_name, event_name);
+                @M@_destroy(&sm);
+                continue;
+            }
+            expect_that(holds_configuration(&sm, @p@_configuration(state)),
+                        "the path leaves the machine elsewhere", state_name, event_name);
+            uint32_t discarded = @M@_discarded_external_events(&sm);
+            deliver(&sm, event);
+            @p@_state_t to = state;
+            if (!@p@_transition(state, event, &to)) {
+                expect_that(@M@_discarded_external_events(&sm) == discarded + 1u,
+                            "the function refuses it and the machine took it", state_name, event_name);
+                expect_that(holds_configuration(&sm, @p@_configuration(state)),
+                            "the machine moved on an event it discarded", state_name, event_name);
+            } else {
+                expect_that(@M@_discarded_external_events(&sm) == discarded,
+                            "the function takes it and the machine discarded it", state_name, event_name);
+                if (@p@_is_final(to)) {
+                    expect_that(strcmp(terminal_name(&sm), @p@_state_name(to)) == 0,
+                                "the machine did not end where the function says", state_name, event_name);
+                } else {
+                    expect_that(holds_configuration(&sm, @p@_configuration(to)),
+                                "the machine is not where the function says", state_name, event_name);
+                }
+            }
+            @M@_destroy(&sm);
+        }
+    }
+    printf("pairs %d\n", pairs);
+    return bad ? 1 : 0;
+}
+"#;
+
+/// The generated C machine, built with the C runtime's headers, and the C
+/// function generated beside it — both included in one translation unit —
+/// agree on every pair.
+#[test]
+fn the_c_machine_and_the_c_function_agree_on_every_pair() {
+    let Some(gcc) = toolchain::locate_any(&["gcc", "cc"]) else {
+        toolchain::skipped(
+            "the_c_machine_and_the_c_function_agree_on_every_pair: gcc/cc not on PATH",
+        );
+        return;
+    };
+    for stem in FIXTURES {
+        let work = scratch(&format!("c_engine_{stem}"));
+        let out = work.join("out");
+        generate("c11", &fixture(stem), &out);
+        let function = produced(
+            &fixture(stem),
+            &header_hash(&read(&function_file("c11", &out, stem))),
+        );
+        let program = work.join("check.c");
+        std::fs::write(
+            &program,
+            C_EQUIVALENCE
+                .replace("@UM@", &stem.to_uppercase())
+                .replace("@M@", stem)
+                .replace("@p@", &format!("{stem}_transition_function"))
+                .replace("@P@", &c_prefix_upper(stem)),
+        )
+        .expect("write the program");
+        let binary = work.join("check");
+        let mut compile = Command::new(&gcc);
+        compile
+            .args(["-std=c11", "-I"])
+            .arg(repo_root().join("backends/c/runtime/include"))
+            .arg("-I")
+            .arg(&out)
+            .arg(&program)
+            .arg(out.join(format!("{stem}_sm.c")))
+            .arg("-o")
+            .arg(&binary);
+        run_ok(
+            compile,
+            &format!("[{stem}] cc over the machine, the function and the drive"),
+        );
+        assert_eq!(
+            run_ok(
+                Command::new(&binary),
+                &format!("[{stem}] the C equivalence program")
+            )
+            .trim(),
+            every_pair(&function),
+            "[{stem}] the C program did not check every pair"
+        );
+    }
+}
+
+/// The Kotlin runtime jar the Gradle build of `backends/kotlin/runtime` left,
+/// the newest when there are several.
+fn kotlin_runtime_jar() -> Option<PathBuf> {
+    let libs = repo_root().join("backends/kotlin/runtime/build/libs");
+    let mut jars: Vec<PathBuf> = std::fs::read_dir(libs)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            let name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+            name.starts_with("sce-kotlin-runtime-jvm-")
+                && name.ends_with(".jar")
+                && !name.ends_with("-sources.jar")
+        })
+        .collect();
+    jars.sort();
+    jars.pop()
+}
+
+/// The coroutines jar the Kotlin runtime is built against and runs with: the
+/// version `gradle/libs.versions.toml` names, from the Gradle cache the
+/// runtime's own build filled.
+fn kotlin_coroutines_jar() -> Option<PathBuf> {
+    let versions = read(&repo_root().join("gradle/libs.versions.toml"));
+    let version = versions.lines().find_map(|line| {
+        let value = line
+            .trim()
+            .strip_prefix("coroutines")?
+            .trim_start()
+            .strip_prefix('=')?;
+        Some(value.trim().trim_matches('"').to_string())
+    })?;
+    let gradle_home = std::env::var_os("GRADLE_USER_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".gradle")))?;
+    let artifact = gradle_home
+        .join("caches/modules-2/files-2.1/org.jetbrains.kotlinx/kotlinx-coroutines-core-jvm")
+        .join(&version);
+    let name = format!("kotlinx-coroutines-core-jvm-{version}.jar");
+    std::fs::read_dir(artifact)
+        .ok()?
+        .flatten()
+        .map(|entry| entry.path().join(&name))
+        .find(|jar| jar.is_file())
+}
+
+/// The Kotlin drive.
+const KOTLIN_EQUIVALENCE: &str = r#"import @MACHINE_PACKAGE@.@MACHINE@StateMachine
+import @PACKAGE@.ALL_EVENTS
+import @PACKAGE@.ALL_STATES
+import @PACKAGE@.Event
+import @PACKAGE@.INITIAL
+import @PACKAGE@.State
+import @PACKAGE@.configuration
+import @PACKAGE@.isFinal
+import @PACKAGE@.transition
+
+fun fresh(): @MACHINE@StateMachine {
+    val machine = @MACHINE@StateMachine()
+    machine.initialize()
+    return machine
+}
+
+fun send(machine: @MACHINE@StateMachine, event: Event) {
+    machine.sendEventByName(event.scxmlName)
+    machine.tick()
+}
+
+fun active(machine: @MACHINE@StateMachine): Set<String> =
+    machine.activeConfiguration.map { machine.nameOfState(it) }.toSet()
+
+fun terminal(machine: @MACHINE@StateMachine): String =
+    machine.terminalState?.let { machine.nameOfState(it) } ?: ""
+
+fun pathTo(target: State): List<Event>? {
+    val frontier = mutableListOf(Pair(INITIAL, emptyList<Event>()))
+    val seen = mutableSetOf(INITIAL)
+    var index = 0
+    while (index < frontier.size) {
+        val (state, path) = frontier[index]
+        index++
+        if (state == target) return path
+        for (event in ALL_EVENTS) {
+            val to = transition(state, event)
+            if (to != null && seen.add(to)) {
+                frontier.add(Pair(to, path + event))
+            }
+        }
+    }
+    return null
+}
+
+fun main() {
+    val bad = mutableListOf<String>()
+    fun expect(ok: Boolean, what: String) {
+        if (!ok) bad.add(what)
+    }
+    expect(active(fresh()) == configuration(INITIAL).toSet(), "the machine does not start where the function does")
+    var pairs = 0
+    for (state in ALL_STATES) {
+        val path = pathTo(state)
+        if (path == null) {
+            expect(false, state.scxmlName + " is not reached from INITIAL")
+            continue
+        }
+        for (event in ALL_EVENTS) {
+            val machine = fresh()
+            for (taken in path) send(machine, taken)
+            pairs++
+            val pair = "(" + state.scxmlName + ", " + event.scxmlName + ")"
+            if (isFinal(state)) {
+                expect(terminal(machine) == state.scxmlName, pair + ": the path does not end the machine there")
+                continue
+            }
+            expect(active(machine) == configuration(state).toSet(), pair + ": the path leaves the machine elsewhere")
+            val discarded = machine.discardedExternalEvents()
+            send(machine, event)
+            val to = transition(state, event)
+            if (to == null) {
+                expect(machine.discardedExternalEvents() == discarded + 1, pair + ": the function refuses it and the machine took it")
+                expect(active(machine) == configuration(state).toSet(), pair + ": the machine moved on an event it discarded")
+            } else {
+                expect(machine.discardedExternalEvents() == discarded, pair + ": the function takes it and the machine discarded it")
+                if (isFinal(to)) {
+                    expect(terminal(machine) == to.scxmlName, pair + ": the machine did not end where the function says")
+                } else {
+                    expect(active(machine) == configuration(to).toSet(), pair + ": the machine is not where the function says")
+                }
+            }
+        }
+    }
+    for (line in bad) println("MISMATCH: " + line)
+    println("pairs " + pairs)
+    if (bad.isNotEmpty()) System.exit(1)
+}
+"#;
+
+/// The generated Kotlin machine, compiled against the real runtime jar, and
+/// the Kotlin function generated beside it agree on every pair.
+#[test]
+fn the_kotlin_machine_and_the_kotlin_function_agree_on_every_pair() {
+    let what = "the_kotlin_machine_and_the_kotlin_function_agree_on_every_pair";
+    let Some(kotlinc) = toolchain::locate("kotlinc") else {
+        toolchain::skipped(&format!("{what}: kotlinc not on PATH"));
+        return;
+    };
+    let Some(java) = toolchain::locate("java") else {
+        toolchain::skipped(&format!("{what}: java not on PATH"));
+        return;
+    };
+    let Some(runtime_jar) = kotlin_runtime_jar() else {
+        toolchain::skipped(&format!(
+            "{what}: runtime jar missing under backends/kotlin/runtime/build/libs \
+             (run `./gradlew :sce-kotlin-runtime:assemble`)"
+        ));
+        return;
+    };
+    let Some(coroutines_jar) = kotlin_coroutines_jar() else {
+        toolchain::skipped(&format!(
+            "{what}: the kotlinx-coroutines jar the runtime is built against is not in the \
+             Gradle cache (run `./gradlew :sce-kotlin-runtime:assemble`)"
+        ));
+        return;
+    };
+    let classpath = format!(
+        "{}:{}",
+        runtime_jar.to_str().unwrap(),
+        coroutines_jar.to_str().unwrap()
+    );
+    for stem in FIXTURES {
+        let work = scratch(&format!("kotlin_engine_{stem}"));
+        let out = work.join("out");
+        generate("kotlin", &fixture(stem), &out);
+        let function_path = function_file("kotlin", &out, stem);
+        let function = produced(&fixture(stem), &header_hash(&read(&function_path)));
+        let program = work.join("Check.kt");
+        std::fs::write(
+            &program,
+            KOTLIN_EQUIVALENCE
+                .replace(
+                    "@MACHINE_PACKAGE@",
+                    &format!("com.sce.generated.{}", stem.to_lowercase()),
+                )
+                .replace(
+                    "@PACKAGE@",
+                    &format!(
+                        "com.sce.generated.{}_transition_function",
+                        stem.to_lowercase()
+                    ),
+                )
+                .replace("@MACHINE@", &filters::to_pascal_case(stem.to_string())),
+        )
+        .expect("write the program");
+        let jar = work.join("check.jar");
+        let mut compile = Command::new(&kotlinc);
+        compile
+            .arg("-nowarn")
+            .arg("-cp")
+            .arg(&classpath)
+            .arg(machine_file("kotlin", &out, stem))
+            .arg(&function_path)
+            .arg(&program)
+            .arg("-include-runtime")
+            .arg("-d")
+            .arg(&jar);
+        run_ok(
+            compile,
+            &format!("[{stem}] kotlinc over the machine, the function and the drive"),
+        );
+        let mut run = Command::new(&java);
+        run.arg("-cp")
+            .arg(format!("{}:{classpath}", jar.to_str().unwrap()))
+            .arg("CheckKt");
+        assert_eq!(
+            run_ok(run, &format!("[{stem}] the Kotlin equivalence program")).trim(),
+            every_pair(&function),
+            "[{stem}] the Kotlin program did not check every pair"
+        );
+    }
+}
+
+/// The Python drive: the machine's module and the function's, imported from
+/// the directory they were generated into, and the real runtime.
+const PYTHON_EQUIVALENCE: &str = r#"
+import importlib
+import sys
+
+sys.path.insert(0, sys.argv[1])
+sys.path.insert(0, sys.argv[2])
+machine = importlib.import_module(sys.argv[3])
+tf = importlib.import_module(sys.argv[4])
+
+
+def fresh():
+    engine = machine.create_engine()
+    engine.initialize()
+    return engine
+
+
+def send(engine, event):
+    member = engine.policy.get_event_from_name(event.value)
+    if member is not None:
+        engine.send_event(member)
+
+
+def active(engine):
+    return {str(state) for state in engine.active_configuration()}
+
+
+def terminal(engine):
+    state = engine.terminal_state
+    return "" if state is None else str(state)
+
+
+def path_to(target):
+    frontier = [(tf.INITIAL, [])]
+    seen = {tf.INITIAL}
+    index = 0
+    while index < len(frontier):
+        state, path = frontier[index]
+        index += 1
+        if state is target:
+            return path
+        for event in tf.ALL_EVENTS:
+            to = tf.transition(state, event)
+            if to is not None and to not in seen:
+                seen.add(to)
+                frontier.append((to, path + [event]))
+    return None
+
+
+bad = []
+
+
+def expect(ok, what):
+    if not ok:
+        bad.append(what)
+
+
+expect(
+    active(fresh()) == set(tf.configuration(tf.INITIAL)),
+    "the machine does not start where the function does",
+)
+pairs = 0
+for state in tf.ALL_STATES:
+    path = path_to(state)
+    if path is None:
+        expect(False, state.value + " is not reached from INITIAL")
+        continue
+    for event in tf.ALL_EVENTS:
+        engine = fresh()
+        for taken in path:
+            send(engine, taken)
+        pairs += 1
+        pair = "(%s, %s)" % (state.value, event.value)
+        if tf.is_final(state):
+            expect(terminal(engine) == state.value, pair + ": the path does not end the machine there")
+            continue
+        expect(
+            active(engine) == set(tf.configuration(state)),
+            pair + ": the path leaves the machine elsewhere",
+        )
+        discarded = engine.discarded_external_events()
+        send(engine, event)
+        to = tf.transition(state, event)
+        if to is None:
+            expect(
+                engine.discarded_external_events() == discarded + 1,
+                pair + ": the function refuses it and the machine took it",
+            )
+            expect(
+                active(engine) == set(tf.configuration(state)),
+                pair + ": the machine moved on an event it discarded",
+            )
+        else:
+            expect(
+                engine.discarded_external_events() == discarded,
+                pair + ": the function takes it and the machine discarded it",
+            )
+            if tf.is_final(to):
+                expect(terminal(engine) == to.value, pair + ": the machine did not end where the function says")
+            else:
+                expect(
+                    active(engine) == set(tf.configuration(to)),
+                    pair + ": the machine is not where the function says",
+                )
+for line in bad:
+    print("MISMATCH: " + line)
+print("pairs %d" % pairs)
+sys.exit(1 if bad else 0)
+"#;
+
+/// The generated Python machine, run on the real Python runtime, and the
+/// Python function generated beside it agree on every pair.
+#[test]
+fn the_python_machine_and_the_python_function_agree_on_every_pair() {
+    let what = "the_python_machine_and_the_python_function_agree_on_every_pair";
+    let Some(python) = toolchain::locate_any(&["python3", "python"]) else {
+        toolchain::skipped(&format!("{what}: python not on PATH"));
+        return;
+    };
+    // The runtime every generated machine runs on needs the Lua binding, and
+    // a host without it can run no machine at all: a missing tool, not a
+    // function that disagrees.
+    let has_lupa = Command::new(&python)
+        .args(["-I", "-c", "import lupa"])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    if !has_lupa {
+        toolchain::skipped(&format!(
+            "{what}: lupa is not importable (`python3 -m pip install lupa`)"
+        ));
+        return;
+    }
+    for stem in FIXTURES {
+        let work = scratch(&format!("python_engine_{stem}"));
+        let out = work.join("out");
+        generate("python", &fixture(stem), &out);
+        let function = produced(
+            &fixture(stem),
+            &header_hash(&read(&function_file("python", &out, stem))),
+        );
+        let mut run = Command::new(&python);
+        run.args(["-I", "-c", PYTHON_EQUIVALENCE])
+            .arg(&out)
+            .arg(repo_root().join("backends/python/runtime"))
+            .arg(format!("{stem}_sm"))
+            .arg(format!("{stem}_transition_function"));
+        assert_eq!(
+            run_ok(run, &format!("[{stem}] the Python equivalence program")).trim(),
+            every_pair(&function),
+            "[{stem}] the Python program did not check every pair"
+        );
+    }
+}
+
 /// A document that does not declare the function gets no file for it, in any
 /// backend.
 #[test]
