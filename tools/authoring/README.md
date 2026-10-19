@@ -2020,6 +2020,19 @@ the document's words. A conversion of another extraction than the one named is r
 The files `extract` and `convert` write are exactly their canonical text, so the SHA-256 of a file is
 its revision, and the specs folder (`save_extraction`) names it the same way.
 
+**prepare-conversion** and **finish-conversion** are the same route for a conversion that a model makes
+(`conversion_by_model.py`, ADR 0036), and nothing in them reaches a model. `python3 -m sce_author
+prepare-conversion --extraction EXTRACTION.json --out-dir DIR` cuts the blocks that have words into units (at
+a page, and when a unit holds `--characters` of them; a block is never cut) and writes the recipe and the
+blocks of each as `DIR/unit-0001.prompt.txt`. The host takes each prompt to the model it chose and writes
+what came back beside it as `unit-0001.answer.txt`; `finish-conversion --extraction EXTRACTION.json --dir
+DIR --converter-name NAME --out CONVERSION.json` reads the answers (a JSON array of `{"markdown", "cites"}`,
+with a fence or words round it forgiven) and writes the conversion. An answer that cannot be read fails its
+unit, by number and a typed reason (`no-answer`, `not-json`, `empty`, `bad-shape`), and exits 1 so the host asks
+again for that unit; the other units are kept, and the blocks of the one that failed are *missing* to the
+check. The check is `check-conversion`, unchanged: a model that summarised, corrected or changed a number is
+found by the same words-for-words comparison that holds the converter by rule to its own work.
+
 **assemble** makes the text a review ends in (`assembly.py`, ADR 0037): `python3 -m sce_author assemble
 --extraction EXTRACTION.json --conversion CONVERSION.json --decisions DECISIONS.json --out TEXT.md`, where
 `DECISIONS.json` is the list `read_proposal` gives. The conversion is not changed by a review: the latest

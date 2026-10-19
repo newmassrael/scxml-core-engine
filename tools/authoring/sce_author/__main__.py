@@ -26,7 +26,16 @@ from .decisions import cited_by_binding
 from .decisions import hold as hold_decisions
 from .decisions import summary as decisions_summary
 from .assembly import assemble, decisions_from_json, report_of
-from .conversion import Conversion, check_conversion, convert_by_rules
+from .conversion import Conversion, Converter, check_conversion, convert_by_rules
+from .conversion_by_model import (
+    KIND as RECIPE_KIND,
+    RECIPE_VERSION,
+    UNIT_CHARACTERS,
+    assemble_units,
+    parse_answer,
+    prompt_for,
+    split_units,
+)
 from .errors import AuthoringError, IngestError
 from .extraction import Extraction
 from .extractors import DEFAULT as DEFAULT_EXTRACTORS
@@ -164,6 +173,95 @@ def cmd_check_conversion(args) -> int:
         for why, block_id in report.queue():
             print(f"  ask: {why} {block_id}")
     return 0 if report.complete else 1
+
+
+def _unit_file(directory: pathlib.Path, n: int, part: str) -> pathlib.Path:
+    return directory / f"unit-{n:04d}.{part}.txt"
+
+
+def cmd_prepare_conversion(args) -> int:
+    """Cut an extraction into the units a model is asked to convert, and write what it is told for each.
+
+    One prompt file for each unit (`unit-0001.prompt.txt`), and a list of which blocks each unit holds,
+    which only `finish-conversion` reads. A host takes each prompt to the model it chose, writes the
+    answer beside it (`unit-0001.answer.txt`), and runs `finish-conversion`. Nothing here reaches a model.
+    """
+    extraction = _read_extraction(args.extraction)
+    units = split_units(extraction, args.characters)
+    if not units:
+        raise IngestError("the extraction has no block with words in it, so there is nothing to ask a model")
+    out = pathlib.Path(args.out_dir)
+    try:
+        out.mkdir(parents=True, exist_ok=True)
+        for unit in units:
+            _unit_file(out, unit.n, "prompt").write_text(prompt_for(extraction, unit), encoding="utf-8")
+        listing = {
+            "v": 1,
+            "recipe": f"{RECIPE_KIND} {RECIPE_VERSION}",
+            "extraction": extraction.revision(),
+            "units": [{"n": unit.n, "blocks": list(unit.blocks)} for unit in units],
+        }
+        (out / "units.json").write_text(json.dumps(listing, sort_keys=True), encoding="utf-8")
+    except OSError as exc:
+        raise IngestError(f"{out}: cannot be written ({exc})") from exc
+    print(f"units: {len(units)} unit(s) of {sum(len(u.blocks) for u in units)} block(s), recipe {RECIPE_KIND} {RECIPE_VERSION} -> {out}")
+    return 0
+
+
+def cmd_finish_conversion(args) -> int:
+    """Take the model's answers to the units, and write the conversion they make.
+
+    A unit whose answer cannot be read is named, by its number and a typed reason, and the others are
+    kept: the blocks of the one that failed are *missing* to the check, which is what they are. Exit 1
+    when any unit failed, so a host asks that model again for it; nothing of the document's words is
+    printed.
+    """
+    extraction = _read_extraction(args.extraction)
+    directory = pathlib.Path(args.dir)
+    try:
+        listing = json.loads((directory / "units.json").read_text(encoding="utf-8"))
+        wanted = [int(unit["n"]) for unit in listing["units"]]
+        named = listing["extraction"]
+    except (OSError, UnicodeDecodeError, ValueError, KeyError, TypeError) as exc:
+        raise IngestError(f"{directory}: holds no units.json that `prepare-conversion` wrote ({exc})") from exc
+    if named != extraction.revision():
+        raise IngestError(
+            f"{directory} was prepared for the extraction {str(named)[:12]}, not for this one "
+            f"({extraction.revision()[:12]}): answers about other blocks are not put together"
+        )
+    answers: dict[int, object] = {}
+    for n in wanted:
+        path = _unit_file(directory, n, "answer")
+        text = None
+        if path.is_file():
+            try:
+                text = path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError) as exc:
+                raise IngestError(f"{path}: not readable ({exc})") from exc
+        answers[n] = parse_answer(n, text)
+    made, failed = assemble_units(
+        extraction, answers, Converter("model", args.converter_name, args.converter_version)  # type: ignore[arg-type]
+    )
+    try:
+        pathlib.Path(args.out).write_text(made.to_json(), encoding="utf-8")
+    except OSError as exc:
+        raise IngestError(f"{args.out}: cannot be written ({exc})") from exc
+    report = {
+        "units": len(wanted),
+        "converted": [n for n in wanted if n not in {f.n for f in failed}],
+        "failed": [{"n": f.n, "code": f.code} for f in failed],
+        "revision": made.revision(),
+    }
+    if args.json:
+        print(json.dumps(report, sort_keys=True))
+    else:
+        print(
+            f"conversion: {len(made.blocks)} block(s) from {len(report['converted'])} of {len(wanted)} unit(s) "
+            f"by {made.converter.name} {made.converter.version}, revision {made.revision()} -> {args.out}"
+        )
+        for f in failed:
+            print(f"  unit {f.n} failed: {f.code}")
+    return 1 if failed else 0
 
 
 def cmd_assemble(args) -> int:
@@ -682,6 +780,24 @@ def main(argv=None) -> int:
     chk.add_argument("--conversion", required=True, help="the conversion (JSON) to hold to it")
     chk.add_argument("--json", action="store_true", help="print the counts and ids as JSON")
     chk.set_defaults(fn=cmd_check_conversion)
+
+    prep = sub.add_parser(
+        "prepare-conversion", help="cut an extraction into the units a model converts, and write what it is told")
+    prep.add_argument("--extraction", required=True, help="the extraction (JSON) `extract` wrote")
+    prep.add_argument("--out-dir", required=True, help="where to write one prompt for each unit")
+    prep.add_argument("--characters", type=int, default=UNIT_CHARACTERS,
+                      help="how many characters of words a unit holds (a model with a small context wants fewer)")
+    prep.set_defaults(fn=cmd_prepare_conversion)
+
+    fin = sub.add_parser(
+        "finish-conversion", help="put a model's answers to the units together as a conversion")
+    fin.add_argument("--extraction", required=True, help="the extraction the units were cut from")
+    fin.add_argument("--dir", required=True, help="the folder `prepare-conversion` wrote, with an answer beside each prompt")
+    fin.add_argument("--converter-name", required=True, help="what to call the model that answered")
+    fin.add_argument("--converter-version", default="1", help="its version, as it reports one")
+    fin.add_argument("--out", required=True, help="where to write the conversion (JSON)")
+    fin.add_argument("--json", action="store_true", help="print which units were converted and which failed, as JSON")
+    fin.set_defaults(fn=cmd_finish_conversion)
 
     asm = sub.add_parser(
         "assemble", help="apply the owner's decisions to a conversion: the text a review ends in")

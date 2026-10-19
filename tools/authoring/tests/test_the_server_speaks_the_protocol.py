@@ -222,7 +222,12 @@ class TheServerSpeaksTheProtocol(unittest.TestCase):
         # a count of its own conversion is SCE's to make and not the maker's to ask for and report.
         # `assemble` is the same host's: it applies an owner's decisions to a conversion and writes the
         # text the owner accepts (docs/adr/0037), which is the owner's act and not a run's.
-        cli_only = {"revise-gate", "views", "extract", "convert", "check-conversion", "assemble"}
+        # `prepare-conversion` and `finish-conversion` are the host's too: they cut an extraction into what a
+        # model is asked and put its answers together, and the host is what reaches the model.
+        cli_only = {
+            "revise-gate", "views", "extract", "convert", "check-conversion", "assemble",
+            "prepare-conversion", "finish-conversion",
+        }
         self.assertLessEqual(cli_only, commands, "a command-line-only name that is not a command")
         self.assertEqual(commands - cli_only, {t["name"] for t in mcp.TOOLS} - mcp_only)
 
