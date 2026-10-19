@@ -54,6 +54,7 @@ from .revision_gate import hold as hold_revision
 from .revision_gate import judge as judge_revision
 from .scaffold import KINDS
 from .scaffold import write as write_scaffold
+from .scope import OUTLINES, Scope, outline as outline_of, scope_of
 from .verify import product_findings_of_binding
 from .verify import verify as run_verify
 
@@ -133,13 +134,60 @@ def _read_conversion(path: str) -> Conversion:
         raise IngestError(f"{path}: not readable as a conversion ({exc})") from exc
 
 
+def _read_scope(path: str | None) -> Scope | None:
+    """The scope the owner chose, or `None` for the whole extraction when none was named."""
+    if path is None:
+        return None
+    try:
+        return Scope.from_json(pathlib.Path(path).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError) as exc:
+        raise IngestError(f"{path}: not readable as a scope ({exc})") from exc
+
+
 def _summary(report) -> str:
     said = report.to_dict()
+    left = f", {said['out_of_scope']} outside the chosen part" if said["out_of_scope"] else ""
     return (
         f"{'complete' if said['complete'] else 'not complete'}: {said['matched']} matched, "
         f"{len(said['check'])} to check, {len(said['not_in_original'])} not in the original, "
-        f"{len(said['missing'])} missing, {len(said['recognised'])} read from an image"
+        f"{len(said['missing'])} missing, {len(said['recognised'])} read from an image{left}"
     )
+
+
+def cmd_outline(args) -> int:
+    """The parts of an extraction the owner can choose between, each with an id, and what it holds.
+
+    `--json` prints the outline for a host; the text form is for a person at a terminal. Titles are
+    the document's own words, so they are printed here and not in any log a host keeps.
+    """
+    extraction = _read_extraction(args.extraction)
+    way, sections = outline_of(extraction, args.by)
+    if args.json:
+        print(json.dumps(
+            {"v": 1, "extraction": extraction.revision(), "by": way, "sections": [s.to_dict() for s in sections]},
+            sort_keys=True, ensure_ascii=False))
+        return 0
+    print(f"outline by {way}: {len(sections)} section(s)")
+    for section in sections:
+        pages = "" if section.page_first is None else (
+            f" p.{section.page_first}" if section.page_first == section.page_last
+            else f" p.{section.page_first}-{section.page_last}")
+        title = section.title or f"({section.kind})"
+        print(f"  {section.id}{'  ' * (section.level - 1)} {title}  [{section.blocks} block(s), "
+              f"{section.characters} characters{pages}]")
+    return 0
+
+
+def cmd_make_scope(args) -> int:
+    """Write the scope of the sections the owner chose, each with the sections under it."""
+    extraction = _read_extraction(args.extraction)
+    made = scope_of(extraction, list(args.section), args.by)
+    try:
+        pathlib.Path(args.out).write_text(made.to_json(), encoding="utf-8")
+    except OSError as exc:
+        raise IngestError(f"{args.out}: cannot be written ({exc})") from exc
+    print(f"scope: {len(made.blocks)} of {len(extraction.blocks)} block(s), revision {made.revision()} -> {args.out}")
+    return 0
 
 
 def cmd_convert(args) -> int:
@@ -149,8 +197,9 @@ def cmd_convert(args) -> int:
     ever wrote something its own check refuses is a failure here and not a conversion handed on.
     """
     extraction = _read_extraction(args.extraction)
-    made = convert_by_rules(extraction)
-    report = check_conversion(extraction, made)
+    scope = _read_scope(args.scope)
+    made = convert_by_rules(extraction, scope)
+    report = check_conversion(extraction, made, scope)
     out = pathlib.Path(args.out)
     # Exactly the canonical text, as `extract` writes one: the file's hash is the conversion's revision.
     out.write_text(made.to_json(), encoding="utf-8")
@@ -164,7 +213,9 @@ def cmd_convert(args) -> int:
 
 def cmd_check_conversion(args) -> int:
     """SCE's count of a conversion against the extraction it names. The exit code says whether it is complete."""
-    report = check_conversion(_read_extraction(args.extraction), _read_conversion(args.conversion))
+    report = check_conversion(
+        _read_extraction(args.extraction), _read_conversion(args.conversion), _read_scope(args.scope)
+    )
     if args.json:
         # Ids and counts only: the blocks hold the document's own words.
         print(json.dumps(report.to_dict(), sort_keys=True))
@@ -187,7 +238,8 @@ def cmd_prepare_conversion(args) -> int:
     answer beside it (`unit-0001.answer.txt`), and runs `finish-conversion`. Nothing here reaches a model.
     """
     extraction = _read_extraction(args.extraction)
-    units = split_units(extraction, args.characters)
+    scope = _read_scope(args.scope)
+    units = split_units(extraction, args.characters, scope)
     if not units:
         raise IngestError("the extraction has no block with words in it, so there is nothing to ask a model")
     out = pathlib.Path(args.out_dir)
@@ -199,6 +251,7 @@ def cmd_prepare_conversion(args) -> int:
             "v": 1,
             "recipe": f"{RECIPE_KIND} {RECIPE_VERSION}",
             "extraction": extraction.revision(),
+            "scope": "" if scope is None else scope.revision(),
             "units": [{"n": unit.n, "blocks": list(unit.blocks)} for unit in units],
         }
         (out / "units.json").write_text(json.dumps(listing, sort_keys=True), encoding="utf-8")
@@ -772,13 +825,32 @@ def main(argv=None) -> int:
     conv.add_argument("--extraction", required=True, help="the extraction (JSON) `extract` wrote")
     conv.add_argument("--out", required=True, help="where to write the conversion (JSON)")
     conv.add_argument("--markdown", help="also write the Markdown itself here")
+    conv.add_argument("--scope", help="the scope (JSON) `make-scope` wrote: convert and check only that part")
     conv.set_defaults(fn=cmd_convert)
+
+    out = sub.add_parser(
+        "outline", help="list the parts of an extraction an owner can choose between (no pack, no model)")
+    out.add_argument("--extraction", required=True, help="the extraction (JSON) `extract` wrote")
+    out.add_argument("--by", choices=OUTLINES,
+                     help="divide by headings, pages or not at all (default: headings, else pages, else whole)")
+    out.add_argument("--json", action="store_true", help="print the outline as JSON for a host")
+    out.set_defaults(fn=cmd_outline)
+
+    mks = sub.add_parser(
+        "make-scope", help="write the scope of the sections an owner chose, each with the sections under it")
+    mks.add_argument("--extraction", required=True, help="the extraction (JSON) `extract` wrote")
+    mks.add_argument("--section", action="append", required=True,
+                     help="the id of a section `outline` listed (repeat for each one chosen)")
+    mks.add_argument("--by", choices=OUTLINES, help="the division `outline` was asked for, when it was asked")
+    mks.add_argument("--out", required=True, help="where to write the scope (JSON)")
+    mks.set_defaults(fn=cmd_make_scope)
 
     chk = sub.add_parser(
         "check-conversion", help="count what a conversion matched, left out and invented, against its original")
     chk.add_argument("--extraction", required=True, help="the extraction the conversion names")
     chk.add_argument("--conversion", required=True, help="the conversion (JSON) to hold to it")
     chk.add_argument("--json", action="store_true", help="print the counts and ids as JSON")
+    chk.add_argument("--scope", help="the scope (JSON) the import was made under: count only that part")
     chk.set_defaults(fn=cmd_check_conversion)
 
     prep = sub.add_parser(
@@ -787,6 +859,7 @@ def main(argv=None) -> int:
     prep.add_argument("--out-dir", required=True, help="where to write one prompt for each unit")
     prep.add_argument("--characters", type=int, default=UNIT_CHARACTERS,
                       help="how many characters of words a unit holds (a model with a small context wants fewer)")
+    prep.add_argument("--scope", help="the scope (JSON) `make-scope` wrote: only that part is given to a model")
     prep.set_defaults(fn=cmd_prepare_conversion)
 
     fin = sub.add_parser(

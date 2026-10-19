@@ -2033,6 +2033,22 @@ again for that unit; the other units are kept, and the blocks of the one that fa
 check. The check is `check-conversion`, unchanged: a model that summarised, corrected or changed a number is
 found by the same words-for-words comparison that holds the converter by rule to its own work.
 
+**outline** and **make-scope** are how an owner imports a part of a document (`scope.py`, ADR 0039).
+`python3 -m sce_author outline --extraction EXTRACTION.json [--json]` lists the parts the owner can choose
+between, each with an id (`s1`, `s2`, ...), its title, its level, how many blocks and characters it holds and
+the pages it spans: the headings of the document, nested by level, with a first part for what comes before the
+first heading; for a document with no heading its pages; for one with neither, the whole of it (`--by
+headings|pages|whole` asks for one). `make-scope --extraction EXTRACTION.json --section s2 [--section s4]
+--out SCOPE.json` writes the scope: the ids of the blocks, in the document's order, each chosen part bringing
+the parts under it. A host shows the outline and sends ids, and never works out which blocks a part holds.
+`--scope SCOPE.json` is then given to `prepare-conversion` (only those blocks are ever in a prompt), to
+`convert`, and to `check-conversion`, which counts only those blocks: a block outside the scope is not
+*missing*, it is counted as `out_of_scope` and not asked about, and a conversion block that cites one is *to
+check*, since what was not given to its maker cannot have been read. The scope is the owner's and is never a
+field of the conversion, whose maker would then decide what counts as missing; the report names the scope it
+was made under (`scope`, a revision, empty for the whole document), and a scope of every block is the same
+input as none. A scope of another extraction is refused.
+
 **assemble** makes the text a review ends in (`assembly.py`, ADR 0037): `python3 -m sce_author assemble
 --extraction EXTRACTION.json --conversion CONVERSION.json --decisions DECISIONS.json --out TEXT.md`, where
 `DECISIONS.json` is the list `read_proposal` gives. The conversion is not changed by a review: the latest

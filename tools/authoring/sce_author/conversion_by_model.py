@@ -31,9 +31,10 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
-from .conversion import Conversion, Converter, MarkdownBlock, plain_of_block
+from .conversion import Conversion, Converter, MarkdownBlock, in_scope, plain_of_block
 from .errors import IngestError
 from .extraction import Block, Extraction
+from .scope import Scope
 
 KIND = "convert-blocks"
 RECIPE_VERSION = "1"
@@ -69,10 +70,17 @@ def _size(block: Block) -> int:
     return len(block.text) + sum(len(cell) for row in (block.cells or ()) for cell in row)
 
 
-def split_units(extraction: Extraction, characters: int = UNIT_CHARACTERS) -> list[Unit]:
-    """The extraction's blocks with words, in order, cut into units at a page and at a size."""
+def split_units(
+    extraction: Extraction, characters: int = UNIT_CHARACTERS, scope: Scope | None = None
+) -> list[Unit]:
+    """The extraction's blocks with words, in order, cut into units at a page and at a size.
+
+    Only the blocks of `scope` are cut into units, when there is one: what the owner did not choose is
+    never in a prompt (ADR 0039).
+    """
     if characters < 1:
         raise IngestError("a unit has to hold at least one character")
+    scope = in_scope(extraction, scope)
     units: list[Unit] = []
     held: list[str] = []
     held_size = 0
@@ -85,7 +93,7 @@ def split_units(extraction: Extraction, characters: int = UNIT_CHARACTERS) -> li
         held, held_size = [], 0
 
     for block in extraction.blocks:
-        if not plain_of_block(block):
+        if not plain_of_block(block) or (scope is not None and not scope.covers(block.id)):
             continue
         block_page = block.place.page
         if held and block_page is not None and page is not None and block_page != page:

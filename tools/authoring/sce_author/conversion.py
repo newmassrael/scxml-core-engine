@@ -36,10 +36,13 @@ import json
 import re
 import unicodedata
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .errors import IngestError
 from .extraction import Block, Extraction
+
+if TYPE_CHECKING:
+    from .scope import Scope
 
 SCHEMA_VERSION = 1
 SCHEMA_STATUS = "pre-release"
@@ -274,6 +277,10 @@ class Report:
     # What the count was made of, each by revision: a proposal is kept only when its parts name each other.
     extraction: str = ""
     conversion: str = ""
+    # The scope the count was made under, by revision ("" for the whole extraction), and how many blocks with
+    # words lay outside it: they are not asked about, and a count that hid them would read as a whole one.
+    scope: str = ""
+    out_of_scope: int = 0
 
     def ids(self, status: str) -> list[str]:
         return [verdict.id for verdict in self.verdicts if verdict.status == status]
@@ -301,6 +308,8 @@ class Report:
         return {
             "extraction": self.extraction,
             "conversion": self.conversion,
+            "scope": self.scope,
+            "out_of_scope": self.out_of_scope,
             "complete": self.complete,
             "matched": self.matched,
             "check": self.ids(CHECK),
@@ -311,18 +320,35 @@ class Report:
         }
 
 
-def check_conversion(extraction: Extraction, conversion: Conversion) -> Report:
-    """Hold `conversion` to `extraction` block by block.
+def in_scope(extraction: Extraction, scope: "Scope | None") -> "Scope | None":
+    """The scope a count is made under: `None` for the whole extraction, which a scope of every block is.
+
+    One input has one spelling, so that a proposal made for everything is the same input whether the owner
+    chose everything or chose nothing. A scope of another extraction is refused, as a conversion is.
+    """
+    if scope is None:
+        return None
+    scope.held_by(extraction)
+    return None if len(scope.blocks) == len(extraction.blocks) else scope
+
+
+def check_conversion(extraction: Extraction, conversion: Conversion, scope: "Scope | None" = None) -> Report:
+    """Hold `conversion` to `extraction` block by block, or to the part of it `scope` names.
 
     It is refused, and no report is made, when the conversion is of another extraction: a count of what
-    matched against the wrong original says nothing, and reads like a count.
+    matched against the wrong original says nothing, and reads like a count. The scope is the owner's and is
+    given here, never read from the conversion, whose maker would then decide what counts as missing
+    (ADR 0026, 0039). A block outside it is not missing; it is counted as out of scope. A conversion block
+    that cites a block outside it is to check, since what was not given to its maker cannot have been read.
     """
     if conversion.extraction != extraction.revision():
         raise IngestError(
             f"the conversion is of the extraction {conversion.extraction[:12]}, not of this one "
             f"({extraction.revision()[:12]}): nothing is counted against another original"
         )
+    scope = in_scope(extraction, scope)
     by_id = {block.id: block for block in extraction.blocks}
+    chosen = by_id if scope is None else {block_id: by_id[block_id] for block_id in scope.blocks}
     cited: set[str] = set()
     verdicts: list[BlockVerdict] = []
     for block in conversion.blocks:
@@ -335,6 +361,16 @@ def check_conversion(extraction: Extraction, conversion: Conversion) -> Report:
                 BlockVerdict(block.id, CHECK, f"it cites {', '.join(unknown)}, which the original does not have")
             )
             continue
+        outside = [cite for cite in block.cites if cite not in chosen]
+        if outside:
+            verdicts.append(
+                BlockVerdict(
+                    block.id,
+                    CHECK,
+                    f"it cites {', '.join(outside)}, which is outside the part of the original chosen for this import",
+                )
+            )
+            continue
         cited.update(block.cites)
         wanted = _normal(" ".join(plain_of_block(by_id[cite]) for cite in block.cites))
         said = plain_of_markdown(block.markdown)
@@ -343,17 +379,19 @@ def check_conversion(extraction: Extraction, conversion: Conversion) -> Report:
         else:
             verdicts.append(BlockVerdict(block.id, CHECK, "its words are not the words of the blocks it cites"))
     # A block with no words (an empty cell row) has nothing to leave out.
-    missing = tuple(
-        block.id for block in extraction.blocks if block.id not in cited and plain_of_block(block)
+    missing = tuple(block.id for block in chosen.values() if block.id not in cited and plain_of_block(block))
+    recognised = tuple(
+        block_id for block_id, block in chosen.items() if block_id in cited and block.how_read != "text-layer"
     )
-    recognised = tuple(block.id for block in extraction.blocks if block.id in cited and block.how_read != "text-layer")
     return Report(
         tuple(verdicts),
         missing,
         recognised,
-        carried_text=sum(1 for b in extraction.blocks if plain_of_block(b)),
+        carried_text=sum(1 for b in chosen.values() if plain_of_block(b)),
         extraction=extraction.revision(),
         conversion=conversion.revision(),
+        scope="" if scope is None else scope.revision(),
+        out_of_scope=sum(1 for b in extraction.blocks if b.id not in chosen and plain_of_block(b)),
     )
 
 
@@ -416,16 +454,18 @@ RULES_NAME = "blocks-to-markdown"
 RULES_VERSION = "1"
 
 
-def convert_by_rules(extraction: Extraction) -> Conversion:
-    """The conversion of an original that carries its text: each block written as Markdown, and cited.
+def convert_by_rules(extraction: Extraction, scope: "Scope | None" = None) -> Conversion:
+    """The conversion of an original that carries its text, or of the part of it `scope` names: each block
+    written as Markdown, and cited.
 
     A block with no words is not written (an empty cell row has nothing to say), and so is not cited and
     is not missing either. Every other block is, one for one, which is why the check finds this
     conversion complete.
     """
+    scope = in_scope(extraction, scope)
     blocks: list[MarkdownBlock] = []
     for block in extraction.blocks:
-        if not plain_of_block(block):
+        if not plain_of_block(block) or (scope is not None and not scope.covers(block.id)):
             continue
         blocks.append(
             MarkdownBlock(

@@ -224,9 +224,11 @@ class TheServerSpeaksTheProtocol(unittest.TestCase):
         # text the owner accepts (docs/adr/0037), which is the owner's act and not a run's.
         # `prepare-conversion` and `finish-conversion` are the host's too: they cut an extraction into what a
         # model is asked and put its answers together, and the host is what reaches the model.
+        # `outline` and `make-scope` are the owner's choosing of a part of a document (docs/adr/0039): a
+        # host shows the sections and sends their ids, and a model is never asked which part to import.
         cli_only = {
             "revise-gate", "views", "extract", "convert", "check-conversion", "assemble",
-            "prepare-conversion", "finish-conversion",
+            "prepare-conversion", "finish-conversion", "outline", "make-scope",
         }
         self.assertLessEqual(cli_only, commands, "a command-line-only name that is not a command")
         self.assertEqual(commands - cli_only, {t["name"] for t in mcp.TOOLS} - mcp_only)
