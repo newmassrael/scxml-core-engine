@@ -422,6 +422,14 @@ class TheRulesConverterIsTheChecksControl(unittest.TestCase):
         self.assertEqual(len(made.blocks), 1)
         self.assertTrue(check_conversion(extraction, made).complete)
 
+    def test_a_document_with_no_words_in_it_has_nothing_to_convert_and_is_refused(self):
+        for blocks in ((), (block("b1", "table", "|  |", cells=(("",),)),)):
+            with self.subTest(blocks=len(blocks)):
+                with self.assertRaisesRegex(IngestError, "nothing to convert"):
+                    convert_by_rules(Extraction("plain", "1", "s.md", blocks))
+        # The nearest document that has words is converted.
+        self.assertEqual(len(convert_by_rules(Extraction("plain", "1", "s.md", (block("b1", text="Words."),))).blocks), 1)
+
     def test_a_table_it_cannot_write_from_its_cells_is_refused_and_not_guessed_at(self):
         extraction = Extraction("plain", "1", "s.md", (block("b1", "table", "| a |"),))
 

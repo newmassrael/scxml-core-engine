@@ -2010,7 +2010,9 @@ whatever its text says, because recognition is never exact.
 `python3 -m sce_author convert --extraction EXTRACTION.json --out CONVERSION.json` writes each block as
 Markdown, cites it, runs the check on what it made, and exits 1 if the check does not find it complete
 (it is the check's control: a converter whose own work the check refuses is a defect and not a
-conversion handed on). `--markdown FILE` also writes the Markdown itself. **check-conversion** holds any
+conversion handed on). An extraction with no block that has words in it (an empty file, or pages that
+are pictures) is refused, since a conversion that says nothing would be found complete and proposed as
+an empty spec. `--markdown FILE` also writes the Markdown itself. **check-conversion** holds any
 conversion (a model's too) to its original: `python3 -m sce_author check-conversion --extraction
 EXTRACTION.json --conversion CONVERSION.json` prints the counts and what a person is asked about, in the
 order they are asked, and exits 1 unless it is complete; `--json` prints the counts and the ids and never

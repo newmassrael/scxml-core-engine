@@ -434,4 +434,12 @@ def convert_by_rules(extraction: Extraction) -> Conversion:
                 cites=(block.id,),
             )
         )
+    if not blocks:
+        # Not a conversion that says nothing and is found complete: a document with no words in it (an
+        # empty file, or pages that are pictures) has nothing to convert by rule, and a proposal made of
+        # it would be an empty spec waiting to be accepted. Reading pictures is a reader's work.
+        raise IngestError(
+            f"the extraction has no block with words in it, so there is nothing to convert by rule "
+            f"({len(extraction.blocks)} block(s), {len(extraction.not_carried)} thing(s) not carried)"
+        )
     return Conversion(Converter("rules", RULES_NAME, RULES_VERSION), extraction.revision(), tuple(blocks))
