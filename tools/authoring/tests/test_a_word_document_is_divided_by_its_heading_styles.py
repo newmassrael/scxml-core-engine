@@ -132,7 +132,8 @@ class TheStylesOfAWordFileMakeItsHeadings(Folder):
         # a localized id (two syllables and a digit), a two-syllable title and a short sentence.
         local_id = chr(0xC81C) + chr(0xBAA9) + "1"
         title = chr(0xB7A8) + chr(0xD504)
-        sentence = chr(0xCF1C) + chr(0xC838) + " " + chr(0xC788) + chr(0xB2E4) + "."        styles = style(local_id, "heading 1")
+        sentence = chr(0xCF1C) + chr(0xC838) + " " + chr(0xC788) + chr(0xB2E4) + "."
+        styles = style(local_id, "heading 1")
 
         found = self.blocks(paragraph(title, local_id) + paragraph(sentence), styles)
 
