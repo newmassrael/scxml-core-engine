@@ -3157,9 +3157,19 @@ fn no_document_the_conformance_cmake_route_reads_declares_the_function() {
         "found {} conformance documents under resources/; the scan is broken, not the tree",
         documents.len()
     );
+    // Read as bytes: the corpus holds documents that are not UTF-8 on purpose
+    // (test513.txml), and the attribute's name is ASCII in any encoding the
+    // corpus uses.
+    let needle = b"sce:transition-function";
     let declaring: Vec<&String> = documents
         .iter()
-        .filter(|path| read(&repo_root().join(path)).contains("sce:transition-function"))
+        .filter(|path| {
+            let at = repo_root().join(path);
+            std::fs::read(&at)
+                .unwrap_or_else(|e| panic!("read {}: {e}", at.display()))
+                .windows(needle.len())
+                .any(|window| window == needle)
+        })
         .collect();
     assert!(
         declaring.is_empty(),
