@@ -2828,6 +2828,10 @@
               },
               "type": "object"
             },
+            "transition_function_declared": {
+              "description": "`<scxml sce:transition-function=\"emit\">`: the document is also generated as a pure function of (leaf state, event), in a file beside the machine that depends on no SCE runtime (`docs/SCE_TRANSITION_FUNCTION.md`, `TransitionFunction`). The declaration holds the document to the subset such a function can represent (SCE Accepted Subset §2.21). A fact of the document and not of the build, so it is inside the source set the machine's `source-hash` covers. Absent, nothing is emitted and nothing is refused, and the generated files are byte-identical to what they were before the declaration existed.",
+              "type": "boolean"
+            },
             "transition_table_declared": {
               "description": "`<scxml sce:transition-table=\"emit\">`: the generated machine carries its own transitions as constant data (`docs/SCE_TRANSITION_TABLE.md`, [`EmittedTransitionTable`]). A fact of the document and not of the build, so the request is inside the source set the machine's `source-hash` covers. Absent, nothing is emitted, and the generated files are byte-identical to what they were before the declaration existed.",
               "type": "boolean"

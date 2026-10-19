@@ -279,6 +279,12 @@
        Subset §2.20). `xs:string` for the reason `sce:interface` is: the parser
        refuses any other value with its own diagnostic. -->
   <xs:attribute name="transition-table" type="xs:string"/>
+  <!-- `sce:transition-function="emit"` on a statechart's `<scxml>`: the
+       document is also generated as a pure function of (leaf state, event)
+       beside the machine (SCE Accepted Subset §2.21). `xs:string` for the
+       reason `sce:interface` is: the parser refuses any other value with its
+       own diagnostic. -->
+  <xs:attribute name="transition-function" type="xs:string"/>
   <xs:attribute name="direction" type="sce:directionType"/>
 
   <!-- NL→IR Item C1 Path A — `sce:underlying-type` on a

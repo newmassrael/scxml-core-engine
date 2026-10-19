@@ -2592,6 +2592,36 @@ impl SCXMLParser {
             }
         };
 
+        // `<scxml sce:transition-function="emit">` declares that the document
+        // is also generated as a pure function of (leaf state, event), in a
+        // file beside the machine that depends on no SCE runtime
+        // (`docs/SCE_TRANSITION_FUNCTION.md`). A fact of the document for the
+        // reason `sce:transition-table` is one, and with one value for the
+        // same reason: the other is the attribute's absence. What the
+        // declaration admits is judged after analysis, by
+        // `crate::scxml_transition_function`.
+        let transition_function_declared = match crate::sce_attr::read(&root, "transition-function")
+        {
+            None => false,
+            Some("emit") => true,
+            Some(raw) => {
+                return Err(crate::forge::error::Located::new(
+                    crate::forge::error::ValidationError::AttributeRuleViolated {
+                        element: "scxml".to_string(),
+                        attr: "sce:transition-function".to_string(),
+                        value: raw.to_string(),
+                        rule: "\"emit\", or absent for a machine generated without a \
+                                   transition function"
+                            .to_string(),
+                    }
+                    .into(),
+                    diag_label,
+                    None,
+                    None,
+                ));
+            }
+        };
+
         // SCE Protocol-Synthesis RFC §synth-5-O: anchor the model at the
         // `<scxml>` root element's post-preprocessor position. Codegen
         // templates lower this to the top-level SCE-MAP marker above
@@ -2659,6 +2689,7 @@ impl SCXMLParser {
             event_queue_capacity,
             interface_closed,
             transition_table_declared,
+            transition_function_declared,
             source_location: root_source_location,
             forge_imports,
             kind_basis,
@@ -11559,5 +11590,45 @@ mod tests {
         assert_eq!(model.parallel_regions["p"], ["zr", "np", "ar"]);
         assert_eq!(model.parallel_regions["np"], ["n2", "n1"]);
         assert!(model.states["z1"].children.is_empty());
+    }
+
+    /// `sce:transition-function` has one value, and its absence is the other
+    /// answer: `emit` declares the function, nothing declares none, and any
+    /// other spelling is refused with the attribute's name rather than read
+    /// as a way of saying no.
+    #[test]
+    fn a_transition_function_is_declared_by_emit_alone() {
+        use crate::forge::diagnostic::ToDiagnostics;
+        let document = |root: &str| {
+            format!(
+                r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="a" datamodel="null"{root}>
+  <state id="a"><transition event="go" target="b"/></state>
+  <final id="b"/>
+</scxml>"#
+            )
+        };
+        let parse = |root: &str| SCXMLParser::new().parse_string(&document(root), "tf_declared");
+
+        let declared = parse(r#" sce:transition-function="emit""#).expect("emit is the value");
+        assert!(declared.transition_function_declared);
+        let undeclared = parse("").expect("absence is the other answer");
+        assert!(!undeclared.transition_function_declared);
+
+        for refused in ["yes", "", "Emit"] {
+            let err = parse(&format!(r#" sce:transition-function="{refused}""#))
+                .expect_err("only emit declares the function");
+            let records = err.error.to_diagnostics();
+            assert_eq!(
+                records[0].code.as_str(),
+                "validation/attribute-rule-violated",
+                "{refused:?}"
+            );
+            assert!(
+                records[0].message.contains("sce:transition-function"),
+                "the refusal names the attribute: {}",
+                records[0].message
+            );
+        }
     }
 }

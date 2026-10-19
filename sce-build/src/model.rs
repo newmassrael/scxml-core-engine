@@ -3411,6 +3411,19 @@ pub struct SCXMLModel {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub transition_table_declared: bool,
 
+    /// `<scxml sce:transition-function="emit">`: the document is also
+    /// generated as a pure function of (leaf state, event), in a file beside
+    /// the machine that depends on no SCE runtime
+    /// (`docs/SCE_TRANSITION_FUNCTION.md`, `TransitionFunction`). The
+    /// declaration holds the document to the subset such a function can
+    /// represent (SCE Accepted Subset §2.21). A fact of the document and not
+    /// of the build, so it is inside the source set the machine's
+    /// `source-hash` covers. Absent, nothing is emitted and nothing is
+    /// refused, and the generated files are byte-identical to what they were
+    /// before the declaration existed.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub transition_function_declared: bool,
+
     pub states: BTreeMap<String, State>,
     pub events: BTreeSet<String>,
     /// Derived external-ingress event set: the event descriptors that
