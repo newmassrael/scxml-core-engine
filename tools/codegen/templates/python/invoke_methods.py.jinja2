@@ -216,7 +216,7 @@
    acts of its own — asked here, where the invocation starts, and not for a
    candidate the value did not name. A candidate that declares none is built as
    it was. #}
-{% set duty_stems = inv.candidates | selectattr("child_states_duties") | map(attribute="stem") | list %}
+{% set duty_stems = inv.candidates | selectattr("child_declares_host_duties") | map(attribute="stem") | list %}
 {% if duty_stems %}
 {# docs/adr/0038: a candidate that states a duty is built through the check that
    refuses a host that only simulates, so it is handed the statement the caller
@@ -255,7 +255,7 @@
 {# The host the child performs its acts through leads its policy's parameters, as
    the machine's own does, and is asked of the parent's host each time the
    invocation starts (docs/adr/0005, decision 6). #}
-{% if inv.child_states_duties %}
+{% if inv.child_declares_host_duties %}
                 _child_policy = _child_module_{{ inv.invoke_id | to_python_const }}.Policy({{ inv.child_host_call }}, accept_simulated_host=self._accept_simulated_host)
 {% else %}
                 _child_policy = _child_module_{{ inv.invoke_id | to_python_const }}.Policy({{ inv.child_host_call }})

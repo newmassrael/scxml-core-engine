@@ -5312,7 +5312,7 @@ mod child_duties {
         let model = parse(r#"<invoke type="scxml" id="w" src="static_host_duty.scxml"/>"#);
         let invoke = scxml_invoke(&model);
         assert!(invoke.common.child_declares_host_acts);
-        assert!(invoke.common.child_states_duties);
+        assert!(invoke.common.child_declares_host_duties);
         assert!(model.any_child_states_duties());
     }
 
@@ -5321,7 +5321,7 @@ mod child_duties {
         let model = parse(r#"<invoke type="scxml" id="w" src="quiet.scxml"/>"#);
         let invoke = scxml_invoke(&model);
         assert!(invoke.common.child_declares_host_acts);
-        assert!(!invoke.common.child_states_duties);
+        assert!(!invoke.common.child_declares_host_duties);
         assert!(!model.any_child_states_duties());
     }
 
@@ -5338,7 +5338,7 @@ mod child_duties {
         let marked: Vec<(&str, bool)> = hybrid
             .candidates
             .iter()
-            .map(|c| (c.stem.as_str(), c.child_states_duties))
+            .map(|c| (c.stem.as_str(), c.child_declares_host_duties))
             .collect();
         assert_eq!(
             marked,
