@@ -205,7 +205,7 @@ class LinesBecomeBlocksByTheirOwnGeometry(Folder):
 # Helvetica's advance widths, in thousandths of the type size (its published metrics): a producer that
 # places each glyph puts the next one this far on, which is what makes the gaps between letters real ones.
 _HELVETICA = {
-    " ": 278, ".": 278, ",": 278, "-": 333, "'": 191,
+    " ": 278, ".": 278, ",": 278, "-": 333, "'": 191, ";": 278, ":": 278, "(": 333, ")": 333,
     **{d: 556 for d in "0123456789"},
     "a": 556, "b": 556, "c": 500, "d": 556, "e": 556, "f": 278, "g": 556, "h": 556, "i": 222, "j": 222,
     "k": 500, "l": 222, "m": 833, "n": 556, "o": 556, "p": 556, "q": 556, "r": 333, "s": 500, "t": 278,
@@ -226,6 +226,34 @@ def glyphs(x: float, y: float, size: float, text: str) -> list[tuple[float, floa
             out.append((round(x, 2), y, size, character))
         x += size * _HELVETICA[character] / 1000
     return out
+
+
+@needs_pack
+class ACharacterIsOnALineByWhereItIsSet(unittest.TestCase):
+    """Measured on a browser's PDF of a real specification: every character of the line `... SCXML, or the ...`
+    is set at one baseline, 270.2, and the comma's box (268.7 to 271.3) reaches only 1.2 points into the
+    letters' (270.1 to 276.2), which by overlap of boxes is not the same line."""
+
+    def line(self, **kwargs):
+        from sce_author.extractors_pdf import _Run
+
+        return _Run(
+            left=158.2, bottom=270.1, right=182.9, top=276.2, size=16.0, baseline=270.2, text=list("SCXML"), **kwargs
+        )
+
+    def test_the_comma_set_on_the_baseline_continues_the_line_though_its_box_hangs_below_it(self):
+        self.assertTrue(self.line().continued_by(left=183.5, baseline=270.2, size=16.0))
+
+    def test_a_character_of_the_next_line_does_not(self):
+        self.assertFalse(self.line().continued_by(left=183.5, baseline=270.2 - 18.0, size=16.0))
+
+    def test_a_raised_glyph_a_part_of_a_size_off_does_and_one_a_whole_size_off_does_not(self):
+        self.assertTrue(self.line().continued_by(left=183.5, baseline=270.2 + 4.0, size=11.0))
+        self.assertFalse(self.line().continued_by(left=183.5, baseline=270.2 + 16.0, size=16.0))
+
+    def test_a_column_across_a_gutter_and_a_character_back_over_the_line_do_not(self):
+        self.assertFalse(self.line().continued_by(left=182.9 + 5 * 16.0, baseline=270.2, size=16.0))
+        self.assertFalse(self.line().continued_by(left=100.0, baseline=270.2, size=16.0))
 
 
 @needs_pack
@@ -265,6 +293,29 @@ class ALineDrawnAGlyphAtATimeIsOneLine(Folder):
         done = builtin().extract(self.pdf([{"lines": lines}]))
 
         self.assertEqual(sorted(b.text for b in done.blocks), ["Left column text.", "Right column text."])
+
+    def test_a_comma_that_hangs_below_the_baseline_is_on_the_line_it_ends_a_word_of(self):
+        # A glyph is on a line by where it is set (its baseline), not by how much of its box overlaps the
+        # others: a comma's box lies below the line, and a full stop's sits on it.
+        lines = glyphs(72, 700, 11, "The lamp, which is on, turns off; it is fine.")
+
+        done = builtin().extract(self.pdf([{"lines": lines}]))
+
+        self.assertEqual([b.text for b in done.blocks], ["The lamp, which is on, turns off; it is fine."])
+
+    def test_a_raised_or_lowered_glyph_is_on_the_line_and_a_line_below_is_not(self):
+        raised = glyphs(72, 700, 11, "Water is H") + glyphs(126, 703, 7, "2") + glyphs(130, 700, 11, "O.")
+        below = glyphs(72, 686, 11, "Next line.")
+
+        done = builtin().extract(self.pdf([{"lines": raised + below}]))
+
+        # The raised glyph is on the first line, not a line of its own, and the line under it is the same
+        # paragraph as it always was: one block that says both, in order.
+        self.assertEqual(len(done.blocks), 1)
+        text = done.blocks[0].text
+        self.assertTrue(text.startswith("Water is H"), text)
+        self.assertLess(text.index("2"), text.index("O."))
+        self.assertTrue(text.endswith("Next line."), text)
 
     def test_a_box_covers_the_whole_line_and_not_its_first_glyph(self):
         done = builtin().extract(self.pdf([{"lines": glyphs(72, 700, 11, "The lamp is on.")}]))

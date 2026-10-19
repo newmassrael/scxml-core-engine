@@ -24,6 +24,7 @@ memory and a time limit; these are the checks that need no jail to make.
 
 from __future__ import annotations
 
+import ctypes
 import pathlib
 import re
 from dataclasses import dataclass
@@ -63,10 +64,11 @@ MARGIN_SHIFT = 1.5
 # How different two lines' heights may be, as a share of the smaller, and still be one paragraph.
 SIZE_SHIFT = 0.25
 MOST_LISTED = 12
-# Two pieces of drawing are one line when this share of the shorter one's height is shared by both, and when
-# they are no further apart than this many heights (a word's space is about a third of one; a column gutter is
-# several), or no more overlapping than this many (kerning and a letter set over its neighbour).
-SAME_LINE = 0.5
+# Two characters are on one line when their baselines are no further apart than this share of the larger type
+# size (a raised or lowered glyph is set a part of a size off), and when they are no further apart along it
+# than this many sizes (a word's space is about a third of one; a column gutter is several), or no more
+# overlapping than KERN of one (kerning and a letter set over its neighbour).
+SAME_BASELINE = 0.4
 GLUE = 0.8
 # After a space the document drew, whitespace of its own making is allowed to be wider: several spaces in a
 # run are one space character to the library, with the rest of the width left as a gap.
@@ -109,19 +111,22 @@ class _Run:
     right: float
     top: float
     size: float
+    baseline: float
     text: list[str]
     space: bool = False
     # A space the document drew (it has a width) was the last thing on the line: whitespace the producer put
     # in the run itself, which is not a gap between two pieces of drawing.
     spaced: bool = False
 
-    def continued_by(self, left: float, bottom: float, right: float, top: float, size: float) -> bool:
-        """Whether a character with this box and type size is the next of this line: it sits on the same
-        baseline, reads on in the direction of the text, and has no more before it than a word's space."""
-        height = min(top - bottom, self.top - self.bottom)
-        if height <= 0:
-            return False
-        if min(top, self.top) - max(bottom, self.bottom) < SAME_LINE * height:
+    def continued_by(self, left: float, baseline: float, size: float) -> bool:
+        """Whether a character set at `baseline` in this type size is the next of this line: it is on the same
+        baseline, reads on in the direction of the text, and has no more before it than a word's space.
+
+        A character is on a line by where it is set and not by how much of its box overlaps the others': a
+        comma's box lies below the line, a quotation mark's above it, and neither is on another line. A raised
+        or lowered glyph (a power, an index) is set a part of a type size off, and is still the line's.
+        """
+        if abs(baseline - self.baseline) > SAME_BASELINE * max(size, self.size):
             return False
         # A character that starts further back than a letter's kerning begins another row or a column to the
         # left, and one further on than a space is another column: both are another line.
@@ -174,10 +179,12 @@ def _page_lines(textpage, page_height: float, raw) -> list[Line]:
         size = raw.FPDFText_GetFontSize(textpage.raw, index)
         # A character whose size cannot be read is measured by its box, which is only near.
         size = size if size > 0 else top - bottom
-        if run is not None and not run.continued_by(left, bottom, right, top, size):
+        origin_x, origin_y = ctypes.c_double(), ctypes.c_double()
+        raw.FPDFText_GetCharOrigin(textpage.raw, index, ctypes.byref(origin_x), ctypes.byref(origin_y))
+        if run is not None and not run.continued_by(left, origin_y.value, size):
             close()
         if run is None:
-            run = _Run(left, bottom, right, top, size, [character])
+            run = _Run(left, bottom, right, top, size, origin_y.value, [character])
             continue
         # A word's space is the library's to say: it puts a space character where the drawing leaves a gap, and
         # a threshold of this reader's own would put one after every narrow glyph (the full stop of `3.1.1`).
