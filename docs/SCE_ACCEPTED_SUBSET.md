@@ -7223,8 +7223,12 @@ that admits:
 - Any `datamodel` value, since nothing is evaluated; and the annotations that
   change no behaviour (`sce:req`, `sce:provenance`, `sce:transition-table`).
 
-What it refuses, each where it is written and every one in the same run, by
-`check`, `generate` and the library entry points alike:
+What it refuses, each where it is written and every one in the same run, with
+the same codes and the same locations whichever route is asked: `check` and
+`generate` on one document, `check` and `orchestrate` on a document set, and
+`generate-w3c` for each fixture it is given. The library entry points, the
+in-memory ones included, refuse the same documents and reject on the first of
+these records, since their result carries one error:
 
 - As `scxml/transition-function-rule`, with the rule the construct breaks in
   `expected`:

@@ -3770,27 +3770,21 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
     file_documents(document, &mut scxml, &mut forge, error_format);
     let scxml_paths: &[String] = &scxml;
     let forge_paths: &[String] = &forge;
+    let scxml_path_bufs: Vec<PathBuf> = scxml_paths.iter().map(PathBuf::from).collect();
+    let forge_path_bufs: Vec<PathBuf> = forge_paths.iter().map(PathBuf::from).collect();
     // The refusals `check` gives a set under the same flags, by the same
     // functions and in the same order, before anything is compiled or
-    // written: a design refused here has produced nothing.
-    let mut profile_facts = None;
-    if strict_unresolved || lint || profile.is_some() {
-        let scxml_owned: Vec<PathBuf> = scxml_paths.iter().map(PathBuf::from).collect();
-        let forge_owned: Vec<PathBuf> = forge_paths.iter().map(PathBuf::from).collect();
-        if strict_unresolved {
-            strict_set_unresolved(&scxml_owned, &forge_owned, error_format);
-        }
-        if let Some(profile) = &profile {
-            profile_facts = Some(judge_set_under_profile(
-                profile,
-                &scxml_owned,
-                &forge_owned,
-                error_format,
-            ));
-        }
-        if lint {
-            lint_set_statecharts(&scxml_owned, error_format);
-        }
+    // written: a design refused here has produced nothing. The declared
+    // transition function is among them whatever the flags, as it is there.
+    if strict_unresolved {
+        strict_set_unresolved(&scxml_path_bufs, &forge_path_bufs, error_format);
+    }
+    let profile_facts = profile.as_ref().map(|profile| {
+        judge_set_under_profile(profile, &scxml_path_bufs, &forge_path_bufs, error_format)
+    });
+    refuse_set_transition_functions(&scxml_path_bufs, error_format);
+    if lint {
+        lint_set_statecharts(&scxml_path_bufs, error_format);
     }
     let language: &str = &language_arg;
     let output_dir: &str = &output_dir_arg;
@@ -3816,10 +3810,6 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
     // Resolved at the first C++ file there is to write — see `CppFormatterSlot`.
     let cpp_formatter = CppFormatterSlot::new(lang, format_style.as_deref(), no_format);
 
-    let scxml_path_bufs: Vec<std::path::PathBuf> =
-        scxml_paths.iter().map(std::path::PathBuf::from).collect();
-    let forge_path_bufs: Vec<std::path::PathBuf> =
-        forge_paths.iter().map(std::path::PathBuf::from).collect();
     let scxml_refs: Vec<&Path> = scxml_path_bufs.iter().map(|p| p.as_path()).collect();
     let forge_refs: Vec<&Path> = forge_path_bufs.iter().map(|p| p.as_path()).collect();
 
@@ -4563,6 +4553,52 @@ fn accumulate_host_requirements(
     report.needs_host_processor = Some(needs_host_processor);
 }
 
+/// Every refusal `sce:transition-function="emit"` earns across a document
+/// set (SCE Accepted Subset §2.21), all reported in one run before anything
+/// is compiled; nothing for a set whose statecharts declare nothing.
+///
+/// Not a lint, so it runs whatever the flags, at the point the
+/// single-document routes ask it: after what the document leaves open and
+/// the profile, before the lints. Both set routes, `check` and
+/// `orchestrate`, call this one function, and it asks the one producer the
+/// single-document routes ask, [`sce_build::transition_function_findings`].
+///
+/// The compile that follows judges the declaration too, through the
+/// library's `compile_model`, but its result carries one error, so it
+/// rejects on the first record alone. Without this pass the same document
+/// told `check` every refusal and `check --scxml` one of them, and
+/// `orchestrate` one, so an author paid a run per repair on exactly the
+/// routes a build uses. The model asked is the one `compile_model` judges:
+/// parsed without include directories, analyzed under the same label, past
+/// `analyzer::can_generate_static`. So the codes, the locations and the
+/// anchors are the ones the single-document routes report.
+///
+/// A statechart that does not parse, or that `can_generate_static` refuses,
+/// is skipped here: the compile reads the same file and refuses it with its
+/// own record, and the single-document routes never reach the declaration of
+/// such a document either.
+fn refuse_set_transition_functions(scxml_paths: &[PathBuf], error_format: ErrorFormat) {
+    let mut findings = Vec::new();
+    for path in scxml_paths {
+        let label = path.to_string_lossy();
+        let mut parser = SCXMLParser::new();
+        let Ok(mut model) = parser.parse_file(&label) else {
+            continue;
+        };
+        // The producer answers nothing for such a document; asked first so
+        // a set of statecharts that declare nothing is not analyzed twice.
+        if !model.transition_function_declared {
+            continue;
+        }
+        analyzer::analyze(&mut model, &label);
+        if analyzer::can_generate_static(&model, &label).is_err() {
+            continue;
+        }
+        findings.extend(sce_build::transition_function_findings(&model, &label));
+    }
+    error_format.emit_all_and_exit(&findings, "");
+}
+
 /// `--lint` over a document set: every statechart of it, linted as
 /// `generate --lint` lints one — the design-time findings, then the
 /// expressions the ECMAScript frontend refused — and the first statechart
@@ -4682,6 +4718,9 @@ fn cmd_check_document_set(args: CheckArgs, error_format: ErrorFormat) {
     let profile_facts = profile
         .as_ref()
         .map(|profile| judge_set_under_profile(profile, &scxml_paths, &forge_paths, error_format));
+    // Not a lint: refused whatever the flags, every record at once, where
+    // the single-document route refuses it.
+    refuse_set_transition_functions(&scxml_paths, error_format);
     if lint {
         lint_set_statecharts(&scxml_paths, error_format);
     }
@@ -7516,6 +7555,31 @@ fn generate_w3c_unified(
                 {
                     skipped.push((test_id.clone(), "dynamic features".to_string()));
                     continue;
+                }
+
+                // Not a lint: a fixture declaring `sce:transition-function`
+                // that holds what a pure function cannot is refused here as
+                // `generate` refuses it, by the same producer, every record
+                // on the JSON stream and the fixture failed rather than
+                // generated. A rejected document (`document_rejected`) is
+                // written as its stub before the declaration is read, as
+                // `generate` writes it.
+                if !model.document_rejected {
+                    let refused = sce_build::transition_function_findings(&model, scxml_str);
+                    if let Some(first) = refused.first() {
+                        for err in &refused {
+                            emit_batch_failure_ndjson(err);
+                        }
+                        failed.push((
+                            test_id.clone(),
+                            format!(
+                                "{} refusal(s) of sce:transition-function, the first: {}",
+                                refused.len(),
+                                first.error
+                            ),
+                        ));
+                        continue;
+                    }
                 }
 
                 resolve_source_path(&mut model, &scxml_path);

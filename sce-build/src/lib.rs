@@ -702,10 +702,14 @@ pub fn unhandled_declaration_findings(
 /// it asserts nothing about intent. The declaration says the document is a
 /// pure function of (leaf state, event), and a construct that contradicts it
 /// makes the declaration false whether or not anyone asked for design advice.
-/// So `check`, `generate` and the library entry points all ask it, at the same
+/// So every route that judges or generates a statechart asks it, at the same
 /// point — after [`analyzer::can_generate_static`], before the lints — and a
 /// document they accept is one whose function [`model::TransitionFunction::of`]
-/// computes.
+/// computes: `check` and `generate` on one document, `check` and
+/// `orchestrate` on a set (one pass over the set before it is compiled),
+/// `generate-w3c` per fixture, and the library entry points, in-memory ones
+/// included, which reject on the first record because their result carries
+/// one error.
 ///
 /// Every refusal, not the first: each is a separate repair. The states no
 /// path reaches are among them ([`scxml_reachability::findings`]): opt-in for

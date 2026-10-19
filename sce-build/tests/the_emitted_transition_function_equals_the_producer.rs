@@ -31,6 +31,8 @@ use std::process::{Command, Output};
 
 use regex::Regex;
 use sce_build::filters;
+use sce_build::forge::diagnostic::ToDiagnostics;
+use sce_build::generator::Language;
 use sce_build::model::TransitionFunction;
 use sce_build::parser::SCXMLParser;
 use sce_build::toolchain;
@@ -783,15 +785,9 @@ fn every_other_backend_refuses_the_declaration_by_name() {
     assert_eq!(verdicts.len(), 1 + REFUSING.len(), "{manifest}");
 }
 
-/// Every refusal the declaration brings comes in one run, and `check` and
-/// `generate` report the same records.
-#[test]
-fn check_and_generate_report_every_refusal_at_once() {
-    let work = scratch("impure");
-    let doc = work.join("impure.scxml");
-    std::fs::write(
-        &doc,
-        r#"<?xml version="1.0" encoding="UTF-8"?>
+/// A document that declares the function and holds what it refuses, several
+/// of some: the document every route below is asked about.
+const IMPURE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" name="impure" initial="idle" datamodel="null"
        sce:transition-function="emit">
@@ -812,56 +808,273 @@ fn check_and_generate_report_every_refusal_at_once() {
     <final id="done"/>
   </state>
 </scxml>
-"#,
-    )
-    .expect("write the document");
+"#;
+
+/// The code of every record [`IMPURE`] earns, sorted.
+const IMPURE_CODES: [&str; 13] = [
+    "scxml/dead-transition",
+    "scxml/transition-function-dead-end",
+    "scxml/transition-function-dead-end",
+    "scxml/transition-function-rule",
+    "scxml/transition-function-rule",
+    "scxml/transition-function-rule",
+    "scxml/transition-function-rule",
+    "scxml/transition-function-rule",
+    "scxml/transition-function-rule",
+    "scxml/transition-function-rule",
+    "scxml/transition-function-unmatched-descriptor",
+    "scxml/unreachable-state",
+    "scxml/unreachable-state",
+];
+
+/// [`IMPURE`], written into `dir` as `file`.
+fn write_impure(dir: &Path, file: &str) -> PathBuf {
+    let doc = dir.join(file);
+    std::fs::write(&doc, IMPURE).expect("write the document");
+    doc
+}
+
+/// Every record a `--error-format=json` run that must fail wrote, in the
+/// order written, each line whole: two routes that agree on the lines agree
+/// on the code, the location and the anchors alike.
+fn refused_records(args: &[&str]) -> Vec<String> {
+    let refused = codegen(args);
+    assert!(
+        !refused.status.success(),
+        "{args:?}: an impure declaration passed"
+    );
+    String::from_utf8_lossy(&refused.stderr)
+        .lines()
+        .filter(|line| line.starts_with('{'))
+        .map(str::to_string)
+        .collect()
+}
+
+fn sorted(mut records: Vec<String>) -> Vec<String> {
+    records.sort();
+    records
+}
+
+/// The sorted codes of `records`.
+fn codes_of(records: &[String]) -> Vec<String> {
+    let mut codes = wire_codes(&records.join("\n"));
+    codes.sort();
+    codes
+}
+
+/// What `check` on the one document at `doc` reports, in the order written:
+/// what every other route is held to. Held itself to every refusal first, so
+/// a route that agrees with it agrees about all of them.
+fn checked_records(doc: &str) -> Vec<String> {
+    let records = refused_records(&["--error-format=json", "check", doc, "-l", "rust"]);
+    assert_eq!(
+        codes_of(&records),
+        IMPURE_CODES,
+        "check no longer reports every refusal of the document"
+    );
+    records
+}
+
+/// Every refusal the declaration brings comes in one run, and `check` and
+/// `generate` report the same records.
+#[test]
+fn check_and_generate_report_every_refusal_at_once() {
+    let work = scratch("impure");
+    let doc = write_impure(&work, "impure.scxml");
     let doc_str = doc.to_str().unwrap();
     let out = work.join("out");
-    let mut reported: Vec<Vec<String>> = Vec::new();
-    for args in [
-        vec!["--error-format=json", "check", doc_str, "-l", "rust"],
-        vec![
-            "--error-format=json",
-            "generate",
-            doc_str,
-            "-l",
-            "rust",
-            "-o",
-            out.to_str().unwrap(),
-        ],
-    ] {
-        let refused = codegen(&args);
-        assert!(
-            !refused.status.success(),
-            "{args:?}: an impure declaration passed"
-        );
-        let mut codes = wire_codes(&String::from_utf8_lossy(&refused.stderr));
-        codes.sort();
-        reported.push(codes);
-    }
-    assert_eq!(reported[0], reported[1], "check and generate disagree");
+    let checked = checked_records(doc_str);
+    let generated = refused_records(&[
+        "--error-format=json",
+        "generate",
+        doc_str,
+        "-l",
+        "rust",
+        "-o",
+        out.to_str().unwrap(),
+    ]);
     assert_eq!(
-        reported[0],
-        [
-            "scxml/dead-transition",
-            "scxml/transition-function-dead-end",
-            "scxml/transition-function-dead-end",
-            "scxml/transition-function-rule",
-            "scxml/transition-function-rule",
-            "scxml/transition-function-rule",
-            "scxml/transition-function-rule",
-            "scxml/transition-function-rule",
-            "scxml/transition-function-rule",
-            "scxml/transition-function-rule",
-            "scxml/transition-function-unmatched-descriptor",
-            "scxml/unreachable-state",
-            "scxml/unreachable-state",
-        ]
+        sorted(generated),
+        sorted(checked),
+        "check and generate disagree"
     );
     assert!(
         !out.join("impure_sm.rs").exists(),
         "a refused document generated a machine"
     );
+}
+
+/// `check` over a document set reports what `check` reports for the one
+/// document: every record, the same records. The set is compiled by the
+/// library, whose result carries one error, so without the pass over the set
+/// the route reported the first refusal alone.
+#[test]
+fn a_document_set_check_reports_every_refusal_check_reports() {
+    let work = scratch("impure_set");
+    let doc = write_impure(&work, "impure.scxml");
+    let doc_str = doc.to_str().unwrap();
+    let checked = checked_records(doc_str);
+    let set = refused_records(&[
+        "--error-format=json",
+        "check",
+        "--scxml",
+        doc_str,
+        "-l",
+        "rust",
+    ]);
+    assert_eq!(
+        sorted(set),
+        sorted(checked),
+        "check on a set and check on the document disagree"
+    );
+}
+
+/// `orchestrate` reports what `check` reports, and writes nothing for a
+/// refused document.
+#[test]
+fn orchestrate_reports_every_refusal_check_reports() {
+    let work = scratch("impure_orchestrate");
+    let doc = write_impure(&work, "impure.scxml");
+    let doc_str = doc.to_str().unwrap();
+    let out = work.join("out");
+    let checked = checked_records(doc_str);
+    let orchestrated = refused_records(&[
+        "--error-format=json",
+        "orchestrate",
+        "--scxml",
+        doc_str,
+        "-l",
+        "rust",
+        "-o",
+        out.to_str().unwrap(),
+    ]);
+    assert_eq!(
+        sorted(orchestrated),
+        sorted(checked),
+        "orchestrate and check disagree"
+    );
+    assert!(
+        !out.join("impure_sm.rs").exists(),
+        "orchestrate generated a machine for a refused document"
+    );
+}
+
+/// `generate-w3c` reports, for a fixture that declares the function and does
+/// not keep it, every record `check` reports for the same file, and fails the
+/// fixture rather than generating it.
+#[test]
+fn generate_w3c_reports_every_refusal_check_reports() {
+    let work = scratch("impure_w3c");
+    let resources = work.join("resources");
+    let fixture_dir = resources.join("900");
+    std::fs::create_dir_all(&fixture_dir).expect("create the fixture directory");
+    let doc = write_impure(&fixture_dir, "test900.scxml");
+
+    // The committed registry, holding this one fixture: its harnesses and
+    // version are what the loader asks of a registry.
+    let committed = std::fs::read_to_string(
+        repo_root().join(sce_build::w3c_registry::W3C_REGISTRY_RELATIVE_PATH),
+    )
+    .expect("read the committed registry");
+    let mut registry: serde_json::Value =
+        serde_json::from_str(&committed).expect("the registry is JSON");
+    registry["fixtures"] = serde_json::json!([{
+        "id": "900",
+        "harness": "simple",
+        "summary": "a fixture declaring a transition function it does not keep"
+    }]);
+    let registry_path = work.join("fixtures.json");
+    std::fs::write(
+        &registry_path,
+        serde_json::to_string_pretty(&registry).expect("serialize the registry"),
+    )
+    .expect("write the registry");
+
+    let out = work.join("out");
+    let checked = checked_records(doc.to_str().unwrap());
+    let records = refused_records(&[
+        "--error-format=json",
+        "generate-w3c",
+        "-l",
+        "rust",
+        "--registry",
+        registry_path.to_str().unwrap(),
+        "--resources",
+        resources.to_str().unwrap(),
+        "--output-dir",
+        out.to_str().unwrap(),
+    ]);
+    // The run ends on the batch's own record, naming the failed fixture.
+    let (batch, findings): (Vec<String>, Vec<String>) = records
+        .into_iter()
+        .partition(|line| wire_codes(line) == ["cli/scxml-generate"]);
+    assert_eq!(batch.len(), 1, "{batch:?}");
+    assert!(
+        batch[0].contains("900"),
+        "the batch record does not name the fixture: {}",
+        batch[0]
+    );
+    assert_eq!(
+        sorted(findings),
+        sorted(checked),
+        "generate-w3c and check disagree"
+    );
+    assert!(
+        !out.join("backends/rust/tests/src/generated/test900")
+            .exists(),
+        "generate-w3c generated a refused fixture"
+    );
+}
+
+/// The library's file entry point rejects a declaring document on the record
+/// `check` lists first, whole: its result carries one error, and it is the
+/// first of the records the routes above report.
+#[test]
+fn the_library_file_entry_rejects_on_the_first_record() {
+    let work = scratch("impure_library_file");
+    let doc = write_impure(&work, "impure.scxml");
+    let doc_str = doc.to_str().unwrap();
+    let first: serde_json::Value =
+        serde_json::from_str(&checked_records(doc_str)[0]).expect("a record is JSON");
+    let refused = match sce_build::compile_scxml_lang_typed(
+        doc_str,
+        &sce_build::find_template_dir_for(Language::Rust),
+        Language::Rust,
+    ) {
+        Ok(_) => panic!("the library compiled an impure declaration"),
+        Err(err) => err,
+    };
+    let record = serde_json::to_value(&refused.to_diagnostics()[0]).expect("a record serializes");
+    assert_eq!(record, first, "the library and check disagree");
+}
+
+/// The in-memory entry point, which the WASM build calls, rejects a declaring
+/// document on the refusal `check` lists first. Compared by what the record
+/// says rather than whole, since a document handed over as a string is
+/// located under the name it was given, not under a path.
+#[test]
+fn the_library_in_memory_entry_rejects_on_the_first_record() {
+    let work = scratch("impure_library_memory");
+    let doc = write_impure(&work, "impure.scxml");
+    let first: serde_json::Value =
+        serde_json::from_str(&checked_records(doc.to_str().unwrap())[0]).expect("a record is JSON");
+    let templates = sce_build::template_registry::embedded_templates_for(Language::Rust);
+    let refused = match sce_build::compile_from_string_lang_typed(
+        IMPURE,
+        "impure",
+        &templates,
+        Language::Rust,
+    ) {
+        Ok(_) => panic!("the in-memory entry compiled an impure declaration"),
+        Err(err) => err,
+    };
+    let record = serde_json::to_value(&refused.to_diagnostics()[0]).expect("a record serializes");
+    for field in ["code", "actual", "expected"] {
+        assert_eq!(
+            record[field], first[field],
+            "the in-memory entry and check disagree on `{field}`"
+        );
+    }
 }
 
 /// The template reads the function the producer built, and nothing else: no
