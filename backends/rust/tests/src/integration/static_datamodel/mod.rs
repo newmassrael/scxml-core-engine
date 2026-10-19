@@ -69,6 +69,7 @@ pub mod static_foreach_sm;
 pub mod static_history_sm;
 pub mod static_host_call_sm;
 pub mod static_host_clock_sm;
+pub mod static_host_duty_sm;
 pub mod static_host_http_sm;
 pub mod static_host_kv_sm;
 pub mod static_host_notify_sm;
