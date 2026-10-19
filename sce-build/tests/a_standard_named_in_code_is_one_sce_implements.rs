@@ -236,6 +236,7 @@ const IMPLEMENTED: &[Implemented] = &[
             "backends/rust/mesh/src/zenoh.rs",
             "backends/rust/mesh/src/inbox.rs",
             "backends/rust/mesh/src/conformance.rs",
+            "backends/rust/mesh/src/reconnect.rs",
             "backends/rust/mesh/src/peers.rs",
             "backends/rust/mesh/src/lib.rs",
             "backends/rust/mesh/examples/zenoh_probe.rs",
@@ -255,11 +256,13 @@ const IMPLEMENTED: &[Implemented] = &[
               replaceable; zenoh.rs is the upstream client that performs \
               them and opens the session that carries a machine's envelopes \
               and readiness; conformance.rs is the kit any client is held \
-              to; peers.rs and the mesh_router templates carry the peer \
+              to; reconnect.rs opens that binding again on a new session \
+              each time the router session ends; peers.rs and the \
+              mesh_router templates carry the peer \
               table link a deploy.yaml's `zenoh_inbox` binding becomes; \
               lib.rs declares those modules behind their features; and \
               examples/zenoh_probe.rs measures the round trip over that \
-              same session. Seven paths, not the crate: the rest of it \
+              same session. Eight paths, not the crate: the rest of it \
               speaks WebSocket.",
     },
     Implemented {
