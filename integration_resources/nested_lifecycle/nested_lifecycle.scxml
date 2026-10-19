@@ -19,7 +19,10 @@
   `working` handles `resume` as well as `held` does so that the two siblings
   agree on the events they share (scxml/non-exhaustive-event-handling).
 
-  Held by sce-build/tests/the_emitted_transition_function_equals_the_producer.rs.
+  Held by sce-build/tests/the_emitted_transition_function_equals_the_producer.rs,
+  and, as an integration stem, in every channel by a driver that walks the
+  machine to every state by the function's shortest path, sends every event
+  there, and compares the engine with the function generated beside it.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"

@@ -14,6 +14,10 @@
 //!   per-fixture scripts (e.g. `scripts/regen_donedata_local_invoke.sh`).
 //!   The `mod.rs` is hand-authored so the W3C regen pipeline never
 //!   touches it.
+//! - [`transition_function_equivalence`]: the drive that holds a generated
+//!   machine to the transition function generated beside it, which the
+//!   drivers of the stems that declare one (`docs/SCE_TRANSITION_FUNCTION.md`)
+//!   share.
 //!
 //! ## Running
 //!
@@ -28,3 +32,4 @@
 pub mod generated;
 pub mod harness;
 pub mod integration;
+pub mod transition_function_equivalence;

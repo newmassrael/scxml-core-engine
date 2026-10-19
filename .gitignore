@@ -206,6 +206,9 @@ backends/python/tests/generated/
 # hand-authored test wrappers (`test_*.py`) and `__init__.py` markers
 # under `backends/python/tests/integration/<stem>/` stay committed.
 backends/python/tests/integration/*/*_sm.py
+# The transition function a document declares (docs/SCE_TRANSITION_FUNCTION.md)
+# is a module of its own beside the machine's, emitted by the same regen script.
+backends/python/tests/integration/*/*_transition_function.py
 backends/python/tests/integration/*/sce_sourcemap.json
 backends/python/tests/integration/*/__pycache__/
 # The sce-static tree is one package: a machine imports the algorithm it calls

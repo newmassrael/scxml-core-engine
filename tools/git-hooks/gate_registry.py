@@ -713,6 +713,10 @@ GATES: dict[str, dict] = {
             # The policy documents `forge_conformance` compiles into its
             # per-language run tests.
             "tests/forge/resources/**",
+            # The integration stems `the_emitted_transition_function_equals_the_producer`
+            # generates and states the table of.
+            "integration_resources/flat_lifecycle/**",
+            "integration_resources/nested_lifecycle/**",
         ],
         # The crate whose test suite this gate runs. `include-str-coverage`
         # in the self-test reads it: every file the sources under this root

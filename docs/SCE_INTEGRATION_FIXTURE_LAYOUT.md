@@ -71,6 +71,32 @@ asserts it, the Interpreter's included; before it every AOT engine looked a comp
 name up exactly in the table of the names its document writes and dropped one that
 was not in it, in silence (`ARCHITECTURE.md` "Event Names at the Door").
 
+`flat_lifecycle` and `nested_lifecycle` cover the transition function a document
+may declare (`sce:transition-function="emit"`, SCE Accepted Subset §2.21,
+`docs/SCE_TRANSITION_FUNCTION.md`): a pure function of (state, event) the generator
+computes at build time, by the selection rule every engine follows at run time, and
+writes beside the machine. The axis is that the two are one fact. Every driver walks
+its engine to each state of the function by the shortest event path the function
+gives, sends it every event there, and holds the configuration the engine reaches,
+and whether it took the event or discarded it, to the function generated beside the
+machine — the Interpreter included, which generates nothing and is held to the
+function the build computed for the same document. The flat document is a cycle
+with a targetless transition and a self-transition with a target, and no final;
+the nested one reaches every selection rule: transitions held by an ancestor, each
+way a compound state names its default child, an internal and an external
+transition, a prefix and a wildcard descriptor, and a top-level final. The drive is
+written once per language and shared by the two stems
+(`backends/rust/tests/src/transition_function_equivalence.rs`,
+`backends/go/tests/harness/transition_function.go`,
+`backends/kotlin/tests/src/test/kotlin/com/sce/integration/TransitionFunctionEquivalence.kt`,
+`backends/python/tests/integration/transition_function_equivalence.py`,
+`backends/c/tests/integration/transition_function_equivalence.h`,
+`tests/integration/TransitionFunctionEquivalence.h`). Each committed tree holds the
+function beside the machine: Rust declares it as a module in the stem's `mod.rs`, Go
+as the package directory `<stem>_transition_function/`, Kotlin as the file
+`<stem>TransitionFunction.kt`; the Python module is generated beside the machine's
+and gitignored with it, and C++ and C11 generate it at build time.
+
 **Fixtures stay on one axis.** `autoforward_event_fields` returns the child's
 verdict as its own event rather than as `<donedata>`, so a regression in the
 donedata lift cannot surface as an autoforward failure; `donedata_local_invoke`

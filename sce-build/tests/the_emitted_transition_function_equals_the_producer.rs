@@ -18,7 +18,11 @@
 //   configuration the engine reaches, and whether it took or discarded the
 //   event, is what the function says. That is what makes the selection the
 //   generator does at build time and the one the engine does at run time one
-//   fact rather than two that happen to agree.
+//   fact rather than two that happen to agree. The two fixtures are
+//   integration stems (`integration_resources/<stem>/`), so the C++ AOT engine
+//   and the Interpreter, which this file cannot build, are driven the same way
+//   by their drivers under `tests/integration/`, as every other channel is by
+//   its own.
 //
 // The compiling checks run where a toolchain is found; the rest run anywhere.
 // The declaration, its one value, the forge root that does not take it, and
@@ -66,9 +70,12 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
+/// The canonical document of `stem`: an integration stem, so the same
+/// document every channel's driver holds its engine to.
 fn fixture(stem: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/transition_function")
+    repo_root()
+        .join("integration_resources")
+        .join(stem)
         .join(format!("{stem}.scxml"))
 }
 

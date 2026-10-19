@@ -563,6 +563,63 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # SCE Accepted Subset 2.21: a document that declares its transition function
+    # (`sce:transition-function="emit"`) is generated with a header of its own
+    # beside the machine, `<stem>_transition_function.h`, every symbol under a
+    # prefix no symbol of the machine begins with. Each driver includes both in
+    # one translation unit and holds the machine to the function on every
+    # (state, event) pair. A flat cycle, and a nested lifecycle that reaches every
+    # selection rule the function is computed by.
+    sce_generate_static_integration_c_test(flat_lifecycle "${SCE_C_INTEGRATION_GENERATED_DIR}")
+
+    add_executable(sce_c_integration_flat_lifecycle
+        integration/test_flat_lifecycle.c
+        ${INTEGRATION_C_TEST_flat_lifecycle_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_flat_lifecycle PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
+    )
+    target_include_directories(sce_c_integration_flat_lifecycle PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_flat_lifecycle PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_flat_lifecycle
+        COMMAND sce_c_integration_flat_lifecycle
+    )
+    set_tests_properties(c11_integration_flat_lifecycle PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
+    sce_generate_static_integration_c_test(nested_lifecycle "${SCE_C_INTEGRATION_GENERATED_DIR}")
+
+    add_executable(sce_c_integration_nested_lifecycle
+        integration/test_nested_lifecycle.c
+        ${INTEGRATION_C_TEST_nested_lifecycle_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_nested_lifecycle PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
+    )
+    target_include_directories(sce_c_integration_nested_lifecycle PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_nested_lifecycle PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_nested_lifecycle
+        COMMAND sce_c_integration_nested_lifecycle
+    )
+    set_tests_properties(c11_integration_nested_lifecycle PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # W3C SCXML 6.4 autoforward carries `done.invoke.<id>`. Appendix D
     # `mainEventLoop` forwards every event dequeued from the external queue to each
     # autoforward child and excludes only the cancel event; §6.4.2 puts

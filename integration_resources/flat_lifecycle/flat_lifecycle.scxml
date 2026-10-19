@@ -7,8 +7,12 @@
   function of the current state and the event alone.
 
   Held by sce-build/tests/the_emitted_transition_function_equals_the_producer.rs:
-  the generated function, compiled alone, against the producer's table, and the
-  generated machine, run on the Rust runtime, against the function.
+  the generated function of every backend, compiled alone, against the
+  producer's table, and the generated machine, run on its runtime, against the
+  function. As an integration stem it is held the same way in every channel:
+  each driver walks the machine to every state by the function's shortest path,
+  sends every event there, and compares where the engine goes, and whether it
+  took the event, with the function generated beside it.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"

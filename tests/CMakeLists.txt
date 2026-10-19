@@ -1453,6 +1453,12 @@ add_executable(integration_tests
     integration/AnEventKeepsTheNameItWasSentUnderAotTest.cpp
     integration/AComputedEventNameIsMatchedLikeAnyOtherTest.cpp
     integration/AComputedEventNameIsMatchedLikeAnyOtherAotTest.cpp
+    # docs/SCE_TRANSITION_FUNCTION.md: each machine, and the Interpreter running
+    # the same document, held to the transition function generated beside it.
+    integration/FlatLifecycleTest.cpp
+    integration/FlatLifecycleAotTest.cpp
+    integration/NestedLifecycleTest.cpp
+    integration/NestedLifecycleAotTest.cpp
     integration/EventOriginIsALocationTest.cpp
     integration/EventOriginIsALocationAotTest.cpp
     integration/SessionIdsAreDistinctTest.cpp
@@ -1896,6 +1902,17 @@ sce_generate_static_integration_test(an_event_keeps_the_name_it_was_sent_under $
 # this channel is what proves it compiles. Its wildcard transitions and its
 # several events are the shapes of an entry that has no single id.
 sce_generate_static_integration_test(a_computed_event_name_is_matched_like_any_other ${STATIC_INTEGRATION_OUTPUT_DIR})
+
+# SCE Accepted Subset 2.21: a document that declares its transition function
+# (`sce:transition-function="emit"`) is generated with a header of its own
+# beside the machine, `<stem>_transition_function.h`, which the plan names and
+# this command produces. The drivers hold the machine, and the Interpreter
+# running the same document, to that function on every (state, event) pair:
+# the selection the generator made at build time and the one each engine makes
+# at run time are one fact. A flat cycle, and a nested lifecycle that reaches
+# every selection rule the function is computed by.
+sce_generate_static_integration_test(flat_lifecycle ${STATIC_INTEGRATION_OUTPUT_DIR})
+sce_generate_static_integration_test(nested_lifecycle ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # W3C SCXML C.1: `_event.origin` must be the sender's published
 # `_ioprocessors` location, and that location must be a usable <send>
