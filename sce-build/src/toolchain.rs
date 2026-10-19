@@ -131,6 +131,12 @@ pub enum ToolSource {
     /// package name, which is often not the binary name —
     /// `gcc-arm-none-eabi` provides `arm-none-eabi-gcc`.
     AptPackage(&'static str),
+    /// Installed by the lane's Rust toolchain step as a rustup component
+    /// (the `components:` of `dtolnay/rust-toolchain`). Carries the
+    /// component name: `clippy` provides `clippy-driver`. The step's
+    /// default profile is minimal, so a component it does not name is
+    /// absent however common it is on a workstation.
+    RustupComponent(&'static str),
 }
 
 /// Every tool the harness can ask [`locate`] for, and where the
@@ -185,6 +191,9 @@ pub const HARNESS_TOOLS: &[(&str, ToolSource)] = &[
     // present — kotlinc is itself a JVM program — so no lane installs it
     // separately.
     ("java", ToolSource::RunnerImage),
+    // Lints one generated file alone, as rustc does when it compiles one:
+    // the transition function is held to `clippy::pedantic` this way.
+    ("clippy-driver", ToolSource::RustupComponent("clippy")),
 ];
 
 pub const VERSIONED_BIN_DIRS: &[(&str, &str, &str)] = &[

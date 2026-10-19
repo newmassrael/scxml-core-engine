@@ -304,6 +304,9 @@ jobs:
       uses: dtolnay/rust-toolchain@stable
       with:
         toolchain: stable
+        # `clippy-driver` lints a generated file alone (toolchain::HARNESS_TOOLS);
+        # the action's profile is minimal and installs no component unnamed.
+        components: clippy
 
     - name: Cache Cargo
       uses: actions/cache@v5

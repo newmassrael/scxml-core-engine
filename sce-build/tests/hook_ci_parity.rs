@@ -933,6 +933,51 @@ fn every_apt_sourced_tool_is_installed_by_the_requiring_lane() {
     );
 }
 
+/// Every rustup-component tool must be a component the requiring lane's
+/// Rust toolchain step installs. That step's profile is minimal, so a
+/// component it does not name is not there.
+#[test]
+fn every_rustup_component_tool_is_installed_by_the_requiring_lane() {
+    use sce_build::toolchain::{ToolSource, HARNESS_TOOLS};
+    let workflow = read(".github/workflows/rust-workspace-tests.yml");
+    assert!(
+        workflow.contains("dtolnay/rust-toolchain"),
+        "the requiring lane no longer installs Rust through \
+         dtolnay/rust-toolchain, so its components are declared somewhere \
+         this check does not read and it needs re-aiming",
+    );
+    let components: Vec<&str> = workflow
+        .lines()
+        .filter_map(|l| l.trim().strip_prefix("components:"))
+        .flat_map(|list| list.split(|c: char| c == ',' || c.is_whitespace()))
+        .filter(|c| !c.is_empty())
+        .collect();
+
+    let mut checked = 0usize;
+    let mut missing: Vec<String> = Vec::new();
+    for (tool, source) in HARNESS_TOOLS {
+        let ToolSource::RustupComponent(component) = source else {
+            continue;
+        };
+        checked += 1;
+        if !components.contains(component) {
+            missing.push(format!("{tool} needs component `{component}`"));
+        }
+    }
+    assert!(
+        checked >= 1,
+        "no rustup-component tool checked; the table lost its \
+         RustupComponent entries and this gate would pass on anything",
+    );
+    assert!(
+        missing.is_empty(),
+        "the lane sets SCE_REQUIRE_TOOLS but its Rust toolchain step does not \
+         install what the harness asks for ({} tool(s)):\n  {}\ncomponents: {components:?}",
+        missing.len(),
+        missing.join("\n  "),
+    );
+}
+
 /// A lane that runs a gate whose script can skip on a missing tool must
 /// say so, and must supply the tool.
 ///
