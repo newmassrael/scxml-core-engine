@@ -36,7 +36,7 @@
    invoke endpoints all borrow that one session rather than opening their
    own. That is the resource/discovery-conflict argument the section gives,
    realized structurally — there is no per-target session field to diverge.
-   The session's config is the device's `transports.zenoh` block, so
+   The session's config is the device's `transports.zenoh_keyexpr` block, so
    deploy.yaml remains the only source for it. #}
 
 {# §mesh-9.2: the child session id is assembled in exactly one place — the
@@ -55,7 +55,7 @@
 
    Each target's transport type determines its send function and router field.
    Supports mixed transports: e.g. #motor via local, #display via shm,
-   #logger via someip, #telemetry via zenoh.
+   #logger via someip, #telemetry via zenoh_keyexpr.
 
    Template structure:
      (A) Includes                     — keyed by `transport_types`
@@ -295,7 +295,7 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
    row-4 catalog shape instead of a silent return. One-line expansion
    so the macro can replace the existing `return;` token without
    disturbing the caller's indentation. `transport` is the literal
-   string the catalog row carries ("someip" / "zenoh" — extend when a
+   string the catalog row carries ("someip" / "zenoh_keyexpr" — extend when a
    new transport that decodes envelopes lands). `codec` is always
    "cbor" today (MeshEnvelope wire is canonical CBOR per §7.5);
    `position` stays absent because `decodeEnvelope`'s bool return does
@@ -464,7 +464,7 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
    interception in the mesh send callback. #}
 {% set has_server = server is defined and server %}
 {% set has_server_someip = has_server and server.transport_kind == "someip" %}
-{% set has_server_zenoh = has_server and server.transport_kind == "zenoh" %}
+{% set has_server_zenoh = has_server and server.transport_kind == "zenoh_keyexpr" %}
 {% set has_server_custom_tcp = has_server and server.transport_kind == "custom_tcp" %}
 {% set has_server_dds = has_server and server.transport_kind == "dds" %}
 
@@ -542,7 +542,7 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
    the emission gate requires BOTH a zenoh transport on this machine AND
    the opt-in section. A SCXML that never sends over zenoh pays zero LoC
    even if the deploy.yaml declared a liveliness block by mistake. #}
-{% set has_zenoh_liveliness = ("zenoh" in transport_types) and machine_liveliness %}
+{% set has_zenoh_liveliness = ("zenoh_keyexpr" in transport_types) and machine_liveliness %}
 
 {# Emission gate for Zenoh client-side `session.get` on_drop wiring
    (SCE Mesh gap Z3). The on_drop closure early-cancels a mesh-rpc
@@ -551,7 +551,7 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
    Gate requires BOTH zenoh transport AND `<invoke type="sce:mesh-rpc">`
    on this machine — without mesh-rpc the outbound envelope never
    stamps `invoke_id`, so there is no correlation entry to cancel. #}
-{% set has_zenoh_mesh_rpc = ("zenoh" in transport_types) and has_mesh_rpc.v %}
+{% set has_zenoh_mesh_rpc = ("zenoh_keyexpr" in transport_types) and has_mesh_rpc.v %}
 
 {# Joint emission gate for the `raiseCommunicationError` helper
    (SCE_MESH.md §10.10.1). Ordering-path raises (MISSING_SEQUENCE /
@@ -573,7 +573,7 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
    mesh-rpc has the row-5 shutdown emit; any router with §9.6
    shm scxml-invoke inbound or outbound peers has the shm
    drainWith decode-fail emit. #}
-{% set raises_communication_error = has_ordered_binding or has_zenoh_liveliness or machine_outbound_buffer or someip_liveness_service_id_self_hex or someip_machine_liveness_service_id_self_hex or ("someip" in transport_types) or ("zenoh" in transport_types) or ("custom_tcp" in transport_types) or ("dds" in transport_types) or has_mesh_rpc.v or scxml_remote_inbound_peers or scxml_remote_outbound_peers %}
+{% set raises_communication_error = has_ordered_binding or has_zenoh_liveliness or machine_outbound_buffer or someip_liveness_service_id_self_hex or someip_machine_liveness_service_id_self_hex or ("someip" in transport_types) or ("zenoh_keyexpr" in transport_types) or ("custom_tcp" in transport_types) or ("dds" in transport_types) or has_mesh_rpc.v or scxml_remote_inbound_peers or scxml_remote_outbound_peers %}
 
 {# CorrelationKey/Hash are needed by SOME/IP client correlation AND/OR
    server pending-request storage. Emit once if either usage is present. #}
@@ -677,7 +677,7 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
 #include <vector>
 {% endif %}
 {% endif %}
-{% if "zenoh" in transport_types %}
+{% if "zenoh_keyexpr" in transport_types %}
 #include <functional>
 #include <optional>
 #include <stdexcept>
@@ -688,7 +688,7 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
 #include <unordered_map>
 #include <utility>
 #include <zenoh.hxx>
-{% if scxml_remote_outbound_peers | selectattr("transport", "equalto", "zenoh") | list or scxml_remote_inbound_peers | selectattr("transport", "equalto", "zenoh") | list %}
+{% if scxml_remote_outbound_peers | selectattr("transport", "equalto", "zenoh_keyexpr") | list or scxml_remote_inbound_peers | selectattr("transport", "equalto", "zenoh_keyexpr") | list %}
 // SCE_MESH.md §9.6.2 Session 5 — ScxmlInvokeEndpoint helper for
 // cross-device `<invoke type="scxml" src="#peer">` Zenoh traffic.
 // Rides the same `zenoh_session_` that ordinary `<send>` zenoh
@@ -1013,12 +1013,12 @@ static constexpr const char* DDS_TOPIC_{{ target.target_snake | upper }} = {{ ta
 {% endif %}
 {% endfor %}
 {% endif %}
-{% if "zenoh" in transport_types %}
-{% for target in targets if target.state.kind == "zenoh" %}
+{% if "zenoh_keyexpr" in transport_types %}
+{% for target in targets if target.state.kind == "zenoh_keyexpr" %}
 static constexpr const char* ZENOH_KEY_{{ target.target_snake | upper }} = "{{ target.state.key }}";
 {% endfor %}
 {# Device-shared Zenoh endpoints mirrored from deploy.yaml
-   transports.zenoh.{listen,connect}. Flow: deploy.yaml → ZenohTransportConfig
+   transports.zenoh_keyexpr.{listen,connect}. Flow: deploy.yaml → ZenohTransportConfig
    → codegen context → this constant. Tests consume these directly so a port
    change in deploy.yaml regenerates the header and drifted test literals
    fail to compile or to connect, instead of silently masquerading as a
@@ -1078,12 +1078,12 @@ static constexpr const char* PARTITION_WIRE21_FROM_{{ r.src_partition_snake | up
        (wire-14/17/19) or `dispatchToSession` (wire-15/16/18/20) by the
        receive callback that Session 2 commit 2 installs. #}
 {% if scxml_remote_outbound_peers or scxml_remote_inbound_peers %}
-{% for peer in scxml_remote_outbound_peers if peer.transport not in ("custom_tcp", "someip", "zenoh") %}
+{% for peer in scxml_remote_outbound_peers if peer.transport not in ("custom_tcp", "someip", "zenoh_keyexpr") %}
 // Outbound peer: I am parent, `{{ peer.name }}` is child (shm).
 static constexpr const char* P2C_TO_{{ peer.name | upper }}   = "/sce_p2c_{{ machine_name }}_{{ peer.name }}";
 static constexpr const char* C2P_FROM_{{ peer.name | upper }} = "/sce_c2p_{{ peer.name }}_{{ machine_name }}";
 {% endfor %}
-{% for peer in scxml_remote_inbound_peers if peer.transport not in ("custom_tcp", "someip", "zenoh") %}
+{% for peer in scxml_remote_inbound_peers if peer.transport not in ("custom_tcp", "someip", "zenoh_keyexpr") %}
 // Inbound peer: I am child, `{{ peer.name }}` is parent (shm).
 static constexpr const char* P2C_FROM_{{ peer.name | upper }} = "/sce_p2c_{{ peer.name }}_{{ machine_name }}";
 static constexpr const char* C2P_TO_{{ peer.name | upper }}   = "/sce_c2p_{{ machine_name }}_{{ peer.name }}";
@@ -1121,7 +1121,7 @@ static constexpr vsomeip::method_t SOMEIP_SERVER_SETTER_{{ fa.event_const }} = {
 static constexpr vsomeip::eventgroup_t SOMEIP_SERVER_EVENTGROUP_{{ eg.event_const }} = {{ eg.event_group_id }};
 static constexpr vsomeip::event_t SOMEIP_SERVER_EVENT_{{ eg.event_const }} = {{ eg.event_id }};
 {% endfor %}
-{% elif server.transport_kind == "zenoh" %}
+{% elif server.transport_kind == "zenoh_keyexpr" %}
 // Server-side Zenoh key expression (declare_queryable + optional put subscriber)
 static constexpr const char* ZENOH_SERVER_KEY = "{{ server.state.key }}";
 {% elif server.transport_kind == "dds" %}
@@ -1248,7 +1248,7 @@ inline void send_to_{{ target.target_snake }}(
 {% endif %}
 }
 
-{% elif target.state.kind == "zenoh" %}
+{% elif target.state.kind == "zenoh_keyexpr" %}
 {# Zenoh dispatch is a member function on TransportRouter (D6) — it requires
    access to router state (session, subscriber handle map, receive_callback_)
    that cannot be passed cleanly as free-function parameters. No emission here. #}
@@ -1559,7 +1559,7 @@ struct TransportRouter {
     // `dispatchToSession`, mirroring the custom_tcp outbound pattern
     // where parent-side replies bypass the worker's staging queue.
     SCE::Mesh::Someip::ScxmlInvokeEndpoint scxml_invoke_to_{{ peer.name }}_;
-{%   elif peer.transport == "zenoh" %}
+{%   elif peer.transport == "zenoh_keyexpr" %}
     // §9.6 Session 5 Zenoh outbound: ScxmlInvokeEndpoint dispatches
     // wire-14/17/19 via the device-shared `zenoh_session_` Publisher
     // pinned to CongestionControl::Block + Priority::Data. Inbound
@@ -1598,7 +1598,7 @@ struct TransportRouter {
     SCE::Mesh::Someip::ScxmlInvokeEndpoint scxml_invoke_to_{{ peer.name }}_;
     std::mutex someip_invoke_inbound_mutex_{{ peer.name }}_;
     std::vector<SCE::Mesh::MeshEnvelope> someip_invoke_inbound_queue_{{ peer.name }}_;
-{%   elif peer.transport == "zenoh" %}
+{%   elif peer.transport == "zenoh_keyexpr" %}
     // §9.6 Session 5 Zenoh inbound: ScxmlInvokeEndpoint handles
     // wire-15/16/18/20 outbound and wire-14/17/19 inbound. The receive
     // callback stages inbound envelopes in `zenoh_invoke_inbound_queue_`
@@ -1842,7 +1842,7 @@ struct TransportRouter {
     // with the other server pending state, below `CorrelationKey`.
     std::unique_ptr<SCE::Mesh::Dds::Server> dds_server_;
 {% endif %}
-{% if "zenoh" in transport_types %}
+{% if "zenoh_keyexpr" in transport_types %}
     // Zenoh: one session per device, shared by all zenoh targets.
     std::optional<zenoh::Session> zenoh_session_;
     // Active EventSubscribe handles keyed by SCXML target string. Zenoh
@@ -2044,7 +2044,7 @@ struct TransportRouter {
     SCE::Mesh::RetryingDispatcher {{ target.target_snake }}_retry_;
 {% endif %}
     SCE::Mesh::OutboundBuffer {{ target.target_snake }}_outbound_;
-{% if target.state.kind == "zenoh" %}
+{% if target.state.kind == "zenoh_keyexpr" %}
     std::optional<zenoh::Publisher> {{ target.target_snake }}_publisher_;
     std::optional<zenoh::MatchingListener<void>> {{ target.target_snake }}_matching_listener_;
 {% endif %}
@@ -2580,7 +2580,7 @@ struct TransportRouter {
      terminal-pattern matching against ZException::what() once
      zenoh's error surface stabilises around a documented vocabulary. #}
 {%-       set dispatch = "[this](const SCE::Mesh::MeshEnvelope& env) -> SCE::Mesh::SendResult { if (!" ~ target.target_snake ~ "_publisher_) return SCE::Mesh::SendResult::failure(\"zenoh publisher not initialized\", /*retryable=*/false); try { " ~ target.target_snake ~ "_publisher_->put(zenoh::Bytes(SCE::Mesh::encodeEnvelope(env))); return SCE::Mesh::SendResult::success(); } catch (const zenoh::ZException& e) { return SCE::Mesh::SendResult::failure(e.what(), /*retryable=*/true); } }" %}
-{%-       set transport_literal = "\"zenoh\"" %}
+{%-       set transport_literal = "\"zenoh_keyexpr\"" %}
 {%-     endif %}
 {%-     if target.retry %}
 {#- SCE Mesh §16.7 row 3 — wrap the transport-send closure in a
@@ -2652,7 +2652,7 @@ struct TransportRouter {
 {%-     set ns.parts = ns.parts + ["p2c_to_" ~ peer.name ~ "_(\"" ~ peer.connect_endpoint ~ "\", [](const SCE::Mesh::MeshEnvelope&, const SCE::Mesh::CustomTcp::PeerLink&) {}, CUSTOM_TCP_SOCKET)"] %}
 {%-   elif peer.transport == "someip" %}
 {%-     set ns.parts = ns.parts + ["scxml_invoke_to_" ~ peer.name ~ "_(" ~ someip_sce_app_field ~ ", SCE_SOMEIP_SERVICE_SELF, SCE_SOMEIP_SERVICE_PEER_" ~ (peer.name | upper) ~ ")"] %}
-{%-   elif peer.transport != "zenoh" %}
+{%-   elif peer.transport != "zenoh_keyexpr" %}
 {%-     set ns.parts = ns.parts + ["p2c_to_" ~ peer.name ~ "_(P2C_TO_" ~ (peer.name | upper) ~ ", SCE::Mesh::ShmChannel<>::Mode::Create)"] %}
 {%-     set ns.parts = ns.parts + ["c2p_from_" ~ peer.name ~ "_(C2P_FROM_" ~ (peer.name | upper) ~ ", SCE::Mesh::ShmChannel<>::Mode::Open)"] %}
 {%-   endif %}
@@ -2662,7 +2662,7 @@ struct TransportRouter {
 {%-     set ns.parts = ns.parts + ["c2p_to_" ~ peer.name ~ "_(\"" ~ peer.connect_endpoint ~ "\", [](const SCE::Mesh::MeshEnvelope&, const SCE::Mesh::CustomTcp::PeerLink&) {}, CUSTOM_TCP_SOCKET)"] %}
 {%-   elif peer.transport == "someip" %}
 {%-     set ns.parts = ns.parts + ["scxml_invoke_to_" ~ peer.name ~ "_(" ~ someip_sce_app_field ~ ", SCE_SOMEIP_SERVICE_SELF, SCE_SOMEIP_SERVICE_PEER_" ~ (peer.name | upper) ~ ")"] %}
-{%-   elif peer.transport != "zenoh" %}
+{%-   elif peer.transport != "zenoh_keyexpr" %}
 {%-     set ns.parts = ns.parts + ["p2c_from_" ~ peer.name ~ "_(P2C_FROM_" ~ (peer.name | upper) ~ ", SCE::Mesh::ShmChannel<>::Mode::Open)"] %}
 {%-     set ns.parts = ns.parts + ["c2p_to_" ~ peer.name ~ "_(C2P_TO_" ~ (peer.name | upper) ~ ", SCE::Mesh::ShmChannel<>::Mode::Create)"] %}
 {%-   endif %}
@@ -2966,7 +2966,7 @@ struct TransportRouter {
                     if (target == "{{ peer.name }}") {
 {%   if peer.transport == "someip" %}
                         return scxml_invoke_to_{{ peer.name }}_.send(env);
-{%   elif peer.transport == "zenoh" %}
+{%   elif peer.transport == "zenoh_keyexpr" %}
                         return scxml_invoke_to_{{ peer.name }}_->send(env);
 {%   else %}
                         return p2c_to_{{ peer.name }}_.send(env);
@@ -3009,7 +3009,7 @@ struct TransportRouter {
                     if (target == "{{ peer.name }}") {
 {%   if peer.transport == "someip" %}
                         return scxml_invoke_to_{{ peer.name }}_.send(env);
-{%   elif peer.transport == "zenoh" %}
+{%   elif peer.transport == "zenoh_keyexpr" %}
                         return scxml_invoke_to_{{ peer.name }}_->send(env);
 {%   else %}
                         return p2c_to_{{ peer.name }}_.send(env);
@@ -3034,7 +3034,7 @@ struct TransportRouter {
                     if (target == "{{ peer.name }}") {
 {%   if peer.transport == "someip" %}
                         return scxml_invoke_to_{{ peer.name }}_.send(env);
-{%   elif peer.transport == "zenoh" %}
+{%   elif peer.transport == "zenoh_keyexpr" %}
                         return scxml_invoke_to_{{ peer.name }}_->send(env);
 {%   else %}
                         return p2c_to_{{ peer.name }}_.send(env);
@@ -3096,7 +3096,7 @@ struct TransportRouter {
     /// yet at our ctor time (typical startup race).
     std::size_t pumpScxmlInvokeRequests() {
         std::size_t total = 0;
-{% for peer in scxml_remote_inbound_peers if peer.transport not in ("custom_tcp", "someip", "zenoh") %}
+{% for peer in scxml_remote_inbound_peers if peer.transport not in ("custom_tcp", "someip", "zenoh_keyexpr") %}
         if (!p2c_from_{{ peer.name }}_.valid()) {
             p2c_from_{{ peer.name }}_ = SCE::Mesh::ShmChannel<>(
                 P2C_FROM_{{ peer.name | upper }},
@@ -3209,7 +3209,7 @@ struct TransportRouter {
    dispatch. Reply wire-15/16/18/20 publish through
    `scxml_invoke_to_<peer>_->send` rather than a shm/tcp channel — the
    publisher lambda below resolves per-peer by transport. #}
-{% for peer in scxml_remote_inbound_peers if peer.transport == "zenoh" %}
+{% for peer in scxml_remote_inbound_peers if peer.transport == "zenoh_keyexpr" %}
         {
             std::vector<SCE::Mesh::MeshEnvelope> drained;
             {
@@ -3248,7 +3248,7 @@ struct TransportRouter {
                     return [this](const SCE::Mesh::MeshEnvelope& env) -> bool {
 {%   if peer.transport == "someip" %}
                         return scxml_invoke_to_{{ peer.name }}_.send(env);
-{%   elif peer.transport == "zenoh" %}
+{%   elif peer.transport == "zenoh_keyexpr" %}
                         return scxml_invoke_to_{{ peer.name }}_->send(env);
 {%   else %}
                         return c2p_to_{{ peer.name }}_.send(env);
@@ -3274,7 +3274,7 @@ struct TransportRouter {
     /// Same lazy-reopen as `pumpScxmlInvokeRequests`.
     std::size_t pumpScxmlInvokeReplies() {
         std::size_t total = 0;
-{% for peer in scxml_remote_outbound_peers if peer.transport not in ("custom_tcp", "someip", "zenoh") %}
+{% for peer in scxml_remote_outbound_peers if peer.transport not in ("custom_tcp", "someip", "zenoh_keyexpr") %}
         if (!c2p_from_{{ peer.name }}_.valid()) {
             c2p_from_{{ peer.name }}_ = SCE::Mesh::ShmChannel<>(
                 C2P_FROM_{{ peer.name | upper }},
@@ -3303,7 +3303,7 @@ struct TransportRouter {
         return total;
     }
 {% endif %}
-{% if "someip" in transport_types or "zenoh" in transport_types or "custom_tcp" in transport_types or "dds" in transport_types or has_mesh_rpc.v or has_server %}
+{% if "someip" in transport_types or "zenoh_keyexpr" in transport_types or "custom_tcp" in transport_types or "dds" in transport_types or has_mesh_rpc.v or has_server %}
 
 {# ── (D4) init() / shutdown() — lifecycle for shared transport resources ── #}
     /// Initialize transport connections and open shared sessions.
@@ -3315,7 +3315,7 @@ struct TransportRouter {
     /// SOME/IP: calls init(), request_service(), and spawns start() in a
     /// background thread for each SOME/IP binding.
 {% endif %}
-{% if "zenoh" in transport_types %}
+{% if "zenoh_keyexpr" in transport_types %}
     /// Zenoh: opens a single Session configured from deploy.yaml session-level
     /// keys (mode, connect, listen), shared by all Zenoh bindings on this device.
 {% endif %}
@@ -3833,10 +3833,10 @@ struct TransportRouter {
 {% endfor %}
 {% endfor %}
 {% endif %}
-{% if "zenoh" in transport_types %}
+{% if "zenoh_keyexpr" in transport_types %}
         try {
 {# Base config comes from an external zenoh.json5 (SCE_MESH.md §13) when
-   `transports.zenoh.config:` is declared; otherwise the zenoh defaults.
+   `transports.zenoh_keyexpr.config:` is declared; otherwise the zenoh defaults.
    `zenoh::Config::from_file` throws `zenoh::ZException` on IO/parse failure;
    the surrounding `try` below converts this to `init()` returning false. #}
 {% if zenoh_session_json5 and zenoh_session_json5.config_file %}
@@ -3861,7 +3861,7 @@ struct TransportRouter {
             // Zenoh signals config/open failures via ZException. Unknown
             // exception types should propagate (not be silently converted).
             // Tear down any SOME/IP threads spawned earlier in this init().
-{%- set zenoh_auth_targets = targets | selectattr("auth") | selectattr("state.kind", "equalto", "zenoh") | list %}
+{%- set zenoh_auth_targets = targets | selectattr("auth") | selectattr("state.kind", "equalto", "zenoh_keyexpr") | list %}
 {% if zenoh_auth_targets %}
             // SCE_MESH.md §16.7 row 10 UNAUTHORIZED — at least one zenoh
             // target opted into trust enforcement. Delegate the
@@ -3883,7 +3883,7 @@ struct TransportRouter {
                     ::SCE::Mesh::CommunicationError __sce_auth_err;
                     __sce_auth_err.reason = ::SCE::Mesh::ReasonCode::Unauthorized;
                     __sce_auth_err.target = "{{ t.target }}";
-                    __sce_auth_err.transport = "zenoh";
+                    __sce_auth_err.transport = "zenoh_keyexpr";
                     __sce_auth_err.transport_status = __sce_what_msg;
                     raiseCommunicationError(std::move(__sce_auth_err));
                 }
@@ -3904,8 +3904,8 @@ struct TransportRouter {
     enclosing try/catch. Pattern dispatch mirrors the someip §9.6
     init() arm above — parent-side inline `dispatchToSession`,
     worker-side mutex-guarded staging. #}
-{%- set zenoh_invoke_outbound_peers = scxml_remote_outbound_peers | selectattr("transport", "equalto", "zenoh") | list %}
-{%- set zenoh_invoke_inbound_peers = scxml_remote_inbound_peers | selectattr("transport", "equalto", "zenoh") | list %}
+{%- set zenoh_invoke_outbound_peers = scxml_remote_outbound_peers | selectattr("transport", "equalto", "zenoh_keyexpr") | list %}
+{%- set zenoh_invoke_inbound_peers = scxml_remote_inbound_peers | selectattr("transport", "equalto", "zenoh_keyexpr") | list %}
 {% if zenoh_invoke_outbound_peers or zenoh_invoke_inbound_peers %}
         try {
 {% for peer in zenoh_invoke_outbound_peers %}
@@ -3935,7 +3935,7 @@ struct TransportRouter {
                     }
                 });
             scxml_invoke_to_{{ peer.name }}_->setDecodeErrorHandler(
-                [this]() {{ raise_envelope_corrupt_lambda("zenoh") }});
+                [this]() {{ raise_envelope_corrupt_lambda("zenoh_keyexpr") }});
             if (!scxml_invoke_to_{{ peer.name }}_->start()) {
                 shutdown();
                 return false;
@@ -3970,7 +3970,7 @@ struct TransportRouter {
                     }
                 });
             scxml_invoke_to_{{ peer.name }}_->setDecodeErrorHandler(
-                [this]() {{ raise_envelope_corrupt_lambda("zenoh") }});
+                [this]() {{ raise_envelope_corrupt_lambda("zenoh_keyexpr") }});
             if (!scxml_invoke_to_{{ peer.name }}_->start()) {
                 shutdown();
                 return false;
@@ -3986,7 +3986,7 @@ struct TransportRouter {
         }
 {% endif %}
 {% if machine_outbound_buffer %}
-{% for target in targets if target.state.kind == "zenoh" %}
+{% for target in targets if target.state.kind == "zenoh_keyexpr" %}
         // SCE Mesh §10.10: declare a Publisher on this target's keyexpr
         // so we can observe subscriber-matching transitions via
         // `declare_matching_listener`. Publisher-side put (as opposed
@@ -4459,7 +4459,7 @@ struct TransportRouter {
                 if (!payload_opt.has_value()) return;
                 auto bytes = payload_opt->get().as_vector();
                 SCE::Mesh::MeshEnvelope env;
-                if (!SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), env)) {{ raise_envelope_corrupt("zenoh") }}
+                if (!SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), env)) {{ raise_envelope_corrupt("zenoh_keyexpr") }}
                 // Stash the Query under the shared §8.3 correlation macros so
                 // the outbound response resolves through the engine's
                 // currentEventInvokeId without an extra mapping table — same
@@ -4522,7 +4522,7 @@ struct TransportRouter {
             [this](const zenoh::Sample& sample) {
                 auto bytes = sample.get_payload().as_vector();
                 SCE::Mesh::MeshEnvelope env;
-                if (!SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), env)) {{ raise_envelope_corrupt("zenoh") }}
+                if (!SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), env)) {{ raise_envelope_corrupt("zenoh_keyexpr") }}
                 // Skip self-published eventgroup notifications. When the
                 // server publishes via session.put on ZENOH_SERVER_KEY, this
                 // subscriber also receives the event. Filtering by source
@@ -4735,7 +4735,7 @@ struct TransportRouter {
 {% endif %}
         zenoh_queryable_.reset();
 {% endif %}
-{% if "zenoh" in transport_types %}
+{% if "zenoh_keyexpr" in transport_types %}
 {% if has_zenoh_mesh_rpc %}
         // SCE Mesh gap Z3: arm the shutdown flag BEFORE any zenoh reset
         // so the cascade of on_drop closures fired by session teardown
@@ -4771,10 +4771,10 @@ struct TransportRouter {
     Subscriber dtors call into the Session, so they MUST run while the
     session is still alive. Idempotent via `optional::reset` semantics
     (resetting an already-empty optional is a no-op). #}
-{% for peer in scxml_remote_outbound_peers if peer.transport == "zenoh" %}
+{% for peer in scxml_remote_outbound_peers if peer.transport == "zenoh_keyexpr" %}
         scxml_invoke_to_{{ peer.name }}_.reset();
 {% endfor %}
-{% for peer in scxml_remote_inbound_peers if peer.transport == "zenoh" %}
+{% for peer in scxml_remote_inbound_peers if peer.transport == "zenoh_keyexpr" %}
         scxml_invoke_to_{{ peer.name }}_.reset();
 {% endfor %}
         zenoh_session_.reset();
@@ -4906,7 +4906,7 @@ struct TransportRouter {
             }
             return false;
 {% endif %}
-{% elif target.state.kind == "zenoh" %}
+{% elif target.state.kind == "zenoh_keyexpr" %}
 {% if machine_outbound_buffer %}
             // SCE Mesh §10.10: subscriber-matching-gated buffering for
             // PUT-style patterns (FireForget, FieldWrite). GET-style
@@ -5038,7 +5038,7 @@ struct TransportRouter {
         return PK::FireForget;
     }
 
-{% if "someip" in transport_types or "zenoh" in transport_types or "custom_tcp" in transport_types or "dds" in transport_types or has_mesh_rpc.v or has_server %}
+{% if "someip" in transport_types or "zenoh_keyexpr" in transport_types or "custom_tcp" in transport_types or "dds" in transport_types or has_mesh_rpc.v or has_server %}
     /// Look up the paired reply event for an RPC request (build-time table).
     /// SCE_MESH.md §13 path B: the pair is inferred by convention —
     /// `service.request.X` ↔ `service.response.X`. Returns empty string
@@ -5364,7 +5364,7 @@ struct TransportRouter {
     }
 
 {% endif %}
-{% if "someip" in transport_types or "zenoh" in transport_types or "local" in transport_types or "custom_tcp" in transport_types or has_mesh_rpc.v or has_server or scxml_remote_inbound_peers or scxml_remote_outbound_peers or "dds" in transport_types %}
+{% if "someip" in transport_types or "zenoh_keyexpr" in transport_types or "local" in transport_types or "custom_tcp" in transport_types or has_mesh_rpc.v or has_server or scxml_remote_inbound_peers or scxml_remote_outbound_peers or "dds" in transport_types %}
     /// Dispatch an incoming envelope to a specific session via MeshDispatch.
     ///
     /// Called on transport callback threads (vsomeip application threads,
@@ -6269,7 +6269,7 @@ struct TransportRouter {
                         const auto& sample = reply_msg.get_ok();
                         auto bytes = sample.get_payload().as_vector();
                         SCE::Mesh::MeshEnvelope resp;
-                        if (!SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), resp)) {{ raise_envelope_corrupt("zenoh") }}
+                        if (!SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), resp)) {{ raise_envelope_corrupt("zenoh_keyexpr") }}
                         if (!reply_event.empty()) resp.type = reply_event;
                         resp.pattern = SCE::Mesh::PatternKind::RpcReply;
                         (void)this->admitZenohInbound(target_owned, resp);
@@ -6729,7 +6729,7 @@ struct TransportRouter {
    Member function (not free) because multi-pattern dispatch requires
    mutating router state (zenoh_subscribers_) and capturing receive
    state (receive_callback_) into closures passed to the zenoh API. #}
-{% if "zenoh" in transport_types %}
+{% if "zenoh_keyexpr" in transport_types %}
     /// Dispatch an outbound envelope through Zenoh using the pattern-matched
     /// native API. Called by route_send() with the target's key expression.
     ///
@@ -6763,7 +6763,7 @@ struct TransportRouter {
     /// N_SESSIONS == 1.
     [[nodiscard]] bool admitZenohInbound(const std::string& target,
                                          const SCE::Mesh::MeshEnvelope& env) {
-{% for t in targets if t.state.kind == "zenoh" %}
+{% for t in targets if t.state.kind == "zenoh_keyexpr" %}
         if (target == "{{ t.target }}") {
             return this->{{ admit_or_dispatch(t.needs_ordering, t.needs_dedup, "env", "0") }};
         }
@@ -6846,7 +6846,7 @@ struct TransportRouter {
                     const auto& sample = reply_msg.get_ok();
                     auto bytes = sample.get_payload().as_vector();
                     SCE::Mesh::MeshEnvelope resp;
-                    if (!SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), resp)) {{ raise_envelope_corrupt("zenoh") }}
+                    if (!SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), resp)) {{ raise_envelope_corrupt("zenoh_keyexpr") }}
                     if (!reply_event.empty()) resp.type = reply_event;
                     resp.pattern = reply_pattern;
                     // SCE_MESH.md §10.5/§10.6 SSoT dispatch: the per-
@@ -6893,7 +6893,7 @@ struct TransportRouter {
                  target_owned = std::string(target_name)](const zenoh::Sample& sample) {
                     auto bytes = sample.get_payload().as_vector();
                     SCE::Mesh::MeshEnvelope notify;
-                    if (!SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), notify)) {{ raise_envelope_corrupt("zenoh") }}
+                    if (!SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), notify)) {{ raise_envelope_corrupt("zenoh_keyexpr") }}
                     notify.pattern = SCE::Mesh::PatternKind::EventNotify;
                     // SCE_MESH.md §10.5/§10.6: per-target admit chain
                     // via the same SSoT helper the reply closure uses.
