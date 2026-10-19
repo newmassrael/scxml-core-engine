@@ -344,6 +344,13 @@ const UNFILTERABLE_GATES: &[&str] = &[
     // filter shares. The pin it guards has been in three places at once; the
     // copy that hurt was the one nothing enumerated.
     "the_pin_is_read_from_one_place",
+    // Asks `git ls-files` for every document under `resources/` and refuses
+    // one declaring the transition function, whose header the conformance
+    // suite's CMake route does not declare as an output. The document that
+    // breaks the route is one an author adds there next, and the lane running
+    // the function's own suite filters on paths that do not name
+    // `resources/`, so that commit would start nothing that judged it.
+    "no_conformance_document_declares_the_transition_function",
     "workflow_trigger_coverage",
 ];
 

@@ -276,7 +276,7 @@ function(sce_generate_static_w3c_test TEST_NUM OUTPUT_DIR)
     # `<stem>_transition_function.h` beside each machine, which this list does
     # not name. No conformance document declares it, and
     # `no_document_the_conformance_cmake_route_reads_declares_the_function`
-    # (sce-build/tests/the_emitted_transition_function_equals_the_producer.rs)
+    # (sce-build/tests/no_conformance_document_declares_the_transition_function.rs)
     # holds that, here and on the C11 route below.
     file(GLOB _CPP_SYNTH_FILES
         "${RESOURCE_DIR}/test${TEST_NUM}__sce_synth_invoke__*.scxml")

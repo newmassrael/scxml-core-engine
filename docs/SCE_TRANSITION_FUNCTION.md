@@ -202,10 +202,13 @@ and a nested lifecycle that reaches every selection rule) in all six backends, a
   `generate-w3c` for a document, `generate` and `generate-w3c` for an in-line child, each file
   carrying the hash its machine carries, and the W3C Rust module index naming each function module;
   an in-line child's refusal on the row its author wrote; and the library entry points refusing, by
-  name, the function or the table they have no hash for;
-- holds the CMake route of the conformance suite to the documents it can reach: none declares the
-  function, so the outputs `cmake/SCEStaticW3CTest.cmake` lists by hand are every file a C++ or C11
-  fixture's generation writes.
+  name, the function or the table they have no hash for.
+
+`sce-build/tests/no_conformance_document_declares_the_transition_function.rs` holds the CMake route
+of the conformance suite to the documents it can reach: none declares the function, so the outputs
+`cmake/SCEStaticW3CTest.cmake` lists by hand are every file a C++ or C11 fixture's generation writes.
+It is a target of its own so that it runs on every push: the document that would break the route is
+one an author adds under `resources/`, which the suite's own lane does not filter on.
 
 The two documents are integration stems, so every channel holds its engine to its function the same
 way, in its own suite: the Rust, Go, Kotlin, Python and C11 drivers, and the C++ AOT engine and the

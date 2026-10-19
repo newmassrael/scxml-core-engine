@@ -222,4 +222,5 @@ cargo test -p sce-build --features cli,ffi \
     --test every_annotated_document_is_accounted_for \
     --test script_engine_census \
     --test hybrid_stubs_are_tracked_as_generated \
+    --test no_conformance_document_declares_the_transition_function \
     || sce_gate_fail "tree-wide hygiene gates"
