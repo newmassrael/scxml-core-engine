@@ -7194,6 +7194,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `validation/typed-invoke-request` | Validation |
 | `validation/native-action-argument` | Validation |
 | `validation/native-action-signature-conflict` | Validation |
+| `validation/native-action-release` | Validation |
 | `validation/mesh-rpc-reserved-param` | Validation |
 | `validation/mesh-rpc-missing-target` | Validation |
 | `validation/mesh-rpc-duplicate-target` | Validation |

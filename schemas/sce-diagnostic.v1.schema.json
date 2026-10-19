@@ -85,6 +85,7 @@
         "validation/typed-invoke-request",
         "validation/native-action-argument",
         "validation/native-action-signature-conflict",
+        "validation/native-action-release",
         "validation/mesh-rpc-reserved-param",
         "validation/mesh-rpc-missing-target",
         "validation/mesh-rpc-duplicate-target",

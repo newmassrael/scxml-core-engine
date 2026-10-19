@@ -356,6 +356,12 @@ impl Default for LinkConfig {
 #[cfg(any(feature = "std", test))]
 extern crate std;
 
+/// Reading a socket directly before sleeping on the reactor, for the budget a
+/// deploy declares as `session_runtime.rx_busy_poll_us`. Unix only: it reads
+/// the descriptor with `read(2)`.
+#[cfg(all(any(feature = "std", test), unix))]
+pub mod busy_poll;
+
 #[cfg(any(feature = "std", test))]
 #[derive(Debug, Default)]
 pub struct StubLink {

@@ -393,6 +393,7 @@ pub fn stable_sort_by_key<T, K: Ord, F: FnMut(&T) -> K>(buf: &mut [T], mut f: F)
     stable_sort_by(buf, |a, b| f(a).cmp(&f(b)));
 }
 
+pub mod action_realization;
 pub mod clock;
 pub mod engine;
 pub mod event;
@@ -458,6 +459,9 @@ pub mod scripting;
 
 // Public re-exports — the primary API surface
 
+/// docs/adr/0038: what a host does with a machine's duties, named at the crate
+/// root because every generated host interface that states a duty spells it.
+pub use action_realization::ActionRealization;
 pub use clock::SceClock;
 pub use engine::Engine;
 /// §scxml-6.2.4: why [`Engine::initialize_as_root`] refused a start.

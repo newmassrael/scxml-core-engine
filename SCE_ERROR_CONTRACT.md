@@ -952,6 +952,7 @@ references against a real document and drift silently.
 | `validation/missing-element` | `validation` | no |  |
 | `validation/native-action-argument` | `validation` | no |  |
 | `validation/native-action-placement` | `validation` | no |  |
+| `validation/native-action-release` | `validation` | no |  |
 | `validation/native-action-signature-conflict` | `validation` | no |  |
 | `validation/numeric-parse` | `validation` | no |  |
 | `validation/provenance-duplicate` | `validation` | no |  |

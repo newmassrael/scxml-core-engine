@@ -332,7 +332,197 @@ pub fn validate(
             }
         }
     }
+    check_releases(scxml, diag_label)?;
     check_host_operations(scxml, &signatures, diag_label)
+}
+
+/// One site where a machine states a duty — an action whose effect is `duty`
+/// (docs/adr/0038, decision 5) — as the stdout manifest's `host_duties` carries
+/// it. A consumer that wires a host reads it to see what the machine depends on
+/// the host performing, and may gate on it; the build only publishes it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct HostDutyRecord {
+    /// The machine, by its document's stem: a document-set run reports every
+    /// member's duties, and a state id alone does not say whose.
+    pub machine: String,
+    /// The action's name, as the document spells it.
+    pub action: String,
+    /// The state the action sits in.
+    pub state: String,
+    /// Where in the state it sits: `entry`, `exit`, `transition`, `initial`
+    /// or `history-default`.
+    pub on: &'static str,
+    /// The action that gives the duty back, when the document names one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub released_by: Option<String>,
+}
+
+/// Every duty `model` states, in the order of its sorted states and, within a
+/// state, `entry`, `exit`, `initial`, `history-default`, then its transitions.
+pub fn host_duty_records(model: &SCXMLModel) -> Vec<HostDutyRecord> {
+    let mut records = Vec::new();
+    for (state_id, state) in &model.states {
+        let sites: [(&'static str, Vec<&Action>); 4] = [
+            ("entry", state.on_entry_blocks.iter().flatten().collect()),
+            ("exit", state.on_exit_blocks.iter().flatten().collect()),
+            ("initial", state.initial_transition_actions.iter().collect()),
+            (
+                "history-default",
+                state.initial_history_default_actions.iter().collect(),
+            ),
+        ];
+        let transitions = state.transitions.iter().flat_map(|t| t.actions.iter());
+        let positioned = sites
+            .into_iter()
+            .flat_map(|(on, actions)| actions.into_iter().map(move |a| (on, a)))
+            .chain(transitions.map(|a| ("transition", a)));
+        for (on, action) in positioned {
+            if is_native(action) && action.native_action_effect == "duty" {
+                records.push(HostDutyRecord {
+                    machine: model.name.clone(),
+                    action: action.native_action_name.clone(),
+                    state: state_id.clone(),
+                    on,
+                    released_by: (!action.native_action_released_by.is_empty())
+                        .then(|| action.native_action_released_by.clone()),
+                });
+            }
+        }
+    }
+    records
+}
+
+/// Whether `model` states any duty. Drives the host seam each backend opens for
+/// a duty: the realization member of the interface and the refusal of a host
+/// that only simulates.
+pub fn document_has_duties(model: &SCXMLModel) -> bool {
+    model
+        .states
+        .values()
+        .flat_map(state_natives)
+        .any(|a| a.native_action_effect == "duty")
+}
+
+/// Every direct `<sce:action>` of `state`, wherever it sits.
+fn state_natives(state: &crate::model::State) -> Vec<&Action> {
+    state
+        .transitions
+        .iter()
+        .flat_map(|t| t.actions.iter())
+        .chain(state.on_entry_blocks.iter().flatten())
+        .chain(state.on_exit_blocks.iter().flatten())
+        .chain(state.initial_transition_actions.iter())
+        .chain(state.initial_history_default_actions.iter())
+        .filter(|a| is_native(a))
+        .collect()
+}
+
+/// A refusal of a `released-by`, on the action that states it.
+fn release_err(action: &Action, diag_label: &str, detail: String) -> Located<ForgeError> {
+    located_on_action(
+        action,
+        diag_label,
+        ValidationError::NativeActionRelease {
+            name: action.native_action_name.clone(),
+            released_by: action.native_action_released_by.clone(),
+            detail,
+        },
+    )
+}
+
+/// docs/adr/0038, decision 2: a duty an `<onentry>` takes names the action that
+/// gives it back, and that action runs on the `<onexit>` of the same state, so
+/// every way out of the state releases what the entry took.
+///
+/// A `released-by` is judged on four counts: it sits on an action of an
+/// `<onentry>` (nowhere else is there an entry to pair an exit with), that
+/// action is a duty (a notice takes nothing), the release it names is an action
+/// the document declares, and the release is a duty on this state's `<onexit>`
+/// (a release the host may drop leaves the entry's duty held).
+fn check_releases(scxml: &SCXMLModel, diag_label: &str) -> Result<(), Located<ForgeError>> {
+    // What each name states, for judging a release by what it is. The one
+    // effect per name is already held by `register_signature`.
+    let effects: BTreeMap<&str, &str> = scxml
+        .states
+        .values()
+        .flat_map(state_natives)
+        .map(|a| {
+            (
+                a.native_action_name.as_str(),
+                a.native_action_effect.as_str(),
+            )
+        })
+        .collect();
+
+    for (state_id, state) in &scxml.states {
+        let entry: Vec<&Action> = state
+            .on_entry_blocks
+            .iter()
+            .flatten()
+            .filter(|a| is_native(a))
+            .collect();
+        for action in state_natives(state) {
+            if action.native_action_released_by.is_empty() {
+                continue;
+            }
+            let on_entry = entry.iter().any(|a| std::ptr::eq(*a, action));
+            if !on_entry {
+                return Err(release_err(
+                    action,
+                    diag_label,
+                    "released-by is stated only on an action of an <onentry>: it names the \
+                     action of the same state's <onexit> that gives back what the entry took"
+                        .to_string(),
+                ));
+            }
+            if action.native_action_effect != "duty" {
+                return Err(release_err(
+                    action,
+                    diag_label,
+                    format!(
+                        "a {} takes nothing to release; released-by belongs to an action \
+                         whose effect is duty",
+                        action.native_action_effect
+                    ),
+                ));
+            }
+            let release = &action.native_action_released_by;
+            let Some(release_effect) = effects.get(release.as_str()) else {
+                return Err(release_err(
+                    action,
+                    diag_label,
+                    "names no <sce:action> of this document".to_string(),
+                ));
+            };
+            let on_exit = state
+                .on_exit_blocks
+                .iter()
+                .flatten()
+                .any(|a| is_native(a) && a.native_action_name == *release);
+            if !on_exit {
+                return Err(release_err(
+                    action,
+                    diag_label,
+                    format!(
+                        "'{release}' is not performed on the <onexit> of state '{state_id}', \
+                         whose <onentry> takes this duty: a way out of the state would not \
+                         release it"
+                    ),
+                ));
+            }
+            if *release_effect != "duty" {
+                return Err(release_err(
+                    action,
+                    diag_label,
+                    format!(
+                        "'{release}' is a {release_effect}, which the host may drop, so the \
+                         duty it is to release would stay held; make it a duty"
+                    ),
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// The host interface carries two kinds of operation in one namespace: the acts
@@ -347,7 +537,7 @@ fn check_host_operations(
 ) -> Result<(), Located<ForgeError>> {
     let acts: BTreeMap<String, (&String, &Option<SourceLocation>)> = signatures
         .iter()
-        .map(|(name, (_, at))| (filters::to_snake_case(name.clone()), (name, at)))
+        .map(|(name, (_, at, _))| (filters::to_snake_case(name.clone()), (name, at)))
         .collect();
     let mut seen: BTreeMap<String, String> = BTreeMap::new();
     for site in child_host_sites(scxml) {
@@ -554,12 +744,16 @@ pub(crate) fn static_argument_type(
 }
 
 /// The first call of each native action name: the signature every later
-/// call must match, and where that call is, so a conflict can name it.
-type SignatureTable = BTreeMap<String, (Vec<String>, Option<SourceLocation>)>;
+/// call must match, where that call is so a conflict can name it, and the
+/// effect it states, which every later call must state too (docs/adr/0038).
+type SignatureTable = BTreeMap<String, (Vec<String>, Option<SourceLocation>, String)>;
 
 /// Record `sig` for `action.native_action_name` in the document-wide table,
 /// rejecting a divergence from a prior occurrence — one generated trait method
-/// must serve every call site of a given name, regardless of position.
+/// must serve every call site of a given name, regardless of position. The
+/// effect is part of that method's contract: the host that implements it
+/// either owes the machine the operation or does not, so a name that is a duty
+/// at one site and a notice at another has no one answer to give.
 fn register_signature(
     action: &Action,
     sig: Vec<String>,
@@ -567,7 +761,33 @@ fn register_signature(
     diag_label: &str,
 ) -> Result<(), Located<ForgeError>> {
     match signatures.get(&action.native_action_name) {
-        Some((prev, first_at)) if *prev != sig => {
+        Some((_, first_at, prev_effect)) if *prev_effect != action.native_action_effect => {
+            let refusal = located_on_action(
+                action,
+                diag_label,
+                ValidationError::NativeActionSignatureConflict {
+                    name: action.native_action_name.clone(),
+                    detail: format!(
+                        "effect '{}' here disagrees with '{prev_effect}' at another call site: \
+                         one host operation is either a duty or a notice",
+                        action.native_action_effect
+                    ),
+                },
+            );
+            Err(match first_at {
+                Some(at) => refusal.related_to(RelatedSite {
+                    role: RelatedRole::ConflictingUse,
+                    location: SourceLocation {
+                        file: diag_label.to_string(),
+                        line: at.line,
+                        col: at.col,
+                    },
+                    actual: Some(action.native_action_name.clone()),
+                }),
+                None => refusal,
+            })
+        }
+        Some((prev, first_at, _)) if *prev != sig => {
             let refusal = located_on_action(
                 action,
                 diag_label,
@@ -599,7 +819,11 @@ fn register_signature(
         None => {
             signatures.insert(
                 action.native_action_name.clone(),
-                (sig, action.source_location.clone()),
+                (
+                    sig,
+                    action.source_location.clone(),
+                    action.native_action_effect.clone(),
+                ),
             );
             Ok(())
         }
@@ -721,6 +945,27 @@ pub struct NativeActions {
     /// out of [`Self::interface_def`] because it holds its calls in a `Vec`:
     /// the template emits it only for a profile with `alloc`.
     pub recording_def: String,
+    /// Whether the document states any duty (docs/adr/0038): an action whose
+    /// effect is `duty`. Drives the realization member of the interface and the
+    /// refusal, at the machine's construction, of a host that only simulates.
+    /// A document with no duty is built exactly as before.
+    pub has_duty: bool,
+}
+
+/// The line the host interface declares for its realization when the machine
+/// states a duty (docs/adr/0038, decision 3): what the host does with the
+/// machine's duties, `performs` or `simulates`. One member, with no default, so
+/// a host cannot omit it. Its type lives in each backend's runtime library, and
+/// the spelling is that backend's own.
+fn realization_member(lang: Language) -> &'static str {
+    match lang {
+        Language::Rust => "    const REALIZATION: ::sce_rust_runtime::ActionRealization;\n",
+        Language::Go => "\tRealization() sce.ActionRealization\n",
+        Language::Kotlin => "    val realization: ActionRealization\n",
+        Language::Python => "    realization: \"ActionRealization\"\n\n",
+        Language::Cpp => "    virtual SCE::ActionRealization realization() const = 0;\n",
+        Language::C11 => "    sce_action_realization_t realization;\n",
+    }
 }
 
 /// One host operation's signature: the ordered `(parameter name, declared
@@ -1004,8 +1249,12 @@ fn render_with_options(
         .map(|n| method_name(lang, n))
         .chain(child_hosts.iter().map(|h| method_name(lang, &h.operation)))
         .collect();
+    let has_duty = document_has_duties(model);
     let (interface_def, interface_name) = if any {
-        (build_interface(lang, &name, &sigs, &child_hosts), name)
+        (
+            build_interface(lang, &name, &sigs, &child_hosts, has_duty),
+            name,
+        )
     } else {
         (String::new(), String::new())
     };
@@ -1013,7 +1262,7 @@ fn render_with_options(
     // apart, because it holds its calls in a `Vec` and the template emits it
     // only where `alloc` is.
     let recording_def = if any && lang == Language::Rust {
-        rust_recording_host(&interface_name, &sigs, &child_hosts)
+        rust_recording_host(&interface_name, &sigs, &child_hosts, has_duty)
     } else {
         String::new()
     };
@@ -1025,6 +1274,7 @@ fn render_with_options(
         any,
         operation_names,
         recording_def,
+        has_duty,
     }
 }
 
@@ -1507,6 +1757,7 @@ fn build_interface(
     interface_name: &str,
     sigs: &BTreeMap<String, Signature>,
     children: &[ChildHost],
+    has_duty: bool,
 ) -> String {
     const DOC: [&str; 3] = [
         "W3C SCXML G.7: host operations dispatched by `<sce:action>`.",
@@ -1525,7 +1776,13 @@ fn build_interface(
             .collect()
     };
 
-    let mut methods = String::new();
+    // The realization leads the members, so a reader of the interface meets
+    // what the host owes before the operations it owes it through.
+    let mut methods = if has_duty {
+        realization_member(lang).to_string()
+    } else {
+        String::new()
+    };
     match lang {
         Language::Rust => {
             for (name, sig) in sigs {
@@ -1599,7 +1856,7 @@ fn build_interface(
             format!(
                 "/**\n{} */\ninterface {interface_name} {{\n{methods}}}\n\n{}",
                 doc(" * "),
-                kotlin_recording_host(interface_name, sigs, children)
+                kotlin_recording_host(interface_name, sigs, children, has_duty)
             )
         }
         Language::Python => {
@@ -1708,10 +1965,19 @@ fn kotlin_recording_host(
     interface_name: &str,
     sigs: &BTreeMap<String, Signature>,
     children: &[ChildHost],
+    has_duty: bool,
 ) -> String {
     let lang = Language::Kotlin;
     let mut variants = String::new();
-    let mut overrides = String::new();
+    // A recorder performs nothing, so it says it simulates (docs/adr/0038,
+    // decision 4): a machine with a duty refuses it unless the caller accepts a
+    // simulated host by name.
+    let mut overrides = if has_duty {
+        "    override val realization: ActionRealization = ActionRealization.SIMULATES\n\n"
+            .to_string()
+    } else {
+        String::new()
+    };
     let mut sources = String::new();
     for child in children {
         let method = method_name(lang, &child.operation);
@@ -1809,6 +2075,7 @@ fn rust_recording_host(
     interface_name: &str,
     sigs: &BTreeMap<String, Signature>,
     children: &[ChildHost],
+    has_duty: bool,
 ) -> String {
     let lang = Language::Rust;
     let owned = |t: &SceType| -> String {
@@ -1819,7 +2086,16 @@ fn rust_recording_host(
         }
     };
     let mut variants = String::new();
-    let mut methods = String::new();
+    // A recorder performs nothing, so it says it simulates (docs/adr/0038,
+    // decision 4): a machine with a duty refuses it unless it is built with
+    // `new_simulated`.
+    let mut methods = if has_duty {
+        "    const REALIZATION: ::sce_rust_runtime::ActionRealization =\n        \
+         ::sce_rust_runtime::ActionRealization::Simulates;\n"
+            .to_string()
+    } else {
+        String::new()
+    };
     // What a parent with children adds: one type parameter and one source function
     // per child host, and the operation that records the question and answers.
     let mut type_params = Vec::new();
@@ -2063,6 +2339,210 @@ mod tests {
         );
     }
 
+    /// A statechart with one state whose `<onentry>` and `<onexit>` hold
+    /// `entry` and `exit` (docs/adr/0038).
+    fn entry_exit_doc(entry: &str, exit: &str) -> String {
+        format!(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="live">
+                <state id="live">
+                    <onentry>{entry}</onentry>
+                    <onexit>{exit}</onexit>
+                </state>
+            </scxml>"#
+        )
+    }
+
+    fn release_detail(scxml: &str) -> String {
+        match validate(&parse(scxml), &BTreeMap::new(), "t")
+            .expect_err("the release is refused")
+            .error
+        {
+            ForgeError::Validation(err) => match *err {
+                ValidationError::NativeActionRelease { detail, .. } => detail,
+                other => panic!("expected NativeActionRelease, got {other:?}"),
+            },
+            other => panic!("expected a validation error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_duty_released_on_the_exit_of_its_own_state_is_accepted() {
+        let model = parse(&entry_exit_doc(
+            r#"<sce:action name="start_x" effect="duty" released-by="stop_x"/>"#,
+            r#"<sce:action name="stop_x" effect="duty"/>"#,
+        ));
+        assert!(validate(&model, &BTreeMap::new(), "t").is_ok());
+    }
+
+    #[test]
+    fn a_duty_may_state_no_release_and_last_the_machines_life() {
+        let model = parse(&entry_exit_doc(
+            r#"<sce:action name="start_x" effect="duty"/>"#,
+            "",
+        ));
+        assert!(validate(&model, &BTreeMap::new(), "t").is_ok());
+    }
+
+    #[test]
+    fn an_action_that_states_no_effect_is_refused_at_the_element() {
+        let err = SCXMLParser::new()
+            .parse_string(&entry_exit_doc(r#"<sce:action name="start_x"/>"#, ""), "t")
+            .expect_err("an action must state its effect");
+        let text = format!("{err:?}");
+        assert!(
+            text.contains("MissingAttribute") && text.contains("effect"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn an_effect_that_is_neither_duty_nor_notice_is_refused_with_both_as_candidates() {
+        let err = SCXMLParser::new()
+            .parse_string(
+                &entry_exit_doc(r#"<sce:action name="start_x" effect="must"/>"#, ""),
+                "t",
+            )
+            .expect_err("only duty and notice are effects");
+        let text = format!("{err:?}");
+        assert!(
+            text.contains("InvalidAttribute")
+                && text.contains("\"duty\"")
+                && text.contains("\"notice\""),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn one_name_cannot_be_a_duty_at_one_site_and_a_notice_at_another() {
+        let model = parse(&entry_exit_doc(
+            r#"<sce:action name="f" effect="duty"/>"#,
+            r#"<sce:action name="f" effect="notice"/>"#,
+        ));
+        let refusal = validate(&model, &BTreeMap::new(), "t").expect_err("the effects differ");
+        let text = format!("{:?}", refusal.error);
+        assert!(
+            text.contains("NativeActionSignatureConflict") && text.contains("effect"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn a_release_on_a_notice_is_refused() {
+        let detail = release_detail(&entry_exit_doc(
+            r#"<sce:action name="note_x" effect="notice" released-by="stop_x"/>"#,
+            r#"<sce:action name="stop_x" effect="duty"/>"#,
+        ));
+        assert!(detail.contains("takes nothing"), "{detail}");
+    }
+
+    #[test]
+    fn a_release_off_an_entry_is_refused() {
+        let detail = release_detail(&entry_exit_doc(
+            "",
+            r#"<sce:action name="stop_x" effect="duty" released-by="stop_x"/>"#,
+        ));
+        assert!(
+            detail.contains("only on an action of an <onentry>"),
+            "{detail}"
+        );
+    }
+
+    #[test]
+    fn a_release_that_names_no_action_is_refused() {
+        let detail = release_detail(&entry_exit_doc(
+            r#"<sce:action name="start_x" effect="duty" released-by="stop_missing"/>"#,
+            "",
+        ));
+        assert!(detail.contains("names no <sce:action>"), "{detail}");
+    }
+
+    #[test]
+    fn a_release_performed_on_another_states_exit_is_refused() {
+        let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="a">
+                <state id="a">
+                    <onentry><sce:action name="start_x" effect="duty" released-by="stop_x"/></onentry>
+                    <transition event="go" target="b"/>
+                </state>
+                <state id="b">
+                    <onexit><sce:action name="stop_x" effect="duty"/></onexit>
+                </state>
+            </scxml>"#;
+        let detail = release_detail(scxml);
+        assert!(
+            detail.contains("not performed on the <onexit> of state 'a'"),
+            "{detail}"
+        );
+    }
+
+    #[test]
+    fn a_release_the_host_may_drop_is_refused() {
+        let detail = release_detail(&entry_exit_doc(
+            r#"<sce:action name="start_x" effect="duty" released-by="stop_x"/>"#,
+            r#"<sce:action name="stop_x" effect="notice"/>"#,
+        ));
+        assert!(detail.contains("may drop"), "{detail}");
+    }
+
+    #[test]
+    fn host_duties_name_each_duty_site_and_leave_notices_out() {
+        let model = parse(&entry_exit_doc(
+            r#"<sce:action name="start_x" effect="duty" released-by="stop_x"/>
+               <sce:action name="show_x" effect="notice"/>"#,
+            r#"<sce:action name="stop_x" effect="duty"/>"#,
+        ));
+        let records = host_duty_records(&model);
+        let seen: Vec<(&str, &str, Option<&str>)> = records
+            .iter()
+            .map(|r| (r.action.as_str(), r.on, r.released_by.as_deref()))
+            .collect();
+        assert_eq!(
+            seen,
+            vec![
+                ("start_x", "entry", Some("stop_x")),
+                ("stop_x", "exit", None)
+            ]
+        );
+        assert!(document_has_duties(&model));
+    }
+
+    #[test]
+    fn a_document_of_notices_has_no_duty() {
+        let model = parse(&entry_exit_doc(
+            r#"<sce:action name="show_x" effect="notice"/>"#,
+            "",
+        ));
+        assert!(!document_has_duties(&model));
+        assert!(host_duty_records(&model).is_empty());
+    }
+
+    #[test]
+    fn the_realization_is_declared_only_where_the_machine_has_a_duty() {
+        for lang in [
+            Language::Rust,
+            Language::Go,
+            Language::Kotlin,
+            Language::Python,
+            Language::Cpp,
+            Language::C11,
+        ] {
+            let with = build_interface(lang, "MActions", &BTreeMap::new(), &[], true);
+            let without = build_interface(lang, "MActions", &BTreeMap::new(), &[], false);
+            let member = realization_member(lang);
+            assert!(with.contains(member.trim_end()), "{lang:?}:\n{with}");
+            assert!(!without.contains("ealization"), "{lang:?}:\n{without}");
+        }
+    }
+
+    #[test]
+    fn a_recorder_of_a_machine_with_a_duty_says_it_simulates() {
+        let rust = rust_recording_host("MActions", &BTreeMap::new(), &[], true);
+        assert!(rust.contains("ActionRealization::Simulates"), "{rust}");
+        let kotlin = build_interface(Language::Kotlin, "MActions", &BTreeMap::new(), &[], true);
+        assert!(kotlin.contains("ActionRealization.SIMULATES"), "{kotlin}");
+        let plain = rust_recording_host("MActions", &BTreeMap::new(), &[], false);
+        assert!(!plain.contains("ealization"), "{plain}");
+    }
+
     #[test]
     fn consistent_signature_across_transitions_accepted() {
         // Same action name `f` with the same field (hence same type) on two
@@ -2246,7 +2726,7 @@ mod tests {
             ],
         );
         sigs.insert("reset_slot".to_string(), Vec::new());
-        let out = build_interface(Language::Kotlin, "MActions", &sigs, &[]);
+        let out = build_interface(Language::Kotlin, "MActions", &sigs, &[], false);
         assert!(
             out.contains("class RecordingMActions : MActions {"),
             "the recorder implements the interface it is generated from:\n{out}"
@@ -2278,7 +2758,7 @@ mod tests {
         }];
         let mut sigs: BTreeMap<String, Signature> = BTreeMap::new();
         sigs.insert("reset_slot".to_string(), Vec::new());
-        let out = build_interface(Language::Kotlin, "MActions", &sigs, &children);
+        let out = build_interface(Language::Kotlin, "MActions", &sigs, &children, false);
         assert!(
             out.contains("    fun resetSlot()\n    fun actionsForWorker(): WorkerActions\n}"),
             "the acts, then the operation that answers a child's host:\n{out}"
@@ -2299,7 +2779,7 @@ mod tests {
             "the question is recorded, then answered:\n{out}"
         );
         // A parent with no child to answer for is as it was.
-        let plain = build_interface(Language::Kotlin, "MActions", &sigs, &[]);
+        let plain = build_interface(Language::Kotlin, "MActions", &sigs, &[], false);
         assert!(!plain.contains("Source"), "{plain}");
     }
 
@@ -2314,7 +2794,7 @@ mod tests {
         }];
         let mut sigs: BTreeMap<String, Signature> = BTreeMap::new();
         sigs.insert("reset_slot".to_string(), Vec::new());
-        let out = build_interface(Language::Python, "MActions", &sigs, &children);
+        let out = build_interface(Language::Python, "MActions", &sigs, &children, false);
         let act = out.find("def reset_slot(self) -> None:").expect(&out);
         let factory = out
             .find("def actions_for_worker(self) -> \"WorkerActions\":")
@@ -2323,7 +2803,7 @@ mod tests {
             act < factory,
             "the acts, then the operation that answers a child's host:\n{out}"
         );
-        let plain = build_interface(Language::Python, "MActions", &sigs, &[]);
+        let plain = build_interface(Language::Python, "MActions", &sigs, &[], false);
         assert!(!plain.contains("actions_for"), "{plain}");
     }
 
@@ -2347,7 +2827,7 @@ mod tests {
         }];
         let mut sigs: BTreeMap<String, Signature> = BTreeMap::new();
         sigs.insert("reset_slot".to_string(), Vec::new());
-        let out = build_interface(Language::Cpp, "MActions", &sigs, &children);
+        let out = build_interface(Language::Cpp, "MActions", &sigs, &children, false);
         let act = out.find("virtual void resetSlot() = 0;").expect(&out);
         let factory = out
             .find("virtual ::SCE::Generated::worker::WorkerActions& actionsForWorker() = 0;")
@@ -2356,7 +2836,7 @@ mod tests {
             act < factory,
             "the acts, then the operation that answers a child's host:\n{out}"
         );
-        let plain = build_interface(Language::Cpp, "MActions", &sigs, &[]);
+        let plain = build_interface(Language::Cpp, "MActions", &sigs, &[], false);
         assert!(!plain.contains("actionsFor"), "{plain}");
     }
 
@@ -2372,7 +2852,7 @@ mod tests {
         assert_eq!(children[0].child_interface, "worker_actions_t");
         let mut sigs: BTreeMap<String, Signature> = BTreeMap::new();
         sigs.insert("reset_slot".to_string(), Vec::new());
-        let out = build_interface(Language::C11, "m_actions_t", &sigs, &children);
+        let out = build_interface(Language::C11, "m_actions_t", &sigs, &children, false);
         let act = out
             .find("void (*reset_slot)(void *user_data);")
             .expect(&out);
@@ -2383,7 +2863,7 @@ mod tests {
             act < factory,
             "the acts, then the operation that answers a child's host:\n{out}"
         );
-        let plain = build_interface(Language::C11, "m_actions_t", &sigs, &[]);
+        let plain = build_interface(Language::C11, "m_actions_t", &sigs, &[], false);
         assert!(!plain.contains("actions_for"), "{plain}");
     }
 
@@ -2454,7 +2934,7 @@ mod tests {
             ],
         );
         sigs.insert("reset_slot".to_string(), Vec::new());
-        let out = rust_recording_host("MActions", &sigs, &[]);
+        let out = rust_recording_host("MActions", &sigs, &[], false);
         assert!(
             out.contains("impl MActions for RecordingMActions {"),
             "the recorder implements the trait it is generated from:\n{out}"
@@ -2496,7 +2976,7 @@ mod tests {
         );
         let mut sigs: BTreeMap<String, Signature> = BTreeMap::new();
         sigs.insert("reset_slot".to_string(), Vec::new());
-        let out = build_interface(Language::Rust, "MActions", &sigs, &children);
+        let out = build_interface(Language::Rust, "MActions", &sigs, &children, false);
         assert!(
             out.contains(
                 "pub trait MActions {\n    type ActionsForWorker: super::worker_sm::WorkerActions + 'static;\n"
@@ -2512,7 +2992,7 @@ mod tests {
             "the acts, then the operation that answers a child's host:\n{out}"
         );
 
-        let recording = rust_recording_host("MActions", &sigs, &children);
+        let recording = rust_recording_host("MActions", &sigs, &children, false);
         assert!(
             recording.contains(
                 "pub struct RecordingMActions<ActionsForWorkerHost: super::worker_sm::WorkerActions + 'static> {"
@@ -2532,7 +3012,7 @@ mod tests {
             ),
             "the question is recorded, then answered:\n{recording}"
         );
-        let plain = build_interface(Language::Rust, "MActions", &sigs, &[]);
+        let plain = build_interface(Language::Rust, "MActions", &sigs, &[], false);
         assert!(!plain.contains("type "), "{plain}");
     }
 }

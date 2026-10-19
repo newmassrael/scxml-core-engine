@@ -97,6 +97,12 @@ pub enum Word {
     Test,
     Param,
     Arg,
+    /// A host action's effect clause: `effect duty` or `effect notice`
+    /// (docs/adr/0038). The value is the document's own word and is not
+    /// translated; this names the clause.
+    Effect,
+    /// A duty's release clause: `released-by <action>` (docs/adr/0038).
+    ReleasedBy,
     From,
     Expr,
     Observer,
@@ -278,6 +284,8 @@ impl Word {
         Word::Test,
         Word::Param,
         Word::Arg,
+        Word::Effect,
+        Word::ReleasedBy,
         Word::From,
         Word::Expr,
         Word::Observer,
@@ -439,6 +447,8 @@ fn en_word(w: Word) -> &'static str {
         Word::Test => "test",
         Word::Param => "param",
         Word::Arg => "arg",
+        Word::Effect => "effect",
+        Word::ReleasedBy => "released-by",
         Word::From => "from",
         Word::Expr => "expr",
         Word::Observer => "observer",
@@ -966,6 +976,8 @@ fn ko_word(w: Word) -> &'static str {
         Word::Test => "시험",
         Word::Param => "인자",
         Word::Arg => "인수",
+        Word::Effect => "효과",
+        Word::ReleasedBy => "해제",
         Word::From => "위치",
         Word::Expr => "식",
         Word::Observer => "관찰",

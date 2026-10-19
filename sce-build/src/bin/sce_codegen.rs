@@ -995,6 +995,9 @@ struct GenerateReport {
     /// judged (`--profile`); `None` when no profile was given.
     profile: Option<sce_build::manifest::ProfileInfo>,
     host_processor_causes: Vec<sce_build::host_processor_analyzer::HostProcessorCauseRecord>,
+    /// Every duty the run's statecharts state (docs/adr/0038), read from the
+    /// parsed model as `host_processor_causes` is.
+    host_duties: Vec<sce_build::forge::native_action::HostDutyRecord>,
     /// The `--host-processor` declarations this run was given, echoed so
     /// a consumer can check the build's half of the contract against the
     /// registrations its host makes.
@@ -1165,6 +1168,7 @@ fn build_manifest<'a>(
         }),
         surface: report.surface.as_ref(),
         host_processor_causes: &report.host_processor_causes,
+        host_duties: &report.host_duties,
         host_processor_types: &report.host_processor_types,
         host_invoker_types: &report.host_invoker_types,
         unreadable_variables: &report.unreadable_variables,
@@ -4252,6 +4256,7 @@ fn scxml_host_requirement_facts(path: &str) -> Option<HostRequirements> {
         needs_event_scheduler: model.needs_event_scheduler_driving(),
         needs_host_processor: !model.host_processor_causes.is_empty(),
         host_processor_causes: model.host_processor_cause_records(),
+        host_duties: sce_build::forge::native_action::host_duty_records(&model),
         unreadable_variables: model.unreadable_variables,
         unresolved,
         open_interface,
@@ -4475,6 +4480,7 @@ struct HostRequirements {
     needs_event_scheduler: bool,
     needs_host_processor: bool,
     host_processor_causes: Vec<sce_build::host_processor_analyzer::HostProcessorCauseRecord>,
+    host_duties: Vec<sce_build::forge::native_action::HostDutyRecord>,
     unreadable_variables: Vec<sce_build::reader_names::UnreadableVariable>,
     /// What the document leaves open — `sce:unresolved` / `sce:assumed`.
     unresolved: Vec<sce_build::unresolved_check::UnresolvedRecord>,
@@ -4527,6 +4533,8 @@ fn accumulate_host_requirements(
                 report.host_processor_causes.push(cause);
             }
         }
+        // A duty is one site of one document; a set reports each member's.
+        report.host_duties.extend(facts.host_duties);
         // Per document, not unioned: each record carries its location, and
         // one name refused in two documents is two refusals.
         report
@@ -5057,6 +5065,7 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
             report.talks_to_a_mesh_peer =
                 sce_build::host_processor_analyzer::talks_to_a_mesh_peer(&model);
             report.host_processor_causes = model.host_processor_cause_records();
+            report.host_duties = sce_build::forge::native_action::host_duty_records(&model);
             report
                 .unreadable_variables
                 .clone_from(&model.unreadable_variables);
@@ -6193,6 +6202,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
         report.talks_to_a_mesh_peer =
             sce_build::host_processor_analyzer::talks_to_a_mesh_peer(&model);
         report.host_processor_causes = model.host_processor_cause_records();
+        report.host_duties = sce_build::forge::native_action::host_duty_records(&model);
         report
             .unreadable_variables
             .clone_from(&model.unreadable_variables);

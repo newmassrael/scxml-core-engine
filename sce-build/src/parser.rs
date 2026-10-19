@@ -4145,8 +4145,35 @@ impl SCXMLParser {
         let name = elem.attribute("name").unwrap_or("").trim().to_string();
         require_attr(!name.is_empty(), "<sce:action>", "name", elem)?;
 
+        // docs/adr/0038: every action says whether the machine depends on the
+        // host performing it. An action that does not is the gap the ADR closes,
+        // so it is refused here, at the element, as a missing `name` is.
+        let effect = elem.attribute("effect").unwrap_or("").trim().to_string();
+        require_attr(!effect.is_empty(), "<sce:action>", "effect", elem)?;
+        if !matches!(effect.as_str(), "duty" | "notice") {
+            let pos = elem.document().text_pos_at(elem.range().start);
+            return Err(Located::new(
+                ValidationError::InvalidAttribute {
+                    element: "<sce:action>".into(),
+                    attr: "effect".into(),
+                    value: effect,
+                    allowed: vec!["duty".into(), "notice".into()],
+                }
+                .into(),
+                source_name,
+                Some(pos.row),
+                Some(pos.col),
+            ));
+        }
+
         action.action_type = "native_action".to_string();
         action.native_action_name = name;
+        action.native_action_effect = effect;
+        action.native_action_released_by = elem
+            .attribute("released-by")
+            .unwrap_or("")
+            .trim()
+            .to_string();
 
         for arg in elem.children().filter(|c| {
             c.is_element()

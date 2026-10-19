@@ -3763,11 +3763,17 @@ fn parse_scxml_action_body(
         a.action_type = "native_action".to_string();
         a.native_action_name = undo(rest.trim_end_matches(':'), line.number)?;
         for (k, sub) in group(kids) {
-            let arg = k.text.strip_prefix("arg ").ok_or_else(|| ParseError {
-                line: k.number,
-                why: format!("`{}` is not a call argument", k.text),
-            })?;
-            a.params.push(parse_param(arg, &sub, k.number)?);
+            if let Some(effect) = k.text.strip_prefix("effect ") {
+                a.native_action_effect = undo(effect, k.number)?;
+            } else if let Some(release) = k.text.strip_prefix("released-by ") {
+                a.native_action_released_by = undo(release, k.number)?;
+            } else {
+                let arg = k.text.strip_prefix("arg ").ok_or_else(|| ParseError {
+                    line: k.number,
+                    why: format!("`{}` is not a call clause", k.text),
+                })?;
+                a.params.push(parse_param(arg, &sub, k.number)?);
+            }
         }
     } else if t == "assign:" || t.starts_with("assign ") {
         a.action_type = "assign".to_string();

@@ -45,6 +45,13 @@ pub const SESSION_RUNTIME: SessionRuntime = SessionRuntime {
     rx_busy_poll_us: {{ rx_busy_poll_us }},
 };
 
+/// The wait budget `SESSION_RUNTIME.rx_busy_poll_us` declares, as the
+/// `Duration` `sce_link_runtime::busy_poll::read_within` takes; zero when the
+/// deploy declares none, which makes that function one read and no loop.
+pub const fn rx_busy_poll() -> core::time::Duration {
+    core::time::Duration::from_micros(SESSION_RUNTIME.rx_busy_poll_us as u64)
+}
+
 /// Build the tokio runtime `SESSION_RUNTIME.drive` declares. The one place the
 /// drive is interpreted: a host that builds its runtime here cannot disagree
 /// with the deploy, and a host that builds it elsewhere has chosen to.

@@ -527,6 +527,14 @@ pub struct Manifest<'a> {
     /// [`Self::script_engine_causes`].
     #[serde(skip_serializing_if = "<[_]>::is_empty")]
     pub host_processor_causes: &'a [HostProcessorCauseRecord],
+    /// Every site where the machine states a duty — a `<sce:action>` whose
+    /// effect is `duty`, the operations the machine's correctness depends on the
+    /// host performing (docs/adr/0038). Omitted (not `[]`) when there are none.
+    /// Published and not enforced: a consumer that wires a host decides whether
+    /// to gate on it, and a build that drives the machine with a test double
+    /// keeps working.
+    #[serde(skip_serializing_if = "<[_]>::is_empty")]
+    pub host_duties: &'a [crate::forge::native_action::HostDutyRecord],
     /// Event I/O Processor types this build was told the host serves
     /// (`--host-processor`). Omitted when none were declared.
     ///
@@ -862,6 +870,7 @@ mod tests {
                     house_rules: None,
                 }),
                 host_processor_causes: &[],
+                host_duties: &[],
                 host_processor_types: &[],
                 host_invoker_types: &[],
                 unreadable_variables: &[],
@@ -919,6 +928,7 @@ mod tests {
             open: Vec::new(),
             profile: None,
             host_processor_causes: &[],
+            host_duties: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
             unreadable_variables: &[],
@@ -955,6 +965,7 @@ mod tests {
             open: Vec::new(),
             profile: None,
             host_processor_causes: &[],
+            host_duties: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
             unreadable_variables: &[],
@@ -997,6 +1008,7 @@ mod tests {
             open: Vec::new(),
             profile: None,
             host_processor_causes: &[],
+            host_duties: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
             unreadable_variables: &[],
@@ -1060,6 +1072,7 @@ mod tests {
             open: Vec::new(),
             profile: None,
             host_processor_causes: &causes,
+            host_duties: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
             unreadable_variables: &[],
@@ -1108,6 +1121,7 @@ mod tests {
             open: Vec::new(),
             profile: None,
             host_processor_causes: &[],
+            host_duties: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
             unreadable_variables: &[],
@@ -1164,6 +1178,7 @@ mod tests {
             open: Vec::new(),
             profile: None,
             host_processor_causes: &[],
+            host_duties: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
             unreadable_variables: &[],
@@ -1204,6 +1219,7 @@ mod tests {
             open: Vec::new(),
             profile: None,
             host_processor_causes: &[],
+            host_duties: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
             unreadable_variables: &[],
@@ -1251,6 +1267,7 @@ mod tests {
             open: Vec::new(),
             profile: None,
             host_processor_causes: &[],
+            host_duties: &[],
             host_processor_types: &declared,
             // The invoke half declared beside it, because the two travel
             // together on a real build and a record carrying only one
@@ -1300,6 +1317,7 @@ mod tests {
             open: Vec::new(),
             profile: None,
             host_processor_causes: &[],
+            host_duties: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
             unreadable_variables: &[],

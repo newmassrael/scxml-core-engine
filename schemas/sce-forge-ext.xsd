@@ -2003,6 +2003,20 @@
         <xs:element ref="sce:arg" minOccurs="0" maxOccurs="unbounded"/>
       </xs:sequence>
       <xs:attribute name="name" type="xs:string" use="required"/>
+      <!-- Whether the machine's correctness depends on the host performing
+           the operation (docs/adr/0038). Required: an action that does not say
+           is the gap the attribute closes. -->
+      <xs:attribute name="effect" use="required">
+        <xs:simpleType>
+          <xs:restriction base="xs:string">
+            <xs:enumeration value="duty"/>
+            <xs:enumeration value="notice"/>
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:attribute>
+      <!-- The action of the same state's `<onexit>` that gives back what this
+           duty took on `<onentry>`. -->
+      <xs:attribute name="released-by" type="xs:string"/>
     </xs:complexType>
   </xs:element>
 

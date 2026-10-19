@@ -750,14 +750,18 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
         self.basic_http_access_uri = access_uri.into();
     }
 
-    pub fn new({% if has_native_actions %}actions: A, {% endif %}script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>) -> Self {
+{# docs/adr/0038: a machine that states a duty is built through `new`, which
+   refuses a host that only simulates, or `new_simulated`, which is the caller
+   saying so on purpose. Both reach this one constructor. A machine with no
+   duty keeps `new` as it was. #}
+    {% if has_native_duties %}fn construct{% else %}pub fn new{% endif %}({% if has_native_actions %}actions: A, {% endif %}script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>) -> Self {
         Self {
 {% if has_native_actions %}
             actions,
 {% endif %}
             script_engine,
 {% else %}
-    pub fn new({% if has_native_actions %}actions: A{% endif %}) -> Self {
+    {% if has_native_duties %}fn construct{% else %}pub fn new{% endif %}({% if has_native_actions %}actions: A{% endif %}) -> Self {
 {# SCE Accepted Subset §2.15: each sce-static variable's initial value, in
    declaration order — an initial value reads the variables declared before
    it by these names. #}
@@ -841,6 +845,44 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
 {% endif %}
         }
     }
+{% if has_native_duties %}
+
+    /// docs/adr/0038: the compile-time refusal of a host that only simulates the
+    /// duties this machine states. Evaluated where a machine is built with a
+    /// host type, so a recorder or a test double does not reach production
+    /// by accident; build one on purpose with [`Self::new_simulated`].
+    const HOST_PERFORMS_DUTIES: () = assert!(
+        A::REALIZATION.is_performing(),
+        "this machine states a duty and its host declares REALIZATION = Simulates: \
+         build it with `new_simulated` to run it on a test double on purpose"
+    );
+
+    /// Build the machine with a host that performs its duties. A host whose
+    /// `REALIZATION` is `Simulates` does not compile here.
+{% if model.needs_script_engine %}
+    pub fn new(actions: A, script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>) -> Self {
+        let () = Self::HOST_PERFORMS_DUTIES;
+        Self::construct(actions, script_engine)
+    }
+
+    /// Build the machine with a host that only simulates its duties — a
+    /// recorder, a test double — as the caller's statement that it means to.
+    pub fn new_simulated(actions: A, script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>) -> Self {
+        Self::construct(actions, script_engine)
+    }
+{% else %}
+    pub fn new(actions: A) -> Self {
+        let () = Self::HOST_PERFORMS_DUTIES;
+        Self::construct(actions)
+    }
+
+    /// Build the machine with a host that only simulates its duties — a
+    /// recorder, a test double — as the caller's statement that it means to.
+    pub fn new_simulated(actions: A) -> Self {
+        Self::construct(actions)
+    }
+{% endif %}
+{% endif %}
 {% if has_native_actions %}
 
     /// W3C SCXML G.7: the host the `<sce:action>` operations are dispatched

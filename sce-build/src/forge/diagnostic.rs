@@ -807,6 +807,10 @@ pub enum DiagnosticCode {
     ValidationNativeActionArgument,
     #[serde(rename = "validation/native-action-signature-conflict")]
     ValidationNativeActionSignatureConflict,
+    /// docs/adr/0038 — a `released-by` on a `<sce:action>` that cannot be
+    /// honoured. `actual` is the release the document names.
+    #[serde(rename = "validation/native-action-release")]
+    ValidationNativeActionRelease,
     #[serde(rename = "validation/mesh-rpc-reserved-param")]
     ValidationMeshRpcReservedParam,
     #[serde(rename = "validation/mesh-rpc-missing-target")]
@@ -3506,6 +3510,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationTypedInvokeRequest,
         ValidationNativeActionArgument,
         ValidationNativeActionSignatureConflict,
+        ValidationNativeActionRelease,
         ValidationMeshRpcReservedParam,
         ValidationMeshRpcMissingTarget,
         ValidationMeshRpcDuplicateTarget,
@@ -4750,6 +4755,7 @@ impl DiagnosticCode {
             | ValidationNativeActionPlacement
             | ValidationNativeActionArgument
             | ValidationNativeActionSignatureConflict
+            | ValidationNativeActionRelease
             | ValidationBytesMaxSizeViolation
             | ImportFileNotFound
             | ImportKindMismatch
@@ -4987,6 +4993,7 @@ impl DiagnosticCode {
             ValidationNativeActionSignatureConflict => {
                 "validation/native-action-signature-conflict"
             }
+            ValidationNativeActionRelease => "validation/native-action-release",
             ValidationMeshRpcReservedParam => "validation/mesh-rpc-reserved-param",
             ValidationMeshRpcMissingTarget => "validation/mesh-rpc-missing-target",
             ValidationMeshRpcDuplicateTarget => "validation/mesh-rpc-duplicate-target",
@@ -6939,6 +6946,21 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             actual: Some(name.clone()),
             fix: None,
             key_fragments: vec![name.clone(), detail.clone()],
+        },
+        // The repair — move the release, state a duty, name another action —
+        // is the author's, so there is no closed candidate set. `actual` is the
+        // release the row spells.
+        ValidationError::NativeActionRelease {
+            name,
+            released_by,
+            detail,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationNativeActionRelease,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(released_by.clone()),
+            fix: None,
+            key_fragments: vec![name.clone(), released_by.clone(), detail.clone()],
         },
         ValidationError::MeshRpcReservedParam { param, detail } => DiagnosticPayload {
             code: DiagnosticCode::ValidationMeshRpcReservedParam,
@@ -11796,6 +11818,16 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:2f5ea10b3dcdc557","code":"validation/native-action-signature-conflict","stage":"validation","message":"<sce:action name=\"append\">: argument types (bytes) here disagree with (uint32) on another transition","actual":"append"}"#,
+            ),
+            (
+                "forge/native-action-release",
+                ValidationError::NativeActionRelease {
+                    name: "start_keepalive".into(),
+                    released_by: "stop_keepalive".into(),
+                    detail: "'stop_keepalive' is not performed on the <onexit> of state 'established', whose <onentry> takes this duty: a way out of the state would not release it".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:0000000000000000","code":"validation/native-action-release","stage":"validation","message":"<sce:action name=\"start_keepalive\" released-by=\"stop_keepalive\">: 'stop_keepalive' is not performed on the <onexit> of state 'established', whose <onentry> takes this duty: a way out of the state would not release it","actual":"stop_keepalive"}"#,
             ),
             (
                 "forge/mesh-rpc-reserved-param",
@@ -17052,6 +17084,7 @@ mod tests {
             | ValidationTypedInvokeSchema
             | ValidationTypedInvokeRequest
             | ValidationNativeActionArgument
+            | ValidationNativeActionRelease
             | ValidationNativeActionSignatureConflict
             | ValidationMeshRpcReservedParam
             | ValidationMeshRpcMissingTarget
@@ -17968,7 +18001,8 @@ mod tests {
                 | ValidationDynamicFeatures | ValidationNativeActionPlacement
                 | ValidationTypedInvokeSchema | ValidationTypedInvokeRequest
                 | ValidationNativeActionArgument
-                | ValidationNativeActionSignatureConflict | ValidationMeshRpcReservedParam
+                | ValidationNativeActionSignatureConflict | ValidationNativeActionRelease
+                | ValidationMeshRpcReservedParam
                 | ValidationMeshRpcMissingTarget
                 | ValidationMeshRpcDuplicateTarget
                 | ValidationRemovedAttribute
@@ -18337,9 +18371,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            441,
+            442,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 441 distinct variants to match the DiagnosticCode \
+             expected 442 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -18979,6 +19013,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ValidationTypedInvokeSchema
             | ValidationTypedInvokeRequest
             | ValidationNativeActionArgument
+            | ValidationNativeActionRelease
             | ValidationNativeActionSignatureConflict
             | ValidationMeshRpcReservedParam
             | ValidationMeshRpcMissingTarget

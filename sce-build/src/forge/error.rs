@@ -1131,6 +1131,19 @@ pub enum ValidationError {
     #[error("<sce:action name=\"{name}\">: {detail}")]
     NativeActionSignatureConflict { name: String, detail: String },
 
+    /// docs/adr/0038 — a `<sce:action released-by>` that cannot be honoured:
+    /// it sits off an `<onentry>`, on an action that is not a duty, names no
+    /// action of the document, names one that is not performed on the
+    /// `<onexit>` of the same state, or names a release that is not itself a
+    /// duty. `released_by` is the name the document writes; `detail` says
+    /// which of the five it is.
+    #[error("<sce:action name=\"{name}\" released-by=\"{released_by}\">: {detail}")]
+    NativeActionRelease {
+        name: String,
+        released_by: String,
+        detail: String,
+    },
+
     /// Reserved `_mesh_*` `<param>` rule violation on
     /// `<invoke type="sce:mesh-rpc">` (SCE Mesh §9.5). Covers the four
     /// cases the spec calls out as hard build-time errors: the required

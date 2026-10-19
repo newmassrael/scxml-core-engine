@@ -2841,27 +2841,30 @@ fn render_scxml_action_body(a: &crate::model::Action, out: &mut Out<'_>) {
         ]),
         "script" => out.line(&format!("script {}", text(&a.content))),
         "native_action" => {
-            // One argument per line, as the algorithm's `call` does and
-            // for the same reason. ⚠ No native action in this tree
-            // carries an argument (measured: zero), so this arm is
-            // written to the rule rather than to an example.
-            if a.params.is_empty() {
+            // The effect is stated by every action (docs/adr/0038), so the
+            // line always opens a block: the effect, the release when there
+            // is one, then one argument per line, as the algorithm's `call`
+            // does and for the same reason.
+            out.line_of(vec![
+                Part::Word(Word::Call),
+                Part::Text(text(&a.native_action_name).into_owned()),
+                Part::Glued(":".into()),
+            ]);
+            out.nested(|out| {
                 out.line_of(vec![
-                    Part::Word(Word::Call),
-                    Part::Text(text(&a.native_action_name).into_owned()),
+                    Part::Word(Word::Effect),
+                    Part::Text(text(&a.native_action_effect).into_owned()),
                 ]);
-            } else {
-                out.line_of(vec![
-                    Part::Word(Word::Call),
-                    Part::Text(text(&a.native_action_name).into_owned()),
-                    Part::Glued(":".into()),
-                ]);
-                out.nested(|out| {
-                    for p in &a.params {
-                        render_param_into(Word::Arg, p, out);
-                    }
-                });
-            }
+                if !a.native_action_released_by.is_empty() {
+                    out.line_of(vec![
+                        Part::Word(Word::ReleasedBy),
+                        Part::Text(text(&a.native_action_released_by).into_owned()),
+                    ]);
+                }
+                for p in &a.params {
+                    render_param_into(Word::Arg, p, out);
+                }
+            });
         }
         "foreach" => {
             // The array is an expression and goes last; the index is an

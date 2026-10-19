@@ -478,6 +478,20 @@ pub struct Action {
     /// action.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub native_action_name: String,
+    /// `<sce:action effect="duty|notice">` (docs/adr/0038): whether the
+    /// machine's correctness depends on the host performing the operation.
+    /// `"duty"` is a dependence, `"notice"` is not (the host may observe,
+    /// record or drop it). Required of every `<sce:action>`: the parser refuses
+    /// an element that states none, so the field is empty only on an action
+    /// that is not a `native_action`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub native_action_effect: String,
+    /// `<sce:action released-by="op">` (docs/adr/0038): the `<sce:action>` of
+    /// the same machine that gives back what this `duty` took, performed on the
+    /// `<onexit>` of the state whose `<onentry>` took it. Empty for a duty that
+    /// lasts the machine's life and for a `notice`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub native_action_released_by: String,
     /// Codegen-internal: the fully-rendered backend call site for this
     /// `<sce:action>` (e.g. the Rust `self.actions.op(&ev.field);` wrapped
     /// in its payload-variant binding). Computed by the per-backend native
@@ -924,7 +938,12 @@ impl Action {
             "foreach" => &["array", "item", "index", "actions"],
             "if" => &["cond", "then_actions", "else_actions", "elseif_branches"],
             "log" => &["label", "expr"],
-            "native_action" => &["native_action_name", "params"],
+            "native_action" => &[
+                "native_action_name",
+                "native_action_effect",
+                "native_action_released_by",
+                "params",
+            ],
             "raise" => &["event"],
             "sce_append" => &["location", "expr"],
             "sce_clear" => &["location"],
