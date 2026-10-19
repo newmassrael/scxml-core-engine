@@ -2251,9 +2251,11 @@ performing it, with the required, unqualified attribute `effect`:
 
 - `effect="duty"`: the machine's correctness depends on the host performing the
   operation. `effect="notice"`: it does not; the host may observe, record or
-  drop it. An action with no `effect` is refused at the element
-  (`validation/missing-attribute`); a value that is neither word is refused
-  with both as candidates (`validation/invalid-attribute`). One name carries
+  drop it. An action with no `effect`, or with a value that is neither word,
+  is refused at the element by the grammar (`xml/schema-validation`, which
+  names the attribute and the two words); the parser holds the same two
+  refusals for a document that was not validated against it
+  (`validation/missing-attribute`, `validation/invalid-attribute`). One name carries
   one effect at every call site, because the effect belongs to the one host
   method that serves them (`validation/native-action-signature-conflict`).
 - A duty an `<onentry>` takes may name its release with `released-by`: an

@@ -2385,12 +2385,15 @@ mod tests {
 
     #[test]
     fn an_action_that_states_no_effect_is_refused_at_the_element() {
+        // The grammar (`schemas/sce-forge-ext.xsd`) declares `effect` required, and
+        // a document is held to it before the parser reads an element, so the
+        // refusal is the schema's, at the element, naming the attribute.
         let err = SCXMLParser::new()
             .parse_string(&entry_exit_doc(r#"<sce:action name="start_x"/>"#, ""), "t")
             .expect_err("an action must state its effect");
         let text = format!("{err:?}");
         assert!(
-            text.contains("MissingAttribute") && text.contains("effect"),
+            text.contains("SchemaValidation") && text.contains("'effect' is required but missing"),
             "{text}"
         );
     }
@@ -2405,9 +2408,9 @@ mod tests {
             .expect_err("only duty and notice are effects");
         let text = format!("{err:?}");
         assert!(
-            text.contains("InvalidAttribute")
-                && text.contains("\"duty\"")
-                && text.contains("\"notice\""),
+            text.contains("SchemaValidation")
+                && text
+                    .contains("The value 'must' is not an element of the set {'duty', 'notice'}"),
             "{text}"
         );
     }

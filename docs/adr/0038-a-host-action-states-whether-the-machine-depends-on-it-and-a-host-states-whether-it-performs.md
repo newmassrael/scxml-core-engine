@@ -51,8 +51,10 @@ here.
 
    The attribute is **required**: an action whose effect is unstated is the gap this ADR closes,
    and a period in which it is optional would leave the gap open under a lint that asks for the
-   fix. An action without it is refused at the element as a missing attribute; a value that is
-   neither word is refused as an invalid attribute with both words as candidates. One name carries
+   fix. An action without it, or with a value that is neither word, is refused at the element by
+   the grammar (`xml/schema-validation`, naming the attribute and both words); the parser holds
+   the same two refusals as a missing and an invalid attribute for a document the grammar did not
+   see. One name carries
    one effect at every call site, as it already carries one signature, because the effect is part
    of the one host method that serves them: a name that is a duty here and a notice there is
    refused as `validation/native-action-signature-conflict`.
@@ -138,8 +140,8 @@ here.
   `apis/forge-ast.v1.schema.json` and `schemas/sce-manifest.v1.schema.json` change under
   `SCE_WIRE_CONTRACTS.md`; all three are `pre-release`.
 - One new diagnostic code, `validation/native-action-release`, with its acceptance-doc row; the
-  other refusals reuse `validation/missing-attribute`, `validation/invalid-attribute` and
-  `validation/native-action-signature-conflict`.
+  other refusals reuse `xml/schema-validation`, `validation/missing-attribute`,
+  `validation/invalid-attribute` and `validation/native-action-signature-conflict`.
 - Every `<sce:action>` in a committed document states its effect, and every committed generated
   tree is regenerated. A host of a machine that states a duty adds one member; a host of a
   machine of notices is untouched.

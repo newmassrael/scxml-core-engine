@@ -1439,18 +1439,33 @@ mod tests {
                 "validation/exactly-one-attribute",
                 "SemanticExactlyOneAttribute",
             ),
+            // The `<sce:action>` effect leaves (docs/adr/0038): an effect that
+            // is neither word, a name that is a duty at one site and a notice
+            // at another, and a `released-by` that cannot be honoured. They
+            // mirror what the forge frontend raises for the same documents
+            // (`InvalidAttribute`, `NativeActionSignatureConflict`,
+            // `NativeActionRelease`), so all three reuse those codes.
+            ("validation/invalid-attribute", "SemanticInvalidAttribute"),
+            (
+                "validation/native-action-signature-conflict",
+                "SemanticNativeActionSignatureConflict",
+            ),
+            (
+                "validation/native-action-release",
+                "SemanticNativeActionRelease",
+            ),
         ];
         assert_eq!(
             rust_to_cpp.len(),
-            11,
-            "Expected 11 W5 leaves (§wire-W5 D2 inventory: 1 NEW + 10 REUSED)"
+            14,
+            "Expected 14 W5 leaves (§wire-W5 D2 inventory: 1 NEW + 13 REUSED)"
         );
 
         let expected_cpp: BTreeSet<&str> = rust_to_cpp.iter().map(|(_, cpp)| *cpp).collect();
         assert_eq!(
             expected_cpp.len(),
-            11,
-            "Expected 11 distinct SemanticError subtypes"
+            14,
+            "Expected 14 distinct SemanticError subtypes"
         );
 
         let hdr = include_str!("../../sce/include/parsing/SemanticError.h");
