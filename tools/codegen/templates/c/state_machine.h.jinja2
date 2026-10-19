@@ -17,6 +17,22 @@
    `void` for every other document shape, byte-identical to the pre-feature
    emit. Kept in step with the same `set` in `state_machine.c.jinja2`. #}
 {%- set init_rc = 'bool' if has_native_actions else 'void' %}
+{# docs/adr/0038: a machine takes the caller's opt-in for a simulated host when
+   it states a duty itself, or when a child it begins with a host of its own
+   states one, because the opt-in the caller gave a parent covers the children
+   the parent begins. `host_duty_children` is true for the second. A machine
+   with neither emits nothing new. Kept in step with the same `set`s in
+   `state_machine.c.jinja2`. #}
+{% set host_duty_children = namespace(any=false) %}
+{% for invoke_info in model.invokes | scxml %}
+{% if invoke_info.child_declares_host_duties %}{% set host_duty_children.any = true %}{% endif %}
+{% endfor %}
+{% for invoke_info in model.invokes | hybrid %}
+{% for candidate in invoke_info.candidates %}
+{% if candidate.child_declares_host_duties %}{% set host_duty_children.any = true %}{% endif %}
+{% endfor %}
+{% endfor %}
+{% set takes_simulated_host = has_native_duties or host_duty_children.any %}
 {# SCE Protocol-Synthesis RFC §synth-5-O: SCE-MAP marker anchoring the
    generated C11 header. Module-level form is a comment, not the
    `#line` directive — `#line` in a header would propagate into
@@ -66,6 +82,13 @@
    or not it has delays of its own. */
 #include "sce/clock.h"
 
+{% if has_native_duties %}
+/* docs/adr/0038: `sce_action_realization_t`, the first member of the host table
+   of a machine that states a duty
+   (backends/c/runtime/include/sce/action_realization.h). */
+#include "sce/action_realization.h"
+
+{% endif %}
 {% if model.on_sample_links %}
 /* SCE Protocol-Synthesis RFC §synth-5-E sample-callback codegen wire-up. `sce_sample_t`
    borrow type + `sce_sub_callback_t` typedef live in the runtime
@@ -540,6 +563,14 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
        already perform an act, so a vtable written after `_init` would arrive
        one act too late (and `_init` zeroes the struct anyway). */
     {{ native_actions_interface }} actions;
+{% endif %}
+{% if host_duty_children.any %}
+    /* docs/adr/0038: whether the caller initialised this machine through
+       `_init_with_simulated_actions`. A child begun with the table this
+       machine's own table answers for it is begun with the same opt-in, so
+       the caller states it once and it covers the children the machine begins;
+       the child makes the refusal itself, at its own `_invoked_begin`. */
+    bool accept_simulated_host;
 {% endif %}
 {% if event_payload_active %}
     /* NL→IR Item C1 Path A: the current event's typed `_event.data`
@@ -1033,6 +1064,9 @@ bool {{ csym_prefix }}{{ model.name }}_{{ var.reader.c11 }}(const {{ csym_prefix
    Usage:
 
      {{ native_actions_interface }} host = {
+{% if has_native_duties %}
+         .realization = SCE_ACTION_PERFORMS,
+{% endif %}
 {% for op in native_action_ops %}
          .{{ op }} = my_{{ op }},
 {% endfor %}
@@ -1042,10 +1076,37 @@ bool {{ csym_prefix }}{{ model.name }}_{{ var.reader.c11 }}(const {{ csym_prefix
          return;   // a member was NULL: the machine was NOT initialised
      }
 
+{% if has_native_duties %}
+   This document states a duty (docs/adr/0038), so the table's first member,
+   `realization`, must be written: `SCE_ACTION_PERFORMS` when the host performs
+   the duties. A table that says `SCE_ACTION_SIMULATES`, or says nothing, is
+   refused with false and the machine is left UNINITIALISED, as a NULL member
+   is. A recorder or a test double is accepted through
+   `{{ csym_prefix }}{{ model.name }}_init_with_simulated_actions`, which says so by its name.
+
+{% endif %}
    `actions` is copied into the machine, so the struct itself need not outlive
    this call; whatever `user_data` points at must. */
 bool {{ csym_prefix }}{{ model.name }}_init_with_actions({{ csym_prefix }}{{ model.name }}_t *sm,
                                                           const {{ native_actions_interface }} *actions);
+{% if takes_simulated_host %}
+
+/* docs/adr/0038: `_init_with_actions` for a host that only simulates the
+   duties this machine{% if host_duty_children.any %} (and the children it begins){% endif %} states — a recorder, a test double. It is the
+   same initialiser with the refusal of `SCE_ACTION_SIMULATES` lifted, called by
+   name so that accepting a simulated host is written where it is accepted;
+   a table that performs is accepted too, and one that says nothing, or has a
+   NULL member, is refused as there.
+{% if host_duty_children.any %}
+   A child this machine begins with the table its own table answers for it is
+   begun with the same opt-in.
+{% endif %}
+   Only this entry takes the opt-in. The entries that also install a clock, a
+   host processor or an invoker refuse a simulating host, because they are the
+   production wiring and a recorder is not. */
+bool {{ csym_prefix }}{{ model.name }}_init_with_simulated_actions({{ csym_prefix }}{{ model.name }}_t *sm,
+                                                                    const {{ native_actions_interface }} *actions);
+{% endif %}
 {% else %}
 /* Initialize SM to its initial state (W3C SCXML 3.3 + 3.6 compound descend).
    Must be called once before {{ csym_prefix }}{{ model.name }}_step / {{ csym_prefix }}{{ model.name }}_run. */
@@ -1096,6 +1157,11 @@ void {{ csym_prefix }}{{ model.name }}_init_with_parent({{ csym_prefix }}{{ mode
    the parent's clock and, for a child that addresses its parent, the routing
    `_init_with_parent` stamps); the parent then writes the values it was asked
    to hand over, and `_invoked_enter` runs the entry walk.
+{% if has_native_duties %}
+   This child states a duty (docs/adr/0038), so `accept_simulated` follows the
+   table: a table that says `SCE_ACTION_SIMULATES`, or says nothing, refuses the
+   start unless it is true. The parent passes the opt-in its own caller gave it.
+{% endif %}
 {% if has_native_actions %}
    A child that declares `<sce:action>`s is begun with the table of the host that
    performs them — the one its parent's own table answers for it — copied in
@@ -1104,6 +1170,9 @@ void {{ csym_prefix }}{{ model.name }}_init_with_parent({{ csym_prefix }}{{ mode
    start, leaving the child's storage as it was, and the parent reports it. */
 bool {{ csym_prefix }}{{ model.name }}_invoked_begin({{ csym_prefix }}{{ model.name }}_t *sm,
                                        const {{ native_actions_interface }} *actions,
+{% if has_native_duties %}
+                                       bool accept_simulated,
+{% endif %}
                                        void *parent_sm,
 {% else %}
    */

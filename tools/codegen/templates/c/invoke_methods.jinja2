@@ -665,6 +665,9 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
             if (!{{ csym_prefix }}{{ invoke_info.child_name }}_invoked_begin(
                     &sm->child_{{ invoke_info.field_suffix }},
                     {{ invoke_info.child_host_call }},
+                    {% if invoke_info.child_declares_host_duties %}
+                    sm->accept_simulated_host,
+                    {% endif %}
                     {% if invoke_info.child_has_send_to_parent %}sm,
                     {{ csym_prefix }}{{ model.name }}_dispatch_external_by_name{% else %}NULL,
                     NULL{% endif %},
@@ -903,6 +906,9 @@ sce_copy_bounded_id(_done_evt.name, "done.invoke.{{ invoke_info.invoke_id | esca
                 if (!{{ csym_prefix }}{{ candidate.stem }}_invoked_begin(
                         &sm->child_{{ invoke_info.field_suffix }}_{{ candidate.stem }},
                         {{ candidate.child_host_call }},
+                        {% if candidate.child_declares_host_duties %}
+                        sm->accept_simulated_host,
+                        {% endif %}
                         {% if candidate.child_has_send_to_parent %}sm,
                         {{ csym_prefix }}{{ model.name }}_dispatch_external_by_name{% else %}NULL,
                         NULL{% endif %},

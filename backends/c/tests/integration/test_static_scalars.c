@@ -122,6 +122,7 @@
 #include "static_foreach_sm.h"
 #include "static_history_sm.h"
 #include "static_host_call_sm.h"
+#include "static_host_duty_sm.h"
 #include "static_invoke_params_sm.h"
 #include "static_invoke_sm.h"
 #include "static_invoke_string_sm.h"
@@ -1843,6 +1844,51 @@ static const variable_t host_call_variables[] = {
 };
 STATIC_SCENARIO_HOSTED(static_host_call, host_call_states, host_call_variables, host_call_start(&sm), host_call_heard)
 
+// static_host_duty (docs/adr/0038): a duty taken on entering `engaged` beside a
+// notice, and given back on its <onexit>. The host installed here only records, so
+// it says it simulates, and the machine is started through the entry that names a
+// simulated host. What it heard is written as the compact JSON a scenario's
+// `host_calls` states, as the host of `static_host_call` above does, and handed back
+// through the same `host_call_heard`.
+static void host_hears_start_keepalive(void *user_data) {
+    (void)user_data;
+    host_hears("{\"action\":\"start_keepalive\",\"args\":[]}");
+}
+
+static void host_hears_note_engaged(void *user_data) {
+    (void)user_data;
+    host_hears("{\"action\":\"note_engaged\",\"args\":[]}");
+}
+
+static void host_hears_stop_keepalive(void *user_data) {
+    (void)user_data;
+    host_hears("{\"action\":\"stop_keepalive\",\"args\":[]}");
+}
+
+static void host_duty_start(static_host_duty_t *sm) {
+    static_host_duty_actions_t host;
+    memset(&host, 0, sizeof(host));
+    host.realization = SCE_ACTION_SIMULATES;
+    host.start_keepalive = host_hears_start_keepalive;
+    host.note_engaged = host_hears_note_engaged;
+    host.stop_keepalive = host_hears_stop_keepalive;
+    host_heard.len = 0u;
+    host_heard.text[0] = '\0';
+    if (!static_host_duty_init_with_simulated_actions(sm, &host)) {
+        (void)fprintf(stderr, "static_host_duty: FAIL - a complete simulating vtable was refused\n");
+    }
+}
+
+static const name_value_t host_duty_states[] = {
+    {"idle", STATIC_HOST_DUTY_STATE_IDLE},
+    {"engaged", STATIC_HOST_DUTY_STATE_ENGAGED},
+};
+/* No variable is published; the empty name matches no scenario's. */
+static const variable_t host_duty_variables[] = {
+    {"", NULL},
+};
+STATIC_SCENARIO_HOSTED(static_host_duty, host_duty_states, host_duty_variables, host_duty_start(&sm), host_call_heard)
+
 // static_child_host and static_child_host_hybrid: a child that declares
 // `<sce:action>`s is begun with the table of the host that performs them, which its
 // parent's table answers each time the invocation starts, and the parent declares no
@@ -2516,6 +2562,7 @@ int main(void) {
     bad |= static_send_idlocation_scenario("static_send_idlocation", 13);
     bad |= static_history_scenario("static_history", 17);
     bad |= static_host_call_scenario("static_host_call", 5);
+    bad |= static_host_duty_scenario("static_host_duty", 4);
     bad |= static_child_host_scenario("static_child_host", 8);
     bad |= static_child_host_hybrid_scenario("static_child_host_hybrid", 3);
     bad |= static_invoke_scenario("static_invoke", 6);

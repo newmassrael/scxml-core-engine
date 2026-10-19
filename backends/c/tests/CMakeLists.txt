@@ -2832,6 +2832,23 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_host_call.scxml"
     )
 
+    # The duty machine of `static_host_duty` (docs/adr/0038) is generated once and
+    # used by two executables: the scenarios below, which drive it through a
+    # recording host (which simulates, so through the entry that names a simulated
+    # host), and the cases of the realization further down.
+    sce_generate_static_integration_c_test(static_host_duty
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_host_duty.scxml"
+    )
+
+    # A child that states a duty, beside the C++ suite that drives the same
+    # document, for the reason `static_host_call_arguments` sits beside it: only
+    # the cases of the realization read it.
+    sce_generate_static_integration_c_test(static_host_duty_child
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/tests/integration/static_host_duty_child.scxml"
+    )
+
     # A child that declares `<sce:action>`s is begun with the table of the host
     # that performs them, which its parent's own table answers each time the
     # invocation starts (docs/adr/0005, decision 6). The documents are the ones
@@ -2882,6 +2899,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_timers_SOURCES}
         ${INTEGRATION_C_TEST_static_history_SOURCES}
         ${INTEGRATION_C_TEST_static_host_call_SOURCES}
+        ${INTEGRATION_C_TEST_static_host_duty_SOURCES}
         ${INTEGRATION_C_TEST_static_child_host_SOURCES}
         ${INTEGRATION_C_TEST_static_child_host_hybrid_SOURCES}
         ${INTEGRATION_C_TEST_static_invoke_SOURCES}
@@ -2976,6 +2994,36 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         COMMAND sce_c_integration_static_host_call
     )
     set_tests_properties(c11_integration_static_host_call PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
+    # What a host says it does with the duties of a machine that states one
+    # (docs/adr/0038): a table that performs, one that only simulates, one that
+    # says nothing, the entry that names a simulated host, and the child a parent
+    # begins. The machines are generated above.
+    add_executable(sce_c_integration_static_host_duty
+        integration/test_static_host_duty.c
+        ${INTEGRATION_C_TEST_static_host_duty_SOURCES}
+        ${INTEGRATION_C_TEST_static_host_duty_child_SOURCES}
+        ${INTEGRATION_C_TEST_static_host_call_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_static_host_duty PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base
+    )
+    target_include_directories(sce_c_integration_static_host_duty PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
+    )
+    set_target_properties(sce_c_integration_static_host_duty PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_static_host_duty
+        COMMAND sce_c_integration_static_host_duty
+    )
+    set_tests_properties(c11_integration_static_host_duty PROPERTIES
         TIMEOUT 30
         LABELS "integration;c11;aot"
     )
