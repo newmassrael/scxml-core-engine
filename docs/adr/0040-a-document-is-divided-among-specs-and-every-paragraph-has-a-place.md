@@ -153,6 +153,41 @@ Each step lands with its tests and is useful before the next.
    a draft is one question a person waits for, bounded by the connection's time, and what a job record buys
    (a request that outlives the screen) is not needed until a kind takes minutes of a model for each of many units.
 
+## What was measured of the AI draft
+
+Measured on 2026-10-20 with `eval/divide_draft.py` on public documents of this repository, cut at their `##`
+sections and laid in one document (in their order, or shuffled with seed 1) so that every part has a right
+answer; the model was `qwen3.8-flash-next` at iq2_xs on a server of the person's, with no output ceiling.
+**Named** (the owner has a spec for each source, titled as it is) and **open** (the owner has one spec and the
+model proposes the others by title). The share of paragraphs a model gets by putting everything with the biggest
+source is the number to beat.
+
+| case | parts | named: parts placed rightly | named: paragraphs | open: purity of groups | biggest source |
+|---|---|---|---|---|---|
+| two documents apart | 20 | 20 of 20 | 100% | 100%, 2 groups of 2 | 75% |
+| the same two, shuffled | 20 | 19 of 20 | 94% | 100%, 2 groups of 2 | 75% |
+| three documents, shuffled | 29 | 20 of 29 | 76% | 86%, 3 groups of 3, a source over 1.7 groups | 65% |
+| one subject cut in three | 33 | 27 of 33 | 83% | 76%, 3 groups of 3, a source over 2.3 groups | 52% |
+| five documents, shuffled | 41 | 38 of 41 | 96% | 32%, one group of five | 38% |
+
+What it says, and what was done about it:
+
+- **Named, the draft beats the biggest source in every case**, by 19 to 58 points of paragraphs, and is worth
+  showing. It is wrong in a part in five or in three at worst (three unlike documents, all about SCE), and a wrong
+  part is the owner's to move.
+- **Open, it works for two subjects and not beyond**: with one spec to place parts in and five subjects it
+  proposed no other and put everything at the one (the biggest-source figure, saying nothing). The screen
+  therefore says, when only one spec is there, that naming the others first divides better.
+- **It never declined**: every part was placed in every case, though told to leave a part it was unsure of. A
+  suggestion carries no sign of the model's own doubt, which is why every suggestion is marked as the model's until
+  the owner moves or confirms it, and why the draft is never saved as a ledger.
+- **A draft takes from 20 seconds to 7 minutes**, the model writing 4 to 86 thousand characters of reasoning before
+  its answer, and a ceiling of 8192 tokens cut the larger cases before any answer (the first run read as five
+  documents that "could not be read"): the workbench sends no ceiling, and the evaluation does not.
+- One model, one quantisation and five documents are one measurement: a number to be read as that, and measured
+  again for another model before it is relied on. The documents are all about one project, which is the harder
+  case; documents that differ in subject more are not in it.
+
 ## Alternatives rejected
 
 - **The ledger inside the first spec.** It makes that spec the document's owner, breaks when it is removed,

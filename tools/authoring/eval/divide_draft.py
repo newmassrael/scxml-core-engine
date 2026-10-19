@@ -214,10 +214,16 @@ class LinkFailed(Exception):
     """The server could not be reached or did not answer in time: nothing is known of the model."""
 
 
-def ask(endpoint: str, model: str, prompt: str, timeout: float, key: str | None) -> tuple[str | None, float]:
-    """One chat completion, with no tools: the prompt in, the text out, and how long it took."""
+def ask(endpoint: str, model: str, prompt: str, timeout: float, key: str | None) -> tuple[str | None, float, dict]:
+    """One chat completion, with no tools: the prompt in, the text out, how long it took and how it ended.
+
+    No `max_tokens` is sent, as the workbench sends none: a model that thinks before it answers (the one measured
+    here writes thousands of tokens of reasoning first) is cut by any ceiling that is not the server's own, and
+    what is measured would then be the ceiling. What the server says of how the message ended is kept, since an
+    empty answer that was cut at a limit and one that was never given are not the same.
+    """
     body = json.dumps({
-        "model": model, "temperature": 0, "max_tokens": 8192,
+        "model": model, "temperature": 0,
         "messages": [{"role": "user", "content": prompt}],
     }).encode("utf-8")
     request = urllib.request.Request(
@@ -230,13 +236,22 @@ def ask(endpoint: str, model: str, prompt: str, timeout: float, key: str | None)
             answer = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         # The server answered, with an error: a context that was too long is a result about the model.
-        return None, time.monotonic() - began
+        return None, time.monotonic() - began, {"http_status": exc.code}
     except (urllib.error.URLError, socket.timeout, TimeoutError, ConnectionError, OSError) as exc:
         raise LinkFailed(str(exc)) from exc
+    seconds = time.monotonic() - began
     try:
-        return answer["choices"][0]["message"]["content"], time.monotonic() - began
+        choice = answer["choices"][0]
+        message = choice["message"]
     except (KeyError, IndexError, TypeError):
-        return None, time.monotonic() - began
+        return None, seconds, {"shape": "not a chat completion"}
+    reasoning = message.get("reasoning_content") or message.get("reasoning") or ""
+    meta = {
+        "finish": choice.get("finish_reason"),
+        "completion_tokens": (answer.get("usage") or {}).get("completion_tokens"),
+        "reasoning_chars": len(reasoning),
+    }
+    return message.get("content"), seconds, meta
 
 
 def run_case(case: dict, way: str, args, out: pathlib.Path) -> dict:
@@ -266,14 +281,14 @@ def run_case(case: dict, way: str, args, out: pathlib.Path) -> dict:
     result.update(parts=len(prepared.parts), prompt_characters=len(prepared.prompt),
                   baseline=baseline(truth, weight))
     try:
-        answer, seconds = ask(args.endpoint, args.model, prepared.prompt, args.timeout, args.key)
+        answer, seconds, meta = ask(args.endpoint, args.model, prepared.prompt, args.timeout, args.key)
     except LinkFailed as exc:
         return {**result, "status": "link-failed", "why": str(exc)}
     (folder / "answer.txt").write_text(answer or "", encoding="utf-8")
     draft = read_answer(extraction, prepared, offered, answer)
     (folder / "draft.json").write_text(json.dumps(draft.to_dict(), indent=1, sort_keys=True), encoding="utf-8")
     result.update(
-        status="answered", seconds=round(seconds, 1),
+        status="answered", seconds=round(seconds, 1), ended=meta,
         unreadable=None if draft.unreadable is None else draft.unreadable.code,
         refused=dict(Counter(r.code for r in draft.refused)),
     )
