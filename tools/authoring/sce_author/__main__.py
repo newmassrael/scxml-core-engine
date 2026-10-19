@@ -186,7 +186,16 @@ def cmd_make_scope(args) -> int:
         pathlib.Path(args.out).write_text(made.to_json(), encoding="utf-8")
     except OSError as exc:
         raise IngestError(f"{args.out}: cannot be written ({exc})") from exc
-    print(f"scope: {len(made.blocks)} of {len(extraction.blocks)} block(s), revision {made.revision()} -> {args.out}")
+    whole = len(made.blocks) == len(extraction.blocks)
+    if args.json:
+        # `whole` says the choice is every block, which is no scope: the specs folder refuses one, and a
+        # host leaves it out (and leaves `--scope` off the tools) rather than work out the rule itself.
+        print(json.dumps(
+            {"blocks": len(made.blocks), "of": len(extraction.blocks), "whole": whole, "revision": made.revision()},
+            sort_keys=True))
+    else:
+        print(f"scope: {len(made.blocks)} of {len(extraction.blocks)} block(s), revision {made.revision()} -> {args.out}"
+              f"{' (every block, which is no scope)' if whole else ''}")
     return 0
 
 
@@ -843,6 +852,7 @@ def main(argv=None) -> int:
                      help="the id of a section `outline` listed (repeat for each one chosen)")
     mks.add_argument("--by", choices=OUTLINES, help="the division `outline` was asked for, when it was asked")
     mks.add_argument("--out", required=True, help="where to write the scope (JSON)")
+    mks.add_argument("--json", action="store_true", help="print the counts and whether it is every block, as JSON")
     mks.set_defaults(fn=cmd_make_scope)
 
     chk = sub.add_parser(

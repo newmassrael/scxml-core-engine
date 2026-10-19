@@ -2026,7 +2026,7 @@ prepare-conversion --extraction EXTRACTION.json --out-dir DIR` cuts the blocks t
 a page, and when a unit holds `--characters` of them; a block is never cut) and writes the recipe and the
 blocks of each as `DIR/unit-0001.prompt.txt`. The host takes each prompt to the model it chose and writes
 what came back beside it as `unit-0001.answer.txt`; `finish-conversion --extraction EXTRACTION.json --dir
-DIR --converter-name NAME --out CONVERSION.json` reads the answers (a JSON array of `{"markdown", "cites"}`,
+DIR --converter-name NAME [--converter-version VERSION] --out CONVERSION.json` reads the answers (a JSON array of `{"markdown", "cites"}`,
 with a fence or words round it forgiven) and writes the conversion. An answer that cannot be read fails its
 unit, by number and a typed reason (`no-answer`, `not-json`, `empty`, `bad-shape`), and exits 1 so the host asks
 again for that unit; the other units are kept, and the blocks of the one that failed are *missing* to the
@@ -2040,7 +2040,9 @@ the pages it spans: the headings of the document, nested by level, with a first 
 first heading; for a document with no heading its pages; for one with neither, the whole of it (`--by
 headings|pages|whole` asks for one). `make-scope --extraction EXTRACTION.json --section s2 [--section s4]
 --out SCOPE.json` writes the scope: the ids of the blocks, in the document's order, each chosen part bringing
-the parts under it. A host shows the outline and sends ids, and never works out which blocks a part holds.
+the parts under it; `--json` prints the counts and `whole`, which is true when the choice is every block, which
+is no scope (the specs folder refuses one, so a host leaves it out). A host shows the outline and sends ids,
+and never works out which blocks a part holds.
 `--scope SCOPE.json` is then given to `prepare-conversion` (only those blocks are ever in a prompt), to
 `convert`, and to `check-conversion`, which counts only those blocks: a block outside the scope is not
 *missing*, it is counted as `out_of_scope` and not asked about, and a conversion block that cites one is *to

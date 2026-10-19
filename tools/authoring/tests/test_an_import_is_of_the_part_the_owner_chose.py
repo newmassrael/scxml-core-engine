@@ -290,9 +290,21 @@ class TheCommandLine(unittest.TestCase):
             self.assertEqual([x["id"] for x in listed["sections"]], ["s1", "s2", "s3", "s4"])
             self.assertEqual(listed["by"], "headings")
 
-            code, _ = self.run_main("make-scope", "--extraction", str(e), "--section", "s4", "--out", str(s))
+            code, said = self.run_main(
+                "make-scope", "--extraction", str(e), "--section", "s4", "--out", str(s), "--json"
+            )
             self.assertEqual(code, 0)
             self.assertEqual(json.loads(s.read_text())["blocks"], ["b6", "b7"])
+            self.assertEqual(
+                json.loads(said), {"blocks": 2, "of": 7, "whole": False, "revision": Scope.from_json(s.read_text()).revision()}
+            )
+            # The nearest that must say otherwise: every section is every block, which is no scope.
+            code, said = self.run_main(
+                "make-scope", "--extraction", str(e), "--out", str(work / "all.json"), "--json",
+                "--section", "s1", "--section", "s2", "--section", "s4",
+            )
+            self.assertEqual(code, 0)
+            self.assertEqual((json.loads(said)["whole"], json.loads(said)["blocks"]), (True, 7))
 
             code, said = self.run_main(
                 "prepare-conversion", "--extraction", str(e), "--scope", str(s), "--out-dir", str(units)
