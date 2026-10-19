@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Child sessions") with
+  a child that states a duty (§2.11, docs/adr/0038): `worker` takes the duty
+  `begin_work` on entering `running` and gives it back through `released-by` on
+  that state's <onexit>.
+
+  The parent declares no act and no duty of its own: its host answers the host
+  of `worker` each time the invocation starts. A child is built with the host
+  its parent's host answers, so the child makes its own refusal of a host that
+  only simulates `begin_work`, at its own construction, and the opt-in the
+  caller gave the parent covers the child the parent builds. The document sits
+  beside AStaticDatamodelRunsGeneratedCppTest for the reason
+  static_host_call_arguments.scxml does: the host is the C++ interface the
+  generator emits, so that test alone reads it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="working" datamodel="sce-static" name="static_host_duty_child">
+  <datamodel>
+    <data id="completed" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="working">
+    <invoke type="scxml" id="worker" autoforward="true">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+               version="1.0" initial="running" datamodel="sce-static">
+          <state id="running">
+            <onentry>
+              <sce:action name="begin_work" effect="duty" released-by="end_work"/>
+            </onentry>
+            <onexit>
+              <sce:action name="end_work" effect="duty"/>
+            </onexit>
+            <transition event="stop" target="leaf"/>
+          </state>
+          <final id="leaf"/>
+        </scxml>
+      </content>
+    </invoke>
+    <transition event="stop"/>
+    <transition event="done.invoke.worker">
+      <assign location="completed" expr="completed + 1"/>
+    </transition>
+  </state>
+</scxml>

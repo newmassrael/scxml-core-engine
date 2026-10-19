@@ -11,6 +11,21 @@
 
 {{ sce_map.source_marker(model.source_location, "cpp", module_level=true, symbol_artifact=sce_artifact.machine) }}
 
+{# docs/adr/0038: a machine takes the caller's opt-in for a simulated host when
+   it states a duty itself, or when a child it builds with a host of its own
+   states one, because the opt-in the caller gave a parent covers the children
+   the parent builds. `host_duty_children` is true for the second. A machine
+   with neither emits nothing new. #}
+{% set host_duty_children = namespace(any=false) %}
+{% for invoke_info in model.invokes | scxml %}
+{% if invoke_info.child_declares_host_duties %}{% set host_duty_children.any = true %}{% endif %}
+{% endfor %}
+{% for invoke_info in model.invokes | hybrid %}
+{% for candidate in invoke_info.candidates %}
+{% if candidate.child_declares_host_duties %}{% set host_duty_children.any = true %}{% endif %}
+{% endfor %}
+{% endfor %}
+{% set takes_simulated_host = has_native_duties or host_duty_children.any %}
 #pragma once
 #include <cstdint>
 #include <string>
@@ -39,6 +54,10 @@
 {% endif %}
 {% endfor %}
 #include "static/StaticExecutionEngine.h"
+{% if takes_simulated_host %}
+// docs/adr/0038: `SimulatedHost` and the refusal of a host that only simulates.
+#include "runtime/SimulatedHost.h"
+{% endif %}
 {% if static_fields %}
 {# SCE Accepted Subset §2.15: a `sce-static` document's integer operations are
    the checked ones every forge algorithm is held to (SCE_FORGE.md §3.4.1). #}
@@ -625,6 +644,14 @@ struct {{ model.name }}Policy {
     // transition matcher reads the policy from a const method.
     mutable {{ native_actions_interface }} *actions_ = nullptr;
     {% endif %}
+    {% if host_duty_children.any %}
+    // docs/adr/0038: the opt-in the caller gave this machine's constructor for
+    // a host that only simulates. A child this machine builds with the host
+    // its own host answers is built with the same opt-in, so the caller states
+    // it once and it covers the children the machine builds; the child makes
+    // the refusal itself, at its own construction.
+    ::SCE::SimulatedHost simulatedHost_ = ::SCE::SimulatedHost::Refuse;
+    {% endif %}
     // W3C SCXML 5.10: the current event's metadata — the payload, origin,
     // sendid and invokeid a dequeued event carries.
     //
@@ -907,7 +934,17 @@ public:
         {%- if has_native_actions %}{{ native_actions_interface }}& actions, {% endif -%}
         {%- for ctx in model.context_objects %}{% if ctx.cpp_type %}{{ ctx.cpp_type }}{% else %}{{ ctx.id | capitalize }}T{% endif %}& {{ ctx.id }}{{ ', ' if not loop.last or model.needs_parent_template }}{% endfor %}
         {%- if model.needs_parent_template %}ParentStateMachine* parent = nullptr, const std::string& invokeId = "", const std::string& childSessionId = ""{% endif -%}
+        {%- if takes_simulated_host %}, ::SCE::SimulatedHost simulatedHost = ::SCE::SimulatedHost::Refuse{% endif -%}
     ) {
+        {% if has_native_duties %}
+        // docs/adr/0038: this machine states a duty, so a host that only
+        // simulates it is refused here, before the host is stored, unless the
+        // caller passed `::SCE::SimulatedHost::Accept`.
+        ::SCE::requireHostPerforms("{{ model.name }}", actions.realization(), simulatedHost);
+        {% endif %}
+        {% if host_duty_children.any %}
+        this->policy_.simulatedHost_ = simulatedHost;
+        {% endif %}
         {% if has_native_actions %}
         this->policy_.actions_ = &actions;
         {% endif %}
@@ -925,7 +962,15 @@ public:
     }
 {% elif model.invokes | scxml or model.invokes | hybrid or model.partition_parallel_roles %}
     {% if has_native_actions %}
-    explicit {{ model.name }}({{ native_actions_interface }}& actions) {
+    explicit {{ model.name }}({{ native_actions_interface }}& actions{% if takes_simulated_host %}, ::SCE::SimulatedHost simulatedHost = ::SCE::SimulatedHost::Refuse{% endif %}) {
+        {% if has_native_duties %}
+        // docs/adr/0038: refused before the host is stored, unless the caller
+        // passed `::SCE::SimulatedHost::Accept`.
+        ::SCE::requireHostPerforms("{{ model.name }}", actions.realization(), simulatedHost);
+        {% endif %}
+        {% if host_duty_children.any %}
+        this->policy_.simulatedHost_ = simulatedHost;
+        {% endif %}
         this->policy_.actions_ = &actions;
     {% else %}
     {{ model.name }}() {
@@ -970,7 +1015,12 @@ public:
 {% endif %}
     }
 {% elif has_native_actions %}
-    explicit {{ model.name }}({{ native_actions_interface }}& actions) {
+    explicit {{ model.name }}({{ native_actions_interface }}& actions{% if takes_simulated_host %}, ::SCE::SimulatedHost simulatedHost = ::SCE::SimulatedHost::Refuse{% endif %}) {
+        {% if has_native_duties %}
+        // docs/adr/0038: refused before the host is stored, unless the caller
+        // passed `::SCE::SimulatedHost::Accept`.
+        ::SCE::requireHostPerforms("{{ model.name }}", actions.realization(), simulatedHost);
+        {% endif %}
         this->policy_.actions_ = &actions;
     }
 {% else %}

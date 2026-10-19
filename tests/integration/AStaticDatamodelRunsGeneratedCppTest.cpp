@@ -24,6 +24,9 @@
 //   * `static_host_call`: a host action takes the machine's variables as typed
 //     arguments, and `static_host_call_arguments` (beside this file): an
 //     argument that overflows stops the call and raises `error.execution`.
+//   * `static_host_duty` (docs/adr/0038): a machine that states a duty takes
+//     a host that says whether it performs the duty, and refuses one that only
+//     simulates it unless it is built for one on purpose.
 
 #include "common/SceClock.h"
 #include "presence_peer_sm.h"
@@ -46,6 +49,7 @@
 #include "static_history_sm.h"
 #include "static_host_call_arguments_sm.h"
 #include "static_host_call_sm.h"
+#include "static_host_duty_sm.h"
 #include "static_invoke_hybrid_saved_sm.h"
 #include "static_invoke_hybrid_sm.h"
 #include "static_invoke_params_sm.h"
@@ -100,6 +104,7 @@
 #include <nlohmann/json.hpp>
 #include <set>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -145,6 +150,18 @@ json readScenario(const std::string &machine) {
 /// it reads the machine back: two for each level of child session, and a round
 /// that finds nothing to do changes nothing.
 constexpr int kSettleTicks = 5;
+
+/// The rounds `machine` needs before it is read back: `tick` for a machine whose
+/// policy needs it (a delayed send, a child session), `step` for one that does not.
+template <typename Machine> void settleRounds(Machine &machine) {
+    if constexpr (::SCE::Core::NeedsEventScheduler<typename Machine::PolicyType>) {
+        for (int round = 0; round < kSettleTicks; ++round) {
+            machine.tick();
+        }
+    } else {
+        machine.step();
+    }
+}
 
 /// The child hosts a machine's host was asked for, in the order asked, and what each
 /// child asked of its host. A child owns nothing of the host it was given, the
@@ -242,6 +259,13 @@ public:
     template <typename Host>
     Driver(std::map<std::string, Reader> variables, Host &host, HostCalls hostCalls)
         : machine_(host), variables_(std::move(variables)), hostCalls_(std::move(hostCalls)) {}
+
+    /// A machine that states a duty, driven by a host that only records
+    /// (docs/adr/0038): it is built through the opt-in a simulated host needs,
+    /// named at the call, and `hostCalls` reads what the host recorded.
+    template <typename Host>
+    Driver(std::map<std::string, Reader> variables, Host &host, HostCalls hostCalls, ::SCE::SimulatedHost simulated)
+        : machine_(host, simulated), variables_(std::move(variables)), hostCalls_(std::move(hostCalls)) {}
 
     /// A machine that declares no act of its own and whose children are given
     /// hosts: `host` answers each child's, and writes it into `children`, which is
@@ -370,13 +394,7 @@ private:
     /// host runs rounds: a child takes an event the parent forwarded in one round
     /// and its end reaches the parent in the next.
     void settle() {
-        if constexpr (::SCE::Core::NeedsEventScheduler<typename Machine::PolicyType>) {
-            for (int round = 0; round < kSettleTicks; ++round) {
-                machine_.tick();
-            }
-        } else {
-            machine_.step();
-        }
+        settleRounds(machine_);
     }
 
     Machine machine_;
@@ -1269,6 +1287,202 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, AHostActionTellsItsHostWhatTheDatamod
 
     Driver<Machine> driver({}, host, [&host] { return host.take(); });
     replay("static_host_call", driver);
+}
+
+namespace {
+
+/// Whether `Actions` declares what its host does with duties.
+template <typename Actions, typename = void> struct DeclaresRealization : std::false_type {};
+
+template <typename Actions>
+struct DeclaresRealization<Actions, std::void_t<decltype(std::declval<const Actions &>().realization())>>
+    : std::true_type {};
+
+/// The host of `static_host_duty`: it records what the machine asked of it, by the
+/// name the document gives the action, and says what it does with the duties.
+struct DutyHost : G::static_host_duty::StaticHostDutyActions {
+    explicit DutyHost(::SCE::ActionRealization declared) : declared(declared) {}
+
+    ::SCE::ActionRealization realization() const override {
+        return declared;
+    }
+
+    void startKeepalive() override {
+        call("start_keepalive");
+    }
+
+    void noteEngaged() override {
+        call("note_engaged");
+    }
+
+    void stopKeepalive() override {
+        call("stop_keepalive");
+    }
+
+    /// The calls made since this was last called, and forgets them.
+    json take() {
+        json taken = std::move(calls);
+        calls = json::array();
+        return taken;
+    }
+
+    ::SCE::ActionRealization declared;
+    json calls = json::array();
+
+private:
+    void call(const std::string &action) {
+        calls.push_back({{"action", action}, {"args", json::array()}});
+    }
+};
+
+}  // namespace
+
+// docs/adr/0038: a machine that states a duty takes a host that says what it does
+// with duties, a machine that states none takes a host with no such member, and the
+// opt-in for a simulated host is a type that is written out and not a flag that can
+// be passed by accident.
+TEST(AStaticDatamodelRunsGeneratedCppTest, OnlyAMachineThatStatesADutyAsksItsHostWhatItDoesWithDuties) {
+    static_assert(DeclaresRealization<G::static_host_duty::StaticHostDutyActions>::value,
+                  "a machine that states a duty declares the realization in its host interface");
+    static_assert(!DeclaresRealization<G::static_host_call::StaticHostCallActions>::value,
+                  "a machine of notices takes a host with no realization member");
+    static_assert(std::is_constructible_v<G::static_host_duty::static_host_duty,
+                                          G::static_host_duty::StaticHostDutyActions &, ::SCE::SimulatedHost>,
+                  "the opt-in is the trailing constructor argument of a machine that states a duty");
+    static_assert(!std::is_constructible_v<G::static_host_duty::static_host_duty,
+                                           G::static_host_duty::StaticHostDutyActions &, bool>,
+                  "a bool does not reach the opt-in: it has to be written as SimulatedHost::Accept");
+    static_assert(!std::is_constructible_v<G::static_host_call::static_host_call,
+                                           G::static_host_call::StaticHostCallActions &, ::SCE::SimulatedHost>,
+                  "a machine of notices has no opt-in to give");
+}
+
+// A host that says it performs the duties is the host a machine that states one is
+// built for: no opt-in is given, and the machine takes the duty on entry and gives
+// it back on exit.
+TEST(AStaticDatamodelRunsGeneratedCppTest, AHostThatPerformsTheDutiesIsAcceptedWithoutAnOptIn) {
+    using Machine = G::static_host_duty::static_host_duty;
+    DutyHost host(::SCE::ActionRealization::Performs);
+
+    Machine machine(host);
+    machine.initialize();
+    EXPECT_EQ(host.take(), json::array()) << "`idle` calls nothing on the host";
+
+    machine.raiseExternal("engage");
+    machine.step();
+    EXPECT_EQ(host.take(), json::parse(R"([{"action": "start_keepalive", "args": []},
+                                           {"action": "note_engaged", "args": []}])"))
+        << "entering `engaged` takes the duty and then gives the notice";
+
+    machine.raiseExternal("release");
+    machine.step();
+    EXPECT_EQ(host.take(), json::parse(R"([{"action": "stop_keepalive", "args": []}])"))
+        << "leaving `engaged` gives the duty back through its <onexit>";
+}
+
+// A host that says it only simulates the duties is refused when the machine is
+// built, before it is stored and before the first entry could call it.
+TEST(AStaticDatamodelRunsGeneratedCppTest, AHostThatOnlySimulatesTheDutiesIsRefusedAtConstruction) {
+    using Machine = G::static_host_duty::static_host_duty;
+    DutyHost host(::SCE::ActionRealization::Simulates);
+
+    EXPECT_THROW({ Machine machine(host); }, std::invalid_argument);
+
+    std::string refusal;
+    try {
+        Machine machine(host);
+    } catch (const std::invalid_argument &refused) {
+        refusal = refused.what();
+    }
+    EXPECT_NE(refusal.find("static_host_duty"), std::string::npos) << "the message names the machine: " << refusal;
+    EXPECT_NE(refusal.find("only simulates"), std::string::npos)
+        << "the message says the host declares that it only simulates the duties: " << refusal;
+    EXPECT_NE(refusal.find("SimulatedHost::Accept"), std::string::npos) << "the message names the opt-in: " << refusal;
+    EXPECT_EQ(host.take(), json::array()) << "a refused host was not called";
+}
+
+// The caller that built the host for a recorder says so by name, and the machine
+// runs its scenario against it: the Driver builds the machine through the opt-in.
+TEST(AStaticDatamodelRunsGeneratedCppTest, ASimulatingHostIsAcceptedWhenTheCallerAcceptsOneByName) {
+    using Machine = G::static_host_duty::static_host_duty;
+    DutyHost host(::SCE::ActionRealization::Simulates);
+
+    Driver<Machine> driver({}, host, [&host] { return host.take(); }, ::SCE::SimulatedHost::Accept);
+    replay("static_host_duty", driver);
+}
+
+// The opt-in covers the child the parent builds: the parent's host answers the host
+// of a child that states a duty, and the child is built with the opt-in the caller
+// gave the parent. Without it the child refuses its host at its own construction.
+TEST(AStaticDatamodelRunsGeneratedCppTest, TheOptInOfAParentCoversTheChildItBuildsWithItsHost) {
+    namespace Pc = G::static_host_duty_child;
+    namespace Wk = G::static_host_duty_child__sce_synth_invoke__worker;
+    using Machine = Pc::static_host_duty_child;
+
+    struct WorkerHost : Wk::StaticHostDutyChildSceSynthInvokeWorkerActions {
+        explicit WorkerHost(::SCE::ActionRealization declared) : declared(declared) {}
+
+        ::SCE::ActionRealization realization() const override {
+            return declared;
+        }
+
+        void beginWork() override {
+            calls.push_back("begin_work");
+        }
+
+        void endWork() override {
+            calls.push_back("end_work");
+        }
+
+        ::SCE::ActionRealization declared;
+        std::vector<std::string> calls;
+    };
+
+    struct Host : Pc::StaticHostDutyChildActions {
+        explicit Host(::SCE::ActionRealization workers) : workers(workers) {}
+
+        Wk::StaticHostDutyChildSceSynthInvokeWorkerActions &actionsForWorker() override {
+            return started.emplace_back(workers);
+        }
+
+        ::SCE::ActionRealization workers;
+        std::deque<WorkerHost> started;
+    };
+
+    const auto start = [](Machine &machine) {
+        machine.setClock(std::make_shared<SCE::ManualClock>(0));
+        machine.initialize();
+        settleRounds(machine);
+    };
+
+    // The parent states no duty, so its own host has no realization to declare.
+    static_assert(!DeclaresRealization<Pc::StaticHostDutyChildActions>::value);
+    static_assert(DeclaresRealization<Wk::StaticHostDutyChildSceSynthInvokeWorkerActions>::value);
+
+    {
+        Host host(::SCE::ActionRealization::Performs);
+        Machine machine(host);
+        start(machine);
+        ASSERT_EQ(host.started.size(), 1u) << "the parent's host was asked for the child's host once";
+        EXPECT_EQ(host.started.front().calls, (std::vector<std::string>{"begin_work"}))
+            << "the child took its duty on entry from a host that performs it, with no opt-in given";
+    }
+    {
+        Host host(::SCE::ActionRealization::Simulates);
+        Machine machine(host);
+        EXPECT_THROW(start(machine), std::invalid_argument)
+            << "the child refuses a host that only simulates its duty, and the parent's caller gave no opt-in";
+        ASSERT_EQ(host.started.size(), 1u);
+        EXPECT_TRUE(host.started.front().calls.empty()) << "the refused host was not called";
+    }
+    {
+        Host host(::SCE::ActionRealization::Simulates);
+        Machine machine(host, ::SCE::SimulatedHost::Accept);
+        start(machine);
+        ASSERT_EQ(host.started.size(), 1u);
+        EXPECT_EQ(host.started.front().calls, (std::vector<std::string>{"begin_work"}))
+            << "the opt-in the caller gave the parent covers the child the parent builds";
+    }
 }
 
 // A child that declares `<sce:action>`s is built with the host its parent's host
