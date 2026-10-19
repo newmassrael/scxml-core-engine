@@ -101,6 +101,26 @@ fn output_ok(output: Output, what: &str) -> String {
     String::from_utf8_lossy(&output.stdout).into_owned()
 }
 
+/// Run `command`, failing with everything it printed unless it succeeded.
+fn run_ok(mut command: Command, what: &str) -> String {
+    let output = command
+        .output()
+        .unwrap_or_else(|e| panic!("run {what}: {e}"));
+    output_ok(output, what)
+}
+
+/// A C, C++, Go or Kotlin string literal of `text`, written here and not by
+/// the templates. The ids and names it is given are XML names and event
+/// names, so it never meets a `$` Kotlin would read as a template.
+fn c_literal(text: &str) -> String {
+    let escaped = text
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\t', "\\t");
+    format!("\"{escaped}\"")
+}
+
 /// `generate -l <lang>` of `doc` into `out`.
 fn generate(lang: &str, doc: &Path, out: &Path) {
     output_ok(
@@ -575,6 +595,564 @@ fn the_generated_function_compiles_alone_and_answers_as_the_producer() {
             printed,
             listing(&function),
             "[{stem}] the compiled function does not answer as the producer"
+        );
+    }
+}
+
+// ── The other five backends, compiled alone and run ─────────────────────────
+//
+// Each program below is written here, in the language's own syntax, and not by
+// a template: it prints the compiled function in `listing`'s shape, so the
+// comparison is with the producer's value and nothing the templates wrote.
+// "Alone" means what each toolchain can be asked for: the file and the
+// standard library, with no SCE include path, module, jar or runtime given.
+
+/// A C++ translation unit that includes the generated header and nothing else,
+/// and has the compiler check every answer the producer's table gives as a
+/// constant expression.
+fn cpp_constant_checks(header: &Path, stem: &str, function: &TransitionFunction) -> String {
+    let names = names_of("cpp");
+    let state = |id: &str| format!("tf::State::{}", (names.state)(id));
+    let event = |name: &str| format!("tf::Event::{}", (names.event)(name));
+    let mut unit = format!(
+        "#include {}\n\nnamespace tf = SCE::Generated::{stem}::transition_function;\n\n",
+        c_literal(header.to_str().unwrap())
+    );
+    let mut check = |condition: String| unit.push_str(&format!("static_assert({condition});\n"));
+    check(format!(
+        "tf::SOURCE_HASH == {}",
+        c_literal(&function.source_hash)
+    ));
+    check(format!("tf::INITIAL == {}", state(&function.initial)));
+    check(format!(
+        "tf::ALL_STATES.size() == {}",
+        function.states.len()
+    ));
+    check(format!(
+        "tf::ALL_EVENTS.size() == {}",
+        function.events.len()
+    ));
+    for (index, row) in function.states.iter().enumerate() {
+        let s = state(&row.id);
+        check(format!("tf::ALL_STATES[{index}] == {s}"));
+        check(format!("tf::getStateName({s}) == {}", c_literal(&row.id)));
+        check(format!(
+            "tf::getStateFromName({}) == {s}",
+            c_literal(&row.id)
+        ));
+        check(format!(
+            "tf::isFinal({s}) == {}",
+            if row.is_final { "true" } else { "false" }
+        ));
+        check(format!(
+            "tf::configuration({s}).size() == {}",
+            row.configuration.len()
+        ));
+        for (depth, id) in row.configuration.iter().enumerate() {
+            check(format!(
+                "tf::configuration({s})[{depth}] == {}",
+                c_literal(id)
+            ));
+        }
+        for cell in &row.next {
+            let e = event(&cell.event);
+            match &cell.to {
+                Some(to) => check(format!("tf::transition({s}, {e}) == {}", state(to))),
+                None => check(format!("!tf::transition({s}, {e}).has_value()")),
+            }
+        }
+    }
+    for (index, name) in function.events.iter().enumerate() {
+        let e = event(name);
+        check(format!("tf::ALL_EVENTS[{index}] == {e}"));
+        check(format!("tf::getEventName({e}) == {}", c_literal(name)));
+        check(format!("tf::getEventFromName({}) == {e}", c_literal(name)));
+    }
+    check("!tf::getStateFromName(\"\").has_value()".to_string());
+    check("!tf::getEventFromName(\"\").has_value()".to_string());
+    unit.push_str("\nint main() {\n    return 0;\n}\n");
+    unit
+}
+
+/// A C++ program that prints the compiled function in `listing`'s shape.
+const CPP_LISTING: &str = r#"#include @HEADER@
+
+#include <iostream>
+#include <string>
+#include <string_view>
+
+namespace tf = SCE::Generated::@STEM@::transition_function;
+
+int main() {
+    std::cout << "hash\t" << tf::SOURCE_HASH << "\n";
+    std::cout << "initial\t" << tf::getStateName(tf::INITIAL) << "\n";
+    for (tf::State state : tf::ALL_STATES) {
+        if (tf::getStateFromName(tf::getStateName(state)) != state) {
+            return 2;
+        }
+        std::string configuration;
+        for (std::string_view id : tf::configuration(state)) {
+            if (!configuration.empty()) {
+                configuration.push_back(' ');
+            }
+            configuration.append(id.data(), id.size());
+        }
+        std::cout << "state\t" << tf::getStateName(state) << "\t" << (tf::isFinal(state) ? "true" : "false")
+                  << "\t" << configuration << "\n";
+    }
+    for (tf::Event event : tf::ALL_EVENTS) {
+        if (tf::getEventFromName(tf::getEventName(event)) != event) {
+            return 2;
+        }
+        std::cout << "event\t" << tf::getEventName(event) << "\n";
+    }
+    for (tf::State state : tf::ALL_STATES) {
+        for (tf::Event event : tf::ALL_EVENTS) {
+            const auto next = tf::transition(state, event);
+            std::cout << "next\t" << tf::getStateName(state) << "\t" << tf::getEventName(event) << "\t"
+                      << (next ? tf::getStateName(*next) : std::string_view("-")) << "\n";
+        }
+    }
+    return 0;
+}
+"#;
+
+/// The generated C++ compiles alone — a translation unit that includes the
+/// header and nothing else, under `-std=c++17 -Werror` with no include path —
+/// and answers as the producer, both as constant expressions the compiler
+/// checks and as a program that prints every answer. It also compiles in one
+/// translation unit with the machine generated beside it.
+#[test]
+fn the_cpp_function_compiles_alone_and_answers_as_the_producer() {
+    let Some(gpp) = toolchain::locate("g++") else {
+        toolchain::skipped(
+            "the_cpp_function_compiles_alone_and_answers_as_the_producer: g++ not on PATH",
+        );
+        return;
+    };
+    for stem in FIXTURES {
+        let work = scratch(&format!("cpp_alone_{stem}"));
+        let out = work.join("out");
+        generate("cpp", &fixture(stem), &out);
+        let header = function_file("cpp", &out, stem);
+        let function = produced(&fixture(stem), &header_hash(&read(&header)));
+
+        let alone = work.join("alone.cpp");
+        std::fs::write(&alone, cpp_constant_checks(&header, stem, &function))
+            .expect("write the unit");
+        let mut compile = Command::new(&gpp);
+        compile
+            .args([
+                "-std=c++17",
+                "-Wall",
+                "-Wextra",
+                "-Wpedantic",
+                "-Werror",
+                "-fsyntax-only",
+            ])
+            .arg(&alone);
+        run_ok(compile, &format!("[{stem}] g++ over the function alone"));
+
+        let program = work.join("listing.cpp");
+        std::fs::write(
+            &program,
+            CPP_LISTING
+                .replace("@HEADER@", &c_literal(header.to_str().unwrap()))
+                .replace("@STEM@", stem),
+        )
+        .expect("write the program");
+        let binary = work.join("listing");
+        let mut build = Command::new(&gpp);
+        build.args(["-std=c++17", "-o"]).arg(&binary).arg(&program);
+        run_ok(build, &format!("[{stem}] g++ over the listing program"));
+        assert_eq!(
+            run_ok(
+                Command::new(&binary),
+                &format!("[{stem}] the listing program")
+            ),
+            listing(&function),
+            "[{stem}] the compiled C++ function does not answer as the producer"
+        );
+
+        // One translation unit with the machine: the two headers declare
+        // nothing in common.
+        let both = work.join("both.cpp");
+        std::fs::write(
+            &both,
+            format!(
+                "#include \"{stem}_sm.h\"\n#include \"{stem}_transition_function.h\"\n\nint main() {{\n    return 0;\n}}\n"
+            ),
+        )
+        .expect("write the unit");
+        let mut together = Command::new(&gpp);
+        together.args(["-std=c++20", "-fsyntax-only"]);
+        for include in [
+            repo_root().join("sce/include"),
+            repo_root().join("third_party/spdlog/include"),
+            repo_root().join("third_party/nlohmann_json/include"),
+            out,
+        ] {
+            together.arg("-I").arg(include);
+        }
+        together.arg(&both);
+        run_ok(
+            together,
+            &format!("[{stem}] g++ over the machine and the function in one unit"),
+        );
+    }
+}
+
+/// A C program that prints the compiled function in `listing`'s shape. `@p@`
+/// is the function's symbol prefix and `@P@` the same in upper case.
+const C_LISTING: &str = r#"#include @HEADER@
+
+#include <stdio.h>
+
+int main(void) {
+    const @p@_state_t *states = @p@_all_states();
+    const @p@_event_t *events = @p@_all_events();
+    printf("hash\t%s\n", @P@_SOURCE_HASH);
+    printf("initial\t%s\n", @p@_state_name(@P@_INITIAL));
+    for (size_t i = 0; i < (size_t)@P@_NUM_STATES; ++i) {
+        @p@_state_t back;
+        if (!@p@_state_from_name(@p@_state_name(states[i]), &back) || back != states[i]) {
+            return 2;
+        }
+        @p@_configuration_t configuration = @p@_configuration(states[i]);
+        printf("state\t%s\t%s\t", @p@_state_name(states[i]), @p@_is_final(states[i]) ? "true" : "false");
+        for (size_t k = 0; k < configuration.count; ++k) {
+            if (k > 0) {
+                printf(" ");
+            }
+            printf("%s", configuration.ids[k]);
+        }
+        printf("\n");
+    }
+    for (size_t j = 0; j < (size_t)@P@_NUM_EVENTS; ++j) {
+        @p@_event_t back;
+        if (!@p@_event_from_name(@p@_event_name(events[j]), &back) || back != events[j]) {
+            return 2;
+        }
+        printf("event\t%s\n", @p@_event_name(events[j]));
+    }
+    for (size_t i = 0; i < (size_t)@P@_NUM_STATES; ++i) {
+        for (size_t j = 0; j < (size_t)@P@_NUM_EVENTS; ++j) {
+            @p@_state_t next = states[i];
+            const char *to = @p@_transition(states[i], events[j], &next) ? @p@_state_name(next) : "-";
+            printf("next\t%s\t%s\t%s\n", @p@_state_name(states[i]), @p@_event_name(events[j]), to);
+        }
+    }
+    {
+        @p@_state_t state;
+        @p@_event_t event;
+        if (@p@_state_from_name("", &state) || @p@_event_from_name("", &event)) {
+            return 2;
+        }
+    }
+    return 0;
+}
+"#;
+
+/// The generated C compiles alone — a translation unit that includes the
+/// header and nothing else, under `-std=c11 -Wpedantic -Werror` with no
+/// include path — and a program over it prints every answer as the producer.
+#[test]
+fn the_c_function_compiles_alone_and_answers_as_the_producer() {
+    let Some(gcc) = toolchain::locate_any(&["gcc", "cc"]) else {
+        toolchain::skipped(
+            "the_c_function_compiles_alone_and_answers_as_the_producer: gcc/cc not on PATH",
+        );
+        return;
+    };
+    for stem in FIXTURES {
+        let work = scratch(&format!("c_alone_{stem}"));
+        let out = work.join("out");
+        generate("c11", &fixture(stem), &out);
+        let header = function_file("c11", &out, stem);
+        let function = produced(&fixture(stem), &header_hash(&read(&header)));
+        let include = c_literal(header.to_str().unwrap());
+
+        let alone = work.join("alone.c");
+        std::fs::write(
+            &alone,
+            format!("#include {include}\n\nint main(void) {{\n    return 0;\n}}\n"),
+        )
+        .expect("write the unit");
+        let mut compile = Command::new(&gcc);
+        compile
+            .args([
+                "-std=c11",
+                "-Wall",
+                "-Wextra",
+                "-Wpedantic",
+                "-Werror",
+                "-fsyntax-only",
+            ])
+            .arg(&alone);
+        run_ok(compile, &format!("[{stem}] cc over the function alone"));
+
+        let prefix = format!("{stem}_transition_function");
+        let program = work.join("listing.c");
+        std::fs::write(
+            &program,
+            C_LISTING
+                .replace("@HEADER@", &include)
+                .replace("@p@", &prefix)
+                .replace("@P@", &c_prefix_upper(stem)),
+        )
+        .expect("write the program");
+        let binary = work.join("listing");
+        let mut build = Command::new(&gcc);
+        build.args(["-std=c11", "-o"]).arg(&binary).arg(&program);
+        run_ok(build, &format!("[{stem}] cc over the listing program"));
+        assert_eq!(
+            run_ok(
+                Command::new(&binary),
+                &format!("[{stem}] the listing program")
+            ),
+            listing(&function),
+            "[{stem}] the compiled C function does not answer as the producer"
+        );
+    }
+}
+
+/// A Go program that prints the compiled function in `listing`'s shape.
+const GO_LISTING: &str = r#"package main
+
+import (
+	"fmt"
+	"os"
+	"strings"
+
+	tf "example.com/tfalone/@PACKAGE@"
+)
+
+func main() {
+	fmt.Printf("hash\t%s\n", tf.SourceHash)
+	fmt.Printf("initial\t%s\n", tf.Initial.String())
+	for _, state := range tf.AllStates {
+		if back, ok := tf.ParseState(state.String()); !ok || back != state {
+			os.Exit(2)
+		}
+		fmt.Printf("state\t%s\t%t\t%s\n", state.String(), tf.IsFinal(state), strings.Join(tf.Configuration(state), " "))
+	}
+	for _, event := range tf.AllEvents {
+		if back, ok := tf.ParseEvent(event.String()); !ok || back != event {
+			os.Exit(2)
+		}
+		fmt.Printf("event\t%s\n", event.String())
+	}
+	for _, state := range tf.AllStates {
+		for _, event := range tf.AllEvents {
+			next := "-"
+			if to, ok := tf.Transition(state, event); ok {
+				next = to.String()
+			}
+			fmt.Printf("next\t%s\t%s\t%s\n", state.String(), event.String(), next)
+		}
+	}
+	if _, ok := tf.ParseState(""); ok {
+		os.Exit(2)
+	}
+	if _, ok := tf.ParseEvent(""); ok {
+		os.Exit(2)
+	}
+}
+"#;
+
+/// The generated Go package builds alone — copied into a module that requires
+/// nothing — and a program over it prints every answer as the producer.
+#[test]
+fn the_go_function_compiles_alone_and_answers_as_the_producer() {
+    let Some(go) = toolchain::locate("go") else {
+        toolchain::skipped(
+            "the_go_function_compiles_alone_and_answers_as_the_producer: go not on PATH",
+        );
+        return;
+    };
+    for stem in FIXTURES {
+        let work = scratch(&format!("go_alone_{stem}"));
+        let out = work.join("out");
+        generate("go", &fixture(stem), &out);
+        let source = function_file("go", &out, stem);
+        let function = produced(&fixture(stem), &header_hash(&read(&source)));
+
+        let package = go_package(stem);
+        let project = work.join("project");
+        std::fs::create_dir_all(project.join(&package)).expect("create the package directory");
+        std::fs::copy(
+            &source,
+            project
+                .join(&package)
+                .join(source.file_name().expect("a file name")),
+        )
+        .expect("copy the package");
+        std::fs::write(
+            project.join("go.mod"),
+            "module example.com/tfalone\n\ngo 1.22\n",
+        )
+        .expect("write go.mod");
+        std::fs::write(
+            project.join("main.go"),
+            GO_LISTING.replace("@PACKAGE@", &package),
+        )
+        .expect("write the program");
+
+        let mut run = Command::new(&go);
+        run.args(["run", "."])
+            .current_dir(&project)
+            .env("GOWORK", "off")
+            .env("GOFLAGS", "-mod=mod");
+        assert_eq!(
+            run_ok(run, &format!("[{stem}] the Go listing program")),
+            listing(&function),
+            "[{stem}] the compiled Go function does not answer as the producer"
+        );
+    }
+}
+
+/// A Kotlin program that prints the compiled function in `listing`'s shape.
+const KOTLIN_LISTING: &str = r#"import @PACKAGE@.*
+
+fun main() {
+    print("hash\t" + SOURCE_HASH + "\n")
+    print("initial\t" + INITIAL.scxmlName + "\n")
+    for (state in ALL_STATES) {
+        check(stateFromName(state.scxmlName) == state) { "a state name does not read back" }
+        print("state\t" + state.scxmlName + "\t" + isFinal(state) + "\t" + configuration(state).joinToString(" ") + "\n")
+    }
+    for (event in ALL_EVENTS) {
+        check(eventFromName(event.scxmlName) == event) { "an event name does not read back" }
+        print("event\t" + event.scxmlName + "\n")
+    }
+    for (state in ALL_STATES) {
+        for (event in ALL_EVENTS) {
+            print("next\t" + state.scxmlName + "\t" + event.scxmlName + "\t" + (transition(state, event)?.scxmlName ?: "-") + "\n")
+        }
+    }
+    check(stateFromName("") == null && eventFromName("") == null) { "an empty name reads as a value" }
+}
+"#;
+
+/// The generated Kotlin compiles alone — `kotlinc` over the file and the
+/// program, with no classpath — and the program prints every answer as the
+/// producer.
+#[test]
+fn the_kotlin_function_compiles_alone_and_answers_as_the_producer() {
+    let Some(kotlinc) = toolchain::locate("kotlinc") else {
+        toolchain::skipped(
+            "the_kotlin_function_compiles_alone_and_answers_as_the_producer: kotlinc not on PATH",
+        );
+        return;
+    };
+    let Some(java) = toolchain::locate("java") else {
+        toolchain::skipped(
+            "the_kotlin_function_compiles_alone_and_answers_as_the_producer: java not on PATH",
+        );
+        return;
+    };
+    for stem in FIXTURES {
+        let work = scratch(&format!("kotlin_alone_{stem}"));
+        let out = work.join("out");
+        generate("kotlin", &fixture(stem), &out);
+        let source = function_file("kotlin", &out, stem);
+        let function = produced(&fixture(stem), &header_hash(&read(&source)));
+
+        let program = work.join("Check.kt");
+        std::fs::write(
+            &program,
+            KOTLIN_LISTING.replace(
+                "@PACKAGE@",
+                &format!(
+                    "com.sce.generated.{}_transition_function",
+                    stem.to_lowercase()
+                ),
+            ),
+        )
+        .expect("write the program");
+        let jar = work.join("check.jar");
+        let mut compile = Command::new(&kotlinc);
+        compile
+            .arg("-nowarn")
+            .arg(&source)
+            .arg(&program)
+            .arg("-include-runtime")
+            .arg("-d")
+            .arg(&jar);
+        run_ok(
+            compile,
+            &format!("[{stem}] kotlinc over the function alone"),
+        );
+        let mut run = Command::new(&java);
+        run.arg("-cp").arg(&jar).arg("CheckKt");
+        assert_eq!(
+            run_ok(run, &format!("[{stem}] the Kotlin listing program")),
+            listing(&function),
+            "[{stem}] the compiled Kotlin function does not answer as the producer"
+        );
+    }
+}
+
+/// A Python program that imports the generated module from its directory
+/// alone and prints it in `listing`'s shape.
+const PYTHON_LISTING: &str = r#"
+import importlib
+import sys
+
+sys.path.insert(0, sys.argv[1])
+tf = importlib.import_module(sys.argv[2])
+lines = ["hash\t" + tf.SOURCE_HASH, "initial\t" + tf.INITIAL.value]
+for state in tf.ALL_STATES:
+    assert tf.State.from_name(state.value) is state, state
+    assert str(state) == state.value, state
+    lines.append(
+        "state\t%s\t%s\t%s"
+        % (
+            state.value,
+            "true" if tf.is_final(state) else "false",
+            " ".join(tf.configuration(state)),
+        )
+    )
+for event in tf.ALL_EVENTS:
+    assert tf.Event.from_name(event.value) is event, event
+    lines.append("event\t" + event.value)
+for state in tf.ALL_STATES:
+    for event in tf.ALL_EVENTS:
+        to = tf.transition(state, event)
+        lines.append(
+            "next\t%s\t%s\t%s" % (state.value, event.value, "-" if to is None else to.value)
+        )
+assert tf.State.from_name("") is None and tf.Event.from_name("") is None
+sys.stdout.write("\n".join(lines) + "\n")
+"#;
+
+/// The generated Python imports alone — from its own directory, in an
+/// isolated interpreter with no SCE runtime on the path — and answers every
+/// question as the producer.
+#[test]
+fn the_python_function_imports_alone_and_answers_as_the_producer() {
+    let Some(python) = toolchain::locate_any(&["python3", "python"]) else {
+        toolchain::skipped(
+            "the_python_function_imports_alone_and_answers_as_the_producer: python not on PATH",
+        );
+        return;
+    };
+    for stem in FIXTURES {
+        let work = scratch(&format!("python_alone_{stem}"));
+        let out = work.join("out");
+        generate("python", &fixture(stem), &out);
+        let function = produced(
+            &fixture(stem),
+            &header_hash(&read(&function_file("python", &out, stem))),
+        );
+        let mut run = Command::new(&python);
+        run.args(["-I", "-c", PYTHON_LISTING])
+            .arg(&out)
+            .arg(format!("{stem}_transition_function"));
+        assert_eq!(
+            run_ok(run, &format!("[{stem}] the Python listing program")),
+            listing(&function),
+            "[{stem}] the imported Python function does not answer as the producer"
         );
     }
 }
