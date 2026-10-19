@@ -17749,23 +17749,25 @@ pub fn render_machine_concurrency_artifacts(
     Ok(files)
 }
 
-/// Per-machine session drive on the Rust (AP, tokio host) backend (SCE
-/// Protocol-Synthesis RFC §synth-5-K, Session drive). Emits the
-/// `SessionDrive` enum and the `SESSION_DRIVE` const a host reads where it
-/// builds the machine's session runtime. The orchestrator pipeline path pushes
-/// the rendered output as `{machine}_session_drive.rs`.
-pub fn render_machine_session_drive_rust(
+/// Per-machine session runtime on the Rust (AP, tokio host) backend (SCE
+/// Protocol-Synthesis RFC §synth-5-K, Session runtime). Emits the
+/// `SessionDrive` enum, the `SessionRuntime` struct, the `SESSION_RUNTIME`
+/// const a host reads where it builds the machine's session runtime, and the
+/// `build_session_runtime()` that builds the one the const declares. The
+/// orchestrator pipeline path pushes the rendered output as
+/// `{machine}_session_runtime.rs`.
+pub fn render_machine_session_runtime_rust(
     env: &minijinja::Environment<'_>,
     machine_name: &str,
-    profile: crate::mesh::deploy::SessionDriveProfile,
+    profile: crate::mesh::deploy::SessionRuntimeProfile,
 ) -> Result<String, ForgeError> {
     use crate::mesh::deploy::{SessionDrive, SessionDriveProfile};
-    let tmpl = env.get_template("session_drive.rs.jinja2").map_err(|e| {
+    let tmpl = env.get_template("session_runtime.rs.jinja2").map_err(|e| {
         ForgeError::from(GenerateError::TemplateLoad(format!(
-            "session_drive.rs.jinja2 (rust): {e}"
+            "session_runtime.rs.jinja2 (rust): {e}"
         )))
     })?;
-    let (drive, worker_threads) = match profile {
+    let (drive, worker_threads) = match profile.drive {
         SessionDriveProfile::OwnThread => (SessionDrive::OwnThread, 0),
         SessionDriveProfile::WorkerPool { worker_threads } => {
             (SessionDrive::WorkerPool, worker_threads)
@@ -17775,28 +17777,29 @@ pub fn render_machine_session_drive_rust(
         machine_name => machine_name,
         drive => drive.as_str(),
         worker_threads => worker_threads,
-        session_drive_derives_attr => crate::rust_derive_policy::RustDeriveCategory::SessionDrive.derives_attr(),
+        rx_busy_poll_us => profile.rx_busy_poll_us,
+        session_runtime_derives_attr => crate::rust_derive_policy::RustDeriveCategory::SessionRuntime.derives_attr(),
     };
     tmpl.render(ctx).map_err(|e| {
         ForgeError::from(GenerateError::TemplateRender(format!(
-            "session_drive.rs.jinja2 (rust): {e}"
+            "session_runtime.rs.jinja2 (rust): {e}"
         )))
     })
 }
 
-/// Per-machine session-drive emission entry point used by the orchestrator
-/// (SCE Protocol-Synthesis RFC §synth-5-K, Session drive). Independent of
-/// [`render_machine_concurrency_artifacts`]: a machine's drive does not
-/// depend on it having links, and a deploy that states no drive emits
+/// Per-machine session-runtime emission entry point used by the orchestrator
+/// (SCE Protocol-Synthesis RFC §synth-5-K, Session runtime). Independent of
+/// [`render_machine_concurrency_artifacts`]: a machine's session runtime does
+/// not depend on it having links, and a deploy that states none emits
 /// nothing, so every existing output stays byte-identical.
 ///
-/// Rust is the only backend that emits: the session drive configures the
-/// tokio runtime a Rust host creates. Other backends silent-skip.
-pub fn render_machine_session_drive_artifacts(
+/// Rust is the only backend that emits: the session runtime is the tokio
+/// runtime a Rust host creates. Other backends silent-skip.
+pub fn render_machine_session_runtime_artifacts(
     template_dir: &Path,
     language: crate::generator::Language,
     machine_name: &str,
-    profile: Option<crate::mesh::deploy::SessionDriveProfile>,
+    profile: Option<crate::mesh::deploy::SessionRuntimeProfile>,
 ) -> Result<Vec<(String, String)>, ForgeError> {
     let Some(profile) = profile else {
         return Ok(Vec::new());
@@ -17806,9 +17809,9 @@ pub fn render_machine_session_drive_artifacts(
             let forge_dir = template_dir.join("forge/rust");
             let mut env = generator::new_env();
             generator::load_templates(&mut env, &forge_dir, crate::generator::Language::Rust)?;
-            let drive = render_machine_session_drive_rust(&env, machine_name, profile)?;
+            let runtime = render_machine_session_runtime_rust(&env, machine_name, profile)?;
             let snake = filters::to_snake_case(machine_name.to_string());
-            Ok(vec![(format!("{snake}_session_drive.rs"), drive)])
+            Ok(vec![(format!("{snake}_session_runtime.rs"), runtime)])
         }
         _ => Ok(Vec::new()),
     }

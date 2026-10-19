@@ -6,10 +6,13 @@ topology:
         source: own_thread_node.scxml
         scheduler:
           kind: tokio
-          drive: own-thread
+          session_runtime:
+            drive: own-thread
       pool_node:
         source: pool_node.scxml
         scheduler:
           kind: tokio
-          drive: worker-pool
-          worker_threads: 3
+          session_runtime:
+            drive: worker-pool
+            worker_threads: 3
+            rx_busy_poll_us: 10

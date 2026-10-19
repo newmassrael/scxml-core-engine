@@ -19,7 +19,9 @@
 // to know every key.
 
 use crate::forge::model::LinkClass;
-use crate::mesh::error::{DeployError, PartitionTransportBindingFailure, WorkerThreadsFault};
+use crate::mesh::error::{
+    DeployError, PartitionTransportBindingFailure, RxBusyPollFault, WorkerThreadsFault,
+};
 use crate::mesh::target::TargetId;
 use crate::mesh::transport::ServerDeadlineNotice;
 use serde::{Deserialize, Serialize};
@@ -1345,25 +1347,39 @@ pub struct MachineSchedulerConfig {
     /// don't consume the slot accounting.
     #[serde(default)]
     pub per_link_budget_us: Option<u32>,
-    /// How a `kind: tokio` host drives this machine's session runtime
-    /// (SCE Protocol-Synthesis RFC §synth-5-K, Session drive): on one
-    /// drive thread, or on a worker pool. The host's runtime reads it as a
-    /// generated const ([`SessionDrive`]); the choice is the host runtime's
-    /// configuration, not a statechart or pool figure, and `cooperative` /
-    /// `rt` have no such choice to make
-    /// (`deploy/scheduler-drive-not-applicable`).
+    /// How a `kind: tokio` host configures the runtime it creates for this
+    /// machine's sessions (SCE Protocol-Synthesis RFC §synth-5-K, Session
+    /// runtime). The host reads it as a generated const
+    /// ([`SessionRuntimeProfile`]); it is the host runtime's configuration,
+    /// not a statechart or pool figure, and `cooperative` / `rt` have no such
+    /// runtime to configure (`deploy/scheduler-session-runtime-not-applicable`).
+    /// The keys live in one block so that applicability is judged once, here,
+    /// and a further host-runtime key joins the block rather than the
+    /// scheduler's own list, which also carries the cooperative budgets.
     ///
     /// ```yaml
     /// scheduler:
     ///   kind: tokio
-    ///   drive: worker-pool
-    ///   worker_threads: 2
+    ///   session_runtime:
+    ///     drive: worker-pool
+    ///     worker_threads: 2
+    ///     rx_busy_poll_us: 10
     /// ```
     ///
-    /// Absent ⇒ the deploy states no drive model and nothing is emitted for
-    /// it.
+    /// Absent ⇒ the deploy states no session runtime and nothing is emitted
+    /// for it.
     #[serde(default)]
-    pub drive: Option<SessionDrive>,
+    pub session_runtime: Option<SessionRuntimeConfig>,
+}
+
+/// The `scheduler.session_runtime:` block of a `kind: tokio` machine (see
+/// [`MachineSchedulerConfig::session_runtime`]).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SessionRuntimeConfig {
+    /// Where the runtime runs. REQUIRED: a block that does not say would
+    /// leave the generated const without a drive to carry.
+    pub drive: SessionDrive,
     /// Worker threads of a `drive: worker-pool` runtime. REQUIRED, and at
     /// least 1, when `drive: worker-pool`; refused otherwise
     /// (`deploy/scheduler-worker-threads-invalid`). The count is stated, not
@@ -1371,10 +1387,23 @@ pub struct MachineSchedulerConfig {
     /// did not write.
     #[serde(default)]
     pub worker_threads: Option<u32>,
+    /// How long, in microseconds, a read that has to wait reads the socket
+    /// directly (`read(2)`) before it sleeps on the reactor. A wait that ends
+    /// inside the budget is answered without the sleep and wake-up, at the
+    /// cost of that much CPU per wait. At least 1, and no more than
+    /// `tick_period_us` when the machine declares one
+    /// (`deploy/scheduler-rx-busy-poll-invalid`); to leave it off, omit it.
+    /// Not `SO_BUSY_POLL`, which polls the network device inside the kernel.
+    ///
+    /// `cooperative` states its own per-link poll cap, `per_link_budget_us`:
+    /// that bounds the work a link may do in a tick and is the scheduler
+    /// itself, where this is an optional wait the runtime could do without.
+    #[serde(default)]
+    pub rx_busy_poll_us: Option<u32>,
 }
 
 /// How a `kind: tokio` host drives a machine's session runtime (see
-/// [`MachineSchedulerConfig::drive`]).
+/// [`SessionRuntimeConfig::drive`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum SessionDrive {
@@ -1382,7 +1411,7 @@ pub enum SessionDrive {
     /// has no workers, so a task waits behind a blocking callback.
     OwnThread,
     /// The session runtime is a multi-threaded runtime with
-    /// [`MachineSchedulerConfig::worker_threads`] workers.
+    /// [`SessionRuntimeConfig::worker_threads`] workers.
     WorkerPool,
 }
 
@@ -1396,27 +1425,41 @@ impl SessionDrive {
     }
 }
 
-/// A machine's session drive with its worker count resolved, the value the
-/// generated `SESSION_DRIVE` const carries. Unlike [`SessionDrive`] it cannot
-/// state a worker pool without a count.
+/// A machine's session drive with its worker count resolved. Unlike
+/// [`SessionDrive`] it cannot state a worker pool without a count.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SessionDriveProfile {
     OwnThread,
     WorkerPool { worker_threads: u32 },
 }
 
+/// A machine's session runtime with every figure resolved, the value the
+/// generated `SESSION_RUNTIME` const carries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SessionRuntimeProfile {
+    pub drive: SessionDriveProfile,
+    /// Microseconds a waiting read reads the socket before it sleeps; 0 when
+    /// the deploy states none, which is the runtime's own behaviour.
+    pub rx_busy_poll_us: u32,
+}
+
 impl MachineSchedulerConfig {
-    /// The resolved session drive, or `None` when the deploy states none.
-    /// [`validate_scheduler_session_drive`] refuses a worker pool with no
+    /// The resolved session runtime, or `None` when the deploy states none.
+    /// [`validate_scheduler_session_runtime`] refuses a worker pool with no
     /// count at parse time, so a validated deploy never meets that case here.
-    pub fn session_drive_profile(&self) -> Option<SessionDriveProfile> {
-        match (self.drive?, self.worker_threads) {
-            (SessionDrive::OwnThread, _) => Some(SessionDriveProfile::OwnThread),
+    pub fn session_runtime_profile(&self) -> Option<SessionRuntimeProfile> {
+        let block = self.session_runtime.as_ref()?;
+        let drive = match (block.drive, block.worker_threads) {
+            (SessionDrive::OwnThread, _) => SessionDriveProfile::OwnThread,
             (SessionDrive::WorkerPool, Some(worker_threads)) => {
-                Some(SessionDriveProfile::WorkerPool { worker_threads })
+                SessionDriveProfile::WorkerPool { worker_threads }
             }
-            (SessionDrive::WorkerPool, None) => None,
-        }
+            (SessionDrive::WorkerPool, None) => return None,
+        };
+        Some(SessionRuntimeProfile {
+            drive,
+            rx_busy_poll_us: block.rx_busy_poll_us.unwrap_or(0),
+        })
     }
 }
 
@@ -3640,7 +3683,7 @@ pub fn parse_deploy_str(content: &str) -> Result<DeployConfig, DeployError> {
     validate_scheduler_cooperative_stack_budget(&cfg)?;
     validate_worker_slot_budget_required_when_cooperative(&cfg)?;
     validate_keepalive_jitter_required_when_cooperative(&cfg)?;
-    validate_scheduler_session_drive(&cfg)?;
+    validate_scheduler_session_runtime(&cfg)?;
     validate_machine_scheduler_worker_capacity(&cfg)?;
     validate_machine_scheduler_link_concurrency(&cfg)?;
     validate_machine_timer_wheel_capacity(&cfg)?;
@@ -4993,48 +5036,62 @@ fn validate_keepalive_jitter_required_when_cooperative(
     Ok(())
 }
 
-/// SCE Protocol-Synthesis RFC §synth-5-K (Session drive) — `drive` and
-/// `worker_threads` describe how a `tokio` host runs the session runtime.
+/// SCE Protocol-Synthesis RFC §synth-5-K (Session runtime) — the
+/// `session_runtime:` block configures the runtime a `tokio` host creates for
+/// the machine's sessions.
 ///
-/// - `cooperative` and `rt` own their dispatch, so writing either key under
-///   them is refused (`deploy/scheduler-drive-not-applicable`).
+/// - `cooperative` and `rt` create no such runtime, so the block under either
+///   is refused (`deploy/scheduler-session-runtime-not-applicable`).
 /// - `drive: worker-pool` needs `worker_threads` of at least 1, and
-///   `worker_threads` is meaningless without `drive: worker-pool`
+///   `worker_threads` is meaningless without it
 ///   (`deploy/scheduler-worker-threads-invalid`).
+/// - `rx_busy_poll_us` is at least 1, and a wait that spins longer than a tick
+///   contradicts the tick the same scheduler declares, so it is no more than
+///   `tick_period_us` when that is stated
+///   (`deploy/scheduler-rx-busy-poll-invalid`).
 ///
-/// A scheduler that writes neither key is not looked at: the keys are
-/// optional, and absence emits nothing.
-fn validate_scheduler_session_drive(cfg: &DeployConfig) -> Result<(), DeployError> {
+/// A scheduler with no block is not looked at: the block is optional, and
+/// absence emits nothing.
+fn validate_scheduler_session_runtime(cfg: &DeployConfig) -> Result<(), DeployError> {
     for device in cfg.topology.values() {
         for (machine_name, machine) in device.machines.iter() {
             let Some(sched) = machine.scheduler.as_ref() else {
                 continue;
             };
+            let Some(block) = sched.session_runtime.as_ref() else {
+                continue;
+            };
             if !matches!(sched.kind, SchedulerKind::Tokio) {
-                let key = match (sched.drive, sched.worker_threads) {
-                    (Some(_), _) => "drive",
-                    (None, Some(_)) => "worker_threads",
-                    (None, None) => continue,
-                };
-                return Err(DeployError::SchedulerDriveNotApplicable {
+                return Err(DeployError::SchedulerSessionRuntimeNotApplicable {
                     machine: machine_name.clone(),
                     kind: sched.kind.as_str(),
-                    key,
                 });
             }
-            let fault = match (sched.drive, sched.worker_threads) {
-                (Some(SessionDrive::WorkerPool), None) => Some(WorkerThreadsFault::Missing),
-                (Some(SessionDrive::WorkerPool), Some(0)) => Some(WorkerThreadsFault::BelowOne),
-                (Some(SessionDrive::OwnThread) | None, Some(_)) => {
-                    Some(WorkerThreadsFault::WithoutWorkerPool)
-                }
-                (Some(SessionDrive::WorkerPool), Some(_)) | (_, None) => None,
+            let fault = match (block.drive, block.worker_threads) {
+                (SessionDrive::WorkerPool, None) => Some(WorkerThreadsFault::Missing),
+                (SessionDrive::WorkerPool, Some(0)) => Some(WorkerThreadsFault::BelowOne),
+                (SessionDrive::OwnThread, Some(_)) => Some(WorkerThreadsFault::WithoutWorkerPool),
+                (SessionDrive::WorkerPool, Some(_)) | (SessionDrive::OwnThread, None) => None,
             };
             if let Some(fault) = fault {
                 return Err(DeployError::SchedulerWorkerThreadsInvalid {
                     machine: machine_name.clone(),
                     fault,
-                    worker_threads: sched.worker_threads,
+                    worker_threads: block.worker_threads,
+                });
+            }
+            let busy_poll_fault = match (block.rx_busy_poll_us, sched.tick_period_us) {
+                (Some(0), _) => Some(RxBusyPollFault::Zero),
+                (Some(budget), Some(tick_period_us)) if budget > tick_period_us => {
+                    Some(RxBusyPollFault::ExceedsTick { tick_period_us })
+                }
+                _ => None,
+            };
+            if let Some(fault) = busy_poll_fault {
+                return Err(DeployError::SchedulerRxBusyPollInvalid {
+                    machine: machine_name.clone(),
+                    fault,
+                    rx_busy_poll_us: block.rx_busy_poll_us.unwrap_or(0),
                 });
             }
         }

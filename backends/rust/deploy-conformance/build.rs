@@ -4,14 +4,14 @@
 // build.rs for the deploy-artifact conformance crate.
 //
 // The Rust files SCE writes from a deploy.yaml (a machine's LinkBus, its
-// cooperative scheduler, its session drive) were only ever compared as text. A
+// cooperative scheduler, its session runtime) were only ever compared as text. A
 // template that stopped compiling would have passed every test that read them.
 // Here the generator runs in-process, as `sce-forge-conformance`'s does, and the
 // files it writes are compiled into this crate, one module per machine.
 //
 //   - `deploy.yaml` in this directory is parsed by `parse_deploy_str`, so what
 //     is compiled is what the deploy parser accepts, and each tokio machine's
-//     session drive is rendered from its `scheduler:`;
+//     session runtime is rendered from its `scheduler:`;
 //   - the LinkBus and scheduler of a cooperative machine are rendered from the
 //     same numbers a deploy carries for `links:` and `scheduler:`.
 //
@@ -20,7 +20,7 @@
 // does not accept at a crate's top level but a module body does.
 
 use sce_build::forge::generator::{
-    render_machine_concurrency_artifacts, render_machine_session_drive_artifacts,
+    render_machine_concurrency_artifacts, render_machine_session_runtime_artifacts,
 };
 use sce_build::generator::Language;
 use sce_build::mesh::deploy::parse_deploy_str;
@@ -46,7 +46,7 @@ fn main() {
 
     let mut modules = String::new();
 
-    // Session drive, from the deploy file.
+    // Session runtime, from the deploy file.
     let deploy_text = std::fs::read_to_string(&deploy_path)
         .unwrap_or_else(|e| panic!("read {}: {e}", deploy_path.display()));
     let deploy = parse_deploy_str(&deploy_text).unwrap_or_else(|e| panic!("parse deploy: {e}"));
@@ -55,14 +55,14 @@ fn main() {
             let profile = config
                 .scheduler
                 .as_ref()
-                .and_then(|s| s.session_drive_profile());
-            let files = render_machine_session_drive_artifacts(
+                .and_then(|s| s.session_runtime_profile());
+            let files = render_machine_session_runtime_artifacts(
                 &template_base,
                 Language::Rust,
                 machine,
                 profile,
             )
-            .unwrap_or_else(|e| panic!("render session drive for {machine}: {e}"));
+            .unwrap_or_else(|e| panic!("render session runtime for {machine}: {e}"));
             for (name, body) in files {
                 push_module(&mut modules, &name, &body);
             }

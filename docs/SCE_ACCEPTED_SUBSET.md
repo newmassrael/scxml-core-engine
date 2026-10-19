@@ -7483,8 +7483,9 @@ Codes that the author can avoid by writing a better SCXML /
 | `deploy/worker-slot-budget-missing` | Mesh Deploy |
 | `deploy/keepalive-jitter-budget-missing` | Mesh Deploy |
 | `deploy/scheduler-incompatible-with-worker-count` | Mesh Deploy |
-| `deploy/scheduler-drive-not-applicable` | Mesh Deploy |
+| `deploy/scheduler-session-runtime-not-applicable` | Mesh Deploy |
 | `deploy/scheduler-worker-threads-invalid` | Mesh Deploy |
+| `deploy/scheduler-rx-busy-poll-invalid` | Mesh Deploy |
 | `deploy/link-driver-unknown` | Mesh Deploy |
 | `deploy/link-mtu-missing-on-fragmenting-link` | Mesh Deploy |
 | `deploy/link-mtu-below-driver-floor` | Mesh Deploy |

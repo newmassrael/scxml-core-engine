@@ -2936,8 +2936,10 @@ topology:
         scheduler:
           kind: tokio | cooperative | rt
           worker_stack_budget: <integer>     # bytes; required when kind=cooperative
-          drive: own-thread | worker-pool    # optional; kind=tokio only (RFC §5.K, Session drive)
-          worker_threads: <integer>          # >=1; required with, and only with, drive=worker-pool
+          session_runtime:                   # optional; kind=tokio only (RFC §5.K, Session runtime)
+            drive: own-thread | worker-pool  # required in the block
+            worker_threads: <integer>        # >=1; required with, and only with, drive=worker-pool
+            rx_busy_poll_us: <integer>       # optional; >=1, <= tick_period_us when declared
 
         # Per-machine memory layout (RFC §5.K, Phase A2). Optional. Region
         # attributes ride as raw strings; structural interpretation lives in

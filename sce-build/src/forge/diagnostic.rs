@@ -2833,18 +2833,24 @@ pub enum DiagnosticCode {
     /// fires at deploy.yaml parse time.
     #[serde(rename = "deploy/keepalive-jitter-budget-missing")]
     MeshDeploySchedulerCooperativeMissingKeepaliveJitterBudget,
-    /// SCE Protocol-Synthesis RFC §synth-5-K (Session drive). `drive` or
-    /// `worker_threads` written under a scheduler `kind` other than `tokio`,
-    /// which has no session-runtime drive model to choose. `expected` carries
-    /// the kind the keys apply to, `actual` the key the deploy wrote.
-    #[serde(rename = "deploy/scheduler-drive-not-applicable")]
-    MeshDeploySchedulerDriveNotApplicable,
-    /// SCE Protocol-Synthesis RFC §synth-5-K (Session drive). A `tokio`
+    /// SCE Protocol-Synthesis RFC §synth-5-K (Session runtime). A
+    /// `session_runtime:` block under a scheduler `kind` other than `tokio`,
+    /// which creates no session runtime to configure. `expected` carries the
+    /// kind the block applies to, `actual` the block the deploy wrote.
+    #[serde(rename = "deploy/scheduler-session-runtime-not-applicable")]
+    MeshDeploySchedulerSessionRuntimeNotApplicable,
+    /// SCE Protocol-Synthesis RFC §synth-5-K (Session runtime). A `tokio`
     /// machine whose `worker_threads` contradicts its `drive`: a worker pool
     /// with no count or a count of 0, or a count with no worker pool. `actual`
     /// carries the figure the deploy states, when it states one.
     #[serde(rename = "deploy/scheduler-worker-threads-invalid")]
     MeshDeploySchedulerWorkerThreadsInvalid,
+    /// SCE Protocol-Synthesis RFC §synth-5-K (Session runtime). A `tokio`
+    /// machine whose `rx_busy_poll_us` is 0, or longer than the
+    /// `tick_period_us` the same scheduler declares. `actual` carries the
+    /// figure the deploy states.
+    #[serde(rename = "deploy/scheduler-rx-busy-poll-invalid")]
+    MeshDeploySchedulerRxBusyPollInvalid,
     /// SCE Protocol-Synthesis RFC §synth-5-K line 2423 verbatim
     /// (`deploy/scheduler-incompatible-with-worker-count`). Cooperative
     /// scheduler's derived slot count (`floor(tick_period_us /
@@ -3877,9 +3883,10 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshDeploySchedulerCooperativeMissingSlotBudget,
         MeshDeploySchedulerCooperativeMissingKeepaliveJitterBudget,
         MeshDeploySchedulerIncompatibleWithWorkerCount,
-        // Session drive axis (SCE Protocol-Synthesis RFC §synth-5-K)
-        MeshDeploySchedulerDriveNotApplicable,
+        // Session runtime axis (SCE Protocol-Synthesis RFC §synth-5-K)
+        MeshDeploySchedulerSessionRuntimeNotApplicable,
         MeshDeploySchedulerWorkerThreadsInvalid,
+        MeshDeploySchedulerRxBusyPollInvalid,
         // §synth-5-K `links:` block schema + parse-time + cross-doc (RFC §synth-5-K lines 2232-2540)
         MeshDeployLinkDriverUnknown,
         MeshDeployLinkMtuMissingOnFragmentingLink,
@@ -4578,8 +4585,9 @@ impl DiagnosticCode {
             | MeshDeploySchedulerCooperativeMissingSlotBudget
             | MeshDeploySchedulerCooperativeMissingKeepaliveJitterBudget
             | MeshDeploySchedulerIncompatibleWithWorkerCount
-            | MeshDeploySchedulerDriveNotApplicable
+            | MeshDeploySchedulerSessionRuntimeNotApplicable
             | MeshDeploySchedulerWorkerThreadsInvalid
+            | MeshDeploySchedulerRxBusyPollInvalid
             // §synth-5-K `links:` block (RFC §synth-5-K lines 2232-2540) +
             // cross-doc RX-pool burst invariants (RFC §synth-5-K
             // lines 2489-2500).
@@ -5373,8 +5381,11 @@ impl DiagnosticCode {
             MeshDeploySchedulerIncompatibleWithWorkerCount => {
                 "deploy/scheduler-incompatible-with-worker-count"
             }
-            MeshDeploySchedulerDriveNotApplicable => "deploy/scheduler-drive-not-applicable",
+            MeshDeploySchedulerSessionRuntimeNotApplicable => {
+                "deploy/scheduler-session-runtime-not-applicable"
+            }
             MeshDeploySchedulerWorkerThreadsInvalid => "deploy/scheduler-worker-threads-invalid",
+            MeshDeploySchedulerRxBusyPollInvalid => "deploy/scheduler-rx-busy-poll-invalid",
             MeshDeployLinkDriverUnknown => "deploy/link-driver-unknown",
             MeshDeployLinkMtuMissingOnFragmentingLink => {
                 "deploy/link-mtu-missing-on-fragmenting-link"
@@ -15364,14 +15375,25 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:f26a225afadc7a9a","code":"deploy/scheduler-incompatible-with-worker-count","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.K","message":"machine 'mcu_node': declared 5 workers under machines.mcu_node.workers, but cooperative scheduler can host only 3 per tick window (derived from tick_period_us 1000 / worker_slot_budget_us 300). SCE Protocol-Synthesis RFC §5.K line 2423 (`deploy/scheduler-incompatible-with-worker-count`). Repair: raise `tick_period_us`, lower `worker_slot_budget_us`, remove excess workers, or switch `scheduler.kind:` to a preemptive host (`tokio` / `rt`).","expected":["3"],"actual":"5"}"#,
             ),
             (
-                "deploy/scheduler-drive-not-applicable",
-                DeployError::SchedulerDriveNotApplicable {
+                "deploy/scheduler-session-runtime-not-applicable",
+                DeployError::SchedulerSessionRuntimeNotApplicable {
                     machine: "mcu_node".into(),
                     kind: "cooperative",
-                    key: "drive",
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:db63176b6f0dcf70","code":"deploy/scheduler-drive-not-applicable","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.K","message":"machine 'mcu_node': scheduler.drive is not applicable to scheduler.kind 'cooperative'. SCE Protocol-Synthesis RFC §5.K (Session drive, `deploy/scheduler-drive-not-applicable`) — `drive` and `worker_threads` configure the runtime a `tokio` host creates for the session, and a 'cooperative' scheduler has no such choice. Repair: remove `drive` from `scheduler:`, or change `kind:` to `tokio`.","expected":["tokio"],"actual":"drive"}"#,
+                r#"{"v":1,"id":"fnv1a:d30d87b6b0c48c10","code":"deploy/scheduler-session-runtime-not-applicable","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.K","message":"machine 'mcu_node': scheduler.session_runtime is not applicable to scheduler.kind 'cooperative'. SCE Protocol-Synthesis RFC §5.K (Session runtime, `deploy/scheduler-session-runtime-not-applicable`) — the block configures the runtime a `tokio` host creates for the session, and a 'cooperative' scheduler creates none. Repair: remove `session_runtime` from `scheduler:`, or change `kind:` to `tokio`.","expected":["tokio"],"actual":"session_runtime"}"#,
+            ),
+            (
+                "deploy/scheduler-rx-busy-poll-invalid",
+                DeployError::SchedulerRxBusyPollInvalid {
+                    machine: "ap_node".into(),
+                    fault: crate::mesh::error::RxBusyPollFault::ExceedsTick {
+                        tick_period_us: 1000,
+                    },
+                    rx_busy_poll_us: 5000,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:c4a429f9a60b8de3","code":"deploy/scheduler-rx-busy-poll-invalid","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.K","message":"machine 'ap_node': `rx_busy_poll_us` is longer than `tick_period_us` (1000), so a wait would spin through a whole tick. SCE Protocol-Synthesis RFC §5.K (Session runtime, `deploy/scheduler-rx-busy-poll-invalid`). Repair: write `rx_busy_poll_us: <us>` of at least 1 and, when `tick_period_us` is declared, no more than it, or remove `rx_busy_poll_us` to leave it off.","actual":"5000"}"#,
             ),
             (
                 "deploy/scheduler-worker-threads-invalid",
@@ -15381,7 +15403,7 @@ mod tests {
                     worker_threads: Some(0),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:4c263c309109f5c6","code":"deploy/scheduler-worker-threads-invalid","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.K","message":"machine 'ap_node': `drive: worker-pool` needs at least one worker thread, and `worker_threads` is 0. SCE Protocol-Synthesis RFC §5.K (Session drive, `deploy/scheduler-worker-threads-invalid`). Repair: write `drive: worker-pool` with `worker_threads: <n>` (n >= 1), or write `drive: own-thread` and remove `worker_threads`.","actual":"0"}"#,
+                r#"{"v":1,"id":"fnv1a:4c263c309109f5c6","code":"deploy/scheduler-worker-threads-invalid","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.K","message":"machine 'ap_node': `drive: worker-pool` needs at least one worker thread, and `worker_threads` is 0. SCE Protocol-Synthesis RFC §5.K (Session runtime, `deploy/scheduler-worker-threads-invalid`). Repair: write `drive: worker-pool` with `worker_threads: <n>` (n >= 1), or write `drive: own-thread` and remove `worker_threads`.","actual":"0"}"#,
             ),
             // ── §synth-5-K `links:` block (RFC §synth-5-K lines 2232-2540) ──
             (
@@ -16985,10 +17007,10 @@ mod tests {
             | QueueProgressInsufficientForIsr
             | QueueSegmentedNeedsAlloc
             | QueueStorageRuntimeMissing
-            // `deploy/scheduler-drive-not-applicable`: `expected` is the one
-            // scheduler kind the keys apply to (`tokio`). Dropping the key is
-            // the other repair, so it is not a `Fix`.
-            | MeshDeploySchedulerDriveNotApplicable => ExpectedIsMetadata,
+            // `deploy/scheduler-session-runtime-not-applicable`: `expected` is
+            // the one scheduler kind the block applies to (`tokio`). Dropping
+            // the block is the other repair, so it is not a `Fix`.
+            | MeshDeploySchedulerSessionRuntimeNotApplicable => ExpectedIsMetadata,
 
             // ── Deterministic fix or no fix; expected=None ────
             XmlParse
@@ -17422,9 +17444,10 @@ mod tests {
             // candidate list, so `fix: None` ⇒ NeutralOrDeterministic.
             | MeshDeploySchedulerCooperativeMissingSlotBudget
             | MeshDeploySchedulerCooperativeMissingKeepaliveJitterBudget
-            // Session drive: the repair is a count the author chooses or a
+            // Session runtime: the repair is a figure the author chooses or a
             // key dropped, with no closed candidate list.
             | MeshDeploySchedulerWorkerThreadsInvalid
+            | MeshDeploySchedulerRxBusyPollInvalid
             // §synth-5-K `links:` block parse-level + multi-axis repairs
             // (RFC §synth-5-K lines 2440-2503). 6 of the 9 `links:` block codes
             // carry author-domain or multi-axis repairs with no closed
@@ -18211,8 +18234,9 @@ mod tests {
                 | MeshDeploySchedulerCooperativeMissingSlotBudget
                 | MeshDeploySchedulerCooperativeMissingKeepaliveJitterBudget
                 | MeshDeploySchedulerIncompatibleWithWorkerCount
-                | MeshDeploySchedulerDriveNotApplicable
+                | MeshDeploySchedulerSessionRuntimeNotApplicable
                 | MeshDeploySchedulerWorkerThreadsInvalid
+                | MeshDeploySchedulerRxBusyPollInvalid
                 | MeshDeployLinkDriverUnknown
                 | MeshDeployLinkMtuMissingOnFragmentingLink
                 | MeshDeployLinkMtuBelowDriverFloor
@@ -18313,9 +18337,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            440,
+            441,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 440 distinct variants to match the DiagnosticCode \
+             expected 441 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -19196,8 +19220,9 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | MeshDeploySchedulerCooperativeMissingSlotBudget
             | MeshDeploySchedulerCooperativeMissingKeepaliveJitterBudget
             | MeshDeploySchedulerIncompatibleWithWorkerCount
-            | MeshDeploySchedulerDriveNotApplicable
+            | MeshDeploySchedulerSessionRuntimeNotApplicable
             | MeshDeploySchedulerWorkerThreadsInvalid
+            | MeshDeploySchedulerRxBusyPollInvalid
             | MeshDeployLinkDriverUnknown
             | MeshDeployLinkMtuMissingOnFragmentingLink
             | MeshDeployLinkMtuBelowDriverFloor

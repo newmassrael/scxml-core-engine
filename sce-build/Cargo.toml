@@ -1248,12 +1248,12 @@ name = "the_emitted_transition_table_equals_the_export"
 path = "tests/the_emitted_transition_table_equals_the_export.rs"
 required-features = ["cli"]
 
-# `machines.<m>.scheduler.drive` and `worker_threads` (SCE Protocol-Synthesis
-# RFC §synth-5-K, Session drive). It runs `sce-codegen orchestrate` against a
-# deploy with and without the keys, so it carries the `cli` gate.
+# `machines.<m>.scheduler.session_runtime` (SCE Protocol-Synthesis RFC
+# §synth-5-K, Session runtime). It runs `sce-codegen orchestrate` against a
+# deploy with and without the block, so it carries the `cli` gate.
 [[test]]
-name = "scheduler_session_drive"
-path = "tests/scheduler_session_drive.rs"
+name = "scheduler_session_runtime"
+path = "tests/scheduler_session_runtime.rs"
 required-features = ["cli"]
 
 [lints]

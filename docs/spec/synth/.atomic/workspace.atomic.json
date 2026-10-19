@@ -4002,14 +4002,6 @@
           "kind": "implements"
         },
         {
-          "file": "tools/codegen/templates/forge/rust/session_drive.rs.jinja2",
-          "kind": "references"
-        },
-        {
-          "file": "sce-build/tests/scheduler_session_drive.rs",
-          "kind": "references"
-        },
-        {
           "file": "sce-build/src/forge/generator.rs",
           "kind": "references"
         },
@@ -4019,8 +4011,16 @@
           "kind": "implements"
         },
         {
+          "file": "tools/codegen/templates/forge/rust/session_runtime.rs.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/scheduler_session_runtime.rs",
+          "kind": "references"
+        },
+        {
           "file": "sce-build/src/mesh/deploy.rs",
-          "symbol": "validate_scheduler_session_drive",
+          "symbol": "validate_scheduler_session_runtime",
           "kind": "implements"
         }
       ]
@@ -6419,6 +6419,24 @@
       "target_kind": "section",
       "target_id": "synth-5-I",
       "reason": "the test is replaced: a C worker has no translation unit, its inbox is the imported queue (RFC 5.P Migration)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-K",
+      "reason": "renamed with the session runtime block"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-K",
+      "reason": "renamed with the session runtime block"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-K",
+      "reason": "renamed with the session runtime block"
     }
   ],
   "frames": {},

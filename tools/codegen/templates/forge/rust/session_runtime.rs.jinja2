@@ -1,0 +1,68 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+// SCE Forge: Auto-generated per-machine session runtime
+// Runtime: tokio host (AP side)
+// Machine: {{ machine_name }}
+// Do not edit — regenerate from deploy.yaml.
+//
+// §synth-5-K: `machines.{{ machine_name }}.scheduler.session_runtime` states how the
+// host configures the runtime it creates for this machine's sessions. The
+// host reads `SESSION_RUNTIME` where it builds that runtime, so the choice
+// lives in the deploy and not in a build feature of the host crate.
+
+#![allow(clippy::all)]
+#![allow(unused_imports)]
+#![allow(unused_variables)]
+#![allow(dead_code)]
+
+/// Where the session runtime of `{{ machine_name }}` runs.
+{{ session_runtime_derives_attr }}
+pub enum SessionDrive {
+    /// The session runtime runs on the one thread that drives the machine and
+    /// has no workers: a task waits behind a blocking callback.
+    OwnThread,
+    /// A multi-threaded session runtime with `worker_threads` workers.
+    WorkerPool { worker_threads: usize },
+}
+
+/// The session runtime `machines.{{ machine_name }}.scheduler.session_runtime` declares.
+{{ session_runtime_derives_attr }}
+pub struct SessionRuntime {
+    /// Where the runtime runs.
+    pub drive: SessionDrive,
+    /// Microseconds a read that has to wait reads the socket directly
+    /// (`read(2)`) before it sleeps on the reactor; 0 leaves the runtime's own
+    /// behaviour. Read by whoever opens the session's socket, not by
+    /// `build_session_runtime`, since it is a property of a read and not of
+    /// the runtime that schedules it.
+    pub rx_busy_poll_us: u32,
+}
+
+/// The session runtime this deploy declares.
+pub const SESSION_RUNTIME: SessionRuntime = SessionRuntime {
+    drive: {% if drive == "worker-pool" %}SessionDrive::WorkerPool { worker_threads: {{ worker_threads }} }{% else %}SessionDrive::OwnThread{% endif %},
+    rx_busy_poll_us: {{ rx_busy_poll_us }},
+};
+
+/// Build the tokio runtime `SESSION_RUNTIME.drive` declares. The one place the
+/// drive is interpreted: a host that builds its runtime here cannot disagree
+/// with the deploy, and a host that builds it elsewhere has chosen to.
+{% if drive == "worker-pool" %}///
+/// A multi-threaded runtime with {{ worker_threads }} worker threads (needs tokio's
+/// `rt-multi-thread` feature).
+pub fn build_session_runtime() -> std::io::Result<tokio::runtime::Runtime> {
+    tokio::runtime::Builder::new_multi_thread()
+        .worker_threads({{ worker_threads }})
+        .enable_all()
+        .build()
+}
+{% else %}///
+/// A current-thread runtime: it has no workers, and runs only while the thread
+/// that drives the machine is inside `Runtime::block_on`.
+pub fn build_session_runtime() -> std::io::Result<tokio::runtime::Runtime> {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+}
+{% endif %}

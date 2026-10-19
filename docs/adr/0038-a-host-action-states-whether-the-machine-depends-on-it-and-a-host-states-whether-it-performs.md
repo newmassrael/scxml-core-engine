@@ -109,7 +109,7 @@ here.
   signature and is worth having, but a host can produce a dummy handle as easily as an empty
   body, so it adds a shape without adding a refusal. It may follow decision 2 later as a
   strengthening.
-- **Tie a duty's concurrency need to `scheduler.drive`.** Looks natural, is wrong: a host may
+- **Tie a duty's concurrency need to `scheduler.session_runtime.drive`.** Looks natural, is wrong: a host may
   satisfy a concurrent duty on a thread of its own outside the session runtime (the witness did
   exactly that), so an `own-thread` session runtime does not contradict a concurrent duty.
 - **A runtime witness that a duty ran** (a heartbeat the machine checks). It has to be written

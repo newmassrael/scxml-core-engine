@@ -301,6 +301,44 @@ pub enum WorkerThreadsFault {
     WithoutWorkerPool,
 }
 
+/// Which way a `session_runtime.rx_busy_poll_us` figure fails (see
+/// [`DeployError::SchedulerRxBusyPollInvalid`]). The `Display` impl emits the
+/// clause spliced into that variant's `{fault}` placeholder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RxBusyPollFault {
+    /// `rx_busy_poll_us: 0`, a second spelling of leaving it off.
+    Zero,
+    /// A budget longer than the `tick_period_us` the same scheduler declares.
+    ExceedsTick { tick_period_us: u32 },
+}
+
+impl RxBusyPollFault {
+    /// The classification as it enters the diagnostic id. The tick figure is
+    /// left out: it is the deploy's number and moves with the deploy, where
+    /// the classification does not.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Zero => "zero",
+            Self::ExceedsTick { .. } => "exceeds-tick",
+        }
+    }
+}
+
+impl std::fmt::Display for RxBusyPollFault {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Zero => write!(
+                f,
+                "`rx_busy_poll_us` is 0, which says nothing that leaving it out does not"
+            ),
+            Self::ExceedsTick { tick_period_us } => write!(
+                f,
+                "`rx_busy_poll_us` is longer than `tick_period_us` ({tick_period_us}), so a wait would spin through a whole tick"
+            ),
+        }
+    }
+}
+
 impl WorkerThreadsFault {
     /// The classification as it enters the diagnostic id. Spelled out rather
     /// than taken from `Debug`, so renaming a variant cannot move an id.
@@ -1522,38 +1560,35 @@ pub enum DeployError {
     )]
     SchedulerCooperativeMissingKeepaliveJitterBudget { machine: String },
 
-    /// A machine wrote `scheduler.drive` or `scheduler.worker_threads` under a
-    /// `kind` other than `tokio` (SCE Protocol-Synthesis RFC §synth-5-K,
-    /// Session drive; `deploy/scheduler-drive-not-applicable`). The keys
-    /// configure the runtime a `tokio` host creates for the session;
-    /// `cooperative` is the SCE-built single-thread tick loop and `rt` runs in
-    /// an RTOS task, and neither has a drive model to choose. Rejected at
-    /// parse time.
+    /// A machine wrote a `scheduler.session_runtime:` block under a `kind`
+    /// other than `tokio` (SCE Protocol-Synthesis RFC §synth-5-K, Session
+    /// runtime; `deploy/scheduler-session-runtime-not-applicable`). The block
+    /// configures the runtime a `tokio` host creates for the machine's
+    /// sessions; `cooperative` is the SCE-built single-thread tick loop and
+    /// `rt` runs in an RTOS task, and neither creates one. Rejected at parse
+    /// time.
     #[error(
-        "machine '{machine}': scheduler.{key} is not applicable to scheduler.kind '{kind}'. \
-             SCE Protocol-Synthesis RFC §5.K (Session drive, \
-             `deploy/scheduler-drive-not-applicable`) — `drive` and `worker_threads` \
-             configure the runtime a `tokio` host creates for the session, and \
-             a '{kind}' scheduler has no such choice. \
-             Repair: remove `{key}` from `scheduler:`, or change `kind:` to `tokio`."
+        "machine '{machine}': scheduler.session_runtime is not applicable to scheduler.kind '{kind}'. \
+             SCE Protocol-Synthesis RFC §5.K (Session runtime, \
+             `deploy/scheduler-session-runtime-not-applicable`) — the block \
+             configures the runtime a `tokio` host creates for the session, and \
+             a '{kind}' scheduler creates none. \
+             Repair: remove `session_runtime` from `scheduler:`, or change `kind:` to `tokio`."
     )]
-    SchedulerDriveNotApplicable {
+    SchedulerSessionRuntimeNotApplicable {
         machine: String,
         /// The scheduler kind as the deploy spells it.
         kind: &'static str,
-        /// The offending key: `drive`, or `worker_threads` when `drive` is
-        /// absent.
-        key: &'static str,
     },
 
-    /// A `tokio` machine whose `scheduler.worker_threads` contradicts its
-    /// `scheduler.drive` (SCE Protocol-Synthesis RFC §synth-5-K, Session
-    /// drive; `deploy/scheduler-worker-threads-invalid`). A worker pool needs
+    /// A `tokio` machine whose `session_runtime.worker_threads` contradicts its
+    /// `session_runtime.drive` (SCE Protocol-Synthesis RFC §synth-5-K, Session
+    /// runtime; `deploy/scheduler-worker-threads-invalid`). A worker pool needs
     /// a stated count of at least 1, and a count with no worker pool is read
     /// by nothing. Rejected at parse time.
     #[error(
         "machine '{machine}': {fault}. \
-             SCE Protocol-Synthesis RFC §5.K (Session drive, \
+             SCE Protocol-Synthesis RFC §5.K (Session runtime, \
              `deploy/scheduler-worker-threads-invalid`). \
              Repair: write `drive: worker-pool` with `worker_threads: <n>` (n >= 1), \
              or write `drive: own-thread` and remove `worker_threads`."
@@ -1563,6 +1598,25 @@ pub enum DeployError {
         fault: WorkerThreadsFault,
         /// The figure the deploy states, when it states one.
         worker_threads: Option<u32>,
+    },
+
+    /// A `tokio` machine whose `session_runtime.rx_busy_poll_us` cannot be a
+    /// wait budget (SCE Protocol-Synthesis RFC §synth-5-K, Session runtime;
+    /// `deploy/scheduler-rx-busy-poll-invalid`): 0, which is the spelling of
+    /// leaving it off twice, or longer than the scheduler's own
+    /// `tick_period_us`. Rejected at parse time.
+    #[error(
+        "machine '{machine}': {fault}. \
+             SCE Protocol-Synthesis RFC §5.K (Session runtime, \
+             `deploy/scheduler-rx-busy-poll-invalid`). \
+             Repair: write `rx_busy_poll_us: <us>` of at least 1 and, when `tick_period_us` \
+             is declared, no more than it, or remove `rx_busy_poll_us` to leave it off."
+    )]
+    SchedulerRxBusyPollInvalid {
+        machine: String,
+        fault: RxBusyPollFault,
+        /// The figure the deploy states.
+        rx_busy_poll_us: u32,
     },
 
     /// A machine declared more workers (entries under `machines.<m>.workers`)
@@ -3718,16 +3772,28 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
                 key_fragments: vec![machine.clone()],
             }
         }
-        DeployError::SchedulerDriveNotApplicable { machine, kind, key } => DiagnosticPayload {
-            code: DiagnosticCode::MeshDeploySchedulerDriveNotApplicable,
+        DeployError::SchedulerSessionRuntimeNotApplicable { machine, kind } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeploySchedulerSessionRuntimeNotApplicable,
             stage: Stage::MeshDeploy,
-            actual: Some((*key).to_string()),
-            // The only kind the keys apply to is a closed fact; whether the
-            // author wants `tokio` or no key is theirs, so it is metadata and
+            actual: Some("session_runtime".to_string()),
+            // The only kind the block applies to is a closed fact; whether the
+            // author wants `tokio` or no block is theirs, so it is metadata and
             // not a `Fix`.
             expected: Some(vec!["tokio".to_string()]),
             fix: None,
-            key_fragments: vec![machine.clone(), (*kind).to_string(), (*key).to_string()],
+            key_fragments: vec![machine.clone(), (*kind).to_string()],
+        },
+        DeployError::SchedulerRxBusyPollInvalid {
+            machine,
+            fault,
+            rx_busy_poll_us,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeploySchedulerRxBusyPollInvalid,
+            stage: Stage::MeshDeploy,
+            actual: Some(rx_busy_poll_us.to_string()),
+            expected: None,
+            fix: None,
+            key_fragments: vec![machine.clone(), fault.as_str().to_string()],
         },
         DeployError::SchedulerWorkerThreadsInvalid {
             machine,
