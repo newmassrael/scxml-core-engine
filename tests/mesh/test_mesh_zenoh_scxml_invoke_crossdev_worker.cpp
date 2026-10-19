@@ -5,7 +5,7 @@
 //
 // Listener half of the §9.6 cross-device fixture for Zenoh. Runs
 // inside the `sce-mesh-worker` netns (172.16.10.2). The deploy.yaml
-// ecu_worker.transports.zenoh.connect points at the parent's listen
+// ecu_worker.transports.zenoh_keyexpr.connect points at the parent's listen
 // address (tcp/172.16.10.1:17449) so init() opens a Zenoh peer session
 // that immediately tries to dial the parent. If the parent is not yet
 // listening (which is the normal case under run_two_host_fixture.sh's

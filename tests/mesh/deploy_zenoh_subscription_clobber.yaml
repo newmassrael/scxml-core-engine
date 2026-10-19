@@ -12,7 +12,7 @@ version: "1.0"
 topology:
   ecu_brake:
     transports:
-      zenoh:
+      zenoh_keyexpr:
         mode: peer
         connect: ["tcp/127.0.0.1:17454"]
     machines:
@@ -20,11 +20,11 @@ topology:
         source: brake_zenoh_subscription_clobber.scxml
         bindings:
           "#motor_clobber":
-            transport: zenoh
+            transport: zenoh_keyexpr
             key: "sce/brake_subscription_clobber/motor/events"
   ecu_motor:
     transports:
-      zenoh:
+      zenoh_keyexpr:
         mode: peer
         listen: ["tcp/127.0.0.1:17454"]
     machines:

@@ -19,7 +19,7 @@ version: "1.0"
 topology:
   ecu_brake:
     transports:
-      zenoh:
+      zenoh_keyexpr:
         config: zenoh_region_liveness_session.json5
         mode: peer
         connect: ["tcp/127.0.0.1:17456"]
@@ -28,13 +28,13 @@ topology:
         source: brake_region_liveness.scxml
         bindings:
           "#peer":
-            transport: zenoh
+            transport: zenoh_keyexpr
             key: "sce/brake_region_liveness/peer/ping"
         liveliness:
           lease_ms: 200
   ecu_peer:
     transports:
-      zenoh:
+      zenoh_keyexpr:
         mode: peer
         listen: ["tcp/127.0.0.1:17456"]
     machines:

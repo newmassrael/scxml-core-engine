@@ -160,7 +160,7 @@ using ReceiveCallback = std::function<void(const SCE::Mesh::MeshEnvelope &)>;
 /// Decode-error callback signature: invoked on the Zenoh runtime
 /// callback thread once per inbound sample whose CBOR decode failed.
 /// Codegen wires this to `raiseCommunicationError(ENVELOPE_CORRUPT,
-/// transport="zenoh")` so the §mesh-16.7 row 4 catalog row fires at this
+/// transport="zenoh_keyexpr")` so the §mesh-16.7 row 4 catalog row fires at this
 /// hand-written endpoint tier the same way codegen `decodeEnvelope`
 /// sites do. The callback runs on the same thread the subscriber's
 /// on_sample fires on; per §mesh-14.4 callback-thread dispatch, it MUST
@@ -224,7 +224,7 @@ public:
     /// Install the decode-error handler (§mesh-16.7 row 4). Invoked on a
     /// Zenoh runtime callback thread per inbound sample whose CBOR
     /// decode fails. Caller wires this to
-    /// `raiseCommunicationError(ENVELOPE_CORRUPT, transport="zenoh")`.
+    /// `raiseCommunicationError(ENVELOPE_CORRUPT, transport="zenoh_keyexpr")`.
     /// May be left unset — in that case decode failures revert to the
     /// pre-row-4 silent-drop semantics, which is acceptable for
     /// fixtures that explicitly do not need the catalog row.

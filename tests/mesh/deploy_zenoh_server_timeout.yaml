@@ -14,14 +14,14 @@ version: "1.0"
 topology:
   ecu_motor:
     transports:
-      zenoh:
+      zenoh_keyexpr:
         mode: peer
         listen: ["tcp/127.0.0.1:17451"]
     machines:
       motor_zenoh_server_timeout:
         source: motor_zenoh_server_timeout.scxml
         server:
-          transport: zenoh
+          transport: zenoh_keyexpr
           key: "sce/motor_server_timeout/rpc"
           # SCE Mesh §9.5 gap Z2: server-side deadline per inbound query.
           # Chosen at 500 ms — comfortably above engine macrostep latency

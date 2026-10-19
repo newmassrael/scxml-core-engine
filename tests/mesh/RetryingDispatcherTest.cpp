@@ -130,7 +130,7 @@ RetryingDispatcher::Policy small_policy(std::uint32_t max_retries) {
         /*backoff_multiplier=*/2.0,
         /*max_backoff=*/std::chrono::milliseconds(100),
         /*jitter_pct=*/0,  // deterministic for timing tests
-        /*transport=*/"zenoh",
+        /*transport=*/"zenoh_keyexpr",
         /*target=*/"motor",
     };
 }
@@ -192,7 +192,7 @@ TEST(RetryingDispatcherTest, ExhaustionRaisesDeliveryExhaustedWithAttempts) {
     ASSERT_EQ(raised.size(), 1u);
     EXPECT_EQ(raised[0].reason, ::SCE::Mesh::ReasonCode::DeliveryExhausted);
     EXPECT_EQ(raised[0].target, "motor");
-    EXPECT_EQ(raised[0].transport, "zenoh");
+    EXPECT_EQ(raised[0].transport, "zenoh_keyexpr");
     ASSERT_TRUE(raised[0].attempts.has_value());
     EXPECT_EQ(*raised[0].attempts, 3);
     ASSERT_TRUE(raised[0].transport_error.has_value());
@@ -341,7 +341,7 @@ TEST(RetryingDispatcherTest, OutboundBufferWiringHidesTransientFailuresAndRaises
 
     OutboundBuffer outbound(
         /*target=*/"motor", /*max_pending=*/4, /*max_age=*/std::chrono::milliseconds::zero(),
-        /*transport=*/"zenoh", [&retrying](const MeshEnvelope &env) { return retrying.send_with_retry(env); },
+        /*transport=*/"zenoh_keyexpr", [&retrying](const MeshEnvelope &env) { return retrying.send_with_retry(env); },
         [&send_failed_recorder](CommunicationError err) { send_failed_recorder(std::move(err)); });
 
     outbound.markReady();  // simulate the transport availability anchor
@@ -376,7 +376,7 @@ TEST(RetryingDispatcherTest, OutboundBufferWiringExhaustionRaisesDeliveryExhaust
 
     OutboundBuffer outbound(
         /*target=*/"motor", /*max_pending=*/4, /*max_age=*/std::chrono::milliseconds::zero(),
-        /*transport=*/"zenoh", [&retrying](const MeshEnvelope &env) { return retrying.send_with_retry(env); },
+        /*transport=*/"zenoh_keyexpr", [&retrying](const MeshEnvelope &env) { return retrying.send_with_retry(env); },
         [&send_failed_recorder](CommunicationError err) { send_failed_recorder(std::move(err)); });
 
     outbound.markReady();

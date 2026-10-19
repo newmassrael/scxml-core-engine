@@ -22,7 +22,7 @@ version: "1.0"
 topology:
   ecu1:
     transports:
-      zenoh:
+      zenoh_keyexpr:
         mode: peer
     machines:
       brake:
@@ -32,7 +32,7 @@ topology:
           tick_period_ms: 5
         bindings:
           "#motor":
-            transport: zenoh
+            transport: zenoh_keyexpr
             key: "sce/brake/motor/cmd"
             ordering: required
       motor:

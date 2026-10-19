@@ -29,7 +29,7 @@ version: "1.0"
 topology:
   ecu1:
     transports:
-      zenoh:
+      zenoh_keyexpr:
         mode: peer
       someip:
         config: vsomeip_pool_controller.json
@@ -41,7 +41,7 @@ topology:
         source: pool_client.scxml
         bindings:
           "#gamer":
-            transport: zenoh
+            transport: zenoh_keyexpr
             key: "sce/player/{id}"
           "#controller":
             transport: someip

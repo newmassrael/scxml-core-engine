@@ -244,7 +244,7 @@ struct CommunicationError {
 
     /// §mesh-16.7 row 9 (BACKPRESSURE_DROP) and other transport-keyed rows
     /// (1 TRANSPORT_UNAVAILABLE, 2 SEND_FAILED, 3 DELIVERY_EXHAUSTED,
-    /// 4 ENVELOPE_CORRUPT): the transport kind ("someip", "zenoh",
+    /// 4 ENVELOPE_CORRUPT): the transport kind ("someip", "zenoh_keyexpr",
     /// etc.) whose plumbing observed the condition. The target-keyed
     /// extra reuses the `target` member above.
     std::optional<std::string> transport;

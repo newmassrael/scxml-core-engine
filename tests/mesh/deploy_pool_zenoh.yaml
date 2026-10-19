@@ -8,7 +8,7 @@ version: "1.0"
 topology:
   ecu1:
     transports:
-      zenoh:
+      zenoh_keyexpr:
         mode: peer
         connect: ["tcp/127.0.0.1:17452"]
     machines:
@@ -16,7 +16,7 @@ topology:
         source: pool_zenoh_client.scxml
         bindings:
           "#gamer_pool":
-            transport: zenoh
+            transport: zenoh_keyexpr
             key: "sce/player/{id}"
       gamer_pool:
         source: gamer_pool.scxml

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Mesh §9.6 Session 5 Zenoh scxml-invoke roundtrip — parent.
      Declared in deploy_scxml_invoke_zenoh.yaml, which binds peer
-     `scxml_invoke_zenoh_worker` to transport: zenoh. On entry of
+     `scxml_invoke_zenoh_worker` to transport: zenoh_keyexpr. On entry of
      `waiting`, codegen emits wire-14 InvokeStart via
      `scxml_invoke_to_scxml_invoke_zenoh_worker_->send(env)` — the
      ScxmlInvokeEndpoint Publisher on key

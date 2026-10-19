@@ -15,7 +15,7 @@ version: "1.0"
 topology:
   ecu_brake:
     transports:
-      zenoh:
+      zenoh_keyexpr:
         mode: peer
         connect: ["tcp/127.0.0.1:17448"]
     machines:
@@ -23,13 +23,13 @@ topology:
         source: brake_zenoh_liveliness.scxml
         bindings:
           "#motor":
-            transport: zenoh
+            transport: zenoh_keyexpr
             key: "sce/brake_liveliness/motor/ping"
         liveliness:
           lease_ms: 200
   ecu_motor:
     transports:
-      zenoh:
+      zenoh_keyexpr:
         mode: peer
         listen: ["tcp/127.0.0.1:17448"]
     machines:

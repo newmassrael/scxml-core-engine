@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Mesh Zenoh liveliness E2E fixture — observer side.
-     Declares one zenoh binding so `"zenoh" in transport_types` becomes
+     Declares one zenoh_keyexpr binding so `"zenoh_keyexpr" in transport_types` becomes
      true and the generated router emits both the session and, via the
      deploy.yaml `liveliness:` opt-in, the liveliness token + subscriber
      pair (SCE Mesh §16.7 row 8). The <send> itself is never actually

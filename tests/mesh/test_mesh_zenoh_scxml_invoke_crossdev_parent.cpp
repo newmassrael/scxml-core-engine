@@ -10,7 +10,7 @@
 // 172.16.10.1/.2 — instead of looping through 127.0.0.1.
 //
 // This half hosts the listen anchor: deploy_scxml_invoke_zenoh_crossdev.yaml
-// configures `transports.zenoh.listen: tcp/172.16.10.1:17449` for the
+// configures `transports.zenoh_keyexpr.listen: tcp/172.16.10.1:17449` for the
 // parent ECU, so init() opens a Zenoh peer session bound to that
 // endpoint. The 1-process Session 5 fixture instead opens a separate
 // relay session in the test driver (open_peer + wait_for_peer_ready);

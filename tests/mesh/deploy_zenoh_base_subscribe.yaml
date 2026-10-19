@@ -13,7 +13,7 @@ version: "1.0"
 topology:
   ecu_brake:
     transports:
-      zenoh:
+      zenoh_keyexpr:
         mode: peer
         connect: ["tcp/127.0.0.1:17447"]
     machines:
@@ -21,11 +21,11 @@ topology:
         source: brake_zenoh_base_subscribe.scxml
         bindings:
           "#motor":
-            transport: zenoh
+            transport: zenoh_keyexpr
             key: "sce/brake_base_subscribe/motor/status"
   ecu_motor:
     transports:
-      zenoh:
+      zenoh_keyexpr:
         mode: peer
         listen: ["tcp/127.0.0.1:17447"]
     machines:

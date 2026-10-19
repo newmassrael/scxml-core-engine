@@ -16,7 +16,7 @@ version: "1.0"
 topology:
   ecu_brake:
     transports:
-      zenoh:
+      zenoh_keyexpr:
         config: zenoh_on_drop_session.json5
         mode: peer
         listen: ["tcp/127.0.0.1:17449"]
@@ -25,7 +25,7 @@ topology:
         source: brake_zenoh_on_drop.scxml
         bindings:
           "#motor":
-            transport: zenoh
+            transport: zenoh_keyexpr
             key: "sce/brake_on_drop/motor/compute_force"
   ecu_motor:
     # Topology-only: motor is referenced by brake's mesh-rpc binding so
@@ -33,7 +33,7 @@ topology:
     # never instantiates this machine — absence of the peer queryable
     # is exactly what triggers the on_drop path under test.
     transports:
-      zenoh:
+      zenoh_keyexpr:
         mode: peer
         listen: ["tcp/127.0.0.1:17450"]
     machines:

@@ -31,7 +31,7 @@ version: "1.0"
 topology:
   ecu_parent:
     transports:
-      zenoh:
+      zenoh_keyexpr:
         mode: peer
         listen: ["tcp/172.16.10.1:17450"]
     machines:
@@ -39,14 +39,14 @@ topology:
         source: parent_session_f_donedata.scxml
         bindings:
           "#worker_session_f_donedata_param":
-            transport: zenoh
+            transport: zenoh_keyexpr
           "#worker_session_f_donedata_content":
-            transport: zenoh
+            transport: zenoh_keyexpr
           "#worker_session_f_donedata_nested":
-            transport: zenoh
+            transport: zenoh_keyexpr
   ecu_worker:
     transports:
-      zenoh:
+      zenoh_keyexpr:
         mode: peer
         connect: ["tcp/172.16.10.1:17450"]
     machines:

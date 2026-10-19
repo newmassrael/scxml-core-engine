@@ -5,7 +5,7 @@
 # lifecycle). Reuses parent_session_f_donedata.scxml + three worker
 # SCXMLs verbatim — same §9.6 transport-axis abstraction principle as
 # the Zenoh donedata fixture: transport changes are invisible at the
-# SCXML layer, so swapping `transport: zenoh` for `transport: someip`
+# SCXML layer, so swapping `transport: zenoh_keyexpr` for `transport: someip`
 # under the same SCXMLs is the textbook way to verify the donedata
 # round-trip behaves identically over a different wire.
 #

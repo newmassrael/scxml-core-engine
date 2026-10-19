@@ -7483,7 +7483,7 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         # Single-process proof that the §9.6 wire-14/20 lifecycle
         # travels over Zenoh. Parent + worker each open their own
         # zenoh::Session sharing it with no `<send>` zenoh target
-        # (the codegen inserts "zenoh" into transport_types when a
+        # (the codegen inserts "zenoh_keyexpr" into transport_types when a
         # §9.6 zenoh peer exists, which fires the existing zenoh.hxx
         # include block + zenoh::Session::open init() block). The
         # fixture trivial-final child reaches `<final>` during

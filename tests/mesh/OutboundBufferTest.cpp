@@ -124,7 +124,7 @@ TEST(OutboundBufferTest, SustainedOverflowRaisesPerAdmit) {
     // silently throttled into a single error event.
     ErrorSink sink;
     OutboundBuffer buf(
-        "motor", /*max_pending*/ 1, std::chrono::milliseconds::zero(), "zenoh",
+        "motor", /*max_pending*/ 1, std::chrono::milliseconds::zero(), "zenoh_keyexpr",
         [](const MeshEnvelope &) { return SendResult::success(); }, std::ref(sink));
 
     MeshEnvelope env{};
@@ -170,7 +170,7 @@ TEST(OutboundBufferTest, MarkNotReadyAfterReadyRaisesRow1) {
     // lifecycle transition signal from the FIFO drain path.
     ErrorSink sink;
     OutboundBuffer buf(
-        "motor", /*max_pending*/ 4, std::chrono::milliseconds::zero(), "zenoh",
+        "motor", /*max_pending*/ 4, std::chrono::milliseconds::zero(), "zenoh_keyexpr",
         [](const MeshEnvelope &) { return SendResult::success(); }, std::ref(sink));
 
     buf.markReady();  // Ready → Active anchor
@@ -183,7 +183,7 @@ TEST(OutboundBufferTest, MarkNotReadyAfterReadyRaisesRow1) {
     ASSERT_TRUE(sink.last->target.has_value());
     EXPECT_EQ(*sink.last->target, "motor");
     ASSERT_TRUE(sink.last->transport.has_value());
-    EXPECT_EQ(*sink.last->transport, "zenoh");
+    EXPECT_EQ(*sink.last->transport, "zenoh_keyexpr");
     EXPECT_FALSE(sink.last->queue_depth.has_value()) << "row 1 reports the disconnection itself, not queue state";
     EXPECT_FALSE(sink.last->source.has_value())
         << "row 1 is observed at transport layer, not bound to an inbound envelope";
@@ -231,7 +231,7 @@ TEST(OutboundBufferTest, AdmitFastPathDispatchFailRelaysTransportError) {
     // SCE-authored prose.
     ErrorSink sink;
     OutboundBuffer buf(
-        "motor", /*max_pending*/ 4, std::chrono::milliseconds::zero(), "zenoh",
+        "motor", /*max_pending*/ 4, std::chrono::milliseconds::zero(), "zenoh_keyexpr",
         [](const MeshEnvelope &) { return SendResult::failure("ZException: closed session"); }, std::ref(sink));
 
     buf.markReady();
@@ -304,7 +304,7 @@ TEST(OutboundBufferTest, MarkReadyDrainDispatchFailRelaysPerEnvelopeTransportErr
     ErrorSink sink;
     std::vector<std::optional<std::string>> captured_errors;
     OutboundBuffer buf(
-        "motor", /*max_pending*/ 8, std::chrono::milliseconds::zero(), "zenoh",
+        "motor", /*max_pending*/ 8, std::chrono::milliseconds::zero(), "zenoh_keyexpr",
         [&](const MeshEnvelope &) {
             const int idx = call_index++;
             return SendResult::failure("ZException env#" + std::to_string(idx));
@@ -432,7 +432,7 @@ TEST(OutboundBufferTest, FreshEnvelopeSurvivesTheAgeBound) {
     ErrorSink sink;
     std::vector<MeshEnvelope> dispatched;
     OutboundBuffer buf(
-        "motor", /*max_pending*/ 4, std::chrono::milliseconds(10'000), "zenoh",
+        "motor", /*max_pending*/ 4, std::chrono::milliseconds(10'000), "zenoh_keyexpr",
         [&dispatched](const MeshEnvelope &env) {
             dispatched.push_back(env);
             return SendResult::success();

@@ -6,7 +6,7 @@
 // Counterpart to the multi-pattern tests: brake.scxml sends a single
 // FireForget event (brake.activate) through the generated zenoh router
 // to a raw listener session. Smallest possible runtime proof that
-// deploy_zenoh.yaml's transports.zenoh.connect wiring drives
+// deploy_zenoh.yaml's transports.zenoh_keyexpr.connect wiring drives
 // TransportRouter::init() end-to-end.
 //
 // Coverage (matches capabilities present in brake.scxml + deploy_zenoh.yaml):

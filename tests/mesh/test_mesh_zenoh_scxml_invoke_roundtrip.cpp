@@ -11,7 +11,7 @@
 //
 // Both TransportRouters run in one process. Each opens its own
 // `zenoh::Session` configured by deploy_scxml_invoke_zenoh.yaml's
-// `transports.zenoh.connect:` block. Unlike the SOME/IP §9.6
+// `transports.zenoh_keyexpr.connect:` block. Unlike the SOME/IP §9.6
 // fixture, there is no SCE-namespaced `<machine>[_<partition>]_sce_app_`:
 // Zenoh has no §13 OEM boundary equivalent that would require a
 // separate session. Both endpoints share the device-wide
@@ -40,7 +40,7 @@
 int main() {
     using namespace SCE::Test::Mesh;
 
-    // Mirrors deploy_scxml_invoke_zenoh.yaml ecu1.transports.zenoh.connect.
+    // Mirrors deploy_scxml_invoke_zenoh.yaml ecu1.transports.zenoh_keyexpr.connect.
     // The relay session below binds this address so both routers'
     // generated init() reaches a listener via peer mesh routing.
     constexpr const char *kListen = "tcp/127.0.0.1:17448";

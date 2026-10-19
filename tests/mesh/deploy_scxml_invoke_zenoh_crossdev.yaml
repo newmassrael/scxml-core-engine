@@ -25,7 +25,7 @@ version: "1.0"
 topology:
   ecu_parent:
     transports:
-      zenoh:
+      zenoh_keyexpr:
         mode: peer
         listen: ["tcp/172.16.10.1:17449"]
     machines:
@@ -33,10 +33,10 @@ topology:
         source: scxml_invoke_zenoh_crossdev_parent.scxml
         bindings:
           "#scxml_invoke_zenoh_crossdev_worker":
-            transport: zenoh
+            transport: zenoh_keyexpr
   ecu_worker:
     transports:
-      zenoh:
+      zenoh_keyexpr:
         mode: peer
         connect: ["tcp/172.16.10.1:17449"]
     machines:

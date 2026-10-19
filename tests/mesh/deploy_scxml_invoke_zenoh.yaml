@@ -2,7 +2,7 @@
 #
 # Two machines (parent + worker) on one device (ecu1). The parent's
 # `<invoke type="scxml" src="#scxml_invoke_zenoh_worker"/>` peer binding
-# declares `transport: zenoh`, so the codegen emits per-peer
+# declares `transport: zenoh_keyexpr`, so the codegen emits per-peer
 # `std::optional<SCE::Mesh::Zenoh::ScxmlInvokeEndpoint> scxml_invoke_to_<peer>_`
 # (§9.6.2 Session 5). Unlike the SOME/IP §9.6 fixture, there is no
 # SCE-namespaced `<machine>[_<partition>]_sce_app_` — Zenoh has no §13 OEM
@@ -11,7 +11,7 @@
 # and the SCE-reserved §9.6 namespace is carved out via the
 # `sce/scxml_invoke/...` key-expression prefix.
 #
-# Reachability: `transports.zenoh.connect:` points both routers at a
+# Reachability: `transports.zenoh_keyexpr.connect:` points both routers at a
 # loopback endpoint (`tcp/127.0.0.1:17448`) where the test fixture
 # stands up a relay session. Peer mesh routing converges through the
 # relay, which is the same shape `mesh_zenoh_runtime` uses to wait
@@ -21,7 +21,7 @@ version: "1.0"
 topology:
   ecu1:
     transports:
-      zenoh:
+      zenoh_keyexpr:
         mode: peer
         connect: ["tcp/127.0.0.1:17448"]
     machines:
@@ -29,6 +29,6 @@ topology:
         source: scxml_invoke_zenoh_parent.scxml
         bindings:
           "#scxml_invoke_zenoh_worker":
-            transport: zenoh
+            transport: zenoh_keyexpr
       scxml_invoke_zenoh_worker:
         source: scxml_invoke_zenoh_worker.scxml

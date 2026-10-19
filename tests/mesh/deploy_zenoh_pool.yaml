@@ -18,7 +18,7 @@ version: "1.0"
 topology:
   ecu_pool_sender_zenoh:
     transports:
-      zenoh:
+      zenoh_keyexpr:
         mode: peer
         connect: ["tcp/127.0.0.1:17457"]
     machines:
@@ -26,7 +26,7 @@ topology:
         source: pool_sender_zenoh.scxml
         bindings:
           "#gamer_pool":
-            transport: zenoh
+            transport: zenoh_keyexpr
             key: "sce/zenoh_pool/player/{id}"
       # The receiver end of `#gamer_pool`. One declaration stands for the
       # whole pool: an open pool's members are addresses of the same

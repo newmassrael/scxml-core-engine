@@ -17,7 +17,7 @@ version: "1.0"
 topology:
   ecu_brake:
     transports:
-      zenoh:
+      zenoh_keyexpr:
         mode: peer
         config: zenoh_publisher_first_session.json5
     machines:
@@ -27,11 +27,11 @@ topology:
           max_pending_per_target: 8
         bindings:
           "#motor":
-            transport: zenoh
+            transport: zenoh_keyexpr
             key: "sce/brake_pub_first/motor/cmd"
   ecu_motor:
     transports:
-      zenoh:
+      zenoh_keyexpr:
         mode: peer
         listen: ["tcp/127.0.0.1:0"]
     machines:

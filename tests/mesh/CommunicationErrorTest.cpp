@@ -204,14 +204,14 @@ TEST(CommunicationErrorTest, EnvelopeCorruptShapeWithPosition) {
     // offsets stay wire-shape compatible.
     CommunicationError err;
     err.reason = ReasonCode::EnvelopeCorrupt;
-    err.transport = "zenoh";
+    err.transport = "zenoh_keyexpr";
     err.codec = "cbor";
     err.position = 42;
 
     const auto out = bytes_to_string(err.toJsonBytes());
     EXPECT_EQ(out, "{\"errorName\":\"communication\","
                    "\"reason\":\"ENVELOPE_CORRUPT\","
-                   "\"transport\":\"zenoh\","
+                   "\"transport\":\"zenoh_keyexpr\","
                    "\"codec\":\"cbor\","
                    "\"position\":42}");
 }
@@ -320,14 +320,14 @@ TEST(CommunicationErrorTest, SendFailedShapeWithTransportError) {
     CommunicationError err;
     err.reason = ReasonCode::SendFailed;
     err.target = "motor";
-    err.transport = "zenoh";
+    err.transport = "zenoh_keyexpr";
     err.transport_error = "ZException: closed session";
 
     const auto out = bytes_to_string(err.toJsonBytes());
     EXPECT_EQ(out, "{\"errorName\":\"communication\","
                    "\"reason\":\"SEND_FAILED\","
                    "\"target\":\"motor\","
-                   "\"transport\":\"zenoh\","
+                   "\"transport\":\"zenoh_keyexpr\","
                    "\"transport_error\":\"ZException: closed session\"}");
 }
 
@@ -347,7 +347,7 @@ TEST(CommunicationErrorTest, DeliveryExhaustedShapeAfterRetries) {
     CommunicationError err;
     err.reason = ReasonCode::DeliveryExhausted;
     err.target = "motor";
-    err.transport = "zenoh";
+    err.transport = "zenoh_keyexpr";
     err.transport_error = "ZException: closed session";
     err.attempts = 4;  // first attempt + 3 retries
 
@@ -355,7 +355,7 @@ TEST(CommunicationErrorTest, DeliveryExhaustedShapeAfterRetries) {
     EXPECT_EQ(out, "{\"errorName\":\"communication\","
                    "\"reason\":\"DELIVERY_EXHAUSTED\","
                    "\"target\":\"motor\","
-                   "\"transport\":\"zenoh\","
+                   "\"transport\":\"zenoh_keyexpr\","
                    "\"transport_error\":\"ZException: closed session\","
                    "\"attempts\":4}");
 }
@@ -378,14 +378,14 @@ TEST(CommunicationErrorTest, UnauthorizedShape) {
     CommunicationError err;
     err.reason = ReasonCode::Unauthorized;
     err.target = "motor";
-    err.transport = "zenoh";
+    err.transport = "zenoh_keyexpr";
     err.transport_status = "TLS: peer certificate fingerprint mismatch";
 
     const auto out = bytes_to_string(err.toJsonBytes());
     EXPECT_EQ(out, "{\"errorName\":\"communication\","
                    "\"reason\":\"UNAUTHORIZED\","
                    "\"target\":\"motor\","
-                   "\"transport\":\"zenoh\","
+                   "\"transport\":\"zenoh_keyexpr\","
                    "\"transport_status\":\"TLS: peer certificate fingerprint mismatch\"}");
 }
 
