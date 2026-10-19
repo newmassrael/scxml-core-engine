@@ -2285,7 +2285,10 @@ performing it, with the required, unqualified attribute `effect`:
   empty body under `performs` is that author's false statement and not an
   unwritten fact. A child machine a parent's host answers is built the same way,
   so its duties are checked at its own construction, and the opt-in a caller gave
-  the parent covers the children the parent builds. The generated recorder
+  the parent covers the children the parent builds. A refused child is not
+  started: in generated C++ its constructor throws, and the runtime's pending-invoke
+  loop catches a failed start, logs it and continues the macrostep, so the refusal
+  is the child's absence and a logged error and not an exception at the parent's caller. The generated recorder
   (`Recording<Machine>Actions`) performs nothing and declares `simulates`.
 - **The Interpreter says the same.** `INativeActionHost::realization()` is pure
   virtual, and `StateMachine::start()` refuses a simulating host of a document that

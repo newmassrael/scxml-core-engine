@@ -213,6 +213,15 @@ const std::map<std::string, std::string> &exemptLeaves() {
          "`scxml/unsupported-datamodel` for `xpath` and invented tokens, which this engine does not refuse. What "
          "is pinned instead is the property the leaf exists for, that this engine never RUNS a `sce-static` "
          "document: `AStaticDatamodelRunsUnderTheInterpreterTest.TheInterpreterRefusesWhatGeneratedCodeRuns`."},
+        {"SemanticInvalidAttribute",
+         "Stage composition, measured 2026-10-19: an `<sce:action effect>` that is neither `duty` nor "
+         "`notice` is refused by both producers, but the Rust pipeline validates against the XSD first "
+         "(`schemas/sce-forge-ext.xsd` enumerates the two words) and answers `xml/schema-validation`, "
+         "where this engine has no schema stage and answers `validation/invalid-attribute`. Rust's own "
+         "`InvalidAttribute` is the defence for a document the grammar did not see, as `ParseWrongRootElement` "
+         "above is. The refusal and its candidates are pinned instead by "
+         "`NativeActionRunsUnderTheInterpreterTest.AnEffectThatIsNeitherDutyNorNoticeIsRefusedWithBothAsCandidates` "
+         "and the wire conformance of the record by `SemanticErrorWire.InvalidAttributeConformsToV1Schema`."},
         {"SemanticTopLevelScriptUnloaded",
          "Both producers reject what §scxml-5.8 forbids — measured on all three shapes — but "
          "through different surfaces: the C++ parser raises this leaf, while the Rust pipeline "

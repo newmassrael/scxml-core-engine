@@ -1471,9 +1471,14 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, TheOptInOfAParentCoversTheChildItBuil
     {
         Host host(::SCE::ActionRealization::Simulates);
         Machine machine(host);
-        EXPECT_THROW(start(machine), std::invalid_argument)
-            << "the child refuses a host that only simulates its duty, and the parent's caller gave no opt-in";
-        ASSERT_EQ(host.started.size(), 1u);
+        // The child refuses a host that only simulates its duty, and the parent's caller
+        // gave no opt-in. The refusal is the child's constructor throwing
+        // `std::invalid_argument`, and the runtime's pending-invoke loop
+        // (`InvokeHelper::executePendingInvokes`) catches a failed start, logs it and goes
+        // on with the macrostep, so it does not reach the caller: what the test can hold
+        // is that the child never performed a duty on the host that only simulates.
+        EXPECT_NO_THROW(start(machine));
+        ASSERT_EQ(host.started.size(), 1u) << "the parent's host was asked for the child's host";
         EXPECT_TRUE(host.started.front().calls.empty()) << "the refused host was not called";
     }
     {
