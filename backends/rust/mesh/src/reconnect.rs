@@ -153,11 +153,8 @@ impl<F: ClientFactory> Supervisor<F> {
     /// Wait for the session to end, wait out the backoff, open another, and again, until stopped.
     fn run(mut self) {
         let mut failures = 0u32;
-        'sessions: loop {
-            match self.signals.recv() {
-                Ok(Signal::Ended) => {}
-                Ok(Signal::Stop) | Err(_) => break,
-            }
+        // Until a stop, or until the signals can no longer come: each end of a session is one turn.
+        'sessions: while let Ok(Signal::Ended) = self.signals.recv() {
             // The dead session's client is dropped outside the lock, so a send is never kept
             // waiting for it to close.
             let dead = locked(&self.slot).take();
