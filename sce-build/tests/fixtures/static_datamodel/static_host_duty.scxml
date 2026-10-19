@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15) with host actions
+  that state their effect (§2.11, docs/adr/0038): `start_keepalive` is a duty
+  the machine takes on entering `engaged` and gives back, through
+  `released-by`, on that state's <onexit>; `note_engaged` is a notice, which
+  the machine does not depend on the host performing.
+
+  A machine that states a duty refuses a host that only simulates it unless it
+  is built for one on purpose, in every backend. The scenario drivers use a
+  recording host, which simulates, so each builds the machine through the
+  entry its backend gives for that.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="static_host_duty">
+  <state id="idle">
+    <transition event="engage" target="engaged"/>
+  </state>
+  <state id="engaged">
+    <onentry>
+      <sce:action name="start_keepalive" effect="duty" released-by="stop_keepalive"/>
+      <sce:action name="note_engaged" effect="notice"/>
+    </onentry>
+    <onexit>
+      <sce:action name="stop_keepalive" effect="duty"/>
+    </onexit>
+    <transition event="release" target="idle"/>
+  </state>
+</scxml>

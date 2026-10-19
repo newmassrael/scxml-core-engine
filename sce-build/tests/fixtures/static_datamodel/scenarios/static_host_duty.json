@@ -1,0 +1,25 @@
+{
+  "machine": "static_host_duty",
+  "about": "A host action that is a duty and one that is a notice: `engaged` takes the duty `start_keepalive` on entry, beside the notice `note_engaged`, and gives the duty back through `stop_keepalive` on its <onexit>, so every way out of `engaged` releases what the entry took. A step's `host_calls` are the calls made in that step, in order, by the name the document gives the action. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "note": "started: `idle` calls nothing on the host",
+      "expect": { "state": "idle", "host_calls": [] } },
+
+    { "note": "engaging enters `engaged`: the duty is taken, then the notice is given",
+      "event": "engage",
+      "expect": { "state": "engaged",
+                  "host_calls": [ { "action": "start_keepalive", "args": [] },
+                                  { "action": "note_engaged", "args": [] } ] } },
+
+    { "note": "releasing leaves `engaged`, and its <onexit> gives the duty back",
+      "event": "release",
+      "expect": { "state": "idle",
+                  "host_calls": [ { "action": "stop_keepalive", "args": [] } ] } },
+
+    { "note": "engaging again takes the duty again: a release is not once only",
+      "event": "engage",
+      "expect": { "state": "engaged",
+                  "host_calls": [ { "action": "start_keepalive", "args": [] },
+                                  { "action": "note_engaged", "args": [] } ] } }
+  ]
+}
