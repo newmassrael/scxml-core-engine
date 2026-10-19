@@ -959,51 +959,75 @@ fn orchestrate_reports_every_refusal_check_reports() {
     );
 }
 
+/// A conformance suite of one fixture, `test<id>.scxml`, for `generate-w3c`.
+struct W3cSuite {
+    resources: PathBuf,
+    registry: PathBuf,
+    document: PathBuf,
+}
+
+impl W3cSuite {
+    /// `text` as fixture `id` under `work`, with a registry naming it alone:
+    /// the committed registry's harnesses and version, which are what the
+    /// loader asks of one.
+    fn stage(work: &Path, id: &str, text: &str) -> Self {
+        let resources = work.join("resources");
+        let fixture_dir = resources.join(id);
+        std::fs::create_dir_all(&fixture_dir).expect("create the fixture directory");
+        let document = fixture_dir.join(format!("test{id}.scxml"));
+        std::fs::write(&document, text).expect("write the fixture");
+
+        let committed = std::fs::read_to_string(
+            repo_root().join(sce_build::w3c_registry::W3C_REGISTRY_RELATIVE_PATH),
+        )
+        .expect("read the committed registry");
+        let mut registry: serde_json::Value =
+            serde_json::from_str(&committed).expect("the registry is JSON");
+        registry["fixtures"] = serde_json::json!([{
+            "id": id,
+            "harness": "simple",
+            "summary": "a fixture declaring a transition function"
+        }]);
+        let registry_path = work.join("fixtures.json");
+        std::fs::write(
+            &registry_path,
+            serde_json::to_string_pretty(&registry).expect("serialize the registry"),
+        )
+        .expect("write the registry");
+        Self {
+            resources,
+            registry: registry_path,
+            document,
+        }
+    }
+
+    /// `generate-w3c -l rust` of this suite into `out`, records as JSON.
+    fn args<'a>(&'a self, out: &'a Path) -> Vec<&'a str> {
+        vec![
+            "--error-format=json",
+            "generate-w3c",
+            "-l",
+            "rust",
+            "--registry",
+            self.registry.to_str().unwrap(),
+            "--resources",
+            self.resources.to_str().unwrap(),
+            "--output-dir",
+            out.to_str().unwrap(),
+        ]
+    }
+}
+
 /// `generate-w3c` reports, for a fixture that declares the function and does
 /// not keep it, every record `check` reports for the same file, and fails the
 /// fixture rather than generating it.
 #[test]
 fn generate_w3c_reports_every_refusal_check_reports() {
     let work = scratch("impure_w3c");
-    let resources = work.join("resources");
-    let fixture_dir = resources.join("900");
-    std::fs::create_dir_all(&fixture_dir).expect("create the fixture directory");
-    let doc = write_impure(&fixture_dir, "test900.scxml");
-
-    // The committed registry, holding this one fixture: its harnesses and
-    // version are what the loader asks of a registry.
-    let committed = std::fs::read_to_string(
-        repo_root().join(sce_build::w3c_registry::W3C_REGISTRY_RELATIVE_PATH),
-    )
-    .expect("read the committed registry");
-    let mut registry: serde_json::Value =
-        serde_json::from_str(&committed).expect("the registry is JSON");
-    registry["fixtures"] = serde_json::json!([{
-        "id": "900",
-        "harness": "simple",
-        "summary": "a fixture declaring a transition function it does not keep"
-    }]);
-    let registry_path = work.join("fixtures.json");
-    std::fs::write(
-        &registry_path,
-        serde_json::to_string_pretty(&registry).expect("serialize the registry"),
-    )
-    .expect("write the registry");
-
+    let suite = W3cSuite::stage(&work, "900", IMPURE);
     let out = work.join("out");
-    let checked = checked_records(doc.to_str().unwrap());
-    let records = refused_records(&[
-        "--error-format=json",
-        "generate-w3c",
-        "-l",
-        "rust",
-        "--registry",
-        registry_path.to_str().unwrap(),
-        "--resources",
-        resources.to_str().unwrap(),
-        "--output-dir",
-        out.to_str().unwrap(),
-    ]);
+    let checked = checked_records(suite.document.to_str().unwrap());
+    let records = refused_records(&suite.args(&out));
     // The run ends on the batch's own record, naming the failed fixture.
     let (batch, findings): (Vec<String>, Vec<String>) = records
         .into_iter()
@@ -1075,6 +1099,306 @@ fn the_library_in_memory_entry_rejects_on_the_first_record() {
             "the in-memory entry and check disagree on `{field}`"
         );
     }
+}
+
+/// A document that declares the function and keeps it, with nothing a
+/// design-time lint reports (the library entry points lint every document),
+/// and a final state named `pass`, so it is a conformance fixture as well.
+const KEPT: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="null" sce:transition-function="emit">
+  <state id="idle"><transition event="go" target="pass"/></state>
+  <final id="pass"/>
+</scxml>
+"#;
+
+/// [`KEPT`], written into `dir` as `kept.scxml`.
+fn write_kept(dir: &Path) -> PathBuf {
+    let doc = dir.join("kept.scxml");
+    std::fs::write(&doc, KEPT).expect("write the document");
+    doc
+}
+
+/// A statechart that declares nothing and runs, in its one state, an in-line
+/// child declaring the function, with `child` as the child's states. Its
+/// final state is `pass`, so it is a conformance fixture as well.
+fn host_with_child(child: &str) -> String {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="running" datamodel="ecmascript">
+  <state id="running">
+    <invoke type="scxml" id="lamp">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+               initial="off" datamodel="ecmascript" sce:transition-function="emit">
+{child}
+        </scxml>
+      </content>
+    </invoke>
+    <transition event="stop" target="pass"/>
+  </state>
+  <final id="pass"/>
+</scxml>
+"#
+    )
+}
+
+/// A child the function admits: two states that take each other.
+const PURE_CHILD: &str = r#"          <state id="off"><transition event="on" target="lit"/></state>
+          <state id="lit"><transition event="off" target="off"/></state>"#;
+
+/// A child the function refuses once, for its `<parallel>`: every state is
+/// reached and left, and every descriptor names an event.
+const IMPURE_CHILD: &str = r#"          <state id="off"><transition event="split" target="both"/></state>
+          <parallel id="both">
+            <state id="r1"><transition event="join" target="off"/></state>
+            <state id="r2"><transition event="join" target="off"/></state>
+          </parallel>"#;
+
+/// The synthesized name of the child [`host_with_child`] runs, in a document
+/// whose file stem is `stem`.
+fn child_stem(stem: &str) -> String {
+    format!("{stem}__sce_synth_invoke__lamp")
+}
+
+/// The machine `stem` and the function written beside it in `dir`, named
+/// after the same stem, carrying the hash the machine's header carries.
+fn assert_function_beside(dir: &Path, stem: &str) {
+    let machine = std::fs::read_to_string(dir.join(format!("{stem}_sm.rs")))
+        .unwrap_or_else(|e| panic!("{stem}_sm.rs in {}: {e}", dir.display()));
+    let function = std::fs::read_to_string(dir.join(format!("{stem}_transition_function.rs")))
+        .unwrap_or_else(|e| panic!("no function beside {stem}_sm.rs in {}: {e}", dir.display()));
+    assert_eq!(
+        header_hash(&function),
+        header_hash(&machine),
+        "{stem}: the function and its machine name different source sets"
+    );
+}
+
+/// An in-line child declaring the function is held to it as a root is, by
+/// `check` and `generate` alike, and its refusal is placed where its author
+/// wrote it: in the enclosing document, on the row of the `<parallel>`, not
+/// in the child's own coordinates under the name the child is synthesized
+/// as.
+#[test]
+fn an_inline_child_is_held_to_its_declaration_where_its_author_wrote_it() {
+    let work = scratch("impure_child");
+    let host = host_with_child(IMPURE_CHILD);
+    let doc = work.join("host.scxml");
+    std::fs::write(&doc, &host).expect("write the document");
+    let doc_str = doc.to_str().unwrap();
+    let out = work.join("out");
+    let checked = refused_records(&["--error-format=json", "check", doc_str, "-l", "rust"]);
+    let generated = refused_records(&[
+        "--error-format=json",
+        "generate",
+        doc_str,
+        "-l",
+        "rust",
+        "-o",
+        out.to_str().unwrap(),
+    ]);
+    assert_eq!(
+        sorted(generated),
+        sorted(checked.clone()),
+        "check and generate disagree about the child"
+    );
+    assert_eq!(
+        codes_of(&checked),
+        ["scxml/transition-function-rule"],
+        "{checked:?}"
+    );
+    let record: serde_json::Value = serde_json::from_str(&checked[0]).expect("a record is JSON");
+    let row = host
+        .lines()
+        .position(|line| line.contains("<parallel"))
+        .expect("the child holds a parallel")
+        + 1;
+    assert_eq!(record["actual"], "parallel", "{record}");
+    assert_eq!(
+        record["location"]["file"], doc_str,
+        "the child's refusal does not name the file its author wrote: {record}"
+    );
+    assert_eq!(
+        record["location"]["line"], row,
+        "the child's refusal is not on the row its author wrote: {record}"
+    );
+    assert!(
+        !out.join("host_sm.rs").exists(),
+        "a document whose child was refused generated a machine"
+    );
+}
+
+/// `generate` writes an in-line child's function beside the child's machine,
+/// named after the child's stem and bound to the hash the child's machine
+/// carries.
+#[test]
+fn generate_writes_an_inline_childs_function_beside_its_machine() {
+    let work = scratch("pure_child");
+    let doc = work.join("host.scxml");
+    std::fs::write(&doc, host_with_child(PURE_CHILD)).expect("write the document");
+    let out = work.join("out");
+    output_ok(
+        codegen(&[
+            "generate",
+            "-l",
+            "rust",
+            "-o",
+            out.to_str().unwrap(),
+            doc.to_str().unwrap(),
+        ]),
+        "generate -l rust of the host",
+    );
+    assert_function_beside(&out, &child_stem("host"));
+}
+
+/// `orchestrate` writes the function beside the machine, bound to the hash
+/// every file of the run carries.
+#[test]
+fn orchestrate_writes_the_function_beside_the_machine() {
+    let work = scratch("orchestrate_function");
+    let doc = write_kept(&work);
+    let out = work.join("out");
+    output_ok(
+        codegen(&[
+            "orchestrate",
+            "--scxml",
+            doc.to_str().unwrap(),
+            "-l",
+            "rust",
+            "-o",
+            out.to_str().unwrap(),
+        ]),
+        "orchestrate -l rust",
+    );
+    assert_function_beside(&out, "kept");
+}
+
+/// `check` on a set renders the function as `orchestrate` does, so it
+/// accepts the declaration `orchestrate` generates: the set compile refuses
+/// a declared function it is given no hash for.
+#[test]
+fn check_on_a_set_accepts_the_function_orchestrate_writes() {
+    let work = scratch("check_set_function");
+    let doc = write_kept(&work);
+    let manifest = output_ok(
+        codegen(&["check", "--scxml", doc.to_str().unwrap(), "-l", "rust"]),
+        "check --scxml -l rust",
+    );
+    let manifest: serde_json::Value =
+        serde_json::from_str(manifest.trim()).expect("check emits a manifest");
+    let verdicts = manifest["languages"]
+        .as_array()
+        .expect("per-backend verdicts");
+    assert_eq!(verdicts.len(), 1, "{manifest}");
+    assert_eq!(verdicts[0]["language"], "rust", "{manifest}");
+    assert_eq!(verdicts[0]["status"], "ok", "{manifest}");
+}
+
+/// The directory `generate-w3c -l rust` writes fixture `id` into under `out`.
+fn w3c_rust_dir(out: &Path, id: &str) -> PathBuf {
+    out.join("backends/rust/tests/src/generated")
+        .join(format!("test{id}"))
+}
+
+/// `generate-w3c` writes a fixture's function beside its machine.
+#[test]
+fn generate_w3c_writes_a_fixtures_function_beside_its_machine() {
+    let work = scratch("w3c_function");
+    let suite = W3cSuite::stage(&work, "902", KEPT);
+    let out = work.join("out");
+    output_ok(codegen(&suite.args(&out)), "generate-w3c -l rust");
+    assert_function_beside(&w3c_rust_dir(&out, "902"), "test902");
+}
+
+/// `generate-w3c` writes an in-line child's function beside the child's
+/// machine, named after the child's stem.
+#[test]
+fn generate_w3c_writes_an_inline_childs_function_beside_its_machine() {
+    let work = scratch("w3c_child_function");
+    let suite = W3cSuite::stage(&work, "903", &host_with_child(PURE_CHILD));
+    let out = work.join("out");
+    output_ok(codegen(&suite.args(&out)), "generate-w3c -l rust");
+    assert_function_beside(&w3c_rust_dir(&out, "903"), &child_stem("test903"));
+}
+
+/// The one refusal a library entry point with no source hash gives a
+/// document whose function it cannot generate, and where it says to go.
+fn assert_refused_for_want_of_a_hash(route: &str, refused: Result<(), sce_build::CompileError>) {
+    let err = match refused {
+        Ok(()) => panic!("{route}: the machine was generated without its function"),
+        Err(err) => err,
+    };
+    let record = &err.to_diagnostics()[0];
+    assert_eq!(
+        record.code.as_str(),
+        "generate/unsupported-feature",
+        "{route}: {}",
+        record.message
+    );
+    assert!(
+        record.message.contains(route) && record.message.contains("sce-codegen generate"),
+        "{route}: the refusal does not name the route and the command that generates it: {}",
+        record.message
+    );
+}
+
+/// The library's file entry points compute no source hash, so they refuse a
+/// document declaring the function rather than return its machine alone.
+#[test]
+fn the_library_file_entries_refuse_a_function_they_cannot_bind() {
+    let work = scratch("library_file_unbound");
+    let doc = write_kept(&work);
+    let doc_str = doc.to_str().unwrap();
+    let template_dir = sce_build::find_template_dir_for(Language::Rust);
+    let route = "the library's file entry points";
+    assert_refused_for_want_of_a_hash(
+        route,
+        sce_build::compile_scxml_lang_typed(doc_str, &template_dir, Language::Rust).map(|_| ()),
+    );
+    assert_refused_for_want_of_a_hash(
+        route,
+        sce_build::compile_scxml_to_string_typed(doc_str, &template_dir).map(|_| ()),
+    );
+}
+
+/// The in-memory entry points, the WASM build's among them, have no source
+/// set to hash, and refuse the declaration the same way.
+#[test]
+fn the_library_in_memory_entries_refuse_a_function_they_cannot_bind() {
+    let templates = sce_build::template_registry::embedded_templates_for(Language::Rust);
+    let route = "the library's in-memory entry points";
+    assert_refused_for_want_of_a_hash(
+        route,
+        sce_build::compile_from_string_lang_typed(KEPT, "kept", &templates, Language::Rust)
+            .map(|_| ()),
+    );
+    assert_refused_for_want_of_a_hash(
+        route,
+        sce_build::compile_from_string_typed(KEPT, "kept", &templates).map(|_| ()),
+    );
+}
+
+/// The set compile, given no hash, refuses the declaration and names the
+/// option that would have carried one.
+#[test]
+fn the_set_compile_refuses_a_function_it_is_given_no_hash_for() {
+    let work = scratch("set_compile_unbound");
+    let doc = write_kept(&work);
+    let template_dir = sce_build::find_template_dir_for(Language::Rust);
+    assert_refused_for_want_of_a_hash(
+        "ForgeCompileOptions::source_hash",
+        sce_build::compile_scxml_with_imports(
+            &[doc.as_path()],
+            &[],
+            &template_dir,
+            Language::Rust,
+            &sce_build::ForgeCompileOptions::default(),
+            None,
+        )
+        .map(|_| ()),
+    );
 }
 
 /// The template reads the function the producer built, and nothing else: no

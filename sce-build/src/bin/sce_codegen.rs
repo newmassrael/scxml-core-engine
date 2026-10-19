@@ -3813,6 +3813,24 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
     let scxml_refs: Vec<&Path> = scxml_path_bufs.iter().map(|p| p.as_path()).collect();
     let forge_refs: Vec<&Path> = forge_path_bufs.iter().map(|p| p.as_path()).collect();
 
+    let template_dir = sce_build::find_template_dir_for(lang);
+
+    // C13 orchestrator wiring (`b501b18c`): parse the optional
+    // deploy.yaml into a `DeployConfig` so the multi-doc compile path
+    // can fire SCE Protocol-Synthesis RFC §synth-5-K + §synth-5-M cross-doc validators.
+    // Shared with `check`'s document-set route, which enters the same
+    // validators and so must refuse the same broken topologies.
+    let deploy_cfg: Option<sce_build::mesh::deploy::DeployConfig> =
+        deploy_path.map(|p| load_deploy_config(p, error_format));
+
+    // SCE Protocol-Synthesis RFC §synth-6.2.6: the inferred root must
+    // describe the entire batch, not just whichever input came first.
+    // Computed before the compile, because a document declaring its
+    // transition table or its transition function carries this digest, and
+    // the compile is where those are generated.
+    let all_documents: Vec<&Path> = scxml_refs.iter().chain(&forge_refs).copied().collect();
+    let drift_ctx = document_set_drift_context(input_root.as_deref(), deploy_path, &all_documents);
+
     // The two options `check`'s document-set route accepts, since that
     // route names this subcommand as the producer it mirrors: a verdict
     // check can reach has to be a verdict this run can reach too.
@@ -3824,18 +3842,9 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
         host_processor_types: host_processor,
         host_invoker_types: host_invoker,
         target_machine,
+        source_hash: Some(drift_ctx.header.source_hex()),
         ..Default::default()
     };
-
-    let template_dir = sce_build::find_template_dir_for(lang);
-
-    // C13 orchestrator wiring (`b501b18c`): parse the optional
-    // deploy.yaml into a `DeployConfig` so the multi-doc compile path
-    // can fire SCE Protocol-Synthesis RFC §synth-5-K + §synth-5-M cross-doc validators.
-    // Shared with `check`'s document-set route, which enters the same
-    // validators and so must refuse the same broken topologies.
-    let deploy_cfg: Option<sce_build::mesh::deploy::DeployConfig> =
-        deploy_path.map(|p| load_deploy_config(p, error_format));
 
     let outputs = match sce_build::compile_scxml_with_imports(
         &scxml_refs,
@@ -3861,25 +3870,6 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
             );
         }
     }
-
-    // SCE Protocol-Synthesis RFC §synth-6.2.6: the inferred root must
-    // describe the entire batch, not just whichever input came first.
-    let all_documents: Vec<&Path> = scxml_refs.iter().chain(&forge_refs).copied().collect();
-    let drift_input_root = input_root.as_deref().map(PathBuf::from).unwrap_or_else(|| {
-        all_documents
-            .first()
-            .map(|p| containing_dir(p))
-            .unwrap_or_else(|| PathBuf::from("."))
-    });
-    let drift_ctx = DriftContext::compute(
-        &drift_input_root,
-        deploy_path.map(Path::new),
-        if input_root.is_some() {
-            &[]
-        } else {
-            &all_documents
-        },
-    );
 
     // §10 stdout manifest. Built from the same `GenerateReport` shape
     // and the same `build_manifest` construction point the other two
@@ -4576,20 +4566,23 @@ fn accumulate_host_requirements(
 /// A statechart that does not parse, or that `can_generate_static` refuses,
 /// is skipped here: the compile reads the same file and refuses it with its
 /// own record, and the single-document routes never reach the declaration of
-/// such a document either.
-fn refuse_set_transition_functions(scxml_paths: &[PathBuf], error_format: ErrorFormat) {
+/// such a document either. The in-line children of each statechart are
+/// judged with it, by the same call.
+///
+/// Returns whether any statechart of the set declares what a run's digest
+/// is bound to ([`sce_build::bind_run_digest`]): its transition table or its
+/// transition function. `check` computes the digest `orchestrate` would
+/// embed only for such a set.
+fn refuse_set_transition_functions(scxml_paths: &[PathBuf], error_format: ErrorFormat) -> bool {
     let mut findings = Vec::new();
+    let mut binds_a_digest = false;
     for path in scxml_paths {
         let label = path.to_string_lossy();
         let mut parser = SCXMLParser::new();
         let Ok(mut model) = parser.parse_file(&label) else {
             continue;
         };
-        // The producer answers nothing for such a document; asked first so
-        // a set of statecharts that declare nothing is not analyzed twice.
-        if !model.transition_function_declared {
-            continue;
-        }
+        binds_a_digest |= model.transition_table_declared || model.transition_function_declared;
         analyzer::analyze(&mut model, &label);
         if analyzer::can_generate_static(&model, &label).is_err() {
             continue;
@@ -4597,6 +4590,33 @@ fn refuse_set_transition_functions(scxml_paths: &[PathBuf], error_format: ErrorF
         findings.extend(sce_build::transition_function_findings(&model, &label));
     }
     error_format.emit_all_and_exit(&findings, "");
+    binds_a_digest
+}
+
+/// The drift-header context of a run over a document set: what
+/// `orchestrate` stamps on every file it writes, and so the digest a
+/// declared transition table or function of the set carries.
+///
+/// One computation for the two set routes, so the function `check` renders
+/// is rendered from the digest `orchestrate` would bind. The root is the
+/// one named, or else the directory of the first document, and an inferred
+/// root has to cover every document of the set.
+fn document_set_drift_context(
+    input_root: Option<&str>,
+    deploy_path: Option<&str>,
+    documents: &[&Path],
+) -> DriftContext {
+    let drift_input_root = input_root.map(PathBuf::from).unwrap_or_else(|| {
+        documents
+            .first()
+            .map(|p| containing_dir(p))
+            .unwrap_or_else(|| PathBuf::from("."))
+    });
+    DriftContext::compute(
+        &drift_input_root,
+        deploy_path.map(Path::new),
+        if input_root.is_some() { &[] } else { documents },
+    )
 }
 
 /// `--lint` over a document set: every statechart of it, linted as
@@ -4720,10 +4740,22 @@ fn cmd_check_document_set(args: CheckArgs, error_format: ErrorFormat) {
         .map(|profile| judge_set_under_profile(profile, &scxml_paths, &forge_paths, error_format));
     // Not a lint: refused whatever the flags, every record at once, where
     // the single-document route refuses it.
-    refuse_set_transition_functions(&scxml_paths, error_format);
+    let binds_a_digest = refuse_set_transition_functions(&scxml_paths, error_format);
     if lint {
         lint_set_statecharts(&scxml_paths, error_format);
     }
+    // A declared table or function carries the digest `orchestrate` stamps
+    // on its files, and the compile below refuses a declared function it is
+    // given none for. So the digest is computed as `orchestrate` computes it
+    // without `--input-root` (the value moves no verdict), and only for a set
+    // that declares one: walking the source set is otherwise work this route
+    // never needed.
+    let source_hash = binds_a_digest.then(|| {
+        let documents: Vec<&Path> = scxml_refs.iter().chain(&forge_refs).copied().collect();
+        document_set_drift_context(None, deploy.as_deref(), &documents)
+            .header
+            .source_hex()
+    });
 
     let mut report = GenerateReport {
         deploy_facts: deploy_cfg.as_ref().map(|cfg| sce_build::DeployFacts {
@@ -4755,6 +4787,7 @@ fn cmd_check_document_set(args: CheckArgs, error_format: ErrorFormat) {
         // refused against that machine's atomics is a verdict this check has
         // to reach too.
         target_machine,
+        source_hash,
         ..Default::default()
     };
 
@@ -5690,18 +5723,6 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
         }
     }
 
-    // The document declares its transition table (`sce:transition-table`);
-    // what the declaration cannot hold is the digest of the source set this
-    // run read, so the table is built here, where that digest is known. It is
-    // set after the AST export, which stays the analysed document. The hash is
-    // the one every file of this run embeds. A rejected document gets none.
-    if model.transition_table_declared && !model.document_rejected {
-        model.emitted_transition_table = Some(sce_build::model::EmittedTransitionTable::of(
-            &model,
-            drift_ctx.header.source_hex(),
-        ));
-    }
-
     // §scxml-5.8: Document rejected at parse time (e.g., unloadable external script)
     // Generate a language-appropriate rejection stub so AOT test reports PASS.
     if model.document_rejected {
@@ -5902,20 +5923,18 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
     }
 
     // Not a lint — see the `check` call site, which sits at the same point.
+    // The document's in-line children are judged by the same call.
     error_format.emit_all_and_exit(
         &sce_build::transition_function_findings(&model, scxml_path),
         "",
     );
-    // The document declares its transition function and nothing in it was
-    // refused: built here, once, for the reason the transition table is built
-    // above — the function carries the digest of the source set this run
-    // read. Every backend renders this value beside the machine.
-    if model.transition_function_declared {
-        model.emitted_transition_function = Some(sce_build::model::TransitionFunction::of(
-            &model,
-            drift_ctx.header.source_hex(),
-        ));
-    }
+    // What the document's declarations cannot hold is the digest of the
+    // source set this run read: the transition table and the transition
+    // function are built here, where that digest is known and after the AST
+    // export, which stays the analysed document. The hash is the one every
+    // file of this run embeds; every route that writes one binds it through
+    // the same call.
+    sce_build::bind_run_digest(&mut model, &drift_ctx.header.source_hex());
 
     // SCE Protocol-Synthesis RFC §synth-5-J-2: Rust no_std variant
     // rejection. Only fires when `--no-std` is paired with `-l rust`
@@ -6227,6 +6246,12 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
             {
                 continue;
             }
+            // The child's declarations mean what they mean on a root: it was
+            // judged with the parent (`transition_function_findings` asks the
+            // in-line children), and it is bound to the digest its machine's
+            // header carries, this run's, so its transition function and
+            // table are written beside its machine and named after its stem.
+            sce_build::bind_run_digest(&mut child_model, &drift_ctx.header.source_hex());
             // `resolve_source_path` canonicalizes the path, which fails
             // on the synthetic (the file does not exist on disk —
             // inline children live in-memory). Set `scxml_source_path`
@@ -7221,6 +7246,32 @@ trait W3cBackend {
         input_stem: &str,
     ) -> Result<Vec<(String, String)>, ForgeError>;
 
+    /// The language this backend generates, which picks the templates the
+    /// files beside a machine are rendered from.
+    fn language(&self) -> Language;
+
+    /// The files a declared transition function adds beside a machine this
+    /// backend generated (SCE Accepted Subset §2.21), named after
+    /// `input_stem` as the machine is; none for a document that declares
+    /// none. Through the one seam every route renders the function by,
+    /// `generator::transition_function_files`, so a parent and a child of
+    /// this suite get what `generate` gives the same document.
+    fn transition_function_files(
+        &self,
+        model: &SCXMLModel,
+        input_stem: &str,
+    ) -> Result<Vec<(String, String)>, ForgeError> {
+        let language = self.language();
+        let template_dir = sce_build::find_template_dir_for(language);
+        sce_build::generator::transition_function_files(
+            model,
+            sce_build::generator::TemplateSource::Directory(&template_dir),
+            input_stem,
+            language,
+        )
+        .map_err(ForgeError::from)
+    }
+
     /// Hook after writing parent SM (e.g. Rust writes mod.rs).
     ///
     /// Takes the model because the artifact it writes is a generated
@@ -7363,6 +7414,12 @@ trait W3cBackend {
 /// per-test output directory. No filesystem scanning, no parent-code
 /// substring heuristics, and no naming-convention filtering — the
 /// backend trait carries no child-discovery hooks anymore.
+///
+/// A child declaring its transition function or table is generated as a
+/// fixture is: judged, bound to this run's digest, and written with its
+/// function beside its machine. Returns the refusals that fail the fixture:
+/// what a child declaring the function holds that the declaration does not
+/// admit, and a function the backend could not render.
 fn generate_child_sms(
     backend: &dyn W3cBackend,
     test_id: &str,
@@ -7371,7 +7428,8 @@ fn generate_child_sms(
     test_mod_dir: &Path,
     drift_ctx: &DriftContext,
     sourcemap_acc: &mut SymbolAccumulator,
-) {
+) -> Vec<sce_build::CompileError> {
+    let mut refused = Vec::new();
     let resource_dir = scxml_path.parent().unwrap_or(Path::new("."));
     let mut seen = BTreeSet::new();
 
@@ -7446,6 +7504,17 @@ fn generate_child_sms(
             continue;
         }
 
+        // The declaration means on a child what it means on a root. An
+        // in-line child was judged with its parent, which passed, so only a
+        // child read from disk can be refused here, by the same call.
+        let findings = sce_build::transition_function_findings(&child_model, &label);
+        if !findings.is_empty() {
+            backend.process_child_failure(test_id, child_name, test_mod_dir, drift_ctx);
+            refused.extend(findings);
+            continue;
+        }
+        sce_build::bind_run_digest(&mut child_model, &drift_ctx.header.source_hex());
+
         if let Some(child_path) = child_path_for_resolver.as_deref() {
             resolve_source_path(&mut child_model, child_path);
         }
@@ -7471,12 +7540,31 @@ fn generate_child_sms(
                 if let Some((_, code)) = files.into_iter().next() {
                     backend.process_child(test_id, child_name, code, test_mod_dir, drift_ctx);
                 }
+                // Beside the child's machine and named after its stem, as
+                // `generate` writes a child's function. Written as rendered:
+                // the function names no machine, so nothing in it is
+                // re-addressed the way a child machine's package is.
+                match backend.transition_function_files(&child_model, child_name) {
+                    Ok(beside) => {
+                        for (filename, code) in &beside {
+                            write_if_changed_drift_aware(
+                                &test_mod_dir.join(filename),
+                                code,
+                                drift_ctx,
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        refused.push(sce_build::forge::error::Located::new(e, label, None, None));
+                    }
+                }
             }
             Err(_) => {
                 backend.process_child_failure(test_id, child_name, test_mod_dir, drift_ctx);
             }
         }
     }
+    refused
 }
 
 /// The single unified W3C test generation loop shared by all backends.
@@ -7581,6 +7669,10 @@ fn generate_w3c_unified(
                         continue;
                     }
                 }
+                // Bound to the digest every file of this run carries, as
+                // `generate` binds it, so a fixture declaring its table or
+                // its function is generated with them.
+                sce_build::bind_run_digest(&mut model, &drift_ctx.header.source_hex());
 
                 resolve_source_path(&mut model, &scxml_path);
 
@@ -7589,7 +7681,17 @@ fn generate_w3c_unified(
                     .and_then(|s| s.to_str())
                     .unwrap_or("unknown");
 
-                match backend.generate_sm(&model, input_stem) {
+                // The machine and, beside it, the transition function the
+                // fixture declares: one result, so a backend that cannot
+                // render the function fails the fixture instead of writing
+                // the machine alone.
+                let generated = backend
+                    .generate_sm(&model, input_stem)
+                    .and_then(|mut files| {
+                        files.extend(backend.transition_function_files(&model, input_stem)?);
+                        Ok(files)
+                    });
+                match generated {
                     Ok(files) => {
                         // Format C++ output before writing to disk
                         let files = maybe_format_files(files, cpp_formatter);
@@ -7633,7 +7735,7 @@ fn generate_w3c_unified(
                         // (only for backends that use per-test subdirs; C++ handles children via CMake)
                         if backend.uses_per_test_subdirs() {
                             generate_hybrid_child_scxmls(&model, &test_mod_dir);
-                            generate_child_sms(
+                            let refused_children = generate_child_sms(
                                 backend,
                                 test_id,
                                 &model,
@@ -7642,6 +7744,23 @@ fn generate_w3c_unified(
                                 &drift_ctx,
                                 &mut sourcemap_acc,
                             );
+                            // A child refused for its declaration fails the
+                            // fixture as the fixture's own refusal would.
+                            if let Some(first) = refused_children.first() {
+                                for err in &refused_children {
+                                    emit_batch_failure_ndjson(err);
+                                }
+                                failed.push((
+                                    test_id.clone(),
+                                    format!(
+                                        "{} refusal(s) of a child's sce:transition-function, \
+                                         the first: {}",
+                                        refused_children.len(),
+                                        first.error
+                                    ),
+                                ));
+                                continue;
+                            }
                         }
 
                         // One sidecar per emitted directory, covering
@@ -7971,6 +8090,9 @@ impl RustBackend {
 impl W3cBackend for RustBackend {
     fn language_name(&self) -> &str {
         "Rust"
+    }
+    fn language(&self) -> Language {
+        Language::Rust
     }
     fn sm_output_base(&self) -> &Path {
         &self.sm_base
@@ -8319,6 +8441,9 @@ impl W3cBackend for GoBackend {
     fn language_name(&self) -> &str {
         "Go"
     }
+    fn language(&self) -> Language {
+        Language::Go
+    }
     fn sm_output_base(&self) -> &Path {
         &self.sm_base
     }
@@ -8624,6 +8749,9 @@ impl W3cBackend for KotlinBackend {
     fn language_name(&self) -> &str {
         "Kotlin"
     }
+    fn language(&self) -> Language {
+        Language::Kotlin
+    }
     fn sm_output_base(&self) -> &Path {
         &self.sm_base
     }
@@ -8900,6 +9028,9 @@ impl W3cBackend for CppBackend {
     fn language_name(&self) -> &str {
         "C++"
     }
+    fn language(&self) -> Language {
+        Language::Cpp
+    }
     fn sm_output_base(&self) -> &Path {
         &self.output_dir
     }
@@ -8983,6 +9114,9 @@ impl PythonBackend {
 impl W3cBackend for PythonBackend {
     fn language_name(&self) -> &str {
         "Python"
+    }
+    fn language(&self) -> Language {
+        Language::Python
     }
     fn sm_output_base(&self) -> &Path {
         &self.sm_base

@@ -716,11 +716,129 @@ pub fn unhandled_declaration_findings(
 /// a document that declares nothing, they are a row of the function nobody
 /// can arrive at for one that does. Resolved at this boundary as the lints
 /// are, so each record carries the anchor enclosing what it names.
+///
+/// The declaration means the same wherever its root is, so the in-line
+/// children of the document are judged here too, after the document's own
+/// records: every `<invoke><content><scxml>` whose root declares the function
+/// (at any depth), each record moved to the row its author wrote in this
+/// document. One call therefore holds the children to it on every route that
+/// holds the document, and a route that generates the children never reaches
+/// one this call refuses.
 pub fn transition_function_findings(model: &model::SCXMLModel, source: &str) -> Vec<CompileError> {
-    scxml_transition_function::findings(model, source)
+    let mut findings: Vec<CompileError> = scxml_transition_function::findings(model, source)
         .into_iter()
         .map(|err| model.with_enclosing_anchor(err))
-        .collect()
+        .collect();
+    findings.extend(inline_child_transition_function_findings(model));
+    findings
+}
+
+/// The records [`transition_function_findings`] gives the in-line children
+/// of `model`, in document order, placed in `model`'s authored coordinates.
+///
+/// A child is judged as the routes that generate it read it: analysed under
+/// its own label, and past [`analyzer::can_generate_static`], since a child
+/// that gate refuses is not generated at all. A child that declares nothing
+/// is not analysed; its own children are still asked.
+fn inline_child_transition_function_findings(model: &model::SCXMLModel) -> Vec<CompileError> {
+    let mut findings = Vec::new();
+    for invoke in model.iter_scxml_invokes() {
+        let (Some(child), Some(positions)) = (
+            invoke.inline_child.as_deref(),
+            invoke.inline_child_positions.as_ref(),
+        ) else {
+            continue;
+        };
+        let label = positions.document.as_str();
+        let refused = if child.transition_function_declared {
+            let mut child = child.clone();
+            analyzer::analyze(&mut child, label);
+            if analyzer::can_generate_static(&child, label).is_err() {
+                continue;
+            }
+            transition_function_findings(&child, label)
+        } else {
+            inline_child_transition_function_findings(child)
+        };
+        // The child's text maps into the text this document was parsed
+        // from; that text maps to what its author wrote when a preprocessor
+        // expanded it.
+        findings.extend(refused.into_iter().map(|err| {
+            let err = positions.authored(err);
+            match model.authored_positions.as_ref() {
+                Some(document) => document.authored(err),
+                None => err,
+            }
+        }));
+    }
+    findings
+}
+
+/// Give `model` what its declarations need from the run that generates it:
+/// the digest of the source set that run read (its `source-hash`), which a
+/// document cannot hold. The transition table (SCE Accepted Subset §2.20) and
+/// the transition function (§2.21) each carry it as a value, so a header that
+/// names a hash names the table and the function that came with it.
+///
+/// The one place a route binds them, called by every route that writes
+/// drift-headed files, with the digest those files embed: `generate` for the
+/// document and its in-line children, `orchestrate` through
+/// [`ForgeCompileOptions::source_hash`], and `generate-w3c` for each fixture
+/// and its children. Called after the declaration is judged
+/// ([`transition_function_findings`]), so the function is built only for a
+/// document that keeps it. A rejected document is written as a stub and gets
+/// neither.
+pub fn bind_run_digest(model: &mut model::SCXMLModel, source_hex: &str) {
+    if model.document_rejected {
+        return;
+    }
+    if model.transition_table_declared {
+        model.emitted_transition_table = Some(model::EmittedTransitionTable::of(
+            model,
+            source_hex.to_string(),
+        ));
+    }
+    if model.transition_function_declared {
+        model.emitted_transition_function =
+            Some(model::TransitionFunction::of(model, source_hex.to_string()));
+    }
+}
+
+/// The `route` [`refuse_unbound_transition_function`] names for the entry
+/// points that compile a document handed over as a string, WASM's among them.
+const IN_MEMORY_ENTRY_POINTS: &str = "the library's in-memory entry points";
+
+/// Refuse a document that declares a transition function on a route that
+/// has no digest to bind ([`bind_run_digest`]) and so cannot generate it.
+///
+/// Without this the route would hand back the machine and no function file:
+/// the Rust arm of [`generator::transition_function_files`] renders only a
+/// bound function, so a build that asked for the file would find out only
+/// when it went looking for it. `route` names the entry the caller took, and
+/// the record says which command does generate the function.
+fn refuse_unbound_transition_function(
+    model: &model::SCXMLModel,
+    source: &str,
+    route: &str,
+) -> Result<(), CompileError> {
+    if !model.transition_function_declared
+        || model.document_rejected
+        || model.emitted_transition_function.is_some()
+    {
+        return Ok(());
+    }
+    Err(locate_codegen_error(
+        forge::error::GenerateError::unsupported_at(
+            format!(
+                "the transition function that sce:transition-function=\"emit\" declares carries \
+                 the source hash of the run that generates it, which {route} cannot supply; \
+                 generate the document with `sce-codegen generate` or `sce-codegen orchestrate`"
+            ),
+            model.source_location.clone(),
+        ),
+        source,
+        model,
+    ))
 }
 
 /// The first of [`transition_function_findings`], for the library entry
@@ -1126,6 +1244,7 @@ pub fn compile_scxml_to_string_typed(
     // an entry that returns [`generator::GeneratedOutput`] so the dep
     // set survives to the depfile sink.
     let ParsedSCXML { model, .. } = compile_model(scxml_path)?;
+    refuse_unbound_transition_function(&model, scxml_path, "the library's file entry points")?;
     generator::generate(&model, template_dir, false)
         .map_err(|e| locate_codegen_error(e, scxml_path, &model))
 }
@@ -1147,6 +1266,7 @@ pub fn compile_from_string_typed(
     templates: &[(&str, &str)],
 ) -> Result<String, CompileError> {
     let model = compile_model_from_string(scxml_content, scxml_name)?;
+    refuse_unbound_transition_function(&model, scxml_name, IN_MEMORY_ENTRY_POINTS)?;
     generator::generate_with_templates(&model, templates, false)
         .map_err(|e| locate_codegen_error(e, scxml_name, &model))
 }
@@ -1171,6 +1291,8 @@ pub fn compile_from_string_lang_typed(
     language: generator::Language,
 ) -> Result<generator::GeneratedOutput, CompileError> {
     let model = compile_model_from_string(scxml_content, scxml_name)?;
+    // A document handed over as a string has no source set to hash.
+    refuse_unbound_transition_function(&model, scxml_name, IN_MEMORY_ENTRY_POINTS)?;
 
     // The in-memory entry emits the same sibling artifacts as the file entry.
     let mut output = match language {
@@ -1407,6 +1529,9 @@ fn compile_scxml_lang_typed_mutated(
         )
     })?;
     mutate(&mut model)?;
+    // A caller that holds the digest of the files it writes binds it in
+    // `mutate`; every other caller of this body computes none.
+    refuse_unbound_transition_function(&model, scxml_path, "the library's file entry points")?;
     if !model.driver_refs.is_empty() {
         match driver_root {
             Some(root) => resolve_driver_refs_with_root(&mut model, scxml_path, root)?,
@@ -2682,6 +2807,17 @@ pub struct ForgeCompileOptions {
     /// Empty (the default) resolves fragments relative to the including
     /// document only.
     pub include_dirs: Vec<PathBuf>,
+    /// The `source-hash` digest the files [`compile_scxml_with_imports`]
+    /// returns are written under, as lowercase hex: what a statechart
+    /// declaring its transition table or its transition function is bound
+    /// with ([`bind_run_digest`]), as `generate` binds one.
+    ///
+    /// It lives here because the caller knows it and the set compile does
+    /// not: the digest is of the source set the caller's headers describe.
+    /// `None` (the default) binds nothing, and a document declaring the
+    /// transition function is then refused, naming the field, rather than
+    /// returned as a machine without the function the document asked for.
+    pub source_hash: Option<String>,
     /// RFC §synth-5-E C5 cache-maintenance platform info. Populated by
     /// [`compile_forge_with_deploy`] from the resolved
     /// [`mesh::deploy::PlatformConfig`]; left `None` by deploy-unaware
@@ -4095,7 +4231,7 @@ fn compile_document_set(
             .file_name()
             .and_then(|s| s.to_str())
             .unwrap_or(path_str);
-        let out = compile_scxml_lang_typed_with_section(
+        let out = compile_scxml_lang_typed_mutated(
             path_str,
             template_dir,
             language,
@@ -4118,6 +4254,20 @@ fn compile_document_set(
                 host_processor_types: options.host_processor_types.clone(),
                 host_invoker_types: options.host_invoker_types.clone(),
                 ..Default::default()
+            },
+            // The digest the caller writes these files under is what a
+            // declared table or function carries; without one a declared
+            // function cannot be generated, and is refused here by name.
+            |model| match options.source_hash.as_deref() {
+                Some(source_hex) => {
+                    bind_run_digest(model, source_hex);
+                    Ok(())
+                }
+                None => refuse_unbound_transition_function(
+                    model,
+                    path_str,
+                    "compile_scxml_with_imports, given no ForgeCompileOptions::source_hash,",
+                ),
             },
         )?;
         outputs.add(basename, path_str, out)?;
