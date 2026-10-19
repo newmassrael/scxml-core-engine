@@ -25,6 +25,7 @@ from .coverage import coverage as run_coverage
 from .decisions import cited_by_binding
 from .decisions import hold as hold_decisions
 from .decisions import summary as decisions_summary
+from .assembly import assemble, decisions_from_json, report_of
 from .conversion import Conversion, check_conversion, convert_by_rules
 from .errors import AuthoringError, IngestError
 from .extraction import Extraction
@@ -163,6 +164,36 @@ def cmd_check_conversion(args) -> int:
         for why, block_id in report.queue():
             print(f"  ask: {why} {block_id}")
     return 0 if report.complete else 1
+
+
+def cmd_assemble(args) -> int:
+    """The text a review ends in: a conversion with the owner's decisions applied, and what it changes.
+
+    The text goes to `--out` exactly as it is to be saved, so the SHA-256 of the file is the revision the
+    specs folder keeps it under. What is printed is the ids, the counts and the lines the text changes:
+    the lines are the document's own words, so they are printed only with `--json`, for the host that
+    asked.
+    """
+    extraction = _read_extraction(args.extraction)
+    conversion = _read_conversion(args.conversion)
+    try:
+        log = decisions_from_json(pathlib.Path(args.decisions).read_text(encoding="utf-8"))
+        current = pathlib.Path(args.current).read_text(encoding="utf-8") if args.current else None
+    except (OSError, UnicodeDecodeError) as exc:
+        raise IngestError(f"{getattr(exc, 'filename', None) or 'a file'}: not readable ({exc})") from exc
+    made = assemble(conversion, extraction, log)
+    pathlib.Path(args.out).write_text(made.text, encoding="utf-8")
+    report = report_of(made, current)
+    if args.json:
+        print(json.dumps(report, sort_keys=True))
+    else:
+        said = report["changes"]
+        print(
+            f"assembled from {made.decisions} decision(s): {len(made.kept)} kept, {len(made.corrected)} corrected, "
+            f"{len(made.dropped)} dropped, {len(made.added)} added, revision {made.revision()} -> {args.out}"
+        )
+        print("changes: " + ("none" if said["unchanged"] else f"{said['added']} line(s) added, {said['removed']} removed"))
+    return 0
 
 
 def cmd_questions(args) -> int:
@@ -651,6 +682,16 @@ def main(argv=None) -> int:
     chk.add_argument("--conversion", required=True, help="the conversion (JSON) to hold to it")
     chk.add_argument("--json", action="store_true", help="print the counts and ids as JSON")
     chk.set_defaults(fn=cmd_check_conversion)
+
+    asm = sub.add_parser(
+        "assemble", help="apply the owner's decisions to a conversion: the text a review ends in")
+    asm.add_argument("--extraction", required=True, help="the extraction the conversion names")
+    asm.add_argument("--conversion", required=True, help="the conversion (JSON) the decisions are about")
+    asm.add_argument("--decisions", required=True, help="the proposal's decisions: the JSON list `read_proposal` gives")
+    asm.add_argument("--current", help="the spec's text now, to say what the assembled text changes in it")
+    asm.add_argument("--out", required=True, help="where to write the text, exactly as it is to be saved")
+    asm.add_argument("--json", action="store_true", help="print the ids, the counts and the changes as JSON")
+    asm.set_defaults(fn=cmd_assemble)
 
     q = with_pack(sub.add_parser("questions", help="what the specification does not answer"))
     q.add_argument("--prose", required=True, nargs="+")

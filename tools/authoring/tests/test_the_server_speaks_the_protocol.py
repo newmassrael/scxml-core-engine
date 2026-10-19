@@ -220,7 +220,9 @@ class TheServerSpeaksTheProtocol(unittest.TestCase):
         # 0036). A client of a run is not offered them, on purpose: a run that is handed an original to
         # read gets the blocks it is to cite and nothing it could call to read a file of the machine, and
         # a count of its own conversion is SCE's to make and not the maker's to ask for and report.
-        cli_only = {"revise-gate", "views", "extract", "convert", "check-conversion"}
+        # `assemble` is the same host's: it applies an owner's decisions to a conversion and writes the
+        # text the owner accepts (docs/adr/0037), which is the owner's act and not a run's.
+        cli_only = {"revise-gate", "views", "extract", "convert", "check-conversion", "assemble"}
         self.assertLessEqual(cli_only, commands, "a command-line-only name that is not a command")
         self.assertEqual(commands - cli_only, {t["name"] for t in mcp.TOOLS} - mcp_only)
 

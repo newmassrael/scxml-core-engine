@@ -2014,6 +2014,20 @@ the document's words. A conversion of another extraction than the one named is r
 The files `extract` and `convert` write are exactly their canonical text, so the SHA-256 of a file is
 its revision, and the specs folder (`save_extraction`) names it the same way.
 
+**assemble** makes the text a review ends in (`assembly.py`, ADR 0037): `python3 -m sce_author assemble
+--extraction EXTRACTION.json --conversion CONVERSION.json --decisions DECISIONS.json --out TEXT.md`, where
+`DECISIONS.json` is the list `read_proposal` gives. The conversion is not changed by a review: the latest
+decision on each block stands, `keep` writes the block as the conversion has it, `correct` puts the owner's
+words in its place, `drop` leaves it out, and `add` writes a block of the original the conversion left
+out, after the block that carries the nearest earlier block of the original (first when none does). A block
+nobody decided about is written as the conversion has it; whether every question the check asked has a
+decision is the specs folder's to judge when the text is accepted. A decision on a block that is not
+there, an `add` of a block the conversion already carries, and a result with nothing left are refused and
+write nothing. `--out` is exactly the text to be saved, so its SHA-256 is the revision the specs folder
+keeps it under; `--current FILE` names the spec's text now, and `--json` prints the ids, the count of
+decisions it was made from (`accept_proposal` refuses a text made from fewer than the log holds) and what
+the text changes in the current one, by line in hunks.
+
 A PDF with a text layer is read by `extractors_pdf.py`, behind the pack `pdf-text` (`pip install
 pypdfium2`; not a dependency of this package, and without it the registry says so). Every line comes with
 the box it sits in, so a block is placed by its page and an exact box (points from the top-left of the
