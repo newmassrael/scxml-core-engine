@@ -5247,3 +5247,109 @@ mod artifact_coordinates {
         assert_eq!(positions(&model), before);
     }
 }
+
+/// docs/adr/0038, decision 3: a parent hands the caller's opt-in to the children
+/// it builds with a host, and only to a child that states a duty (a child with
+/// none has no such parameter to receive it), so the parse says which children do.
+#[cfg(test)]
+mod child_duties {
+    use super::{Invoke, SCXMLModel};
+    use std::path::Path;
+
+    /// A child that states a notice and no duty.
+    const QUIET: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="sce-static" name="quiet">
+  <state id="s">
+    <onentry>
+      <sce:action name="note" effect="notice"/>
+    </onentry>
+  </state>
+</scxml>
+"#;
+
+    fn parent(invoke: &str) -> String {
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="a" datamodel="sce-static" name="parent">
+  <datamodel>
+    <data id="pick" sce:type="string" sce:capacity="48" expr="'quiet.scxml'"/>
+  </datamodel>
+  <state id="a">
+    {invoke}
+  </state>
+</scxml>
+"#
+        )
+    }
+
+    /// Parse `invoke` as the only child of a parent that sits beside the two
+    /// children: the shared duty fixture and [`QUIET`].
+    fn parse(invoke: &str) -> SCXMLModel {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/static_datamodel/static_host_duty.scxml");
+        std::fs::copy(&fixture, dir.path().join("static_host_duty.scxml"))
+            .expect("copy the duty fixture");
+        std::fs::write(dir.path().join("quiet.scxml"), QUIET).expect("write the quiet child");
+        let doc = dir.path().join("parent.scxml");
+        std::fs::write(&doc, parent(invoke)).expect("write the parent");
+        crate::parser::SCXMLParser::new()
+            .parse_file(doc.to_str().expect("a UTF-8 path"))
+            .unwrap_or_else(|e| panic!("the parent parses: {e:?}"))
+    }
+
+    fn scxml_invoke(model: &SCXMLModel) -> &super::ScxmlInvokeInfo {
+        match &model.states["a"].invokes[0] {
+            Invoke::Scxml(info) => info,
+            other => panic!("expected an <invoke type=\"scxml\">, found {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_child_that_states_a_duty_is_marked() {
+        let model = parse(r#"<invoke type="scxml" id="w" src="static_host_duty.scxml"/>"#);
+        let invoke = scxml_invoke(&model);
+        assert!(invoke.common.child_declares_host_acts);
+        assert!(invoke.common.child_states_duties);
+        assert!(model.any_child_states_duties());
+    }
+
+    #[test]
+    fn a_child_that_states_only_notices_is_not_marked() {
+        let model = parse(r#"<invoke type="scxml" id="w" src="quiet.scxml"/>"#);
+        let invoke = scxml_invoke(&model);
+        assert!(invoke.common.child_declares_host_acts);
+        assert!(!invoke.common.child_states_duties);
+        assert!(!model.any_child_states_duties());
+    }
+
+    #[test]
+    fn each_candidate_is_marked_for_its_own_duties() {
+        let model = parse(
+            r#"<invoke type="scxml" id="w" srcexpr="pick"
+            sce:candidates="static_host_duty.scxml quiet.scxml"/>"#,
+        );
+        let hybrid = model.states["a"]
+            .iter_hybrid_invokes()
+            .next()
+            .expect("a hybrid invoke");
+        let marked: Vec<(&str, bool)> = hybrid
+            .candidates
+            .iter()
+            .map(|c| (c.stem.as_str(), c.child_states_duties))
+            .collect();
+        assert_eq!(
+            marked,
+            vec![("static_host_duty", true), ("quiet", false)],
+            "the duty candidate is marked and the quiet one is not"
+        );
+        assert!(model.any_child_states_duties());
+    }
+
+    #[test]
+    fn a_machine_with_no_invoke_has_no_duty_child() {
+        assert!(!SCXMLModel::default().any_child_states_duties());
+    }
+}
