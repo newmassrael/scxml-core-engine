@@ -36,6 +36,7 @@ extern crate alloc;
 pub mod endpoint;
 pub mod generated;
 pub mod inbound;
+pub mod inbox;
 pub mod link;
 pub mod outbound;
 pub mod peers;
