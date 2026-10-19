@@ -2150,6 +2150,15 @@ pub struct ScxmlInvokeInfo {
     #[serde(skip)]
     #[cfg_attr(test, schemars(skip))]
     pub inline_child_range: Option<std::ops::Range<usize>>,
+    /// Where each position [`Self::inline_child`] records stands in the
+    /// document the parser read. The child is parsed from its own text under
+    /// its own label (`<synth>.scxml`), so a refusal raised against it after
+    /// the parse is in the child's coordinates; this is what moves it to the
+    /// rows its author wrote, as the parse's own refusals are moved.
+    /// Co-populated with [`Self::inline_child`].
+    #[serde(skip)]
+    #[cfg_attr(test, schemars(skip))]
+    pub inline_child_positions: Option<AuthoredPositions>,
     /// SCE_MESH.md §9.6 remote `<invoke type="scxml">`. When `src` is of the
     /// form `#<name>` and `<name>` matches a distinct mesh machine declared
     /// in `deploy.yaml`, this carries that machine name (without the leading

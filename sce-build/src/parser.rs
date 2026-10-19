@@ -4861,6 +4861,7 @@ impl SCXMLParser {
                 inline_child_model,
                 inline_child_source_xml,
                 inline_child_range,
+                inline_child_positions,
             ) = if let Some(inline) = inline_document.as_ref() {
                 // SCE Mesh §9.6.6 rule 1: synthesised machine name is
                 // `<parent_machine_id>__sce_synth_invoke__<invoke_id>`.
@@ -4892,12 +4893,17 @@ impl SCXMLParser {
                 // child's header, and the build failed later, far from
                 // the cause.
                 let synth_diag_label = format!("{synth_name}.scxml");
+                // Kept on the invoke as well: a refusal raised against the
+                // child after this parse (its declared transition function,
+                // judged once the child is analysed) is moved to the rows its
+                // author wrote by the same mapping.
+                let positions = inline.positions(&synth_diag_label);
                 let inline_child = SCXMLParser::new()
                     .parse_string_with_label(
                         &inline.text,
                         DocumentLabel::asymmetric(&synth_name, &synth_diag_label),
                     )
-                    .map_err(|err| inline.placed(&synth_diag_label, err))?;
+                    .map_err(|err| positions.authored(err))?;
                 // SCE Mesh §9.6.6 rule 2: the rewritten `<invoke>`
                 // carries the canonical `#<machine>` mesh peer
                 // reference so `classify_remote_scxml_invokes`
@@ -4916,6 +4922,7 @@ impl SCXMLParser {
                     Some(Box::new(inline_child)),
                     Some(inline.text.clone()),
                     Some(inline.range.clone()),
+                    Some(positions),
                 )
             } else if !src.is_empty() {
                 let stripped = src.replace("file:", "");
@@ -4924,9 +4931,9 @@ impl SCXMLParser {
                     .and_then(|s| s.to_str())
                     .map(|s| s.to_string())
                     .unwrap_or_default();
-                (src.clone(), child_name, None, None, None)
+                (src.clone(), child_name, None, None, None, None)
             } else {
-                (src.clone(), String::new(), None, None, None)
+                (src.clone(), String::new(), None, None, None, None)
             };
 
             let Traceability {
@@ -4958,6 +4965,7 @@ impl SCXMLParser {
                 inline_child: inline_child_model,
                 inline_child_xml: inline_child_source_xml,
                 inline_child_range,
+                inline_child_positions,
                 remote_mesh_target: None,
                 remote_mesh_transport: None,
             };
@@ -7258,15 +7266,11 @@ impl InlineDocument {
         Self { text, map, range }
     }
 
-    /// `err`, raised against this document under `label`, moved to where
-    /// the child's author wrote what it names — in the enclosing document.
-    fn placed(
-        &self,
-        label: &str,
-        err: crate::forge::error::Located<crate::forge::error::ForgeError>,
-    ) -> crate::forge::error::Located<crate::forge::error::ForgeError> {
+    /// The positions of this document parsed under `label`: what moves a
+    /// refusal raised against it to where the child's author wrote what it
+    /// names — in the enclosing document.
+    fn positions(&self, label: &str) -> crate::model::AuthoredPositions {
         crate::model::AuthoredPositions::new(label, self.text.as_str(), self.map.clone())
-            .authored(err)
     }
 }
 

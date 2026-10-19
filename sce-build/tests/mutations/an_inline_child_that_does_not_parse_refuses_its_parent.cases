@@ -15,24 +15,19 @@
 mutation_tests -p sce-build --features cli --test an_inline_child_that_does_not_parse_refuses_its_parent
 mutation_targets sce-build/src/parser.rs
 
-# Both keep `placed` named: a method nothing calls does not build under
+# Both still build: the positions the refusal is moved through are kept on
+# the invoke as well, so neither case leaves them unused under
 # `warnings = deny`, and a case that cannot build reports INCONCLUSIVE.
 mutation_case "a child that does not parse leaves its parent standing" <<'PY'
 edit("sce-build/src/parser.rs",
-     r'''                    .map_err(|err| inline.placed(&synth_diag_label, err))?;''',
-     r'''                    .unwrap_or_else(|err| {
-                        let _ = inline.placed(&synth_diag_label, err);
-                        SCXMLModel::default()
-                    });''')
+     r'''                    .map_err(|err| positions.authored(err))?;''',
+     r'''                    .unwrap_or_else(|_err| SCXMLModel::default());''')
 PY
 
 mutation_case "a child's refusal keeps the child's coordinates" <<'PY'
 edit("sce-build/src/parser.rs",
-     r'''                    .map_err(|err| inline.placed(&synth_diag_label, err))?;''',
-     r'''                    .map_err(|err| {
-                        let _placed = |e| inline.placed(&synth_diag_label, e);
-                        err
-                    })?;''')
+     r'''                    .map_err(|err| positions.authored(err))?;''',
+     r'''                    .map_err(|err| err)?;''')
 PY
 
 mutation_case "the inserted bindings are mapped as the author's text" <<'PY'
