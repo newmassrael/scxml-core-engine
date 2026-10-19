@@ -707,9 +707,10 @@ pub fn unhandled_declaration_findings(
 /// document they accept is one whose function [`model::TransitionFunction::of`]
 /// computes: `check` and `generate` on one document, `check` and
 /// `orchestrate` on a set (one pass over the set before it is compiled),
-/// `generate-w3c` per fixture, and the library entry points, in-memory ones
-/// included, which reject on the first record because their result carries
-/// one error.
+/// `generate-w3c` per fixture, and the library entry points: the compiling
+/// ones, in-memory ones included, reject on the first record because their
+/// result carries one error, and [`transition_function_from_string`] returns
+/// every record.
 ///
 /// Every refusal, not the first: each is a separate repair. The states no
 /// path reaches are among them ([`scxml_reachability::findings`]): opt-in for
@@ -774,6 +775,57 @@ fn inline_child_transition_function_findings(model: &model::SCXMLModel) -> Vec<C
     findings
 }
 
+/// The transition function of the statechart `scxml_content`, as data
+/// (SCE Accepted Subset §2.21, `docs/SCE_TRANSITION_FUNCTION.md`): what a
+/// program that renders the function itself, at its own build time, reads
+/// instead of a file `sce-codegen generate` wrote.
+///
+/// The document is judged as `sce-codegen generate` judges one that declares
+/// the function, and refused with every record that route would refuse it
+/// with: parse, analysis, [`analyzer::can_generate_static`],
+/// [`transition_function_findings`] (the states no path reaches among them),
+/// and [`unhandled_declaration_findings`]. The lints stay opt-in there and
+/// are not asked here. `label` names the document in each record, as a path
+/// does on the command line.
+///
+/// The document must declare `sce:transition-function="emit"`, and one that
+/// does not is refused with `validation/missing-attribute`: the declaration is
+/// what holds a document to §2.21 on every route, so a document read here is
+/// held to it by `sce-codegen check` too. A function of a document that does
+/// not claim to be one would be a table of a machine that may hold data,
+/// guards or a second microstep the table cannot show.
+///
+/// No digest: the value is the document's alone (see
+/// [`model::EmittedTransitionFunction`] for the one a generated file adds).
+/// The document is read from the string, so it cannot include another file.
+pub fn transition_function_from_string(
+    scxml_content: &str,
+    label: &str,
+) -> Result<model::TransitionFunction, Vec<CompileError>> {
+    let mut model = parser::SCXMLParser::new()
+        .parse_string(scxml_content, label)
+        .map_err(|refused| vec![refused])?;
+    if !model.transition_function_declared {
+        let refused = forge::error::ValidationError::MissingAttribute {
+            element: "scxml".to_string(),
+            attr: "sce:transition-function".to_string(),
+        };
+        return Err(vec![model.with_enclosing_anchor(model.locate(
+            forge::error::ForgeError::from(refused),
+            model.source_location.as_ref(),
+            label,
+        ))]);
+    }
+    analyzer::analyze(&mut model, label);
+    analyzer::can_generate_static(&model, label).map_err(|refused| vec![refused])?;
+    let mut refused = transition_function_findings(&model, label);
+    refused.extend(unhandled_declaration_findings(&model, label));
+    if !refused.is_empty() {
+        return Err(refused);
+    }
+    Ok(model::TransitionFunction::of(&model))
+}
+
 /// Give `model` what its declarations need from the run that generates it:
 /// the digest of the source set that run read (its `source-hash`), which a
 /// document cannot hold. The transition table (SCE Accepted Subset §2.20) and
@@ -799,8 +851,10 @@ pub fn bind_run_digest(model: &mut model::SCXMLModel, source_hex: &str) {
         ));
     }
     if model.transition_function_declared {
-        model.emitted_transition_function =
-            Some(model::TransitionFunction::of(model, source_hex.to_string()));
+        model.emitted_transition_function = Some(model::EmittedTransitionFunction {
+            source_hash: source_hex.to_string(),
+            function: model::TransitionFunction::of(model),
+        });
     }
 }
 
@@ -8913,6 +8967,95 @@ pub fn find_template_dir() -> std::path::PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A statechart declaring its transition function: a nested state, an
+    /// event two states take, and a top-level `<final>`.
+    const DECLARING: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:transition-function="emit" version="1.0" initial="idle" name="lamp" datamodel="null">
+  <state id="idle"><transition event="on" target="lit"/></state>
+  <state id="lit" initial="dim">
+    <state id="dim"><transition event="up" target="bright"/></state>
+    <state id="bright"/>
+    <transition event="off" target="idle"/>
+    <transition event="break" target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>"#;
+
+    fn codes_of(refused: &[CompileError]) -> Vec<&'static str> {
+        use crate::forge::diagnostic::ToDiagnostics;
+        refused
+            .iter()
+            .map(|record| record.error.to_diagnostics()[0].code.as_str())
+            .collect()
+    }
+
+    /// What the library hands out is the producer's table of the document, the
+    /// one every generated function renders.
+    #[test]
+    fn a_declaring_document_yields_the_producers_function() {
+        let function = transition_function_from_string(DECLARING, "lamp.scxml")
+            .unwrap_or_else(|refused| panic!("refused: {:?}", codes_of(&refused)));
+        let mut model = parser::SCXMLParser::new()
+            .parse_string(DECLARING, "lamp.scxml")
+            .expect("parse");
+        analyzer::analyze(&mut model, "lamp.scxml");
+        assert_eq!(function, model::TransitionFunction::of(&model));
+        assert_eq!(function.initial, "idle");
+        assert_eq!(function.transition("bright", "off"), Some("idle"));
+        assert_eq!(function.transition("idle", "on"), Some("dim"));
+        assert_eq!(
+            function.state("bright").map(|s| s.configuration.clone()),
+            Some(vec!["lit".to_string(), "bright".to_string()])
+        );
+    }
+
+    /// The declaration is what holds a document to §2.21, so a document
+    /// without it is not read as a function of itself.
+    #[test]
+    fn a_document_that_does_not_declare_the_function_is_refused() {
+        let undeclared = DECLARING.replace(r#"sce:transition-function="emit""#, "");
+        let refused = transition_function_from_string(&undeclared, "lamp.scxml").unwrap_err();
+        assert_eq!(codes_of(&refused), ["validation/missing-attribute"]);
+        assert_eq!(refused[0].location.file, "lamp.scxml");
+    }
+
+    /// Every refusal, not the first: each is a separate repair, and a program
+    /// that reads the function at build time reports them in one run.
+    #[test]
+    fn every_refusal_of_the_declaration_is_returned() {
+        let acting = DECLARING
+            .replace(
+                r#"<transition event="on" target="lit"/>"#,
+                r#"<transition event="on" target="lit"><log label="on"/></transition>"#,
+            )
+            .replace(
+                r#"<transition event="up" target="bright"/>"#,
+                r#"<transition event="up" target="bright"><log label="up"/></transition>"#,
+            );
+        let refused = transition_function_from_string(&acting, "lamp.scxml").unwrap_err();
+        assert_eq!(
+            codes_of(&refused),
+            [
+                "scxml/transition-function-rule",
+                "scxml/transition-function-rule"
+            ]
+        );
+    }
+
+    /// The digest is the run's: a route that writes files adds it beside the
+    /// function, which stays the document's.
+    #[test]
+    fn a_run_binds_its_digest_beside_the_function() {
+        let mut model = parser::SCXMLParser::new()
+            .parse_string(DECLARING, "lamp.scxml")
+            .expect("parse");
+        analyzer::analyze(&mut model, "lamp.scxml");
+        bind_run_digest(&mut model, &"cd".repeat(32));
+        let emitted = model.emitted_transition_function.clone().expect("bound");
+        assert_eq!(emitted.source_hash, "cd".repeat(32));
+        assert_eq!(emitted.function, model::TransitionFunction::of(&model));
+    }
 
     /// A driver header outside the folder a caller confined the generator to is answered as one
     /// that is not there: the same refusal, so its being there is not said.

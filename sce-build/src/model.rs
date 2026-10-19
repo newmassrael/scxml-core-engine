@@ -3285,23 +3285,31 @@ pub struct EmittedTransitionTable {
 
 /// A statechart as a pure function of (leaf state, event), for a document
 /// that declares it ([`SCXMLModel::transition_function_declared`]): every
-/// state the machine can be in, every event it names, where each event takes
-/// each state, and the digest of the source set it was generated from.
+/// state the machine can be in, every event it names, and where each event
+/// takes each state.
 ///
 /// The whole table is computed once, at build time, by
 /// [`TransitionFunction::of`], which lives with the rule that computes it
 /// (`crate::transition_function`). Every backend renders this value and
 /// nothing else, so a generated function cannot disagree with the table, and
-/// two backends cannot disagree with each other.
+/// two backends cannot disagree with each other. A program that reads the
+/// function as data gets the same value from
+/// [`crate::transition_function_from_string`].
+///
+/// A fact of the document alone. The digest a generated file carries beside
+/// it belongs to the run that wrote the file, so it is
+/// [`EmittedTransitionFunction`]'s.
+///
+/// The fields are read by programs outside SCE, so a field is added rather
+/// than changed (`#[non_exhaustive]` keeps an addition from breaking them);
+/// `docs/SCE_TRANSITION_FUNCTION.md` states the policy.
 ///
 /// Defined here, beside the model the templates read it through, for the
 /// reason [`EmittedTransitionTable`] is: the gate that holds every attribute a
 /// template reads to a declared one builds its list from this file.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct TransitionFunction {
-    /// The §synth-6.2.6 digest the generated files of the same invocation
-    /// embed, as 64 lowercase hex characters.
-    pub source_hash: String,
     /// The states the machine can be in, in document order: every atomic
     /// `<state>` and every top-level `<final>`. A compound state is never the
     /// current state, so it is not one of these.
@@ -3319,8 +3327,27 @@ pub struct TransitionFunction {
     pub every_pair_taken: bool,
 }
 
+/// A [`TransitionFunction`] as the generated files of one run carry it: the
+/// function, and the §synth-6.2.6 digest of the source set the run read.
+///
+/// The digest is the run's, not the document's: a program that reads the
+/// function as data from the library runs no generation and has none. So it
+/// is added here, where a run that knows it builds the value
+/// ([`crate::bind_run_digest`]). Flattened, so a template reads
+/// `tf.source_hash` and `tf.states` from the one value it is handed.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct EmittedTransitionFunction {
+    /// The §synth-6.2.6 digest the generated files of the same invocation
+    /// embed, as 64 lowercase hex characters.
+    pub source_hash: String,
+    /// The function the files render.
+    #[serde(flatten)]
+    pub function: TransitionFunction,
+}
+
 /// One state of a [`TransitionFunction`].
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct TransitionFunctionState {
     /// The state's id, as written.
     pub id: String,
@@ -3337,6 +3364,7 @@ pub struct TransitionFunctionState {
 
 /// One (state, event) pair of a [`TransitionFunction`].
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct TransitionFunctionCell {
     /// The event, as [`TransitionFunction::events`] spells it.
     pub event: String,
@@ -3795,14 +3823,14 @@ pub struct SCXMLModel {
     /// Built by the generator after the document was accepted, for the
     /// reason [`Self::emitted_transition_table`] is: the function holds the
     /// digest of the source set the run read, which the model does not know.
-    /// `None`, the default, emits nothing. Set by [`TransitionFunction::of`]
+    /// `None`, the default, emits nothing. Set by [`crate::bind_run_digest`]
     /// and read by the template that writes the function beside the machine.
     ///
     /// Not part of the AST export's schema, for the table's reason: the
     /// envelope is written before it is set.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, schemars(skip))]
-    pub emitted_transition_function: Option<TransitionFunction>,
+    pub emitted_transition_function: Option<EmittedTransitionFunction>,
     /// Whether any host-served `<send>` in this document carries a delay
     /// (§scxml-6.2.4 + §scxml-6.2.5).
     ///

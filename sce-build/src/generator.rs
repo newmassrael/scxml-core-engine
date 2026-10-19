@@ -5642,10 +5642,10 @@ mod tests {
             .expect("parse");
         crate::analyzer::analyze(&mut model, "lamp.scxml");
         if with_value {
-            model.emitted_transition_function = Some(crate::model::TransitionFunction::of(
-                &model,
-                "ef".repeat(32),
-            ));
+            model.emitted_transition_function = Some(crate::model::EmittedTransitionFunction {
+                source_hash: "ef".repeat(32),
+                function: crate::model::TransitionFunction::of(&model),
+            });
         }
         model
     }

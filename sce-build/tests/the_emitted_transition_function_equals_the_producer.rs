@@ -37,7 +37,7 @@ use regex::Regex;
 use sce_build::filters;
 use sce_build::forge::diagnostic::ToDiagnostics;
 use sce_build::generator::Language;
-use sce_build::model::TransitionFunction;
+use sce_build::model::{EmittedTransitionFunction, TransitionFunction};
 use sce_build::parser::SCXMLParser;
 use sce_build::toolchain;
 
@@ -202,20 +202,41 @@ fn header_hash(source: &str) -> String {
         .to_string()
 }
 
-/// The producer's function of the fixture, carrying `hash`.
-fn produced(doc: &Path, hash: &str) -> TransitionFunction {
+/// The producer's function of the fixture, as the library hands it out
+/// (`sce_build::transition_function_from_string`): the value a program that
+/// renders the function itself reads, held here to every generated one.
+fn produced(doc: &Path) -> TransitionFunction {
+    let label = doc.to_str().unwrap();
+    sce_build::transition_function_from_string(&read(doc), label)
+        .unwrap_or_else(|refused| panic!("{label}: the library refuses the fixture: {refused:?}"))
+}
+
+/// What the generated files of a run that read the fixture carry: the
+/// producer's function and that run's digest, `hash`, bound the way every
+/// route binds them (`sce_build::bind_run_digest`).
+fn emitted(doc: &Path, hash: &str) -> EmittedTransitionFunction {
     let mut model = SCXMLParser::new()
         .parse_file(doc.to_str().unwrap())
         .expect("the fixture parses");
     sce_build::analyzer::analyze(&mut model, doc.to_str().unwrap());
-    TransitionFunction::of(&model, hash.to_string())
+    sce_build::bind_run_digest(&mut model, hash);
+    let emitted = model
+        .emitted_transition_function
+        .expect("the fixture declares the function");
+    assert_eq!(
+        emitted.function,
+        produced(doc),
+        "the function a run binds is not the one the library hands out"
+    );
+    emitted
 }
 
 /// What the generated function must print, from the producer's value: the
 /// same lines the check program below writes from the compiled one.
-fn listing(function: &TransitionFunction) -> String {
+fn listing(emitted: &EmittedTransitionFunction) -> String {
+    let function = &emitted.function;
     let mut out = String::new();
-    out.push_str(&format!("hash\t{}\n", function.source_hash));
+    out.push_str(&format!("hash\t{}\n", emitted.source_hash));
     out.push_str(&format!("initial\t{}\n", function.initial));
     for state in &function.states {
         out.push_str(&format!(
@@ -445,7 +466,7 @@ fn the_generated_source_holds_the_producers_table() {
             let out = scratch(&format!("source_{lang}_{stem}"));
             generate(lang, &fixture(stem), &out);
             let source = read(&function_file(lang, &out, stem));
-            let function = produced(&fixture(stem), &header_hash(&source));
+            let function = produced(&fixture(stem));
             let expected = expected_cells(lang, &function);
             assert!(!expected.is_empty(), "[{stem}] the producer takes no pair");
             assert_eq!(
@@ -497,7 +518,7 @@ fn every_rust_function_asks_that_its_answer_be_used() {
 /// producer that moves one pair moves this.
 #[test]
 fn the_nested_fixture_yields_the_table_its_rules_give() {
-    let function = produced(&fixture("nested_lifecycle"), &"0".repeat(64));
+    let function = produced(&fixture("nested_lifecycle"));
     assert_eq!(function.initial, "loading");
     assert_eq!(
         function.events,
@@ -625,7 +646,7 @@ fn the_generated_function_compiles_alone_and_answers_as_the_producer() {
             Command::new(&binary).output().expect("run the listing"),
             &format!("[{stem}] the listing program"),
         );
-        let function = produced(&fixture(stem), &header_hash(&source));
+        let function = emitted(&fixture(stem), &header_hash(&source));
         assert_eq!(
             printed,
             listing(&function),
@@ -690,7 +711,8 @@ fn the_generated_rust_function_is_clean_under_clippy_pedantic() {
 /// A C++ translation unit that includes the generated header and nothing else,
 /// and has the compiler check every answer the producer's table gives as a
 /// constant expression.
-fn cpp_constant_checks(header: &Path, stem: &str, function: &TransitionFunction) -> String {
+fn cpp_constant_checks(header: &Path, stem: &str, emitted: &EmittedTransitionFunction) -> String {
+    let function = &emitted.function;
     let names = names_of("cpp");
     let state = |id: &str| format!("tf::State::{}", (names.state)(id));
     let event = |name: &str| format!("tf::Event::{}", (names.event)(name));
@@ -701,7 +723,7 @@ fn cpp_constant_checks(header: &Path, stem: &str, function: &TransitionFunction)
     let mut check = |condition: String| unit.push_str(&format!("static_assert({condition});\n"));
     check(format!(
         "tf::SOURCE_HASH == {}",
-        c_literal(&function.source_hash)
+        c_literal(&emitted.source_hash)
     ));
     check(format!("tf::INITIAL == {}", state(&function.initial)));
     check(format!(
@@ -815,7 +837,7 @@ fn the_cpp_function_compiles_alone_and_answers_as_the_producer() {
         let out = work.join("out");
         generate("cpp", &fixture(stem), &out);
         let header = function_file("cpp", &out, stem);
-        let function = produced(&fixture(stem), &header_hash(&read(&header)));
+        let function = emitted(&fixture(stem), &header_hash(&read(&header)));
 
         let alone = work.join("alone.cpp");
         std::fs::write(&alone, cpp_constant_checks(&header, stem, &function))
@@ -949,7 +971,7 @@ fn the_c_function_compiles_alone_and_answers_as_the_producer() {
         let out = work.join("out");
         generate("c11", &fixture(stem), &out);
         let header = function_file("c11", &out, stem);
-        let function = produced(&fixture(stem), &header_hash(&read(&header)));
+        let function = emitted(&fixture(stem), &header_hash(&read(&header)));
         let include = c_literal(header.to_str().unwrap());
 
         let alone = work.join("alone.c");
@@ -1055,7 +1077,7 @@ fn the_go_function_compiles_alone_and_answers_as_the_producer() {
         let out = work.join("out");
         generate("go", &fixture(stem), &out);
         let source = function_file("go", &out, stem);
-        let function = produced(&fixture(stem), &header_hash(&read(&source)));
+        let function = emitted(&fixture(stem), &header_hash(&read(&source)));
 
         let package = go_package(stem);
         let project = work.join("project");
@@ -1136,7 +1158,7 @@ fn the_kotlin_function_compiles_alone_and_answers_as_the_producer() {
         let out = work.join("out");
         generate("kotlin", &fixture(stem), &out);
         let source = function_file("kotlin", &out, stem);
-        let function = produced(&fixture(stem), &header_hash(&read(&source)));
+        let function = emitted(&fixture(stem), &header_hash(&read(&source)));
 
         let program = work.join("Check.kt");
         std::fs::write(
@@ -1221,7 +1243,7 @@ fn the_python_function_imports_alone_and_answers_as_the_producer() {
         let work = scratch(&format!("python_alone_{stem}"));
         let out = work.join("out");
         generate("python", &fixture(stem), &out);
-        let function = produced(
+        let function = emitted(
             &fixture(stem),
             &header_hash(&read(&function_file("python", &out, stem))),
         );
@@ -1392,8 +1414,7 @@ fn the_generated_machine_and_the_generated_function_agree_on_every_pair() {
         let work = scratch(&format!("engine_{stem}"));
         let out = work.join("out");
         generate("rust", &fixture(stem), &out);
-        let source = read(&function_file("rust", &out, stem));
-        let function = produced(&fixture(stem), &header_hash(&source));
+        let function = produced(&fixture(stem));
 
         let project = work.join("project");
         std::fs::create_dir_all(project.join("src")).expect("create project");
@@ -1608,10 +1629,7 @@ fn the_go_machine_and_the_go_function_agree_on_every_pair() {
         let project = work.join("project");
         let out = project.join(stem);
         generate("go", &fixture(stem), &out);
-        let function = produced(
-            &fixture(stem),
-            &header_hash(&read(&function_file("go", &out, stem))),
-        );
+        let function = produced(&fixture(stem));
         std::fs::write(
             project.join("go.mod"),
             format!(
@@ -1823,10 +1841,7 @@ fn the_c_machine_and_the_c_function_agree_on_every_pair() {
         let work = scratch(&format!("c_engine_{stem}"));
         let out = work.join("out");
         generate("c11", &fixture(stem), &out);
-        let function = produced(
-            &fixture(stem),
-            &header_hash(&read(&function_file("c11", &out, stem))),
-        );
+        let function = produced(&fixture(stem));
         let program = work.join("check.c");
         std::fs::write(
             &program,
@@ -2039,7 +2054,7 @@ fn the_kotlin_machine_and_the_kotlin_function_agree_on_every_pair() {
         let out = work.join("out");
         generate("kotlin", &fixture(stem), &out);
         let function_path = function_file("kotlin", &out, stem);
-        let function = produced(&fixture(stem), &header_hash(&read(&function_path)));
+        let function = produced(&fixture(stem));
         let program = work.join("Check.kt");
         std::fs::write(
             &program,
@@ -2224,10 +2239,7 @@ fn the_python_machine_and_the_python_function_agree_on_every_pair() {
         let work = scratch(&format!("python_engine_{stem}"));
         let out = work.join("out");
         generate("python", &fixture(stem), &out);
-        let function = produced(
-            &fixture(stem),
-            &header_hash(&read(&function_file("python", &out, stem))),
-        );
+        let function = produced(&fixture(stem));
         let mut run = Command::new(&python);
         run.args(["-I", "-c", PYTHON_EQUIVALENCE])
             .arg(&out)

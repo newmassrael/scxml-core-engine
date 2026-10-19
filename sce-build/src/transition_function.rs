@@ -37,20 +37,20 @@ use crate::model::{
 use crate::transition_records::{transition_records, TransitionRecord};
 
 impl TransitionFunction {
-    /// The transition function of `model`, carrying `source_hash` — the
-    /// digest the generated files of the same run embed.
+    /// The transition function of `model`.
     ///
     /// Total over any model, so that a caller holding one the subset check
     /// has not judged gets a value rather than a panic; the value means what
-    /// its name says only for a document the check accepts.
-    pub fn of(model: &SCXMLModel, source_hash: String) -> Self {
+    /// its name says only for a document the check accepts, which is why the
+    /// library hands it out through [`crate::transition_function_from_string`]
+    /// and not through this.
+    pub fn of(model: &SCXMLModel) -> Self {
         let events = events(model);
         let states = rows(model, &events);
         let every_pair_taken = states
             .iter()
             .all(|state| state.next.iter().all(|cell| cell.to.is_some()));
         Self {
-            source_hash,
             initial: initial_leaf(model),
             states,
             events,
@@ -327,7 +327,7 @@ mod tests {
         let model = SCXMLParser::new()
             .parse_string(doc, "transition_function")
             .expect("parse");
-        TransitionFunction::of(&model, "cd".repeat(32))
+        TransitionFunction::of(&model)
     }
 
     fn ids(function: &TransitionFunction) -> Vec<&str> {
@@ -512,11 +512,6 @@ mod tests {
         );
         assert_eq!(f.transition("a", "x"), Some("a"));
         assert!(f.every_pair_taken);
-    }
-
-    #[test]
-    fn the_hash_is_the_one_the_run_gave() {
-        assert_eq!(function(FLAT).source_hash, "cd".repeat(32));
     }
 
     #[test]

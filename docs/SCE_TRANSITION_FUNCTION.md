@@ -31,12 +31,50 @@ that declares nothing is judged by none of it and generates files byte-identical
 | is_final(state) | Whether the state is a `<final>` child of `<scxml>`, where the machine ends. |
 | configuration(state) | The ids of every state active while this one is the current state, outermost first and the state last. For a flat machine it is the state alone. |
 | names | Each state and event as the document writes its id, and back. |
-| source hash | The §synth-6.2.6 digest of the source set the file was generated from: the `source-hash` of its own header, as a value, as the transition table carries it (`docs/SCE_TRANSITION_TABLE.md`). |
+| source hash | In a generated file only: the §synth-6.2.6 digest of the source set the file was generated from, the `source-hash` of its own header, as a value, as the transition table carries it (`docs/SCE_TRANSITION_TABLE.md`). |
 
 The whole table, every state against every event, is computed once, by
 `TransitionFunction::of` (`sce-build/src/transition_function.rs`), and every backend renders that
 value and nothing else. The generated code is a total match over it, so it cannot disagree with the
 table, and two backends cannot disagree with each other.
+
+The table is the document's alone. The source hash belongs to the run that wrote the file, so the
+generator hands the templates `EmittedTransitionFunction`: the run's digest beside the table.
+
+## The function as data
+
+A program that writes its own code from the function at its own build time, rather than compiling
+a file `sce-codegen generate` wrote, reads the same value from the library:
+
+```rust
+let function: sce_build::model::TransitionFunction =
+    sce_build::transition_function_from_string(&document_text, "lifecycle.scxml")?;
+```
+
+- **What is checked.** The document is judged as `sce-codegen generate` judges one that declares
+  the function: parse, analysis, the static-generation precondition, every §2.21 refusal (the
+  states no path reaches among them) and every untrue `sce:unhandled`. Every record comes back, not
+  the first. The opt-in lints are not asked, as they are not on the command line.
+- **The declaration is required.** A document without `sce:transition-function="emit"` is refused
+  with `validation/missing-attribute`. The declaration is what holds a document to §2.21 on every
+  route, so a document a program reads this way is held to the same rules by `sce-codegen check`.
+- **No source hash.** The value is the table above, without the digest a generated file carries.
+- **One document.** The text is read from the string, so it cannot include another file.
+- **No libxml2.** The function is computed with `default-features = false`.
+
+### What a reader may rely on
+
+`TransitionFunction` and its rows are read by programs outside this repository. These hold:
+
+- The fields in the table above keep their names, types and meanings: `states`, `events`,
+  `initial`, `every_pair_taken`; per state `id`, `is_final`, `configuration` and `next`; per cell
+  `event` and `to`. The orders stated above are part of the meaning.
+- A field may be added. The three types are `#[non_exhaustive]`, so a reader that builds none of
+  them and matches none of them exhaustively is not broken by an addition.
+- A change to any of the above is a breaking change, said as one in the commit that makes it.
+
+`sce-build` is not published. Until it is, a reader depends on this repository by a pinned commit,
+and this section is the contract that commit carries.
 
 ## Accessors, by backend
 
