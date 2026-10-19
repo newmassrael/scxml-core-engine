@@ -4340,6 +4340,19 @@ impl SCXMLModel {
     pub fn has_mesh_rpc_invoke(&self) -> bool {
         self.states.values().any(|s| s.has_mesh_rpc_invoke())
     }
+    /// True iff any child this machine builds with a host states a duty
+    /// (docs/adr/0038): an `<invoke type="scxml">` whose child does, or a
+    /// candidate of a hybrid `<invoke>` that does. Such a machine holds the
+    /// caller's statement that a simulated host is meant, to pass it to the
+    /// child it builds, even when it states no duty itself.
+    pub fn any_child_states_duties(&self) -> bool {
+        self.states.values().any(|s| {
+            s.iter_scxml_invokes()
+                .any(|i| i.common.child_declares_host_duties)
+                || s.iter_hybrid_invokes()
+                    .any(|h| h.candidates.iter().any(|c| c.child_declares_host_duties))
+        })
+    }
     /// True iff a host must drive this machine with the runtime's
     /// `tick()` rather than `step()`.
     ///

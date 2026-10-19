@@ -3319,6 +3319,7 @@ fn render_kotlin(
         static_saved_shape => &static_lowering.saved_shape,
         has_native_actions => native.any,
         has_native_duties => native.has_duty,
+        accepts_simulated_host => native.has_duty || model.any_child_states_duties(),
         native_actions_defs => &native.interface_def,
         native_actions_interface => &native.interface_name,
     };
@@ -3667,6 +3668,7 @@ fn render_python(env: &mut Environment, model: &SCXMLModel) -> Result<String, Ge
         host_invoke_request_checks => &host_invoke_request_checks,
         has_native_actions => native.any,
         has_native_duties => native.has_duty,
+        accepts_simulated_host => native.has_duty || model.any_child_states_duties(),
         native_actions_defs => &native.interface_def,
         native_actions_interface => &native.interface_name,
         static_fields => minijinja::Value::from_serialize(&static_lowering.fields),
@@ -3766,6 +3768,7 @@ fn render_go(
             host_invoke_request_checks => &host_invoke_request_checks,
             has_native_actions => native.any,
             has_native_duties => native.has_duty,
+            accepts_simulated_host => native.has_duty || model.any_child_states_duties(),
             native_actions_defs => &native.interface_def,
             native_actions_interface => &native.interface_name,
             static_fields => minijinja::Value::from_serialize(&static_lowering.fields),

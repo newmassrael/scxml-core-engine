@@ -258,6 +258,9 @@ pub fn compute_invoke_entries(model: &SCXMLModel) -> BTreeMap<String, Vec<serde_
                     // The call that answers the host the child is built with,
                     // empty for a child that declares no act.
                     "child_host_call": si.child_host_call,
+                    // Whether that child states a duty, so it is also handed
+                    // the caller's statement that a simulated host is meant.
+                    "child_declares_host_duties": si.child_declares_host_duties,
                 }));
             }
 
