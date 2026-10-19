@@ -1,0 +1,186 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+{#
+   The transition function a statechart declaring
+   `sce:transition-function="emit"` is generated with, beside its machine
+   (SCE Accepted Subset §2.21, docs/SCE_TRANSITION_FUNCTION.md).
+
+   Everything below is read from `model.emitted_transition_function`, the one
+   value `sce-build/src/transition_function.rs` computes. No block here walks
+   the model's states, transitions or events: a table a template derived for
+   itself would be a second producer, and this file and every other backend's
+   would then be free to disagree. The marked block is held to that by
+   `sce-build/tests/the_emitted_transition_function_equals_the_producer.rs`.
+
+   The module uses `core` alone and names no crate, so it compiles in a
+   `#![no_std]` crate with no allocator, and beside the machine in one crate:
+   its names (`State`, `Event`, `transition`, ...) live in its own module, and
+   the machine's are `<Machine>State` and `<Machine>Event` in another. Variants
+   are spelled by the filters the machine's own enums use, so a state is the
+   same identifier in both.
+#}
+{% include 'license_header.rs.jinja2' %}
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{# transition-function:begin #}
+{% set tf = model.emitted_transition_function %}
+{% set finals = tf.states | selectattr("is_final") | list %}
+
+//! The transition function of `{{ model.name }}`, generated because its
+//! document declares `sce:transition-function="emit"`.
+//!
+//! A pure function of (current state, event): [`transition`] answers where an
+//! event takes the machine from a state, or `None` when no transition takes
+//! the event and the machine discards it. Every pair was computed when this
+//! file was generated, by the selection rule the machine itself follows, so
+//! this file and the machine generated beside it agree on every pair. It needs
+//! nothing beyond `core`: no SCE runtime and no allocator.
+
+// Every item is part of the function's surface, and a crate that reads only
+// part of it is not to be told the rest is dead.
+#![allow(dead_code)]
+{{ sce_map.source_marker(model.source_location, "rust", module_level=true, symbol_artifact=sce_artifact.machine) }}
+
+/// A state the machine can be in: an atomic state, or a `<final>` child of
+/// `<scxml>`. A compound state is never the current state, so it is none of
+/// these; [`configuration`] names the compound states active with each.
+{{ state_derives_attr }}
+pub enum State {
+{% for state in tf.states %}
+{% if state.id == tf.initial %}
+    /// The state the machine starts in ([`INITIAL`]).
+    #[default]
+{% endif %}
+    {{ state.id | to_state_variant }},
+{% endfor %}
+}
+
+/// An event the machine names: every literal name its transitions write. A
+/// descriptor such as `error.*` or `*` names no event of its own.
+{{ event_derives_attr }}
+pub enum Event {
+{% for event in tf.events %}
+    {{ event | to_event_variant }},
+{% endfor %}
+}
+
+/// Every state, in document order.
+pub const ALL_STATES: [State; {{ tf.states | length }}] = [
+{% for state in tf.states %}
+    State::{{ state.id | to_state_variant }},
+{% endfor %}
+];
+
+/// Every event, in the order the transitions first name them.
+pub const ALL_EVENTS: [Event; {{ tf.events | length }}] = [
+{% for event in tf.events %}
+    Event::{{ event | to_event_variant }},
+{% endfor %}
+];
+
+/// The state the machine starts in.
+pub const INITIAL: State = State::{{ tf.initial | to_state_variant }};
+
+/// The digest of the source set this file was generated from: the
+/// `source-hash` of its own header, as a value.
+pub const SOURCE_HASH: &str = "{{ tf.source_hash | escape_rust }}";
+
+/// Where `event` takes the machine from `state`: `Some` of the state it is in
+/// afterwards, which is `state` itself when the transition taken has no
+/// target, or `None` when no transition takes the event and the machine
+/// discards it. A final state takes no event.
+pub const fn transition(state: State, event: Event) -> Option<State> {
+{% if tf.events %}
+    match (state, event) {
+{% for state in tf.states %}
+{% for cell in state.next %}
+{% if cell.to %}
+        (State::{{ state.id | to_state_variant }}, Event::{{ cell.event | to_event_variant }}) => Some(State::{{ cell.to | to_state_variant }}),
+{% endif %}
+{% endfor %}
+{% endfor %}
+{% if not tf.every_pair_taken %}
+        _ => None,
+{% endif %}
+    }
+{% else %}
+    let _ = state;
+    match event {}
+{% endif %}
+}
+
+/// Whether `state` is a `<final>` child of `<scxml>`: reaching it ends the
+/// machine, and it takes no event.
+pub const fn is_final(state: State) -> bool {
+{% if finals %}
+    matches!(state, {% for state in finals %}{% if not loop.first %} | {% endif %}State::{{ state.id | to_state_variant }}{% endfor %})
+{% else %}
+    let _ = state;
+    false
+{% endif %}
+}
+
+/// The ids of every state active while `state` is the current state,
+/// outermost first and `state` last.
+pub const fn configuration(state: State) -> &'static [&'static str] {
+    match state {
+{% for state in tf.states %}
+        State::{{ state.id | to_state_variant }} => &[{% for id in state.configuration %}{% if not loop.first %}, {% endif %}"{{ id | escape_rust }}"{% endfor %}],
+{% endfor %}
+    }
+}
+
+impl State {
+    /// The state's id, as the document writes it.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+{% for state in tf.states %}
+            State::{{ state.id | to_state_variant }} => "{{ state.id | escape_rust }}",
+{% endfor %}
+        }
+    }
+
+    /// The state the id `name` names, or `None` when it names none of
+    /// [`ALL_STATES`].
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name {
+{% for state in tf.states %}
+            "{{ state.id | escape_rust }}" => Some(State::{{ state.id | to_state_variant }}),
+{% endfor %}
+            _ => None,
+        }
+    }
+}
+
+impl Event {
+    /// The event's name, as the document writes it.
+    pub const fn as_str(self) -> &'static str {
+{% if tf.events %}
+        match self {
+{% for event in tf.events %}
+            Event::{{ event | to_event_variant }} => "{{ event | escape_rust }}",
+{% endfor %}
+        }
+{% else %}
+        match self {}
+{% endif %}
+    }
+
+    /// The event `name` names, or `None` when it names none of
+    /// [`ALL_EVENTS`]. A name is matched whole: the function's events are the
+    /// names its document writes, and a longer name a descriptor would match
+    /// is not one of them.
+    pub fn from_name(name: &str) -> Option<Self> {
+{% if tf.events %}
+        match name {
+{% for event in tf.events %}
+            "{{ event | escape_rust }}" => Some(Event::{{ event | to_event_variant }}),
+{% endfor %}
+            _ => None,
+        }
+{% else %}
+        let _ = name;
+        None
+{% endif %}
+    }
+}
+{# transition-function:end #}

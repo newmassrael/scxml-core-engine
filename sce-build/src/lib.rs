@@ -1211,6 +1211,17 @@ pub fn compile_from_string_lang_typed(
                 .map_err(|e| locate_codegen_error(e, scxml_name, &model))
         }
     }?;
+    // The same seam as the file entry's, so a backend that does not generate a
+    // declared transition function refuses here too.
+    output.files.extend(
+        generator::transition_function_files(
+            &model,
+            generator::TemplateSource::Strings(templates),
+            scxml_name,
+            language,
+        )
+        .map_err(|e| locate_codegen_error(e, scxml_name, &model))?,
+    );
     emit_inline_kind_siblings(
         &model,
         scxml_name,
@@ -1548,6 +1559,19 @@ pub fn emit_model_artifacts(
                 .map_err(|e| locate_codegen_error(e, source_name, model))?
         }
     };
+    // The transition function a document may declare (SCE Accepted Subset
+    // §2.21) is a file beside the machine's, emitted at this one site for the
+    // reason the inline kinds below are: a caller cannot have the machine
+    // without it. A backend that does not generate it yet refuses here.
+    output.files.extend(
+        generator::transition_function_files(
+            model,
+            generator::TemplateSource::Directory(template_dir),
+            input_stem,
+            language,
+        )
+        .map_err(|e| locate_codegen_error(e, source_name, model))?,
+    );
     emit_inline_kind_siblings(
         model,
         source_name,

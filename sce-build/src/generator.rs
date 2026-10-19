@@ -2301,6 +2301,107 @@ pub fn generate_rust_include_shim(
     .map_err(|e| GenerateError::TemplateRender(e.to_string()))
 }
 
+/// The files a document declaring `sce:transition-function="emit"` is
+/// generated with beside its machine, in `language` (SCE Accepted Subset
+/// §2.21, `docs/SCE_TRANSITION_FUNCTION.md`); none for a document that does
+/// not declare it.
+///
+/// The seam every backend's function goes through. Each language is one arm:
+/// a template that renders [`crate::model::TransitionFunction`] and nothing
+/// else, and the name of the file it writes. The value is the generator's
+/// ([`crate::model::SCXMLModel::emitted_transition_function`], set where the
+/// run's digest is known), so adding a backend adds an arm and a template and
+/// leaves the producer alone.
+///
+/// A backend with no arm yet REFUSES the declaration, naming the language,
+/// rather than writing the machine without the function: a build that asked
+/// for the file and received none would find out only when it went looking.
+///
+/// A declared document reached without the value — `check`, which renders
+/// nothing it keeps, and the library entry points, which compute no digest —
+/// gets no file in Rust; the refusals above stand whoever asks.
+pub fn transition_function_files(
+    model: &SCXMLModel,
+    templates: TemplateSource<'_>,
+    input_stem: &str,
+    language: Language,
+) -> Result<Vec<(String, String)>, GenerateError> {
+    if !model.transition_function_declared {
+        return Ok(Vec::new());
+    }
+    match language {
+        Language::Rust => {
+            if model.emitted_transition_function.is_none() {
+                return Ok(Vec::new());
+            }
+            let mut env = new_env();
+            templates.load(&mut env, Language::Rust)?;
+            filters::register_filters(&mut env, &document_scope(model));
+            let code = render_rust_transition_function(&mut env, model)?;
+            Ok(vec![(format!("{input_stem}_transition_function.rs"), code)])
+        }
+        Language::Cpp | Language::C11 | Language::Go | Language::Kotlin | Language::Python => {
+            Err(GenerateError::unsupported_at(
+                format!(
+                    "the transition function that sce:transition-function=\"emit\" declares \
+                     is not yet generated for {}; it is generated for rust",
+                    language.canonical_name()
+                ),
+                model.source_location.clone(),
+            ))
+        }
+    }
+}
+
+/// Where a render reads its templates: the tree on disk, or the strings a
+/// caller with no filesystem hands over (the embedded registry, WASM).
+#[derive(Clone, Copy)]
+pub enum TemplateSource<'a> {
+    /// A template directory, read through [`load_templates`].
+    Directory(&'a Path),
+    /// Named template texts, as [`crate::template_registry::embedded_templates_for`]
+    /// returns them.
+    Strings(&'a [(&'a str, &'a str)]),
+}
+
+impl TemplateSource<'_> {
+    /// Register this source's templates for `backend` in `env`.
+    fn load(self, env: &mut Environment<'_>, backend: Language) -> Result<(), GenerateError> {
+        match self {
+            TemplateSource::Directory(dir) => load_templates(env, dir, backend),
+            TemplateSource::Strings(templates) => load_template_strings(env, templates, backend),
+        }
+    }
+}
+
+/// The Rust module of a declared transition function: `core` only, its own
+/// `State` and `Event`, and the table as one match.
+fn render_rust_transition_function(
+    env: &mut Environment,
+    model: &SCXMLModel,
+) -> Result<String, GenerateError> {
+    let tmpl = env
+        .get_template("transition_function.rs.jinja2")
+        .map_err(|e| GenerateError::TemplateLoad(format!("Template load error: {e}")))?;
+    // The machine's own state and event derives, without a caller's extras:
+    // an extra names a crate (`serde::Serialize`), and this file names none.
+    let state_derives_attr =
+        crate::rust_derive_policy::RustDeriveCategory::StatechartState.derives_attr();
+    let event_derives_attr =
+        crate::rust_derive_policy::RustDeriveCategory::StatechartEvent.derives_attr();
+    // The marker names the machine's position as the machine's own marker
+    // does, in the coordinates a generated file carries.
+    let mut model_artifact = model.clone();
+    model_artifact.into_artifact_coordinates();
+    let ctx = minijinja::context! {
+        model => minijinja::Value::from_serialize(&model_artifact),
+        license_config => minijinja::Value::from_serialize(license_config()),
+        state_derives_attr => &state_derives_attr,
+        event_derives_attr => &event_derives_attr,
+    };
+    tmpl.render(ctx).map_err(render_error)
+}
+
 /// Generate Rust code using pre-loaded template strings (WASM-compatible).
 ///
 /// See [`StatechartCodegenOptions::no_std`] for `no_std` semantics. The
@@ -5375,6 +5476,125 @@ mod tests {
                 model.needs_script_engine,
                 "`{label}` did not force the script engine — send.jinja2's `#error` for it \
                  would now fire on valid input"
+            );
+        }
+    }
+
+    const FUNCTION_DOCUMENT: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:transition-function="emit" version="1.0" initial="idle" name="lamp" datamodel="null">
+  <state id="idle"><transition event="on" target="lit"/></state>
+  <state id="lit"><transition event="off.hard" target="done"/><transition event="off" target="idle"/></state>
+  <final id="done"/>
+</scxml>"#;
+
+    fn transition_function_model(declared: bool, with_value: bool) -> SCXMLModel {
+        let text = if declared {
+            FUNCTION_DOCUMENT.to_string()
+        } else {
+            FUNCTION_DOCUMENT.replace(r#"sce:transition-function="emit""#, "")
+        };
+        let mut model = SCXMLParser::new()
+            .parse_string(&text, "lamp")
+            .expect("parse");
+        crate::analyzer::analyze(&mut model, "lamp.scxml");
+        if with_value {
+            model.emitted_transition_function = Some(crate::model::TransitionFunction::of(
+                &model,
+                "ef".repeat(32),
+            ));
+        }
+        model
+    }
+
+    fn function_files(
+        model: &SCXMLModel,
+        language: Language,
+    ) -> Result<Vec<(String, String)>, GenerateError> {
+        let templates = crate::template_registry::embedded_templates_for(language);
+        transition_function_files(model, TemplateSource::Strings(&templates), "lamp", language)
+    }
+
+    /// A document that declares nothing gets nothing, in every backend.
+    #[test]
+    fn an_undeclared_document_gets_no_transition_function() {
+        let model = transition_function_model(false, false);
+        for &language in Language::ALL {
+            assert!(
+                function_files(&model, language)
+                    .expect("nothing to refuse")
+                    .is_empty(),
+                "{language:?}"
+            );
+        }
+    }
+
+    /// The five backends without the function refuse the declaration by name,
+    /// whether or not the run built the value: a build that asked for the file
+    /// is told it will not get one.
+    #[test]
+    fn a_backend_that_does_not_generate_the_function_refuses_the_declaration() {
+        for with_value in [false, true] {
+            let model = transition_function_model(true, with_value);
+            for &language in Language::ALL {
+                if language == Language::Rust {
+                    continue;
+                }
+                match function_files(&model, language) {
+                    Err(GenerateError::UnsupportedFeature { detail, at }) => {
+                        assert!(
+                            detail.contains(language.canonical_name())
+                                && detail.contains("sce:transition-function"),
+                            "{language:?}: {detail}"
+                        );
+                        assert!(
+                            at.is_some(),
+                            "{language:?}: the refusal is placed on <scxml>"
+                        );
+                    }
+                    other => panic!("{language:?} did not refuse: {other:?}"),
+                }
+            }
+        }
+    }
+
+    /// Rust renders the value into its own module file, and renders nothing
+    /// where the run built no value.
+    #[test]
+    fn rust_writes_the_function_beside_the_machine_when_the_run_built_it() {
+        let without = transition_function_model(true, false);
+        assert!(function_files(&without, Language::Rust)
+            .expect("nothing to refuse")
+            .is_empty());
+
+        let model = transition_function_model(true, true);
+        let files = function_files(&model, Language::Rust).expect("rust renders it");
+        assert_eq!(files.len(), 1);
+        let (name, code) = &files[0];
+        assert_eq!(name, "lamp_transition_function.rs");
+        for expected in [
+            "pub enum State {",
+            "pub enum Event {",
+            "pub const INITIAL: State = State::Idle;",
+            &format!("pub const SOURCE_HASH: &str = \"{}\";", "ef".repeat(32)),
+            "(State::Idle, Event::On) => Some(State::Lit),",
+            "(State::Lit, Event::OffHard) => Some(State::Done),",
+            "matches!(state, State::Done)",
+            "State::Lit => &[\"lit\"],",
+            "\"off.hard\" => Some(Event::OffHard),",
+            "_ => None,",
+        ] {
+            assert!(code.contains(expected), "missing `{expected}` in:\n{code}");
+        }
+        // `off.hard` is written first in `lit`, so `off`'s descriptor, which
+        // matches `off.hard` too, takes only `off`.
+        assert!(
+            code.contains("(State::Lit, Event::Off) => Some(State::Idle),"),
+            "{code}"
+        );
+        for forbidden in ["sce_rust_runtime", "extern crate", "std::", "alloc::"] {
+            assert!(
+                !code.contains(forbidden),
+                "the module names `{forbidden}`:\n{code}"
             );
         }
     }

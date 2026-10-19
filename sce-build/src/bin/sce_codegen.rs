@@ -5867,6 +5867,16 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
         &sce_build::transition_function_findings(&model, scxml_path),
         "",
     );
+    // The document declares its transition function and nothing in it was
+    // refused: built here, once, for the reason the transition table is built
+    // above — the function carries the digest of the source set this run
+    // read. Every backend renders this value beside the machine.
+    if model.transition_function_declared {
+        model.emitted_transition_function = Some(sce_build::model::TransitionFunction::of(
+            &model,
+            drift_ctx.header.source_hex(),
+        ));
+    }
 
     // SCE Protocol-Synthesis RFC §synth-5-J-2: Rust no_std variant
     // rejection. Only fires when `--no-std` is paired with `-l rust`
