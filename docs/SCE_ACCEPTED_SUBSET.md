@@ -7639,6 +7639,11 @@ Codes that the author can avoid by writing a better SCXML /
 | `deploy/scheduler-session-runtime-not-applicable` | Mesh Deploy |
 | `deploy/scheduler-worker-threads-invalid` | Mesh Deploy |
 | `deploy/scheduler-rx-busy-poll-invalid` | Mesh Deploy |
+| `deploy/queryable-key-invalid` | Mesh Deploy |
+| `deploy/queryable-key-duplicate` | Mesh Deploy |
+| `deploy/queryable-name-invalid` | Mesh Deploy |
+| `deploy/queryable-reply-invalid` | Mesh Deploy |
+| `deploy/queryable-document-invalid` | Mesh Deploy |
 | `deploy/link-driver-unknown` | Mesh Deploy |
 | `deploy/link-mtu-missing-on-fragmenting-link` | Mesh Deploy |
 | `deploy/link-mtu-below-driver-floor` | Mesh Deploy |

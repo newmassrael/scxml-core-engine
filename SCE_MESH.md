@@ -2941,6 +2941,26 @@ topology:
             worker_threads: <integer>        # >=1; required with, and only with, drive=worker-pool
             rx_busy_poll_us: <integer>       # optional; >=1, <= tick_period_us when declared
 
+        # The queries this machine serves (RFC §5.R, Queryables a machine
+        # serves; ADR 0041). Optional. Rust codegen emits `{machine}_queryables.rs`:
+        # the matching from a query key to the queryables that answer it, one
+        # writer per reply into a caller-owned buffer, and the reply size bounds.
+        queryables:
+          - name: <code identifier>          # a variant and a type-name prefix; unique after PascalCase
+            key: <chunks>                    # after the node prefix; `/`-separated, each chunk a literal,
+                                             # `*` or `**` (no `$*`, at most 32 chunks); "" = the prefix
+            reply:
+              encoding: <type/subtype>       # e.g. application/json, text/plain
+              body: <text>                   # exactly one of `body` (a fixed reply) ...
+              document:                      # ... and `document` (a JSON object, needs application/json)
+                - name: <code identifier>    # fields in this order
+                  type: bool | u8 | u16 | u32 | u64 | i8 | i16 | i32 | i64 | string | array | object
+                  nullable: true | false     # optional; an absent value is written as null
+                  max_len: <integer>         # string: required, >=1, bytes before escaping
+                  max_items: <integer>       # array: required, >=1
+                  items: { type: ... }       # array: the element (no name)
+                  fields: [ ... ]            # object: its fields, at most 8 levels deep
+
         # Per-machine memory layout (RFC §5.K, Phase A2). Optional. Region
         # attributes ride as raw strings; structural interpretation lives in
         # the §5.E placement consumer (Phase B+).

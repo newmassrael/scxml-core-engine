@@ -22,8 +22,10 @@
 use sce_build::forge::generator::{
     render_machine_concurrency_artifacts, render_machine_session_runtime_artifacts,
 };
+use sce_build::forge::queryables::render_machine_queryables_artifacts;
 use sce_build::generator::Language;
 use sce_build::mesh::deploy::parse_deploy_str;
+use sce_build::mesh::queryable::resolve_queryables;
 use std::fmt::Write as _;
 use std::path::Path;
 
@@ -63,6 +65,15 @@ fn main() {
                 profile,
             )
             .unwrap_or_else(|e| panic!("render session runtime for {machine}: {e}"));
+            for (name, body) in files {
+                push_module(&mut modules, &name, &body);
+            }
+            // Queryables, from the same machine's deploy block.
+            let legs = resolve_queryables(machine, &config.queryables)
+                .unwrap_or_else(|e| panic!("resolve queryables for {machine}: {e}"));
+            let files =
+                render_machine_queryables_artifacts(&template_base, Language::Rust, machine, &legs)
+                    .unwrap_or_else(|e| panic!("render queryables for {machine}: {e}"));
             for (name, body) in files {
                 push_module(&mut modules, &name, &body);
             }

@@ -356,6 +356,14 @@ impl Default for LinkConfig {
 #[cfg(any(feature = "std", test))]
 extern crate std;
 
+/// Which declared queryables a query key expression reaches, for the keys a
+/// deploy declares in `machines.<m>.queryables`. `no_std`, no allocation.
+pub mod keyexpr;
+
+/// Writing a declared JSON document into a caller-owned buffer, for the
+/// `document:` replies of `machines.<m>.queryables`. `no_std`, no allocation.
+pub mod json;
+
 /// Reading a socket directly before sleeping on the reactor, for the budget a
 /// deploy declares as `session_runtime.rx_busy_poll_us`. Unix only: it reads
 /// the descriptor with `read(2)`.

@@ -2923,6 +2923,16 @@ pub struct MachineConfig {
     #[serde(default)]
     pub scheduler: Option<MachineSchedulerConfig>,
 
+    /// The queries this machine serves (SCE Protocol-Synthesis RFC
+    /// §synth-5-R, Queryables a machine serves; ADR 0041): the key of each
+    /// and the shape of its reply, from which the generated matching, the
+    /// reply writers and the reply size bounds come. Absent or empty ⇒ nothing
+    /// is emitted and every existing output is unchanged. Read by
+    /// [`crate::mesh::queryable::resolve_queryables`], which
+    /// [`validate_queryables`] runs at parse time.
+    #[serde(default)]
+    pub queryables: Vec<crate::mesh::queryable::QueryableConfig>,
+
     /// Per-machine memory layout (SCE Mesh §mesh-14, SCE Protocol-Synthesis RFC §synth-5-K).
     /// Absent ⇒ no SRAM/DMA layout declared; the §synth-5-E placement
     /// validator skips this machine. Present ⇒ region attributes ride as
@@ -3685,6 +3695,7 @@ pub fn parse_deploy_str(content: &str) -> Result<DeployConfig, DeployError> {
     validate_worker_slot_budget_required_when_cooperative(&cfg)?;
     validate_keepalive_jitter_required_when_cooperative(&cfg)?;
     validate_scheduler_session_runtime(&cfg)?;
+    validate_queryables(&cfg)?;
     validate_machine_scheduler_worker_capacity(&cfg)?;
     validate_machine_scheduler_link_concurrency(&cfg)?;
     validate_machine_timer_wheel_capacity(&cfg)?;
@@ -3871,7 +3882,7 @@ fn validate_pool_defaults(cfg: &DeployConfig) -> Result<(), DeployError> {
 ///
 /// Single source of truth for the driver allowlist. Each core driver
 /// implements exactly one protocol class (per RFC §synth-5-C lines 765-771 +
-/// §synth-8 Q8 line 4173); co-locating the class with the driver name
+/// §synth-8 Q8 line 4233); co-locating the class with the driver name
 /// keeps `KNOWN_DRIVERS` the authoritative source — no parallel map
 /// to drift against.
 ///
@@ -3882,7 +3893,7 @@ fn validate_pool_defaults(cfg: &DeployConfig) -> Result<(), DeployError> {
 ///     encapsulation floor as `lwip_tcp`; the per-frame
 ///     WebSocket header is application-protocol framing
 ///     carried by the §synth-5-B framer codec, not by the driver
-///     MTU floor. Spec §synth-8 Q8 line 4173 names the driver;
+///     MTU floor. Spec §synth-8 Q8 line 4233 names the driver;
 ///     spec §synth-5-C row 4 (line 770) names the class).
 ///
 /// Non-IP drivers carry floor `0` to mark "skip floor check"
@@ -4241,7 +4252,7 @@ pub fn validate_links_cross_doc(
     Ok(())
 }
 
-/// SCE Protocol-Synthesis RFC §synth-5-C lines 765-771 + §synth-8 Q8 line 4173 cross-
+/// SCE Protocol-Synthesis RFC §synth-5-C lines 765-771 + §synth-8 Q8 line 4233 cross-
 /// doc consistency check between forge `<sce:link-class>` and the
 /// deploy.yaml `driver:` allowlist entry.
 ///
@@ -5095,6 +5106,22 @@ fn validate_scheduler_session_runtime(cfg: &DeployConfig) -> Result<(), DeployEr
                     rx_busy_poll_us: block.rx_busy_poll_us.unwrap_or(0),
                 });
             }
+        }
+    }
+    Ok(())
+}
+
+/// SCE Protocol-Synthesis RFC §synth-5-R (Queryables a machine serves) — a
+/// machine's `queryables:` is read once, by
+/// [`crate::mesh::queryable::resolve_queryables`], and the first thing it
+/// refuses is the error. A machine that declares none is not looked at.
+fn validate_queryables(cfg: &DeployConfig) -> Result<(), DeployError> {
+    for device in cfg.topology.values() {
+        for (machine_name, machine) in device.machines.iter() {
+            if machine.queryables.is_empty() {
+                continue;
+            }
+            crate::mesh::queryable::resolve_queryables(machine_name, &machine.queryables)?;
         }
     }
     Ok(())

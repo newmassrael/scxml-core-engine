@@ -370,6 +370,248 @@ impl std::fmt::Display for WorkerThreadsFault {
     }
 }
 
+/// Which way a `queryables[].key` fails (see
+/// [`DeployError::QueryableKeyInvalid`]). The `Display` impl emits the clause
+/// spliced into that variant's `{fault}` placeholder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QueryableKeyFault {
+    /// A chunk with nothing in it: `a//b`, or a leading or trailing `/`.
+    EmptyChunk,
+    /// `$*` inside a chunk. A declared key is whole-chunk wildcards only, so
+    /// that matching a query against it is bounded.
+    SubChunkWildcard,
+    /// `*` in a chunk that is neither `*` nor `**`.
+    WildcardInsideChunk,
+    /// `**/**` or `**/*`, which the canonical forms write as `**` and `*/**`.
+    NotCanonical,
+    /// A character a key expression does not carry (`?`, `#`, whitespace, a
+    /// control character).
+    ForbiddenCharacter(char),
+    /// More chunks than the matcher holds a position for.
+    TooManyChunks { max: usize },
+}
+
+impl QueryableKeyFault {
+    /// The classification as it enters the diagnostic id. The character and
+    /// the limit are left out: they are the deploy's text and the tree's
+    /// constant, and neither changes what kind of fault this is.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::EmptyChunk => "empty-chunk",
+            Self::SubChunkWildcard => "sub-chunk-wildcard",
+            Self::WildcardInsideChunk => "wildcard-inside-chunk",
+            Self::NotCanonical => "not-canonical",
+            Self::ForbiddenCharacter(_) => "forbidden-character",
+            Self::TooManyChunks { .. } => "too-many-chunks",
+        }
+    }
+}
+
+impl std::fmt::Display for QueryableKeyFault {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::EmptyChunk => write!(f, "the key has an empty chunk"),
+            Self::SubChunkWildcard => write!(
+                f,
+                "the key has a `$*` inside a chunk, and a declared key uses `*` and `**` as whole chunks only"
+            ),
+            Self::WildcardInsideChunk => write!(
+                f,
+                "the key has a `*` in a chunk that is neither `*` nor `**`"
+            ),
+            Self::NotCanonical => write!(
+                f,
+                "`**` is followed by `**` or `*`, which the canonical form writes as `**` and `*/**`"
+            ),
+            Self::ForbiddenCharacter(c) => {
+                write!(f, "the key has the character {c:?}, which a key expression does not carry")
+            }
+            Self::TooManyChunks { max } => write!(f, "the key has more than {max} chunks"),
+        }
+    }
+}
+
+/// Which way a `queryables[].name` fails (see
+/// [`DeployError::QueryableNameInvalid`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QueryableNameFault {
+    /// Not a code identifier: the name is a variant and a type-name prefix in
+    /// the generated code.
+    NotIdentifier,
+    /// A Rust keyword.
+    Reserved,
+    /// Another queryable of the machine has a name that is the same once
+    /// written in PascalCase.
+    Duplicate,
+}
+
+impl QueryableNameFault {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::NotIdentifier => "not-identifier",
+            Self::Reserved => "reserved",
+            Self::Duplicate => "duplicate",
+        }
+    }
+}
+
+impl std::fmt::Display for QueryableNameFault {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotIdentifier => write!(
+                f,
+                "the name is not a code identifier (an ASCII letter or `_`, then letters, digits or `_`)"
+            ),
+            Self::Reserved => write!(f, "the name is a Rust keyword"),
+            Self::Duplicate => write!(
+                f,
+                "another queryable of the machine has the same name once written in PascalCase"
+            ),
+        }
+    }
+}
+
+/// Which way a `queryables[].reply` fails (see
+/// [`DeployError::QueryableReplyInvalid`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QueryableReplyFault {
+    /// The encoding is not `type/subtype`.
+    EncodingInvalid,
+    /// Neither `body` nor `document` is stated.
+    NeitherBodyNorDocument,
+    /// Both `body` and `document` are stated.
+    BodyAndDocument,
+    /// A `document` under an encoding other than `application/json`.
+    DocumentNeedsJson,
+    /// A `body` under `application/json` that is not JSON.
+    BodyNotJson,
+    /// A `body` longer than a `u32` can count.
+    BodyTooLarge,
+}
+
+impl QueryableReplyFault {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::EncodingInvalid => "encoding-invalid",
+            Self::NeitherBodyNorDocument => "neither-body-nor-document",
+            Self::BodyAndDocument => "body-and-document",
+            Self::DocumentNeedsJson => "document-needs-json",
+            Self::BodyNotJson => "body-not-json",
+            Self::BodyTooLarge => "body-too-large",
+        }
+    }
+}
+
+impl std::fmt::Display for QueryableReplyFault {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::EncodingInvalid => write!(
+                f,
+                "`encoding` is not a `type/subtype` MIME type without parameters"
+            ),
+            Self::NeitherBodyNorDocument => {
+                write!(f, "the reply states neither `body` nor `document`")
+            }
+            Self::BodyAndDocument => write!(f, "the reply states both `body` and `document`"),
+            Self::DocumentNeedsJson => write!(
+                f,
+                "a `document` is JSON, and its `encoding` is not `application/json`"
+            ),
+            Self::BodyNotJson => write!(
+                f,
+                "`encoding` is `application/json` and the `body` is not JSON"
+            ),
+            Self::BodyTooLarge => write!(f, "the `body` is longer than 4294967295 bytes"),
+        }
+    }
+}
+
+/// Which way a `queryables[].reply.document` fails (see
+/// [`DeployError::QueryableDocumentInvalid`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QueryableDocumentFault {
+    /// A field of an object has no `name`.
+    NameMissing,
+    /// The `items:` of an array has a `name`; an element has none.
+    NameNotAllowed,
+    /// A field name that is not a code identifier.
+    NameNotIdentifier,
+    /// A field name that is a Rust keyword.
+    NameReserved,
+    /// Two fields of one object share a name.
+    NameDuplicate,
+    /// A `string` without `max_len`, or an `array` without `max_items`.
+    BoundMissing { attr: &'static str },
+    /// A bound of 0.
+    BoundZero { attr: &'static str },
+    /// An attribute the type does not take.
+    AttributeNotApplicable {
+        attr: &'static str,
+        ty: &'static str,
+    },
+    /// An `array` without `items`.
+    ArrayItemsMissing,
+    /// An `object` with no fields.
+    ObjectEmpty,
+    /// Nesting deeper than the generator emits types for.
+    TooDeep { max: usize },
+    /// A reply that can be larger than 4294967295 bytes.
+    TooLarge,
+    /// Two objects of the machine's documents would generate the same type;
+    /// the error's `path` is that type's name.
+    TypeNameCollision,
+}
+
+impl QueryableDocumentFault {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::NameMissing => "name-missing",
+            Self::NameNotAllowed => "name-not-allowed",
+            Self::NameNotIdentifier => "name-not-identifier",
+            Self::NameReserved => "name-reserved",
+            Self::NameDuplicate => "name-duplicate",
+            Self::BoundMissing { .. } => "bound-missing",
+            Self::BoundZero { .. } => "bound-zero",
+            Self::AttributeNotApplicable { .. } => "attribute-not-applicable",
+            Self::ArrayItemsMissing => "array-items-missing",
+            Self::ObjectEmpty => "object-empty",
+            Self::TooDeep { .. } => "too-deep",
+            Self::TooLarge => "too-large",
+            Self::TypeNameCollision => "type-name-collision",
+        }
+    }
+}
+
+impl std::fmt::Display for QueryableDocumentFault {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NameMissing => write!(f, "a field of an object has no `name`"),
+            Self::NameNotAllowed => {
+                write!(f, "the `items` of an array has a `name`, and an element has none")
+            }
+            Self::NameNotIdentifier => write!(
+                f,
+                "the field name is not a code identifier (an ASCII letter or `_`, then letters, digits or `_`)"
+            ),
+            Self::NameReserved => write!(f, "the field name is a Rust keyword"),
+            Self::NameDuplicate => write!(f, "another field of the object has this name"),
+            Self::BoundMissing { attr } => write!(f, "`{attr}` is required and is not declared"),
+            Self::BoundZero { attr } => write!(f, "`{attr}` is 0, and a bound is at least 1"),
+            Self::AttributeNotApplicable { attr, ty } => {
+                write!(f, "`{attr}` does not apply to the type `{ty}`")
+            }
+            Self::ArrayItemsMissing => write!(f, "an `array` needs `items`, and none is declared"),
+            Self::ObjectEmpty => write!(f, "an `object` needs at least one field"),
+            Self::TooDeep { max } => write!(f, "the document nests deeper than {max} levels"),
+            Self::TooLarge => write!(f, "the reply can be larger than 4294967295 bytes"),
+            Self::TypeNameCollision => write!(
+                f,
+                "two objects of the machine's documents would generate the same type; rename a field"
+            ),
+        }
+    }
+}
+
 /// Errors from deploy.yaml deserialization.
 #[derive(Debug, thiserror::Error)]
 pub enum DeployError {
@@ -1619,6 +1861,89 @@ pub enum DeployError {
         rx_busy_poll_us: u32,
     },
 
+    /// A `machines.<m>.queryables[].key` that no matcher can be generated for
+    /// (SCE Protocol-Synthesis RFC §synth-5-R, Queryables a machine serves;
+    /// `deploy/queryable-key-invalid`). A declared key is literal chunks and
+    /// whole-chunk `*` and `**`. Rejected at parse time.
+    #[error(
+        "machine '{machine}': queryable '{name}' declares the key '{key}', and {fault}. \
+             SCE Protocol-Synthesis RFC §5.R (Queryables a machine serves, \
+             `deploy/queryable-key-invalid`). \
+             Repair: write the key as `/`-separated chunks, each a literal, `*` or `**`."
+    )]
+    QueryableKeyInvalid {
+        machine: String,
+        name: String,
+        key: String,
+        fault: QueryableKeyFault,
+    },
+
+    /// Two queryables of a machine declare the same key
+    /// (`deploy/queryable-key-duplicate`): a query for it would have two
+    /// answers and the generated matching names one. Overlapping keys are
+    /// not this error. Rejected at parse time.
+    #[error(
+        "machine '{machine}': queryables '{first}' and '{second}' both declare the key '{key}'. \
+             SCE Protocol-Synthesis RFC §5.R (Queryables a machine serves, \
+             `deploy/queryable-key-duplicate`). \
+             Repair: give one of them a different key, or remove one."
+    )]
+    QueryableKeyDuplicate {
+        machine: String,
+        key: String,
+        first: String,
+        second: String,
+    },
+
+    /// A `machines.<m>.queryables[].name` the generated code cannot spell
+    /// (`deploy/queryable-name-invalid`). Rejected at parse time.
+    #[error(
+        "machine '{machine}': queryable '{name}': {fault}. \
+             SCE Protocol-Synthesis RFC §5.R (Queryables a machine serves, \
+             `deploy/queryable-name-invalid`). \
+             Repair: name it with an ASCII letter or `_` followed by letters, digits or `_`, \
+             not a Rust keyword, and distinct from the machine's other queryables."
+    )]
+    QueryableNameInvalid {
+        machine: String,
+        name: String,
+        fault: QueryableNameFault,
+    },
+
+    /// A `machines.<m>.queryables[].reply` that does not say what is
+    /// answered (`deploy/queryable-reply-invalid`). Rejected at parse time.
+    #[error(
+        "machine '{machine}': queryable '{name}': {fault}. \
+             SCE Protocol-Synthesis RFC §5.R (Queryables a machine serves, \
+             `deploy/queryable-reply-invalid`). \
+             Repair: state `encoding` as `type/subtype` and exactly one of `body` and `document` \
+             (a `document` is `application/json`)."
+    )]
+    QueryableReplyInvalid {
+        machine: String,
+        name: String,
+        fault: QueryableReplyFault,
+    },
+
+    /// A `machines.<m>.queryables[].reply.document` whose shape has no
+    /// bounded writer (`deploy/queryable-document-invalid`). `path` is the
+    /// field the fault is at, `a.b` for a field of an object and `a[]` for
+    /// the element of an array; empty for the document itself. Rejected at
+    /// parse time.
+    #[error(
+        "machine '{machine}': queryable '{name}', document field '{path}': {fault}. \
+             SCE Protocol-Synthesis RFC §5.R (Queryables a machine serves, \
+             `deploy/queryable-document-invalid`). \
+             Repair: give every field a code-identifier `name` and a type, every `string` a \
+             `max_len`, every `array` a `max_items` and `items`, and every `object` its `fields`."
+    )]
+    QueryableDocumentInvalid {
+        machine: String,
+        name: String,
+        path: String,
+        fault: QueryableDocumentFault,
+    },
+
     /// A machine declared more workers (entries under `machines.<m>.workers`)
     /// than the cooperative scheduler can host in one tick window
     /// (SCE Protocol-Synthesis RFC §synth-5-K line 2423
@@ -1757,7 +2082,7 @@ pub enum DeployError {
         driver_floor: u32,
     },
 
-    /// SCE Protocol-Synthesis RFC §synth-5-C lines 765-771 + §synth-8 Q8 line 4173 —
+    /// SCE Protocol-Synthesis RFC §synth-5-C lines 765-771 + §synth-8 Q8 line 4233 —
     /// the forge `<sce:link-class>` value declared on the link doc
     /// does not match the protocol class implied by the deploy.yaml
     /// `driver:` allowlist entry. Each core driver implements
@@ -1774,7 +2099,7 @@ pub enum DeployError {
              `<sce:link-class>{}</sce:link-class>` but \
              deploy.yaml binds `driver: {}` which implements \
              class '{}'. SCE Protocol-Synthesis RFC §5.C lines \
-             765-771 + §8 Q8 line 4173 \
+             765-771 + §8 Q8 line 4233 \
              (`deploy/link-driver-class-mismatch`) — each core \
              driver implements exactly one protocol class. Repair: \
              change `driver:` to the entry matching the declared \
@@ -3806,6 +4131,79 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             expected: None,
             fix: None,
             key_fragments: vec![machine.clone(), fault.as_str().to_string()],
+        },
+        DeployError::QueryableKeyInvalid {
+            machine,
+            name,
+            key,
+            fault,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployQueryableKeyInvalid,
+            stage: Stage::MeshDeploy,
+            actual: Some(key.clone()),
+            expected: None,
+            fix: None,
+            key_fragments: vec![
+                machine.clone(),
+                name.clone(),
+                key.clone(),
+                fault.as_str().to_string(),
+            ],
+        },
+        DeployError::QueryableKeyDuplicate {
+            machine,
+            key,
+            first,
+            second,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployQueryableKeyDuplicate,
+            stage: Stage::MeshDeploy,
+            actual: Some(key.clone()),
+            expected: None,
+            fix: None,
+            key_fragments: vec![machine.clone(), key.clone(), first.clone(), second.clone()],
+        },
+        DeployError::QueryableNameInvalid {
+            machine,
+            name,
+            fault,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployQueryableNameInvalid,
+            stage: Stage::MeshDeploy,
+            actual: Some(name.clone()),
+            expected: None,
+            fix: None,
+            key_fragments: vec![machine.clone(), name.clone(), fault.as_str().to_string()],
+        },
+        DeployError::QueryableReplyInvalid {
+            machine,
+            name,
+            fault,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployQueryableReplyInvalid,
+            stage: Stage::MeshDeploy,
+            actual: Some(name.clone()),
+            expected: None,
+            fix: None,
+            key_fragments: vec![machine.clone(), name.clone(), fault.as_str().to_string()],
+        },
+        DeployError::QueryableDocumentInvalid {
+            machine,
+            name,
+            path,
+            fault,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployQueryableDocumentInvalid,
+            stage: Stage::MeshDeploy,
+            actual: Some(path.clone()),
+            expected: None,
+            fix: None,
+            key_fragments: vec![
+                machine.clone(),
+                name.clone(),
+                path.clone(),
+                fault.as_str().to_string(),
+            ],
         },
         DeployError::SchedulerIncompatibleWithWorkerCount {
             machine,

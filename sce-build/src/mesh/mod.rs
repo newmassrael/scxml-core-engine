@@ -18,6 +18,7 @@ pub mod error;
 pub mod external;
 pub mod partitions;
 pub mod pattern;
+pub mod queryable;
 pub mod review;
 pub mod someip_format;
 pub mod target;

@@ -23,6 +23,11 @@ sce-link-runtime = { path = "../link-runtime" }
 # two session runtimes a deploy can declare.
 tokio = { version = "1", default-features = false, features = ["rt", "rt-multi-thread", "sync", "time", "macros"] }
 
+# The tests read a written reply back as JSON, so that "the bytes are the
+# document the deploy declares" is judged by a parser and not by a string.
+[dev-dependencies]
+serde_json = "1"
+
 # The generator runs here at build time, in-process, to write the artifacts into
 # OUT_DIR. See build.rs.
 [build-dependencies]

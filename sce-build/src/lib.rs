@@ -4172,6 +4172,27 @@ fn compile_document_set(
                     )
                     .map_err(|e| Located::new(e, "deploy.yaml", None, None))?,
                 );
+                // §synth-5-R: the queries a machine serves, from its own deploy
+                // block and independent of its links and scheduler.
+                let queryable_legs =
+                    mesh::queryable::resolve_queryables(machine_name, &machine.queryables)
+                        .map_err(|e| {
+                            Located::new(
+                                forge::error::ForgeError::from(mesh::error::MeshError::from(e)),
+                                "deploy.yaml",
+                                None,
+                                None,
+                            )
+                        })?;
+                files.extend(
+                    forge::queryables::render_machine_queryables_artifacts(
+                        &template_base,
+                        language,
+                        machine_name,
+                        &queryable_legs,
+                    )
+                    .map_err(|e| Located::new(e, "deploy.yaml", None, None))?,
+                );
                 if !files.is_empty() {
                     // Per-machine scheduler artifacts are
                     // synthesised from `deploy.yaml`, not the SCXML

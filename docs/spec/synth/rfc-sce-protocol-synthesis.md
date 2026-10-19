@@ -3783,6 +3783,66 @@ only figures the deploy wrote.
 - `deploy/scheduler-rx-busy-poll-invalid` — `rx_busy_poll_us` of 0, or longer
   than the `tick_period_us` the same scheduler declares
 
+### 5.R Queryables a machine serves
+
+Extends the deploy model of §5.K. A node that answers queries knows, before it
+runs, which keys it answers and what shape each answer has. What it learns at
+run time is its own key prefix (a zenoh id the host supplies) and the values in
+its replies. `machines.<m>.queryables` states the first and leaves the second to
+the host, and the Rust backend generates from it the three things a host
+otherwise recomputes for every query (ADR 0041):
+
+```yaml
+queryables:
+  - name: status_connect            # code identifier, unique after PascalCase
+    key: status/connect             # after the node prefix; "" is the prefix itself
+    reply:
+      encoding: application/json
+      document:                     # fields in this order
+        - { name: endpoints, type: array, max_items: 8, items: { type: string, max_len: 64 } }
+        - { name: last_write, type: u64, nullable: true }
+        - name: permissions
+          type: object
+          fields: [ { name: write, type: bool } ]
+  - name: ping
+    key: ping
+    reply: { encoding: text/plain, body: pong }   # a body that never changes
+```
+
+A key is `/`-separated chunks, each a literal, `*` (exactly one chunk) or `**`
+(any number, including none). A declared key has no `$*` and at most 32 chunks,
+so that matching a query, which may carry `$*`, is bounded; `**/**` and `**/*`
+are written `**` and `*/**`. Two queryables may not declare the same key;
+overlapping keys are allowed and a query reaches every one it overlaps. A
+`document` is JSON and needs `application/json`; its types are `bool`, `u8`
+to `u64`, `i8` to `i64`, `string` (needs `max_len`), `array` (needs `max_items`
+and `items`) and `object` (needs `fields`), at most 8 levels deep. `nullable`
+writes `null` for an absent value.
+
+Rust codegen emits `{machine}_queryables.rs`: `Leg` and `LEGS`, `answering(query)`
+which returns the set of queryables a query key expression reaches without
+allocating, one document type per object, `write_<name>` which writes a reply
+into a buffer the caller owns (a buffer too small is an error and nothing is
+written; a value outside a declared bound is refused and never written), and
+`<NAME>_MAX_BODY_BYTES` and `MAX_BODY_BYTES`, the largest a reply body can be,
+from which a host sizes its response buffers. `sce_link_runtime::keyexpr` and
+`sce_link_runtime::json` are the runtime the module calls. A machine that
+declares no queryables emits nothing, so existing output is unchanged. The
+detail is SCE_MESH.md's deploy schema.
+
+**Diagnostics:**
+- `deploy/queryable-key-invalid` — a key with an empty chunk, a `$*`, a `*` inside
+  a chunk, `**/**` or `**/*`, a forbidden character, or too many chunks
+- `deploy/queryable-key-duplicate` — two queryables of one machine with the same key
+- `deploy/queryable-name-invalid` — a name that is not a code identifier, is a
+  Rust keyword, or repeats another once written in PascalCase
+- `deploy/queryable-reply-invalid` — a bad `encoding`, neither or both of `body`
+  and `document`, a `document` that is not JSON, or a JSON `body` that is not JSON
+- `deploy/queryable-document-invalid` — a field with no or a bad name, a `string`
+  or `array` with no bound, an attribute the type does not take, an empty object,
+  nesting that is too deep, a reply that can exceed a `u32`, or two objects that
+  would generate one type
+
 ---
 
 ## §6 Cross-cutting concerns

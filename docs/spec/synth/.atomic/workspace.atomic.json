@@ -5627,6 +5627,50 @@
         }
       ]
     },
+    "synth-5-R": {
+      "title": "Queryables a machine serves",
+      "parent_doc": "synth",
+      "parent_section": "synth-5",
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce-build/src/mesh/queryable.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/queryables.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/error.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/tests/queryables_deploy.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/deploy-conformance/tests/queryables.rs",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/rust/queryables.rs.jinja2",
+          "kind": "references"
+        }
+      ]
+    },
     "synth-6": {
       "title": "Cross-cutting concerns",
       "parent_doc": "synth",

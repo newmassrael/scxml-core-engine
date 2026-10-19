@@ -70,8 +70,10 @@ const SPEC_DOCS: &[&str] = &["SCE_MESH.md"];
 ///
 /// History: 4053 until `8c74ee9cf8` added the queue-kind section (+387 lines);
 /// 4440 until section 5.Q (the session runtime of a tokio host) went in after
-/// 5.P, past the last line any citation names, so none was re-pointed (+44).
-const SYNTH_RFC_LINES: usize = 4484;
+/// 5.P, with the citations of sections 6 to 8 and Appendix C re-pointed (+44);
+/// 4484 until section 5.R (the queries a machine serves) went in after 5.Q,
+/// with the same citations re-pointed again (+60).
+const SYNTH_RFC_LINES: usize = 4544;
 
 /// The document the exclusion above is granted to.
 const SYNTH_RFC: &str = "docs/spec/synth/rfc-sce-protocol-synthesis.md";

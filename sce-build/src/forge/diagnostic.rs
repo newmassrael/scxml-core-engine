@@ -2868,6 +2868,38 @@ pub enum DiagnosticCode {
     /// figure the deploy states.
     #[serde(rename = "deploy/scheduler-rx-busy-poll-invalid")]
     MeshDeploySchedulerRxBusyPollInvalid,
+    /// SCE Protocol-Synthesis RFC §synth-5-R (Queryables a machine serves). A
+    /// `queryables[].key` that is not literal chunks and whole-chunk `*` and
+    /// `**`: an empty chunk, a `$*`, a `*` inside a chunk, `**/**` or `**/*`,
+    /// a forbidden character, or too many chunks. `actual` carries the key.
+    #[serde(rename = "deploy/queryable-key-invalid")]
+    MeshDeployQueryableKeyInvalid,
+    /// SCE Protocol-Synthesis RFC §synth-5-R (Queryables a machine serves).
+    /// Two queryables of a machine that declare the same key. `actual`
+    /// carries the key.
+    #[serde(rename = "deploy/queryable-key-duplicate")]
+    MeshDeployQueryableKeyDuplicate,
+    /// SCE Protocol-Synthesis RFC §synth-5-R (Queryables a machine serves). A
+    /// `queryables[].name` that is not a code identifier, is a Rust keyword,
+    /// or is the same as another's once written in PascalCase. `actual`
+    /// carries the name.
+    #[serde(rename = "deploy/queryable-name-invalid")]
+    MeshDeployQueryableNameInvalid,
+    /// SCE Protocol-Synthesis RFC §synth-5-R (Queryables a machine serves). A
+    /// `queryables[].reply` with a bad `encoding`, with neither or both of
+    /// `body` and `document`, with a `document` that is not
+    /// `application/json`, or with a JSON `body` that is not JSON. `actual`
+    /// carries the queryable's name.
+    #[serde(rename = "deploy/queryable-reply-invalid")]
+    MeshDeployQueryableReplyInvalid,
+    /// SCE Protocol-Synthesis RFC §synth-5-R (Queryables a machine serves). A
+    /// `reply.document` whose shape has no bounded writer: a field with no or
+    /// a bad name, a `string` or `array` with no bound, an attribute the type
+    /// does not take, an empty object, nesting that is too deep, a reply that
+    /// can exceed a `u32`, or two objects that generate the same type.
+    /// `actual` carries the path of the field.
+    #[serde(rename = "deploy/queryable-document-invalid")]
+    MeshDeployQueryableDocumentInvalid,
     /// SCE Protocol-Synthesis RFC §synth-5-K line 2423 verbatim
     /// (`deploy/scheduler-incompatible-with-worker-count`). Cooperative
     /// scheduler's derived slot count (`floor(tick_period_us /
@@ -2935,7 +2967,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "deploy/link-mtu-below-driver-floor")]
     MeshDeployLinkMtuBelowDriverFloor,
 
-    /// SCE Protocol-Synthesis RFC §synth-5-C lines 765-771 + §synth-8 Q8 line 4173
+    /// SCE Protocol-Synthesis RFC §synth-5-C lines 765-771 + §synth-8 Q8 line 4233
     /// (`deploy/link-driver-class-mismatch`). The forge
     /// `<sce:link-class>` value on the link doc does not match the
     /// protocol class implied by the deploy.yaml `driver:` allowlist
@@ -3909,6 +3941,12 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshDeploySchedulerSessionRuntimeNotApplicable,
         MeshDeploySchedulerWorkerThreadsInvalid,
         MeshDeploySchedulerRxBusyPollInvalid,
+        // Queryables axis (SCE Protocol-Synthesis RFC §synth-5-R)
+        MeshDeployQueryableKeyInvalid,
+        MeshDeployQueryableKeyDuplicate,
+        MeshDeployQueryableNameInvalid,
+        MeshDeployQueryableReplyInvalid,
+        MeshDeployQueryableDocumentInvalid,
         // §synth-5-K `links:` block schema + parse-time + cross-doc (RFC §synth-5-K lines 2232-2540)
         MeshDeployLinkDriverUnknown,
         MeshDeployLinkMtuMissingOnFragmentingLink,
@@ -4646,6 +4684,13 @@ impl DiagnosticCode {
             MeshDeploySchedulerSessionRuntimeNotApplicable
             | MeshDeploySchedulerWorkerThreadsInvalid
             | MeshDeploySchedulerRxBusyPollInvalid => Some("SCE Protocol-Synthesis RFC §5.Q"),
+
+            // ── Queryables a machine serves (RFC §synth-5-R) ──
+            MeshDeployQueryableKeyInvalid
+            | MeshDeployQueryableKeyDuplicate
+            | MeshDeployQueryableNameInvalid
+            | MeshDeployQueryableReplyInvalid
+            | MeshDeployQueryableDocumentInvalid => Some("SCE Protocol-Synthesis RFC §5.R"),
 
             // ── Mesh rule 12 — parallel root designation (SCE_MESH.md §14 rule 12) ──
             MeshPartitionParallelRootUndesignated
@@ -5421,6 +5466,11 @@ impl DiagnosticCode {
             }
             MeshDeploySchedulerWorkerThreadsInvalid => "deploy/scheduler-worker-threads-invalid",
             MeshDeploySchedulerRxBusyPollInvalid => "deploy/scheduler-rx-busy-poll-invalid",
+            MeshDeployQueryableKeyInvalid => "deploy/queryable-key-invalid",
+            MeshDeployQueryableKeyDuplicate => "deploy/queryable-key-duplicate",
+            MeshDeployQueryableNameInvalid => "deploy/queryable-name-invalid",
+            MeshDeployQueryableReplyInvalid => "deploy/queryable-reply-invalid",
+            MeshDeployQueryableDocumentInvalid => "deploy/queryable-document-invalid",
             MeshDeployLinkDriverUnknown => "deploy/link-driver-unknown",
             MeshDeployLinkMtuMissingOnFragmentingLink => {
                 "deploy/link-mtu-missing-on-fragmenting-link"
@@ -15555,6 +15605,62 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:4c263c309109f5c6","code":"deploy/scheduler-worker-threads-invalid","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.Q","message":"machine 'ap_node': `drive: worker-pool` needs at least one worker thread, and `worker_threads` is 0. SCE Protocol-Synthesis RFC §5.Q (Session runtime, `deploy/scheduler-worker-threads-invalid`). Repair: write `drive: worker-pool` with `worker_threads: <n>` (n >= 1), or write `drive: own-thread` and remove `worker_threads`.","actual":"0"}"#,
             ),
+            // ── §synth-5-R `queryables:` block ──
+            (
+                "deploy/queryable-key-invalid",
+                DeployError::QueryableKeyInvalid {
+                    machine: "admin".into(),
+                    name: "cfg".into(),
+                    key: "a//b".into(),
+                    fault: crate::mesh::error::QueryableKeyFault::EmptyChunk,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:02ae9d1c9da20fb7","code":"deploy/queryable-key-invalid","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.R","message":"machine 'admin': queryable 'cfg' declares the key 'a//b', and the key has an empty chunk. SCE Protocol-Synthesis RFC §5.R (Queryables a machine serves, `deploy/queryable-key-invalid`). Repair: write the key as `/`-separated chunks, each a literal, `*` or `**`.","actual":"a//b"}"#,
+            ),
+            (
+                "deploy/queryable-key-duplicate",
+                DeployError::QueryableKeyDuplicate {
+                    machine: "admin".into(),
+                    key: "config".into(),
+                    first: "a".into(),
+                    second: "b".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:6efa1bde15bd4c1a","code":"deploy/queryable-key-duplicate","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.R","message":"machine 'admin': queryables 'a' and 'b' both declare the key 'config'. SCE Protocol-Synthesis RFC §5.R (Queryables a machine serves, `deploy/queryable-key-duplicate`). Repair: give one of them a different key, or remove one.","actual":"config"}"#,
+            ),
+            (
+                "deploy/queryable-name-invalid",
+                DeployError::QueryableNameInvalid {
+                    machine: "admin".into(),
+                    name: "a-b".into(),
+                    fault: crate::mesh::error::QueryableNameFault::NotIdentifier,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:6b91bc0f564d0245","code":"deploy/queryable-name-invalid","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.R","message":"machine 'admin': queryable 'a-b': the name is not a code identifier (an ASCII letter or `_`, then letters, digits or `_`). SCE Protocol-Synthesis RFC §5.R (Queryables a machine serves, `deploy/queryable-name-invalid`). Repair: name it with an ASCII letter or `_` followed by letters, digits or `_`, not a Rust keyword, and distinct from the machine's other queryables.","actual":"a-b"}"#,
+            ),
+            (
+                "deploy/queryable-reply-invalid",
+                DeployError::QueryableReplyInvalid {
+                    machine: "admin".into(),
+                    name: "cfg".into(),
+                    fault: crate::mesh::error::QueryableReplyFault::NeitherBodyNorDocument,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:b204edbd7b467567","code":"deploy/queryable-reply-invalid","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.R","message":"machine 'admin': queryable 'cfg': the reply states neither `body` nor `document`. SCE Protocol-Synthesis RFC §5.R (Queryables a machine serves, `deploy/queryable-reply-invalid`). Repair: state `encoding` as `type/subtype` and exactly one of `body` and `document` (a `document` is `application/json`).","actual":"cfg"}"#,
+            ),
+            (
+                "deploy/queryable-document-invalid",
+                DeployError::QueryableDocumentInvalid {
+                    machine: "admin".into(),
+                    name: "cfg".into(),
+                    path: "endpoints".into(),
+                    fault: crate::mesh::error::QueryableDocumentFault::BoundMissing {
+                        attr: "max_items",
+                    },
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:4ad710d19056a542","code":"deploy/queryable-document-invalid","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.R","message":"machine 'admin': queryable 'cfg', document field 'endpoints': `max_items` is required and is not declared. SCE Protocol-Synthesis RFC §5.R (Queryables a machine serves, `deploy/queryable-document-invalid`). Repair: give every field a code-identifier `name` and a type, every `string` a `max_len`, every `array` a `max_items` and `items`, and every `object` its `fields`.","actual":"endpoints"}"#,
+            ),
             // ── §synth-5-K `links:` block (RFC §synth-5-K lines 2232-2540) ──
             (
                 "deploy/link-driver-unknown",
@@ -15607,7 +15713,7 @@ mod tests {
                     },
                 ))
                 .into(),
-                r#"{"v":1,"id":"fnv1a:4ac5fbe980bb4938","code":"deploy/link-driver-class-mismatch","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.K","message":"machine 'mcu_node': link 'ws_control' declares forge `<sce:link-class>websocket</sce:link-class>` but deploy.yaml binds `driver: lwip_tcp` which implements class 'tcp'. SCE Protocol-Synthesis RFC §5.C lines 765-771 + §8 Q8 line 4173 (`deploy/link-driver-class-mismatch`) — each core driver implements exactly one protocol class. Repair: change `driver:` to the entry matching the declared class, or change `<sce:link-class>` to match the bound driver.","actual":"lwip_tcp","fix":{"kind":"replace_one_of","candidates":["websocket_tcp"]}}"#,
+                r#"{"v":1,"id":"fnv1a:4ac5fbe980bb4938","code":"deploy/link-driver-class-mismatch","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.K","message":"machine 'mcu_node': link 'ws_control' declares forge `<sce:link-class>websocket</sce:link-class>` but deploy.yaml binds `driver: lwip_tcp` which implements class 'tcp'. SCE Protocol-Synthesis RFC §5.C lines 765-771 + §8 Q8 line 4233 (`deploy/link-driver-class-mismatch`) — each core driver implements exactly one protocol class. Repair: change `driver:` to the entry matching the declared class, or change `<sce:link-class>` to match the bound driver.","actual":"lwip_tcp","fix":{"kind":"replace_one_of","candidates":["websocket_tcp"]}}"#,
             ),
             (
                 "deploy/link-expected-p99-exceeds-mtu",
@@ -17603,6 +17709,13 @@ mod tests {
             // key dropped, with no closed candidate list.
             | MeshDeploySchedulerWorkerThreadsInvalid
             | MeshDeploySchedulerRxBusyPollInvalid
+            // Queryables: the repair is a key, a name or a shape the author
+            // writes, with no closed candidate list.
+            | MeshDeployQueryableKeyInvalid
+            | MeshDeployQueryableKeyDuplicate
+            | MeshDeployQueryableNameInvalid
+            | MeshDeployQueryableReplyInvalid
+            | MeshDeployQueryableDocumentInvalid
             // §synth-5-K `links:` block parse-level + multi-axis repairs
             // (RFC §synth-5-K lines 2440-2503). 6 of the 9 `links:` block codes
             // carry author-domain or multi-axis repairs with no closed
@@ -18401,6 +18514,11 @@ mod tests {
                 | MeshDeploySchedulerSessionRuntimeNotApplicable
                 | MeshDeploySchedulerWorkerThreadsInvalid
                 | MeshDeploySchedulerRxBusyPollInvalid
+                | MeshDeployQueryableKeyInvalid
+                | MeshDeployQueryableKeyDuplicate
+                | MeshDeployQueryableNameInvalid
+                | MeshDeployQueryableReplyInvalid
+                | MeshDeployQueryableDocumentInvalid
                 | MeshDeployLinkDriverUnknown
                 | MeshDeployLinkMtuMissingOnFragmentingLink
                 | MeshDeployLinkMtuBelowDriverFloor
@@ -18501,9 +18619,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            445,
+            450,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 445 distinct variants to match the DiagnosticCode \
+             expected 450 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -19388,6 +19506,11 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | MeshDeploySchedulerSessionRuntimeNotApplicable
             | MeshDeploySchedulerWorkerThreadsInvalid
             | MeshDeploySchedulerRxBusyPollInvalid
+            | MeshDeployQueryableKeyInvalid
+            | MeshDeployQueryableKeyDuplicate
+            | MeshDeployQueryableNameInvalid
+            | MeshDeployQueryableReplyInvalid
+            | MeshDeployQueryableDocumentInvalid
             | MeshDeployLinkDriverUnknown
             | MeshDeployLinkMtuMissingOnFragmentingLink
             | MeshDeployLinkMtuBelowDriverFloor

@@ -117,6 +117,12 @@ pub enum RustDeriveCategory {
     /// Plain data a host copies out of the const and compares, so `Copy` and
     /// `Eq` besides.
     SessionRuntime,
+    /// `queryables.rs.jinja2` — `pub enum Leg`, `pub struct LegSet` and the
+    /// `pub struct {{ Leg }}Doc…` types a host fills in to have a reply
+    /// written. Plain data made of copyable fields (integers, `bool`, `&str`,
+    /// slices, `Option` and other documents), so it is `Copy` and `Eq`
+    /// besides.
+    QueryableData,
     /// `rust/state_machine.rs.jinja2` — `pub enum {{ machine_name }}State`.
     /// Statechart lifecycle enum. Repr-untagged C-like enum used as a
     /// `HashMap` key across the generated transition tables, so `Hash`
@@ -190,6 +196,7 @@ impl RustDeriveCategory {
             Self::BoundedCollectionOverflowError => &["Clone", "Copy", "PartialEq", "Eq", "Debug"],
             Self::LinkBusEvent => &["Debug", "Clone"],
             Self::SessionRuntime => &["Debug", "Clone", "Copy", "PartialEq", "Eq"],
+            Self::QueryableData => &["Debug", "Clone", "Copy", "PartialEq", "Eq"],
             // `Default` marks the initial-state variant (`#[default]`) so a
             // generated statechart's `Default` is its `<scxml initial>` state.
             // The event enum deliberately omits it (no default event).
@@ -338,6 +345,7 @@ mod tests {
             RustDeriveCategory::BoundedCollectionOverflowError,
             RustDeriveCategory::LinkBusEvent,
             RustDeriveCategory::SessionRuntime,
+            RustDeriveCategory::QueryableData,
             RustDeriveCategory::StatechartState,
             RustDeriveCategory::StatechartEvent,
             RustDeriveCategory::ProcedureState,
@@ -421,6 +429,16 @@ mod tests {
         // plain, Copy-field value SCE emits.
         assert_eq!(
             RustDeriveCategory::SessionRuntime.derives(),
+            RustDeriveCategory::ForgeEnum.derives()
+        );
+    }
+
+    #[test]
+    fn queryable_data_is_plain_copyable_data() {
+        // A host fills a document in on the stack and hands it to a writer, so
+        // the category is the derive set of every plain, Copy-field value.
+        assert_eq!(
+            RustDeriveCategory::QueryableData.derives(),
             RustDeriveCategory::ForgeEnum.derives()
         );
     }

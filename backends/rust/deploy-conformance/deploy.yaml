@@ -16,3 +16,37 @@ topology:
             drive: worker-pool
             worker_threads: 3
             rx_busy_poll_us: 10
+      admin_node:
+        source: admin_node.scxml
+        queryables:
+          - name: status_connect
+            key: status/connect
+            reply:
+              encoding: application/json
+              document:
+                - { name: endpoints, type: array, max_items: 2, items: { type: string, max_len: 24 } }
+                - { name: last_write, type: u64, nullable: true }
+                - name: permissions
+                  type: object
+                  fields:
+                    - { name: write, type: bool }
+          - name: config
+            key: config
+            reply:
+              encoding: application/json
+              document:
+                - name: connect
+                  type: object
+                  fields:
+                    - { name: endpoints, type: array, max_items: 2, items: { type: string, max_len: 24 } }
+                - { name: mode, type: string, max_len: 8 }
+                - { name: ttl, type: i32 }
+          - name: root
+            key: ""
+            reply: { encoding: application/json, body: '{"ok":true}' }
+          - name: peer
+            key: "peer/**"
+            reply: { encoding: text/plain, body: peer }
+          - name: peer_one
+            key: "peer/*"
+            reply: { encoding: text/plain, body: one }
