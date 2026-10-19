@@ -2058,9 +2058,10 @@ input as none. A scope of another extraction is refused.
 ADR 0040). A ledger is a list of allotments: for each destination (a spec that exists, a spec to be made by its
 title, or *left out*, with a reason that may be empty) the blocks that go there. `make-ledger --extraction
 EXTRACTION.json --plan PLAN.json --out LEDGER.json [--json]` writes it from a plan, `{"v": 1, "allotments":
-[{"to": {"kind": "spec", "spec": "lamp-1"}, "sections": ["s3"], "trees": ["s5"]}, ...]}`, in which a destination
-is given the parts of the outline (as `make-scope` takes them), so that no host works out which blocks a part
-holds. `check-ledger --extraction EXTRACTION.json --ledger LEDGER.json [--json]` is SCE's count, and the ledger
+[{"to": {"kind": "spec", "spec": "lamp-1"}, "sections": ["s3"], "trees": ["s5"], "blocks": ["b41"]}, ...]}`, in
+which a destination is given the parts of the outline (as `make-scope` takes them), so that no host works out
+which blocks a part holds, and, when a document is divided paragraph by paragraph, the ids of paragraphs
+(`blocks`; they add up with the parts, and a block the extraction does not have is refused). `check-ledger --extraction EXTRACTION.json --ledger LEDGER.json [--json]` is SCE's count, and the ledger
 never reports itself complete: the paragraphs with words that went to no place (*unplaced*), the ones both used
 by a spec and left out (*contradicting*), the ones used by more than one spec (*shared*, which is allowed), and
 the specs that were given no paragraph with words (*empty*) are named by id. It exits 1 unless the ledger is
@@ -2070,6 +2071,19 @@ the document's words. A paragraph with no words (an empty cell row) has nothing 
 spec is imported under (`scope-001.json`, ...) and prints which spec has which file; a spec given every block
 has no scope and no file (`scope` is null), and a ledger that is not complete writes nothing and exits 1.
 Allotments are kept in a fixed order, so one division has one revision however a screen listed it.
+
+**carry-ledger** carries the ledger of a document to its revision (`carry.py`, ADR 0040): `carry-ledger
+--old-extraction OLD.json --old-ledger LEDGER.json --new-extraction NEW.json --out DRAFT.json [--json]`.
+Paragraphs with words are matched in order by their words as the check reads them, so a sentence that occurs
+twice is matched by its place; a matched paragraph goes where its twin went (a shared one stays shared, one
+left out keeps its reason). The draft holds those paragraphs and nothing else, so `check-ledger` of it counts
+exactly what was asked as unplaced. `--json` names, by id and never by words: `carried` (how many), `changed`
+(a new paragraph that stands where an old one with no twin stood, between the same two matched paragraphs,
+with that one and where it had been placed: a pointer to look at, **never carried**, since a requirement
+that moved from "five seconds" to "fifty seconds" is what an owner must decide), `fresh` (a new paragraph
+with no old one at its place), `gone` (an old paragraph nothing stands for, with where it had been placed) and
+`destinations` (those of the old ledger, kept even when nothing was carried to one). A ledger of another
+extraction than `--old-extraction` is refused. The report is `pre-release`.
 
 **assemble** makes the text a review ends in (`assembly.py`, ADR 0037): `python3 -m sce_author assemble
 --extraction EXTRACTION.json --conversion CONVERSION.json --decisions DECISIONS.json --out TEXT.md`, where

@@ -132,9 +132,10 @@ Each step lands with its tests and is useful before the next.
    field of a proposal and the admission above, and the commands that say them (the command set is at 34).
    The ledger's form is read by the store (`crate::ledger`) as the tools read it, and both are held to one list
    of cases (`tools/authoring/tests/fixtures/ledger_wire_cases.json`), which a test on each side reads.
-3. **The workbench commands and the board**, then the screen built from the board.
-4. **Carrying a revision**: `carry-ledger`, the read of two documents, and the screen that shows what was
-   carried, what is asked and what is gone.
+3. **The workbench commands and the board**, then the screen built from the board (built, in the workbench).
+4. **Carrying a revision**: `carry-ledger` (built: `carry.py`, and `make-ledger`'s plan takes paragraphs by id,
+   which is what a revision is divided by), then the host's read of the revised document and its draft, and the
+   screen that shows what was carried, what is asked and what is gone.
 5. **The AI draft**, last, because it needs the AI loop's product wiring (ADR 0036) that is not built, and
    because what it is worth is a number to be measured on public documents before anyone relies on it.
 

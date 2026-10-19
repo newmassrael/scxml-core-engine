@@ -317,9 +317,11 @@ def check_ledger(extraction: Extraction, ledger: Ledger) -> LedgerReport:
 def make_ledger(extraction: Extraction, plan: Any, by: str | None = None) -> Ledger:
     """The ledger of a plan: for each destination, the parts of the outline it was given.
 
-    The plan is `{"v": 1, "allotments": [{"to": ..., "reason": ..., "sections": [...], "trees": [...]}]}`:
-    `sections` are the ids of parts taken as their own blocks and `trees` the ids of parts taken with every part
-    under them (ADR 0039), as `make-scope` takes them. An allotment of no part is refused.
+    The plan is `{"v": 1, "allotments": [{"to": ..., "reason": ..., "sections": [...], "trees": [...],
+    "blocks": [...]}]}`: `sections` are the ids of parts taken as their own blocks and `trees` the ids of parts
+    taken with every part under them (ADR 0039), as `make-scope` takes them, and `blocks` the ids of paragraphs
+    taken one by one, which is what a revised document is divided by (`carry.py`). They add up. An allotment
+    of nothing is refused.
     """
     data = _object(plan, "a plan", {"v", "allotments"})
     if data.get("v") != SCHEMA_VERSION:
@@ -329,14 +331,20 @@ def make_ledger(extraction: Extraction, plan: Any, by: str | None = None) -> Led
         raise _refuse("has a plan whose allotments are not a list")
     allotments: list[Allotment] = []
     for raw in entries:
-        entry = _object(raw, "a planned allotment", {"to", "reason", "sections", "trees"})
-        sections, trees = entry.get("sections", []), entry.get("trees", [])
-        for name, ids in (("sections", sections), ("trees", trees)):
+        entry = _object(raw, "a planned allotment", {"to", "reason", "sections", "trees", "blocks"})
+        sections, trees, named = entry.get("sections", []), entry.get("trees", []), entry.get("blocks", [])
+        for name, ids in (("sections", sections), ("trees", trees), ("blocks", named)):
             if not isinstance(ids, list) or not all(isinstance(i, str) for i in ids):
-                raise _refuse(f"has a planned allotment whose {name} are not a list of part ids")
-        if not sections and not trees:
-            raise _refuse("has a planned allotment that names no part")
-        blocks = scope_of(extraction, list(sections), by, list(trees)).blocks
+                raise _refuse(f"has a planned allotment whose {name} are not a list of ids")
+        if not sections and not trees and not named:
+            raise _refuse("has a planned allotment that names no part and no block")
+        chosen = set(scope_of(extraction, list(sections), by, list(trees)).blocks) if sections or trees else set()
+        known = {block.id for block in extraction.blocks}
+        unknown = sorted(set(named) - known)
+        if unknown:
+            raise _refuse(f"has a planned allotment that names {', '.join(unknown[:5])}, which the extraction does not have")
+        chosen |= set(named)
+        blocks = tuple(block.id for block in extraction.blocks if block.id in chosen)
         allotments.append(Allotment(Destination.from_dict(entry.get("to")), blocks, entry.get("reason", "")))
     return Ledger(extraction.revision(), tuple(allotments))
 

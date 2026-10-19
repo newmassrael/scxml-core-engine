@@ -54,6 +54,7 @@ from .revision_gate import hold as hold_revision
 from .revision_gate import judge as judge_revision
 from .scaffold import KINDS
 from .scaffold import write as write_scaffold
+from .carry import carry_ledger
 from .ledger import Ledger, check_ledger, make_ledger, scopes_of
 from .scope import OUTLINES, Scope, outline as outline_of, scope_of
 from .verify import product_findings_of_binding
@@ -281,6 +282,35 @@ def cmd_ledger_scopes(args) -> int:
     except OSError as exc:
         raise IngestError(f"{out}: cannot be written ({exc})") from exc
     print(json.dumps({"ledger": ledger.revision(), "scopes": listing}, sort_keys=True))
+    return 0
+
+
+def cmd_carry_ledger(args) -> int:
+    """Write the ledger a revised document gets from the old one, for what is the same, and say what is asked.
+
+    The draft holds the paragraphs whose words did not change and nothing else, so the check of it counts the
+    changed and the new ones as unplaced; what is gone is named with where it had been. Counts and ids only.
+    """
+    old = _read_extraction(args.old_extraction)
+    new = _read_extraction(args.new_extraction)
+    carried = carry_ledger(old, _read_ledger(args.old_ledger), new)
+    try:
+        pathlib.Path(args.out).write_text(carried.ledger.to_json(), encoding="utf-8")
+    except OSError as exc:
+        raise IngestError(f"{args.out}: cannot be written ({exc})") from exc
+    if args.json:
+        print(json.dumps(carried.to_dict(), sort_keys=True))
+    else:
+        print(
+            f"carried {carried.carried} paragraph(s) to {len(carried.ledger.allotments)} allotment(s) "
+            f"-> {args.out}; {len(carried.changed)} changed, {len(carried.fresh)} new, {len(carried.gone)} gone"
+        )
+        for changed in carried.changed:
+            print(f"  ask: changed {changed.block} (was {changed.from_block})")
+        for block_id in carried.fresh:
+            print(f"  ask: new {block_id}")
+        for gone in carried.gone:
+            print(f"  note: gone {gone.block}")
     return 0
 
 
@@ -964,6 +994,16 @@ def main(argv=None) -> int:
     lsc.add_argument("--ledger", required=True, help="the ledger (JSON); it has to be complete")
     lsc.add_argument("--out-dir", required=True, help="where to write one scope file for each spec")
     lsc.set_defaults(fn=cmd_ledger_scopes)
+
+    cal = sub.add_parser(
+        "carry-ledger",
+        help="carry the ledger of a document to its revision by what is the same, and say what is asked (no model)")
+    cal.add_argument("--old-extraction", required=True, help="the extraction the old ledger names")
+    cal.add_argument("--old-ledger", required=True, help="the ledger (JSON) of the old document")
+    cal.add_argument("--new-extraction", required=True, help="the extraction of the revised document")
+    cal.add_argument("--out", required=True, help="where to write the draft ledger (JSON) of the revised document")
+    cal.add_argument("--json", action="store_true", help="print what was carried and what is asked, as JSON")
+    cal.set_defaults(fn=cmd_carry_ledger)
 
     chk = sub.add_parser(
         "check-conversion", help="count what a conversion matched, left out and invented, against its original")
