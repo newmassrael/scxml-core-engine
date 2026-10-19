@@ -135,7 +135,9 @@ machine's own enumerations.
 The module uses `core` alone and names no crate: it compiles in a `#![no_std]` crate with no
 allocator, and its functions are `const fn` where the language allows it. Every function only
 returns its answer, so each carries `#[must_use]`: a call whose answer is dropped is named by the
-compiler, and the file is clean under `clippy::pedantic` in a crate that denies it. `State` and `Event` carry
+compiler. `transition` keeps one match arm per pair, the table's own form, and allows
+`clippy::match_same_arms` for that reason. With that the file is clean under `clippy::pedantic` in
+a crate that denies it, which a test holds by running clippy over the file alone. `State` and `Event` carry
 the derives the machine's own `<Machine>State` and `<Machine>Event` carry (`Debug`, `Clone`, `Copy`,
 `PartialEq`, `Eq`, `Hash`, and `Default` on `State`, marked on the initial state), but none of the
 extra derives a caller may add to the machine's enums: an extra derive names a crate, and this file

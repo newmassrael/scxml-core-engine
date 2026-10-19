@@ -634,6 +634,51 @@ fn the_generated_function_compiles_alone_and_answers_as_the_producer() {
     }
 }
 
+/// The file is committed into crates that deny `clippy::pedantic`, so it is
+/// held to that lint group itself: clippy over the function alone, every
+/// pedantic lint an error. A consumer should not need an `allow` of its own to
+/// keep a generated file.
+#[test]
+fn the_generated_rust_function_is_clean_under_clippy_pedantic() {
+    let Some(clippy) = toolchain::locate("clippy-driver") else {
+        toolchain::skipped(
+            "the_generated_rust_function_is_clean_under_clippy_pedantic: clippy-driver not on PATH",
+        );
+        return;
+    };
+    for stem in FIXTURES {
+        let work = scratch(&format!("pedantic_{stem}"));
+        let out = work.join("out");
+        generate("rust", &fixture(stem), &out);
+        let function_path = function_file("rust", &out, stem);
+        let library = work.join("pedantic.rs");
+        std::fs::write(
+            &library,
+            format!(
+                "#![no_std]\n#[path = {:?}]\npub mod tf;\n",
+                function_path.to_str().unwrap()
+            ),
+        )
+        .expect("write the library");
+        let mut lint = Command::new(&clippy);
+        lint.args([
+            "--edition",
+            "2021",
+            "--crate-type",
+            "rlib",
+            "--crate-name",
+            "pedantic",
+        ])
+        .args(["-D", "warnings", "-D", "clippy::pedantic", "--out-dir"])
+        .arg(&work)
+        .arg(&library);
+        output_ok(
+            lint.output().expect("run clippy-driver"),
+            &format!("[{stem}] clippy::pedantic over the function alone"),
+        );
+    }
+}
+
 // ── The other five backends, compiled alone and run ─────────────────────────
 //
 // Each program below is written here, in the language's own syntax, and not by

@@ -25,6 +25,10 @@
 // Every item is part of the function's surface, and a crate that reads only
 // part of it is not to be told the rest is dead.
 #![allow(dead_code)]
+// The SCE-MAP marker below is a `#![doc]` attribute because the Rust marker
+// rule fixes that form (`_macros/sce_map_marker.jinja2`); it is read by tools,
+// not as prose, so its `<file>:<line>` carries no Markdown backticks.
+#![allow(clippy::doc_markdown)]
 #![doc = "SCE-MAP: nested_lifecycle.scxml:27 :: _machine"]
 // SCE-MAP: nested_lifecycle.scxml:27 :: _machine
 
@@ -90,6 +94,10 @@ pub const SOURCE_HASH: &str = "239a1140d1db8dfa52f222a8f17ddb51efb6fc1d0cddb120d
 /// afterwards, which is `state` itself when the transition taken has no
 /// target, or `None` when no transition takes the event and the machine
 /// discards it. A final state takes no event.
+// One arm per (state, event) pair is the table's form: a reader finds a pair
+// by its own line, and a regenerated table differs by the pairs that moved.
+// Two pairs leading to the same state are two facts, not one arm to merge.
+#[allow(clippy::match_same_arms)]
 #[must_use]
 pub const fn transition(state: State, event: Event) -> Option<State> {
     match (state, event) {
