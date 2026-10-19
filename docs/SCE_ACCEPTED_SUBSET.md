@@ -2195,7 +2195,7 @@ host supplies the behaviour by implementing a generated trait.
 
 ```xml
 <transition event="fragment.received" target="assembling">
-  <sce:action name="append_fragment_payload">
+  <sce:action name="append_fragment_payload" effect="notice">
     <sce:arg expr="_event.data.payload"/>
     <sce:arg expr="_event.data.offset"/>
   </sce:action>
