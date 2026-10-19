@@ -4582,7 +4582,7 @@ fn refuse_set_transition_functions(scxml_paths: &[PathBuf], error_format: ErrorF
         let Ok(mut model) = parser.parse_file(&label) else {
             continue;
         };
-        binds_a_digest |= model.transition_table_declared || model.transition_function_declared;
+        binds_a_digest |= !sce_build::digest_bound_declarations(&model).is_empty();
         analyzer::analyze(&mut model, &label);
         if analyzer::can_generate_static(&model, &label).is_err() {
             continue;

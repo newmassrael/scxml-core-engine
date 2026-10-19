@@ -1333,7 +1333,7 @@ fn assert_refused_for_want_of_a_hash(route: &str, refused: Result<(), sce_build:
     let record = &err.to_diagnostics()[0];
     assert_eq!(
         record.code.as_str(),
-        "generate/unsupported-feature",
+        "generate/source-hash-unavailable",
         "{route}: {}",
         record.message
     );
@@ -1398,6 +1398,80 @@ fn the_set_compile_refuses_a_function_it_is_given_no_hash_for() {
             None,
         )
         .map(|_| ()),
+    );
+}
+
+/// [`KEPT`] declaring its transition table instead of its function: the
+/// other output that carries the run's source hash.
+fn kept_table() -> String {
+    KEPT.replace(
+        r#"sce:transition-function="emit""#,
+        r#"sce:transition-table="emit""#,
+    )
+}
+
+/// The routes with no source hash refuse a document declaring its
+/// transition table as they refuse one declaring its function: one
+/// predicate decides both, so a machine is never returned without the table
+/// its document asked for.
+#[test]
+fn the_routes_without_a_hash_refuse_a_declared_table_too() {
+    let work = scratch("table_unbound");
+    let text = kept_table();
+    assert_ne!(text, KEPT, "the document must declare the table");
+    let doc = work.join("kept.scxml");
+    std::fs::write(&doc, &text).expect("write the document");
+    let doc_str = doc.to_str().unwrap();
+    let template_dir = sce_build::find_template_dir_for(Language::Rust);
+    let templates = sce_build::template_registry::embedded_templates_for(Language::Rust);
+    assert_refused_for_want_of_a_hash(
+        "the library's file entry points",
+        sce_build::compile_scxml_lang_typed(doc_str, &template_dir, Language::Rust).map(|_| ()),
+    );
+    assert_refused_for_want_of_a_hash(
+        "the library's in-memory entry points",
+        sce_build::compile_from_string_lang_typed(&text, "kept", &templates, Language::Rust)
+            .map(|_| ()),
+    );
+    assert_refused_for_want_of_a_hash(
+        "ForgeCompileOptions::source_hash",
+        sce_build::compile_scxml_with_imports(
+            &[doc.as_path()],
+            &[],
+            &template_dir,
+            Language::Rust,
+            &sce_build::ForgeCompileOptions::default(),
+            None,
+        )
+        .map(|_| ()),
+    );
+}
+
+/// A document declaring both outputs is refused once, naming both.
+#[test]
+fn a_refusal_names_every_declaration_left_unbound() {
+    let text = KEPT.replace(
+        r#"sce:transition-function="emit""#,
+        r#"sce:transition-table="emit" sce:transition-function="emit""#,
+    );
+    let templates = sce_build::template_registry::embedded_templates_for(Language::Rust);
+    let err = match sce_build::compile_from_string_lang_typed(
+        &text,
+        "kept",
+        &templates,
+        Language::Rust,
+    ) {
+        Ok(_) => panic!("a document declaring both outputs was generated without them"),
+        Err(err) => err,
+    };
+    let record = &err.to_diagnostics()[0];
+    assert_eq!(record.code.as_str(), "generate/source-hash-unavailable");
+    assert!(
+        record
+            .message
+            .contains(r#"sce:transition-table="emit" and sce:transition-function="emit""#),
+        "{}",
+        record.message
     );
 }
 

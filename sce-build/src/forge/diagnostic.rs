@@ -1287,6 +1287,11 @@ pub enum DiagnosticCode {
     GenerateTemplateRender,
     #[serde(rename = "generate/unsupported-feature")]
     GenerateUnsupportedFeature,
+    /// A document declares an output carrying the source hash of the run
+    /// that generates it (its transition table or its transition function)
+    /// and the route it was handed to has no source hash to give it.
+    #[serde(rename = "generate/source-hash-unavailable")]
+    GenerateSourceHashUnavailable,
 
     // ── Codegen matrix invariants (SCE Protocol-Synthesis RFC §synth-5-J-4 / §synth-5-J-5).
     //    The variants shipped first as shells (item A1) so downstream
@@ -3685,6 +3690,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         GenerateTemplateLoad,
         GenerateTemplateRender,
         GenerateUnsupportedFeature,
+        GenerateSourceHashUnavailable,
         // Codegen matrix shells (SCE Protocol-Synthesis RFC §synth-5-J-4 / §synth-5-J-5)
         CodegenMcuClassKindOnNonMcuLanguage,
         CodegenGenericKindBackendEmitMissing,
@@ -4837,6 +4843,7 @@ impl DiagnosticCode {
             | GenerateTemplateLoad
             | GenerateTemplateRender
             | GenerateUnsupportedFeature
+            | GenerateSourceHashUnavailable
             | CodegenMcuClassKindOnNonMcuLanguage
             | CodegenGenericKindBackendEmitMissing
             | IoFilesystem
@@ -5177,6 +5184,7 @@ impl DiagnosticCode {
             GenerateTemplateLoad => "generate/template-load",
             GenerateTemplateRender => "generate/template-render",
             GenerateUnsupportedFeature => "generate/unsupported-feature",
+            GenerateSourceHashUnavailable => "generate/source-hash-unavailable",
             CodegenMcuClassKindOnNonMcuLanguage => "codegen/mcu-class-kind-on-non-mcu-language",
             CodegenGenericKindBackendEmitMissing => "codegen/generic-kind-backend-emit-missing",
             CodegenNoStdScriptNotSupported => "codegen/no-std-script-not-supported",
@@ -10121,6 +10129,23 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![detail.clone()],
         },
+        // The repair is a different route, which the record names in its
+        // message; no fix, since the document is not what is wrong. Both
+        // values are SCE's own spelling — what the document declared and
+        // which entry was taken — so both key the id; `at` stays out of it
+        // for the reason it does above.
+        GenerateError::SourceHashUnavailable {
+            declarations,
+            route,
+            ..
+        } => DiagnosticPayload {
+            code: DiagnosticCode::GenerateSourceHashUnavailable,
+            stage: Stage::Generate,
+            expected: None,
+            actual: None,
+            fix: None,
+            key_fragments: vec![declarations.clone(), route.clone()],
+        },
         GenerateError::CodegenMcuClassKindOnNonMcuLanguage { kind, language } => {
             DiagnosticPayload {
                 code: DiagnosticCode::CodegenMcuClassKindOnNonMcuLanguage,
@@ -13511,6 +13536,18 @@ mod tests {
                 )
                 .into(),
                 r#"{"v":1,"id":"fnv1a:6d877591cf4360d3","code":"generate/unsupported-feature","stage":"generate","message":"feature unsupported in this language: <invoke type=\"sce:mesh-rpc\"> in 'brake' has no Rust codegen path"}"#,
+            ),
+            (
+                // A document declaring its transition function handed to an
+                // entry point with no source hash to bind it to.
+                "forge/generate-source-hash-unavailable",
+                GenerateError::SourceHashUnavailable {
+                    declarations: "sce:transition-function=\"emit\"".into(),
+                    route: "the library's in-memory entry points".into(),
+                    at: None,
+                }
+                .into(),
+                r##"{"v":1,"id":"fnv1a:9d66ced2bb5ec4cc","code":"generate/source-hash-unavailable","stage":"generate","message":"the document declares sce:transition-function=\"emit\", whose output carries the source hash of the run that generates it, which the library's in-memory entry points cannot supply; generate the document with `sce-codegen generate` or `sce-codegen orchestrate`"}"##,
             ),
             (
                 "forge/io-filesystem",
@@ -17546,6 +17583,7 @@ mod tests {
             | GenerateTemplateLoad
             | GenerateTemplateRender
             | GenerateUnsupportedFeature
+            | GenerateSourceHashUnavailable
             | CodegenMcuClassKindOnNonMcuLanguage
             | CodegenGenericKindBackendEmitMissing
             // Queue (RFC §synth-5-P) document-level checks: the repair is
@@ -18332,6 +18370,7 @@ mod tests {
                 | GenerateInvalidConfig
                 | GenerateTemplateLoad | GenerateTemplateRender
                 | GenerateUnsupportedFeature
+                | GenerateSourceHashUnavailable
                 | CodegenMcuClassKindOnNonMcuLanguage
                 | CodegenGenericKindBackendEmitMissing
                 | CodegenNoStdScriptNotSupported
@@ -18619,9 +18658,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            450,
+            451,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 450 distinct variants to match the DiagnosticCode \
+             expected 451 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -19602,6 +19641,10 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ScxmlTransitionFunctionRule
             | ScxmlTransitionFunctionDeadEnd
             | ScxmlTransitionFunctionUnmatchedDescriptor
+            // Located on the root through `locate_codegen_error`, which
+            // resolves the enclosing anchor; no scenario takes a route
+            // without a source hash, so the roster has not seen it carry.
+            | GenerateSourceHashUnavailable
             | ProfileInterfaceNotClosed
             | ProfileNameStyle
             | ProfileNameLimit

@@ -5466,6 +5466,31 @@ pub enum GenerateError {
         at: Option<SourceLocation>,
     },
 
+    /// A document declares an output that carries the source hash of the
+    /// run that generates it — its transition table (SCE Accepted Subset
+    /// §2.20) or its transition function (§2.21) — and the route it was
+    /// handed to has no source hash to give it: the library entry points,
+    /// which write no drift-headed file, and a set compile its caller gave
+    /// none. Refused rather than returned as a machine without the output
+    /// the document asked for.
+    ///
+    /// Not [`Self::UnsupportedFeature`]: nothing here is missing from a
+    /// language, and the same document generates on another route.
+    /// `declarations` is what the document wrote (`sce:transition-function
+    /// ="emit"`, both joined when both are written); `route` names the
+    /// entry the caller took. `at` is the document's root, which carries
+    /// the declarations.
+    #[error(
+        "the document declares {declarations}, whose output carries the source hash of the \
+         run that generates it, which {route} cannot supply; generate the document with \
+         `sce-codegen generate` or `sce-codegen orchestrate`"
+    )]
+    SourceHashUnavailable {
+        declarations: String,
+        route: String,
+        at: Option<SourceLocation>,
+    },
+
     /// SCE Protocol-Synthesis RFC §synth-5-J-4: an MCU-class kind (link / worker /
     /// buffer-pool / reassembly, or an MCU-only codec sub-feature)
     /// was authored against a language target outside `(rust, c11)`.

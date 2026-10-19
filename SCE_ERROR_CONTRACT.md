@@ -798,6 +798,7 @@ references against a real document and drift silently.
 | `extern/symbol-not-in-whitelist` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.I |
 | `extern/target-plugin-symbol-conflict` | `validation` | no | SCE Protocol-Synthesis RFC §5.I |
 | `generate/invalid-config` | `generate` | no |  |
+| `generate/source-hash-unavailable` | `generate` | no |  |
 | `generate/template-load` | `generate` | no |  |
 | `generate/template-render` | `generate` | no |  |
 | `generate/unsupported-feature` | `generate` | no |  |

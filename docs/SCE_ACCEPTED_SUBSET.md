@@ -7181,7 +7181,11 @@ the command line: the declaration is inside the source set the machine's
 `source-hash` covers, so every way of generating the document produces the same
 machine, and a header that names a hash names the table that came with it.
 `docs/SCE_TRANSITION_TABLE.md` states what an entry holds and how each backend
-spells it.
+spells it. The table is bound to that hash by `generate`, `orchestrate` and
+`generate-w3c`; a route that has no hash to give it (the library entry points,
+a set compile given none) refuses the document with
+`generate/source-hash-unavailable` rather than return the machine without the
+table, by the same check that refuses a transition function there (§2.21).
 
 Nothing in a machine reads the table. A document that does not declare it
 generates byte-identical files to what it generated before the attribute
@@ -7207,9 +7211,9 @@ declares the function wherever it stands: an in-line child
 (`<invoke><content><scxml sce:transition-function="emit">`) is judged with the
 document that holds it and generated with its own function beside its machine,
 named after its stem. The library entry points compute no hash and so refuse a
-document that declares the function, with `generate/unsupported-feature`
-naming the entry and `sce-codegen generate`, rather than return the machine
-without it.
+document that declares the function, with `generate/source-hash-unavailable`
+naming the declaration, the entry and `sce-codegen generate`, rather than
+return the machine without it.
 
 The boundary is stated by meaning. A document is a transition function when
 every macrostep is exactly one microstep and one leaf state fixes the
@@ -7283,7 +7287,7 @@ refusal per backend, as it reports every backend gap.
 
 ---
 
-## Appendix — `DiagnosticCode` index (445 codes)
+## Appendix — `DiagnosticCode` index (451 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -7550,6 +7554,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `codegen/no-std-http-not-supported` | Generate |
 | `codegen/no-std-fs-load-not-supported` | Generate |
 | `codegen/no-std-invoke-not-supported` | Generate |
+| `generate/source-hash-unavailable` | Generate |
 | `expression/empty` | Expression |
 | `expression/lex` | Expression |
 | `expression/unsupported-construct` | Expression |

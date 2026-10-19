@@ -187,6 +187,7 @@
         "generate/template-load",
         "generate/template-render",
         "generate/unsupported-feature",
+        "generate/source-hash-unavailable",
         "codegen/mcu-class-kind-on-non-mcu-language",
         "codegen/generic-kind-backend-emit-missing",
         "queue/storage-not-exactly-one",
