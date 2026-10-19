@@ -119,7 +119,7 @@ topology:
           max_pending_per_target: 8
         bindings:
           "#motor":
-            transport: zenoh
+            transport: zenoh_keyexpr
             key: sce/brake/motor
             auth:
               required: true
@@ -169,8 +169,8 @@ topology:
         "auth raise must stamp reason=ReasonCode::Unauthorized"
     );
     assert!(
-        code.contains("__sce_auth_err.transport = \"zenoh\""),
-        "auth raise must stamp transport=zenoh"
+        code.contains("__sce_auth_err.transport = \"zenoh_keyexpr\""),
+        "auth raise must stamp transport=zenoh_keyexpr"
     );
     assert!(
         code.contains("__sce_auth_err.transport_status = __sce_what_msg;"),
@@ -267,7 +267,7 @@ topology:
           max_pending_per_target: 8
         bindings:
           "#motor":
-            transport: zenoh
+            transport: zenoh_keyexpr
             key: sce/brake/motor
       motor:
         source: motor.scxml

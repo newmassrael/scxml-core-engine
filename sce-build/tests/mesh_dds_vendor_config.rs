@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
 // A DDS deployment must be able to name its vendor config file, the way a
-// Zenoh (`transports.zenoh.config: zenoh.json5`) and a SOME/IP
+// Zenoh (`transports.zenoh_keyexpr.config: zenoh.json5`) and a SOME/IP
 // (`transports.someip.config: vsomeip.json`) deployment already can.
 //
 // Without it, `domain_id` is the entire DDS surface a deployment controls

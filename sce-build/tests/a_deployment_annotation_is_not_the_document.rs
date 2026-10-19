@@ -171,7 +171,7 @@ fn hostile_deployment_for(rendered: &str) -> Deployment {
             let raw = sce_build::comment_text::decode(rest.trim())
                 .expect("the renderer wrote it, so it decodes");
             targets.entry(raw).or_default().extend([
-                Fact::new("transport", "zenoh"),
+                Fact::new("transport", "zenoh_keyexpr"),
                 // A value carrying a line terminator is the failure
                 // property 2 exists for: unencoded, it would split into
                 // a second line that does not begin with the sigil and

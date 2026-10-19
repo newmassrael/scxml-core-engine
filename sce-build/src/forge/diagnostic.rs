@@ -14835,11 +14835,11 @@ mod tests {
                 DeployError::InvalidAuthPolicy {
                     machine: "throttle".into(),
                     target: "#motor".into(),
-                    reason: "transport 'custom_tcp' does not support §16.7 row 10 UNAUTHORIZED in this release — only `zenoh` (mTLS cert pinning) and `someip` (SD denial classification) are wired. Either move the binding to a supported transport or set `required: false`".into(),
+                    reason: "transport 'custom_tcp' does not support §16.7 row 10 UNAUTHORIZED in this release — only `zenoh_keyexpr` (mTLS cert pinning) and `someip` (SD denial classification) are wired. Either move the binding to a supported transport or set `required: false`".into(),
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
-                r#"{"v":1,"id":"fnv1a:d3592e1c5629d109","code":"mesh/deploy-invalid-auth-policy","stage":"mesh-deploy","spec":"SCE Mesh §16.7","message":"machine 'throttle', binding '#motor': invalid `auth:` section in deploy.yaml — transport 'custom_tcp' does not support §16.7 row 10 UNAUTHORIZED in this release — only `zenoh` (mTLS cert pinning) and `someip` (SD denial classification) are wired. Either move the binding to a supported transport or set `required: false`. Either fix the configuration or omit the section to opt out of §16.7 row 10 UNAUTHORIZED classification.","actual":"throttle"}"#,
+                r#"{"v":1,"id":"fnv1a:fa8541d0571f709e","code":"mesh/deploy-invalid-auth-policy","stage":"mesh-deploy","spec":"SCE Mesh §16.7","message":"machine 'throttle', binding '#motor': invalid `auth:` section in deploy.yaml — transport 'custom_tcp' does not support §16.7 row 10 UNAUTHORIZED in this release — only `zenoh_keyexpr` (mTLS cert pinning) and `someip` (SD denial classification) are wired. Either move the binding to a supported transport or set `required: false`. Either fix the configuration or omit the section to opt out of §16.7 row 10 UNAUTHORIZED classification.","actual":"throttle"}"#,
             ),
             (
                 "mesh/deploy-discovery-not-supported",
@@ -14863,7 +14863,7 @@ mod tests {
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
-                r#"{"v":1,"id":"fnv1a:d6c4a65cf22dfccc","code":"mesh/deploy-pool-not-supported-by-transport","stage":"mesh-deploy","spec":"SCE Mesh §14.4","message":"machine 'brake': binding '#logger' on transport 'shm' carries a '{name}' placeholder, but this transport does not support pool bindings (pool_shape = None). Transports that do: 'someip' (requires instances:), 'zenoh', 'dds' (requires members:). Move the binding to one of those, or drop the placeholder.","actual":"brake"}"#,
+                r#"{"v":1,"id":"fnv1a:d6c4a65cf22dfccc","code":"mesh/deploy-pool-not-supported-by-transport","stage":"mesh-deploy","spec":"SCE Mesh §14.4","message":"machine 'brake': binding '#logger' on transport 'shm' carries a '{name}' placeholder, but this transport does not support pool bindings (pool_shape = None). Transports that do: 'someip' (requires instances:), 'zenoh_keyexpr', 'dds' (requires members:). Move the binding to one of those, or drop the placeholder.","actual":"brake"}"#,
             ),
             (
                 "mesh/deploy-pool-missing-member-list",
@@ -14895,33 +14895,33 @@ mod tests {
                 DeployError::PoolBindingFieldNotSupported {
                     machine: "brake".into(),
                     binding: "#player".into(),
-                    transport: "zenoh".into(),
+                    transport: "zenoh_keyexpr".into(),
                     declared_field: "instances".into(),
                     // Zenoh has a pool, so its carrier does describe a
                     // mechanism — the rejection is "other carrier's
                     // syntax", not "no pool at all".
-                    expected_mechanism: crate::mesh::transport::lookup("zenoh")
+                    expected_mechanism: crate::mesh::transport::lookup("zenoh_keyexpr")
                         .unwrap()
                         .pool_member_carrier
                         .selection_mechanism()
                         .map(str::to_string),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:5506845f9af45993","code":"mesh/deploy-pool-binding-field-not-supported","stage":"mesh-deploy","spec":"SCE Mesh §14.4","message":"machine 'brake': binding '#player' on transport 'zenoh' declares `instances:`, which this transport does not read. Its pool members are string segments of the binding address: embed a `{name}` placeholder naming the selecting <param>, and — on a bounded pool — enumerate the values in `members:`.","actual":"instances","fix":{"kind":"remove_fields","location":"topology.*.machines.brake.bindings.#player","fields":["instances"]}}"#,
+                r#"{"v":1,"id":"fnv1a:a9b1ecd29bd76f1c","code":"mesh/deploy-pool-binding-field-not-supported","stage":"mesh-deploy","spec":"SCE Mesh §14.4","message":"machine 'brake': binding '#player' on transport 'zenoh_keyexpr' declares `instances:`, which this transport does not read. Its pool members are string segments of the binding address: embed a `{name}` placeholder naming the selecting <param>, and — on a bounded pool — enumerate the values in `members:`.","actual":"instances","fix":{"kind":"remove_fields","location":"topology.*.machines.brake.bindings.#player","fields":["instances"]}}"#,
             ),
             (
                 "mesh/deploy-pool-dispatch-without-member",
                 DeployError::PoolDispatchWithoutMember {
                     machine: "brake".into(),
                     binding: "#player".into(),
-                    transport: "zenoh".into(),
+                    transport: "zenoh_keyexpr".into(),
                     feature: "outbound_buffer".into(),
                     reason: "the buffer holds sends until ONE readiness signal for this \
                              binding fires, and a pool has one address per member"
                         .into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:47d4496873dd770d","code":"mesh/deploy-pool-dispatch-without-member","stage":"mesh-deploy","spec":"SCE Mesh §14.4","message":"machine 'brake': binding '#player' on transport 'zenoh' declares a §14.4 pool, which cannot be combined with `outbound_buffer:` on the same machine — the buffer holds sends until ONE readiness signal for this binding fires, and a pool has one address per member. Remove `outbound_buffer:`, or move the pool binding to a machine without it.","actual":"outbound_buffer","fix":{"kind":"remove_fields","location":"topology.*.machines.brake","fields":["outbound_buffer"]}}"#,
+                r#"{"v":1,"id":"fnv1a:98b73c5e32fd5866","code":"mesh/deploy-pool-dispatch-without-member","stage":"mesh-deploy","spec":"SCE Mesh §14.4","message":"machine 'brake': binding '#player' on transport 'zenoh_keyexpr' declares a §14.4 pool, which cannot be combined with `outbound_buffer:` on the same machine — the buffer holds sends until ONE readiness signal for this binding fires, and a pool has one address per member. Remove `outbound_buffer:`, or move the pool binding to a machine without it.","actual":"outbound_buffer","fix":{"kind":"remove_fields","location":"topology.*.machines.brake","fields":["outbound_buffer"]}}"#,
             ),
             (
                 "mesh/deploy-pool-invalid-placeholder",
@@ -14937,20 +14937,20 @@ mod tests {
                 "mesh/deploy-server-pool-not-supported",
                 DeployError::ServerPoolNotSupported {
                     machine: "motor".into(),
-                    transport: "zenoh".into(),
+                    transport: "zenoh_keyexpr".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:5f473bdda8049652","code":"mesh/deploy-server-pool-not-supported","stage":"mesh-deploy","spec":"SCE Mesh §14.4","message":"machine 'motor': `server.instances:` is not supported on transport 'zenoh' — only transports with a peer-identifying inbound distinguisher (SOME/IP today) can host a multi-instance server pool. Drop `instances:` from the server section, switch the server transport to one that supports pools, or run N processes each hosting a single-instance server. See SCE_MESH.md §14.4.","actual":"motor","fix":{"kind":"remove_fields","location":"topology.*.machines.motor.server","fields":["instances"]}}"#,
+                r#"{"v":1,"id":"fnv1a:77132dfcdd5bb169","code":"mesh/deploy-server-pool-not-supported","stage":"mesh-deploy","spec":"SCE Mesh §14.4","message":"machine 'motor': `server.instances:` is not supported on transport 'zenoh_keyexpr' — only transports with a peer-identifying inbound distinguisher (SOME/IP today) can host a multi-instance server pool. Drop `instances:` from the server section, switch the server transport to one that supports pools, or run N processes each hosting a single-instance server. See SCE_MESH.md §14.4.","actual":"motor","fix":{"kind":"remove_fields","location":"topology.*.machines.motor.server","fields":["instances"]}}"#,
             ),
             (
                 "mesh/deploy-cross-target-reply-not-supported",
                 DeployError::CrossTargetReplyNotSupported {
                     machine: "brake".into(),
                     binding: "#alpha".into(),
-                    transport: "zenoh".into(),
+                    transport: "zenoh_keyexpr".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:42bfa9b16bf8c23d","code":"mesh/deploy-cross-target-reply-not-supported","stage":"mesh-deploy","spec":"SCE Mesh §14.6","message":"machine 'brake': binding '#alpha' on transport 'zenoh' declares a `reply_from:` set wider than its own target, but this transport cannot carry a cross-target reply (supports_cross_target_reply = false). Either drop `reply_from:` to keep the same-target default, or move the binding to a transport that correlates replies through a lookup table (someip, local).","actual":"brake"}"#,
+                r#"{"v":1,"id":"fnv1a:ca5688b55b98d536","code":"mesh/deploy-cross-target-reply-not-supported","stage":"mesh-deploy","spec":"SCE Mesh §14.6","message":"machine 'brake': binding '#alpha' on transport 'zenoh_keyexpr' declares a `reply_from:` set wider than its own target, but this transport cannot carry a cross-target reply (supports_cross_target_reply = false). Either drop `reply_from:` to keep the same-target default, or move the binding to a transport that correlates replies through a lookup table (someip, local).","actual":"brake"}"#,
             ),
             (
                 "mesh/deploy-invalid-reply-from",
@@ -14969,12 +14969,12 @@ mod tests {
                 "mesh/deploy-unknown-binding-field",
                 DeployError::UnknownBindingField {
                     location: "topology.ecu1.machines.brake.bindings.#motor".into(),
-                    transport: "zenoh".into(),
+                    transport: "zenoh_keyexpr".into(),
                     field: "orderng".into(),
                     candidates: vec!["ordering".into(), "key".into()],
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:8e0d02a6016f0b67","code":"mesh/deploy-unknown-binding-field","stage":"mesh-deploy","spec":"SCE Mesh §14","message":"deploy.yaml `topology.ecu1.machines.brake.bindings.#motor` (transport: zenoh) declares unknown key `orderng:` — closest legal key: `ordering`. No transport reads it, so it would be dropped between parse and codegen. Legal keys for a 'zenoh' binding: [ordering, key].","actual":"orderng","fix":{"kind":"replace_one_of","candidates":["ordering","key"]}}"#,
+                r#"{"v":1,"id":"fnv1a:68ed63606f59fd40","code":"mesh/deploy-unknown-binding-field","stage":"mesh-deploy","spec":"SCE Mesh §14","message":"deploy.yaml `topology.ecu1.machines.brake.bindings.#motor` (transport: zenoh_keyexpr) declares unknown key `orderng:` — closest legal key: `ordering`. No transport reads it, so it would be dropped between parse and codegen. Legal keys for a 'zenoh_keyexpr' binding: [ordering, key].","actual":"orderng","fix":{"kind":"replace_one_of","candidates":["ordering","key"]}}"#,
             ),
             (
                 "mesh/deploy-stage-pool-not-declared",
@@ -15008,11 +15008,11 @@ mod tests {
                     machine: "mcu_node".into(),
                     binding: "#sub".into(),
                     stage_pool: "scout_rx_pool".into(),
-                    transport: "zenoh".into(),
+                    transport: "zenoh_keyexpr".into(),
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
-                r#"{"v":1,"id":"fnv1a:5e3fe77a13dd48d3","code":"mesh/deploy-stage-pool-transport-mismatch","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.E","message":"machine 'mcu_node': binding '#sub' declares stage_pool 'scout_rx_pool' on transport 'zenoh', which has no buffer-pool RX staging surface. The `stage_pool` field is meaningful only for transports that bind a forge buffer-pool kind on their RX path. Drop the field or change the transport. See SCE Protocol-Synthesis RFC §5.E.","actual":"zenoh","fix":{"kind":"remove_fields","location":"topology.*.machines.mcu_node.bindings.#sub","fields":["stage_pool"]}}"#,
+                r#"{"v":1,"id":"fnv1a:a247150c57e7abc8","code":"mesh/deploy-stage-pool-transport-mismatch","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.E","message":"machine 'mcu_node': binding '#sub' declares stage_pool 'scout_rx_pool' on transport 'zenoh_keyexpr', which has no buffer-pool RX staging surface. The `stage_pool` field is meaningful only for transports that bind a forge buffer-pool kind on their RX path. Drop the field or change the transport. See SCE Protocol-Synthesis RFC §5.E.","actual":"zenoh_keyexpr","fix":{"kind":"remove_fields","location":"topology.*.machines.mcu_node.bindings.#sub","fields":["stage_pool"]}}"#,
             ),
             (
                 "mesh/deploy-scxml-invoke-target-conflict",
@@ -15130,15 +15130,15 @@ mod tests {
                 "mesh/deploy-partition-transport-binding-unsupported",
                 DeployError::PartitionTransportBindingUnsupported {
                     partition: "motor_left".into(),
-                    transport: "zenoh".into(),
+                    transport: "zenoh_keyexpr".into(),
                     failure: crate::mesh::error::PartitionTransportBindingFailure::Incapable {
-                        transport: "zenoh".into(),
+                        transport: "zenoh_keyexpr".into(),
                     },
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion
                 // on first run; shape + message are the contract.
-                r#"{"v":1,"id":"fnv1a:1e038670d04a2bdb","code":"mesh/deploy-partition-transport-binding-unsupported","stage":"mesh-deploy","spec":"SCE Mesh §14","message":"partition 'motor_left': `transport_binding: zenoh` is not a valid inter-partition IPC transport — transport 'zenoh' does not carry inter-partition IPC (supports_inter_partition_ipc = false). SCE Mesh §14 requires a transport whose primary purpose is same-machine IPC (today: shm, custom_tcp). Switch to one of those or omit `transport_binding:` to accept the default (§14 L2730 \"kind tcp/shm\").","actual":"motor_left"}"#,
+                r#"{"v":1,"id":"fnv1a:2f8b85c2257173e5","code":"mesh/deploy-partition-transport-binding-unsupported","stage":"mesh-deploy","spec":"SCE Mesh §14","message":"partition 'motor_left': `transport_binding: zenoh_keyexpr` is not a valid inter-partition IPC transport — transport 'zenoh_keyexpr' does not carry inter-partition IPC (supports_inter_partition_ipc = false). SCE Mesh §14 requires a transport whose primary purpose is same-machine IPC (today: shm, custom_tcp). Switch to one of those or omit `transport_binding:` to accept the default (§14 L2730 \"kind tcp/shm\").","actual":"motor_left"}"#,
             ),
             (
                 "mesh/deploy-scxml-invoke-cross-device-transport",
@@ -15779,11 +15779,11 @@ mod tests {
                 ExternalConfigError::SomeipFieldOnNonSomeipTransport {
                     machine: "ecu_a".into(),
                     target: "#motor".into(),
-                    transport: "zenoh".into(),
+                    transport: "zenoh_keyexpr".into(),
                     fields: vec!["service", "method"],
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:a86f56b42fa5fd7e","code":"mesh/external-someip-field-on-non-someip-transport","stage":"mesh-external","message":"machine 'ecu_a': binding '#motor' uses transport 'zenoh' but declares SOME/IP-only fields [\"service\", \"method\"]. Either change the transport to 'someip' or remove the SOME/IP-specific fields.","actual":"zenoh","fix":{"kind":"replace_with","to":"someip"}}"#,
+                r#"{"v":1,"id":"fnv1a:ea6a85d1fd598ca7","code":"mesh/external-someip-field-on-non-someip-transport","stage":"mesh-external","message":"machine 'ecu_a': binding '#motor' uses transport 'zenoh_keyexpr' but declares SOME/IP-only fields [\"service\", \"method\"]. Either change the transport to 'someip' or remove the SOME/IP-specific fields.","actual":"zenoh_keyexpr","fix":{"kind":"replace_with","to":"someip"}}"#,
             ),
             (
                 "mesh/external-conflicting-event-schema",
@@ -15943,7 +15943,7 @@ mod tests {
                     transport: "can".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:ad421a502df8f70d","code":"mesh/topology-ordering-cannot-be-guaranteed","stage":"mesh-topology","spec":"SCE Mesh §10.6","message":"machine 'ecu_a': binding for '#motor' (transport: can) declares `ordering: required`, but 'can' is a broadcast bus whose semantics do not support per-(sender, receiver) sequence reconstruction (SCE Mesh §10.6.2). Either change the transport to a point-to-point one (e.g. local, shm, custom_tcp, someip, zenoh) or remove the `ordering: required` declaration from this binding.","actual":"can"}"#,
+                r#"{"v":1,"id":"fnv1a:ad421a502df8f70d","code":"mesh/topology-ordering-cannot-be-guaranteed","stage":"mesh-topology","spec":"SCE Mesh §10.6","message":"machine 'ecu_a': binding for '#motor' (transport: can) declares `ordering: required`, but 'can' is a broadcast bus whose semantics do not support per-(sender, receiver) sequence reconstruction (SCE Mesh §10.6.2). Either change the transport to a point-to-point one (e.g. local, shm, custom_tcp, someip, zenoh_keyexpr) or remove the `ordering: required` declaration from this binding.","actual":"can"}"#,
             ),
             (
                 "mesh/topology-pool-param-name-missing",
@@ -15984,7 +15984,7 @@ mod tests {
                         crate::mesh::transport::machine_lifetime_subscribe_alternatives(),
                 }
                 .into(),
-                r##"{"v":1,"id":"fnv1a:a66a86a130ed11be","code":"mesh/topology-machine-lifetime-subscription-unsupported","stage":"mesh-topology","spec":"SCE Mesh §13","message":"machine 'brake': subscription on source '#motor' for event 'event.notification.status' uses transport 'someip', which does not support the machine-lifetime subscription path in this build. Transports that do realise it: 'someip', 'zenoh', 'custom_tcp', 'dds'. Move the binding to one of those, or drop the subscription from machines.brake.subscriptions:.","actual":"someip"}"##,
+                r##"{"v":1,"id":"fnv1a:a66a86a130ed11be","code":"mesh/topology-machine-lifetime-subscription-unsupported","stage":"mesh-topology","spec":"SCE Mesh §13","message":"machine 'brake': subscription on source '#motor' for event 'event.notification.status' uses transport 'someip', which does not support the machine-lifetime subscription path in this build. Transports that do realise it: 'someip', 'zenoh_keyexpr', 'custom_tcp', 'dds'. Move the binding to one of those, or drop the subscription from machines.brake.subscriptions:.","actual":"someip"}"##,
             ),
             (
                 "mesh/codegen-unsupported-language",
@@ -15999,7 +15999,7 @@ mod tests {
                     served: crate::mesh::transport::ServiceKind::CppTemplate,
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:aa145685cde035e6","code":"mesh/codegen-unsupported-transport","stage":"mesh-codegen","spec":"SCE Mesh §8","message":"transport 'carrier_pigeon' has no C++ template arm (target '#motor')","actual":"carrier_pigeon","fix":{"kind":"replace_one_of","candidates":["local","shm","someip","zenoh","custom_tcp","dds"]}}"#,
+                r#"{"v":1,"id":"fnv1a:aa145685cde035e6","code":"mesh/codegen-unsupported-transport","stage":"mesh-codegen","spec":"SCE Mesh §8","message":"transport 'carrier_pigeon' has no C++ template arm (target '#motor')","actual":"carrier_pigeon","fix":{"kind":"replace_one_of","candidates":["local","shm","someip","zenoh_keyexpr","custom_tcp","dds"]}}"#,
             ),
             (
                 "mesh/codegen-template-read",
@@ -16054,11 +16054,11 @@ mod tests {
                 CodegenError::HostCoreUnsupported {
                     machine: "calendar".into(),
                     feature: crate::mesh::error::HostCoreGap::ServerBlock {
-                        transport: "zenoh".into(),
+                        transport: "zenoh_keyexpr".into(),
                     },
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:b7033381df436a0b","code":"mesh/codegen-host-core-unsupported","stage":"mesh-codegen","spec":"SCE Mesh §19","message":"machine 'calendar' declares a `server:` block on transport 'zenoh', which the host Mesh cores do not carry (SCE_MESH.md §mesh-19). Generate this machine with `--lang cpp`, or remove it from deploy.yaml.","actual":"calendar"}"#,
+                r#"{"v":1,"id":"fnv1a:b7033381df436a0b","code":"mesh/codegen-host-core-unsupported","stage":"mesh-codegen","spec":"SCE Mesh §19","message":"machine 'calendar' declares a `server:` block on transport 'zenoh_keyexpr', which the host Mesh cores do not carry (SCE_MESH.md §mesh-19). Generate this machine with `--lang cpp`, or remove it from deploy.yaml.","actual":"calendar"}"#,
             ),
             (
                 "mesh/io",

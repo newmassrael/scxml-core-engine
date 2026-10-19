@@ -21,7 +21,7 @@
 //   * dds → `ActiveError`: the notice is published on the reply topic
 //     paired with the request topic, after the admitted correlation is
 //     erased so a late engine response cannot publish a second answer.
-//   * zenoh → `DropSilently`: expiry destructs the stored `zenoh::Query`
+//   * zenoh_keyexpr → `DropSilently`: expiry destructs the stored `zenoh::Query`
 //     and the peer infers `RpcStatus::Unavailable` from the drop. The
 //     query model carries no server-authored failure channel.
 //
@@ -222,20 +222,20 @@ version: "1.0"
 topology:
   ecu1:
     transports:
-      zenoh:
+      zenoh_keyexpr:
         mode: peer
     machines:
       motor:
         source: motor.scxml
         server:
-          transport: zenoh
+          transport: zenoh_keyexpr
           key: "sce/motor/rpc"
           response_deadline_ms: 500
 "##,
     );
 
     let code = generate(&deploy_path);
-    assert_deadline_armed(&code, "zenoh");
+    assert_deadline_armed(&code, "zenoh_keyexpr");
 
     assert!(
         code.contains("pending_server_queries_.erase"),

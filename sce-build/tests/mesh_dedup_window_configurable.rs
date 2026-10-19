@@ -85,14 +85,14 @@ version: "1.0"
 topology:
   ecu1:
     transports:
-      zenoh:
+      zenoh_keyexpr:
         mode: peer
     machines:
       brake:
         source: brake.scxml
 {dedup_section}        bindings:
           "#motor":
-            transport: zenoh
+            transport: zenoh_keyexpr
             key: "brake/motor"
       motor:
         source: motor.scxml

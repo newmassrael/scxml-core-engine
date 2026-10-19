@@ -143,7 +143,7 @@ pub fn resolve_external_bindings(
 
                 if binding.transport != "someip" {
                     // Only SOME/IP currently uses name-based resolution.
-                    // Zenoh bindings resolve their key expression at runtime;
+                    // zenoh_keyexpr bindings resolve their key expression at runtime;
                     // other transports have no external config concept. If a
                     // non-someip binding carries SOME/IP-only fields that is
                     // a deploy.yaml bug — catch it here.
@@ -1102,14 +1102,14 @@ version: "1.0"
 topology:
   ecu1:
     transports:
-      zenoh:
+      zenoh_keyexpr:
         mode: peer
     machines:
       brake:
         source: brake.scxml
         bindings:
           "#motor":
-            transport: zenoh
+            transport: zenoh_keyexpr
             key: "brake/cmd"
 "##;
         let deploy = crate::mesh::deploy::parse_deploy_str(yaml).expect("parse");
@@ -1137,7 +1137,7 @@ topology:
         source: brake.scxml
         bindings:
           "#motor":
-            transport: zenoh
+            transport: zenoh_keyexpr
             service: motor_control
             method: compute_force
 "##;
@@ -1146,7 +1146,7 @@ topology:
             Err(ExternalConfigError::SomeipFieldOnNonSomeipTransport {
                 transport, fields, ..
             }) => {
-                assert_eq!(transport, "zenoh");
+                assert_eq!(transport, "zenoh_keyexpr");
                 assert!(fields.contains(&"service"));
                 assert!(fields.contains(&"method"));
             }

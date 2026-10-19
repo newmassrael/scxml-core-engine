@@ -6730,7 +6730,7 @@ pub struct MeshResult {
 /// Step 2b. Resolve targets against deploy.yaml bindings.
 ///
 /// Step 2c. Pattern capability validation — architectural: is the bound transport
-///          even capable of the requested communication pattern? (e.g. zenoh
+///          even capable of the requested communication pattern? (e.g. can
 ///          cannot do request/reply). Runs BEFORE event coverage because a
 ///          transport mismatch is a deploy.yaml design error.
 ///
@@ -7195,8 +7195,8 @@ fn validate_scxml_invoke_transport(
                     // propagates to the caller).
                     None
                 }
-                Some(t) if t == "zenoh" => {
-                    // SCE_MESH.md §9.6 Session 5: zenoh
+                Some(t) if t == "zenoh_keyexpr" => {
+                    // SCE_MESH.md §9.6 Session 5: zenoh_keyexpr
                     // scxml-remote is wired. The §9.6 endpoint
                     // shares the device-wide `zenoh_session_`
                     // (Zenoh has no §13 OEM boundary equivalent —
@@ -8080,7 +8080,7 @@ pub fn compile_mesh_transport(
     // key (e.g. "motor") when the SCXML name attribute is used.
     // `device` + `machine_subscriptions` are hoisted above the Stage 2b
     // call so the same slice feeds synthesis and codegen.
-    let zenoh_session = device.and_then(|d| d.transports.zenoh.as_ref());
+    let zenoh_session = device.and_then(|d| d.transports.zenoh_keyexpr.as_ref());
     let someip_config = device.and_then(|d| d.transports.someip.as_ref());
     let custom_tcp_config = device.and_then(|d| d.transports.custom_tcp.as_ref());
     let dds_config = device.and_then(|d| d.transports.dds.as_ref());
@@ -10689,7 +10689,7 @@ topology:
         let _ = fs::remove_dir_all(&tmp);
     }
 
-    /// Cross-device peer with `bindings["#worker"].transport: zenoh` —
+    /// Cross-device peer with an unwired `bindings["#worker"].transport` —
     /// structurally capable transport but the C++ wire-14/20 dispatch
     /// has not landed for it. Rejected with `TransportUnwired`.
     #[test]
@@ -10700,8 +10700,8 @@ topology:
         // `implemented: false`). The classifier rejects with
         // `TransportUnwired` so authors see a build-time error instead of
         // a runtime silent fallback. Mirrors the original assertion's
-        // intent — formerly aimed at zenoh, now aimed at the next
-        // unwired-but-known transport since Session 5 wired zenoh
+        // intent — formerly aimed at zenoh_keyexpr, now aimed at the next
+        // unwired-but-known transport since Session 5 wired zenoh_keyexpr
         // (§9.6 L1393 Session 5).
         use std::fs;
         let bindings = "        bindings:\n          \"#worker\":\n            transport: dds\n";
@@ -10826,23 +10826,24 @@ topology:
         let _ = fs::remove_dir_all(&tmp);
     }
 
-    /// Cross-device peer with `bindings["#worker"].transport: zenoh` —
-    /// SCE_MESH.md §9.6 Session 5: zenoh is wired for scxml-invoke
-    /// cross-device. Like someip, zenoh has no listen/endpoint gate
+    /// Cross-device peer with `bindings["#worker"].transport: zenoh_keyexpr` —
+    /// SCE_MESH.md §9.6 Session 5: zenoh_keyexpr is wired for scxml-invoke
+    /// cross-device. Like someip, zenoh_keyexpr has no listen/endpoint gate
     /// on the SCE side at this layer (deploy-time session failures
     /// surface through `zenoh::Session::open` ZException → init()
     /// returning false). The classifier must accept the binding
-    /// without reaching into topology.transports.zenoh.
+    /// without reaching into topology.transports.zenoh_keyexpr.
     #[test]
     fn cross_device_zenoh_accepted() {
         use std::fs;
-        let bindings = "        bindings:\n          \"#worker\":\n            transport: zenoh\n";
+        let bindings =
+            "        bindings:\n          \"#worker\":\n            transport: zenoh_keyexpr\n";
         let (tmp, deploy_path) = setup_cross_device_deployment("zenoh", bindings);
         let mut model = parser::SCXMLParser::new()
             .parse_file(tmp.join("parent.scxml").to_str().unwrap())
             .expect("parse parent");
         inject_partition_context_for(&mut model, &deploy_path, None)
-            .expect("cross-device zenoh scxml-invoke must accept — §9.6 Session 5 wired");
+            .expect("cross-device zenoh_keyexpr scxml-invoke must accept — §9.6 Session 5 wired");
         let _ = fs::remove_dir_all(&tmp);
     }
 

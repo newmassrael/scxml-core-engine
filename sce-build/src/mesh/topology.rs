@@ -278,8 +278,9 @@ pub enum TransportState {
         /// defined` even on empty bindings.
         extra: std::collections::HashMap<String, serde_yaml_ng::Value>,
     },
-    /// Zenoh pub/sub. The key expression is mandatory.
-    Zenoh {
+    /// Zenoh pub/sub, addressed by key expression (transport name
+    /// `zenoh_keyexpr`). The key expression is mandatory.
+    ZenohKeyexpr {
         /// Zenoh key expression (`brake/cmd`, etc).
         key: String,
         /// Non-typed passthrough. Always serialised (see Someip::extra).
@@ -330,7 +331,7 @@ pub enum TransportState {
     /// binding carries no field: the peer is the `#peer` it is keyed by, the
     /// key is derived from the two machine names, and the router endpoints
     /// are the host's own client configuration. Not the variant of the C++
-    /// template Zenoh transport, which is a different wire.
+    /// template transport `zenoh_keyexpr`, which is a different wire.
     ZenohInbox,
     /// Recognised in the registry but not yet implemented (can, …).
     /// Codegen rejects with `UnsupportedTransport` before this variant
@@ -352,7 +353,7 @@ impl TransportState {
             Self::Local => "local",
             Self::Shm { .. } => "shm",
             Self::Someip { .. } => "someip",
-            Self::Zenoh { .. } => "zenoh",
+            Self::ZenohKeyexpr { .. } => "zenoh_keyexpr",
             Self::CustomTcp { .. } => "custom_tcp",
             Self::Dds { .. } => "dds",
             Self::Wss { .. } => "wss",
@@ -452,7 +453,7 @@ pub struct ResolvedTarget {
     pub auth: Option<crate::mesh::deploy::AuthPolicyConfig>,
     /// SCE_MESH.md §mesh-14.4 — runtime pool substitution plan, or `None` if
     /// this target has no placeholder bindings. The typed sum type
-    /// (`Zenoh { placeholders }` vs `Someip { instance_from, instances }`)
+    /// (`OpenString { placeholders }` vs `Someip { instance_from, instances }`)
     /// replaces the historical pattern of consulting `pt.extra` +
     /// `pt.instance_from` + `pt.instances` at every codegen / validator
     /// site; each consumer dispatches by variant and cannot observe an
@@ -465,7 +466,7 @@ pub struct ResolvedTarget {
 /// substitution. Transport-specific because each transport exposes a
 /// different substitution surface (Zenoh uses `{name}` embeds inside a
 /// `key:` string; SOME/IP uses a typed `uint16_t` instance selector).
-/// Tagged serialisation (`{"kind":"zenoh", "placeholders":[...]}`)
+/// Tagged serialisation (`{"kind":"open_string", "placeholders":[...]}`)
 /// keeps the minijinja template branch unambiguous.
 ///
 /// Call sites dispatch by variant; every field a consumer reads is
@@ -1477,7 +1478,7 @@ fn build_server_transport_state(
                 extra: server_cfg.extra.clone(),
             })
         }
-        "zenoh" => {
+        "zenoh_keyexpr" => {
             // SCE_MESH.md §mesh-15.1: the server-side counterpart of the
             // per-target mapping. A machine that answers queries declares
             // its queryable on the key expression its `server:` block
@@ -1493,10 +1494,10 @@ fn build_server_transport_state(
                 .ok_or_else(|| TopologyError::MissingBindingField {
                     machine: machine_name.to_string(),
                     target: server_target,
-                    transport: "zenoh".to_string(),
+                    transport: "zenoh_keyexpr".to_string(),
                     field: "key (required for server-side Zenoh queryable)".to_string(),
                 })?;
-            Ok(TransportState::Zenoh {
+            Ok(TransportState::ZenohKeyexpr {
                 key,
                 extra: server_cfg.extra.clone(),
             })
@@ -1542,7 +1543,8 @@ fn build_server_transport_state(
             machine: machine_name.to_string(),
             target: server_target,
             transport: other.to_string(),
-            field: "server transport must be 'someip', 'zenoh', 'custom_tcp', or 'dds'".to_string(),
+            field: "server transport must be 'someip', 'zenoh_keyexpr', 'custom_tcp', or 'dds'"
+                .to_string(),
         }),
     }
 }
@@ -2970,7 +2972,7 @@ fn sanitize_ident(value: &str) -> String {
 /// `u32`; the cast is therefore lossless. SOME/IP identity and per-event
 /// IDs are produced by the caller via [`resolve_someip_ids`] and passed
 /// in as a single tuple — non-`None` iff `pt.transport == "someip"`.
-/// Zenoh `key` is required by the registry
+/// `zenoh_keyexpr`'s `key` is required by the registry
 /// (`required_binding_fields = ["key"]`) so its presence is guaranteed
 /// upstream; non-string values render as the empty string here, which
 /// downstream codegen will surface as a build-time mismatch.
@@ -3009,13 +3011,13 @@ fn build_transport_state(
                 extra: pt.extra.clone(),
             }
         }
-        "zenoh" => {
+        "zenoh_keyexpr" => {
             // SCE_MESH.md §mesh-15.1 key expression mapping. The key
             // expression for a `#target` comes from that binding's `key:`
             // in deploy.yaml and from nowhere else — never from the SCXML
             // document, which names only `#target`. Reading it here, at
             // the single point where a binding becomes a typed
-            // `TransportState::Zenoh`, is what keeps location transparency
+            // `TransportState::ZenohKeyexpr`, is what keeps location transparency
             // structural rather than a convention: there is no path by
             // which an authored SCXML string could reach the emitted key.
             let key = pt
@@ -3030,7 +3032,7 @@ fn build_transport_state(
                 .filter(|(k, _)| k.as_str() != "key")
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect();
-            TransportState::Zenoh { key, extra }
+            TransportState::ZenohKeyexpr { key, extra }
         }
         "custom_tcp" => {
             // `connect` presence is enforced by `required_binding_fields`
@@ -3052,7 +3054,7 @@ fn build_transport_state(
             TransportState::CustomTcp { connect, extra }
         }
         "dds" => {
-            // Same location-transparency argument as the zenoh arm above:
+            // Same location-transparency argument as the zenoh_keyexpr arm above:
             // the topic name comes from this binding's `topic:` and from
             // nowhere else, so no authored SCXML string can reach the
             // emitted DDS topic. `topic` presence is enforced by
@@ -4719,7 +4721,7 @@ topology:
     #[test]
     fn pattern_validation_fire_forget_passes_everywhere() {
         // fire_forget is supported by all known transports.
-        for transport in &["local", "shm", "someip", "dds", "zenoh", "can"] {
+        for transport in &["local", "shm", "someip", "dds", "zenoh_keyexpr", "can"] {
             let yaml = format!(
                 r##"version: "1.0"
 topology:
@@ -5388,7 +5390,7 @@ topology:
         source: s.scxml
         bindings:
           "#receiver":
-            transport: zenoh
+            transport: zenoh_keyexpr
             key: receiver/key
             ordering: required
       receiver: { source: r.scxml }
@@ -5426,7 +5428,7 @@ topology:
         source: s.scxml
         bindings:
           "#receiver":
-            transport: zenoh
+            transport: zenoh_keyexpr
             key: receiver/key
       receiver: { source: r.scxml }
 "##;
@@ -5559,13 +5561,13 @@ topology:
 topology:
   ecu1:
     transports:
-      zenoh: { mode: peer, connect: ["tcp/127.0.0.1:0"] }
+      zenoh_keyexpr: { mode: peer, connect: ["tcp/127.0.0.1:0"] }
     machines:
       brake:
         source: b.scxml
         bindings:
           "#motor":
-            transport: zenoh
+            transport: zenoh_keyexpr
             key: brake/motor/status
         subscriptions:
           - event: event.notification.status
@@ -5596,7 +5598,10 @@ topology:
         let t = &resolution.targets[0];
         assert_eq!(t.target.as_str(), "#motor");
         assert!(
-            matches!(t.state, crate::mesh::topology::TransportState::Zenoh { .. }),
+            matches!(
+                t.state,
+                crate::mesh::topology::TransportState::ZenohKeyexpr { .. }
+            ),
             "synthesized target must carry the binding's transport state",
         );
         assert!(
@@ -5618,16 +5623,16 @@ topology:
 topology:
   ecu1:
     transports:
-      zenoh: { mode: peer, connect: ["tcp/127.0.0.1:0"] }
+      zenoh_keyexpr: { mode: peer, connect: ["tcp/127.0.0.1:0"] }
     machines:
       brake:
         source: b.scxml
         bindings:
           "#motor":
-            transport: zenoh
+            transport: zenoh_keyexpr
             key: brake/motor/status
           "#chassis":
-            transport: zenoh
+            transport: zenoh_keyexpr
             key: brake/chassis/speed
         subscriptions:
           - event: event.notification.foo
@@ -5689,13 +5694,13 @@ topology:
 topology:
   ecu1:
     transports:
-      zenoh: { mode: peer, connect: ["tcp/127.0.0.1:0"] }
+      zenoh_keyexpr: { mode: peer, connect: ["tcp/127.0.0.1:0"] }
     machines:
       brake:
         source: b.scxml
         bindings:
           "#motor":
-            transport: zenoh
+            transport: zenoh_keyexpr
             key: brake/motor/tick
         subscriptions:
           - event: event.notification.heartbeat

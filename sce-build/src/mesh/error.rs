@@ -149,7 +149,7 @@ impl std::fmt::Display for PartitionTransportBindingFailure {
 ///   transports that cannot cross a device boundary (shm segments are
 ///   pid-namespaced; local is in-process).
 /// - `TransportUnwired` — binding names a structurally capable
-///   transport (someip / zenoh / dds) but the C++ wire-14/20 dispatch
+///   transport (someip / zenoh_keyexpr / dds) but the C++ wire-14/20 dispatch
 ///   has not yet landed for it. Same precedent as §mesh-16.5's
 ///   `partition-wire21-custom-tcp-unimplemented`: reject at build time
 ///   rather than silent runtime fallback.
@@ -612,7 +612,7 @@ pub enum DeployError {
     /// A binding (or `server:`) declares a key that neither the shared
     /// schema nor the bound transport reads. `BindingConfig` cannot use
     /// `deny_unknown_fields` — its flattened `extra` map is what carries
-    /// transport-native keys such as zenoh's `key:` — so the closed set
+    /// transport-native keys such as zenoh_keyexpr's `key:` — so the closed set
     /// comes from the transport registry
     /// ([`crate::mesh::transport::TransportDescriptor::known_binding_fields`])
     /// plus the typed schema fields.
@@ -845,7 +845,7 @@ pub enum DeployError {
     /// transport has no buffer-pool RX staging surface (SCE Protocol-Synthesis
     /// RFC §synth-5-E). Today only RX paths
     /// integrated with the forge buffer-pool kind support
-    /// `Sample::take()`; mesh RPC transports (`zenoh`, `someip`,
+    /// `Sample::take()`; mesh RPC transports (`zenoh_keyexpr`, `someip`,
     /// `shm`, `local`, `dds`, `custom_tcp`) route logical events
     /// rather than allocating from a slot table. The repair is to
     /// drop the `stage_pool` field on the binding (its presence is
@@ -1067,7 +1067,7 @@ pub enum DeployError {
     /// was rejected and downstream consumers can match structurally
     /// without parsing the prose. Partition IPC carried over `local`
     /// cannot cross process boundaries; carrying it over `someip` /
-    /// `zenoh` / `dds` / `can` routes through a middleware daemon or
+    /// `zenoh_keyexpr` / `dds` / `can` routes through a middleware daemon or
     /// broadcast fabric instead of the direct channel §mesh-14 intends.
     #[error(
         "partition '{partition}': `transport_binding: {transport}` is not a valid \
@@ -2529,7 +2529,7 @@ pub enum TopologyError {
              `ordering: required`, but '{transport}' is a broadcast bus whose semantics do not \
              support per-(sender, receiver) sequence reconstruction (SCE Mesh §10.6.2). \
              Either change the transport to a point-to-point one (e.g. local, shm, custom_tcp, \
-             someip, zenoh) or remove the `ordering: required` declaration from this binding."
+             someip, zenoh_keyexpr) or remove the `ordering: required` declaration from this binding."
     )]
     OrderingCannotBeGuaranteed {
         machine: String,
@@ -2618,7 +2618,7 @@ pub enum TopologyError {
         /// Rendered by
         /// [`super::transport::machine_lifetime_subscribe_alternatives`]
         /// at the raise site. Read out of the registry rather than
-        /// restated in prose: the message used to say "e.g. 'zenoh'"
+        /// restated in prose: the message used to say "e.g. 'zenoh_keyexpr'"
         /// while three transports realised the path, and a diagnostic
         /// that names the wrong set is worse than one that names none.
         ///

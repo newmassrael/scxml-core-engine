@@ -422,7 +422,7 @@ fn application_name_from_deploy_yaml_reaches_generated_code() {
 
 #[test]
 fn zenoh_config_file_reaches_generated_code() {
-    // SCE_MESH.md §14: `transports.zenoh.config:` references an external
+    // SCE_MESH.md §14: `transports.zenoh_keyexpr.config:` references an external
     // zenoh.json5. Generated init() uses `Config::from_file(<path>)` as
     // the base; deploy.yaml overrides merge on top.
     let fx = Fixture::new("zenoh_cfg");
@@ -436,7 +436,7 @@ version: "1.0"
 topology:
   ecu1:
     transports:
-      zenoh:
+      zenoh_keyexpr:
         config: zenoh.json5
         mode: peer
     machines:
@@ -444,7 +444,7 @@ topology:
         source: brake.scxml
         bindings:
           "#motor":
-            transport: zenoh
+            transport: zenoh_keyexpr
             key: "brake/cmd"
       motor:
         source: motor.scxml
@@ -535,7 +535,7 @@ topology:
         source: brake.scxml
         bindings:
           "#motor":
-            transport: zenoh
+            transport: zenoh_keyexpr
             key: "brake/cmd"
             method_id: "0x0421"
       motor:
@@ -554,7 +554,7 @@ topology:
             fields,
             ..
         }) => {
-            assert_eq!(transport, "zenoh");
+            assert_eq!(transport, "zenoh_keyexpr");
             assert_eq!(fields, vec!["method_id"]);
         }
         other => panic!("expected ReservedSomeipIdKeys, got {other}"),

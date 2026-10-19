@@ -4,7 +4,7 @@
 // A binding key that no transport reads must be rejected, not absorbed.
 //
 // `BindingConfig` collects unrecognised keys into `extra` via
-// `serde(flatten)` because transport-native keys (`key:` for zenoh,
+// `serde(flatten)` because transport-native keys (`key:` for zenoh_keyexpr,
 // `topic:` for dds, `protocol:` for someip) are not modellable as typed
 // fields on a shared struct. That mechanism is load-bearing, so
 // `deny_unknown_fields` is not the repair — it would reject the very keys
@@ -105,7 +105,7 @@ topology:
     sce_build::compile_mesh_transport(&mut model, &deploy_path, Language::Cpp).map(|_| ())
 }
 
-const ZENOH_DEVICE: &str = "      zenoh:\n        mode: peer\n";
+const ZENOH_DEVICE: &str = "      zenoh_keyexpr:\n        mode: peer\n";
 
 #[test]
 fn unknown_binding_key_is_rejected() {
@@ -115,7 +115,7 @@ fn unknown_binding_key_is_rejected() {
     let err = compile(
         "unknown",
         ZENOH_DEVICE,
-        "            transport: zenoh\n            key: \"brake/motor\"\n            qos: reliable\n",
+        "            transport: zenoh_keyexpr\n            key: \"brake/motor\"\n            qos: reliable\n",
     )
     .expect_err("a key no transport reads must not compile");
 
@@ -131,7 +131,7 @@ fn unknown_binding_key_is_rejected() {
                 unreachable!("guarded by the arm's matches!")
             };
             assert_eq!(field, "qos");
-            assert_eq!(transport, "zenoh");
+            assert_eq!(transport, "zenoh_keyexpr");
             assert!(
                 location.ends_with("machines.brake.bindings.#motor"),
                 "location must address the offending binding: {location}"
@@ -162,7 +162,7 @@ fn near_miss_key_is_rejected_with_its_neighbour_named() {
     let err = compile(
         "typo",
         ZENOH_DEVICE,
-        "            transport: zenoh\n            key: \"brake/motor\"\n            orderng: required\n",
+        "            transport: zenoh_keyexpr\n            key: \"brake/motor\"\n            orderng: required\n",
     )
     .expect_err("a misspelt key must not compile");
 
@@ -183,9 +183,9 @@ fn transport_native_keys_still_compile() {
     compile(
         "native",
         ZENOH_DEVICE,
-        "            transport: zenoh\n            key: \"brake/motor\"\n",
+        "            transport: zenoh_keyexpr\n            key: \"brake/motor\"\n",
     )
-    .expect("a zenoh binding's own `key:` must remain legal");
+    .expect("a zenoh_keyexpr binding's own `key:` must remain legal");
 }
 
 #[test]

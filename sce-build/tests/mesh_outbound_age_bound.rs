@@ -73,7 +73,7 @@ impl Drop for Fixture {
 }
 
 /// Zenoh rather than SOME/IP so the fixture needs no vsomeip.json; the
-/// buffer is emitted for both (`target.state.kind in ("someip", "zenoh")`).
+/// buffer is emitted for both (`target.state.kind in ("someip", "zenoh_keyexpr")`).
 fn deploy_yaml(buffer_section: &str) -> String {
     format!(
         r##"
@@ -81,7 +81,7 @@ version: "1.0"
 topology:
   ecu1:
     transports:
-      zenoh:
+      zenoh_keyexpr:
         mode: peer
     machines:
       brake:
@@ -89,7 +89,7 @@ topology:
         outbound_buffer:
 {buffer_section}        bindings:
           "#motor":
-            transport: zenoh
+            transport: zenoh_keyexpr
             key: "brake/motor"
       motor:
         source: motor.scxml

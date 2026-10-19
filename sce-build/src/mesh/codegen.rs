@@ -5,7 +5,7 @@
 //!
 //! Each target routes through its deploy.yaml-bound transport. Mixed
 //! transports are supported: e.g. `#motor` via local, `#display` via
-//! shm, `#logger` via someip, `#telemetry` via zenoh. The unified
+//! shm, `#logger` via someip, `#telemetry` via zenoh_keyexpr. The unified
 //! template generates a single `TransportRouter` that dispatches
 //! per-target to the appropriate transport-specific send function.
 //!
@@ -335,7 +335,7 @@ struct SomeipServiceLiterals {
 /// `| default(...)` filter still produces the legacy fallback constants.
 ///
 /// `tag = "kind"` lets the template dispatch on
-/// `target.state.kind == "local" | "shm" | "someip" | "zenoh"` instead of
+/// `target.state.kind == "local" | "shm" | "someip" | "zenoh_keyexpr"` instead of
 /// the deprecated `target.transport == "..."` string. The `Unimplemented`
 /// variant never reaches the template because codegen rejects unsupported
 /// transports up front.
@@ -358,7 +358,7 @@ enum TargetStateView {
         // and the probe would error instead of falling back to default.
         extra: HashMap<String, serde_yaml_ng::Value>,
     },
-    Zenoh {
+    ZenohKeyexpr {
         key: String,
         extra: HashMap<String, serde_yaml_ng::Value>,
     },
@@ -404,7 +404,7 @@ impl TargetStateView {
                 },
                 extra: extra.clone(),
             },
-            TransportState::Zenoh { key, extra } => Self::Zenoh {
+            TransportState::ZenohKeyexpr { key, extra } => Self::ZenohKeyexpr {
                 key: key.clone(),
                 extra: extra.clone(),
             },
@@ -453,7 +453,7 @@ struct TargetContext {
     /// `OutboundBuffer`, when one is declared?
     ///
     /// Registry-derived (`TransportDescriptor::buffers_outbound`) rather
-    /// than a `kind in ("someip", "zenoh")` test in the template: the
+    /// than a `kind in ("someip", "zenoh_keyexpr")` test in the template: the
     /// question is whether the transport exposes a readiness edge to gate
     /// on, which is a property of the transport, and a name list in the
     /// template is a second place to update when a transport gains one.
@@ -504,7 +504,7 @@ struct TargetContext {
     /// the template context. `None` ⇒ no row-10 wiring is emitted;
     /// transport rejection signals stay classified as row 1 / row 8.
     /// `Some(_)` ⇒ the generator's transport classify-arm reads
-    /// `peer_fingerprint` (zenoh) or `sd_denied_classifies_as_unauthorized`
+    /// `peer_fingerprint` (zenoh_keyexpr) or `sd_denied_classifies_as_unauthorized`
     /// (someip) and emits the UNAUTHORIZED classification at the
     /// matching rejection site.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -591,15 +591,15 @@ impl From<super::deploy::RetryPolicyConfig> for RetryPolicyContext {
 #[derive(Debug, Clone, serde::Serialize)]
 struct AuthPolicyContext {
     /// SHA-256 peer-cert fingerprint pinned for this target. Populated
-    /// only for zenoh bindings (validator rejected the field on
+    /// only for zenoh_keyexpr bindings (validator rejected the field on
     /// someip / custom_tcp / shm). When absent, the template emits the
-    /// SOMEIP variant of row-10 wiring instead of the zenoh variant.
+    /// SOMEIP variant of row-10 wiring instead of the zenoh_keyexpr variant.
     peer_fingerprint: Option<String>,
 
     /// SOMEIP-specific opt-in: classify `register_availability_handler(false)`
     /// as row 10 instead of row 8. Populated only for someip bindings;
     /// validator ensures this is `Some(true)` when the binding declared
-    /// `required: true` on a someip transport, and `None` on zenoh.
+    /// `required: true` on a someip transport, and `None` on zenoh_keyexpr.
     sd_denied_classifies_as_unauthorized: Option<bool>,
 }
 
@@ -790,7 +790,7 @@ fn event_ids_to_template(ids: &crate::mesh::topology::SomeipEventIds) -> EventId
 /// per-RPC-pair metadata for handler registration.
 #[derive(Debug, Clone, serde::Serialize)]
 struct ServerContext {
-    /// Transport variant: `"someip"` or `"zenoh"`.
+    /// Transport variant: `"someip"` or `"zenoh_keyexpr"`.
     transport_kind: String,
     /// Tagged transport state (same as TargetStateView) for service IDs
     /// or key expression.
@@ -1631,7 +1631,7 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
     if let Some(ref sc) = server_context {
         transport_types.insert(match sc.transport_kind.as_str() {
             "someip" => "someip",
-            "zenoh" => "zenoh",
+            "zenoh_keyexpr" => "zenoh_keyexpr",
             other => other,
         });
     }
@@ -1706,8 +1706,8 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
     // into zenoh demand `zenoh_session_` to exist (the per-peer
     // ScxmlInvokeEndpoint takes a reference to it) and the
     // `<zenoh.hxx>` include block to fire. Both are gated by the
-    // template's `{% if "zenoh" in transport_types %}`, so add the
-    // variant when no `<send>` target selected zenoh but a §mesh-9.6 peer
+    // template's `{% if "zenoh_keyexpr" in transport_types %}`, so add the
+    // variant when no `<send>` target selected zenoh_keyexpr but a §mesh-9.6 peer
     // did. Mirrors the someip insertion above. The same gate also
     // pulls the existing `zenoh::Session::open(...)` init() block
     // — the §mesh-9.6 endpoint emplace then chains off the session that
@@ -1715,9 +1715,9 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
     if scxml_remote_outbound_peers
         .iter()
         .chain(scxml_remote_inbound_peers.iter())
-        .any(|p| p.transport.as_deref() == Some("zenoh"))
+        .any(|p| p.transport.as_deref() == Some("zenoh_keyexpr"))
     {
-        transport_types.insert("zenoh");
+        transport_types.insert("zenoh_keyexpr");
     }
 
     // SCE_MESH.md §mesh-10.5: per-binding dedup decision drives machine-level
@@ -1734,13 +1734,16 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
     // but only the undeduped paths pay the admit cost.
     let any_target_needs_dedup = target_contexts.iter().any(|t| t.needs_dedup);
     let server_needs_dedup = server_context.as_ref().is_some_and(|sc| {
-        // Server transport kind is "someip" or "zenoh" today. SOME/IP
+        // Server transport kind is "someip" or "zenoh_keyexpr" today. SOME/IP
         // server sockets default to UDP multicast (per vsomeip.json), so
         // conservatively treat both as needing dedup. If a future deploy
         // schema adds a server-side `protocol: tcp` pin, extend this
         // match to recognise it — same pattern as the target-side
         // `needs_dedup` computation above.
-        matches!(sc.transport_kind.as_str(), "someip" | "zenoh" | "dds")
+        matches!(
+            sc.transport_kind.as_str(),
+            "someip" | "zenoh_keyexpr" | "dds"
+        )
     });
     let has_undeduped_transport = any_target_needs_dedup || server_needs_dedup;
 
@@ -2682,7 +2685,7 @@ mod tests {
         // Zenoh lacks a per-binding TCP pin — the extra map cannot flip
         // the decision. The transport-level `supplies_dedup: false`
         // propagates straight through.
-        let state = TransportState::Zenoh {
+        let state = TransportState::ZenohKeyexpr {
             key: "brake/cmd".to_string(),
             extra: HashMap::new(),
         };
@@ -2728,7 +2731,7 @@ mod tests {
     fn ordering_none_never_emits_buffer() {
         // The binding declared OrderingRequirement::None — no buffer
         // regardless of transport. Covers zenoh + someip UDP.
-        let zenoh = TransportState::Zenoh {
+        let zenoh = TransportState::ZenohKeyexpr {
             key: "k".into(),
             extra: HashMap::new(),
         };
@@ -2749,7 +2752,7 @@ mod tests {
     fn zenoh_with_ordering_required_emits_buffer() {
         // Zenoh has supplies_ordering=false; binding demands order →
         // runtime OrderingBuffer is required.
-        let state = TransportState::Zenoh {
+        let state = TransportState::ZenohKeyexpr {
             key: "k".into(),
             extra: HashMap::new(),
         };
@@ -2971,7 +2974,7 @@ mod tests {
         // rejection surface. Guards against a future Zenoh server-pool
         // extension accidentally treating Zenoh clients as unsafe.
         let tc = mk_target_context(
-            TargetStateView::Zenoh {
+            TargetStateView::ZenohKeyexpr {
                 key: "vehicle/probe".into(),
                 extra: HashMap::new(),
             },

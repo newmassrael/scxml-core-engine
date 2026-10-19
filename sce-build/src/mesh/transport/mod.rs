@@ -46,12 +46,12 @@ pub struct TransportShape {
     /// (and a matching entry in the constructor initializer list)?
     ///
     /// `true` for local/shm/someip (each target has its own channel/app,
-    /// constructed via reference or ctor-initializer). `false` for zenoh
+    /// constructed via reference or ctor-initializer). `false` for zenoh_keyexpr
     /// (all targets share one Session, constructed in `init()` after the
     /// TransportRouter is already live).
     pub has_per_target_field: bool,
     /// Does this transport use a device-shared session resource?
-    /// `true` for zenoh. The template emits the shared field once per
+    /// `true` for zenoh_keyexpr. The template emits the shared field once per
     /// transport (not per target) and initializes it in `init()`.
     pub has_shared_session: bool,
 }
@@ -215,7 +215,7 @@ impl PoolShape {
 ///
 /// | transport | shape | carrier |
 /// |---|---|---|
-/// | `zenoh` | `Open` | `StringSegment` |
+/// | `zenoh_keyexpr` | `Open` | `StringSegment` |
 /// | `dds` | `Bounded` | `StringSegment` |
 /// | `someip` | `Bounded` | `TypedInstanceId` |
 ///
@@ -510,7 +510,7 @@ pub struct TransportDescriptor {
     /// Classification rationale:
     /// - in-process queueing + single-stream TCP preserve send order by
     ///   construction (local, shm, custom_tcp — same set as supplies_dedup)
-    /// - UDP-capable transports (someip default, zenoh, dds) may reorder
+    /// - UDP-capable transports (someip default, zenoh_keyexpr, dds) may reorder
     ///   across routers or datagrams
     /// - CAN frame arbitration is priority-based, not sender-FIFO
     /// - wss is FIFO within one connection only; a retry sent after a
@@ -604,7 +604,7 @@ pub struct TransportDescriptor {
     ///   vsomeip.json through the same resolver. A subscription whose
     ///   binding declares no eventgroup is rejected by name rather than
     ///   dispatched into the "unknown event" arm.
-    /// - `zenoh`: binding-wide `key:` is sufficient for subscribe
+    /// - `zenoh_keyexpr`: binding-wide `key:` is sufficient for subscribe
     ///   dispatch — no per-event resolution needed. `true`.
     /// - `custom_tcp` / `dds`: `true`. Both were realised end-to-end
     ///   after this doc first listed them as `false` — the flag's
@@ -626,7 +626,7 @@ pub struct TransportDescriptor {
     /// - `someip`: `true`. `register_availability_handler` reports the
     ///   (service, instance) pair going available, which drives
     ///   `markReady` / `markNotReady`.
-    /// - `zenoh`: `true`. A declared publisher's matching-status listener
+    /// - `zenoh_keyexpr`: `true`. A declared publisher's matching-status listener
     ///   reports the first subscriber, which is the publisher-first-lost
     ///   window the buffer closes.
     /// - `local` / `shm`: `false`. Delivery is a synchronous enqueue into
@@ -705,7 +705,7 @@ pub struct TransportDescriptor {
     ///
     /// - `local` — in-process direct dispatch; cannot cross the OS
     ///   process boundary that a partition defines.
-    /// - `someip` / `zenoh` — designed as inter-machine middleware /
+    /// - `someip` / `zenoh_keyexpr` — designed as inter-machine middleware /
     ///   fabric. Forcing partition IPC through them routes through a
     ///   daemon or routing fabric instead of the intended same-machine
     ///   channel; authors should pick `shm` or `custom_tcp` when the
@@ -737,7 +737,7 @@ pub struct TransportDescriptor {
     /// `false` for transports whose reply path is bound to the request
     /// at the protocol layer, leaving no place for another target's
     /// reply to enter:
-    ///   - `zenoh`: `session.get(key, …)` installs a per-query reply
+    ///   - `zenoh_keyexpr`: `session.get(key, …)` installs a per-query reply
     ///     closure on ONE target's KeyExpr. A different target's
     ///     queryable is a different key and therefore a different query;
     ///     there is no correlation table to address. This is a property
@@ -747,7 +747,7 @@ pub struct TransportDescriptor {
     ///   - `custom_tcp`: the reply is written on the stream the request
     ///     arrived on, so another target — by definition another
     ///     connection — has no entry its reply could land in. Same
-    ///     conclusion as `zenoh`, reached from the connection model
+    ///     conclusion as `zenoh_keyexpr`, reached from the connection model
     ///     rather than the query model.
     ///   - `shm` / `can` / `dds`: no `RequestReply` capability at all, so
     ///     the question does not arise.
@@ -780,7 +780,7 @@ pub struct TransportDescriptor {
     ///   published on the reply topic derived from the request topic,
     ///   after the admitted correlation is erased so a late engine
     ///   response cannot publish a second answer.
-    /// - `zenoh`: [`ServerDeadlineNotice::DropSilently`]. A
+    /// - `zenoh_keyexpr`: [`ServerDeadlineNotice::DropSilently`]. A
     ///   `zenoh::Query` has `reply` but no server-authored failure
     ///   channel; dropping it is the only signal available.
     /// - `local`: [`ServerDeadlineNotice::Unsupported`]. In-process
@@ -890,13 +890,13 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // the SCE_MESH.md §mesh-8.3 `field.notify` reply to a
         // `field.get`/`field.set` request. The field reply machinery
         // (`handleServerResponse`, getter/setter receive handlers) is
-        // emitted only for the someip/zenoh transport arms; shm's send
+        // emitted only for the someip/zenoh_keyexpr transport arms; shm's send
         // arm is a bare one-way `channel.send(env)`. Advertising
         // FieldAccess would let `field.get` over shm pass
         // `validate_pattern_capability` at build time and then silently
         // never receive its reply at runtime. Same exclusion rationale
         // as RequestReply (covered by the `mesh_pattern_capability_rejection`
-        // negative test). Inter-machine field access uses someip/zenoh.
+        // negative test). Inter-machine field access uses someip/zenoh_keyexpr.
         capabilities: &[FireForget],
         implemented: true,
         required_binding_fields: &[],
@@ -1029,7 +1029,7 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         implemented: true,
         required_binding_fields: &["key"],
         // Everything else a Zenoh deployment tunes lives in the device-
-        // level `transports.zenoh.config:` json5 file, which Zenoh's own
+        // level `transports.zenoh_keyexpr.config:` json5 file, which Zenoh's own
         // schema validates — a per-binding tunable would have to be
         // merged into that session config, which the session does not
         // support per-publisher.
@@ -1217,7 +1217,7 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // A reply rides the topic paired with the request topic of the
         // binding it answers, so another target — a different topic
         // pair — has no entry its reply could land in. Same conclusion
-        // as zenoh and custom_tcp, reached from the topic model.
+        // as zenoh_keyexpr and custom_tcp, reached from the topic model.
         supports_cross_target_reply: false,
         // The notice is published on the reply topic paired with the
         // request topic (SCE_MESH.md section 8.2) — the same leg a
@@ -1317,8 +1317,8 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         server_deadline_notice: ServerDeadlineNotice::Unsupported,
     };
     // §mesh-20: one Zenoh client session per machine, spoken by the
-    // Rust host core and by no C++ arm. It is not the C++ template Zenoh
-    // transport (KeyExpr pub/sub and query, a key per target): this wire is
+    // Rust host core and by no C++ arm. It is not the C++ template transport
+    // `zenoh_keyexpr` (KeyExpr pub/sub and query, a key per target): this wire is
     // point-to-point envelopes into the receiver's inbox at
     // `sce-mesh/1/to/<receiver>/<sender>`, which is what the name says, and
     // the two cannot reach one another.
@@ -1374,7 +1374,7 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         "local" => Some(&LOCAL),
         "shm" => Some(&SHM),
         "someip" => Some(&SOMEIP),
-        "zenoh" => Some(&ZENOH),
+        "zenoh_keyexpr" => Some(&ZENOH),
         "custom_tcp" => Some(&CUSTOM_TCP),
         "dds" => Some(&DDS),
         "can" => Some(&CAN),
@@ -1430,7 +1430,7 @@ pub fn known_names() -> &'static [&'static str] {
         "local",
         "shm",
         "someip",
-        "zenoh",
+        "zenoh_keyexpr",
         "custom_tcp",
         "dds",
         "can",
@@ -1489,7 +1489,7 @@ pub fn server_deadline_transports() -> Vec<(&'static str, ServerDeadlineNotice)>
 /// by reading this dimension of the registry, so an arm that lands or
 /// regresses moves the message without a second edit. The custom_tcp
 /// landing is exactly the case a prose list would have gone stale on —
-/// the message said "e.g. 'zenoh'" while three transports realised it.
+/// the message said "e.g. 'zenoh_keyexpr'" while three transports realised it.
 pub fn machine_lifetime_subscribe_transports() -> Vec<&'static str> {
     known_names()
         .iter()
@@ -1550,8 +1550,8 @@ mod tests {
     #[test]
     fn zenoh_inbox_is_the_host_core_binding_and_has_no_cpp_layout() {
         // SCE_MESH.md section 20: the Zenoh binding of the host cores is a different wire
-        // from the C++ template Zenoh transport (a KeyExpr per target against
-        // a queryable), so it is served by a host core and the C++ router
+        // from the C++ template transport `zenoh_keyexpr` (a KeyExpr per target
+        // against a queryable), so it is served by a host core and the C++ router
         // has no arm for it.
         let d = lookup("zenoh_inbox").expect("known");
         assert_eq!(d.served_by, TransportService::HostCore);
@@ -1623,8 +1623,8 @@ mod tests {
     }
 
     #[test]
-    fn zenoh_is_shared() {
-        let d = lookup("zenoh").expect("known");
+    fn zenoh_keyexpr_is_shared() {
+        let d = lookup("zenoh_keyexpr").expect("known");
         assert!(!shape(d).has_per_target_field);
         assert!(shape(d).has_shared_session);
     }
@@ -1648,11 +1648,24 @@ mod tests {
         assert!(lookup("iceoryx2").is_none());
     }
 
+    #[test]
+    fn the_former_name_zenoh_is_no_alias_of_zenoh_keyexpr() {
+        // The C++ template transport is `zenoh_keyexpr` (addressed by key
+        // expression); `zenoh_inbox` is addressed by machine name. The bare
+        // `zenoh` it used to carry resolves to nothing, so a deploy.yaml
+        // still writing it meets the unknown-transport path like any other
+        // unknown name.
+        assert!(lookup("zenoh").is_none());
+        assert!(!known_names().contains(&"zenoh"));
+        assert!(!implemented_names().contains(&"zenoh"));
+        assert!(lookup("zenoh_keyexpr").is_some());
+    }
+
     // ── implemented ─────────────────────────────────────────
 
     #[test]
     fn implemented_transports_have_template() {
-        for name in &["local", "shm", "someip", "zenoh", "custom_tcp"] {
+        for name in &["local", "shm", "someip", "zenoh_keyexpr", "custom_tcp"] {
             assert!(
                 lookup(name).unwrap().implemented,
                 "transport '{name}' should be marked implemented"
@@ -1707,7 +1720,7 @@ mod tests {
         //
         //   shm    → `topology::build_transport_state` (TransportState::Shm)
         //   someip → `mesh_transport.h.jinja2` reliability flag
-        //   zenoh/custom_tcp/dds → the address each arm bakes in
+        //   zenoh_keyexpr/custom_tcp/dds → the address each arm bakes in
         //   wss    → the host core's peer table (`templates/mesh_router/`)
         //
         // `zenoh_inbox` is absent on purpose: the peer is named by `#peer`
@@ -1725,7 +1738,7 @@ mod tests {
             vec![
                 ("shm", vec!["shm_arena_bytes", "shm_ring_capacity"]),
                 ("someip", vec!["protocol"]),
-                ("zenoh", vec!["key"]),
+                ("zenoh_keyexpr", vec!["key"]),
                 ("custom_tcp", vec!["connect"]),
                 ("dds", vec!["topic"]),
                 ("wss", vec!["url", "keepalive_ms"]),
@@ -1738,7 +1751,7 @@ mod tests {
         // `known_binding_fields` is what the unknown-key diagnostic
         // renders as "legal keys", and a reader scanning that list
         // should meet the mandatory ones first.
-        let d = lookup("zenoh").expect("known");
+        let d = lookup("zenoh_keyexpr").expect("known");
         assert_eq!(d.known_binding_fields().next(), Some("key"));
     }
 
@@ -1856,10 +1869,10 @@ mod tests {
     }
 
     #[test]
-    fn zenoh_requires_runtime_dedup() {
+    fn zenoh_keyexpr_requires_runtime_dedup() {
         // Zenoh router reordering is visible to applications even in
         // reliable mode; receivers must run the DedupWindow.
-        assert!(!lookup("zenoh").unwrap().supplies_dedup);
+        assert!(!lookup("zenoh_keyexpr").unwrap().supplies_dedup);
     }
 
     #[test]
@@ -1909,9 +1922,9 @@ mod tests {
     }
 
     #[test]
-    fn zenoh_requires_runtime_ordering() {
+    fn zenoh_keyexpr_requires_runtime_ordering() {
         // Router fabric may reorder even under reliable QoS.
-        let d = lookup("zenoh").unwrap();
+        let d = lookup("zenoh_keyexpr").unwrap();
         assert!(!d.supplies_ordering);
         assert!(d.ordering_representable);
     }
@@ -1937,7 +1950,7 @@ mod tests {
     #[test]
     fn exactly_five_implemented_transports_require_runtime_ordering() {
         // Regression guard mirroring the dedup counterpart below: today
-        // SOME/IP, Zenoh, DDS, wss and zenoh_inbox are the implemented
+        // SOME/IP, zenoh_keyexpr, DDS, wss and zenoh_inbox are the implemented
         // transports that may reorder. local/shm/custom_tcp preserve order
         // by construction.
         // If this set changes, the classification table in
@@ -1948,7 +1961,7 @@ mod tests {
             .collect();
         assert_eq!(
             unordered_impls,
-            ["someip", "zenoh", "dds", "wss", "zenoh_inbox"]
+            ["someip", "zenoh_keyexpr", "dds", "wss", "zenoh_inbox"]
         );
     }
 
@@ -1975,7 +1988,7 @@ mod tests {
         // (ring buffer per channel) and custom_tcp is the TCP loopback
         // reference transport (§mesh-16.8.3). Every other transport is
         // designed either for intra-process dispatch (local) or for
-        // inter-machine middleware (someip / zenoh / dds / can); forcing
+        // inter-machine middleware (someip / zenoh_keyexpr / dds / can); forcing
         // partition IPC through them contradicts the spec's direct-
         // channel intent. Adding another same-machine IPC transport
         // (e.g. iceoryx2, a local unix socket) must flip this flag in
@@ -2009,7 +2022,7 @@ mod tests {
 
     #[test]
     fn exactly_five_implemented_transports_require_runtime_dedup() {
-        // Regression guard: today SOME/IP, Zenoh, DDS, wss and zenoh_inbox
+        // Regression guard: today SOME/IP, zenoh_keyexpr, DDS, wss and zenoh_inbox
         // are the implemented transports that admit duplicates. local/shm/
         // custom_tcp are duplicate-free by construction. If this set
         // changes, the classification table in supplies_dedup comments
@@ -2021,7 +2034,7 @@ mod tests {
             .collect();
         assert_eq!(
             undeduped_impls,
-            ["someip", "zenoh", "dds", "wss", "zenoh_inbox"]
+            ["someip", "zenoh_keyexpr", "dds", "wss", "zenoh_inbox"]
         );
     }
 
@@ -2081,7 +2094,7 @@ mod tests {
 
     #[test]
     fn machine_lifetime_alternatives_are_read_from_the_registry() {
-        // The rejection diagnostic used to name "e.g. 'zenoh'" in prose while
+        // The rejection diagnostic used to name "e.g. 'zenoh_keyexpr'" in prose while
         // three transports realised the path. This pins the replacement to the
         // descriptor set rather than to any list: a flag flip in either
         // direction has to move the message, and no second edit can be
@@ -2120,7 +2133,7 @@ mod tests {
     /// The table used to have patterns as rows and *categories* of
     /// transport as columns ("Req/Reply transports", "Pub/Sub
     /// transports"), which cannot answer the question an author actually
-    /// has at a binding site — "what does zenoh give me" — because no row
+    /// has at a binding site — "what does zenoh_keyexpr give me" — because no row
     /// names a transport. Transposing it makes every cell a specific
     /// claim about a specific descriptor field, and a specific claim in
     /// prose drifts the first time a flag flips unless something compares
@@ -2176,7 +2189,7 @@ mod tests {
             "shm",
             "custom_tcp",
             "someip",
-            "zenoh",
+            "zenoh_keyexpr",
             "dds",
             "can",
             "wss",
@@ -2376,8 +2389,8 @@ mod tests {
     }
 
     #[test]
-    fn zenoh_supports_all() {
-        let d = lookup("zenoh").unwrap();
+    fn zenoh_keyexpr_supports_all() {
+        let d = lookup("zenoh_keyexpr").unwrap();
         // Zenoh realizes all four categories: put/get/pub-sub/queryable.
         assert!(d.capabilities.contains(&RequestReply));
         assert!(d.capabilities.contains(&FireForget));
@@ -2422,12 +2435,12 @@ mod tests {
     }
 
     #[test]
-    fn zenoh_can_only_drop_on_a_server_deadline() {
+    fn zenoh_keyexpr_can_only_drop_on_a_server_deadline() {
         // A `zenoh::Query` exposes `reply` and destruction, nothing in
         // between. This is a property of the query model, not a choice
         // SCE made, so a future arm that started emitting a notice here
         // would have to move this entry first.
-        let d = lookup("zenoh").expect("known");
+        let d = lookup("zenoh_keyexpr").expect("known");
         assert_eq!(d.server_deadline_notice, ServerDeadlineNotice::DropSilently);
     }
 
@@ -2478,7 +2491,7 @@ mod tests {
             "local",
             "shm",
             "someip",
-            "zenoh",
+            "zenoh_keyexpr",
             "custom_tcp",
             "dds",
             "can",

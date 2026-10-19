@@ -260,7 +260,7 @@ topology:
         .filter_map(|c| c.as_str())
         .collect();
     assert!(
-        candidates.contains(&"zenoh") && !candidates.contains(&"wss"),
+        candidates.contains(&"zenoh_keyexpr") && !candidates.contains(&"wss"),
         "the candidates are the C++ core's own: {candidates:?}"
     );
 }
@@ -284,14 +284,17 @@ topology:
       client:
         source: client.scxml
         bindings:
-          "#server": { transport: zenoh, key: "cal/server" }
+          "#server": { transport: zenoh_keyexpr, key: "cal/server" }
   cloud:
     machines:
       server: { source: server.scxml }
 "##,
     );
     let out = run_with_deploy_for("rust", &scxml, &deploy, dir.path());
-    assert!(!out.status.success(), "a host core must refuse zenoh");
+    assert!(
+        !out.status.success(),
+        "a host core must refuse zenoh_keyexpr"
+    );
     let stderr = String::from_utf8(out.stderr).expect("stderr utf8");
     let rec = sole_ndjson_record(&stderr);
     assert_core_shape(&rec);
@@ -506,7 +509,7 @@ topology:
     machines:
       client:
         source: client.scxml
-        server: { transport: zenoh, key: "cal/client" }
+        server: { transport: zenoh_keyexpr, key: "cal/client" }
         bindings:
           "#server": { transport: wss, url: "wss://cal.example" }
   cloud:

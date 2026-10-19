@@ -280,7 +280,7 @@ fn push_transport(name: &str, state: &TransportState, out: &mut Vec<Fact>) {
             push_nested(&at("event-binding"), event_bindings, out);
             push_nested(&at("extra"), extra, out);
         }
-        TransportState::Zenoh { key, extra } => {
+        TransportState::ZenohKeyexpr { key, extra } => {
             out.push(Fact::new(at("key"), key));
             push_nested(&at("extra"), extra, out);
         }
@@ -347,7 +347,7 @@ fn push_event_pattern(name: &str, p: &EventPatternInfo, out: &mut Vec<Fact>) {
 ///
 /// ⚠ No `..`. Two of its three fields carry `skip_serializing_if`, and
 /// this is the one place in the whole surface where a vanished field is
-/// a security statement: a `zenoh` binding with `required: true` and no
+/// a security statement: a `zenoh_keyexpr` binding with `required: true` and no
 /// pinned fingerprint on the page reads exactly like one whose
 /// fingerprint the reviewer simply was not shown.
 ///

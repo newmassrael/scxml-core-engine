@@ -8,9 +8,9 @@
 //   topology.<device>.transports.<transport>   — device-shared session config
 //   topology.<device>.machines.<name>.bindings — per-target binding config
 //
-// Device-shared transports (e.g. zenoh opens one Session per device, shared
+// Device-shared transports (e.g. zenoh_keyexpr opens one Session per device, shared
 // by all machines on that device) declare their session-level config under
-// `transports:`. Per-target keys (e.g. zenoh `key:`, someip `service_id:`)
+// `transports:`. Per-target keys (e.g. zenoh_keyexpr `key:`, someip `service_id:`)
 // stay on individual bindings. This mirrors the runtime semantics: there
 // is exactly one session per device and many bindings per session.
 //
@@ -1640,7 +1640,7 @@ pub struct DeviceConfig {
     /// (`target_atomics`), so a queue row the triple cannot build is refused at generation.
     pub target: Option<String>,
     /// Device-shared transport configuration — one entry per transport type
-    /// that has session-level state (e.g. zenoh). Omit the block entirely
+    /// that has session-level state (e.g. zenoh_keyexpr). Omit the block entirely
     /// when no device-shared transports are used.
     #[serde(default)]
     pub transports: TransportConfigs,
@@ -1654,15 +1654,16 @@ pub struct DeviceConfig {
 /// transport that has no shared state (local, shm) does not appear here —
 /// its entire config is per-binding. SOME/IP and Zenoh appear here because
 /// they carry device-shared identity (vsomeip application name, zenoh
-/// session) and reference external OEM config files (SCE_MESH.md §mesh-13).
+/// session; the block is keyed by the transport name `zenoh_keyexpr`) and reference external OEM config files (SCE_MESH.md §mesh-13).
 /// `deny_unknown_fields` catches typos in transport names (e.g. `zneoh:`)
 /// at parse time.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TransportConfigs {
     /// Zenoh session config — applied to the single `zenoh::Session` shared
-    /// by all zenoh bindings on this device.
-    pub zenoh: Option<ZenohTransportConfig>,
+    /// by all zenoh_keyexpr bindings on this device. The deploy.yaml key is
+    /// the transport name, `transports.zenoh_keyexpr:`.
+    pub zenoh_keyexpr: Option<ZenohTransportConfig>,
     /// SOME/IP device-shared config — references the OEM-supplied
     /// vsomeip.json (single source of truth for service/method IDs) and
     /// binds the generated runtime to a vsomeip application identity.
@@ -1867,7 +1868,7 @@ impl CustomTcpTransportConfig {
 /// selection, buffer sizes, thread scheduling, tracing — is tuning that
 /// belongs in its own XML config rather than mirrored into the mesh
 /// schema. `config:` names that file, the same way
-/// `transports.zenoh.config:` names a `zenoh.json5` and
+/// `transports.zenoh_keyexpr.config:` names a `zenoh.json5` and
 /// `transports.someip.config:` a `vsomeip.json`. Naming it here rather
 /// than leaving it to the `CYCLONEDDS_URI` environment variable is what
 /// makes a deployment reproducible from deploy.yaml alone.
@@ -2260,7 +2261,7 @@ pub const MIN_SERVER_RESPONSE_DEADLINE_MS: u64 = 10;
 /// **Transport compat**: the declaring machine must also carry at
 /// least one Zenoh binding or server; [`validate_liveliness`] enforces
 /// this at parse time. The codegen template emits liveliness
-/// primitives only when `"zenoh" in transport_types`, so a SomeIP-only
+/// primitives only when `"zenoh_keyexpr" in transport_types`, so a SomeIP-only
 /// (or binding-less) machine declaring `liveliness:` without that gate
 /// would compile but never raise the `error.communication` signal its
 /// required handler awaits (`feedback_silently_broken_hooks`). SomeIP
@@ -2496,14 +2497,14 @@ pub struct RetryPolicyConfig {
 ///
 /// Per-transport applicability (auth = mTLS-style peer pinning, wired
 /// per transport binding):
-/// * `zenoh` — `peer_fingerprint` pins the peer cert; failed handshake
+/// * `zenoh_keyexpr` — `peer_fingerprint` pins the peer cert; failed handshake
 ///   classifies on `ZException::what()` text.
 /// * `someip` — `sd_denied_classifies_as_unauthorized: true` opts in
 ///   to classifying SOMEIP SD denial as UNAUTHORIZED instead of
 ///   PEER_PARTITIONED.
 /// * `custom_tcp` / `shm` — rejected at parse time: no auth wiring is
 ///   defined for these transports. The validator surfaces a clear error message
-///   pointing authors at zenoh / someip.
+///   pointing authors at zenoh_keyexpr / someip.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct AuthPolicyConfig {
@@ -2514,11 +2515,11 @@ pub struct AuthPolicyConfig {
     pub required: bool,
 
     /// SHA-256 peer-certificate fingerprint (`"sha256:<hex>"`). For
-    /// `zenoh` bindings: pinned against the peer's TLS handshake cert
-    /// chain. Required when `required: true` AND `transport == "zenoh"`.
+    /// `zenoh_keyexpr` bindings: pinned against the peer's TLS handshake cert
+    /// chain. Required when `required: true` AND `transport == "zenoh_keyexpr"`.
     /// Format validation at parse time: literal `"sha256:"` prefix
     /// followed by 64 lowercase hex characters (the SHA-256 digest
-    /// length). Non-zenoh transports must omit this field.
+    /// length). Other transports must omit this field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub peer_fingerprint: Option<String>,
 
@@ -2561,12 +2562,12 @@ impl AuthPolicyConfig {
             return None;
         }
         match transport {
-            "zenoh" => {
+            "zenoh_keyexpr" => {
                 let fp = match &self.peer_fingerprint {
                     Some(s) => s,
                     None => {
                         return Some(
-                            "zenoh `auth: { required: true }` requires `peer_fingerprint: \"sha256:<64-hex>\"` — \
+                            "zenoh_keyexpr `auth: { required: true }` requires `peer_fingerprint: \"sha256:<64-hex>\"` — \
                              without a pinned cert digest there is nothing to authorize against. \
                              Either pin the peer fingerprint or set `required: false`"
                                 .to_string(),
@@ -2578,7 +2579,7 @@ impl AuthPolicyConfig {
                 }
                 if self.sd_denied_classifies_as_unauthorized.is_some() {
                     return Some(
-                        "zenoh `auth:` block must not declare \
+                        "zenoh_keyexpr `auth:` block must not declare \
                          `sd_denied_classifies_as_unauthorized` — that field is \
                          SOMEIP-specific"
                             .to_string(),
@@ -2601,7 +2602,7 @@ impl AuthPolicyConfig {
                 if self.peer_fingerprint.is_some() {
                     return Some(
                         "someip `auth:` block must not declare `peer_fingerprint` — \
-                         that field is zenoh-specific (TLS handshake cert pinning). \
+                         that field is zenoh_keyexpr-specific (TLS handshake cert pinning). \
                          SOMEIP authorization is delegated to the SD responder; this \
                          binding observes the SD denial code, not a cert chain"
                             .to_string(),
@@ -2611,7 +2612,7 @@ impl AuthPolicyConfig {
             }
             other => Some(format!(
                 "transport '{}' does not support §16.7 row 10 UNAUTHORIZED in this release — \
-                 only `zenoh` (mTLS cert pinning) and `someip` (SD denial classification) \
+                 only `zenoh_keyexpr` (mTLS cert pinning) and `someip` (SD denial classification) \
                  are wired. Either move the binding to a supported transport or set \
                  `required: false`",
                 other,
@@ -3166,7 +3167,7 @@ impl MachineConfig {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ServerConfig {
-    /// Transport type: "someip", "zenoh".
+    /// Transport type: "someip", "zenoh_keyexpr".
     pub transport: String,
     /// SOME/IP service name — resolved against vsomeip.json
     /// `services[*].name`, producing `service_id` + `instance_id`.
@@ -3210,7 +3211,7 @@ pub struct ServerConfig {
     /// transport-neutral — every server arm parks *something* between
     /// receiving a request and emitting the paired response
     /// (`pending_server_requests_` for vsomeip,
-    /// `pending_server_queries_` for zenoh, `pending_server_links_` for
+    /// `pending_server_queries_` for zenoh_keyexpr,`pending_server_links_` for
     /// custom_tcp, `pending_server_correlations_` for dds), and each of
     /// those leaks when the engine leaves the handling state without
     /// sending. What differs per transport is the **notice** the
@@ -3382,7 +3383,7 @@ impl EventBinding {
 /// at resolution time so a reader cannot be confused about precedence.
 ///
 /// `extra` uses `serde(flatten)` for per-target transport-native keys not
-/// covered by the explicit fields (e.g. zenoh `key:`, someip `protocol:`,
+/// covered by the explicit fields (e.g. zenoh_keyexpr `key:`, someip `protocol:`,
 /// shm arena/ring settings). The SOME/IP numeric-ID key names
 /// (`service_id:`, `method_id:`, …) land in `extra` at parse time but are
 /// reserved and rejected by the external-resolution stage
@@ -3391,7 +3392,7 @@ impl EventBinding {
 /// Device-shared session keys live on `DeviceConfig::transports`, not here.
 #[derive(Debug, Clone, Deserialize)]
 pub struct BindingConfig {
-    /// Transport type: "local", "shm", "someip", "dds", "zenoh", etc.
+    /// Transport type: "local", "shm", "someip", "dds", "zenoh_keyexpr", etc.
     pub transport: String,
 
     /// SOME/IP service name — resolved against vsomeip.json
@@ -3560,7 +3561,7 @@ pub struct BindingConfig {
     pub auth: Option<AuthPolicyConfig>,
 
     /// Per-target transport-native settings passed through to templates
-    /// (zenoh `key:`, someip `protocol:`, shm `shm_arena_bytes:`, etc.).
+    /// (zenoh_keyexpr `key:`, someip `protocol:`, shm `shm_arena_bytes:`, etc.).
     /// Reserved SOME/IP ID key names are collected here at parse time but
     /// rejected by the external-resolution stage — see
     /// `ExternalConfigError::ReservedSomeipIdKeys`.
@@ -3703,7 +3704,7 @@ pub fn parse_deploy_str(content: &str) -> Result<DeployConfig, DeployError> {
 /// The device-level `transports:` structs all carry
 /// `deny_unknown_fields`, so a typo there is refused at parse time.
 /// [`BindingConfig`] cannot: its flattened `extra` map is the mechanism
-/// that carries transport-native keys (zenoh `key:`, dds `topic:`,
+/// that carries transport-native keys (zenoh_keyexpr `key:`, dds `topic:`,
 /// someip `protocol:`), and serde offers no way to say "flatten, but
 /// only these names". So the closed set is assembled here instead —
 /// typed fields from [`BINDING_TYPED_FIELDS`], transport-native keys
@@ -5771,7 +5772,7 @@ fn validate_liveliness(cfg: &DeployConfig) -> Result<(), DeployError> {
         return Err(DeployError::InvalidLiveliness {
             machine: machine_name.to_string(),
             reason: "machine has neither Zenoh nor SomeIP transport; `liveliness:` \
-                     requires at least one `transport: zenoh` (any partition shape) \
+                     requires at least one `transport: zenoh_keyexpr` (any partition shape) \
                      or `transport: someip` (any partition shape, RFC F.X-4 covers \
                      row 8 unconditionally) — add a compatible binding/server or \
                      drop `liveliness:`"
@@ -5786,11 +5787,14 @@ fn validate_liveliness(cfg: &DeployConfig) -> Result<(), DeployError> {
 /// [`validate_liveliness`] to gate `liveliness:` on transport
 /// compatibility — see that function's doc comment for rationale.
 fn machine_uses_zenoh_transport(machine: &MachineConfig) -> bool {
-    machine.bindings.values().any(|b| b.transport == "zenoh")
+    machine
+        .bindings
+        .values()
+        .any(|b| b.transport == "zenoh_keyexpr")
         || machine
             .server
             .as_ref()
-            .is_some_and(|s| s.transport == "zenoh")
+            .is_some_and(|s| s.transport == "zenoh_keyexpr")
 }
 
 /// Returns true when at least one of the machine's bindings or its
@@ -6126,7 +6130,7 @@ fn validate_pool_capability(cfg: &DeployConfig) -> Result<(), DeployError> {
             // binding (a SOME/IP (service, instance) availability
             // handler, a Zenoh publisher's matching status) while a pool
             // has one address per member. Asked of the registry rather
-            // than as `transport in ("someip", "zenoh")`: whether a
+            // than as `transport in ("someip", "zenoh_keyexpr")`: whether a
             // transport is buffered at all is the registry's answer, and
             // the template's emission loop reads the same flag.
             if machine.outbound_buffer.is_some() && descriptor.buffers_outbound {
@@ -6314,7 +6318,7 @@ fn validate_reply_from(cfg: &DeployConfig) -> Result<(), DeployError> {
 /// declare `stage_pool: <name>` only on a transport in this list; any
 /// other transport raises `mesh/deploy-stage-pool-transport-mismatch`.
 ///
-/// Currently empty. The mesh RPC transports SCE knows today (zenoh,
+/// Currently empty. The mesh RPC transports SCE knows today (zenoh_keyexpr,
 /// someip, dds, shm, local, custom_tcp) route logical events rather
 /// than allocating from a slot table — none of them actually surface
 /// `Sample::take()` semantics. The list is empty because no transport
@@ -7439,7 +7443,7 @@ version: "1.0"
 topology:
   ecu1:
     transports:
-      zenoh:
+      zenoh_keyexpr:
         mode: peer
         connect:
           - "tcp/192.168.1.1:7447"
@@ -7452,9 +7456,9 @@ topology:
         let cfg = parse_deploy_str(yaml).expect("parse");
         let zenoh = cfg.topology["ecu1"]
             .transports
-            .zenoh
+            .zenoh_keyexpr
             .as_ref()
-            .expect("zenoh block");
+            .expect("zenoh_keyexpr block");
         assert_eq!(zenoh.mode, Some(ZenohMode::Peer));
         assert_eq!(
             zenoh.connect.as_deref(),
@@ -7475,7 +7479,7 @@ version: "1.0"
 topology:
   ecu1:
     transports:
-      zenoh:
+      zenoh_keyexpr:
         mode: pier
     machines:
       brake: { source: brake.scxml }
@@ -7495,7 +7499,7 @@ version: "1.0"
 topology:
   ecu1:
     transports:
-      zenoh:
+      zenoh_keyexpr:
         mode: Peer
     machines:
       brake: { source: brake.scxml }
@@ -7513,7 +7517,7 @@ topology:
       brake: { source: brake.scxml }
 "#;
         let cfg = parse_deploy_str(yaml).expect("parse");
-        assert!(cfg.topology["ecu1"].transports.zenoh.is_none());
+        assert!(cfg.topology["ecu1"].transports.zenoh_keyexpr.is_none());
     }
 
     #[test]
@@ -7585,14 +7589,32 @@ topology:
 
     #[test]
     fn transports_unknown_transport_name_rejected() {
-        // Typo: `zneoh` instead of `zenoh`. Without deny_unknown_fields the
-        // entire block would be silently discarded.
+        // Typo: `zneoh` instead of `zenoh_keyexpr`. Without
+        // deny_unknown_fields the entire block would be silently discarded.
         let yaml = r#"
 version: "1.0"
 topology:
   ecu1:
     transports:
       zneoh:
+        mode: peer
+    machines:
+      brake: { source: brake.scxml }
+"#;
+        assert!(matches!(parse_deploy_str(yaml), Err(DeployError::Yaml(_))));
+    }
+
+    #[test]
+    fn transports_block_key_zenoh_is_an_unknown_name() {
+        // The C++ template transport is `zenoh_keyexpr`; the former
+        // spelling `zenoh` has no alias, so its device block is refused
+        // like any other unknown transport name.
+        let yaml = r#"
+version: "1.0"
+topology:
+  ecu1:
+    transports:
+      zenoh:
         mode: peer
     machines:
       brake: { source: brake.scxml }
@@ -7608,7 +7630,7 @@ version: "1.0"
 topology:
   ecu1:
     transports:
-      zenoh:
+      zenoh_keyexpr:
         mode: peer
         conncet: ["tcp/host:7447"]
     machines:
@@ -7819,7 +7841,7 @@ topology:
         source: brake.scxml
         bindings:
           "#motor":
-            transport: zenoh
+            transport: zenoh_keyexpr
             key: motor/cmd
             ordering: required
 "##;
@@ -7842,7 +7864,7 @@ topology:
         source: brake.scxml
         bindings:
           "#motor":
-            transport: zenoh
+            transport: zenoh_keyexpr
             key: motor/cmd
 "##;
         let cfg = parse_deploy_str(yaml).expect("parse");
@@ -7866,7 +7888,7 @@ topology:
         source: brake.scxml
         bindings:
           "#motor":
-            transport: zenoh
+            transport: zenoh_keyexpr
             key: motor/cmd
             ordering: reqired
 "##;
@@ -8053,7 +8075,7 @@ topology:
     fn liveliness_section_present_parses() {
         // A Zenoh binding is required by `validate_liveliness` transport-
         // compat check — the template emits liveliness code only when
-        // `"zenoh" in transport_types`, so a machine without any Zenoh
+        // `"zenoh_keyexpr" in transport_types`, so a machine without any Zenoh
         // binding/server cannot observe the signal it opts into.
         let yaml = r##"
 version: "1.0"
@@ -8064,7 +8086,7 @@ topology:
         source: brake.scxml
         bindings:
           "#motor":
-            transport: zenoh
+            transport: zenoh_keyexpr
             key: "sce/brake/motor/ping"
         liveliness:
           lease_ms: 2000
@@ -8133,14 +8155,14 @@ version: "1.0"
 topology:
   ecu1:
     transports:
-      zenoh:
+      zenoh_keyexpr:
         mode: peer
         listen: ["tcp/127.0.0.1:17460"]
     machines:
       brake:
         source: brake.scxml
         server:
-          transport: zenoh
+          transport: zenoh_keyexpr
           key: "sce/brake/rpc"
         liveliness:
           lease_ms: 200
@@ -8534,7 +8556,7 @@ version: "1.0"
 topology:
   ecu1:
     transports:
-      zenoh:
+      zenoh_keyexpr:
         mode: peer
     machines:
       brake:
@@ -8543,7 +8565,7 @@ topology:
           max_pending_per_target: 64
         bindings:
           "#motor":
-            transport: zenoh
+            transport: zenoh_keyexpr
             key: "sce/brake/motor"
 "##;
         let cfg = parse_deploy_str(yaml).expect("parse");
@@ -8589,7 +8611,7 @@ topology:
                 // The repair names the transports that do buffer, and it
                 // is derived from the registry rather than spelled out.
                 assert!(
-                    reason.contains("someip") && reason.contains("zenoh"),
+                    reason.contains("someip") && reason.contains("zenoh_keyexpr"),
                     "reason must list the transports whose registry entry buffers: {reason}"
                 );
             }
@@ -8645,7 +8667,7 @@ topology:
         source: brake.scxml
         bindings:
           "#motor":
-            transport: zenoh
+            transport: zenoh_keyexpr
 "##;
         let cfg = parse_deploy_str(yaml).expect("parse");
         let machine = &cfg.topology["ecu1"].machines["brake"];
@@ -8670,7 +8692,7 @@ topology:
         source: brake.scxml
         bindings:
           "#motor":
-            transport: zenoh
+            transport: zenoh_keyexpr
             retry:
               max_retries: 3
 "##;
@@ -8733,7 +8755,7 @@ topology:
         source: brake.scxml
         bindings:
           "#motor":
-            transport: zenoh
+            transport: zenoh_keyexpr
             retry:
               max_retries: 0
 "##;
@@ -8765,7 +8787,7 @@ topology:
         source: brake.scxml
         bindings:
           "#motor":
-            transport: zenoh
+            transport: zenoh_keyexpr
             retry:
               max_retries: 2
               backoff_multiplier: 0.5
@@ -8789,7 +8811,7 @@ topology:
         let retry = format!(
             "version: \"1.0\"\ntopology:\n  ecu1:\n    machines:\n      brake:\n        \
              source: brake.scxml\n        bindings:\n          \"#motor\":\n            \
-             transport: zenoh\n            retry:\n              max_retries: 2\n              \
+             transport: zenoh_keyexpr\n            retry:\n              max_retries: 2\n              \
              max_backoff_ms: {past}\n"
         );
         match parse_deploy_str(&retry) {
@@ -8802,7 +8824,7 @@ topology:
             "version: \"1.0\"\ntopology:\n  ecu1:\n    machines:\n      brake:\n        \
              source: brake.scxml\n        outbound_buffer:\n          max_pending_per_target: 8\n          \
              max_age_ms: {past}\n        bindings:\n          \"#motor\":\n            \
-             transport: zenoh\n            key: \"vehicle/motor\"\n"
+             transport: zenoh_keyexpr\n            key: \"vehicle/motor\"\n"
         );
         match parse_deploy_str(&buffer) {
             Err(DeployError::InvalidOutboundBuffer { reason, .. }) => {
@@ -8856,7 +8878,7 @@ topology:
         source: brake.scxml
         bindings:
           "#motor":
-            transport: zenoh
+            transport: zenoh_keyexpr
             retry:
               max_retries: 2
               backoff_jitter_pct: 150
@@ -8883,7 +8905,7 @@ topology:
         source: brake.scxml
         bindings:
           "#motor":
-            transport: zenoh
+            transport: zenoh_keyexpr
             retry:
               max_retries: 2
               initial_backoff_ms: 500
@@ -8913,7 +8935,7 @@ topology:
         source: brake.scxml
         bindings:
           "#motor":
-            transport: zenoh
+            transport: zenoh_keyexpr
 "##;
         let cfg = parse_deploy_str(yaml).expect("parse");
         let machine = &cfg.topology["ecu1"].machines["brake"];
@@ -8938,7 +8960,7 @@ topology:
         source: brake.scxml
         bindings:
           "#motor":
-            transport: zenoh
+            transport: zenoh_keyexpr
             auth:
               required: true
               peer_fingerprint: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -8997,7 +9019,7 @@ topology:
         source: brake.scxml
         bindings:
           "#motor":
-            transport: zenoh
+            transport: zenoh_keyexpr
             auth:
               required: true
 "##;
@@ -9023,7 +9045,7 @@ topology:
         source: brake.scxml
         bindings:
           "#motor":
-            transport: zenoh
+            transport: zenoh_keyexpr
             auth:
               required: true
               peer_fingerprint: "sha256:NOTHEX"
@@ -9103,7 +9125,7 @@ topology:
         source: brake.scxml
         bindings:
           "#motor":
-            transport: zenoh
+            transport: zenoh_keyexpr
             auth:
               required: false
               peer_fingerprint: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -9185,7 +9207,7 @@ topology:
         // Writing the default out explicitly does not widen the set, so
         // it stays legal even on a transport that cannot cross targets.
         parse_deploy_str(&reply_from_yaml(
-            "zenoh",
+            "zenoh_keyexpr",
             "            reply_from: [\"#alpha\"]",
         ))
         .expect("self-only reply_from must parse on any transport");
@@ -9256,7 +9278,7 @@ topology:
         // so a wider set could never be exercised — reject at parse time
         // rather than generating a router that silently ignores it.
         match parse_deploy_str(&reply_from_yaml(
-            "zenoh",
+            "zenoh_keyexpr",
             "            reply_from: [\"#alpha\", \"#broker\"]",
         )) {
             Err(DeployError::CrossTargetReplyNotSupported {
@@ -9266,7 +9288,7 @@ topology:
             }) => {
                 assert_eq!(machine, "brake");
                 assert_eq!(binding, "#alpha");
-                assert_eq!(transport, "zenoh");
+                assert_eq!(transport, "zenoh_keyexpr");
             }
             other => panic!("expected CrossTargetReplyNotSupported, got {other:?}"),
         }
@@ -9382,7 +9404,7 @@ topology:
       motor:
         source: motor.scxml
         server:
-          transport: zenoh
+          transport: zenoh_keyexpr
           key: "sce/motor"
 "#;
         let cfg = parse_deploy_str(yaml).expect("parse");
@@ -9404,7 +9426,7 @@ topology:
       motor:
         source: motor.scxml
         server:
-          transport: zenoh
+          transport: zenoh_keyexpr
           key: "sce/motor"
           response_deadline_ms: 500
 "#;
@@ -9478,7 +9500,7 @@ topology:
                 // every arm that realises the knob is named — a prose
                 // list that had drifted would fail here rather than ship
                 // a diagnostic pointing at the wrong set.
-                for realised in ["someip", "zenoh", "custom_tcp", "dds"] {
+                for realised in ["someip", "zenoh_keyexpr", "custom_tcp", "dds"] {
                     assert!(
                         reason.contains(realised),
                         "reason must name `{realised}`, which DOES realise the knob: {reason}"
@@ -9533,7 +9555,7 @@ topology:
       motor:
         source: motor.scxml
         server:
-          transport: zenoh
+          transport: zenoh_keyexpr
           key: "sce/motor"
           response_deadline_ms: 5
 "#;
@@ -9798,14 +9820,14 @@ version: "1.0"
 topology:
   ecu1:
     transports:
-      zenoh:
+      zenoh_keyexpr:
         mode: peer
     machines:
       brake:
         source: brake.scxml
         bindings:
           "#player":
-            transport: zenoh
+            transport: zenoh_keyexpr
             key: "sce/player/x"
             instance_from: id
 "##;
@@ -9819,13 +9841,13 @@ topology:
             }) => {
                 assert_eq!(machine, "brake");
                 assert_eq!(binding, "#player");
-                assert_eq!(transport, "zenoh");
+                assert_eq!(transport, "zenoh_keyexpr");
                 assert_eq!(declared_field, "instance_from");
                 // Present, not absent: the repair is a rewrite on this
                 // transport, not a move to another one.
                 assert_eq!(
                     expected_mechanism.as_deref(),
-                    crate::mesh::transport::lookup("zenoh")
+                    crate::mesh::transport::lookup("zenoh_keyexpr")
                         .unwrap()
                         .pool_member_carrier
                         .selection_mechanism()
@@ -9967,14 +9989,14 @@ version: "1.0"
 topology:
   ecu1:
     transports:
-      zenoh:
+      zenoh_keyexpr:
         mode: peer
     machines:
       brake:
         source: brake.scxml
         bindings:
           "#player":
-            transport: zenoh
+            transport: zenoh_keyexpr
             key: "sce/player"
             instances: [1, 2]
 "##;
@@ -9988,7 +10010,7 @@ topology:
             }) => {
                 assert_eq!(machine, "brake");
                 assert_eq!(binding, "#player");
-                assert_eq!(transport, "zenoh");
+                assert_eq!(transport, "zenoh_keyexpr");
                 assert_eq!(declared_field, "instances");
                 assert!(
                     expected_mechanism
@@ -10087,7 +10109,7 @@ version: "1.0"
 topology:
   ecu1:
     transports:
-      zenoh:
+      zenoh_keyexpr:
         mode: peer
     machines:
       brake:
@@ -10096,7 +10118,7 @@ topology:
           max_pending_per_target: 8
         bindings:
           "#player":
-            transport: zenoh
+            transport: zenoh_keyexpr
             key: "sce/player/{id}"
 "##;
         match parse_deploy_str(yaml) {
@@ -10107,7 +10129,7 @@ topology:
                 ..
             }) => {
                 assert_eq!(binding, "#player");
-                assert_eq!(transport, "zenoh");
+                assert_eq!(transport, "zenoh_keyexpr");
                 assert_eq!(feature, "outbound_buffer");
             }
             other => panic!("expected PoolDispatchWithoutMember, got {other:?}"),
@@ -10166,14 +10188,14 @@ version: "1.0"
 topology:
   ecu1:
     transports:
-      zenoh:
+      zenoh_keyexpr:
         mode: peer
     machines:
       brake:
         source: brake.scxml
         bindings:
           "#player":
-            transport: zenoh
+            transport: zenoh_keyexpr
             key: "sce/player/{id}"
         subscriptions:
           - event: event.notification.status
@@ -10201,17 +10223,17 @@ version: "1.0"
 topology:
   ecu1:
     transports:
-      zenoh:
+      zenoh_keyexpr:
         mode: peer
     machines:
       brake:
         source: brake.scxml
         bindings:
           "#player":
-            transport: zenoh
+            transport: zenoh_keyexpr
             key: "sce/player/{id}"
           "#chassis":
-            transport: zenoh
+            transport: zenoh_keyexpr
             key: "sce/chassis/state"
         subscriptions:
           - event: event.notification.status
@@ -10325,22 +10347,24 @@ version: "1.0"
 topology:
   ecu1:
     transports:
-      zenoh:
+      zenoh_keyexpr:
         mode: peer
     machines:
       motor:
         source: motor.scxml
         server:
-          transport: zenoh
+          transport: zenoh_keyexpr
           key: "sce/motor"
           instances: [1, 2]
 "##;
         match parse_deploy_str(yaml) {
             Err(DeployError::ServerPoolNotSupported { machine, transport }) => {
                 assert_eq!(machine, "motor");
-                assert_eq!(transport, "zenoh");
+                assert_eq!(transport, "zenoh_keyexpr");
             }
-            other => panic!("expected ServerPoolNotSupported with transport=zenoh, got {other:?}"),
+            other => panic!(
+                "expected ServerPoolNotSupported with transport=zenoh_keyexpr, got {other:?}"
+            ),
         }
     }
 
@@ -10353,14 +10377,14 @@ version: "1.0"
 topology:
   ecu1:
     transports:
-      zenoh:
+      zenoh_keyexpr:
         mode: peer
     machines:
       brake:
         source: brake.scxml
         bindings:
           "#player":
-            transport: zenoh
+            transport: zenoh_keyexpr
             key: "sce/player/{id}"
 "##;
         let cfg = parse_deploy_str(yaml).expect("parse");
@@ -10371,7 +10395,7 @@ topology:
             .find(|(k, _)| k.as_str() == "#player")
             .expect("binding")
             .1;
-        assert_eq!(binding.transport, "zenoh");
+        assert_eq!(binding.transport, "zenoh_keyexpr");
     }
 
     #[test]
@@ -10383,14 +10407,14 @@ version: "1.0"
 topology:
   ecu1:
     transports:
-      zenoh:
+      zenoh_keyexpr:
         mode: peer
     machines:
       brake:
         source: brake.scxml
         bindings:
           "#motor":
-            transport: zenoh
+            transport: zenoh_keyexpr
             key: "sce/motor"
 "##;
         parse_deploy_str(yaml).expect("parse");
@@ -10939,7 +10963,7 @@ partitions:
     contains:
       parallel_regions:
         - { machine: brake, region: watchdog }
-    transport_binding: zenoh
+    transport_binding: zenoh_keyexpr
 "##;
         match parse_deploy_str(yaml) {
             Err(DeployError::PartitionTransportBindingUnsupported {
@@ -10948,7 +10972,7 @@ partitions:
                 ..
             }) => {
                 assert_eq!(partition, "brake_main");
-                assert_eq!(transport, "zenoh");
+                assert_eq!(transport, "zenoh_keyexpr");
             }
             other => panic!("expected PartitionTransportBindingUnsupported, got {other:?}"),
         }
@@ -11187,7 +11211,7 @@ topology:
         source: brake.scxml
         bindings:
           "#motor":
-            transport: zenoh
+            transport: zenoh_keyexpr
       motor:
         source: motor.scxml
 "##;
@@ -11703,7 +11727,7 @@ topology:
         source: mcu.scxml
         bindings:
           "#sub":
-            transport: zenoh
+            transport: zenoh_keyexpr
             stage_pool: rx_pool_sram1
 "##;
         match parse_deploy_str(yaml) {
@@ -11716,7 +11740,7 @@ topology:
                 assert_eq!(machine, "mcu_node");
                 assert_eq!(binding, "#sub");
                 assert_eq!(stage_pool, "rx_pool_sram1");
-                assert_eq!(transport, "zenoh");
+                assert_eq!(transport, "zenoh_keyexpr");
             }
             other => panic!("expected StagePoolTransportMismatch, got {other:?}"),
         }
@@ -11756,7 +11780,7 @@ topology:
         source: mcu.scxml
         bindings:
           "#sub":
-            transport: zenoh
+            transport: zenoh_keyexpr
             stage_pool: rx_pool_sram1
 "##;
         let cfg: DeployConfig = serde_yaml_ng::from_str(yaml).expect("YAML parses");
@@ -11764,7 +11788,7 @@ topology:
         // candidate list is non-trivial.
         let mut registry = ForgePoolRegistry::new();
         registry.record("scout_rx_pool", ForgePoolKind::BufferPool);
-        match validate_stage_pool_references_with(&cfg, &registry, &["zenoh"]) {
+        match validate_stage_pool_references_with(&cfg, &registry, &["zenoh_keyexpr"]) {
             Err(DeployError::StagePoolNotDeclared {
                 machine,
                 binding,
@@ -11794,13 +11818,13 @@ topology:
         source: mcu.scxml
         bindings:
           "#sub":
-            transport: zenoh
+            transport: zenoh_keyexpr
             stage_pool: rx_pool_sram1
 "##;
         let cfg: DeployConfig = serde_yaml_ng::from_str(yaml).expect("YAML parses");
         let mut registry = ForgePoolRegistry::new();
         registry.record("rx_pool_sram1", ForgePoolKind::BufferPool);
-        validate_stage_pool_references_with(&cfg, &registry, &["zenoh"])
+        validate_stage_pool_references_with(&cfg, &registry, &["zenoh_keyexpr"])
             .expect("registered name resolves cleanly");
     }
 
@@ -11830,7 +11854,7 @@ topology:
         source: mcu.scxml
         bindings:
           "#sub":
-            transport: zenoh
+            transport: zenoh_keyexpr
             stage_pool: rx_pool_sram1
 "##;
         let cfg: DeployConfig =
