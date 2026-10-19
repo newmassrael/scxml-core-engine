@@ -329,12 +329,19 @@ class TheCommandLine(unittest.TestCase):
             self.assertEqual(code, 0)
             self.assertEqual([x["id"] for x in listed["sections"]], ["s1", "s2", "s3", "s4"])
             self.assertEqual(listed["by"], "headings")
+            # A section says the paragraphs `make-scope` would take for it as its own, and every paragraph is the
+            # own paragraph of exactly one section, so a ledger that keeps paragraphs is read back into parts.
+            every = [b for x in listed["sections"] for b in x["block_ids"]]
+            self.assertEqual(len(every), len(set(every)))
+            self.assertEqual(sorted(every), sorted(b.id for b in two_functions().blocks))
 
             code, said = self.run_main(
                 "make-scope", "--extraction", str(e), "--section", "s4", "--out", str(s), "--json"
             )
             self.assertEqual(code, 0)
             self.assertEqual(json.loads(s.read_text())["blocks"], ["b6", "b7"])
+            # What the section says it holds is what taking it as a scope gives.
+            self.assertEqual(listed["sections"][3]["block_ids"], ["b6", "b7"])
             self.assertEqual(
                 json.loads(said), {"blocks": 2, "of": 7, "whole": False, "revision": Scope.from_json(s.read_text()).revision()}
             )

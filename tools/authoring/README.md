@@ -2037,8 +2037,10 @@ found by the same words-for-words comparison that holds the converter by rule to
 `python3 -m sce_author outline --extraction EXTRACTION.json [--json]` lists the parts the owner can choose
 between, each with an id (`s1`, `s2`, ...), its title, its level, its parent, how many blocks and characters it
 holds (its own: from its heading to the next heading of any level, so the parts add up to the document and
-nothing is counted twice; `tree_blocks` and `tree_characters` are the same with the parts under it) and the
-pages it spans: the headings of the document, nested by level, with a first part for what comes before the
+nothing is counted twice; `tree_blocks` and `tree_characters` are the same with the parts under it), the pages
+it spans and, in `--json`, `block_ids`, the ids of the paragraphs that are its own, with and without words,
+which are exactly the ones `--section` takes, so that a host reads a saved ledger, which keeps paragraphs, back
+into parts without working out a range of its own: the headings of the document, nested by level, with a first part for what comes before the
 first heading; for a document with no heading its pages; for one with neither, the whole of it (`--by
 headings|pages|whole` asks for one). `make-scope --extraction EXTRACTION.json --section s2 [--section s4]
 [--tree s5] --out SCOPE.json` writes the scope: the ids of the blocks, in the document's order. A `--section`

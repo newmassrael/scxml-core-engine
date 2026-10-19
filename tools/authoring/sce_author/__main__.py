@@ -165,8 +165,14 @@ def cmd_outline(args) -> int:
     extraction = _read_extraction(args.extraction)
     way, sections = outline_of(extraction, args.by)
     if args.json:
+        # `block_ids` are the paragraphs `scope_of` takes for the section as its own (`first` to `end`), with and
+        # without words, so that a host reads a saved ledger, which keeps paragraphs, back into parts without
+        # working out a block range of its own.
+        listed = [
+            {**s.to_dict(), "block_ids": [b.id for b in extraction.blocks[s.first:s.end]]} for s in sections
+        ]
         print(json.dumps(
-            {"v": 1, "extraction": extraction.revision(), "by": way, "sections": [s.to_dict() for s in sections]},
+            {"v": 1, "extraction": extraction.revision(), "by": way, "sections": listed},
             sort_keys=True, ensure_ascii=False))
         return 0
     print(f"outline by {way}: {len(sections)} section(s)")
