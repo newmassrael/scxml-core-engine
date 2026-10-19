@@ -52,6 +52,12 @@ wss = ["dep:tokio", "dep:tokio-tungstenite", "dep:futures-util"]
 # upstream's `zenoh` crate, so this binding talks to any router of that protocol: the
 # watching-zenoh router the owner chose as the Mesh backend on 2026-10-18, or zenohd.
 zenoh = ["dep:zenoh"]
+# The behaviour tests every client of the Zenoh binding is held to (SCE_MESH.md section 20.4): the
+# binding takes its client through the `ZenohClient` trait, and `conformance` is the kit a client
+# is run through, as functions over a `Harness` that connects one client per machine. Off by
+# default and dependency-free: it is compiled for a client's own test target, in this repository
+# or in the one that implements another client, and not for a host.
+conformance = []
 
 [dependencies]
 sce-forge-runtime = { path = "../forge-runtime", default-features = false }

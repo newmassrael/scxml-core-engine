@@ -33,6 +33,8 @@ compile_error!(
 
 extern crate alloc;
 
+#[cfg(feature = "conformance")]
+pub mod conformance;
 pub mod endpoint;
 pub mod generated;
 pub mod inbound;
