@@ -14,10 +14,15 @@
 //! module: it speaks upstream's `zenoh` client, so it reaches any router of that protocol version
 //! (§mesh-20.4).
 
+use std::collections::BTreeSet;
+use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Mutex, PoisonError};
+use std::thread::JoinHandle;
+use std::time::Duration;
 
 use ::zenoh::qos::CongestionControl;
 use ::zenoh::sample::SampleKind;
+use ::zenoh::session::ZenohId;
 use ::zenoh::{Config, Session, Wait};
 
 use crate::inbox::{
@@ -64,9 +69,85 @@ pub fn client_config(endpoints: &[&str]) -> Result<Config, ZenohError> {
     Ok(config)
 }
 
+/// How often the session's link to its router is looked at for the end notice. A loss is told
+/// within this long of the router's side of the link closing.
+const SESSION_POLL: Duration = Duration::from_millis(50);
+
+/// Whether a session that was connected to the nodes in `before` has lost its router, given the
+/// nodes it is connected to `now`: none are left, or none of the ones it had are. A session that
+/// has not been seen connected is not lost, and one that keeps any node it had is not lost either.
+fn session_lost<T: Ord>(before: &BTreeSet<T>, now: &BTreeSet<T>) -> bool {
+    !before.is_empty() && (now.is_empty() || before.is_disjoint(now))
+}
+
+/// The ids of the nodes the session is connected to: the routers it dialed, or the peers a
+/// deployment pointed it at.
+fn connected_nodes(session: &Session) -> BTreeSet<ZenohId> {
+    let info = session.info();
+    info.routers_zid()
+        .wait()
+        .chain(info.peers_zid().wait())
+        .collect()
+}
+
+/// Watch `session` until `stopped` is told or dropped, and call `on_end` once if the session
+/// closes or loses its link.
+fn watch_session(session: Session, stopped: mpsc::Receiver<()>, on_end: impl FnOnce(String)) {
+    let mut before = connected_nodes(&session);
+    loop {
+        match stopped.recv_timeout(SESSION_POLL) {
+            Err(RecvTimeoutError::Timeout) => {}
+            Ok(()) | Err(RecvTimeoutError::Disconnected) => return,
+        }
+        if session.is_closed() {
+            on_end("the session was closed".to_string());
+            return;
+        }
+        let now = connected_nodes(&session);
+        if session_lost(&before, &now) {
+            on_end("the link to the router closed".to_string());
+            return;
+        }
+        before = now;
+    }
+}
+
+/// The thread that watches a session; dropping it stops the thread and waits for it.
+struct SessionWatch {
+    stop: Option<mpsc::Sender<()>>,
+    thread: Option<JoinHandle<()>>,
+}
+
+impl Drop for SessionWatch {
+    fn drop(&mut self) {
+        // The thread holds a handle on the session, so it ends first and the session closes when
+        // the last handle goes, on whichever side that is.
+        drop(self.stop.take());
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
+}
+
 /// Upstream's `zenoh` crate as the binding's client: one session, from which the binding's
 /// subscribers, token and puts are made.
+///
+/// Upstream's session does not end when its router goes away. A client-mode session dials its
+/// router again by itself, forever, and declares again what it held (subscribers and token);
+/// `Session::is_closed` stays false, no configuration key turns the reconnection off, and the
+/// transport-events listener that would announce the loss is behind upstream's `unstable` feature,
+/// which this crate does not enable. So [`ZenohClient::on_session_end`] is made by a thread that
+/// looks, every 50 ms, at the ids of the nodes the session is connected to, and says the session
+/// ended when it has none left or none it had before (a router that came back is a different
+/// node, with an id of its own). Its limit is the interval: a link that closes and is made again
+/// to the very same node between two looks is not told, and the binding then keeps believing in
+/// peers that left in that moment. After the notice, the binding is over and the
+/// session underneath is still reconnecting by itself until the client is dropped; a host that
+/// wants a session after the end opens a new one (see `reconnect::open_reconnecting`).
 pub struct UpstreamClient {
+    // Declared before the session so that the watching thread, which holds a handle on it, is
+    // stopped and joined first.
+    watch: Option<SessionWatch>,
     session: Session,
 }
 
@@ -74,7 +155,10 @@ impl UpstreamClient {
     /// Open a session from `config` (see [`client_config`]).
     pub fn connect(config: Config) -> Result<Self, ZenohError> {
         let session = ::zenoh::open(config).wait().map_err(session_error)?;
-        Ok(UpstreamClient { session })
+        Ok(UpstreamClient {
+            watch: None,
+            session,
+        })
     }
 }
 
@@ -146,6 +230,28 @@ impl ZenohClient for UpstreamClient {
             .wait()
             .map_err(PutError::retryable)
     }
+
+    fn on_session_end<F>(&mut self, on_end: F) -> Result<(), ClientError>
+    where
+        F: FnOnce(String) + Send + 'static,
+    {
+        if self.watch.is_some() {
+            return Err(ClientError::new(
+                "the end of this session is already being watched",
+            ));
+        }
+        let (stop, stopped) = mpsc::channel();
+        let session = self.session.clone();
+        let thread = std::thread::Builder::new()
+            .name("mesh-session-watch".to_string())
+            .spawn(move || watch_session(session, stopped, on_end))
+            .map_err(ClientError::new)?;
+        self.watch = Some(SessionWatch {
+            stop: Some(stop),
+            thread: Some(thread),
+        });
+        Ok(())
+    }
 }
 
 /// Open the binding for `machine` on a session made from `config`, carried by upstream's client.
@@ -170,6 +276,27 @@ mod tests {
                 Ok(_) => panic!("{bad:?} opened a binding"),
             }
         }
+    }
+
+    #[test]
+    fn a_session_is_lost_when_its_router_goes_or_is_replaced() {
+        let nodes = |ids: &[u8]| ids.iter().copied().collect::<BTreeSet<u8>>();
+
+        assert!(!session_lost(&nodes(&[1]), &nodes(&[1])), "still connected");
+        assert!(session_lost(&nodes(&[1]), &nodes(&[])), "none left");
+        assert!(
+            session_lost(&nodes(&[1]), &nodes(&[2])),
+            "a router that came back is another node"
+        );
+        assert!(
+            !session_lost(&nodes(&[1, 2]), &nodes(&[2])),
+            "one of two links closing keeps the session"
+        );
+        assert!(
+            !session_lost(&nodes(&[]), &nodes(&[])),
+            "a session never seen connected is not lost"
+        );
+        assert!(!session_lost(&nodes(&[]), &nodes(&[3])));
     }
 
     #[test]
