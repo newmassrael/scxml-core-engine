@@ -22,12 +22,12 @@
   </datamodel>
   <state id="idle">
     <transition event="fine">
-      <sce:action name="report">
+      <sce:action name="report" effect="notice">
         <sce:arg name="next" expr="level + 1"/>
       </sce:action>
     </transition>
     <transition event="overflow">
-      <sce:action name="report">
+      <sce:action name="report" effect="notice">
         <sce:arg name="next" expr="level + 10"/>
       </sce:action>
     </transition>

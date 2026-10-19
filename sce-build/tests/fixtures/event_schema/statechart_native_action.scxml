@@ -37,7 +37,7 @@
   <sce:import src="schema_fragment.scxml" kind="event-schema" as="FragmentSchema"/>
   <state id="idle">
     <onentry>
-      <sce:action name="on_idle_entry"/>
+      <sce:action name="on_idle_entry" effect="notice"/>
     </onentry>
     <transition event="fragment.received" target="assembling">
       <!-- ⚠ `name=` on the FIRST argument and not the second, on
@@ -47,7 +47,7 @@
            would have gone unnoticed — the shape `<sce:while max-iter>`
            had. Naming one of two keeps the positional form exercised
            beside it, which naming both would retire. -->
-      <sce:action name="append_fragment_payload">
+      <sce:action name="append_fragment_payload" effect="notice">
         <sce:arg name="payload" expr="_event.data.payload"/>
         <sce:arg expr="_event.data.offset"/>
       </sce:action>
@@ -58,10 +58,10 @@
   </state>
   <state id="assembling">
     <onexit>
-      <sce:action name="on_assembling_exit"/>
+      <sce:action name="on_assembling_exit" effect="notice"/>
     </onexit>
     <transition event="reset" target="idle">
-      <sce:action name="reset_slot"/>
+      <sce:action name="reset_slot" effect="notice"/>
     </transition>
     <transition event="error.execution" target="faulted"/>
   </state>

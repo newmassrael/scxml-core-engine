@@ -36,7 +36,7 @@
           </datamodel>
           <state id="first">
             <onentry>
-              <sce:action name="started"/>
+              <sce:action name="started" effect="notice"/>
             </onentry>
             <transition event="a" target="second">
               <assign location="steps" expr="steps + 1"/>
@@ -45,7 +45,7 @@
           <state id="second">
             <transition event="b" target="leaf">
               <assign location="steps" expr="steps + 1"/>
-              <sce:action name="finished">
+              <sce:action name="finished" effect="notice">
                 <sce:arg name="steps" expr="steps"/>
               </sce:action>
             </transition>

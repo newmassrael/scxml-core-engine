@@ -25,22 +25,22 @@
   <sce:context id="climate"/>
   <state id="idle">
     <onentry>
-      <sce:action name="on_enter_idle"/>
+      <sce:action name="on_enter_idle" effect="notice"/>
     </onentry>
     <transition event="temp_high" cond="cpp:climate.shouldCool()" target="cooling">
-      <sce:action name="start_cooling"/>
+      <sce:action name="start_cooling" effect="notice"/>
     </transition>
   </state>
 
   <state id="cooling">
     <onentry>
-      <sce:action name="on_enter_cooling"/>
+      <sce:action name="on_enter_cooling" effect="notice"/>
     </onentry>
     <onexit>
-      <sce:action name="on_exit_cooling"/>
+      <sce:action name="on_exit_cooling" effect="notice"/>
     </onexit>
     <transition event="temp_normal" target="idle">
-      <sce:action name="stop_cooling"/>
+      <sce:action name="stop_cooling" effect="notice"/>
     </transition>
   </state>
 </scxml>

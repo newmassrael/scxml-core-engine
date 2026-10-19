@@ -17,7 +17,7 @@
   </datamodel>
   <state id="idle">
     <onentry>
-      <sce:action name="showAttempts">
+      <sce:action name="showAttempts" effect="notice">
         <sce:arg name="count" expr="attempts"/>
         <sce:arg name="exhausted" expr="attempts &gt;= 3"/>
       </sce:action>
