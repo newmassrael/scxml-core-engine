@@ -1,11 +1,12 @@
-# ADR 0038 — A host action states whether the machine depends on it, and a host states whether it performs it
+# ADR 0038 — A host action states whether the machine depends on it, and a host states whether it performs
 
-- Status: Proposed (the owner asked on 2026-10-19 for the upstream form to be designed for the
-  long term, without regard to the downstream whose request raised the question)
+- Status: Accepted and implemented (the owner asked on 2026-10-19 for the upstream form to be
+  designed for the long term, without regard to the downstream whose request raised the question,
+  and for all of it to be built)
 - Date: 2026-10-19
 - Scope: `<sce:action>` (`docs/SCE_ACCEPTED_SUBSET.md` §2.11), the six generated host interfaces
   and the Interpreter's `INativeActionHost`, the `sce-codegen` stdout manifest,
-  `schemas/sce-forge-ext.xsd`, `apis/forge-ast.v1.schema.json`
+  `schemas/sce-forge-ext.xsd`, `apis/forge-ast.v1.schema.json`, `schemas/sce-manifest.v1.schema.json`
 - Related: `docs/adr/0005-sce-static-closes-its-gaps-by-bounding-and-declaring.md`,
   `sce-build/src/host_processor_analyzer.rs` (the same "published, not enforced" shape),
   `SCE_WIRE_CONTRACTS.md`
@@ -39,64 +40,75 @@ a method can always be written to do nothing.
 **What SCE can do** is make the question answerable by someone other than the author of the
 host: say which actions the machine depends on, make the host state in its own type what it does
 with them, refuse the combinations that contradict each other, and publish the list. That is
-what `needs_host_processor` does for a `<send type>` nobody implements, and it is what is missing
+what `needs_host_processor` does for a `<send type>` nobody implements, and it is what was missing
 here.
 
 ## Decisions
 
-1. **An action declares its effect.** `<sce:action name="…" sce:effect="duty|notice">`.
+1. **An action states its effect.** `<sce:action name="…" effect="duty|notice">`.
    - `duty`: the machine's correctness depends on the host performing the operation.
    - `notice`: it does not; the host may observe, record or drop it.
 
-   One name carries one effect everywhere it appears, as it already carries one signature
-   (`validation/native-action-signature-conflict`); a name with two effects is refused by a code of
-   its own. The attribute is absent on every document today. The end state is that it is
-   **required**, because an action whose effect is unstated is the gap this ADR closes. It gets
-   there in two steps rather than one: first optional, with the manifest listing the actions
-   that state none (`actions_without_effect`) and `sce-codegen --lint` refusing them; required
-   once the committed corpus states it. The first step is not a workaround, since the end state is
-   fixed here and the lint is what drives the migration.
+   The attribute is **required**: an action whose effect is unstated is the gap this ADR closes,
+   and a period in which it is optional would leave the gap open under a lint that asks for the
+   fix. An action without it is refused at the element as a missing attribute; a value that is
+   neither word is refused as an invalid attribute with both words as candidates. One name carries
+   one effect at every call site, as it already carries one signature, because the effect is part
+   of the one host method that serves them: a name that is a duty here and a notice there is
+   refused as `validation/native-action-signature-conflict`.
 
-2. **A duty entered on `<onentry>` names its release.** `sce:released-by="stop_keepalive_worker"`.
-   The release must be an action of the same machine and must sit on the `<onexit>` of the same
-   state, so every way out of the state releases what the entry took. A duty with no release is
-   legal (a duty that lasts for the machine's life), and says so by omitting the attribute. A
-   `released-by` that names nothing, or that sits elsewhere, is refused.
+   The attributes are written unqualified, as `name` and `expr` are: the element is SCE's own.
 
-3. **A host states what it does with duties, in its own type.** Each generated interface carries
-   one required member with no default, and its values are `performs` and `simulates`:
+2. **A duty entered on `<onentry>` names its release.** `released-by="stop_keepalive_worker"`.
+   The release is an action of the same machine, a duty itself (a release the host may drop leaves
+   the entry's duty held), performed on the `<onexit>` of the same state, so every way out of the
+   state releases what the entry took. A duty with no `released-by` is legal and lasts the
+   machine's life. A `released-by` off an `<onentry>`, on a notice, naming no action, or naming one
+   that is not a duty on this state's `<onexit>`, is refused as
+   `validation/native-action-release`, with the reason in the message.
 
-   | backend | the member |
-   |---|---|
-   | Rust | an associated const of the actions trait |
-   | C++ | a `constexpr` static of the abstract struct |
-   | Kotlin / Go / Python | a required property / method |
-   | C11 | a field of the vtable |
+3. **A host states what it does with duties, in its own type.** The generated interface of a
+   machine that states a duty carries one member with no default, whose value is `performs` or
+   `simulates`. A machine with no duty has no such member and takes any host, as before.
 
-   A host that `performs` is a host whose author has said so beside the code. A host that
-   `simulates` is a test double. The machine refuses a `simulates` host unless the caller opts in
-   by name: a compile-time assertion on Rust and C++ (the host type is known), a refused
-   construction elsewhere (`_init_with_actions` already returns `false` for an unfilled vtable, and
-   this is the same refusal). A machine with no duty takes any host, as now. The ambiguous third
-   state, a host that implements the method and does nothing, is not a value: writing `performs`
-   over an empty body is the author's false statement, in a line a reviewer can grep for, rather
-   than an unwritten fact.
+   | backend | the member | refusal of a simulating host | accepting one on purpose |
+   |---|---|---|---|
+   | Rust | `const REALIZATION: ::sce_rust_runtime::ActionRealization` | compile time: `Policy::new` evaluates an associated const | `Policy::new_simulated` |
+   | C++ | `virtual SCE::ActionRealization realization() const = 0` | at construction | a named constructor argument |
+   | Kotlin | `val realization: ActionRealization` | `require` at construction | `acceptSimulatedHost = true` |
+   | Go | `Realization() sce.ActionRealization` | `New<Machine>Policy` panics | `NewSimulated<Machine>Policy` |
+   | Python | `realization: ActionRealization` | `ValueError` at construction | `accept_simulated_host=True` |
+   | C11 | `sce_action_realization_t realization` in the vtable | `_init_with_actions` returns false | `_init_with_simulated_actions` |
+
+   `Performs` is a statement the host's author makes about the bodies of the methods, in a line a
+   reviewer can find. SCE cannot read the bodies; an empty body under `Performs` is that author's
+   false statement and not an unwritten fact. The refusal is made where the machine is built with
+   a host, and a child machine that a parent's host answers is built the same way, so a child's
+   duties are checked at the child's construction and no check is repeated at the parent.
 
 4. **The generated `Recording…` host simulates.** It is a recorder by construction. It exists for
-   Kotlin and Rust today (`kotlin_recording_host`, `rust_recording_host` in
+   Kotlin and Rust (`kotlin_recording_host`, `rust_recording_host` in
    `sce-build/src/forge/native_action.rs`); wherever it exists it declares `simulates`, so a harness
-   that wants to drive a machine with duties through it says so at the call and a production
-   wiring that reaches for it by accident is refused.
+   that drives a machine with duties through it says so at the call and a production wiring that
+   reaches for it by accident is refused.
 
-5. **The manifest publishes the duties.** `sce-codegen`'s stdout manifest gains `host_duties`
-   (for each: the action, the state that enters it, its release) beside `needs_host_processor`. It
-   is published and not enforced here, for the reason `host_processor_analyzer` gives: the
-   consumer decides whether to gate on it, and a build that deliberately drives a machine with a
-   test double keeps working.
+5. **The manifest publishes the duties.** `sce-codegen`'s stdout manifest gains `host_duties`, one
+   record per site that states a duty (`machine`, `action`, `state`, `on` — `entry`, `exit`,
+   `transition`, `initial` or `history-default` — and `released_by` when there is one), beside
+   `needs_host_processor`. It is published and not enforced, for the reason
+   `host_processor_analyzer` gives: the consumer decides whether to gate on it, and a build that
+   deliberately drives a machine with a test double keeps working.
 
 6. **The Interpreter says the same.** `INativeActionHost` already answers whether the host
    performed an operation, and an unanswered one raises `error.execution`. It gains the same
-   declaration, so the Interpreter and the six generated engines refuse the same hosts.
+   declaration (`realization()`, pure virtual), and `StateMachine::start()` refuses a simulating
+   host of a document that states a duty unless the host was installed through
+   `setSimulatedNativeActionHost`, so the Interpreter and the six generated engines refuse the
+   same hosts. Its parser reads the two attributes and refuses an action that states no effect.
+
+7. **The pseudocode says it too.** The reading of a statechart that a specification's owner is
+   shown renders the effect and the release as clauses of the `call` block, and reads them back,
+   so what the owner reads is what the machine is.
 
 ## Considered and not chosen
 
@@ -109,40 +121,37 @@ here.
   signature and is worth having, but a host can produce a dummy handle as easily as an empty
   body, so it adds a shape without adding a refusal. It may follow decision 2 later as a
   strengthening.
-- **Tie a duty's concurrency need to `scheduler.session_runtime.drive`.** Looks natural, is wrong: a host may
-  satisfy a concurrent duty on a thread of its own outside the session runtime (the witness did
-  exactly that), so an `own-thread` session runtime does not contradict a concurrent duty.
+- **Tie a duty's concurrency need to `scheduler.session_runtime.drive`.** Looks natural, is wrong:
+  a host may satisfy a concurrent duty on a thread of its own outside the session runtime (the
+  witness did exactly that), so an `own-thread` session runtime does not contradict a concurrent
+  duty.
 - **A runtime witness that a duty ran** (a heartbeat the machine checks). It has to be written
   per duty, and what it proves is that the witness ran.
+- **Make the effect optional first and require it once the corpus states it.** A period of
+  "optional" is a period in which the gap is open, and the corpus this tree owns is migrated in the
+  same change. A consumer's document that lacks it is refused with a code that names the missing
+  attribute and its two values, which is the repair.
 
 ## Consequences
 
-- The attribute `sce:effect` and the manifest fields are wire surface: `schemas/sce-forge-ext.xsd`,
-  `apis/forge-ast.v1.schema.json` and the manifest each change under `SCE_WIRE_CONTRACTS.md`, and
-  its registry rows move with them.
-- New diagnostic codes, each with its acceptance-doc row: a name with two effects, a
-  `released-by` naming nothing, a `released-by` off the state's `<onexit>`, and the lint code for
-  an undeclared effect.
-- The six interfaces and the two `Recording…` hosts change shape, so every committed generated tree
-  that declares an action is regenerated, and every host that implements an interface adds the
-  member. That is the cost, and it is paid once.
+- The attributes and the manifest field are wire surface: `schemas/sce-forge-ext.xsd`,
+  `apis/forge-ast.v1.schema.json` and `schemas/sce-manifest.v1.schema.json` change under
+  `SCE_WIRE_CONTRACTS.md`; all three are `pre-release`.
+- One new diagnostic code, `validation/native-action-release`, with its acceptance-doc row; the
+  other refusals reuse `validation/missing-attribute`, `validation/invalid-attribute` and
+  `validation/native-action-signature-conflict`.
+- Every `<sce:action>` in a committed document states its effect, and every committed generated
+  tree is regenerated. A host of a machine that states a duty adds one member; a host of a
+  machine of notices is untouched.
 - Decision 4 does not extend the `Recording…` host to the four backends without one.
-  `docs/SCE_ACCEPTED_SUBSET.md` §2.11 still says Kotlin alone has it; Rust has had it since, so
-  that sentence is stale and is corrected when stage 2 lands.
+  `docs/SCE_ACCEPTED_SUBSET.md` §2.11 said Kotlin alone has it; Rust has had it since, and that
+  sentence is corrected with this change.
 
 ## Open
 
-- Whether `notice` needs to be spelled at all, or is what an action is when it says nothing and
-  `duty` is the only attribute. The lint in decision 1 reads more clearly with both spelled;
-  the migration is cheaper with one.
 - Whether a duty should be able to state the context it needs (concurrent, interrupt-safe) so a
   host's declaration can say which of them it provides. Nothing here needs it, and the rejected
   scheduler tie above is the warning against inventing it from one witness.
-
-## Order
-
-1. The model, the validation and the three wire surfaces for decisions 1 and 2, with the lint and
-   the manifest fields (decision 5). No backend changes.
-2. The realization member in the six backends and the Interpreter, with the `Recording…` host
-   (decisions 3, 4 and 6).
-3. The corpus migration, then the flip of decision 1 from optional to required.
+- The attributes are not checked for a misspelled sibling (`releasedby`): `<sce:action>` is SCE's
+  own element and carries no unknown-attribute refusal today. `schemas/sce-forge-ext.xsd` declares
+  its attributes and refuses an undeclared one where a document is validated against it.
