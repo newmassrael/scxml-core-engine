@@ -39,6 +39,11 @@ class Ingested:
     text: str
     reader: str
     notes: list[str] = field(default_factory=list)
+    # The headings of the document when the reader knows them from the file and not from the text: the line
+    # of `text` (counted as `splitlines` counts, from 0) mapped to its level. `None` is a reader that does not
+    # say, whose text is then read as Markdown is (a line that begins `# ` is a heading); `{}` is a reader that
+    # looked and found none, so no line of its text is one, whatever it begins with.
+    headings: dict[int, int] | None = None
 
     @property
     def clean(self) -> bool:
@@ -139,8 +144,17 @@ def _html_table(match: "re.Match[str]") -> str:
     return "\n" + "\n".join("| " + " | ".join(cells) + " |" for cells in rows if cells) + "\n"
 
 
-def _read_html(path: pathlib.Path) -> Ingested:
+_HEADING_TAG = re.compile(r"<h([1-6])\b[^>]*>(.*?)</h\1\s*>", re.S | re.I)
+# What stands before a heading's text while the page is being turned into lines. A page cannot hold it: it is
+# taken out of the text first.
+_HEADING_MARK = "\x00"
+
+
+def _read_html(path: pathlib.Path, headings: bool = False) -> Ingested:
+    """A page as text. With `headings`, it also says which of its lines are `<h1>` to `<h6>` and at what level."""
     raw = path.read_text(encoding="utf-8", errors="replace")
+    if headings:
+        raw = raw.replace(_HEADING_MARK, " ")
     raw = _SCRIPTISH.sub(" ", raw)
     # Tables with a table inside are read from the inside out: the inner one becomes lines of text
     # that sit in the cell of the outer one.
@@ -155,11 +169,28 @@ def _read_html(path: pathlib.Path) -> Ingested:
         return "\n| " + " | ".join(cells) + " |\n"
 
     raw = _ROW.sub(row, raw)
+    if headings:
+        def titled(match: "re.Match[str]") -> str:
+            words = _one_line(_TAG.sub("", match.group(2)))
+            return f"\n{_HEADING_MARK}{match.group(1)}{_HEADING_MARK}{words}\n" if words else "\n"
+
+        raw = _HEADING_TAG.sub(titled, raw)
     raw = re.sub(r"</(p|div|br|h[1-6]|li)>", "\n", raw, flags=re.I)
     text = _TAG.sub("", raw)
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
-    return Ingested(text.strip() + "\n", "html")
+    if not headings:
+        return Ingested(text.strip() + "\n", "html")
+    # The marks are taken out and the headings said by the line they are on in the text as it is written.
+    lines: list[str] = []
+    at: dict[int, int] = {}
+    for line in text.strip().splitlines():
+        marked = re.fullmatch(f"{_HEADING_MARK}([1-6]){_HEADING_MARK}(.*)", line)
+        if marked:
+            at[len(lines)] = int(marked.group(1))
+            line = marked.group(2).strip()
+        lines.append(line)
+    return Ingested("\n".join(lines) + "\n", "html", [], at)
 
 
 # --------------------------------------------------------------------- docx
@@ -945,20 +976,116 @@ def _table_lines(table, attached: dict[str, str], pictured: dict[str, str]) -> l
     return ["| " + " | ".join(cells) + " |" for cells in rows]
 
 
-def _docx_lines(body, attached: dict[str, str], pictured: dict[str, str]) -> list[str]:
+_HEADING_NAME = re.compile(r"^heading\s*([1-9])$", re.IGNORECASE)
+# The deepest level a heading is given. Word has nine; a document that goes deeper than six is read as six.
+_MOST_HEADING_LEVEL = 6
+
+
+def _outline_level(props) -> int | None:
+    """The level a `pPr` or a style's properties give by their outline level (0 is the top), or none."""
+    if props is None:
+        return None
+    node = props.find(f"{_W}outlineLvl")
+    value = None if node is None else node.get(f"{_W}val")
+    # 9 is "body text": the level a paragraph has when it is in no outline.
+    return int(value) + 1 if value is not None and value.isdigit() and int(value) < 9 else None
+
+
+def _docx_heading_levels(zf: zipfile.ZipFile, names: set[str]) -> dict[str, int]:
+    """The level of each paragraph style that is a heading, by the style's id.
+
+    A style is a heading by what the file says of it: an outline level of its own, or the name Word gives
+    its built-in headings (`heading 1`, and `Title`, which is the top), and a style based on a heading is
+    one at the same level unless it says another. The names are the file's and not the language Word ran in:
+    Word writes the built-in names in English whatever its interface says.
+    """
+    if "word/styles.xml" not in names:
+        return {}
+    try:
+        root = ET.parse(io.BytesIO(_member(zf, "word/styles.xml"))).getroot()
+    except ET.ParseError:
+        # A styles part that is not XML is a document whose headings are not known, and not one with none:
+        # its paragraphs are read as they were, and the extraction does not claim a structure it did not see.
+        return {}
+    own: dict[str, int] = {}
+    parents: dict[str, str] = {}
+    for style in root.iter(f"{_W}style"):
+        if style.get(f"{_W}type") != "paragraph":
+            continue
+        style_id = style.get(f"{_W}styleId")
+        if not style_id:
+            continue
+        based = style.find(f"{_W}basedOn")
+        if based is not None and based.get(f"{_W}val"):
+            parents[style_id] = based.get(f"{_W}val")
+        level = _outline_level(style.find(f"{_W}pPr"))
+        if level is None:
+            name = style.find(f"{_W}name")
+            said = (name.get(f"{_W}val") if name is not None else "") or ""
+            named = _HEADING_NAME.match(said.strip())
+            level = int(named.group(1)) if named else 1 if said.strip().lower() == "title" else None
+        if level is not None:
+            own[style_id] = level
+    levels: dict[str, int] = {}
+    for style_id in set(own) | set(parents):
+        seen, current = set(), style_id
+        # A chain of styles is followed to the first that says a level; one that loops, or is long, says none.
+        while current and current not in seen and len(seen) < 20:
+            if current in own:
+                levels[style_id] = min(_MOST_HEADING_LEVEL, own[current])
+                break
+            seen.add(current)
+            current = parents.get(current, "")
+    return levels
+
+
+def _heading_level_of(paragraph, levels: dict[str, int]) -> int | None:
+    """The heading level of a paragraph: its own outline level, else its style's."""
+    props = paragraph.find(f"{_W}pPr")
+    if props is None:
+        return None
+    own = _outline_level(props)
+    if own is not None:
+        return min(_MOST_HEADING_LEVEL, own)
+    style = props.find(f"{_W}pStyle")
+    if style is None:
+        return None
+    style_id = style.get(f"{_W}val") or ""
+    if style_id in levels:
+        return levels[style_id]
+    # A style the styles part does not describe (a document without one) is a heading by the id Word gives
+    # its built-in ones, which is the same word as the name.
+    named = _HEADING_NAME.match(style_id.strip())
+    if named:
+        return int(named.group(1))
+    return 1 if style_id.strip().lower() == "title" else None
+
+
+def _docx_lines(
+    body, attached: dict[str, str], pictured: dict[str, str], levels: dict[str, int] | None = None
+) -> tuple[list[str], dict[int, int]]:
     """The lines of a document body in reading order: a paragraph is a line, a table is a line per row.
 
     A paragraph inside a table is part of its row and is written there and nowhere else. (The first
     version of this reader walked every node, which wrote each such paragraph twice, once bare and once
     in its row; in a corpus of real specifications 93% of the paragraphs are in tables, so the text came
     out nearly doubled and a name search found every name twice.)
+
+    With `levels` (the heading styles of the document), the index of each line that is a heading paragraph
+    is given beside the lines, with its level: the text stays what it was, and the structure is said apart
+    from it, where a paragraph that happens to begin with `#` cannot be mistaken for it.
     """
     lines: list[str] = []
+    heading_at: dict[int, int] = {}
 
     def walk(parent) -> None:
         for child in parent:
             if child.tag == f"{_W}p":
-                lines.append(_docx_text(child, attached, pictured))
+                said = _docx_text(child, attached, pictured)
+                level = _heading_level_of(child, levels) if levels is not None and said.strip() else None
+                if level is not None:
+                    heading_at[len(lines)] = level
+                lines.append(said)
             elif child.tag == f"{_W}tbl":
                 lines.extend(_table_lines(child, attached, pictured))
             else:
@@ -966,11 +1093,18 @@ def _docx_lines(body, attached: dict[str, str], pictured: dict[str, str]) -> lis
                 walk(child)
 
     walk(body)
-    return lines
+    return lines, heading_at
 
 
-def _read_docx(path: pathlib.Path) -> Ingested:
+def _read_docx(path: pathlib.Path, headings: bool = False) -> Ingested:
+    """A word document as text. With `headings`, it also says which of its lines are headings, and at what level.
+
+    The prose reading of a specification (a brief for a model) takes the text as it was; an extraction
+    (ADR 0026) is of blocks and needs to know which of them are headings, or a Word document cannot be
+    divided into the parts an owner chooses between (ADR 0039).
+    """
     notes: list[str] = []
+    levels: dict[str, int] | None = None
     try:
         with zipfile.ZipFile(path) as zf:
             _check_archive(zf)
@@ -1004,10 +1138,12 @@ def _read_docx(path: pathlib.Path) -> Ingested:
             pictures = sorted(n for n in names if n.startswith("word/media/"))
             enclosed = read_enclosed(zf)
             pictured = pictured_in(zf)
+            if headings:
+                levels = _docx_heading_levels(zf, names)
     except zipfile.BadZipFile as exc:
         raise IngestError(f"{path}: not a readable document ({exc})") from exc
 
-    lines = _docx_lines(body, enclosed.attached, pictured)
+    lines, heading_at = _docx_lines(body, enclosed.attached, pictured, levels)
 
     # ⚠ What a document ENCLOSES is read, not merely named. The note this
     # replaces was right about the danger and wrong about what to do: an
@@ -1086,17 +1222,37 @@ def _read_docx(path: pathlib.Path) -> Ingested:
             " shows; it says where each one is." + placed + where
         )
 
-    text = "\n".join(line for line in lines if line.strip())
+    kept = [(index, line) for index, line in enumerate(lines) if line.strip()]
+    text = "\n".join(line for _, line in kept)
     if not text.strip():
         raise IngestError(
             f"{path}: read as a document and produced no text. An empty "
             f"document answers every question cleanly, which is "
             f"indistinguishable from one that says everything."
         )
-    return Ingested(text + "\n", "docx", notes)
+    said: dict[int, int] | None = None
+    if headings:
+        # The headings are said by the line they are on in the text as it is written: empty lines are not in
+        # it, and a paragraph whose own text breaks across lines takes as many as it breaks into.
+        said, at = {}, 0
+        for index, line in kept:
+            if index in heading_at:
+                said[at] = heading_at[index]
+            at += len(line.splitlines()) or 1
+    return Ingested(text + "\n", "docx", notes, said)
 
 
 # ------------------------------------------------------------------ dispatch
+
+def read_docx_with_headings(path: pathlib.Path) -> Ingested:
+    """A word document as text that also says which of its lines are headings (what an extraction reads)."""
+    return _read_docx(path, headings=True)
+
+
+def read_html_with_headings(path: pathlib.Path) -> Ingested:
+    """An HTML document as text that also says which of its lines are headings (what an extraction reads)."""
+    return _read_html(path, headings=True)
+
 
 READERS = {
     ".md": _read_plain,

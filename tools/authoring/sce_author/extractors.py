@@ -130,10 +130,22 @@ def _row_cells(line: str) -> list[str]:
     return [cell.strip() for cell in inner.split(" | ")] if " | " in inner else [inner.strip()]
 
 
+_FENCE = re.compile(r"^(`{3,}|~{3,})")
+
+
 def blocks_of_text(
-    text: str, member: str, line_is_block: bool, delimiter_row: bool = False
+    text: str,
+    member: str,
+    line_is_block: bool,
+    delimiter_row: bool = False,
+    headings: dict[int, int] | None = None,
 ) -> tuple[list[Block], list[NotCarried]]:
     """The blocks of a reader's text, and what putting them in blocks could not keep exact.
+
+    `headings` is for a reader that knows its headings from the file (a style of a word document, an
+    `<h2>`): the lines it names, by their number from 0, are headings at the levels it gives, and no other
+    line is, whatever it begins with. Without it the text is read as Markdown is, where a line that begins
+    `# ` is a heading, except in a fenced block of code, whose lines are the code's and not the document's.
 
     The readers of `ingest` write a document as text (a table as one line per row beginning with `|`,
     a picture as a `[picture: NAME]` mark) and say what they could not carry. This gives that text the
@@ -183,8 +195,32 @@ def blocks_of_text(
         add("table", "\n".join(table), cells=grid)
         table.clear()
 
-    for line in text.splitlines():
+    fence: str | None = None  # the mark that opened the fenced block of code the line is in, if it is in one
+    for number, line in enumerate(text.splitlines()):
         stripped = line.strip()
+        if headings is None:
+            marked = _FENCE.match(stripped)
+            if fence is not None:
+                if marked and marked.group(1)[0] == fence[0] and len(marked.group(1)) >= len(fence):
+                    fence = None
+                # What is in a fence is the code's: it is neither a heading, a list item nor a table row.
+                if stripped:
+                    if line_is_block:
+                        add("paragraph", stripped)
+                    else:
+                        run.append(stripped)
+                else:
+                    flush_run()
+                continue
+            if marked:
+                flush_run()
+                flush_table()
+                fence = marked.group(1)
+                if line_is_block:
+                    add("paragraph", stripped)
+                else:
+                    run.append(stripped)
+                continue
         if stripped.startswith("|"):
             flush_run()
             table.append(stripped)
@@ -193,10 +229,15 @@ def blocks_of_text(
         if not stripped:
             flush_run()
             continue
-        heading = _HEADING.match(stripped)
-        if heading:
+        if headings is not None:
+            level = headings.get(number)
+            heading = None
+        else:
+            heading = _HEADING.match(stripped)
+            level = len(heading.group(1)) if heading else None
+        if level is not None:
             flush_run()
-            add("heading", heading.group(2).strip(), level=len(heading.group(1)))
+            add("heading", (heading.group(2) if heading else stripped).strip(), level=level)
         elif _ENCLOSED.match(stripped):
             flush_run()
             add("attachment", stripped)
@@ -234,7 +275,9 @@ class ReaderExtractor:
 
     def extract(self, path: pathlib.Path) -> Extraction:
         ingested = self.read(path)
-        blocks, notes = blocks_of_text(ingested.text, path.name, self.line_is_block, self.delimiter_row)
+        blocks, notes = blocks_of_text(
+            ingested.text, path.name, self.line_is_block, self.delimiter_row, ingested.headings
+        )
         carried = [NotCarried(note) for note in ingested.notes] + notes
         return Extraction(
             extractor=self.declaration.name,
@@ -263,10 +306,12 @@ def builtin() -> Registry:
                 line_is_block=False,
                 delimiter_row=True,
             ),
-            ReaderExtractor(Declaration("html", "1", (".html", ".htm")), _ingest.READERS[".html"], line_is_block=True),
             ReaderExtractor(
-                Declaration("docx", "1", (".docx",), magic=DOCX_MAGIC, magic_identifies=False),
-                _ingest.READERS[".docx"],
+                Declaration("html", "2", (".html", ".htm")), _ingest.read_html_with_headings, line_is_block=True
+            ),
+            ReaderExtractor(
+                Declaration("docx", "2", (".docx",), magic=DOCX_MAGIC, magic_identifies=False),
+                _ingest.read_docx_with_headings,
                 line_is_block=True,
             ),
             PdfTextExtractor(),

@@ -63,8 +63,22 @@ MARGIN_SHIFT = 1.5
 # How different two lines' heights may be, as a share of the smaller, and still be one paragraph.
 SIZE_SHIFT = 0.25
 MOST_LISTED = 12
+# Two pieces of drawing are one line when this share of the shorter one's height is shared by both, and when
+# they are no further apart than this many heights (a word's space is about a third of one; a column gutter is
+# several), or no more overlapping than this many (kerning and a letter set over its neighbour).
+SAME_LINE = 0.5
+GLUE = 0.8
+# After a space the document drew, whitespace of its own making is allowed to be wider: several spaces in a
+# run are one space character to the library, with the rest of the width left as a gap.
+SPACED = 4.0
+KERN = 0.5
 
 _LIST_ITEM = re.compile(r"^(?:[-*+•·▪◦–]|\d+[.)])\s+\S")
+# A clause number (`3.1`, `3.1.2`, `A.1`) and the title that follows it, which begins with a letter or an
+# opening bracket. Only numbers made of digits count: a lettered list item is not a section.
+_CLAUSE = re.compile(r"^(\d+(?:\.\d+)*)\.?\s+[A-Za-z<(\[\"'가-힣]")
+# The longest line that is a title and not a sentence that begins with a number.
+MAX_TITLE = 100
 
 
 @dataclass
@@ -86,20 +100,120 @@ def _listed(numbers: list[int]) -> str:
     return shown + (", ..." if len(numbers) > MOST_LISTED else "")
 
 
+@dataclass
+class _Run:
+    """The line being gathered from the characters of a page, in PDF's own measure (up from the bottom)."""
+
+    left: float
+    bottom: float
+    right: float
+    top: float
+    size: float
+    text: list[str]
+    space: bool = False
+    # A space the document drew (it has a width) was the last thing on the line: whitespace the producer put
+    # in the run itself, which is not a gap between two pieces of drawing.
+    spaced: bool = False
+
+    def continued_by(self, left: float, bottom: float, right: float, top: float, size: float) -> bool:
+        """Whether a character with this box and type size is the next of this line: it sits on the same
+        baseline, reads on in the direction of the text, and has no more before it than a word's space."""
+        height = min(top - bottom, self.top - self.bottom)
+        if height <= 0:
+            return False
+        if min(top, self.top) - max(bottom, self.bottom) < SAME_LINE * height:
+            return False
+        # A character that starts further back than a letter's kerning begins another row or a column to the
+        # left, and one further on than a space is another column: both are another line.
+        return -KERN * size <= left - self.right <= (SPACED if self.spaced else GLUE) * size
+
+
+def _unicode(textpage, raw, index: int) -> str:
+    """The character at `index`: PDFium answers in UTF-16 code units, and a pair is put back together."""
+    unit = raw.FPDFText_GetUnicode(textpage.raw, index)
+    return chr(unit) if not 0xD800 <= unit <= 0xDFFF else "�"
+
+
 def _page_lines(textpage, page_height: float, raw) -> list[Line]:
+    """The lines of a page, read from its characters in the order the document has them.
+
+    The library's rectangles are not lines: a producer that sets every glyph on its own (a browser's
+    print-to-PDF does) gets a rectangle for each, and they overlap and repeat. A character is the unit that is
+    always one thing, with its own box and type size, so a line is the characters that follow each other on
+    one baseline with no more between them than a word's space, which is how a reader sees it. A gap wider
+    than that is a column, and stays a line of its own: the extraction says it does not untangle columns.
+    """
     lines: list[Line] = []
-    for index in range(textpage.count_rects()):
-        left, bottom, right, top = textpage.get_rect(index)
-        text = " ".join(textpage.get_text_bounded(left, bottom, right, top).split())
-        if not text:
+    run: _Run | None = None
+
+    def close() -> None:
+        nonlocal run
+        if run is not None:
+            text = " ".join("".join(run.text).split())
+            if text:
+                # PDF measures up from the bottom of the page; a reader's box is measured down from the top.
+                lines.append(Line(run.left, page_height - run.top, run.right, page_height - run.bottom, text, run.size))
+        run = None
+
+    for index in range(textpage.count_chars()):
+        character = _unicode(textpage, raw, index)
+        if character in "\r\n":
+            # The library puts a break where it has seen the drawing move; the geometry decides what a line is.
             continue
-        first = textpage.get_index(left + 1.0, (bottom + top) / 2, 2.0, 2.0)
-        size = raw.FPDFText_GetFontSize(textpage.raw, first) if first is not None else 0.0
-        # A line whose first letter cannot be found is measured by its box, which is only near.
+        if character.isspace():
+            if run is not None:
+                run.space = True
+                # A space the document drew has a width, and the line reaches to the end of it: several of
+                # them in one run are a gap the producer made on purpose and is still one run's.
+                left, bottom, right, top = textpage.get_charbox(index)
+                if right > left and bottom < run.top and top > run.bottom:
+                    run.right = max(run.right, right)
+                    run.spaced = True
+            continue
+        left, bottom, right, top = textpage.get_charbox(index)
+        size = raw.FPDFText_GetFontSize(textpage.raw, index)
+        # A character whose size cannot be read is measured by its box, which is only near.
         size = size if size > 0 else top - bottom
-        # PDF measures up from the bottom of the page; a reader's box is measured down from the top.
-        lines.append(Line(left, page_height - top, right, page_height - bottom, text, size))
+        if run is not None and not run.continued_by(left, bottom, right, top, size):
+            close()
+        if run is None:
+            run = _Run(left, bottom, right, top, size, [character])
+            continue
+        # A word's space is the library's to say: it puts a space character where the drawing leaves a gap, and
+        # a threshold of this reader's own would put one after every narrow glyph (the full stop of `3.1.1`).
+        if run.space:
+            run.text.append(" ")
+        run.space = False
+        run.spaced = False
+        run.text.append(character)
+        run.left, run.bottom = min(run.left, left), min(run.bottom, bottom)
+        run.right, run.top = max(run.right, right), max(run.top, top)
+    close()
     return lines
+
+
+def _section_depth(text: str) -> int:
+    """How many numbers a clause number has (`3.1.2 Title` is 3, `3 Title` is 1), or 0 for a line that is
+    not a title: a clause number, a title that begins a word, and no more than a title's length, which does not
+    end as a sentence does."""
+    if len(text) > MAX_TITLE:
+        return 0
+    found = _CLAUSE.match(text)
+    if found is None or text.rstrip().endswith((".", ";", ":", ",")):
+        return 0
+    return found.group(1).count(".") + 1
+
+
+def _numbering_base(pages, body: float, larger: list[float]) -> int:
+    """The level the document set its own top-level numbers at (`3 Core Constructs`), which is where a
+    numbered line of two or more numbers goes one level below. Without any, the first level."""
+    levels: dict[int, int] = {}
+    for _, groups, _ in pages:
+        for group in groups:
+            if len(group) == 1 and group[0].size >= HEADING_RATIO * body and _section_depth(group[0].text) == 1:
+                level = min(6, 1 + larger.index(round(group[0].size * 2) / 2))
+                levels[level] = levels.get(level, 0) + 1
+    return max(levels, key=lambda level: (levels[level], -level)) if levels else 1
 
 
 def _group(lines: list[Line]) -> list[list[Line]]:
@@ -209,16 +323,24 @@ class PdfTextExtractor:
         body = max(letters, key=letters.__getitem__) if letters else 0.0
         blocks: list[Block] = []
         member = path.name
+        larger = [s for s in sizes if s >= HEADING_RATIO * body]
+        base = _numbering_base(pages, body, larger)
         for number, groups, lines in pages:
             for group in groups:
                 text = " ".join(l.text for l in group)
                 tall = group[0].size >= HEADING_RATIO * body and len(group) == 1
                 kind, extra = "paragraph", {}
+                depth = _section_depth(text) if len(group) == 1 else 0
                 if tall:
                     # Level by rank among the sizes taller than the body text, tallest first.
-                    larger = [s for s in sizes if s >= HEADING_RATIO * body]
                     kind = "heading"
                     extra["level"] = min(6, 1 + larger.index(round(group[0].size * 2) / 2))
+                elif depth >= 2:
+                    # A clause number is how a specification marks its sections, and a line of it that stands
+                    # alone at the body's size is a heading the document did not set larger. Its level is how
+                    # deep its number goes, from the level the document's own top-level numbers were set at.
+                    kind = "heading"
+                    extra["level"] = min(6, base + depth - 1)
                 elif _LIST_ITEM.match(group[0].text):
                     kind = "list_item"
                 ordinal = len(blocks) + 1

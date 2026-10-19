@@ -202,6 +202,146 @@ class LinesBecomeBlocksByTheirOwnGeometry(Folder):
         self.assertEqual(positions, sorted(positions))
 
 
+# Helvetica's advance widths, in thousandths of the type size (its published metrics): a producer that
+# places each glyph puts the next one this far on, which is what makes the gaps between letters real ones.
+_HELVETICA = {
+    " ": 278, ".": 278, ",": 278, "-": 333, "'": 191,
+    **{d: 556 for d in "0123456789"},
+    "a": 556, "b": 556, "c": 500, "d": 556, "e": 556, "f": 278, "g": 556, "h": 556, "i": 222, "j": 222,
+    "k": 500, "l": 222, "m": 833, "n": 556, "o": 556, "p": 556, "q": 556, "r": 333, "s": 500, "t": 278,
+    "u": 556, "v": 500, "w": 722, "x": 500, "y": 500, "z": 500,
+    "A": 667, "B": 667, "C": 722, "D": 722, "E": 667, "F": 611, "G": 778, "H": 722, "I": 278, "J": 500,
+    "K": 667, "L": 556, "M": 833, "N": 722, "O": 778, "P": 667, "Q": 778, "R": 722, "S": 667, "T": 611,
+    "U": 722, "V": 667, "W": 944, "X": 667, "Y": 667, "Z": 611,
+}
+
+
+def glyphs(x: float, y: float, size: float, text: str) -> list[tuple[float, float, float, str]]:
+    """`text` drawn as a producer that sets every glyph on its own draws it: one text object per character,
+    each at its own position, the next as far on as the glyph is wide. A browser's print-to-PDF does this, and
+    the library reports a rectangle for each piece, so a line arrives as dozens of them."""
+    out = []
+    for character in text:
+        if character != " ":
+            out.append((round(x, 2), y, size, character))
+        x += size * _HELVETICA[character] / 1000
+    return out
+
+
+@needs_pack
+class ALineDrawnAGlyphAtATimeIsOneLine(Folder):
+    """A rectangle of the library is a piece of drawing and not a line: pieces that sit on one baseline with
+    no more than a word's space between them are the same line, and a gap wider than that is not."""
+
+    def test_a_line_set_glyph_by_glyph_is_read_as_the_line_it_is(self):
+        lines = glyphs(72, 720, 18, "Lamp controller") + glyphs(72, 690, 11, "The lamp is on while the supply is present.")
+
+        done = builtin().extract(self.pdf([{"lines": lines}]))
+
+        self.assertEqual([(b.kind, b.text) for b in done.blocks], [
+            ("heading", "Lamp controller"),
+            ("paragraph", "The lamp is on while the supply is present."),
+        ])
+
+    def test_the_lines_of_a_paragraph_set_that_way_are_still_one_paragraph(self):
+        lines = glyphs(72, 700, 11, "The lamp is on while the supply is present.") + glyphs(72, 686, 11, "It turns off when the supply is lost.")
+
+        done = builtin().extract(self.pdf([{"lines": lines}]))
+
+        self.assertEqual([b.text for b in done.blocks], ["The lamp is on while the supply is present. It turns off when the supply is lost."])
+
+    def test_it_is_the_same_reading_as_the_line_set_whole(self):
+        whole = builtin().extract(self.pdf([{"lines": LAMP}], "whole.pdf"))
+        pieces = [piece for x, y, size, text in LAMP for piece in glyphs(x, y, size, text)]
+
+        glyphwise = builtin().extract(self.pdf([{"lines": pieces}], "glyphs.pdf"))
+
+        self.assertEqual([(b.kind, b.level, b.text) for b in glyphwise.blocks], [(b.kind, b.level, b.text) for b in whole.blocks])
+
+    def test_two_columns_on_one_row_are_not_joined_across_the_gap_between_them(self):
+        # The extraction says it does not untangle columns; reading across one would be worse than that.
+        lines = glyphs(72, 700, 11, "Left column text.") + glyphs(340, 700, 11, "Right column text.")
+
+        done = builtin().extract(self.pdf([{"lines": lines}]))
+
+        self.assertEqual(sorted(b.text for b in done.blocks), ["Left column text.", "Right column text."])
+
+    def test_a_box_covers_the_whole_line_and_not_its_first_glyph(self):
+        done = builtin().extract(self.pdf([{"lines": glyphs(72, 700, 11, "The lamp is on.")}]))
+
+        left, _, right, _ = done.blocks[0].place.box
+        self.assertGreater(right - left, 50)
+
+    def test_a_document_of_glyphs_does_not_make_a_block_of_each(self):
+        lines = [piece for row in range(20) for piece in glyphs(72, 740 - 14 * row, 11, "Row of text that is a line.")]
+
+        done = builtin().extract(self.pdf([{"lines": lines}]))
+
+        self.assertEqual(len(done.blocks), 1)
+
+
+@needs_pack
+class AClauseNumberMakesATitleAHeadingWhenTheDocumentSetItNoLarger(Folder):
+    """A specification marks its sections by number, and a producer that sets every title in the body's size
+    leaves nothing else to tell a title by. The rule is narrow, and each way it must not fire is held."""
+
+    def kinds(self, lines):
+        done = builtin().extract(self.pdf([{"lines": lines}]))
+        return [(b.kind, b.level, b.text) for b in done.blocks]
+
+    def test_a_dotted_number_and_a_short_title_alone_on_the_line_is_a_heading_under_the_top_level(self):
+        lines = [
+            (72, 740, 18, "3 Lamp"),
+            (72, 690, 11, "3.1 Timing"),
+            (72, 640, 11, "It turns off after thirty seconds."),
+            (72, 590, 11, "3.1.1 Delay"),
+            (72, 540, 11, "The delay is five seconds."),
+        ]
+
+        self.assertEqual(self.kinds(lines), [
+            ("heading", 1, "3 Lamp"),
+            ("heading", 2, "3.1 Timing"),
+            ("paragraph", None, "It turns off after thirty seconds."),
+            ("heading", 3, "3.1.1 Delay"),
+            ("paragraph", None, "The delay is five seconds."),
+        ])
+
+    def test_the_level_follows_where_the_document_set_its_own_top_level_numbers(self):
+        # The top-level titles are set larger and are the second size here (a title above them is the first):
+        # a number of two parts is one level below those, whatever level that is.
+        lines = [
+            (72, 760, 24, "Lamp specification"),
+            (72, 720, 16, "3 Lamp"),
+            (72, 670, 11, "3.1 Timing"),
+            (72, 620, 11, "It turns off."),
+        ]
+
+        self.assertEqual([(k, lv) for k, lv, _ in self.kinds(lines)], [
+            ("heading", 1), ("heading", 2), ("heading", 3), ("paragraph", None),
+        ])
+
+    def test_a_line_that_is_a_sentence_a_list_item_or_a_single_number_is_not_one(self):
+        lines = [
+            (72, 740, 11, "3.1 The lamp turns off after thirty seconds."),
+            (72, 690, 11, "1. first item"),
+            (72, 640, 11, "2 Timing"),
+            (72, 590, 11, "3.2 Notes:"),
+            (72, 540, 11, "3.3" + " very long title" * 8),
+            (72, 490, 11, "3.4 timing"),
+        ]
+
+        got = self.kinds(lines)
+
+        self.assertEqual([k for k, _, _ in got], ["paragraph", "list_item", "paragraph", "paragraph", "paragraph", "heading"])
+        # The nearest that must fire: the same shape, with a title that begins a word and does not end a sentence.
+        self.assertEqual(got[-1][2], "3.4 timing")
+
+    def test_a_numbered_line_that_has_lines_under_it_in_one_paragraph_is_not_a_title_alone(self):
+        lines = [(72, 700, 11, "3.1 Timing"), (72, 688, 11, "continues here as the paragraph does")]
+
+        self.assertEqual([k for k, _, _ in self.kinds(lines)], ["paragraph"])
+
+
 @needs_pack
 class PagesArePlacedAndAPageWithNoTextIsSaid(Folder):
     def test_each_block_is_on_its_page_and_ordinals_run_on(self):
