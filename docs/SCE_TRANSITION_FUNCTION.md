@@ -65,7 +65,11 @@ every backend before any file is written. Every function's names live where the 
 reach them, so the two files of one machine compile in one build unit: a C++ namespace of their
 own; a C prefix that no symbol of the machine begins with, since the machine's are `<name>_`
 followed by something else (`<name>_state_t`, `<name>_init`, `<NAME>_STATE_…`); a Go package, a
-Kotlin package and a Python module of their own.
+Kotlin package and a Python module of their own. The one machine symbol a document spells is a
+published variable's C reader, `<name>_<variable>`, so a variable whose reader would begin
+`transition_function_` is refused in every document, as one beginning `_sce_synth_invoke__` is.
+The other way round, a function's names are no members of the machine's type: a C++ machine
+publishes a variable `size` beside a function whose `Configuration` has a `size()`.
 
 ### What each language forces
 

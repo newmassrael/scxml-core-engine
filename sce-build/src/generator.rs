@@ -2363,6 +2363,31 @@ pub struct TransitionFunctionNaming<'a> {
     pub c_symbol_prefix: Option<&'a str>,
 }
 
+/// What C11 writes after `<machine>` and before every symbol of a machine's
+/// transition function (`<machine>_transition_function_<name>`). A reader C11
+/// gives a variable is `<machine>_<variable>`, so a variable spelled with this
+/// infix would land among the function's symbols, and
+/// [`crate::reader_names::reserved`] holds it off them.
+pub(crate) const TRANSITION_FUNCTION_C_INFIX: &str = "_transition_function";
+
+/// The template that renders `language`'s transition function, named as that
+/// language's templates address it ([`crate::template_registry::embedded_templates_for`]).
+///
+/// Every one of them writes a file of its own whose names live in a scope of
+/// their own, never in the machine's type ([`TransitionFunctionTarget`]), so
+/// [`crate::reader_names::reserved`] does not read them as the machine's
+/// members.
+pub(crate) fn transition_function_template(language: Language) -> &'static str {
+    match language {
+        Language::Rust => "transition_function.rs.jinja2",
+        Language::Cpp => "transition_function.jinja2",
+        Language::C11 => "c/transition_function.h.jinja2",
+        Language::Go => "transition_function.go.jinja2",
+        Language::Kotlin => "transition_function.kt.jinja2",
+        Language::Python => "transition_function.py.jinja2",
+    }
+}
+
 /// One backend's transition function: the template that renders it, the file
 /// it is written to (relative to the output directory), and the names the
 /// template is handed, each computed here once.
@@ -2388,9 +2413,10 @@ impl TransitionFunctionTarget {
         language: Language,
         naming: TransitionFunctionNaming<'_>,
     ) -> Self {
+        let template = transition_function_template(language);
         match language {
             Language::Rust => Self {
-                template: "transition_function.rs.jinja2",
+                template,
                 file: format!("{input_stem}_transition_function.rs"),
                 // The machine's own state and event derives, without a
                 // caller's extras: an extra names a crate
@@ -2403,7 +2429,7 @@ impl TransitionFunctionTarget {
                 },
             },
             Language::Cpp => Self {
-                template: "transition_function.jinja2",
+                template,
                 file: format!("{input_stem}_transition_function.h"),
                 names: minijinja::context! {
                     cpp_namespace => format!(
@@ -2414,11 +2440,11 @@ impl TransitionFunctionTarget {
                 },
             },
             Language::C11 => Self {
-                template: "c/transition_function.h.jinja2",
+                template,
                 file: format!("{input_stem}_transition_function.h"),
                 names: minijinja::context! {
                     c_prefix => format!(
-                        "{}{}_transition_function",
+                        "{}{}{TRANSITION_FUNCTION_C_INFIX}",
                         c_symbol_segment(naming.c_symbol_prefix),
                         model.name
                     ),
@@ -2434,13 +2460,13 @@ impl TransitionFunctionTarget {
                     filters::to_snake_case(model.name.clone())
                 );
                 Self {
-                    template: "transition_function.go.jinja2",
+                    template,
                     file: format!("{package}/{input_stem}_transition_function.go"),
                     names: minijinja::context! { go_package => package },
                 }
             }
             Language::Kotlin => Self {
-                template: "transition_function.kt.jinja2",
+                template,
                 file: format!("{input_stem}TransitionFunction.kt"),
                 names: minijinja::context! {
                     kotlin_package => format!(
@@ -2453,7 +2479,7 @@ impl TransitionFunctionTarget {
                 },
             },
             Language::Python => Self {
-                template: "transition_function.py.jinja2",
+                template,
                 file: format!("{input_stem}_transition_function.py"),
                 names: minijinja::context! {},
             },

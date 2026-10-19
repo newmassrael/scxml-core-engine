@@ -593,9 +593,17 @@ const CPP_RUNTIME_ENGINE: &str = include_str!("../../sce/include/static/StaticEx
 
 /// The templates a backend's generated type is emitted from — the backend's
 /// own directory, read through the registry the generator loads from.
+///
+/// The transition function's template is not one of them: it writes a file of
+/// its own whose names live in a module, package or namespace of their own, so
+/// its `size` or `transition` is no member a reader could hide. Read as the
+/// machine's, it refused C++ the published `size` a document declared. C11's
+/// one namespace is held apart by the prefix [`reserved`] adds instead.
 fn backend_templates(language: Language) -> Vec<&'static str> {
+    let transition_function = crate::generator::transition_function_template(language);
     crate::template_registry::embedded_templates_for(language)
         .into_iter()
+        .filter(|(name, _)| *name != transition_function)
         .filter(|(name, _)| match language {
             // Both load the whole tree; C++ owns the root files and C11 `c/`.
             Language::Cpp => !name.contains('/'),
@@ -743,6 +751,21 @@ pub fn rendered_members(language: Language, source: &str, c11_symbols: &str) -> 
     found.names
 }
 
+/// The members a generated type of `language` inherits from its runtime, the
+/// half of [`reserved`] no template spells.
+fn scan_runtime(language: Language, reserved: &mut Reserved) {
+    let runtime = match language {
+        Language::Rust => RUST_RUNTIME_POLICY,
+        Language::Kotlin => KOTLIN_RUNTIME_ENGINE,
+        Language::Python => PYTHON_RUNTIME_POLICY,
+        Language::Cpp => CPP_RUNTIME_ENGINE,
+        Language::Go | Language::C11 => return,
+    };
+    let syntax = crate::template_lexing::Syntax::of_language(language);
+    let code = code_only(runtime, &crate::template_lexing::classify(runtime, syntax));
+    scan_code(language, &code, reserved);
+}
+
 /// The members each backend's generated type carries.
 pub fn reserved(language: Language) -> &'static Reserved {
     static RESERVED: LazyLock<BTreeMap<&'static str, Reserved>> = LazyLock::new(|| {
@@ -753,23 +776,19 @@ pub fn reserved(language: Language) -> &'static Reserved {
                 for template in backend_templates(language) {
                     scan_template(language, template, &mut reserved);
                 }
-                let runtime = match language {
-                    Language::Rust => Some(RUST_RUNTIME_POLICY),
-                    Language::Kotlin => Some(KOTLIN_RUNTIME_ENGINE),
-                    Language::Python => Some(PYTHON_RUNTIME_POLICY),
-                    Language::Cpp => Some(CPP_RUNTIME_ENGINE),
-                    Language::Go | Language::C11 => None,
-                };
-                if let Some(source) = runtime {
-                    let syntax = crate::template_lexing::Syntax::of_language(language);
-                    let code = code_only(source, &crate::template_lexing::classify(source, syntax));
-                    scan_code(language, &code, &mut reserved);
-                }
+                scan_runtime(language, &mut reserved);
                 if language == Language::C11 {
                     // A local `<invoke>`'s child machine is
                     // `<parent>__sce_synth_invoke__<id>`, and C11 has one
                     // namespace for the parent's functions and the child's.
                     let infix = crate::mesh::deploy::SYNTH_INVOKE_INFIX;
+                    reserved
+                        .prefixes
+                        .insert(infix.strip_prefix('_').unwrap_or(infix).to_string());
+                    // A machine's transition function is
+                    // `<machine>_transition_function_<name>`, in the same
+                    // namespace as the machine's `<machine>_<reader>`.
+                    let infix = crate::generator::TRANSITION_FUNCTION_C_INFIX;
                     reserved
                         .prefixes
                         .insert(infix.strip_prefix('_').unwrap_or(infix).to_string());
@@ -1057,6 +1076,74 @@ mod tests {
         assert!(reserved(Language::Cpp).covers("machinePolicy", m));
         assert!(!reserved(Language::Rust).covers("slot", m));
         assert!(!reserved(Language::Go).covers("AiLoopStateRun", m));
+    }
+
+    /// A transition function's names are in a scope of their own, so a reader
+    /// the machine is given may share one: C++'s `size` is the one that was
+    /// refused, a published variable of a fixture every C++ lane builds.
+    ///
+    /// A language whose function declares nothing the machine does not (Go's
+    /// declares `String` on its own `State` and `Event`, as the machine's
+    /// types do) has nothing to hold here, so the count that keeps this from
+    /// measuring nothing is taken over every language rather than each.
+    #[test]
+    fn a_transition_functions_names_are_not_the_machines_members() {
+        let m = "machine";
+        let mut held = 0usize;
+        for language in Language::ALL.iter() {
+            if *language == Language::C11 {
+                continue;
+            }
+            let template = crate::generator::transition_function_template(*language);
+            let (_, source) = crate::template_registry::embedded_templates_for(*language)
+                .into_iter()
+                .find(|(name, _)| *name == template)
+                .unwrap_or_else(|| panic!("{language:?} has no template named {template}"));
+            let mut declared = Reserved::default();
+            scan_template(*language, source, &mut declared);
+            assert!(
+                !declared.names.is_empty(),
+                "{language:?}: the scan read no name from {template}, so this measures nothing"
+            );
+            // The machine's own names come from its templates and from the
+            // runtime it inherits: Rust's `is_final` is a `StatePolicy`
+            // method, so the function's `is_final` is the machine's too.
+            let mut machine = Reserved::default();
+            for other in backend_templates(*language) {
+                scan_template(*language, other, &mut machine);
+            }
+            scan_runtime(*language, &mut machine);
+            let own: Vec<&String> = declared
+                .names
+                .iter()
+                .filter(|name| !machine.covers(name, m))
+                .filter(|name| !is_reserved_word(*language, name))
+                .collect();
+            for name in own {
+                assert!(
+                    !reserved(*language).covers(name, m),
+                    "{language:?}: `{name}` is declared only by {template}, and is reserved"
+                );
+                held += 1;
+            }
+        }
+        assert!(
+            held > 0,
+            "no transition function declares a name its machine does not, so this measures nothing"
+        );
+        assert!(!reserved(Language::Cpp).covers("size", m));
+    }
+
+    /// C11 has one namespace, so the function's prefix is held off a reader:
+    /// a variable `transition_function_state` would be a reader spelled as the
+    /// function's own state type.
+    #[test]
+    fn a_c11_reader_is_held_off_the_transition_functions_prefix() {
+        let m = "machine";
+        assert!(reserved(Language::C11).covers("transition_function_state", m));
+        assert!(reserved(Language::C11).covers("transition_function_transition", m));
+        // The prefix alone is no symbol of the function, which are all longer.
+        assert!(!reserved(Language::C11).covers("transition_function", m));
     }
 
     /// `_` binds nothing where it is written as a name in Rust, Kotlin and Go,
