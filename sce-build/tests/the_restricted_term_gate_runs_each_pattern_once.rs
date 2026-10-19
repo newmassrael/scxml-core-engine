@@ -491,6 +491,78 @@ fn a_pattern_the_exclude_file_names_leaves_the_loose_tier_and_not_the_strict_one
     );
 }
 
+/// A lockfile's `checksum = "<64 hex digits>"` line is written by a package manager, and a digest
+/// is hex, so a term made of hex letters turns up inside one at random. Measured 2026-10-19: a
+/// `Cargo.lock` line tripped a pattern of a few letters from `a` to `f` and the commit that locked
+/// a dependency tree was refused. Only the loose tier, which has no word boundary, passes such a
+/// line, and only when the line is nothing else; the strict tier and every other line are read as
+/// before, in the staged scan and in the push-range scan alike.
+#[test]
+fn a_lockfile_checksum_line_is_not_read_loosely_and_nothing_else_is_spared() {
+    let sb = Sandbox::new("loose-checksum");
+    let terms = sb.terms("\\bfacade\n");
+    let inside = format!("3facade{}", "0".repeat(57));
+    assert_eq!(inside.len(), 64);
+    let line = |digest: &str| format!("checksum = \"{digest}\"\n");
+
+    sb.stage("Cargo.lock", line(&inside).as_bytes());
+    let spared = sb.run_gate(&terms, None);
+    assert!(
+        spared.status.success(),
+        "a digest that holds the term inside it is not a hit:\n{}",
+        String::from_utf8_lossy(&spared.stderr)
+    );
+
+    sb.stage(
+        "Cargo.lock",
+        format!("checksum = \"{inside}\" xfacade\n").as_bytes(),
+    );
+    let extra = sb.run_gate(&terms, None);
+    assert_eq!(
+        loose_lines(&extra),
+        vec!["  Cargo.lock: line(s) 1 — loose term #0"],
+        "text after the digest is read: {}",
+        String::from_utf8_lossy(&extra.stderr)
+    );
+
+    sb.stage("Cargo.lock", line(&inside[..63]).as_bytes());
+    let short = sb.run_gate(&terms, None);
+    assert_eq!(
+        loose_lines(&short),
+        vec!["  Cargo.lock: line(s) 1 — loose term #0"],
+        "63 digits is not a checksum: {}",
+        String::from_utf8_lossy(&short.stderr)
+    );
+
+    let leading = format!("facade{}", "0".repeat(58));
+    sb.stage("Cargo.lock", line(&leading).as_bytes());
+    let strict = sb.run_gate(&terms, None);
+    assert_eq!(
+        hit_lines(&strict),
+        vec!["  Cargo.lock: line(s) 1 — term #0"],
+        "the strict tier still reads a digest that begins with the term: {}",
+        String::from_utf8_lossy(&strict.stderr)
+    );
+
+    // The push-range scan reads the lines a commit added, and spares the same line and no other.
+    sb.stage("Cargo.lock", line(&inside).as_bytes());
+    sb.commit("lock the tree");
+    let range = sb.run_range(&terms, &["HEAD"]);
+    assert!(
+        range.status.success(),
+        "the range scan spares the digest line:\n{}",
+        String::from_utf8_lossy(&range.stderr)
+    );
+    sb.stage("note.txt", b"a word xfacade here\n");
+    sb.commit("a note");
+    let refused = sb.run_range(&terms, &["HEAD"]);
+    assert!(
+        !refused.status.success(),
+        "the range scan still refuses an ordinary line:\n{}",
+        String::from_utf8_lossy(&refused.stderr)
+    );
+}
+
 #[test]
 fn many_files_that_match_loosely_are_reported_in_bounded_time() {
     // `grep_runs_once_per_pattern_however_many_files_are_staged` stages clean

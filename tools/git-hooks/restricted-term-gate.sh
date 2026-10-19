@@ -142,6 +142,15 @@ _rt_without() {
     printf '%s' "$out"
 }
 
+# Whether $1 is a lockfile checksum assignment and nothing else: `checksum = "` and 64 hex digits.
+# A package manager writes it, so no person chose its spelling, and a hash is no place for a term
+# that matters: with case ignored and no word boundary, a pattern of a few letters from a to f is
+# found inside digests at random (measured 2026-10-19 on a Cargo.lock line). Only the LOOSE tier
+# skips it. The strict tier, which keeps case and boundaries, still reads such a line.
+_rt_is_lockfile_checksum() {
+    [[ "$1" =~ ^[[:space:]]*checksum[[:space:]]*=[[:space:]]*\"[0-9a-f]{64}\"[[:space:]]*$ ]]
+}
+
 # Whether line $2 of staged path $1 is one the commit adds.
 _rt_is_added() {
     [[ "$RT_UNMAPPED" == "1" ]] && return 0
@@ -311,6 +320,7 @@ restricted_term_gate_staged() {
             while IFS= read -r -d '' path && IFS= read -r hit; do
                 rel="${path#"$root"/}"
                 n="${hit%%:*}"
+                _rt_is_lockfile_checksum "${hit#*:}" && continue
                 if _rt_is_added "$rel" "$n"; then
                     lfound["${RT_LOOSE_IDX[$j]}:$rel"]+="$n,"
                 fi
@@ -526,6 +536,7 @@ restricted_term_gate_range() {
     done
     for j in "${!RT_LOOSE_PATS[@]}"; do
         while IFS= read -r hit; do
+            _rt_is_lockfile_checksum "${hit#*:}" && continue
             printf 'L %d %s\n' "${RT_LOOSE_IDX[$j]}" "${hit%%:*}" >> "$work/hits"
         done < <(grep -n -i -E -- "${RT_LOOSE_PATS[$j]}" "$work/text" 2>/dev/null)
     done
