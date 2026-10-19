@@ -234,8 +234,12 @@ const IMPLEMENTED: &[Implemented] = &[
             "sce/include/mesh/",
             "tools/codegen/templates/mesh/",
             "backends/rust/mesh/src/zenoh.rs",
+            "backends/rust/mesh/src/inbox.rs",
+            "backends/rust/mesh/src/conformance.rs",
+            "backends/rust/mesh/src/peers.rs",
             "backends/rust/mesh/src/lib.rs",
             "backends/rust/mesh/examples/zenoh_probe.rs",
+            "tools/codegen/templates/mesh_router/",
         ],
         why: "SCE speaks Zenoh: transport/zenoh.rs plans the key \
               expressions and liveliness tokens, and templates/mesh/cpp \
@@ -246,12 +250,17 @@ const IMPLEMENTED: &[Implemented] = &[
               diagnostic sentence each, not implementation: the generators \
               explain a liveliness rule and a deferral in prose the user \
               reads at run time. The Rust Mesh binding is the same speech in \
-              another runtime: backends/rust/mesh/src/zenoh.rs opens the \
-              client session that carries a machine's envelopes and \
-              readiness, lib.rs declares that module \
-              behind its feature, and examples/zenoh_probe.rs measures the \
-              round trip over that same session. Three files, not the \
-              crate: the rest of it speaks WebSocket.",
+              another runtime. inbox.rs holds the key space and the four \
+              operations a client must perform, so that the client is \
+              replaceable; zenoh.rs is the upstream client that performs \
+              them and opens the session that carries a machine's envelopes \
+              and readiness; conformance.rs is the kit any client is held \
+              to; peers.rs and the mesh_router templates carry the peer \
+              table link a deploy.yaml's `zenoh_inbox` binding becomes; \
+              lib.rs declares those modules behind their features; and \
+              examples/zenoh_probe.rs measures the round trip over that \
+              same session. Seven paths, not the crate: the rest of it \
+              speaks WebSocket.",
     },
     Implemented {
         token: "RFC 4122",
