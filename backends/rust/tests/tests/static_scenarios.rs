@@ -564,6 +564,30 @@ fn static_host_call_tells_its_host_what_the_datamodel_held() {
     );
 }
 
+// A machine that states a duty (docs/adr/0038): `engaged` takes the duty
+// `start_keepalive` on entry and gives it back, through `released-by`, on its
+// `<onexit>`, beside the notice `note_engaged`. The recording host performs
+// nothing and so only simulates, which a machine with a duty refuses unless it is
+// built for one: this replay builds it through `new_simulated`, and the scenario
+// holds what the host was told, in order.
+#[test]
+fn static_host_duty_gives_its_host_the_duty_and_its_release() {
+    use sce_rust_scenarios::integration::static_datamodel::static_host_duty_sm::{
+        RecordingStaticHostDutyActions, StaticHostDutyPersist, StaticHostDutyPolicy,
+    };
+    let mut seen = 0usize;
+    replay_with_host(
+        Engine::new(StaticHostDutyPolicy::new_simulated(
+            RecordingStaticHostDutyActions::default(),
+        )),
+        |engine| engine.save().expect("saves"),
+        |engine| hosts::static_host_duty(engine, &mut seen),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_host_duty.json"
+        ),
+    );
+}
+
 // A child that declares `<sce:action>`s is built with the host its parent's host
 // answers for it, and what the child asked of it is what the scenario's
 // `child_hosts` holds. The parent's recording host takes the function that answers

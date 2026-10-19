@@ -18,6 +18,12 @@ macro_rules! policy {
     ($policy:ident, host $host:ident) => {
         $policy::new($host::default())
     };
+    // A machine that states a duty refuses a host that only simulates it, and the
+    // recording host simulates, so a replay that drives one with it says so
+    // (docs/adr/0038).
+    ($policy:ident, simulated $host:ident) => {
+        $policy::new_simulated($host::default())
+    };
     ($policy:ident, children $builder:ident, $book:ident) => {
         $policy::new(hosts::$builder(&$book))
     };
@@ -66,6 +72,10 @@ macro_rules! replay_row {
 /// the host of that name, which records what it is asked, and `hosts::<reader>`
 /// turns that into the calls a scenario's `host_calls` states.
 ///
+/// A row marked `~ <Host> => <reader>` is the same for a machine that states a duty
+/// (docs/adr/0038): the host records and so only simulates, and the machine is built
+/// through `new_simulated` to say that it means to run on one.
+///
 /// A row marked `& <builder>` is a machine whose children are given hosts: its
 /// policy takes the host `hosts::<builder>` makes of the book the row replays with,
 /// and the scenario's `child_hosts` are read from that book.
@@ -73,7 +83,7 @@ macro_rules! replay_row {
 /// What a machine sends its Mesh peers needs no mark: the replay records it for
 /// every machine, and a scenario's `sent` is held to what was recorded.
 macro_rules! scenarios {
-    ($($name:literal => $module:ident::{$policy:ident, $persist:ident} $(@ $manual:ident)? $(+ $host:ident => $calls:ident)? $(& $builder:ident)?;)*) => {
+    ($($name:literal => $module:ident::{$policy:ident, $persist:ident} $(@ $manual:ident)? $(+ $host:ident => $calls:ident)? $(~ $shost:ident => $scalls:ident)? $(& $builder:ident)?;)*) => {
         /// The scenarios this crate can replay, by file name.
         pub const NAMES: &[&str] = &[$($name),*];
 
@@ -96,16 +106,17 @@ macro_rules! scenarios {
         pub fn run(name: &str) {
             match name {
                 $($name => {
-                    use crate::integration::static_datamodel::$module::{$persist, $policy $(, $host)?};
+                    use crate::integration::static_datamodel::$module::{$persist, $policy $(, $host)? $(, $shost)?};
                     #[allow(unused_variables)]
                     let book = ChildHosts::default();
                     #[allow(unused_mut)]
-                    let mut engine = Engine::new(policy!($policy $(, host $host)? $(, children $builder, book)?));
+                    let mut engine = Engine::new(policy!($policy $(, host $host)? $(, simulated $shost)? $(, children $builder, book)?));
                     $(engine.set_clock(SceClock::$manual(0));)?
                     replay_row!(
                         engine,
                         scenario_text($name).expect("the table names its own scenario")
                         $(, calls $calls)?
+                        $(, calls $scalls)?
                         $(, children book $builder)?
                     );
                 })*
@@ -143,6 +154,7 @@ scenarios! {
     "static_foreach" => static_foreach_sm::{StaticForeachPolicy, StaticForeachPersist};
     "static_history" => static_history_sm::{StaticHistoryPolicy, StaticHistoryPersist};
     "static_host_call" => static_host_call_sm::{StaticHostCallPolicy, StaticHostCallPersist} + RecordingStaticHostCallActions => static_host_call;
+    "static_host_duty" => static_host_duty_sm::{StaticHostDutyPolicy, StaticHostDutyPersist} ~ RecordingStaticHostDutyActions => static_host_duty;
     "static_invoke" => static_invoke_sm::{StaticInvokePolicy, StaticInvokePersist};
     "static_invoke_abort" => static_invoke_sm::{StaticInvokePolicy, StaticInvokePersist};
     "static_invoke_params" => static_invoke_params_sm::{StaticInvokeParamsPolicy, StaticInvokeParamsPersist};

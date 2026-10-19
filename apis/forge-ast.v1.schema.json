@@ -141,8 +141,16 @@
         "namelist": {
           "type": "string"
         },
+        "native_action_effect": {
+          "description": "`<sce:action effect=\"duty|notice\">` (docs/adr/0038): whether the machine's correctness depends on the host performing the operation. `\"duty\"` is a dependence, `\"notice\"` is not (the host may observe, record or drop it). Required of every `<sce:action>`: the parser refuses an element that states none, so the field is empty only on an action that is not a `native_action`.",
+          "type": "string"
+        },
         "native_action_name": {
           "description": "§scxml-G-7 — Custom Action Element `<sce:action name=\"...\">`. The symbolic host-operation name this action dispatches to. When non-empty, [`action_type`](Self::action_type) is `\"native_action\"` and [`params`](Self::params) carries the positional `<sce:arg expr=\"...\">` argument expressions. The codegen lowers each argument through the typed-expression pipeline (the same path guards use) and emits a direct call into a generated host-`Actions` trait method — no script engine. Empty for every standard W3C executable-content action.",
+          "type": "string"
+        },
+        "native_action_released_by": {
+          "description": "`<sce:action released-by=\"op\">` (docs/adr/0038): the `<sce:action>` of the same machine that gives back what this `duty` took, performed on the `<onexit>` of the state whose `<onentry>` took it. Empty for a duty that lasts the machine's life and for a `notice`.",
           "type": "string"
         },
         "params": {

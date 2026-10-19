@@ -1256,5 +1256,13 @@ name = "scheduler_session_runtime"
 path = "tests/scheduler_session_runtime.rs"
 required-features = ["cli"]
 
+# A host that only simulates a machine's duties is refused where the machine is
+# built, in all six backends (docs/adr/0038). It runs `sce-codegen generate` and
+# `check`, so it carries the `cli` gate.
+[[test]]
+name = "a_host_duty_is_refused_where_the_machine_is_built"
+path = "tests/a_host_duty_is_refused_where_the_machine_is_built.rs"
+required-features = ["cli"]
+
 [lints]
 workspace = true

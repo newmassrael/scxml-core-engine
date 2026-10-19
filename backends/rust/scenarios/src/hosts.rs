@@ -24,6 +24,9 @@ use crate::integration::static_datamodel::static_child_host_sm::RecordingStaticC
 use crate::integration::static_datamodel::static_host_call_sm::{
     RecordingStaticHostCallActions, StaticHostCallActionsCall, StaticHostCallPolicy,
 };
+use crate::integration::static_datamodel::static_host_duty_sm::{
+    RecordingStaticHostDutyActions, StaticHostDutyActionsCall, StaticHostDutyPolicy,
+};
 use crate::integration::static_datamodel::static_hosted_first_sm::StaticHostedFirstActions;
 use crate::integration::static_datamodel::static_hosted_second_sm::StaticHostedSecondActions;
 use sce_rust_runtime::Engine;
@@ -41,6 +44,30 @@ pub fn static_host_call(
         .map(|call| match call {
             StaticHostCallActionsCall::ShowAttempts { count, exhausted } => {
                 json!({"action": "showAttempts", "args": [count, exhausted]})
+            }
+        })
+        .collect();
+    *seen = calls.len();
+    fresh
+}
+
+/// The calls `static_host_duty` made of its host since `seen` of them were read.
+pub fn static_host_duty(
+    engine: &Engine<StaticHostDutyPolicy<RecordingStaticHostDutyActions>>,
+    seen: &mut usize,
+) -> Vec<Value> {
+    let calls = engine.policy().actions().calls();
+    let fresh = calls[*seen..]
+        .iter()
+        .map(|call| match call {
+            StaticHostDutyActionsCall::StartKeepalive => {
+                json!({"action": "start_keepalive", "args": []})
+            }
+            StaticHostDutyActionsCall::NoteEngaged => {
+                json!({"action": "note_engaged", "args": []})
+            }
+            StaticHostDutyActionsCall::StopKeepalive => {
+                json!({"action": "stop_keepalive", "args": []})
             }
         })
         .collect();
