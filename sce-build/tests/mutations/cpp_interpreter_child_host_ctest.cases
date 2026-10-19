@@ -39,20 +39,20 @@ mutation_oracles tests/integration/NativeActionRunsUnderTheInterpreterTest.cpp t
 
 mutation_case "the parent's host is asked and its answer is not installed" <<'PY'
 edit("sce/src/runtime/InvokeExecutor.cpp",
-     "stateMachine->setNativeActionHost(parentHost->hostForChild(invokeid, childDocument));",
-     "(void)parentHost->hostForChild(invokeid, childDocument);")
+     "            if (parentSM->acceptsSimulatedNativeActionHost()) {\n                stateMachine->setSimulatedNativeActionHost(std::move(childHost));\n            } else {\n                stateMachine->setNativeActionHost(std::move(childHost));\n            }",
+     "            (void)childHost;")
 PY
 
 mutation_case "the parent's host is asked with the document where the id goes" <<'PY'
 edit("sce/src/runtime/InvokeExecutor.cpp",
-     "parentHost->hostForChild(invokeid, childDocument));",
-     "parentHost->hostForChild(childDocument, invokeid));")
+     "auto childHost = parentHost->hostForChild(invokeid, childDocument);",
+     "auto childHost = parentHost->hostForChild(childDocument, invokeid);")
 PY
 
 mutation_case "the parent's host is asked twice for one start" <<'PY'
 edit("sce/src/runtime/InvokeExecutor.cpp",
-     "stateMachine->setNativeActionHost(parentHost->hostForChild(invokeid, childDocument));",
-     "stateMachine->setNativeActionHost((parentHost->hostForChild(invokeid, childDocument), parentHost->hostForChild(invokeid, childDocument)));")
+     "auto childHost = parentHost->hostForChild(invokeid, childDocument);",
+     "auto childHost = (parentHost->hostForChild(invokeid, childDocument), parentHost->hostForChild(invokeid, childDocument));")
 PY
 
 mutation_case "the document of a src is not named" <<'PY'

@@ -615,15 +615,38 @@ public:
      * for it (`INativeActionHost::hostForChild`), and has none when there is no
      * host here or it answers none.
      *
+     * A document that states a duty (`<sce:action effect="duty">`, docs/adr/0038)
+     * is not started with a host whose `realization()` is `Simulates`: `start()`
+     * fails and says so. A caller that drives such a machine with a recording
+     * double on purpose installs it with `setSimulatedNativeActionHost`.
+     *
      * @param host The host (see `INativeActionHost`)
      */
     void setNativeActionHost(std::shared_ptr<INativeActionHost> host);
+
+    /**
+     * @brief docs/adr/0038: install a host that may only simulate the duties, on purpose
+     *
+     * As `setNativeActionHost`, and `start()` accepts the host whatever its
+     * `realization()` says: the caller states, at this call, that the machine is
+     * driven by a recorder or another double and nothing is to perform its duties.
+     * The acceptance covers the children this machine starts: the host the
+     * installed one answers for a child is installed on the child the same way.
+     *
+     * @param host The host (see `INativeActionHost`)
+     */
+    void setSimulatedNativeActionHost(std::shared_ptr<INativeActionHost> host);
 
     /**
      * @brief §scxml-G-7: the host installed with `setNativeActionHost`
      * @return The host, or nullptr when none was installed
      */
     std::shared_ptr<INativeActionHost> getNativeActionHost() const;
+
+    /**
+     * @brief docs/adr/0038: whether the host was installed through `setSimulatedNativeActionHost`
+     */
+    bool acceptsSimulatedNativeActionHost() const;
 
     /**
      * @brief §scxml-6.4.3: Set completion callback for top-level final state notification
@@ -903,6 +926,9 @@ private:
 
     // The host this machine's `<sce:action>`s are performed by
     std::shared_ptr<INativeActionHost> nativeActionHost_;
+    // Whether the caller accepted a host that only simulates the duties
+    // (`setSimulatedNativeActionHost`); false for one installed the plain way.
+    bool simulatedNativeActionHostAccepted_ = false;
 
     // EventRaiser: holds both of Appendix D's queues
     std::shared_ptr<IEventRaiser> eventRaiser_;

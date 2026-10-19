@@ -2,6 +2,8 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #include "runtime/StateMachine.h"
+#include "actions/NativeActionContract.h"
+#include "runtime/INativeActionHost.h"
 #include "scripting/ScriptResultUtils.h"
 #include "scripting/SessionRegistry.h"
 
@@ -265,6 +267,26 @@ bool StateMachine::start(bool autoProcessQueuedEvents) {
 
     if (!document_ || document_->documentInitialTargets().empty()) {
         SCE_LOG_ERROR("StateMachine: Cannot start - no initial state defined");
+        return false;
+    }
+
+    // docs/adr/0038: a document that states a duty is not run by a host that
+    // says it only simulates the duties, unless the caller accepted such a host by
+    // name. Refused before anything of the machine runs, so an `<onentry>` that
+    // takes a duty never reaches a recorder by accident. A document with no duty
+    // takes any host, and a machine with no host at all keeps its `error.execution`
+    // where the action runs.
+    if (nativeActionHost_ && !simulatedNativeActionHostAccepted_ &&
+        nativeActionHost_->realization() == ActionRealization::Simulates && NativeActionContract::statesDuty(*model_)) {
+        std::string document = SessionRegistry::instance().getSessionFilePath(sessionId_);
+        if (document.empty()) {
+            document = model_->getName().empty() ? "(unnamed document)" : "'" + model_->getName() + "'";
+        }
+        SCE_LOG_ERROR("StateMachine: Cannot start {} - it states a duty (<sce:action effect=\"duty\">) and the "
+                      "installed host declares that it only simulates the duties; install a host that performs "
+                      "them with setNativeActionHost, or accept this one on purpose with "
+                      "setSimulatedNativeActionHost",
+                      document);
         return false;
     }
 
@@ -1953,13 +1975,25 @@ void StateMachine::executeOnEntryActions(const std::string &stateId) {
 // §scxml-G-7: the host of the machine's `<sce:action>`s
 void StateMachine::setNativeActionHost(std::shared_ptr<INativeActionHost> host) {
     nativeActionHost_ = std::move(host);
+    simulatedNativeActionHostAccepted_ = false;
     if (cachedExecutorImpl_) {
         cachedExecutorImpl_->setNativeActionHost(nativeActionHost_);
     }
 }
 
+// docs/adr/0038: the same host seam, with the caller's statement that the host only
+// simulates the duties and that is intended.
+void StateMachine::setSimulatedNativeActionHost(std::shared_ptr<INativeActionHost> host) {
+    setNativeActionHost(std::move(host));
+    simulatedNativeActionHostAccepted_ = true;
+}
+
 std::shared_ptr<INativeActionHost> StateMachine::getNativeActionHost() const {
     return nativeActionHost_;
+}
+
+bool StateMachine::acceptsSimulatedNativeActionHost() const {
+    return simulatedNativeActionHostAccepted_;
 }
 
 // EventDispatcher management

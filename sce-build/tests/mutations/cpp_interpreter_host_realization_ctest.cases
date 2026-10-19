@@ -1,0 +1,95 @@
+# Mutation cases for "a document that states a duty is not started with a host
+# that only simulates the duties unless the caller accepted it by name, and an
+# action that states no effect or a release that cannot be honoured is refused
+# as the build tool refuses it", C++ Interpreter (docs/adr/0038, decisions 1, 2
+# and 6).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/cpp_interpreter_host_realization_ctest.cases`.
+#
+# `INativeActionHost::realization()` is the host's own statement of whether it
+# performs the duties of a machine; `StateMachine::start()` reads it against what
+# the document states (`NativeActionContract::statesDuty`) and against how the
+# host was installed (`setNativeActionHost` or `setSimulatedNativeActionHost`);
+# a child the parent's host answers is checked by the same rule, with the
+# acceptance the caller gave the parent. The parser reads `effect` and
+# `released-by`, and the rules between actions run where the model is validated.
+# `NativeActionRunsUnderTheInterpreterTest` is the oracle; the cross-producer
+# fixtures hold the codes and sentences to the build tool's.
+#
+# What is easy to get wrong and reads as success: a refusal that never fires
+# (every recorder passes), one that fires on every document (no notice takes a
+# recorder), an acceptance that is ignored or kept past the host it was given
+# for, a duty the walk does not find because it sits inside an `<if>`, and a
+# child that is not given the acceptance its parent has.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^IntegrationTests$'
+mutation_targets sce/src/runtime/StateMachine.cpp sce/src/runtime/InvokeExecutor.cpp sce/src/actions/NativeActionContract.cpp sce/src/parsing/ActionParser.cpp sce/src/parsing/SCXMLParser.cpp
+mutation_oracles tests/integration/NativeActionRunsUnderTheInterpreterTest.cpp
+
+# A host that declares it only simulates is never taken for one that does.
+mutation_case "a simulating host is never refused" <<'PY'
+edit("sce/src/runtime/StateMachine.cpp",
+     "        nativeActionHost_->realization() == ActionRealization::Simulates && NativeActionContract::statesDuty(*model_)) {\n",
+     "        false && nativeActionHost_->realization() == ActionRealization::Simulates && NativeActionContract::statesDuty(*model_)) {\n")
+PY
+
+# Whatever the document states, a recorder installed the plain way is refused.
+mutation_case "a document with no duty is refused the host too" <<'PY'
+edit("sce/src/runtime/StateMachine.cpp",
+     "        nativeActionHost_->realization() == ActionRealization::Simulates && NativeActionContract::statesDuty(*model_)) {\n",
+     "        nativeActionHost_->realization() == ActionRealization::Simulates && (NativeActionContract::statesDuty(*model_) || true)) {\n")
+PY
+
+# The caller's acceptance by name is not read.
+mutation_case "the acceptance by name is ignored" <<'PY'
+edit("sce/src/runtime/StateMachine.cpp",
+     "    if (nativeActionHost_ && !simulatedNativeActionHostAccepted_ &&\n",
+     "    if (nativeActionHost_ &&\n")
+PY
+
+# A host installed the plain way inherits the acceptance given to the one before it.
+mutation_case "a later host inherits the acceptance of the earlier one" <<'PY'
+edit("sce/src/runtime/StateMachine.cpp",
+     "    nativeActionHost_ = std::move(host);\n    simulatedNativeActionHostAccepted_ = false;\n",
+     "    nativeActionHost_ = std::move(host);\n")
+PY
+
+# A child the parent's host answers is not given the acceptance its parent has.
+mutation_case "a child is not given its parent's acceptance" <<'PY'
+edit("sce/src/runtime/InvokeExecutor.cpp",
+     "            if (parentSM->acceptsSimulatedNativeActionHost()) {\n",
+     "            if (false && parentSM->acceptsSimulatedNativeActionHost()) {\n")
+PY
+
+# A duty nested in an <if> is not looked into, so it is no duty.
+mutation_case "a duty inside an <if> is not found" <<'PY'
+edit("sce/src/actions/NativeActionContract.cpp",
+     "        } else if (const auto *conditional = dynamic_cast<const IfAction *>(node.get())) {\n",
+     "        } else if (const auto *conditional = dynamic_cast<const IfAction *>(node.get()); false) {\n")
+PY
+
+# A release that names a notice is let through.
+mutation_case "a release that is a notice is accepted" <<'PY'
+edit("sce/src/actions/NativeActionContract.cpp",
+     "        if (releaseEffect->second != NativeAction::Effect::Duty) {\n",
+     "        if (false && releaseEffect->second != NativeAction::Effect::Duty) {\n")
+PY
+
+# The rules between actions are not applied where the model is validated.
+mutation_case "the rules between actions are not applied" <<'PY'
+edit("sce/src/parsing/SCXMLParser.cpp",
+     "    SCE::NativeActionContract::require(*model);\n",
+     "    (void)model;\n")
+PY
+
+# An action with no effect is read as the word it lacks, so it reaches the
+# invalid-attribute refusal instead of the missing-attribute one.
+mutation_case "a missing effect is refused as an invalid one" <<'PY'
+edit("sce/src/parsing/ActionParser.cpp",
+     "    if (effect.empty()) {\n        throw SCE::parsing::SemanticMissingAttribute(\"<sce:action>\", \"effect\");\n    }\n",
+     "")
+PY

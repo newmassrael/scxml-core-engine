@@ -268,6 +268,13 @@ private:
 /// written under.
 class RecordingHost : public INativeActionHost {
 public:
+    /// A recorder performs nothing: a machine that states a duty is built for it
+    /// through `setSimulatedNativeActionHost`, and a child it answers for inherits
+    /// that (docs/adr/0038).
+    ActionRealization realization() const override {
+        return ActionRealization::Simulates;
+    }
+
     bool performNativeAction(const std::string &name, const std::vector<ScriptValue> &args) override {
         nlohmann::json values = nlohmann::json::array();
         for (const auto &arg : args) {
@@ -478,8 +485,12 @@ protected:
         const auto machine = std::make_shared<StateMachine>(*engine_);
         // The host a machine's `<sce:action>`s go to, which records them: what a
         // step's `host_calls` is read from. A machine with no action never asks it.
+        // The recorder simulates, and a machine that states a duty
+        // (`static_host_duty`) refuses such a host unless it is accepted by name, so
+        // it is installed through the entry that says the double is meant
+        // (docs/adr/0038).
         const auto host = std::make_shared<RecordingHost>();
-        machine->setNativeActionHost(host);
+        machine->setSimulatedNativeActionHost(host);
         // What the machine sends its Mesh peers, which a step's `sent` is read
         // from. Wired before the machine starts, because its first entry can
         // already send.
@@ -648,6 +659,11 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheInterpreterDoesWha
     // ... and the bytes a typed payload carries, the text its wire spells them as.
     EXPECT_NE(std::find(replayed.begin(), replayed.end(), "static_payload_bytes"), replayed.end())
         << "static_payload_bytes was not replayed: a payload's byte string has no lowering for the Interpreter";
+    // ... and the machine that states a duty and a notice, replayed with a recorder
+    // that simulates (docs/adr/0038): were it not accepted by name, `start()` would
+    // refuse the document and the replay would fail before its first step.
+    EXPECT_NE(std::find(replayed.begin(), replayed.end(), "static_host_duty"), replayed.end())
+        << "static_host_duty was not replayed: a host duty has no lowering for the Interpreter";
     // ... and one carried by a `<param>` and a `<donedata>`, as its Latin-1 text.
     EXPECT_NE(std::find(replayed.begin(), replayed.end(), "static_bytes_wire"), replayed.end())
         << "static_bytes_wire was not replayed: a byte string as a param has no lowering for the Interpreter";
@@ -687,6 +703,10 @@ namespace {
 /// `RecordingHost`, keeping what it was asked and what it answered.
 class ParentHost : public INativeActionHost {
 public:
+    ActionRealization realization() const override {
+        return ActionRealization::Simulates;
+    }
+
     bool performNativeAction(const std::string &, const std::vector<ScriptValue> &) override {
         return false;
     }
@@ -730,6 +750,8 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, AHostActionIsPerforme
 
     const auto host = std::make_shared<RecordingHost>();
     const auto machine = std::make_shared<StateMachine>(*engine_);
+    // `showAttempts` is a notice, which the machine does not depend on the host
+    // performing, so a recorder is installed the plain way (docs/adr/0038).
     machine->setNativeActionHost(host);
     ASSERT_TRUE(machine->loadSCXMLFromString(lowered.document));
     ASSERT_TRUE(machine->start());
@@ -898,7 +920,9 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, AChildIsGivenTheHostI
 
     const auto parentHost = std::make_shared<ParentHost>();
     const auto machine = std::make_shared<StateMachine>(*engine_);
-    machine->setNativeActionHost(parentHost);
+    // The hosts it answers are recorders, which simulate: accepted by name, and the
+    // acceptance covers the children the machine starts (docs/adr/0038).
+    machine->setSimulatedNativeActionHost(parentHost);
     const auto raiser = wire(*machine);
     ASSERT_TRUE(machine->loadSCXMLFromString(lowered.document)) << "the Interpreter does not load the document";
     ASSERT_TRUE(machine->start());
@@ -957,7 +981,9 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, ACandidateIsGivenTheH
 
     const auto parentHost = std::make_shared<ParentHost>();
     const auto machine = std::make_shared<StateMachine>(*engine_);
-    machine->setNativeActionHost(parentHost);
+    // The hosts it answers are recorders, which simulate: accepted by name, and the
+    // acceptance covers the children the machine starts (docs/adr/0038).
+    machine->setSimulatedNativeActionHost(parentHost);
     const auto raiser = wire(*machine);
     ASSERT_TRUE(machine->loadSCXML(set.documents[0].string())) << "the Interpreter does not load the document";
     ASSERT_TRUE(machine->start());

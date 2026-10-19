@@ -317,9 +317,20 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
     // starts (entry and restoration alike), before anything of the child's runs.
     // A parent with no host, or one that answers none, leaves the child without
     // one, and an action it performs raises `error.execution`.
+    //
+    // docs/adr/0038: the child is checked by the rule its parent is (`start()`
+    // refuses a host that simulates a document that states a duty), and the
+    // acceptance the caller gave the parent covers the children it starts: a
+    // parent driven by a recorder on purpose is not made to accept the recorder
+    // it answers for each child a second time.
     if (auto parentSM = parentStateMachine_.lock()) {
         if (auto parentHost = parentSM->getNativeActionHost()) {
-            stateMachine->setNativeActionHost(parentHost->hostForChild(invokeid, childDocument));
+            auto childHost = parentHost->hostForChild(invokeid, childDocument);
+            if (parentSM->acceptsSimulatedNativeActionHost()) {
+                stateMachine->setSimulatedNativeActionHost(std::move(childHost));
+            } else {
+                stateMachine->setNativeActionHost(std::move(childHost));
+            }
         }
     }
 

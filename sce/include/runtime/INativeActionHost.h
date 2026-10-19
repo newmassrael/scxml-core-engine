@@ -4,6 +4,7 @@
 #pragma once
 
 #include "SCXMLTypes.h"
+#include "runtime/ActionRealization.h"
 
 #include <memory>
 #include <string>
@@ -35,10 +36,39 @@ namespace SCE {
  * A child session started by an `<invoke>` is given its own host by this one
  * (`hostForChild`), as a generated parent's host interface answers one for
  * each child that declares `<sce:action>`s.
+ *
+ * A host also says what it does with the duties of a machine (`realization`,
+ * docs/adr/0038): whether the operations a document marks `effect="duty"` are
+ * performed or only recorded. A document that states a duty is not started with
+ * a host that simulates unless the caller said so by name.
  */
 class INativeActionHost {
 public:
     virtual ~INativeActionHost() = default;
+
+    /**
+     * @brief What this host does with the duties of a machine (docs/adr/0038)
+     *
+     * An `<sce:action effect="duty">` is an operation the machine's correctness
+     * depends on the host performing. The host states in its own type whether it
+     * does:
+     *
+     *  - `Performs`: its `performNativeAction` does what the operation's name
+     *    says. This is a statement the host's author makes about the body, in a
+     *    line a reviewer can find; SCE cannot read the body, and an empty body
+     *    under `Performs` is that author's false statement.
+     *  - `Simulates`: it records, drops or fakes the operations, as a test double
+     *    does. `StateMachine::start()` refuses a document that states a duty when
+     *    the host installed through `setNativeActionHost` simulates; a caller
+     *    that means to drive the machine with a double installs it through
+     *    `setSimulatedNativeActionHost`.
+     *
+     * The same two words and the same refusal are the generated hosts' in every
+     * backend, so the Interpreter and the generated engines refuse the same
+     * hosts. The member has no default: a host that does not say has not decided.
+     * A document with no duty takes either answer.
+     */
+    virtual ActionRealization realization() const = 0;
 
     /**
      * @brief Perform the host operation `name`
