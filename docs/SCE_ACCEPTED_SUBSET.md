@@ -2272,7 +2272,7 @@ performing it, with the required, unqualified attribute `effect`:
   | backend | the member | refusal | accepting one on purpose |
   |---|---|---|---|
   | Rust | `const REALIZATION: ::sce_rust_runtime::ActionRealization` | compile time, in `Policy::new` | `Policy::new_simulated` |
-  | C++ | `virtual SCE::ActionRealization realization() const = 0` | at construction | a named constructor argument |
+  | C++ | `virtual SCE::ActionRealization realization() const = 0` | `std::invalid_argument` at construction | a trailing `SCE::SimulatedHost::Accept` constructor argument |
   | Kotlin | `val realization: ActionRealization` | `require` at construction | `acceptSimulatedHost = true` |
   | Go | `Realization() sce.ActionRealization` | `New<Machine>Policy` panics | `NewSimulated<Machine>Policy` |
   | Python | `realization: ActionRealization` | `ValueError` at construction | `accept_simulated_host=True` |

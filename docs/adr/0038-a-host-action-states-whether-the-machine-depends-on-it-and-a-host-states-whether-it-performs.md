@@ -74,11 +74,11 @@ here.
    | backend | the member | refusal of a simulating host | accepting one on purpose |
    |---|---|---|---|
    | Rust | `const REALIZATION: ::sce_rust_runtime::ActionRealization` | compile time: `Policy::new` evaluates an associated const | `Policy::new_simulated` |
-   | C++ | `virtual SCE::ActionRealization realization() const = 0` | at construction | a named constructor argument |
+   | C++ | `virtual SCE::ActionRealization realization() const = 0` | `std::invalid_argument` at construction | a trailing `SCE::SimulatedHost::Accept` constructor argument (an enum, so a `bool` cannot be passed by accident) |
    | Kotlin | `val realization: ActionRealization` | `require` at construction | `acceptSimulatedHost = true` |
    | Go | `Realization() sce.ActionRealization` | `New<Machine>Policy` panics | `NewSimulated<Machine>Policy` |
    | Python | `realization: ActionRealization` | `ValueError` at construction | `accept_simulated_host=True` |
-   | C11 | `sce_action_realization_t realization` in the vtable | `_init_with_actions` returns false | `_init_with_simulated_actions` |
+   | C11 | `sce_action_realization_t realization` in the vtable (`SCE_ACTION_UNSTATED` is zero, so a table that never says is refused as a missing member is) | `_init_with_actions` returns false | `_init_with_simulated_actions` |
 
    `Performs` is a statement the host's author makes about the bodies of the methods, in a line a
    reviewer can find. SCE cannot read the bodies; an empty body under `Performs` is that author's
