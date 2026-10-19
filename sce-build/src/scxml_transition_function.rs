@@ -149,7 +149,7 @@ struct Refusals<'m> {
 
 impl Refusals<'_> {
     fn push(&mut self, error: ScxmlSemanticError, at: Option<&SourceLocation>) {
-        let located = self.model.locate(error.into(), at, self.source);
+        let located: Located<ForgeError> = self.model.locate(error.into(), at, self.source);
         self.out.push(located);
     }
 

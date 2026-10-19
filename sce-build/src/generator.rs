@@ -5571,11 +5571,12 @@ mod tests {
         assert_eq!(files.len(), 1);
         let (name, code) = &files[0];
         assert_eq!(name, "lamp_transition_function.rs");
+        let hash_line = format!("pub const SOURCE_HASH: &str = \"{}\";", "ef".repeat(32));
         for expected in [
             "pub enum State {",
             "pub enum Event {",
             "pub const INITIAL: State = State::Idle;",
-            &format!("pub const SOURCE_HASH: &str = \"{}\";", "ef".repeat(32)),
+            hash_line.as_str(),
             "(State::Idle, Event::On) => Some(State::Lit),",
             "(State::Lit, Event::OffHard) => Some(State::Done),",
             "matches!(state, State::Done)",
