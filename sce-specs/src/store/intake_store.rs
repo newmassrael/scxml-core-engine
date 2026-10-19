@@ -216,6 +216,41 @@ fn read_head(dir: &Path) -> Result<Option<Revision>, StoreError> {
     }
 }
 
+/// An original a store holds, as a draft that adds the same original to another store: every member's bytes,
+/// and a rendition naming the member it was made from by path, which is how a draft says it (a manifest says it
+/// by hash). The same members under the same paths with the same roles and label are the same original, so
+/// what is copied has the digest it had.
+fn draft_of<C: Clock>(
+    store: &SpecStore<C>,
+    spec: &SpecId,
+    original: &Revision,
+) -> Result<OriginalDraft, StoreError> {
+    let manifest = store.read_original(spec, original)?;
+    let mut members = Vec::with_capacity(manifest.members.len());
+    for member in &manifest.members {
+        let bytes = store.read_original_member(spec, original, &member.path)?;
+        let of = member.of.as_ref().and_then(|hash| {
+            manifest
+                .members
+                .iter()
+                .find(|other| other.hash == *hash)
+                .map(|other| other.path.clone())
+        });
+        members.push(MemberDraft {
+            path: member.path.clone(),
+            role: member.role,
+            bytes,
+            of,
+            renderer: member.renderer.clone(),
+        });
+    }
+    Ok(OriginalDraft {
+        label: manifest.label.clone(),
+        members,
+        missing: manifest.missing.clone(),
+    })
+}
+
 /// A text kept under the hash of its bytes, read back and checked to be what it is named.
 fn read_kept(folder: &Path, digest: &Revision, what: &str) -> Result<String, StoreError> {
     let path = folder.join(format!("{}.json", digest.as_str()));
@@ -643,34 +678,7 @@ impl<C: Clock> SpecStore<C> {
         let (intake_spec, dir) = self.intake_folder(id)?;
         let intake = Self::read_intake_file(&dir)?;
         let held = self.intakes();
-        let manifest = held.read_original(&intake_spec, &intake.original)?;
-        let mut members = Vec::with_capacity(manifest.members.len());
-        for member in &manifest.members {
-            let bytes = held.read_original_member(&intake_spec, &intake.original, &member.path)?;
-            // A rendition names the member it was made from by hash, and a draft names it by path.
-            let of = member.of.as_ref().and_then(|hash| {
-                manifest
-                    .members
-                    .iter()
-                    .find(|other| other.hash == *hash)
-                    .map(|other| other.path.clone())
-            });
-            members.push(MemberDraft {
-                path: member.path.clone(),
-                role: member.role,
-                bytes,
-                of,
-                renderer: member.renderer.clone(),
-            });
-        }
-        let added = self.add_original(
-            spec,
-            OriginalDraft {
-                label: manifest.label.clone(),
-                members,
-                missing: manifest.missing.clone(),
-            },
-        )?;
+        let added = self.add_original(spec, draft_of(&held, &intake_spec, &intake.original)?)?;
         if added.digest != intake.original {
             return Err(StoreError::corrupt(
                 &dir,
@@ -683,6 +691,49 @@ impl<C: Clock> SpecStore<C> {
             original: added.digest,
             extraction: saved.digest,
         })
+    }
+
+    /// Start dividing a document a spec already holds: the original and the extraction it kept, which is what a
+    /// screen has when a person reading a document for one spec decides it holds several. Nothing is read again
+    /// and no bytes are sent: the intake is made of what the spec has, and is the same intake the same press
+    /// made before.
+    pub fn start_intake_from_spec(
+        &self,
+        spec: &SpecId,
+        original: &Revision,
+        extraction: &Revision,
+        key: &str,
+        origin: &str,
+        title: &str,
+    ) -> Result<IntakeStarted, StoreError> {
+        let entry = self
+            .list_extractions(spec, Some(original))?
+            .into_iter()
+            .find(|entry| entry.digest == *extraction)
+            .ok_or_else(|| {
+                bad(
+                    "the extraction is not one saved for this original",
+                    json!({ "extraction": extraction }),
+                )
+            })?;
+        let text = self.read_extraction(spec, extraction)?;
+        let draft = draft_of(self, spec, original)?;
+        self.start_intake(IntakeRegistration {
+            key,
+            origin,
+            title,
+            draft,
+            member: &entry.member,
+            extraction: &text,
+        })
+    }
+
+    /// The extraction an intake holds, as the text it was kept as: what a screen divides by its outline.
+    pub fn read_intake_extraction(&self, id: &str) -> Result<(Revision, String), StoreError> {
+        let (spec, dir) = self.intake_folder(id)?;
+        let intake = Self::read_intake_file(&dir)?;
+        let text = self.intakes().read_extraction(&spec, &intake.extraction)?;
+        Ok((intake.extraction, text))
     }
 
     /// Whether a proposal may be admitted as `spec`'s part of an intake's division, and why not.

@@ -102,7 +102,9 @@ pub const COMMANDS: &[&str] = &[
     "reject_proposal",
     "rebase_proposal",
     "start_intake",
+    "start_intake_from_spec",
     "read_intake",
+    "read_intake_extraction",
     "list_intakes",
     "save_ledger",
     "bind_new_spec",
@@ -349,7 +351,12 @@ pub const COMMANDS: &[&str] = &[
 /// `ledger-moved`, `ledger-incomplete` or `bad-proposal`, and a ledger as `bad-ledger` or `already-bound`. A screen
 /// written for 34 divides a document; a core of 33 refuses the six commands as `unknown-command`, and a screen
 /// written for 33 has no use for them.
-pub const COMMAND_SET_VERSION: u32 = 34;
+///
+/// 35: a spec that holds a document can divide it (`start_intake_from_spec`, made of the original and the
+/// extraction the spec kept, with nothing sent again), and the extraction an intake holds is read
+/// (`read_intake_extraction`). A screen written for 35 divides a document it has read; a core of 34 refuses the
+/// two as `unknown-command`, and a screen written for 34 has no use for them.
+pub const COMMAND_SET_VERSION: u32 = 35;
 
 /// A command that did not do what was asked, in a shape every shell can pass on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -553,6 +560,21 @@ struct StartIntake {
     member: String,
     /// The extraction, kept exactly as given.
     extraction: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StartIntakeFromSpec {
+    /// The spec that holds the document.
+    id: String,
+    original: Revision,
+    extraction: Revision,
+    /// What makes the same press sent again the intake it already made.
+    key: String,
+    /// Where it is asked from: `gui`, or the name of a client.
+    origin: String,
+    /// What the document is called.
+    title: String,
 }
 
 #[derive(Deserialize)]
@@ -2285,9 +2307,32 @@ pub fn call_with<C: Clock>(
                 extraction: &extraction,
             })?)
         }
+        "start_intake_from_spec" => {
+            let StartIntakeFromSpec {
+                id,
+                original,
+                extraction,
+                key,
+                origin,
+                title,
+            } = arguments(args)?;
+            answer(&store.start_intake_from_spec(
+                &spec_id(&id)?,
+                &original,
+                &extraction,
+                &key,
+                &origin,
+                &title,
+            )?)
+        }
         "read_intake" => {
             let OneIntake { id } = arguments(args)?;
             answer(&store.read_intake(&id)?)
+        }
+        "read_intake_extraction" => {
+            let OneIntake { id } = arguments(args)?;
+            let (digest, text) = store.read_intake_extraction(&id)?;
+            Ok(json!({ "digest": digest, "text": text }))
         }
         "list_intakes" => {
             arguments::<Empty>(args)?;

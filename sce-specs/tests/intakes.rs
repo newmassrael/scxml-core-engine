@@ -1035,7 +1035,9 @@ fn the_commands_start_save_and_read_an_intake_and_say_their_refusals_by_word() {
         .collect();
     for name in [
         "start_intake",
+        "start_intake_from_spec",
         "read_intake",
+        "read_intake_extraction",
         "list_intakes",
         "save_ledger",
         "bind_new_spec",
@@ -1043,4 +1045,139 @@ fn the_commands_start_save_and_read_an_intake_and_say_their_refusals_by_word() {
     ] {
         assert!(commands.contains(&name), "{name}");
     }
+}
+
+// ------------------------------------------------------------ a spec that holds a document divides it
+
+/// A spec that was brought a document: the original and the extraction it kept, as an import of one spec makes.
+fn spec_with_the_document(r: &Rig) -> (SpecId, Revision, Revision) {
+    let spec = spec_of(r, "Controller");
+    let text = extraction_text();
+    let original = r.store.add_original(&spec, draft()).unwrap().digest;
+    let extraction = r
+        .store
+        .save_extraction(&spec, &original, "spec.md", &text)
+        .unwrap()
+        .digest;
+    (spec, original, extraction)
+}
+
+#[test]
+fn a_spec_that_holds_a_document_divides_it_with_nothing_sent_again() {
+    let r = rig("from-spec");
+    let (spec, original, extraction) = spec_with_the_document(&r);
+
+    let started = r
+        .store
+        .start_intake_from_spec(
+            &spec,
+            &original,
+            &extraction,
+            "press-1",
+            "gui",
+            "Controller",
+        )
+        .unwrap();
+    let again = r
+        .store
+        .start_intake_from_spec(
+            &spec,
+            &original,
+            &extraction,
+            "press-1",
+            "gui",
+            "Controller",
+        )
+        .unwrap();
+
+    // The intake holds the same document by the same names, so what is copied back is the same.
+    assert!(started.created && !again.created);
+    assert_eq!(again.intake.id, started.intake.id);
+    assert_eq!(started.intake.original, original);
+    assert_eq!(started.intake.extraction, extraction);
+    assert_eq!(started.intake.member, "spec.md");
+    assert!(r.store.list_specs().unwrap().specs.len() == 1);
+    let (digest, text) = r.store.read_intake_extraction(&started.intake.id).unwrap();
+    assert_eq!((digest, text), (extraction.clone(), extraction_text()));
+    // It can be given to another spec as the one it came from.
+    let other = spec_of(&r, "Other");
+    let given = r
+        .store
+        .give_intake_to_spec(&started.intake.id, &other)
+        .unwrap();
+    assert_eq!((given.original, given.extraction), (original, extraction));
+}
+
+#[test]
+fn an_extraction_that_is_not_one_the_spec_kept_for_that_original_is_refused() {
+    let r = rig("from-spec-refused");
+    let (spec, original, extraction) = spec_with_the_document(&r);
+    let stranger = Revision::of(b"an extraction nobody saved");
+    let other_original = Revision::of(b"another original");
+
+    let unsaved = r
+        .store
+        .start_intake_from_spec(&spec, &original, &stranger, "k1", "gui", "Controller")
+        .unwrap_err();
+    let wrong_original = r
+        .store
+        .start_intake_from_spec(
+            &spec,
+            &other_original,
+            &extraction,
+            "k2",
+            "gui",
+            "Controller",
+        )
+        .unwrap_err();
+
+    assert_eq!(refusal(unsaved).0, "bad-ledger");
+    assert!(matches!(wrong_original.kind(), "bad-ledger" | "not-found"));
+    assert!(r.store.list_intakes().unwrap().is_empty());
+    // The nearest that must pass.
+    assert!(r
+        .store
+        .start_intake_from_spec(&spec, &original, &extraction, "k3", "gui", "Controller")
+        .is_ok());
+}
+
+#[test]
+fn the_extraction_of_an_intake_that_is_not_there_is_not_found() {
+    let r = rig("intake-extraction-missing");
+
+    let missing = r
+        .store
+        .read_intake_extraction("intake-00000000")
+        .unwrap_err();
+
+    assert_eq!(missing.kind(), "not-found");
+}
+
+#[test]
+fn the_commands_divide_a_document_a_spec_holds_and_read_its_extraction() {
+    let r = rig("commands-from-spec");
+    let (spec, original, extraction) = spec_with_the_document(&r);
+
+    let started = run(
+        &r,
+        "start_intake_from_spec",
+        json!({
+            "id": spec.as_str(), "original": original, "extraction": extraction,
+            "key": "k", "origin": "gui", "title": "Controller",
+        }),
+    )
+    .unwrap();
+    let id = started["intake"]["id"].as_str().unwrap().to_string();
+    let read = run(&r, "read_intake_extraction", json!({"id": id})).unwrap();
+    let extra = run(
+        &r,
+        "read_intake_extraction",
+        json!({"id": id, "colour": "red"}),
+    )
+    .unwrap_err();
+
+    assert_eq!(started["created"], true);
+    assert_eq!(read["digest"], json!(extraction));
+    assert_eq!(read["text"], json!(extraction_text()));
+    assert_eq!(extra.kind, "bad-request");
 }
