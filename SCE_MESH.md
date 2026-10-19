@@ -4285,5 +4285,7 @@ It is a host-core binding, like §18, and not a generated C++ transport: `mesh_t
 | Rust `sce-rust-mesh`, feature `zenoh` | upstream `zenoh` crate, pinned to the version the router implements |
 | Kotlin `sce-kotlin-mesh` | — |
 
+The binding talks to its client through a trait, `ZenohClient` in `sce-rust-mesh`'s `inbox` module, of four synchronous operations: subscribe to a key expression, subscribe to presence with or without history, declare a presence token, and put bytes with Block congestion control (§20.2). The key layout, the name check, the order the session is set up in, the filter that keeps a machine's own presence from reaching it and the mapping from what arrives to readiness, loss and receipt are the binding's own and are one copy whichever client is plugged in. Upstream's `zenoh` crate is the implementation in this repository; another client implements the trait in its own repository and is held to the same behaviour tests, which are in `sce-rust-mesh` behind the feature `conformance` as functions over a harness that connects one client per machine to a router.
+
 The adapter is the only code per language that this binding adds: it publishes the core's bytes, subscribes the inbox and the presence, and turns what arrives into `receive`, `peer_ready` and `peer_not_ready`. Its test runs two machines through a real watching-zenoh router (`WZ_ROUTER_BIN`, a `wz-ap-demo` built with `router-hat-router` and `routing-token-tables`, the latter being the liveliness plane §20.3 rides on).
 
