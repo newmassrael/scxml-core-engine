@@ -76,7 +76,7 @@ class TheBundle(unittest.TestCase):
         cls.tmp.cleanup()
 
     def test_it_carries_what_it_runs_on(self):
-        for part in ("bin/sce-author-mcp", "bin/sce-codegen", "share/sce/templates",
+        for part in ("bin/sce-author-mcp", "bin/sce-author", "bin/sce-codegen", "share/sce/templates",
                      "python/sce_author/mcp.py", "python/schema/decisions.v1.schema.json",
                      "LICENSE", "README.txt"):
             with self.subTest(part=part):
@@ -118,6 +118,35 @@ class TheBundle(unittest.TestCase):
         self.assertEqual("accepted", json.loads(checked["content"][0]["text"])["verdict"])
         catalog = json.loads(replies[2]["result"]["content"][0]["text"])["catalog"]
         self.assertEqual(["timer"], [k["name"] for k in catalog["kinds"]])
+
+    def test_its_command_line_brings_a_document_in_from_an_unrelated_directory(self):
+        """A host that brings a document in runs the tools as programs (docs/adr/0037): extract,
+        convert and assemble, each in a directory that is not this tree, from the bundle's package."""
+        env = {**clean_env(), "PYTHONDONTWRITEBYTECODE": "1"}
+        with tempfile.TemporaryDirectory() as elsewhere:
+            here = pathlib.Path(elsewhere)
+            (here / "spec.md").write_text("# Door lock\n\nIt locks.\n", encoding="utf-8")
+
+            def run(*argv: str) -> subprocess.CompletedProcess:
+                return subprocess.run([str(self.bundle / "bin" / "sce-author"), *argv],
+                                      capture_output=True, text=True, cwd=elsewhere, env=env,
+                                      timeout=300)
+
+            extracted = run("extract", "spec.md", "--out", "e.json")
+            converted = run("convert", "--extraction", "e.json", "--out", "c.json")
+            (here / "d.json").write_text("[]", encoding="utf-8")
+            assembled = run("assemble", "--extraction", "e.json", "--conversion", "c.json",
+                            "--decisions", "d.json", "--out", "text.md", "--json")
+            text = (here / "text.md").read_text(encoding="utf-8")
+            wrong = run("convert", "--extraction", "nowhere.json", "--out", "c2.json")
+        self.assertEqual((0, 0, 0), (extracted.returncode, converted.returncode,
+                                     assembled.returncode), (extracted.stderr, converted.stderr,
+                                                             assembled.stderr))
+        self.assertEqual("# Door lock\n\nIt locks.\n", text)
+        self.assertEqual(0, json.loads(assembled.stdout)["decisions"])
+        # The control: a file that is not there is a refusal that names it, not a traceback.
+        self.assertNotEqual(0, wrong.returncode)
+        self.assertIn("nowhere.json", wrong.stderr)
 
     def test_the_generator_renders_from_the_templates_it_is_given(self):
         """The bundle's templates are what the generator reads: named empty,

@@ -61,6 +61,10 @@ the tool list should include `scxml_kinds`, `validate_scxml` and
 `render_scxml_pseudocode`. `tests/test_the_bundle_runs_where_the_tree_is_not.py`
 starts a bundle's launcher outside the tree and holds it to the protocol.
 
+The bundle also carries `bin/sce-author`, the same tools' command line (`extract`, `convert`,
+`check-conversion`, `assemble`) for an application that brings a document in; it serves nothing, and from
+a checkout `scripts/sce_author.sh` is the same thing.
+
 For a client that is not on the owner's machine — an assistant reached
 through an API, or a hosted one — the same bundle serves over HTTP:
 

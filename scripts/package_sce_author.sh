@@ -10,6 +10,9 @@
 #
 #   bin/sce-author-mcp      the launcher an AI client registers (stdio), or
 #                           runs with --http HOST:PORT for a remote client
+#   bin/sce-author          the same tools' command line, for a host that brings
+#                           a document in (extract, convert, check-conversion,
+#                           assemble: docs/adr/0037); not a server
 #   bin/sce-codegen         the code generator every tool answers from
 #   bin/sce-spec            with --spec: the workbench application's own command
 #                           layer, which the specs tools read and save a spec
@@ -107,6 +110,33 @@ exec python3 -m sce_author.mcp "$@"
 LAUNCHER
 chmod +x "$bundle/bin/sce-author-mcp"
 
+# The command line of the same tools. A host that brings a document in runs `extract`, `convert`,
+# `check-conversion` and `assemble` as programs (docs/adr/0037), so they get a launcher of their own
+# with the same environment and the same readiness check as the server's, and not a second way to
+# find the package.
+cat > "$bundle/bin/sce-author" <<'LAUNCHER'
+#!/usr/bin/env bash
+# The SCE authoring tools' command line, from this bundle:
+#   sce-author extract FILE --out EXTRACTION.json
+#   sce-author convert --extraction EXTRACTION.json --out CONVERSION.json
+#   sce-author check-conversion --extraction EXTRACTION.json --conversion CONVERSION.json --json
+#   sce-author assemble --extraction E.json --conversion C.json --decisions D.json --out TEXT.md
+set -euo pipefail
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export SCE_CODEGEN="$here/bin/sce-codegen"
+if [[ -x "$here/bin/sce-spec" ]]; then
+    export SCE_SPEC="$here/bin/sce-spec"
+fi
+export SCE_TEMPLATE_DIR="$here/share/sce/templates"
+export PYTHONPATH="$here/python${PYTHONPATH:+:$PYTHONPATH}"
+if ! python3 -c 'import yaml' 2>/dev/null; then
+    printf 'sce-author: needs Python 3 with PyYAML (pip install pyyaml)\n' >&2
+    exit 1
+fi
+exec python3 -m sce_author "$@"
+LAUNCHER
+chmod +x "$bundle/bin/sce-author"
+
 commit="$(git -C "$repo_root" rev-parse --short=12 HEAD 2>/dev/null || echo unknown)"
 cat > "$bundle/README.txt" <<README
 SCE authoring MCP server -- bundle of commit $commit.
@@ -126,6 +156,11 @@ and the requirement list written for it. They run
 bin/sce-spec when this bundle carries one, on the specs folder the application
 opens (SCE_SPECS_DIR, else the per-user data directory), and are never offered
 to a remote client.
+
+bin/sce-author is the same tools' command line, for an application that
+brings a document in: extract, convert, check-conversion and assemble. It is a
+program that reads the files it is given and writes the files it is told to,
+and it serves nothing.
 
 Needs Python 3.10 or later with PyYAML, and jsonschema to read a decision
 record or a pack (without it, those tools refuse and say why). Nothing
