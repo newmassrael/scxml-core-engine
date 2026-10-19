@@ -3188,6 +3188,10 @@
         {
           "file": "sce-build/tests/mesh_error_format_json.rs",
           "kind": "verifies"
+        },
+        {
+          "file": "backends/rust/mesh/src/inbox.rs",
+          "kind": "implements"
         }
       ]
     },
@@ -3198,12 +3202,12 @@
       "decision_status": "active",
       "bindings": [
         {
-          "file": "backends/rust/mesh/src/zenoh.rs",
-          "kind": "implements"
-        },
-        {
           "file": "backends/rust/mesh/tests/zenoh_through_a_wz_router.rs",
           "kind": "verifies"
+        },
+        {
+          "file": "backends/rust/mesh/src/inbox.rs",
+          "kind": "implements"
         }
       ]
     },
@@ -3220,6 +3224,10 @@
         {
           "file": "backends/rust/mesh/tests/zenoh_through_a_wz_router.rs",
           "kind": "verifies"
+        },
+        {
+          "file": "backends/rust/mesh/src/inbox.rs",
+          "kind": "implements"
         }
       ]
     },
@@ -3230,12 +3238,12 @@
       "decision_status": "active",
       "bindings": [
         {
-          "file": "backends/rust/mesh/src/zenoh.rs",
-          "kind": "implements"
-        },
-        {
           "file": "backends/rust/mesh/tests/zenoh_through_a_wz_router.rs",
           "kind": "verifies"
+        },
+        {
+          "file": "backends/rust/mesh/src/inbox.rs",
+          "kind": "implements"
         }
       ]
     },
@@ -4771,6 +4779,18 @@
       "target_kind": "section",
       "target_id": "mesh-10.3",
       "reason": "the cite resolves to the enclosing class ShmChannel"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "mesh-20.1",
+      "reason": "The key layout and the readiness mapping moved to inbox.rs when the client became a trait; zenoh.rs now holds only the upstream client"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "mesh-20.3",
+      "reason": "The key layout and the readiness mapping moved to inbox.rs when the client became a trait; zenoh.rs now holds only the upstream client"
     }
   ],
   "frames": {},

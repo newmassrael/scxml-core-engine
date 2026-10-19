@@ -1316,7 +1316,7 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // No server arm holds a request handle.
         server_deadline_notice: ServerDeadlineNotice::Unsupported,
     };
-    // SCE_MESH.md section 20: one Zenoh client session per machine, spoken by the
+    // §mesh-20: one Zenoh client session per machine, spoken by the
     // Rust host core and by no C++ arm. It is not the C++ template Zenoh
     // transport (KeyExpr pub/sub and query, a key per target): this wire is
     // point-to-point envelopes into the receiver's inbox at

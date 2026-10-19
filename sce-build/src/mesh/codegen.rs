@@ -2169,7 +2169,7 @@ enum HostLinkContext {
     /// The host's one Zenoh client session reaches the peer; the link has no
     /// parameters, because the router endpoints are the host's own client
     /// configuration and the key is derived from the two machine names
-    /// (SCE_MESH.md section 20).
+    /// (§mesh-20).
     ZenohInbox,
 }
 

@@ -23,7 +23,8 @@
       "file": "sce-build/tests/mesh_error_format_json.rs",
       "section_ids": [
         "mesh-18",
-        "mesh-19"
+        "mesh-19",
+        "mesh-20"
       ]
     },
     {

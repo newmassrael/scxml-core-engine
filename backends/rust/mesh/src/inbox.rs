@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
-//! The Zenoh binding's own logic, and the four operations it asks of a client (SCE_MESH.md
-//! section 20).
+//! The Zenoh binding's own logic, and the four operations it asks of a client (§mesh-20).
 //!
 //! A machine opens one client session and holds three things on it: a subscriber on its own inbox,
 //! a liveliness token that says it is up, and a liveliness subscriber on everyone's. What arrives
@@ -29,8 +28,7 @@ use std::time::Duration;
 use crate::endpoint::{Endpoint, Environment, Transport, TransportFailure};
 use crate::link::{deliver, is_path_segment, LinkEvent};
 
-/// The key space every machine of one Mesh shares, and the version of this binding (SCE_MESH.md
-/// section 20.1).
+/// The key space every machine of one Mesh shares, and the version of this binding (§mesh-20.1).
 pub const KEY_PREFIX: &str = "sce-mesh/1";
 
 /// The key a machine's inbox for envelopes from `sender` is published on: what `sender` writes to
@@ -169,15 +167,15 @@ pub trait ZenohClient: Send + 'static {
     fn declare_presence(&mut self, key: &str) -> Result<Held, ClientError>;
 
     /// Publish `payload` as one put on `key`. Under congestion it must block until the put is
-    /// accepted and never drop it (SCE_MESH.md section 20.2): an envelope is the unit the core's
-    /// delivery rules count, and one the network dropped silently is one the core would wait for.
+    /// accepted and never drop it (§mesh-20.2): an envelope is the unit the core's delivery rules
+    /// count, and one the network dropped silently is one the core would wait for.
     fn put(&mut self, key: &str, payload: &[u8]) -> Result<(), PutError>;
 }
 
 /// Why a binding could not be opened.
 #[derive(Debug)]
 pub enum ZenohError {
-    /// A machine name is not a key chunk as it stands (SCE_MESH.md section 20.1).
+    /// A machine name is not a key chunk as it stands (§mesh-20.1).
     NotAKeyChunk(String),
     /// The session, a subscriber or the token could not be opened; the words are the client's.
     Session(String),
@@ -275,10 +273,10 @@ pub struct ZenohBinding<C> {
 
 /// Open the binding for `machine` on `client`.
 ///
-/// Readiness is the presence token (SCE_MESH.md section 20.3). The inbox is subscribed before the
-/// token is declared, so that a machine which sees this one come up can send to it at once and not
-/// into a subscriber that does not exist yet. The presence subscriber asks for history, so a
-/// machine that opens after another learns it is up.
+/// Readiness is the presence token (§mesh-20.3). The inbox is subscribed before the token is
+/// declared, so that a machine which sees this one come up can send to it at once and not into a
+/// subscriber that does not exist yet. The presence subscriber asks for history, so a machine that
+/// opens after another learns it is up.
 pub fn open_with<C: ZenohClient>(
     mut client: C,
     machine: &str,

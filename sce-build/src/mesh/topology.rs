@@ -326,7 +326,7 @@ pub enum TransportState {
         #[serde(skip_serializing_if = "Option::is_none")]
         keepalive_ms: Option<u32>,
     },
-    /// Zenoh binding of the host Mesh cores (SCE_MESH.md section 20). The
+    /// Zenoh binding of the host Mesh cores (§mesh-20). The
     /// binding carries no field: the peer is the `#peer` it is keyed by, the
     /// key is derived from the two machine names, and the router endpoints
     /// are the host's own client configuration. Not the variant of the C++

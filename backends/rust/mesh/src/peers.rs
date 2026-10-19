@@ -31,7 +31,7 @@ pub enum PeerLink {
         /// The §mesh-18.3 ping interval, or `None` for the binding's 30 s.
         keepalive_ms: Option<u32>,
     },
-    /// SCE_MESH.md section 20: the host's one Zenoh client session reaches the peer, by the
+    /// §mesh-20: the host's one Zenoh client session reaches the peer, by the
     /// key derived from the two machine names (section 20.1). The link carries
     /// nothing: the router endpoints are the host's own client configuration
     /// (the `zenoh` module's `client_config`), not a per-peer binding, and

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// SCE-VERIFIES: mesh-18 mesh-19
+// SCE-VERIFIES: mesh-18 mesh-19 mesh-20
 //
 // End-to-end contract test for the mesh pipeline under
 // `sce-codegen --error-format=json --deploy ...`.
