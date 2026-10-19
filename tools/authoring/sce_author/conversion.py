@@ -236,8 +236,12 @@ def plain_of_markdown(markdown: str) -> str:
             place += 1
             continue
         place = 0
-        stripped = _HEADING.sub("", stripped)
-        stripped = _MARKER.sub("", stripped)
+        heading = _HEADING.match(stripped)
+        if heading:
+            # A heading's words are inline text: the number of `# 2. Scope` is a word of it, not a list marker.
+            stripped = stripped[heading.end():]
+        else:
+            stripped = _MARKER.sub("", stripped)
         words.append(_unescape(stripped))
     return _normal(" ".join(words))
 

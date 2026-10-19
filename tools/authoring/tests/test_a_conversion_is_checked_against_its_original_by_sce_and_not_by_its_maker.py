@@ -363,6 +363,29 @@ class TheRulesConverterIsTheChecksControl(unittest.TestCase):
         self.assertTrue(made.blocks[0].markdown.startswith("\\#"))
         self.assertEqual(made.blocks[5].markdown, "plain")
 
+    def test_a_heading_that_begins_with_its_number_is_written_as_it_is_and_matches(self):
+        extraction = Extraction(
+            "plain",
+            "1",
+            "s.md",
+            tuple(
+                block(f"b{i}", "heading", text, level=1)
+                for i, text in enumerate(["1. Scope", "2) Unlocking", "- Alarm", "2.1 Keypad"], start=1)
+            ),
+        )
+
+        made = convert_by_rules(extraction)
+
+        self.assertEqual(made.blocks[0].markdown, "# 1. Scope")
+        self.assertTrue(check_conversion(extraction, made).complete)
+
+    def test_a_heading_that_lost_its_number_is_a_difference(self):
+        extraction = Extraction("plain", "1", "s.md", (block("b1", "heading", "2. Unlocking", level=1),))
+
+        report = check_conversion(extraction, conversion(extraction, MarkdownBlock("m1", "# Unlocking", ("b1",))))
+
+        self.assertEqual(report.ids(CHECK), ["m1"])
+
     def test_a_pipe_in_a_cell_stays_in_its_cell(self):
         extraction = Extraction(
             "plain",
@@ -467,6 +490,8 @@ class APlainReadingOfMarkdownOnly(unittest.TestCase):
         self.assertEqual(plain_of_markdown("# Title"), "Title")
         self.assertEqual(plain_of_markdown("  - item"), "item")
         self.assertEqual(plain_of_markdown("12) item"), "item")
+        self.assertEqual(plain_of_markdown("# 2. Scope"), "2. Scope")
+        self.assertEqual(plain_of_markdown("## - Alarm"), "- Alarm")
         self.assertEqual(plain_of_markdown("| a | b |\n| --- | --- |\n| c | d |"), "a b c d")
         self.assertEqual(plain_of_markdown("a \\| b"), "a | b")
         # What looks like a marker and is not one is kept.
