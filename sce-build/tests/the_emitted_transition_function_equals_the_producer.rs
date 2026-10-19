@@ -464,6 +464,34 @@ fn the_generated_source_holds_the_producers_table() {
     }
 }
 
+/// Every function the Rust file offers returns its answer and does nothing
+/// else, so a call whose answer is dropped is a mistake the compiler should
+/// name: each `pub fn` carries `#[must_use]`, which is also what keeps the file
+/// clean under `clippy::pedantic` (`must_use_candidate`) in a crate that denies
+/// it.
+#[test]
+fn every_rust_function_asks_that_its_answer_be_used() {
+    let function_line = Regex::new(r"^\s*pub (const )?fn ").unwrap();
+    for stem in FIXTURES {
+        let out = scratch(&format!("must_use_{stem}"));
+        generate("rust", &fixture(stem), &out);
+        let source = read(&function_file("rust", &out, stem));
+        let lines: Vec<&str> = source.lines().collect();
+        let functions: Vec<usize> = (0..lines.len())
+            .filter(|&i| function_line.is_match(lines[i]))
+            .collect();
+        assert_eq!(functions.len(), 7, "[{stem}] the Rust file's functions");
+        for i in functions {
+            assert_eq!(
+                lines[i - 1].trim(),
+                "#[must_use]",
+                "[{stem}] `{}` does not ask that its answer be used",
+                lines[i].trim()
+            );
+        }
+    }
+}
+
 /// The nested fixture reaches every selection rule the producer's unit tests
 /// name, so the table it yields is stated here in full: a change to the
 /// producer that moves one pair moves this.

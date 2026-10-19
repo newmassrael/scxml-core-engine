@@ -88,6 +88,7 @@ pub const SOURCE_HASH: &str = "{{ tf.source_hash | escape_rust }}";
 /// afterwards, which is `state` itself when the transition taken has no
 /// target, or `None` when no transition takes the event and the machine
 /// discards it. A final state takes no event.
+#[must_use]
 pub const fn transition(state: State, event: Event) -> Option<State> {
 {% if tf.events %}
     match (state, event) {
@@ -110,6 +111,7 @@ pub const fn transition(state: State, event: Event) -> Option<State> {
 
 /// Whether `state` is a `<final>` child of `<scxml>`: reaching it ends the
 /// machine, and it takes no event.
+#[must_use]
 pub const fn is_final(state: State) -> bool {
 {% if finals %}
     matches!(state, {% for state in finals %}{% if not loop.first %} | {% endif %}State::{{ state.id | to_state_variant }}{% endfor %})
@@ -121,6 +123,7 @@ pub const fn is_final(state: State) -> bool {
 
 /// The ids of every state active while `state` is the current state,
 /// outermost first and `state` last.
+#[must_use]
 pub const fn configuration(state: State) -> &'static [&'static str] {
     match state {
 {% for state in tf.states %}
@@ -131,6 +134,7 @@ pub const fn configuration(state: State) -> &'static [&'static str] {
 
 impl State {
     /// The state's id, as the document writes it.
+    #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
 {% for state in tf.states %}
@@ -141,6 +145,7 @@ impl State {
 
     /// The state the id `name` names, or `None` when it names none of
     /// [`ALL_STATES`].
+    #[must_use]
     pub fn from_name(name: &str) -> Option<Self> {
         match name {
 {% for state in tf.states %}
@@ -153,6 +158,7 @@ impl State {
 
 impl Event {
     /// The event's name, as the document writes it.
+    #[must_use]
     pub const fn as_str(self) -> &'static str {
 {% if tf.events %}
         match self {
@@ -169,6 +175,7 @@ impl Event {
     /// [`ALL_EVENTS`]. A name is matched whole: the function's events are the
     /// names its document writes, and a longer name a descriptor would match
     /// is not one of them.
+    #[must_use]
     pub fn from_name(name: &str) -> Option<Self> {
 {% if tf.events %}
         match name {
