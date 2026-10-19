@@ -9,6 +9,7 @@
 //!   decisions/<proposal-id>.log    the owner's decisions, one JSON line each, never edited
 //!   conversions/<digest>.json      a conversion, named by its own SHA-256
 //!   reports/<digest>.json          SCE's check of a conversion, named the same way
+//!   scopes/<digest>.json           the part of the extraction the owner chose, when not all of it
 //! ```
 //!
 //! A proposal changes in place (it is accepted, rejected, replaced), so its file is the truth and is
@@ -23,6 +24,12 @@
 //! exist, and keeps them. It does not check that the text an accept carries is the assembly of the
 //! decisions either, as `save_source` does not check that a text is what its owner meant; it checks
 //! that the text was assembled from as many decisions as the log holds now.
+//!
+//! **A scope is the owner's, and is held to the proposal like the conversion is** (ADR 0039). An import
+//! may be of a part of the original; the scope names its blocks, the report names the scope it was made
+//! under, and the store checks the two name each other, that the scope is of the proposal's extraction,
+//! and that what the check asks and what the owner may add or drop is inside it. A scope of every block
+//! is no scope and is refused, so that one input has one spelling.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -47,6 +54,7 @@ use crate::lock;
 use crate::proposals::{
     Ask, Converter, Decision, DecisionKind, Proposal, ProposalState, MAX_ASKS,
     MAX_CONVERSION_BYTES, MAX_DECISIONS, MAX_DECISION_TEXT_BYTES, MAX_REPORT_BYTES,
+    MAX_SCOPE_BYTES,
 };
 use crate::revision::Revision;
 
@@ -54,6 +62,7 @@ const PROPOSALS_DIR: &str = "proposals";
 const DECISIONS_DIR: &str = "decisions";
 const CONVERSIONS_DIR: &str = "conversions";
 const REPORTS_DIR: &str = "reports";
+const SCOPES_DIR: &str = "scopes";
 const ID_PREFIX: &str = "imp-";
 const ID_HEX: usize = 12;
 const KEY_MAX: usize = 200;
@@ -76,6 +85,9 @@ pub struct ProposalRegistration<'a> {
     pub conversion: &'a str,
     /// SCE's check of that conversion against that extraction, as `check-conversion --json` wrote it.
     pub report: &'a str,
+    /// The part of the extraction the owner chose to import, as `make-scope` wrote it; `None` for the
+    /// whole of it. The report is of this scope, and a proposal is refused when it is not.
+    pub scope: Option<&'a str>,
     /// The text head the caller read and is asking about; `None` for a spec that has no text. The
     /// proposal is refused as `moved` when the spec is no longer at it.
     pub expect: Option<Revision>,
@@ -111,6 +123,9 @@ pub struct ProposalView {
 pub struct ProposalDocuments {
     pub conversion: String,
     pub report: String,
+    /// The scope the import was made under; absent when it is of the whole original.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scope: Option<String>,
 }
 
 /// What accepting made.
@@ -151,6 +166,11 @@ fn conversion_path(dir: &Path, digest: &Revision) -> PathBuf {
 
 fn report_path(dir: &Path, digest: &Revision) -> PathBuf {
     dir.join(REPORTS_DIR)
+        .join(format!("{}.json", digest.as_str()))
+}
+
+fn scope_path(dir: &Path, digest: &Revision) -> PathBuf {
+    dir.join(SCOPES_DIR)
         .join(format!("{}.json", digest.as_str()))
 }
 
@@ -225,8 +245,9 @@ fn not_found(id: &SpecId, proposal: &str) -> StoreError {
     }
 }
 
-/// The ids of the blocks a conversion or an extraction names, or why its text is not one.
-fn block_ids(text: &str, what: &str) -> Result<BTreeSet<String>, StoreError> {
+/// The ids of the blocks a conversion or an extraction names, in the order it has them, or why its
+/// text is not one.
+fn block_id_list(text: &str, what: &str) -> Result<Vec<String>, StoreError> {
     let value: Value = serde_json::from_str(text)
         .map_err(|e| bad(format!("the {what} is not JSON ({e})"), Value::Null))?;
     let blocks = value
@@ -244,6 +265,101 @@ fn block_ids(text: &str, what: &str) -> Result<BTreeSet<String>, StoreError> {
                 .ok_or_else(|| bad(format!("a block of the {what} has no id"), Value::Null))
         })
         .collect()
+}
+
+fn block_ids(text: &str, what: &str) -> Result<BTreeSet<String>, StoreError> {
+    block_id_list(text, what).map(|ids| ids.into_iter().collect())
+}
+
+/// The blocks of a scope that was kept: it was read as one when it was registered, so only its list is
+/// read again.
+fn scope_blocks(text: &str) -> Result<BTreeSet<String>, StoreError> {
+    let value: Value = serde_json::from_str(text)
+        .map_err(|e| bad(format!("the kept scope is not JSON ({e})"), Value::Null))?;
+    value
+        .get("blocks")
+        .and_then(Value::as_array)
+        .ok_or_else(|| bad("the kept scope has no list of blocks", Value::Null))?
+        .iter()
+        .map(|id| {
+            id.as_str()
+                .map(str::to_string)
+                .ok_or_else(|| bad("a block of the kept scope has no id", Value::Null))
+        })
+        .collect()
+}
+
+/// The blocks a scope names, in its order, once it is known to be one: of this extraction, each block
+/// once, in the extraction's order, and not every block (that is no scope, and is left out).
+fn read_scope(
+    text: &str,
+    extraction: &Revision,
+    order: &[String],
+) -> Result<Vec<String>, StoreError> {
+    let value: Value = serde_json::from_str(text)
+        .map_err(|e| bad(format!("the scope is not JSON ({e})"), Value::Null))?;
+    let object = value
+        .as_object()
+        .ok_or_else(|| bad("the scope is not a JSON object", Value::Null))?;
+    if let Some(unknown) = object
+        .keys()
+        .find(|key| !matches!(key.as_str(), "v" | "extraction" | "blocks"))
+    {
+        return Err(bad(
+            format!("the scope has a field nobody defined (`{unknown}`)"),
+            json!({ "field": unknown }),
+        ));
+    }
+    if object.get("v").and_then(Value::as_u64) != Some(1) {
+        return Err(bad(
+            "the scope is of a version this core does not read",
+            Value::Null,
+        ));
+    }
+    if object.get("extraction").and_then(Value::as_str) != Some(extraction.as_str()) {
+        return Err(bad(
+            "the scope is of another extraction than the one named",
+            json!({ "named": extraction }),
+        ));
+    }
+    let blocks = object
+        .get("blocks")
+        .and_then(Value::as_array)
+        .ok_or_else(|| bad("the scope has no list of blocks", Value::Null))?
+        .iter()
+        .map(|id| {
+            id.as_str()
+                .filter(|id| !id.is_empty())
+                .map(str::to_string)
+                .ok_or_else(|| bad("a block of the scope has no id", Value::Null))
+        })
+        .collect::<Result<Vec<String>, StoreError>>()?;
+    if blocks.is_empty() {
+        return Err(bad("the scope holds no block", Value::Null));
+    }
+    // Each block once, and in the order the extraction has them: one choice has one spelling.
+    let mut at = 0;
+    for block in &blocks {
+        match order[at..].iter().position(|held| held == block) {
+            Some(found) => at += found + 1,
+            None => {
+                return Err(bad(
+                    format!(
+                        "the scope names the block `{block}`, which the extraction does not have \
+                         there (a block is named once, in the extraction's order)"
+                    ),
+                    json!({ "block": block }),
+                ));
+            }
+        }
+    }
+    if blocks.len() == order.len() {
+        return Err(bad(
+            "a scope of every block is no scope; leave it out",
+            Value::Null,
+        ));
+    }
+    Ok(blocks)
 }
 
 fn text_field<'a>(value: &'a Value, field: &str, what: &str) -> Result<&'a str, StoreError> {
@@ -278,12 +394,27 @@ fn read_conversion(text: &str) -> Result<(String, Converter), StoreError> {
     ))
 }
 
+/// What the report says it is of, and what a person is asked about.
+struct ReadReport {
+    extraction: String,
+    conversion: String,
+    /// The scope it was made under; empty for the whole extraction, which a report that says nothing
+    /// of a scope is of.
+    scope: String,
+    asks: Vec<Ask>,
+}
+
 /// Read the report's own words about what it is of and what a person is asked about.
-fn read_report(text: &str) -> Result<(String, String, Vec<Ask>), StoreError> {
+fn read_report(text: &str) -> Result<ReadReport, StoreError> {
     let value: Value = serde_json::from_str(text)
         .map_err(|e| bad(format!("the report is not JSON ({e})"), Value::Null))?;
     let extraction = text_field(&value, "extraction", "report")?.to_string();
     let conversion = text_field(&value, "conversion", "report")?.to_string();
+    let scope = match value.get("scope") {
+        None => String::new(),
+        Some(Value::String(scope)) => scope.clone(),
+        Some(_) => return Err(bad("the report's scope is not text", Value::Null)),
+    };
     let queue = value
         .get("queue")
         .and_then(Value::as_array)
@@ -311,7 +442,12 @@ fn read_report(text: &str) -> Result<(String, String, Vec<Ask>), StoreError> {
             })
         })
         .collect::<Result<Vec<Ask>, StoreError>>()?;
-    Ok((extraction, conversion, asks))
+    Ok(ReadReport {
+        extraction,
+        conversion,
+        scope,
+        asks,
+    })
 }
 
 impl<C: Clock> SpecStore<C> {
@@ -362,6 +498,11 @@ impl<C: Clock> SpecStore<C> {
                 registration.report.len(),
                 MAX_REPORT_BYTES,
             ),
+            (
+                "a scope",
+                registration.scope.map_or(0, str::len),
+                MAX_SCOPE_BYTES,
+            ),
         ] {
             if bytes > limit {
                 return Err(StoreError::TooLarge { what, bytes, limit });
@@ -369,6 +510,7 @@ impl<C: Clock> SpecStore<C> {
         }
         let conversion = Revision::of(registration.conversion.as_bytes());
         let report = Revision::of(registration.report.as_bytes());
+        let scope = registration.scope.map(|text| Revision::of(text.as_bytes()));
 
         let dir = self.existing(id)?;
         let _held = lock::exclusive(&dir.join(LOCK_FILE), LOCK_WAIT)?;
@@ -380,13 +522,14 @@ impl<C: Clock> SpecStore<C> {
             let same_inputs = same.original == registration.original
                 && same.extraction == registration.extraction
                 && same.conversion == conversion
-                && same.report == report;
+                && same.report == report
+                && same.scope == scope;
             if !same_inputs {
                 return Err(StoreError::refused(
                     "key-reused",
                     format!(
                         "the key was used for another proposal ({}), made of another original, \
-                         conversion or check",
+                         conversion, check or part of the original",
                         same.id
                     ),
                     json!({ "proposal": same.id }),
@@ -417,10 +560,17 @@ impl<C: Clock> SpecStore<C> {
                 json!({ "extraction": registration.extraction }),
             ));
         }
-        let extraction_ids = block_ids(
-            &self.read_extraction(id, &registration.extraction)?,
-            "extraction",
-        )?;
+        let extraction_text = self.read_extraction(id, &registration.extraction)?;
+        let extraction_order = block_id_list(&extraction_text, "extraction")?;
+        let extraction_ids: BTreeSet<String> = extraction_order.iter().cloned().collect();
+        let scope_ids: Option<BTreeSet<String>> = match registration.scope {
+            Some(text) => Some(
+                read_scope(text, &registration.extraction, &extraction_order)?
+                    .into_iter()
+                    .collect(),
+            ),
+            None => None,
+        };
         let (of_extraction, converter) = read_conversion(registration.conversion)?;
         if of_extraction != registration.extraction.as_str() {
             return Err(bad(
@@ -429,13 +579,25 @@ impl<C: Clock> SpecStore<C> {
             ));
         }
         let conversion_ids = block_ids(registration.conversion, "conversion")?;
-        let (report_extraction, report_conversion, asks) = read_report(registration.report)?;
+        let ReadReport {
+            extraction: report_extraction,
+            conversion: report_conversion,
+            scope: report_scope,
+            asks,
+        } = read_report(registration.report)?;
         if report_extraction != registration.extraction.as_str()
             || report_conversion != conversion.as_str()
         {
             return Err(bad(
                 "the check report is of another extraction or conversion than the ones named",
                 json!({ "report_of": { "extraction": report_extraction, "conversion": report_conversion } }),
+            ));
+        }
+        // A count made under one part of the original says nothing of another, and reads like a count.
+        if report_scope != scope.as_ref().map_or("", Revision::as_str) {
+            return Err(bad(
+                "the check report was made under another part of the original than the one named",
+                json!({ "report_scope": report_scope, "named": scope }),
             ));
         }
         if let Some(stranger) = asks
@@ -450,6 +612,21 @@ impl<C: Clock> SpecStore<C> {
                 ),
                 json!({ "block": stranger.id }),
             ));
+        }
+        if let Some(chosen) = &scope_ids {
+            if let Some(stranger) = asks
+                .iter()
+                .find(|ask| !conversion_ids.contains(&ask.id) && !chosen.contains(&ask.id))
+            {
+                return Err(bad(
+                    format!(
+                        "the check asks about the block `{}`, which is outside the part of the \
+                         original chosen for this import",
+                        stranger.id
+                    ),
+                    json!({ "block": stranger.id }),
+                ));
+            }
         }
 
         let now = self.stamp();
@@ -481,6 +658,14 @@ impl<C: Clock> SpecStore<C> {
             &report,
             registration.report.as_bytes(),
         )?;
+        if let (Some(digest), Some(text)) = (&scope, registration.scope) {
+            keep(
+                &dir.join(SCOPES_DIR),
+                &scope_path(&dir, digest),
+                digest,
+                text.as_bytes(),
+            )?;
+        }
         for old in open {
             let answer = import_life::decide(old.state, &Event::Supersede);
             if answer.verdict == Verdict::Ok {
@@ -499,6 +684,7 @@ impl<C: Clock> SpecStore<C> {
             extraction: registration.extraction,
             conversion,
             report,
+            scope,
             converter,
             against: head,
             asks,
@@ -589,6 +775,11 @@ impl<C: Clock> SpecStore<C> {
         Ok(ProposalDocuments {
             conversion: read(conversion_path(&dir, &found.conversion), &found.conversion)?,
             report: read(report_path(&dir, &found.report), &found.report)?,
+            scope: found
+                .scope
+                .as_ref()
+                .map(|digest| read(scope_path(&dir, digest), digest))
+                .transpose()?,
         })
     }
 
@@ -664,6 +855,24 @@ impl<C: Clock> SpecStore<C> {
         let conversion_ids = block_ids(&documents.conversion, "conversion")?;
         let extraction_ids =
             block_ids(&self.read_extraction(id, &found.extraction)?, "extraction")?;
+        // The owner chose a part of the original, and nothing outside it is added or dropped: it was
+        // never asked about, and the screen does not show it.
+        if let Some(scope) = &documents.scope {
+            let chosen = scope_blocks(scope)?;
+            if matches!(what, DecisionKind::Add | DecisionKind::Drop)
+                && !conversion_ids.contains(block)
+                && extraction_ids.contains(block)
+                && !chosen.contains(block)
+            {
+                return Err(bad(
+                    format!(
+                        "the block `{block}` is outside the part of the original chosen for this \
+                         import, so it is neither added nor dropped"
+                    ),
+                    json!({ "block": block, "what": what.word() }),
+                ));
+            }
+        }
         // Whose a block is decides what may be said of it: the conversion's blocks are kept, corrected
         // or dropped; the original's, which the conversion left out, are added or dropped (left out).
         let refusal = match what {

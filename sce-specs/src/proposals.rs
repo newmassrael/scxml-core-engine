@@ -26,6 +26,8 @@ use crate::revision::Revision;
 pub const MAX_CONVERSION_BYTES: usize = 16 * 1024 * 1024;
 /// The most a check report may hold.
 pub const MAX_REPORT_BYTES: usize = 4 * 1024 * 1024;
+/// The most a scope may hold: the ids of the blocks an import is of.
+pub const MAX_SCOPE_BYTES: usize = 4 * 1024 * 1024;
 /// The most a decision's words may hold.
 pub const MAX_DECISION_TEXT_BYTES: usize = 256 * 1024;
 /// The most questions a proposal asks. A conversion that asks more is not one a person reviews.
@@ -97,6 +99,10 @@ pub struct Proposal {
     pub conversion: Revision,
     /// SCE's check of the conversion against the extraction.
     pub report: Revision,
+    /// The part of the extraction the owner chose to import (ADR 0039), by the digest of the scope the
+    /// check was made under; `None` when the whole of it was.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope: Option<Revision>,
     pub converter: Converter,
     /// The text head the proposal was made against; `None` for a spec that had no text.
     pub against: Option<Revision>,
@@ -212,6 +218,7 @@ mod tests {
                 name: "blocks-to-markdown".to_string(),
                 version: "1".to_string(),
             },
+            scope: None,
             against: None,
             asks: asks
                 .iter()

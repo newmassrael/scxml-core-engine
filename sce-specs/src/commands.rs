@@ -327,7 +327,13 @@ pub const COMMANDS: &[&str] = &[
 /// `undecided`, `decisions-moved` or `proposal-ended`, and a proposal is refused as `bad-proposal` or
 /// `active-proposal`. A screen written for 32 reviews an import; a core of 31 refuses the eight
 /// commands as `unknown-command`, and a screen written for 31 has no use for them.
-pub const COMMAND_SET_VERSION: u32 = 32;
+///
+/// 33: an import may be of a part of the original (ADR 0039). `propose_import` takes a `scope` (the
+/// text `make-scope` wrote) and refuses it as `bad-proposal` unless the scope is of the proposal's
+/// extraction and the report was made under it, and `read_proposal_documents` gives it back as
+/// `scope` when there is one. A screen written for 33 imports a chosen part; a core of 32 refuses the
+/// argument as a `bad-request`, and a screen written for 32 never sends it.
+pub const COMMAND_SET_VERSION: u32 = 33;
 
 /// A command that did not do what was asked, in a shape every shell can pass on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -550,6 +556,9 @@ struct ProposeImport {
     /// The conversion and the check of it, as the authoring tools wrote them.
     conversion: String,
     report: String,
+    /// The part of the extraction the owner chose, as `make-scope` wrote it; absent for the whole.
+    #[serde(default)]
+    scope: Option<String>,
     /// The text head the caller read; absent for a spec that has no text.
     #[serde(default)]
     expect: Option<Revision>,
@@ -2226,6 +2235,7 @@ pub fn call_with<C: Clock>(
                 extraction,
                 conversion,
                 report,
+                scope,
                 expect,
                 supersede,
             } = arguments(args)?;
@@ -2238,6 +2248,7 @@ pub fn call_with<C: Clock>(
                     extraction,
                     conversion: &conversion,
                     report: &report,
+                    scope: scope.as_deref(),
                     expect,
                     supersede,
                 },

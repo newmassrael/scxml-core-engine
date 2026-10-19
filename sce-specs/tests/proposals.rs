@@ -122,6 +122,7 @@ impl Fixture {
             extraction: self.extraction.clone(),
             conversion: &made.conversion,
             report: &made.report,
+            scope: None,
             expect: self.store.head(&self.spec).unwrap(),
             supersede: false,
         }
@@ -1454,4 +1455,307 @@ fn the_new_commands_are_listed_and_the_version_moved() {
         f.store.read_extraction(&f.spec, &f.extraction).unwrap(),
         f.extraction_text
     );
+}
+
+// ------------------------------------------------------------------------------ a part of the original
+
+/// A scope of the fixture's extraction, as `make-scope` writes it.
+fn scope_of(extraction: &Revision, blocks: &[&str]) -> String {
+    json!({"v": 1, "extraction": extraction.as_str(), "blocks": blocks}).to_string()
+}
+
+/// The check of a conversion made under `scope`, which names it by its digest as the tools do.
+fn scoped_report(
+    extraction: &Revision,
+    conversion: &str,
+    scope: &str,
+    asks: &[(&str, &str)],
+) -> String {
+    let mut report: Value = serde_json::from_str(&report_of(extraction, conversion, asks)).unwrap();
+    report["scope"] = json!(Revision::of(scope.as_bytes()).as_str());
+    report["out_of_scope"] = json!(1);
+    report.to_string()
+}
+
+impl Fixture {
+    fn scoped(&self, blocks: &[&str], asks: &[(&str, &str)]) -> (Made, String) {
+        let scope = scope_of(&self.extraction, blocks);
+        let conversion = conversion_of(&self.extraction, &["m1", "m2"]);
+        let report = scoped_report(&self.extraction, &conversion, &scope, asks);
+        (Made { conversion, report }, scope)
+    }
+
+    fn registration_in<'a>(
+        &self,
+        key: &'a str,
+        made: &'a Made,
+        scope: Option<&'a str>,
+    ) -> ProposalRegistration<'a> {
+        ProposalRegistration {
+            scope,
+            ..self.registration(key, made)
+        }
+    }
+}
+
+#[test]
+fn a_proposal_of_a_part_keeps_the_scope_and_gives_it_back_with_the_conversion() {
+    let f = fixture("scope-kept");
+    let (made, scope) = f.scoped(&["b1", "b2"], &[("check", "m1")]);
+
+    let registered = f
+        .store
+        .propose_import(&f.spec, f.registration_in("k", &made, Some(&scope)))
+        .unwrap();
+    let documents = f
+        .store
+        .read_proposal_documents(&f.spec, &registered.proposal.id)
+        .unwrap();
+
+    assert_eq!(
+        registered.proposal.scope,
+        Some(Revision::of(scope.as_bytes()))
+    );
+    assert_eq!(documents.scope.as_deref(), Some(scope.as_str()));
+    assert!(f
+        .dir()
+        .join("scopes")
+        .join(format!("{}.json", Revision::of(scope.as_bytes()).as_str()))
+        .is_file());
+    // The nearest that must differ: a proposal of the whole holds no scope.
+    let whole = fixture("scope-kept-whole").propose("whole", &[]);
+    assert_eq!(whole.scope, None);
+}
+
+#[test]
+fn a_scope_that_is_not_one_of_this_extraction_is_refused_and_the_nearest_that_is_is_not() {
+    let f = fixture("scope-shape");
+    let other = Revision::of(b"another extraction");
+    let wrong_version =
+        json!({"v": 2, "extraction": f.extraction.as_str(), "blocks": ["b1"]}).to_string();
+    let extra_field =
+        json!({"v": 1, "extraction": f.extraction.as_str(), "blocks": ["b1"], "why": "x"})
+            .to_string();
+    let cases = [
+        ("another extraction", scope_of(&other, &["b1", "b2"])),
+        ("no block", scope_of(&f.extraction, &[])),
+        (
+            "a block it does not have",
+            scope_of(&f.extraction, &["b1", "b9"]),
+        ),
+        ("a block twice", scope_of(&f.extraction, &["b1", "b1"])),
+        (
+            "not in the extraction's order",
+            scope_of(&f.extraction, &["b2", "b1"]),
+        ),
+        ("every block", scope_of(&f.extraction, &["b1", "b2", "b3"])),
+        ("a version nobody reads", wrong_version),
+        ("a field nobody defined", extra_field),
+        ("not JSON", "[1".to_string()),
+    ];
+    for (name, scope) in cases {
+        let conversion = conversion_of(&f.extraction, &["m1", "m2"]);
+        let report = scoped_report(&f.extraction, &conversion, &scope, &[]);
+        let made = Made { conversion, report };
+
+        let error = f
+            .store
+            .propose_import(&f.spec, f.registration_in(name, &made, Some(&scope)))
+            .unwrap_err();
+
+        assert_eq!(refusal(error).0, "bad-proposal", "{name}");
+    }
+    let (made, scope) = f.scoped(&["b1", "b3"], &[]);
+    f.store
+        .propose_import(&f.spec, f.registration_in("good", &made, Some(&scope)))
+        .unwrap();
+}
+
+#[test]
+fn a_report_made_under_another_part_than_the_one_named_is_refused() {
+    let f = fixture("scope-report");
+    let (made, scope) = f.scoped(&["b1", "b2"], &[]);
+    let conversion = made.conversion.clone();
+    let under_another = scoped_report(
+        &f.extraction,
+        &conversion,
+        &scope_of(&f.extraction, &["b1", "b3"]),
+        &[],
+    );
+    let under_none = report_of(&f.extraction, &conversion, &[]);
+    let wrong = [
+        (
+            "a report of another part",
+            Made {
+                conversion: conversion.clone(),
+                report: under_another,
+            },
+        ),
+        (
+            "a report of the whole, with a scope named",
+            Made {
+                conversion: conversion.clone(),
+                report: under_none,
+            },
+        ),
+    ];
+
+    for (name, made) in &wrong {
+        let error = f
+            .store
+            .propose_import(&f.spec, f.registration_in(name, made, Some(&scope)))
+            .unwrap_err();
+        assert_eq!(refusal(error).0, "bad-proposal", "{name}");
+    }
+    // And the other way: a report made under a part, with no scope named.
+    let error = f
+        .store
+        .propose_import(&f.spec, f.registration_in("no scope", &made, None))
+        .unwrap_err();
+    assert_eq!(refusal(error).0, "bad-proposal");
+    // The nearest that must pass: the report and the scope that name each other.
+    f.store
+        .propose_import(&f.spec, f.registration_in("good", &made, Some(&scope)))
+        .unwrap();
+}
+
+#[test]
+fn what_the_check_asks_of_the_original_is_inside_the_part() {
+    let f = fixture("scope-asks");
+    let (outside, scope) = f.scoped(&["b1", "b2"], &[("missing", "b3")]);
+    let (inside, _) = f.scoped(&["b1", "b2"], &[("missing", "b2"), ("check", "m1")]);
+
+    let error = f
+        .store
+        .propose_import(&f.spec, f.registration_in("out", &outside, Some(&scope)))
+        .unwrap_err();
+    let kept = f
+        .store
+        .propose_import(&f.spec, f.registration_in("in", &inside, Some(&scope)))
+        .unwrap();
+
+    assert_eq!(refusal(error).0, "bad-proposal");
+    assert_eq!(kept.proposal.asks.len(), 2);
+}
+
+#[test]
+fn the_same_key_with_another_part_is_another_input() {
+    let f = fixture("scope-key");
+    let (made, scope) = f.scoped(&["b1", "b2"], &[]);
+    let first = f
+        .store
+        .propose_import(&f.spec, f.registration_in("k", &made, Some(&scope)))
+        .unwrap();
+
+    let again = f
+        .store
+        .propose_import(&f.spec, f.registration_in("k", &made, Some(&scope)))
+        .unwrap();
+    let (other_made, other_scope) = f.scoped(&["b1", "b3"], &[]);
+    let error = f
+        .store
+        .propose_import(
+            &f.spec,
+            f.registration_in("k", &other_made, Some(&other_scope)),
+        )
+        .unwrap_err();
+    let whole = f.made(&[]);
+    let error_whole = f
+        .store
+        .propose_import(&f.spec, f.registration("k", &whole))
+        .unwrap_err();
+
+    assert!(!again.created);
+    assert_eq!(again.proposal.id, first.proposal.id);
+    assert_eq!(refusal(error).0, "key-reused");
+    assert_eq!(refusal(error_whole).0, "key-reused");
+}
+
+#[test]
+fn a_block_outside_the_part_is_neither_added_nor_dropped_and_one_inside_is() {
+    let f = fixture("scope-decide");
+    let (made, scope) = f.scoped(&["b1", "b2"], &[]);
+    let proposal = f
+        .store
+        .propose_import(&f.spec, f.registration_in("k", &made, Some(&scope)))
+        .unwrap()
+        .proposal;
+
+    for what in [DecisionKind::Add, DecisionKind::Drop] {
+        let error = f
+            .store
+            .decide_block(&f.spec, &proposal.id, "b3", what, None)
+            .unwrap_err();
+        assert_eq!(refusal(error).0, "bad-proposal", "{what:?}");
+    }
+    f.decide(&proposal.id, "b2", DecisionKind::Add);
+    f.decide(&proposal.id, "m1", DecisionKind::Keep);
+
+    let view = f.store.read_proposal(&f.spec, &proposal.id).unwrap();
+    assert_eq!(view.decisions.len(), 2);
+}
+
+#[test]
+fn a_proposal_carried_forward_keeps_its_part() {
+    let f = fixture("scope-rebase");
+    f.store.save_source(&f.spec, "Before.", None).unwrap();
+    let (made, scope) = f.scoped(&["b1", "b2"], &[]);
+    let old = f
+        .store
+        .propose_import(&f.spec, f.registration_in("k", &made, Some(&scope)))
+        .unwrap()
+        .proposal;
+    f.store
+        .save_source(&f.spec, "After.", Some(&Revision::of(b"Before.")))
+        .unwrap();
+
+    let carried = f.store.rebase_proposal(&f.spec, &old.id).unwrap().proposal;
+    let documents = f
+        .store
+        .read_proposal_documents(&f.spec, &carried.id)
+        .unwrap();
+
+    assert_eq!(carried.scope, old.scope);
+    assert_eq!(documents.scope.as_deref(), Some(scope.as_str()));
+}
+
+#[test]
+fn the_command_takes_a_scope_and_reads_it_back() {
+    let f = fixture("scope-command");
+    let (made, scope) = f.scoped(&["b1", "b2"], &[]);
+
+    let registered = run(
+        &f,
+        "propose_import",
+        json!({
+            "id": f.spec.as_str(), "key": "k", "origin": "gui",
+            "original": f.original, "extraction": f.extraction,
+            "conversion": made.conversion, "report": made.report, "scope": scope,
+        }),
+    )
+    .unwrap();
+    let proposal = registered["proposal"]["id"].as_str().unwrap().to_string();
+    let documents = run(
+        &f,
+        "read_proposal_documents",
+        json!({"id": f.spec.as_str(), "proposal": proposal}),
+    )
+    .unwrap();
+    let other = fixture("scope-command-whole");
+    let whole = other.propose("whole", &[]);
+    let whole_documents = run(
+        &other,
+        "read_proposal_documents",
+        json!({"id": other.spec.as_str(), "proposal": whole.id}),
+    )
+    .unwrap();
+
+    assert_eq!(
+        registered["proposal"]["scope"],
+        json!(Revision::of(scope.as_bytes()))
+    );
+    assert_eq!(documents["scope"], json!(scope));
+    // The whole has no `scope` in either place, so a screen written before it reads what it always did.
+    assert!(whole_documents.get("scope").is_none());
+    assert!(whole.scope.is_none());
 }
