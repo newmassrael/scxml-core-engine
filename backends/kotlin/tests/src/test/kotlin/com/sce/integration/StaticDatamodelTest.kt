@@ -24,7 +24,13 @@ import com.sce.integration.static_enum.StaticEnumViewModeEnum
 import com.sce.integration.static_host_call.RecordingStaticHostCallActions
 import com.sce.integration.static_host_call.StaticHostCallEvent
 import com.sce.integration.static_host_call.StaticHostCallState
+import com.sce.integration.static_host_call.StaticHostCallActions
 import com.sce.integration.static_host_call.StaticHostCallStateMachine
+import com.sce.integration.static_host_duty.RecordingStaticHostDutyActions
+import com.sce.integration.static_host_duty.StaticHostDutyActions
+import com.sce.integration.static_host_duty.StaticHostDutyEvent
+import com.sce.integration.static_host_duty.StaticHostDutyState
+import com.sce.integration.static_host_duty.StaticHostDutyStateMachine
 import com.sce.integration.static_history.StaticHistoryEvent
 import com.sce.integration.static_history.StaticHistoryState
 import com.sce.integration.static_history.StaticHistoryStateMachine
@@ -43,6 +49,7 @@ import com.sce.integration.static_record_string.StaticRecordStringStateMachine
 import com.sce.integration.static_string_capacity.StaticStringCapacityStateMachine
 import com.sce.integration.static_timers.StaticTimersEvent
 import com.sce.integration.static_timers.StaticTimersStateMachine
+import com.sce.runtime.ActionRealization
 import com.sce.runtime.ManualClock
 import com.sce.runtime.SavedState
 import com.sce.runtime.StateRefusal
@@ -223,6 +230,120 @@ class StaticDatamodelTest {
         try {
             assertEquals(setOf(StaticHostCallState.Idle), sm.snapshot.value.configuration)
             assertEquals(false, sm.snapshot.value.truncated)
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // ── static_host_duty: what a host says it does with the machine's duties ──
+    // (docs/adr/0038, decision 3)
+
+    /** A host that states it performs the duties, and keeps the names of the calls it was given. */
+    private class PerformingHostDutyActions : StaticHostDutyActions {
+        override val realization: ActionRealization = ActionRealization.PERFORMS
+        val calls = mutableListOf<String>()
+
+        override fun startKeepalive() {
+            calls += "start_keepalive"
+        }
+
+        override fun noteEngaged() {
+            calls += "note_engaged"
+        }
+
+        override fun stopKeepalive() {
+            calls += "stop_keepalive"
+        }
+    }
+
+    /** A host that states, by hand, that it only simulates the duties. */
+    private class SimulatingHostDutyActions : StaticHostDutyActions {
+        override val realization: ActionRealization = ActionRealization.SIMULATES
+
+        override fun startKeepalive() {}
+
+        override fun noteEngaged() {}
+
+        override fun stopKeepalive() {}
+    }
+
+    @Test
+    fun aHostThatPerformsTheDutiesIsAcceptedAndCalled() {
+        val host = PerformingHostDutyActions()
+        val sm = StaticHostDutyStateMachine(host)
+        sm.initialize()
+        try {
+            assertEquals(StaticHostDutyState.Idle, sm.currentState.value)
+            sm.send(StaticHostDutyEvent.Engage)
+            sm.tick()
+            sm.send(StaticHostDutyEvent.Release)
+            sm.tick()
+            assertEquals(
+                listOf("start_keepalive", "note_engaged", "stop_keepalive"),
+                host.calls,
+                "the duty is taken and the notice given on entering `engaged`, the duty given back on leaving it"
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun aHostThatSimulatesTheDutiesIsRefusedAtConstruction() {
+        val refusal =
+            assertThrows(IllegalArgumentException::class.java) {
+                StaticHostDutyStateMachine(SimulatingHostDutyActions())
+            }
+        val message = refusal.message ?: ""
+        assertTrue(message.contains("StaticHostDuty"), "the message names the machine: $message")
+        assertTrue(message.contains("only simulates"), "the message says the host only simulates: $message")
+        assertTrue(message.contains("acceptSimulatedHost"), "the message names the opt-in: $message")
+    }
+
+    @Test
+    fun theGeneratedRecordingHostSimulatesSoItIsRefusedWithoutTheOptIn() {
+        assertEquals(ActionRealization.SIMULATES, RecordingStaticHostDutyActions().realization)
+        assertThrows(IllegalArgumentException::class.java) {
+            StaticHostDutyStateMachine(RecordingStaticHostDutyActions())
+        }
+    }
+
+    @Test
+    fun theOptInAcceptsAHostThatSimulatesTheDuties() {
+        val host = RecordingStaticHostDutyActions()
+        val sm = StaticHostDutyStateMachine(host, acceptSimulatedHost = true)
+        sm.initialize()
+        try {
+            sm.send(StaticHostDutyEvent.Engage)
+            sm.tick()
+            assertEquals(
+                listOf(
+                    RecordingStaticHostDutyActions.Call.StartKeepalive,
+                    RecordingStaticHostDutyActions.Call.NoteEngaged,
+                ),
+                host.calls,
+                "a host accepted on purpose is called like any other"
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun aMachineWithNoDutyTakesAHostThatDeclaresNoRealization() {
+        // `static_host_call` states no duty, so its interface has no `realization`
+        // and a host written without one compiles and is built without the opt-in.
+        val seen = mutableListOf<Pair<UInt, Boolean>>()
+        val host =
+            object : StaticHostCallActions {
+                override fun showAttempts(count: UInt, exhausted: Boolean) {
+                    seen += count to exhausted
+                }
+            }
+        val sm = StaticHostCallStateMachine(host)
+        sm.initialize()
+        try {
+            assertEquals(listOf(0u to false), seen, "entering `idle` shows the first attempt")
         } finally {
             sm.cleanup()
         }

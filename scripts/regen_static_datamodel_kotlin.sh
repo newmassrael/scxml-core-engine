@@ -33,6 +33,8 @@ PACKAGE_PREFIX="com.sce.integration"
 
 # static_counter:   variables, a typed guard and assignments.
 # static_host_call: a native host action taking typed datamodel arguments.
+# static_host_duty: a host action that is a duty, released on <onexit>, beside
+#                   a notice; its machine refuses a host that only simulates.
 # static_record:    a record variable built whole and updated field by field,
 #                   whose schema is imported from a sibling document.
 # static_list:      a list variable filled by <sce:append>, emptied by

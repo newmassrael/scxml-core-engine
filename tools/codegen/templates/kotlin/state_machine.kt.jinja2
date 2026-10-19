@@ -133,9 +133,32 @@ class {{ machine_name }}StateMachine(
 {% endfor %}
 {% if model.needs_script_engine %}
     scriptEngine: ScxmlScriptEngine,
+{% endif %}
+{% if accepts_simulated_host %}
+{# docs/adr/0038, decision 3: the last parameter, defaulted, so a caller that
+   builds this machine as before still compiles and a caller that means to run
+   it on a recorder says so by name. It is held, so the children this machine
+   builds with a host are built under the same statement. #}
+    /**
+     * docs/adr/0038: `true` states that this machine is built for a host that
+     * only simulates its duties (a recorder, a test double) on purpose. The
+     * statement covers the children this machine builds with a host.
+     */
+    private val acceptSimulatedHost: Boolean = false,
+{% endif %}
+{% if model.needs_script_engine %}
 ) : StateMachineEngine<{{ machine_name }}State, {{ machine_name }}Event>(scriptEngine) {
 {% else %}
 ) : StateMachineEngine<{{ machine_name }}State, {{ machine_name }}Event>() {
+{% endif %}
+{% if has_native_duties %}
+
+    init {
+        require(actions.realization == ActionRealization.PERFORMS || acceptSimulatedHost) {
+            "{{ machine_name }} states a duty and its host declares that it only simulates the duties: " +
+                "pass acceptSimulatedHost = true to run it on a recorder or a test double on purpose"
+        }
+    }
 {% endif %}
 {% if static_fields %}
 

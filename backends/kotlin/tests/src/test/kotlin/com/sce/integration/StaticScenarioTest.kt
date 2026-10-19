@@ -43,6 +43,8 @@ import com.sce.integration.static_foreach.StaticForeachStateMachine
 import com.sce.integration.static_history.StaticHistoryStateMachine
 import com.sce.integration.static_host_call.RecordingStaticHostCallActions
 import com.sce.integration.static_host_call.StaticHostCallStateMachine
+import com.sce.integration.static_host_duty.RecordingStaticHostDutyActions
+import com.sce.integration.static_host_duty.StaticHostDutyStateMachine
 import com.sce.integration.static_invoke.StaticInvokeStateMachine
 import com.sce.integration.static_invoke_params.StaticInvokeParamsStateMachine
 import com.sce.integration.static_invoke_string.StaticInvokeStringStateMachine
@@ -171,6 +173,29 @@ class StaticScenarioTest {
                             put("action", "showAttempts")
                             put("args", JsonArray(listOf(JsonPrimitive(call.count.toLong()), JsonPrimitive(call.exhausted))))
                         }
+                }
+            }
+        host.clear()
+        fresh
+    }
+
+    /**
+     * What `static_host_duty` asked of its host since this was last called, oldest
+     * first, each as a scenario's `host_calls` writes it. None of its actions takes
+     * an argument.
+     */
+    private fun staticHostDutyCalls(host: RecordingStaticHostDutyActions): () -> List<JsonElement> = {
+        val fresh =
+            host.calls.map { call ->
+                val action =
+                    when (call) {
+                        RecordingStaticHostDutyActions.Call.StartKeepalive -> "start_keepalive"
+                        RecordingStaticHostDutyActions.Call.NoteEngaged -> "note_engaged"
+                        RecordingStaticHostDutyActions.Call.StopKeepalive -> "stop_keepalive"
+                    }
+                buildJsonObject {
+                    put("action", action)
+                    put("args", JsonArray(emptyList()))
                 }
             }
         host.clear()
@@ -941,6 +966,28 @@ class StaticScenarioTest {
                 save = { sm.save() },
                 ended = { sm.isInFinalState },
                 hostCalls = staticHostCallCalls(host),
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // A duty is taken on entering `engaged` and given back on leaving it, beside a
+    // notice. The recording host simulates, so the machine is built for it on
+    // purpose (docs/adr/0038): the scenario's `host_calls` are read from it.
+    @Test
+    fun staticHostDutyTakesAndReleasesItsDutyThroughItsHost() {
+        val host = RecordingStaticHostDutyActions()
+        val sm = StaticHostDutyStateMachine(host, acceptSimulatedHost = true)
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_host_duty"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+                hostCalls = staticHostDutyCalls(host),
             )
         } finally {
             sm.cleanup()
