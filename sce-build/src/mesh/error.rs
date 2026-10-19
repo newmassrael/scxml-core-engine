@@ -301,6 +301,18 @@ pub enum WorkerThreadsFault {
     WithoutWorkerPool,
 }
 
+impl WorkerThreadsFault {
+    /// The classification as it enters the diagnostic id. Spelled out rather
+    /// than taken from `Debug`, so renaming a variant cannot move an id.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Missing => "missing",
+            Self::BelowOne => "below-one",
+            Self::WithoutWorkerPool => "without-worker-pool",
+        }
+    }
+}
+
 impl std::fmt::Display for WorkerThreadsFault {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -3700,7 +3712,7 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             actual: worker_threads.map(|n| n.to_string()),
             expected: None,
             fix: None,
-            key_fragments: vec![machine.clone(), format!("{fault:?}")],
+            key_fragments: vec![machine.clone(), fault.as_str().to_string()],
         },
         DeployError::SchedulerIncompatibleWithWorkerCount {
             machine,

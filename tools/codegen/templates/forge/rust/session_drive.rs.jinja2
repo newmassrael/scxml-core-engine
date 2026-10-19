@@ -28,3 +28,25 @@ pub enum SessionDrive {
 
 /// The drive `machines.{{ machine_name }}.scheduler.drive` declares.
 pub const SESSION_DRIVE: SessionDrive = {% if drive == "worker-pool" %}SessionDrive::WorkerPool { worker_threads: {{ worker_threads }} }{% else %}SessionDrive::OwnThread{% endif %};
+
+/// Build the session runtime `SESSION_DRIVE` declares. The one place the
+/// declaration is interpreted: a host that builds its runtime here cannot
+/// disagree with the deploy, and a host that builds it elsewhere has chosen to.
+{% if drive == "worker-pool" %}///
+/// A multi-threaded runtime with {{ worker_threads }} worker threads (needs tokio's
+/// `rt-multi-thread` feature).
+pub fn build_session_runtime() -> std::io::Result<tokio::runtime::Runtime> {
+    tokio::runtime::Builder::new_multi_thread()
+        .worker_threads({{ worker_threads }})
+        .enable_all()
+        .build()
+}
+{% else %}///
+/// A current-thread runtime: it has no workers, and runs only while the thread
+/// that drives the machine is inside `block_on` or `Runtime::block_on`.
+pub fn build_session_runtime() -> std::io::Result<tokio::runtime::Runtime> {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+}
+{% endif %}

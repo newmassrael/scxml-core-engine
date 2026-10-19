@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+
+[package]
+name = "sce-deploy-conformance"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "The Rust artifacts SCE writes from a deploy (LinkBus, cooperative scheduler, session drive), compiled and run. Holds tests only."
+publish = false
+build = "build.rs"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+sce-link-runtime = { path = "../link-runtime" }
+# The generated LinkBus and session drive name tokio, so the crate compiling
+# them names it too: `sync` for the channels, `rt` and `rt-multi-thread` for the
+# two session runtimes a deploy can declare.
+tokio = { version = "1", default-features = false, features = ["rt", "rt-multi-thread", "sync", "time", "macros"] }
+
+# The generator runs here at build time, in-process, to write the artifacts into
+# OUT_DIR. See build.rs.
+[build-dependencies]
+sce-build = { path = "../../../sce-build" }
+
+[lints]
+workspace = true

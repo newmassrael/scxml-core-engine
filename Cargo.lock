@@ -3678,6 +3678,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "sce-deploy-conformance"
+version = "0.1.0"
+dependencies = [
+ "sce-build",
+ "sce-link-runtime",
+ "tokio",
+]
+
+[[package]]
 name = "sce-forge-conformance"
 version = "0.1.0"
 dependencies = [

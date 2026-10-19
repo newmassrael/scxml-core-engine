@@ -18,6 +18,7 @@ members = [
     "sce-build-wasm",
     "backends/rust/forge-runtime",
     "backends/rust/forge-conformance",
+    "backends/rust/deploy-conformance",
     "backends/rust/link-runtime",
     "backends/rust/mesh",
     "backends/rust/scenarios",

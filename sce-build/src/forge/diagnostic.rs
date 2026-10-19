@@ -15381,7 +15381,7 @@ mod tests {
                     worker_threads: Some(0),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:45bdf8c9fdeb4cb5","code":"deploy/scheduler-worker-threads-invalid","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.K","message":"machine 'ap_node': `drive: worker-pool` needs at least one worker thread, and `worker_threads` is 0. SCE Protocol-Synthesis RFC §5.K (Session drive, `deploy/scheduler-worker-threads-invalid`). Repair: write `drive: worker-pool` with `worker_threads: <n>` (n >= 1), or write `drive: own-thread` and remove `worker_threads`.","actual":"0"}"#,
+                r#"{"v":1,"id":"fnv1a:4c263c309109f5c6","code":"deploy/scheduler-worker-threads-invalid","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.K","message":"machine 'ap_node': `drive: worker-pool` needs at least one worker thread, and `worker_threads` is 0. SCE Protocol-Synthesis RFC §5.K (Session drive, `deploy/scheduler-worker-threads-invalid`). Repair: write `drive: worker-pool` with `worker_threads: <n>` (n >= 1), or write `drive: own-thread` and remove `worker_threads`.","actual":"0"}"#,
             ),
             // ── §synth-5-K `links:` block (RFC §synth-5-K lines 2232-2540) ──
             (
