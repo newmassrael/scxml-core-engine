@@ -12,8 +12,10 @@ never works out which blocks a section holds.
 
 **What a section is.** The headings of the document, nested by level, with a first section for what comes
 before the first heading. A document with no heading is divided into its pages, and one with neither is one
-section. A heading's section holds its own blocks and those of the sections under it, so choosing it brings
-all of them; choosing only a section under it brings only that.
+section. A section is its own blocks: the ones from its heading to the next heading of any level. The
+sections under it are sections of their own and are chosen as such, so that what is chosen is exactly what
+was named and a part under a chosen one can be left out. `tree` names a section with everything under it,
+for a caller that wants the whole of a function without listing its parts.
 
 The scope's form is `pre-release`: `to_dict` and `from_dict` are its only producer and reader.
 """
@@ -134,12 +136,15 @@ class Section:
     title: str
     level: int
     parent: str | None
-    blocks: int  # blocks with words, those of the sections under it included
+    blocks: int  # its own blocks with words: from its heading to the next heading of any level
     characters: int
-    page_first: int | None
+    tree_blocks: int  # the same with the sections under it
+    tree_characters: int
+    page_first: int | None  # the pages of its own blocks
     page_last: int | None
-    first: int  # where it starts in the extraction's blocks, and where it ends (exclusive)
-    end: int
+    first: int  # where it starts in the extraction's blocks, where its own blocks end, and where the
+    end: int  # sections under it end (all exclusive)
+    tree_end: int
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -150,6 +155,8 @@ class Section:
             "parent": self.parent,
             "blocks": self.blocks,
             "characters": self.characters,
+            "tree_blocks": self.tree_blocks,
+            "tree_characters": self.tree_characters,
             "page_first": self.page_first,
             "page_last": self.page_last,
         }
@@ -182,17 +189,21 @@ def _by_headings(extraction: Extraction) -> list[Section]:
     sections: list[Section] = []
     stack: list[tuple[int, str]] = []  # (level, id) of the sections still open
     for position, (index, kind, level) in enumerate(starts):
-        # It ends where the next heading of its level or a higher one begins.
-        end = len(blocks)
+        # Its own blocks end at the next heading of any level. The sections under it end where the next
+        # heading of its level or a higher one begins; what comes before the first heading is under none,
+        # so it ends at the first heading, of whatever level that is.
+        end = starts[position + 1][0] if position + 1 < len(starts) else len(blocks)
+        tree_end = len(blocks)
         for later_index, later_kind, later_level in starts[position + 1 :]:
-            if later_kind == "heading" and later_level <= level:
-                end = later_index
+            if later_kind == "heading" and (kind == "preamble" or later_level <= level):
+                tree_end = later_index
                 break
         while stack and stack[-1][0] >= level:
             stack.pop()
         identifier = f"s{len(sections) + 1}"
         parent = stack[-1][1] if stack and kind == "heading" else None
         count, characters, page_first, page_last = _measure(extraction, index, end)
+        tree_count, tree_characters, _, _ = _measure(extraction, index, tree_end)
         sections.append(
             Section(
                 id=identifier,
@@ -202,10 +213,13 @@ def _by_headings(extraction: Extraction) -> list[Section]:
                 parent=parent,
                 blocks=count,
                 characters=characters,
+                tree_blocks=tree_count,
+                tree_characters=tree_characters,
                 page_first=page_first,
                 page_last=page_last,
                 first=index,
                 end=end,
+                tree_end=tree_end,
             )
         )
         if kind == "heading":
@@ -226,14 +240,18 @@ def _by_pages(extraction: Extraction) -> list[Section]:
     for first, end, _ in runs:
         count, characters, page_first, page_last = _measure(extraction, first, end)
         sections.append(
-            Section(f"s{len(sections) + 1}", "page", "", 1, None, count, characters, page_first, page_last, first, end)
+            Section(
+                f"s{len(sections) + 1}", "page", "", 1, None,
+                count, characters, count, characters, page_first, page_last, first, end, end,
+            )
         )
     return sections
 
 
 def _whole(extraction: Extraction) -> list[Section]:
     count, characters, page_first, page_last = _measure(extraction, 0, len(extraction.blocks))
-    return [Section("s1", "whole", "", 1, None, count, characters, page_first, page_last, 0, len(extraction.blocks))]
+    last = len(extraction.blocks)
+    return [Section("s1", "whole", "", 1, None, count, characters, count, characters, page_first, page_last, 0, last, last)]
 
 
 def chosen_outline(extraction: Extraction, by: str | None = None) -> str:
@@ -267,18 +285,25 @@ def outline(extraction: Extraction, by: str | None = None) -> tuple[str, list[Se
     return way, sections
 
 
-def scope_of(extraction: Extraction, section_ids: list[str], by: str | None = None) -> Scope:
-    """The scope of the sections with these ids, each with the sections under it, in the extraction's order."""
-    if not section_ids:
+def scope_of(
+    extraction: Extraction, section_ids: list[str], by: str | None = None, tree_ids: list[str] | None = None
+) -> Scope:
+    """The scope of the sections with these ids, each as its own blocks, in the extraction's order.
+
+    `tree_ids` are sections taken with everything under them. A section named both ways is taken once.
+    """
+    tree_ids = tree_ids or []
+    if not section_ids and not tree_ids:
         raise IngestError("nothing is chosen: an import of nothing is not an import")
     _, sections = outline(extraction, by)
     known = {s.id: s for s in sections}
-    unknown = [i for i in section_ids if i not in known]
+    unknown = [i for i in [*section_ids, *tree_ids] if i not in known]
     if unknown:
         raise IngestError(f"the extraction has no section {', '.join(unknown)}")
     chosen: set[int] = set()
     for identifier in section_ids:
-        section = known[identifier]
-        chosen.update(range(section.first, section.end))
+        chosen.update(range(known[identifier].first, known[identifier].end))
+    for identifier in tree_ids:
+        chosen.update(range(known[identifier].first, known[identifier].tree_end))
     ids = tuple(extraction.blocks[i].id for i in sorted(chosen))
     return Scope(extraction.revision(), ids)

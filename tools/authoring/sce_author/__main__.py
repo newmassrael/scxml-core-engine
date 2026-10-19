@@ -179,9 +179,10 @@ def cmd_outline(args) -> int:
 
 
 def cmd_make_scope(args) -> int:
-    """Write the scope of the sections the owner chose, each with the sections under it."""
+    """Write the scope of the sections the owner chose: each `--section` as its own paragraphs, each `--tree`
+    with everything under it."""
     extraction = _read_extraction(args.extraction)
-    made = scope_of(extraction, list(args.section), args.by)
+    made = scope_of(extraction, list(args.section or []), args.by, list(args.tree or []))
     try:
         pathlib.Path(args.out).write_text(made.to_json(), encoding="utf-8")
     except OSError as exc:
@@ -846,10 +847,12 @@ def main(argv=None) -> int:
     out.set_defaults(fn=cmd_outline)
 
     mks = sub.add_parser(
-        "make-scope", help="write the scope of the sections an owner chose, each with the sections under it")
+        "make-scope", help="write the scope of the sections an owner chose")
     mks.add_argument("--extraction", required=True, help="the extraction (JSON) `extract` wrote")
-    mks.add_argument("--section", action="append", required=True,
-                     help="the id of a section `outline` listed (repeat for each one chosen)")
+    mks.add_argument("--section", action="append",
+                     help="the id of a section `outline` listed, taken as its own paragraphs (repeat for each)")
+    mks.add_argument("--tree", action="append",
+                     help="the id of a section taken with every section under it (repeat for each)")
     mks.add_argument("--by", choices=OUTLINES, help="the division `outline` was asked for, when it was asked")
     mks.add_argument("--out", required=True, help="where to write the scope (JSON)")
     mks.add_argument("--json", action="store_true", help="print the counts and whether it is every block, as JSON")

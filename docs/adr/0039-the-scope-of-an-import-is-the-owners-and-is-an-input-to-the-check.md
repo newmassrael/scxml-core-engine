@@ -38,12 +38,18 @@ not have, a block twice, another order, or no block at all is refused. It is kep
 text, as an extraction is, and its form is a `pre-release` surface.
 
 **The tools turn what the owner points at into a scope, so that no host knows how a document is cut.**
-`outline` lists the sections of an extraction, each with an id (`s1`, `s2`, ...), a title, a level, how
-many blocks and characters it holds, and the pages it spans. The sections are the headings of the
-document, nested by level, with a first section for what comes before the first heading; for a document
-with no heading they are its pages, and for one with neither it is one section. `make-scope` takes the ids
-of sections and writes the scope: a section brings its own blocks and those of the sections under it. A
-host and a screen show the outline and send ids, and never compute a block range.
+`outline` lists the sections of an extraction, each with an id (`s1`, `s2`, ...), a title, a level, its
+parent, how many blocks and characters it holds, and the pages it spans. The sections are the headings of
+the document, nested by level, with a first section for what comes before the first heading; for a
+document with no heading they are its pages, and for one with neither it is one section. **A section is its
+own blocks**: those from its heading to the next heading of any level. The sections under it are sections
+of their own. That is so that what is named is exactly what is taken: a person who chooses a function and
+leaves out one of its parts must get that, and a section that carried its parts in with it would take the
+part back in silently. It also makes the parts add up to the document, so a count of what is chosen counts
+nothing twice. `make-scope` takes the ids of sections (`--section`) and writes the scope; `--tree` names a
+section with everything under it, for a caller that wants a whole function without listing its parts. A host
+and a screen show the outline and send ids (a screen that ticks a function ticks its parts with it, and
+sends them all), and never compute a block range.
 
 **The scope is an input to everything that reads blocks, and is never a field of the conversion.**
 
@@ -66,6 +72,19 @@ a report of another conversion. The same key given with another scope is another
 and keeps the extraction, and says the outline), and the owner chooses the parts; then it converts, checks
 and proposes for them. Choosing is never required to be slow: every section is chosen to begin with, so a
 document that is wanted whole is one press more.
+
+**The readers say their headings, from the file and not from the look of a line.** An outline is only as good
+as the headings the extraction has, and trying it on real documents found each reader short of that. A Word
+file's headings are in its styles (an outline level, or the built-in `heading N` and `Title` names, followed
+through the styles they are based on) and were read as ordinary paragraphs, so a Word specification could
+not be divided at all. An HTML page's are `<h1>` to `<h6>`, dropped the same way. A PDF produced by a
+browser draws every glyph on its own, and its text came out as one block per character (157,218 blocks from
+62 pages); the PDF reader now builds lines from the characters, on one baseline with no more between them
+than a word's space. Its titles set in the body's size are found by their clause number (`3.1.2 Title`
+alone on a line, which does not end as a sentence does), at a level one below the document's own top-level
+numbers. A reader that knows its headings from the file hands them over as structure (`Ingested.headings`,
+a line to a level), and the text is then not read for `#`: a code comment in a page, a Word paragraph that
+begins with a hash, or a line in a Markdown fence is not a heading.
 
 **A scope is the owner's choice and is not the system's judgement of the document.** Whether a document
 holds one spec or several is not something SCE can check, and nothing here claims to. What is built is the

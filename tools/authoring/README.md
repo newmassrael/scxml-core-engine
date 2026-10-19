@@ -2035,14 +2035,17 @@ found by the same words-for-words comparison that holds the converter by rule to
 
 **outline** and **make-scope** are how an owner imports a part of a document (`scope.py`, ADR 0039).
 `python3 -m sce_author outline --extraction EXTRACTION.json [--json]` lists the parts the owner can choose
-between, each with an id (`s1`, `s2`, ...), its title, its level, how many blocks and characters it holds and
-the pages it spans: the headings of the document, nested by level, with a first part for what comes before the
+between, each with an id (`s1`, `s2`, ...), its title, its level, its parent, how many blocks and characters it
+holds (its own: from its heading to the next heading of any level, so the parts add up to the document and
+nothing is counted twice; `tree_blocks` and `tree_characters` are the same with the parts under it) and the
+pages it spans: the headings of the document, nested by level, with a first part for what comes before the
 first heading; for a document with no heading its pages; for one with neither, the whole of it (`--by
 headings|pages|whole` asks for one). `make-scope --extraction EXTRACTION.json --section s2 [--section s4]
---out SCOPE.json` writes the scope: the ids of the blocks, in the document's order, each chosen part bringing
-the parts under it; `--json` prints the counts and `whole`, which is true when the choice is every block, which
-is no scope (the specs folder refuses one, so a host leaves it out). A host shows the outline and sends ids,
-and never works out which blocks a part holds.
+[--tree s5] --out SCOPE.json` writes the scope: the ids of the blocks, in the document's order. A `--section`
+is its own blocks and nothing else, so a part under a chosen one can be left out; a `--tree` is a part with
+every part under it. `--json` prints the counts and `whole`, which is true when the choice is every block,
+which is no scope (the specs folder refuses one, so a host leaves it out). A host shows the outline and sends
+ids, and never works out which blocks a part holds.
 `--scope SCOPE.json` is then given to `prepare-conversion` (only those blocks are ever in a prompt), to
 `convert`, and to `check-conversion`, which counts only those blocks: a block outside the scope is not
 *missing*, it is counted as `out_of_scope` and not asked about, and a conversion block that cites one is *to

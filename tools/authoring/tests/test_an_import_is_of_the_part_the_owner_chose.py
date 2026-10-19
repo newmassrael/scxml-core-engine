@@ -71,13 +71,38 @@ class TheOutlineOfADocument(unittest.TestCase):
         ])
         self.assertEqual([s.kind for s in sections], ["preamble", "heading", "heading", "heading"])
 
-    def test_a_section_counts_the_blocks_of_the_sections_under_it(self):
+    def test_what_precedes_the_first_heading_ends_at_it_whatever_level_the_headings_are(self):
+        # A PDF whose headings are all one level below its title has no heading at the first level: the part
+        # before the first heading must still end, or it would hold the whole document.
+        extraction = extraction_of(
+            block("b1", text="Cover."),
+            block("b2", "heading", "One", level=2),
+            block("b3", text="First."),
+            block("b4", "heading", "Two", level=2),
+            block("b5", text="Second."),
+        )
+
+        _, sections = outline(extraction)
+
+        self.assertEqual([(s.id, s.kind, s.blocks) for s in sections], [
+            ("s1", "preamble", 1),
+            ("s2", "heading", 2),
+            ("s3", "heading", 2),
+        ])
+        self.assertEqual(scope_of(extraction, ["s3"]).blocks, ("b4", "b5"))
+
+    def test_a_section_counts_its_own_blocks_and_says_what_it_comes_to_with_the_sections_under_it(self):
         _, sections = outline(two_functions())
         by_id = {s.id: s for s in sections}
 
-        self.assertEqual(by_id["s2"].blocks, 4)  # heading, paragraph, sub-heading, paragraph
-        self.assertEqual(by_id["s3"].blocks, 2)
-        self.assertEqual(by_id["s1"].blocks, 1)
+        self.assertEqual((by_id["s2"].blocks, by_id["s2"].tree_blocks), (2, 4))  # its heading and paragraph; with Timing
+        self.assertEqual((by_id["s3"].blocks, by_id["s3"].tree_blocks), (2, 2))
+        self.assertEqual((by_id["s1"].blocks, by_id["s1"].tree_blocks), (1, 1))
+        # What the parts add up to is the document and no more: nothing is counted in two parts.
+        self.assertEqual(sum(s.blocks for s in sections), 7)
+        self.assertEqual(
+            sum(s.characters for s in sections), sum(len(b.text) for b in two_functions().blocks)
+        )
 
     def test_a_document_with_no_heading_is_divided_by_its_pages(self):
         pages = extraction_of(
@@ -106,12 +131,27 @@ class TheOutlineOfADocument(unittest.TestCase):
 
 
 class AScopeFromTheOwnersChoice(unittest.TestCase):
-    def test_a_section_brings_the_sections_under_it_and_a_sub_section_brings_only_itself(self):
+    def test_a_section_is_its_own_blocks_and_a_tree_is_the_section_with_everything_under_it(self):
         extraction = two_functions()
         ids = sections_by_title(extraction)
 
-        self.assertEqual(scope_of(extraction, [ids["Lamp"]]).blocks, ("b2", "b3", "b4", "b5"))
+        self.assertEqual(scope_of(extraction, [ids["Lamp"]]).blocks, ("b2", "b3"))
         self.assertEqual(scope_of(extraction, [ids["Timing"]]).blocks, ("b4", "b5"))
+        self.assertEqual(scope_of(extraction, [], tree_ids=[ids["Lamp"]]).blocks, ("b2", "b3", "b4", "b5"))
+        # Named both ways it is taken once.
+        self.assertEqual(scope_of(extraction, [ids["Lamp"]], tree_ids=[ids["Lamp"]]).blocks, ("b2", "b3", "b4", "b5"))
+
+    def test_a_part_under_a_chosen_one_can_be_left_out(self):
+        # The screen ticks a function and its parts together, and lets a person untick one of the parts: what
+        # is named is exactly what is taken, so the unticked part is not carried in by the one above it.
+        extraction = two_functions()
+        ids = sections_by_title(extraction)
+
+        scope = scope_of(extraction, [ids["Lamp"], ids["Fan"]])
+
+        self.assertEqual(scope.blocks, ("b2", "b3", "b6", "b7"))
+        self.assertFalse(scope.covers("b4"))
+        self.assertFalse(scope.covers("b5"))
 
     def test_the_blocks_are_in_the_documents_order_whatever_order_the_sections_were_chosen_in(self):
         extraction = two_functions()
@@ -176,7 +216,7 @@ class AScopeThatIsNotWellFormed(unittest.TestCase):
 class TheCheckUnderAScope(unittest.TestCase):
     def setUp(self) -> None:
         self.extraction = two_functions()
-        self.lamp = scope_of(self.extraction, ["s2"])
+        self.lamp = scope_of(self.extraction, [], tree_ids=["s2"])
 
     def test_the_part_converted_by_rule_is_complete_and_the_rest_is_counted_not_asked_about(self):
         made = convert_by_rules(self.extraction, self.lamp)
@@ -223,7 +263,7 @@ class TheCheckUnderAScope(unittest.TestCase):
         self.assertIn("outside the part", reason)
         self.assertFalse(report.complete)
         # The nearest that must pass: the same words, cited by a block that is inside.
-        wider = scope_of(self.extraction, ["s2", "s4"])
+        wider = scope_of(self.extraction, ["s4"], tree_ids=["s2"])
         self.assertEqual(check_conversion(self.extraction, widened, wider).ids(CHECK), [])
 
     def test_a_scope_of_everything_is_the_same_input_as_no_scope(self):
@@ -301,10 +341,19 @@ class TheCommandLine(unittest.TestCase):
             # The nearest that must say otherwise: every section is every block, which is no scope.
             code, said = self.run_main(
                 "make-scope", "--extraction", str(e), "--out", str(work / "all.json"), "--json",
-                "--section", "s1", "--section", "s2", "--section", "s4",
+                "--section", "s1", "--tree", "s2", "--section", "s4",
             )
             self.assertEqual(code, 0)
             self.assertEqual((json.loads(said)["whole"], json.loads(said)["blocks"]), (True, 7))
+            # And the same without the part under Lamp is not every block: it was left out and stays out.
+            code, said = self.run_main(
+                "make-scope", "--extraction", str(e), "--out", str(work / "less.json"), "--json",
+                "--section", "s1", "--section", "s2", "--section", "s4",
+            )
+            self.assertEqual((json.loads(said)["whole"], json.loads(said)["blocks"]), (False, 5))
+            # Nothing named at all is refused.
+            code, _ = self.run_main("make-scope", "--extraction", str(e), "--out", str(work / "none.json"))
+            self.assertEqual(code, 2)
 
             code, said = self.run_main(
                 "prepare-conversion", "--extraction", str(e), "--scope", str(s), "--out-dir", str(units)
