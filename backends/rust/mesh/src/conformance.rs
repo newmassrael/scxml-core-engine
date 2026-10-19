@@ -37,6 +37,12 @@
 //! * [`a_device_that_was_away_catches_up_from_a_hub_that_stayed_up`]: the shape of a shared list
 //!   whose devices are on only while their user presses sync, which exercises all of it, with the
 //!   same name coming back after it has gone.
+//! * [`a_machine_that_loses_its_session_comes_back_and_resyncs`]: the router goes away and comes
+//!   back on the same address, and the machines that reconnect (`open_reconnecting`) are told
+//!   every peer they had ready is lost, then learn from the presence history who is still there,
+//!   so a machine that left during the gap is never believed to be up (section 20.3). It needs a
+//!   harness that can end its sessions, [`Disruptable`], and a client that tells the binding when
+//!   its session ended ([`ZenohClient::on_session_end`]); a client that cannot is not held to it.
 //!
 //! The `_across` forms of the first two take a harness for each machine, for a harness that points
 //! them at different routers of one federation. Nothing here is a timing claim; every wait has a
@@ -48,6 +54,7 @@
 //!
 //! A failed expectation panics, as a test's does.
 
+use std::collections::BTreeSet;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::{Duration, Instant};
 
@@ -55,9 +62,12 @@ use crate::endpoint::{
     Endpoint, EngineCall, EngineEvent, Environment, Transport, MESH_PROCESSOR_TYPE,
 };
 use crate::inbound::Delivery;
-use crate::inbox::{open_with, ZenohBinding, ZenohClient, ZenohEvents, ZenohTransport};
+use crate::inbox::{
+    open_with, ClientError, ZenohBinding, ZenohClient, ZenohEvents, ZenohTransport,
+};
 use crate::link::{deliver, LinkEvent};
 use crate::outbound::OutboundBuffer;
+use crate::reconnect::{open_reconnecting, Backoff, ClientFactory, ReconnectingTransport};
 use crate::router::{PeerConfig, Router};
 use sce_rust_runtime::HostSendRequest;
 
@@ -71,6 +81,30 @@ pub trait Harness {
     /// knows which router it points at, and decides whether a machine needs a session identity of
     /// its own.
     fn connect(&self) -> Self::Client;
+}
+
+/// A harness that can lose its router: what the resync test needs beyond [`Harness`].
+pub trait Disruptable: Harness {
+    /// End every session of this harness's clients as a lost link does. A harness for a real router
+    /// kills it and starts it again on the same address, and returns once it answers there again:
+    /// the clients made before the call are the ones whose sessions ended, and those made after
+    /// (by [`try_connect`](Self::try_connect)) reach the new router.
+    fn drop_every_session(&self);
+
+    /// [`connect`](Harness::connect), that can fail: the router is still down. A reconnecting
+    /// binding retries it with a backoff.
+    fn try_connect(&self) -> Result<Self::Client, ClientError>;
+}
+
+/// Makes a reconnecting binding's clients from a harness that can lose its router.
+struct Redial<H>(H);
+
+impl<H: Disruptable + Send + 'static> ClientFactory for Redial<H> {
+    type Client = H::Client;
+
+    fn connect(&mut self) -> Result<H::Client, ClientError> {
+        self.0.try_connect()
+    }
 }
 
 /// A clock that counts, and ids that count. Each one starts its ids where no earlier one reached:
@@ -534,4 +568,263 @@ pub fn a_device_that_was_away_catches_up_from_a_hub_that_stayed_up(harness: &imp
         Some(r#"{"notes":["bread"],"seen":3}"#),
         "bob's second visit is given only what is new since the two he saw"
     );
+}
+
+/// A machine on a reconnecting binding, with the core it feeds, and what it was told and raised.
+struct Watched {
+    endpoint: Endpoint<ReconnectingTransport, Counting>,
+    events: ZenohEvents,
+    /// Every event the binding gave, in order.
+    log: Vec<LinkEvent>,
+    raised: Vec<EngineEvent>,
+}
+
+impl Watched {
+    /// Open `name` through `open_reconnecting` on clients from `harness`, with a core that knows
+    /// `peers`.
+    fn open(
+        harness: &(impl Disruptable + Clone + Send + 'static),
+        name: &str,
+        peers: &[&'static str],
+        backoff: Backoff,
+    ) -> Self {
+        let binding = match open_reconnecting(Redial(harness.clone()), name, backoff) {
+            Ok(binding) => binding,
+            Err(why) => panic!("{name}'s reconnecting binding did not open: {why}"),
+        };
+        Watched {
+            endpoint: endpoint_with_peers(name, peers, binding.transport),
+            events: binding.events,
+            log: Vec::new(),
+            raised: Vec::new(),
+        }
+    }
+
+    /// One turn: take what has arrived, waiting up to `wait` for the first, hand each event to the
+    /// core as a host would and keep it, and let time pass for the core.
+    fn step(&mut self, wait: Duration) {
+        let mut arrived = Vec::new();
+        if let Some(event) = self.events.next_within(wait) {
+            arrived.push(event);
+        }
+        while let Some(event) = self.events.try_next() {
+            arrived.push(event);
+        }
+        for event in arrived {
+            self.log.push(event.clone());
+            deliver(&mut self.endpoint, event);
+        }
+        self.endpoint.tick();
+        self.raised.extend(raised(&mut self.endpoint));
+    }
+
+    /// The peers the log leaves ready: made ready by a `Ready` and not lost since.
+    fn ready(&self) -> BTreeSet<&str> {
+        let mut ready = BTreeSet::new();
+        for event in &self.log {
+            match event {
+                LinkEvent::Ready(peer) => {
+                    ready.insert(peer.as_str());
+                }
+                LinkEvent::Lost(peer, _) => {
+                    ready.remove(peer.as_str());
+                }
+                _ => {}
+            }
+        }
+        ready
+    }
+
+    /// The first thing the log says about `peer` from position `mark` on.
+    fn first_since(&self, mark: usize, peer: &str) -> Option<&LinkEvent> {
+        self.log[mark..].iter().find(|event| match event {
+            LinkEvent::Ready(named)
+            | LinkEvent::Lost(named, _)
+            | LinkEvent::Received(named, _)
+            | LinkEvent::Unsent(named, _) => named == peer,
+        })
+    }
+
+    /// Whether the log from `mark` on says `peer` is ready.
+    fn announced_since(&self, mark: usize, peer: &str) -> bool {
+        self.log[mark..]
+            .iter()
+            .any(|event| matches!(event, LinkEvent::Ready(named) if named == peer))
+    }
+}
+
+/// Run both machines until `done` holds of them, or `within` passes. Returns whether it did.
+fn until(
+    first: &mut Watched,
+    second: &mut Watched,
+    within: Duration,
+    done: impl Fn(&Watched, &Watched) -> bool,
+) -> bool {
+    let deadline = Instant::now() + within;
+    loop {
+        if done(first, second) {
+            return true;
+        }
+        if Instant::now() >= deadline {
+            return false;
+        }
+        first.step(Duration::from_millis(10));
+        second.step(Duration::from_millis(10));
+    }
+}
+
+fn names<const N: usize>(list: [&'static str; N]) -> BTreeSet<&'static str> {
+    list.into_iter().collect()
+}
+
+/// The router goes away and comes back on the same address, and the machines that reconnect come
+/// back with it, knowing only who is still there.
+///
+/// "hub" and "alice" are on `open_reconnecting` and "carol" is on the plain binding, all through
+/// the harness's router, and all three see the others up. Then every session ends. Hub and alice
+/// are each told every peer they had ready is lost, carol included, before anything else about
+/// that peer. Once the router is back they see each other up again, from the presence history of
+/// their new sessions, and nobody sees carol up again: carol's session ended with the rest, her
+/// plain binding does not reconnect, and a client that told its binding the session ended does not
+/// carry on by itself, so she was gone during the gap and never returned. That is the departure
+/// nobody was told of, which a client that only replays what exists now would leave believed
+/// ready for good. Last, an envelope alice sends reaches the hub's engine on the new sessions.
+pub fn a_machine_that_loses_its_session_comes_back_and_resyncs(
+    harness: &(impl Disruptable + Clone + Send + 'static),
+) {
+    let backoff = Backoff {
+        initial: Duration::from_millis(50),
+        max: Duration::from_millis(500),
+        factor: 2,
+        jitter: false,
+    };
+    let mut hub = Watched::open(harness, "hub", &["alice", "carol"], backoff);
+    let mut alice = Watched::open(harness, "alice", &["hub", "carol"], backoff);
+    let ZenohBinding {
+        transport: carol_transport,
+        events: carol_events,
+    } = open_with(harness.connect(), "carol").expect("carol's binding opens");
+
+    assert!(
+        until(
+            &mut hub,
+            &mut alice,
+            Duration::from_secs(30),
+            |hub, alice| {
+                hub.ready() == names(["alice", "carol"]) && alice.ready() == names(["hub", "carol"])
+            }
+        ),
+        "hub and alice each saw the other two up: hub {:?}, alice {:?}",
+        hub.ready(),
+        alice.ready()
+    );
+    let mut carol_log: Vec<LinkEvent> = Vec::new();
+    let both_up = |log: &[LinkEvent]| {
+        ["hub", "alice"]
+            .iter()
+            .all(|peer| log.contains(&LinkEvent::Ready(peer.to_string())))
+    };
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while !both_up(&carol_log) && Instant::now() < deadline {
+        carol_log.extend(carol_events.next_within(Duration::from_millis(20)));
+    }
+    assert!(both_up(&carol_log), "carol saw hub and alice up");
+    let hub_mark = hub.log.len();
+    let alice_mark = alice.log.len();
+
+    harness.drop_every_session();
+
+    // Carol's own binding is told her session ended, and her peers are lost to her.
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while carol_events.session_ended().is_none() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(
+        carol_events.session_ended().is_some(),
+        "carol's binding was told her session ended"
+    );
+    carol_log.extend(std::iter::from_fn(|| carol_events.try_next()));
+    let carol_lost: BTreeSet<String> = carol_log
+        .into_iter()
+        .filter_map(|event| match event {
+            LinkEvent::Lost(peer, _) => Some(peer),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        carol_lost,
+        BTreeSet::from(["alice".to_string(), "hub".to_string()]),
+        "carol was told the two she had ready are lost"
+    );
+
+    // Hub and alice are told every peer they had ready is lost, before anything else about it.
+    assert!(
+        until(
+            &mut hub,
+            &mut alice,
+            Duration::from_secs(60),
+            |hub, alice| {
+                ["alice", "carol"]
+                    .iter()
+                    .all(|peer| hub.first_since(hub_mark, peer).is_some())
+                    && ["hub", "carol"]
+                        .iter()
+                        .all(|peer| alice.first_since(alice_mark, peer).is_some())
+            }
+        ),
+        "hub and alice were told something about every peer after the router went"
+    );
+    for peer in ["alice", "carol"] {
+        assert!(
+            matches!(hub.first_since(hub_mark, peer), Some(LinkEvent::Lost(..))),
+            "the first thing hub was told of {peer} is that it is lost: {:?}",
+            hub.first_since(hub_mark, peer)
+        );
+    }
+    for peer in ["hub", "carol"] {
+        assert!(
+            matches!(
+                alice.first_since(alice_mark, peer),
+                Some(LinkEvent::Lost(..))
+            ),
+            "the first thing alice was told of {peer} is that it is lost: {:?}",
+            alice.first_since(alice_mark, peer)
+        );
+    }
+
+    // The router is back: hub and alice find each other from the presence history.
+    assert!(
+        until(
+            &mut hub,
+            &mut alice,
+            Duration::from_secs(90),
+            |hub, alice| { hub.ready().contains("alice") && alice.ready().contains("hub") }
+        ),
+        "hub and alice saw each other up again: hub {:?}, alice {:?}",
+        hub.ready(),
+        alice.ready()
+    );
+    // Let whatever else the router replays arrive; none of it may be carol.
+    let _ = until(&mut hub, &mut alice, Duration::from_secs(2), |_, _| false);
+    assert_eq!(hub.ready(), names(["alice"]), "hub is not told carol is up");
+    assert_eq!(
+        alice.ready(),
+        names(["hub"]),
+        "alice is not told carol is up"
+    );
+    assert!(
+        !hub.announced_since(hub_mark, "carol") && !alice.announced_since(alice_mark, "carol"),
+        "carol was never announced again"
+    );
+
+    // And the new sessions carry an envelope.
+    alice.endpoint.send(&send("note.added", "hub"));
+    assert!(
+        until(&mut hub, &mut alice, Duration::from_secs(60), |hub, _| {
+            hub.raised.iter().any(|event| event.name == "note.added")
+        }),
+        "the envelope alice sent after the router came back reached the hub's engine"
+    );
+    drop(carol_transport);
+    drop(carol_events);
 }
