@@ -1255,7 +1255,7 @@ mod tests {
         let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="s">
             <state id="s">
                 <transition event="e" target="s">
-                    <sce:action name="do_effect">
+                    <sce:action name="do_effect" effect="notice">
                         <sce:arg expr="_event.data.payload"/>
                     </sce:action>
                 </transition>

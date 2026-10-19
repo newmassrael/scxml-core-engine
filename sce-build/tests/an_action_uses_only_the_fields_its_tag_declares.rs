@@ -126,7 +126,9 @@ fn synthesised_documents() -> Vec<(&'static str, String)> {
         ),
         (
             "synth_native_action",
-            wrap(r#"<sce:action name="op"><sce:arg name="x" expr="v"/></sce:action>"#),
+            wrap(
+                r#"<sce:action name="op" effect="notice"><sce:arg name="x" expr="v"/></sce:action>"#,
+            ),
         ),
     ]
 }

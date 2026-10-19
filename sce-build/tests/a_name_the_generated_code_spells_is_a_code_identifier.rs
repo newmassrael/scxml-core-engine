@@ -124,7 +124,7 @@ fn a_statechart_sce_name_is_refused_on_its_own_row() {
        version="1.0" datamodel="null" initial="idle">
   <state id="idle">
     <onentry>
-      <sce:action name="ring-bell"/>
+      <sce:action name="ring-bell" effect="notice"/>
     </onentry>
   </state>
 </scxml>"#;

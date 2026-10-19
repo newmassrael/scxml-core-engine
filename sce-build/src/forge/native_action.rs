@@ -4,7 +4,7 @@
 //! §scxml-G-7 — `<sce:action>` Custom Action Element: native host-trait
 //! dispatch.
 //!
-//! A `<sce:action name="op"><sce:arg expr="_event.data.field"/></sce:action>`
+//! A `<sce:action name="op" effect="notice"><sce:arg expr="_event.data.field"/></sce:action>`
 //! names a host operation that lowers to a direct call on a generated
 //! `<Machine>Actions` trait method — **no runtime script engine**. This is
 //! the engine-free symmetric counterpart, for *effects*, of the typed
@@ -2266,7 +2266,7 @@ mod tests {
         let model = parse(
             r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="s">
                 <state id="s"><transition event="e" target="s">
-                    <sce:action name="do_effect"><sce:arg expr="_event.data.x"/></sce:action>
+                    <sce:action name="do_effect" effect="notice"><sce:arg expr="_event.data.x"/></sce:action>
                 </transition></state>
             </scxml>"#,
         );
@@ -2283,10 +2283,10 @@ mod tests {
         let model = parse(
             r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="idle">
                 <state id="idle"><transition event="fragment.received" target="a">
-                    <sce:action name="append"><sce:arg expr="_event.data.payload"/><sce:arg expr="_event.data.offset"/></sce:action>
+                    <sce:action name="append" effect="notice"><sce:arg expr="_event.data.payload"/><sce:arg expr="_event.data.offset"/></sce:action>
                 </transition></state>
                 <state id="a"><transition event="reset" target="idle">
-                    <sce:action name="reset_slot"/>
+                    <sce:action name="reset_slot" effect="notice"/>
                 </transition></state>
             </scxml>"#,
         );
@@ -2298,7 +2298,7 @@ mod tests {
         let model = parse(
             r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="idle">
                 <state id="idle"><transition event="fragment.received" target="idle">
-                    <sce:action name="op"><sce:arg expr="_event.data.nope"/></sce:action>
+                    <sce:action name="op" effect="notice"><sce:arg expr="_event.data.nope"/></sce:action>
                 </transition></state>
             </scxml>"#,
         );
@@ -2313,10 +2313,10 @@ mod tests {
             r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="idle">
                 <state id="idle">
                     <transition event="fragment.received" target="idle">
-                        <sce:action name="f"><sce:arg expr="_event.data.payload"/></sce:action>
+                        <sce:action name="f" effect="notice"><sce:arg expr="_event.data.payload"/></sce:action>
                     </transition>
                     <transition event="fragment.received" target="idle">
-                        <sce:action name="f"><sce:arg expr="_event.data.offset"/></sce:action>
+                        <sce:action name="f" effect="notice"><sce:arg expr="_event.data.offset"/></sce:action>
                     </transition>
                 </state>
             </scxml>"#,
@@ -2551,10 +2551,10 @@ mod tests {
             r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="idle">
                 <state id="idle">
                     <transition event="fragment.received" target="idle">
-                        <sce:action name="f"><sce:arg expr="_event.data.offset"/></sce:action>
+                        <sce:action name="f" effect="notice"><sce:arg expr="_event.data.offset"/></sce:action>
                     </transition>
                     <transition event="fragment.received" target="idle">
-                        <sce:action name="f"><sce:arg expr="_event.data.offset"/></sce:action>
+                        <sce:action name="f" effect="notice"><sce:arg expr="_event.data.offset"/></sce:action>
                     </transition>
                 </state>
             </scxml>"#,
@@ -2567,7 +2567,7 @@ mod tests {
         let model = parse(
             r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="idle">
                 <state id="idle"><transition event="fragment.received" target="idle">
-                    <sce:action name="op"><sce:arg expr="42"/></sce:action>
+                    <sce:action name="op" effect="notice"><sce:arg expr="42"/></sce:action>
                 </transition></state>
             </scxml>"#,
         );
@@ -2579,7 +2579,7 @@ mod tests {
         let model = parse(
             r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="idle">
                 <state id="idle"><transition event="unschemed" target="idle">
-                    <sce:action name="op"><sce:arg expr="_event.data.payload"/></sce:action>
+                    <sce:action name="op" effect="notice"><sce:arg expr="_event.data.payload"/></sce:action>
                 </transition></state>
             </scxml>"#,
         );
@@ -2594,7 +2594,7 @@ mod tests {
         let model = parse(
             r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="idle">
                 <state id="idle"><onentry>
-                    <sce:action name="on_idle_entry"/>
+                    <sce:action name="on_idle_entry" effect="notice"/>
                 </onentry></state>
             </scxml>"#,
         );
@@ -2606,7 +2606,7 @@ mod tests {
         let model = parse(
             r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="idle">
                 <state id="idle"><onexit>
-                    <sce:action name="on_idle_exit"/>
+                    <sce:action name="on_idle_exit" effect="notice"/>
                 </onexit></state>
             </scxml>"#,
         );
@@ -2621,7 +2621,7 @@ mod tests {
         let model = parse(
             r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="root">
                 <state id="root">
-                    <initial><transition target="child"><sce:action name="on_init"/></transition></initial>
+                    <initial><transition target="child"><sce:action name="on_init" effect="notice"/></transition></initial>
                     <state id="child"><transition event="e" target="child"/></state>
                 </state>
             </scxml>"#,
@@ -2636,7 +2636,7 @@ mod tests {
         let model = parse(
             r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="idle">
                 <state id="idle"><onentry>
-                    <sce:action name="op"><sce:arg expr="_event.data.payload"/></sce:action>
+                    <sce:action name="op" effect="notice"><sce:arg expr="_event.data.payload"/></sce:action>
                 </onentry></state>
             </scxml>"#,
         );
@@ -2648,7 +2648,7 @@ mod tests {
         let model = parse(
             r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="idle">
                 <state id="idle"><onexit>
-                    <sce:action name="op"><sce:arg expr="_event.data.payload"/></sce:action>
+                    <sce:action name="op" effect="notice"><sce:arg expr="_event.data.payload"/></sce:action>
                 </onexit></state>
             </scxml>"#,
         );
@@ -2663,7 +2663,7 @@ mod tests {
         let model = parse(
             r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="idle">
                 <state id="idle"><transition event="e" target="idle">
-                    <if cond="true"><sce:action name="op"/></if>
+                    <if cond="true"><sce:action name="op" effect="notice"/></if>
                 </transition></state>
             </scxml>"#,
         );
@@ -2678,9 +2678,9 @@ mod tests {
         let model = parse(
             r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="idle">
                 <state id="idle">
-                    <onentry><sce:action name="f"/></onentry>
+                    <onentry><sce:action name="f" effect="notice"/></onentry>
                     <transition event="fragment.received" target="idle">
-                        <sce:action name="f"><sce:arg expr="_event.data.offset"/></sce:action>
+                        <sce:action name="f" effect="notice"><sce:arg expr="_event.data.offset"/></sce:action>
                     </transition>
                 </state>
             </scxml>"#,
@@ -2695,9 +2695,9 @@ mod tests {
         let model = parse(
             r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="idle">
                 <state id="idle">
-                    <onentry><sce:action name="reset_slot"/></onentry>
-                    <onexit><sce:action name="reset_slot"/></onexit>
-                    <transition event="reset" target="idle"><sce:action name="reset_slot"/></transition>
+                    <onentry><sce:action name="reset_slot" effect="notice"/></onentry>
+                    <onexit><sce:action name="reset_slot" effect="notice"/></onexit>
+                    <transition event="reset" target="idle"><sce:action name="reset_slot" effect="notice"/></transition>
                 </state>
             </scxml>"#,
         );
@@ -2708,7 +2708,7 @@ mod tests {
     fn missing_name_rejected_at_parse() {
         let res = SCXMLParser::new().parse_string(
             r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="s">
-                <state id="s"><transition event="e" target="s"><sce:action/></transition></state>
+                <state id="s"><transition event="e" target="s"><sce:action effect="notice"/></transition></state>
             </scxml>"#,
             "t",
         );
@@ -2877,7 +2877,7 @@ mod tests {
                 r#"<invoke type="scxml" id="{id}"><content>
                      <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
                             version="1.0" initial="b" datamodel="sce-static">
-                       <state id="b"><onentry><sce:action name="hello"/></onentry></state>
+                       <state id="b"><onentry><sce:action name="hello" effect="notice"/></onentry></state>
                      </scxml>
                    </content></invoke>"#
             )
@@ -2891,7 +2891,7 @@ mod tests {
             ))
         };
         let clash = document(format!(
-            r#"{} <onentry><sce:action name="actions_for_worker"/></onentry>"#,
+            r#"{} <onentry><sce:action name="actions_for_worker" effect="notice"/></onentry>"#,
             child("worker")
         ));
         let refusal =
@@ -2903,7 +2903,7 @@ mod tests {
         );
         // Spelled as another language spells it, it is the same method.
         let camel = document(format!(
-            r#"{} <onentry><sce:action name="actionsForWorker"/></onentry>"#,
+            r#"{} <onentry><sce:action name="actionsForWorker" effect="notice"/></onentry>"#,
             child("worker")
         ));
         let refusal =

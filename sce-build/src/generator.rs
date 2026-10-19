@@ -4713,7 +4713,7 @@ mod tests {
     // `<sce:import>`.
     const NATIVE_ACTION_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="s">
-  <state id="s"><transition event="e" target="s"><sce:action name="do_effect"/></transition></state>
+  <state id="s"><transition event="e" target="s"><sce:action name="do_effect" effect="notice"/></transition></state>
 </scxml>"##;
 
     /// The five tests below asserted the OPPOSITE until 2026-08-24: that C++,

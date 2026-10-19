@@ -1557,7 +1557,7 @@ fn a_host_action_takes_typed_datamodel_arguments_with_no_event_in_scope() {
         &machine(
             r#"<state id="s">
     <onentry>
-      <sce:action name="show">
+      <sce:action name="show" effect="notice">
         <sce:arg name="n" expr="count"/>
         <sce:arg name="done" expr="count &gt;= 3 || ready"/>
       </sce:action>
@@ -1576,7 +1576,7 @@ fn a_host_action_argument_reading_a_payload_with_none_in_scope_is_refused() {
         &machine(
             r#"<state id="s">
     <onentry>
-      <sce:action name="show"><sce:arg expr="_event.data.n"/></sce:action>
+      <sce:action name="show" effect="notice"><sce:arg expr="_event.data.n"/></sce:action>
     </onentry>
   </state>"#,
         ),
@@ -1662,7 +1662,7 @@ fn a_record_variable_is_read_and_updated_a_field_at_a_time() {
         &record(
             EVERY_FIELD,
             r#"<state id="s">
-    <onentry><sce:action name="show"><sce:arg name="day" expr="shown.dayOfMonth"/></sce:action></onentry>
+    <onentry><sce:action name="show" effect="notice"><sce:arg name="day" expr="shown.dayOfMonth"/></sce:action></onentry>
     <transition event="next" cond="shown.dayOfMonth &lt; 28" type="internal">
       <assign location="shown.dayOfMonth" expr="shown.dayOfMonth + 1"/>
     </transition>
@@ -1945,7 +1945,7 @@ fn every_language_builds_a_child_with_the_host_its_parent_answers() {
           <datamodel><data id="start" sce:type="uint32" expr="0"/></datamodel>
           <state id="busy">
             <onentry>
-              <sce:action name="announce"><sce:arg name="seen" expr="start"/></sce:action>
+              <sce:action name="announce" effect="notice"><sce:arg name="seen" expr="start"/></sce:action>
             </onentry>
             <transition event="finish" target="end"/>
           </state>
@@ -1973,7 +1973,7 @@ fn every_language_builds_a_child_with_the_host_its_parent_answers() {
         "the Interpreter lowers a child that declares acts:\n{out}"
     );
     assert!(
-        out.contains(r#"<sce:action name="announce">"#),
+        out.contains(r#"<sce:action name="announce" effect="notice">"#),
         "the child's act is carried to the Interpreter as written:\n{out}"
     );
     // A child that declares no act is lowered as well.
@@ -1997,7 +1997,7 @@ fn a_parent_of_another_data_model_gives_its_child_the_host_too() {
         <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
                version="1.0" initial="busy" datamodel="sce-static">
           <state id="busy">
-            <onentry><sce:action name="announce"/></onentry>
+            <onentry><sce:action name="announce" effect="notice"/></onentry>
             <transition event="finish" target="end"/>
           </state>
           <final id="end"/>
@@ -2026,7 +2026,7 @@ const HYBRID_ACTING: &str = r##"<?xml version="1.0"?>
     <data id="start" sce:type="uint32" expr="0"/>
   </datamodel>
   <state id="busy">
-    <onentry><sce:action name="announce"/></onentry>
+    <onentry><sce:action name="announce" effect="notice"/></onentry>
     <transition event="finish" target="end"/>
   </state>
   <final id="end"/>
@@ -2072,7 +2072,7 @@ fn a_candidate_that_declares_acts_is_given_its_host_as_a_child_is() {
     let candidate = std::fs::read_to_string(written.path().join("second.scxml"))
         .expect("the lowered candidate is written beside the invoking document");
     assert!(
-        candidate.contains(r#"<sce:action name="announce"/>"#),
+        candidate.contains(r#"<sce:action name="announce" effect="notice"/>"#),
         "the candidate's act is carried to the Interpreter as written:\n{candidate}"
     );
 }
@@ -4502,7 +4502,7 @@ fn a_python_host_action_argument_that_can_fail_is_received_where_the_call_stands
                 EVERY_FIELD,
                 r#"<state id="s">
     <transition event="day.picked" type="internal">
-      <sce:action name="show"><sce:arg name="d" expr="_event.data.dayOfMonth + 1"/></sce:action>
+      <sce:action name="show" effect="notice"><sce:arg name="d" expr="_event.data.dayOfMonth + 1"/></sce:action>
     </transition>
   </state>"#,
             ),
@@ -5491,7 +5491,7 @@ fn a_list_passed_to_a_host_action_is_refused() {
         &list_doc(
             "sce-static",
             DAYS,
-            r#"<state id="s"><onentry><sce:action name="show"><sce:arg name="d" expr="days"/></sce:action></onentry></state>"#,
+            r#"<state id="s"><onentry><sce:action name="show" effect="notice"><sce:arg name="d" expr="days"/></sce:action></onentry></state>"#,
         ),
     );
     assert!(!ok, "a list is no host-method argument:\n{out}");
@@ -5610,7 +5610,7 @@ fn an_imported_algorithm_is_called_in_a_guard_and_an_assignment() {
     <transition event="tick" cond="Clamp(count + 1, 5) &gt; count" type="internal">
       <assign location="count" expr="Clamp(count + 1, 5)"/>
     </transition>
-    <transition event="list" type="internal"><sce:action name="show"><sce:arg name="n" expr="Clamp(count, 3)"/></sce:action></transition>
+    <transition event="list" type="internal"><sce:action name="show" effect="notice"><sce:arg name="n" expr="Clamp(count, 3)"/></sce:action></transition>
   </state>"#,
         )
         // Upto is imported to be refused below; here it is not in the file.

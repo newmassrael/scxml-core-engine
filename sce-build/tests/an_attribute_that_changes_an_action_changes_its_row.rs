@@ -95,7 +95,7 @@ const DOC: &str = r##"<scxml xmlns="http://www.w3.org/2005/07/scxml"
     </onexit>
     <transition event="armed" target="t">
       <raise event="went"/>
-      <sce:action name="notify">
+      <sce:action name="notify" effect="notice">
         <sce:arg name="a" expr="1"/>
       </sce:action>
     </transition>
