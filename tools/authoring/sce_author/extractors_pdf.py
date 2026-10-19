@@ -78,8 +78,9 @@ KERN = 0.5
 _LIST_ITEM = re.compile(r"^(?:[-*+•·▪◦–]|\d+[.)])\s+\S")
 # A clause number (`3.1`, `3.1.2`, `A.1`) and the title that follows it, which begins with a letter or an
 # opening bracket. Only numbers made of digits count: a lettered list item is not a section.
-# The Hangul syllables (U+AC00 to U+D7A3) are written as escapes, so this source stays ASCII.
-_CLAUSE = re.compile(r"^(\d+(?:\.\d+)*)\.?\s+[A-Za-z<(\[\"'가-힣]")
+# The Hangul syllables are the code points 0xAC00 to 0xD7A3, spelled as numbers so this source stays ASCII.
+_HANGUL = chr(0xAC00) + "-" + chr(0xD7A3)
+_CLAUSE = re.compile(r"^(\d+(?:\.\d+)*)\.?\s+[A-Za-z<(\[\"'" + _HANGUL + "]")
 # The longest line that is a title and not a sentence that begins with a number.
 MAX_TITLE = 100
 

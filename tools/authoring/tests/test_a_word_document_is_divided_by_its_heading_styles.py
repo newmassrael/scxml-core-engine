@@ -128,12 +128,11 @@ class TheStylesOfAWordFileMakeItsHeadings(Folder):
 
     def test_the_built_in_names_are_read_whatever_language_the_document_was_written_in(self):
         # Word writes `heading 1` in the file whatever its interface language is; the id is the author's.
-        # The style id and the texts are Hangul, written as escapes so this source stays ASCII:
-        # a localized id, a two-syllable title and a short sentence.
-        local_id = "제목1"
-        title = "램프"
-        sentence = "켜져 있다."
-        styles = style(local_id, "heading 1")
+        # The style id and the texts are Hangul, spelled as code points so this source stays ASCII:
+        # a localized id (two syllables and a digit), a two-syllable title and a short sentence.
+        local_id = chr(0xC81C) + chr(0xBAA9) + "1"
+        title = chr(0xB7A8) + chr(0xD504)
+        sentence = chr(0xCF1C) + chr(0xC838) + " " + chr(0xC788) + chr(0xB2E4) + "."        styles = style(local_id, "heading 1")
 
         found = self.blocks(paragraph(title, local_id) + paragraph(sentence), styles)
 
