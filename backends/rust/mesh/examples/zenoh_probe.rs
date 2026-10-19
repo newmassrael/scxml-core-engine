@@ -80,7 +80,7 @@ type Core = Endpoint<ZenohTransport, Clock>;
 fn peer_config(peer: &str) -> PeerConfig {
     let name: &'static str = Box::leak(peer.to_string().into_boxed_str());
     PeerConfig {
-        transport: "zenoh",
+        transport: "zenoh_inbox",
         buffer: Some(OutboundBuffer {
             max_pending: 64,
             max_age_ms: 0,

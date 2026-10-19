@@ -110,7 +110,7 @@ impl Environment for Counting {
 
 fn peer_config(peer: &'static str) -> PeerConfig {
     PeerConfig {
-        transport: "zenoh",
+        transport: "zenoh_inbox",
         // The readiness edge the binding supplies is what gates this buffer: nothing leaves for a
         // peer until its presence is seen.
         buffer: Some(OutboundBuffer {

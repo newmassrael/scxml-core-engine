@@ -967,7 +967,7 @@ FireForget   Request   Reply   Notify   Subscribe   Publish   Field
 ```
 
 Per-transport capability tables constrain which patterns each
-transport (`local`, `shm`, `someip`, `zenoh`) can realise
+transport (`local`, `shm`, `someip`, `zenoh_keyexpr`) can realise
 (`mesh/topology-pattern-capability-violation`). **Realization status:**
 at HEAD only `FireForget` is fully realized end-to-end across all
 transports; the remaining six patterns have partial codegen and are

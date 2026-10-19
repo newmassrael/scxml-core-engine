@@ -8,7 +8,7 @@
 //! core: a peer became ready, bytes arrived from it, it was lost, an envelope was queued for it
 //! and never written. The host feeds those, as [`LinkEvent`]s, to its [`Endpoint`] with
 //! [`deliver`], on the thread that steps the engine. The WebSocket binding (`wss`) and the Zenoh
-//! binding (`zenoh`, SCE_MESH.md §mesh-20) differ in the medium and agree on this, so a host moves
+//! binding (`zenoh_inbox`, SCE_MESH.md §mesh-20) differ in the medium and agree on this, so a host moves
 //! from one to the other by changing what produces the events.
 
 use alloc::string::{String, ToString};
