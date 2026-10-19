@@ -494,6 +494,8 @@ pub struct TransportDescriptor {
     ///   ordering
     /// - wss re-sends across a reconnect, so a duplicate can arrive on
     ///   the new connection
+    /// - zenoh_inbox has no acknowledgement and re-sends under a retry
+    ///   policy, so a duplicate can arrive after a put was thought lost
     pub supplies_dedup: bool,
     /// Does this transport inherently deliver per-(source, target)
     /// envelopes in send order?
@@ -513,6 +515,8 @@ pub struct TransportDescriptor {
     /// - CAN frame arbitration is priority-based, not sender-FIFO
     /// - wss is FIFO within one connection only; a retry sent after a
     ///   reconnect can land behind an envelope queued after it
+    /// - zenoh_inbox carries no order across routers, and a retry sent
+    ///   after a refused put can land behind an envelope queued after it
     pub supplies_ordering: bool,
     /// Can a receiver, given a sender-stamped per-(source, target)
     /// `sequence_no`, reconstruct send order?
@@ -638,6 +642,9 @@ pub struct TransportDescriptor {
     /// - `wss`: `true`. The upgrade completing is the ready edge and a
     ///   close ends it (§mesh-18.3); the host core's `Outbound` gates on
     ///   it rather than a generated member.
+    /// - `zenoh_inbox`: `true`. A peer's liveliness token appearing is the
+    ///   ready edge and its end ends it (section 20.3); the host core's
+    ///   `Outbound` gates on it as it does for `wss`.
     ///
     /// Two consumers, which is the point of having the flag rather than a
     /// transport-name list in each: `mesh_transport.h.jinja2` iterates
@@ -1309,6 +1316,59 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // No server arm holds a request handle.
         server_deadline_notice: ServerDeadlineNotice::Unsupported,
     };
+    // SCE_MESH.md section 20: one Zenoh client session per machine, spoken by the
+    // Rust host core and by no C++ arm. It is not the C++ template Zenoh
+    // transport (KeyExpr pub/sub and query, a key per target): this wire is
+    // point-to-point envelopes into the receiver's inbox at
+    // `sce-mesh/1/to/<receiver>/<sender>`, which is what the name says, and
+    // the two cannot reach one another.
+    static ZENOH_INBOX: TransportDescriptor = TransportDescriptor {
+        served_by: TransportService::HostCore,
+        // The set `wss` has, for the same reason: the host core routes a
+        // `<send>` and its delivery and a request with its reply, and keeps no
+        // subscription or field state, so a pattern needing one is refused at
+        // build time rather than sent into a core that would deliver it as a
+        // plain event.
+        capabilities: &[FireForget, RequestReply],
+        implemented: true,
+        // A binding names the peer (`#peer`) and nothing else: the key is
+        // derived from the two machine names (section 20.1), so there is no
+        // KeyExpr to require per target.
+        required_binding_fields: &[],
+        // The router endpoints are the host's client configuration, which it
+        // hands the session itself; they are not a per-peer binding.
+        optional_binding_fields: &[],
+        // A put the network re-delivers, or one a retry policy sends again
+        // after the session refused it, arrives twice, and Zenoh carries no
+        // order across routers: the core's dedup and ordering rules run.
+        supplies_dedup: false,
+        supplies_ordering: false,
+        // Point to point: each (sender, receiver) key pair is its own
+        // sequence domain.
+        ordering_representable: true,
+        // The key is derived from machine names; a binding carries no
+        // address a `{name}` placeholder could substitute into.
+        pool_shape: PoolShape::None,
+        pool_member_carrier: PoolMemberCarrier::None,
+        // No pub/sub capability; machine-lifetime path does not apply.
+        supports_machine_lifetime_subscribe: false,
+        // Section 20.3: a peer's liveliness token appearing is the ready edge
+        // and the token ending is its end, which is the signal a §10.10
+        // buffer gates on.
+        buffers_outbound: true,
+        // The key names a machine, not an instance of it; the core hosts one
+        // identity per machine.
+        supports_multi_instance_server: false,
+        // An inter-machine fabric: a same-machine channel is `shm` or
+        // `custom_tcp`.
+        supports_inter_partition_ipc: false,
+        // The host core checks a reply against its request's responder set
+        // by the binding it arrived on (section 14.6); the wider `reply_from:`
+        // stays refused here as it does for `wss`.
+        supports_cross_target_reply: false,
+        // No server arm holds a request handle.
+        server_deadline_notice: ServerDeadlineNotice::Unsupported,
+    };
 
     match transport {
         "local" => Some(&LOCAL),
@@ -1319,6 +1379,7 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         "dds" => Some(&DDS),
         "can" => Some(&CAN),
         "wss" => Some(&WSS),
+        "zenoh_inbox" => Some(&ZENOH_INBOX),
         _ => None,
     }
 }
@@ -1374,7 +1435,28 @@ pub fn known_names() -> &'static [&'static str] {
         "dds",
         "can",
         "wss",
+        "zenoh_inbox",
     ]
+}
+
+/// The backends whose host core carries a host-served transport's adapter.
+///
+/// [`ServiceKind::HostCore`] says a transport needs no C++ arm; it does not
+/// say which host core speaks it, because the adapter is the one piece of a
+/// host core written by hand per language (SCE_MESH.md sections 18.4 and
+/// 20.4) and the cores do not have the same set. `wss` is in the Rust and the Kotlin core;
+/// the Zenoh binding is in the Rust one only, so a Kotlin peer table naming it
+/// is refused instead of emitted for a core with no `PeerLink` for it.
+///
+/// Empty for a transport no host core carries (every C++-served one, and an
+/// unknown name).
+pub fn host_core_languages(transport: &str) -> &'static [crate::generator::Language] {
+    use crate::generator::Language::{Kotlin, Rust};
+    match transport {
+        "wss" => &[Rust, Kotlin],
+        "zenoh_inbox" => &[Rust],
+        _ => &[],
+    }
 }
 
 /// Transports whose server arm realises `server.response_deadline_ms`,
@@ -1452,7 +1534,10 @@ mod tests {
         let d = lookup("wss").expect("known");
         assert_eq!(d.served_by, TransportService::HostCore);
         assert!(d.implemented);
-        assert_eq!(implemented_names_served_by(ServiceKind::HostCore), ["wss"]);
+        assert_eq!(
+            implemented_names_served_by(ServiceKind::HostCore),
+            ["wss", "zenoh_inbox"]
+        );
         assert!(!implemented_names_served_by(ServiceKind::CppTemplate).contains(&"wss"));
         // What the host cores route (§mesh-9.5, §mesh-10.7), and no more:
         // no subscription or field state is kept.
@@ -1460,6 +1545,67 @@ mod tests {
         assert!(d.capabilities.contains(&RequestReply));
         assert!(!d.capabilities.contains(&PubSub));
         assert!(!d.capabilities.contains(&FieldAccess));
+    }
+
+    #[test]
+    fn zenoh_inbox_is_the_host_core_binding_and_has_no_cpp_layout() {
+        // SCE_MESH.md section 20: the Zenoh binding of the host cores is a different wire
+        // from the C++ template Zenoh transport (a KeyExpr per target against
+        // a queryable), so it is served by a host core and the C++ router
+        // has no arm for it.
+        let d = lookup("zenoh_inbox").expect("known");
+        assert_eq!(d.served_by, TransportService::HostCore);
+        assert!(d.implemented);
+        assert!(d.served_by.cpp_shape().is_none());
+        assert!(!implemented_names_served_by(ServiceKind::CppTemplate).contains(&"zenoh_inbox"));
+        // What the host core routes, and no more (the same set `wss` has).
+        assert_eq!(d.capabilities, lookup("wss").expect("known").capabilities);
+        assert!(d.capabilities.contains(&FireForget));
+        assert!(d.capabilities.contains(&RequestReply));
+        assert!(!d.capabilities.contains(&PubSub));
+        assert!(!d.capabilities.contains(&FieldAccess));
+        // The peer is named by `#peer` alone: the key is derived from the two
+        // machine names, and the router endpoints are the host's own client
+        // configuration, so no per-binding key exists to read.
+        assert_eq!(d.known_binding_fields().count(), 0);
+        assert_eq!(d.pool_shape, PoolShape::None);
+        // The liveliness token is the ready edge a §10.10 buffer gates on.
+        assert!(d.buffers_outbound);
+        // The core keeps no server arm, so no deadline is armed and no
+        // wider responder set is honoured.
+        assert_eq!(d.server_deadline_notice, ServerDeadlineNotice::Unsupported);
+        assert!(!d.supports_cross_target_reply);
+        assert!(!d.supports_machine_lifetime_subscribe);
+    }
+
+    #[test]
+    fn a_host_core_carries_only_the_transports_its_adapter_speaks() {
+        use crate::generator::Language::{Cpp, Kotlin, Rust};
+        // The set is asked per language because the adapter is written per
+        // language: the Kotlin core has the WebSocket client and no Zenoh
+        // session, so it must not be offered a peer table naming one.
+        assert_eq!(host_core_languages("wss"), [Rust, Kotlin]);
+        assert_eq!(host_core_languages("zenoh_inbox"), [Rust]);
+        // A C++-served transport and an unknown name belong to no host core.
+        for name in implemented_names_served_by(ServiceKind::CppTemplate) {
+            assert!(
+                host_core_languages(name).is_empty(),
+                "{name} is not host-served"
+            );
+        }
+        assert!(host_core_languages("iceoryx2").is_empty());
+        // Held to the registry both ways: a host-served, implemented
+        // transport is carried by at least one core, and nothing else is.
+        for name in known_names() {
+            let d = lookup(name).expect("known");
+            let host_served = d.implemented && d.served_by.is(ServiceKind::HostCore);
+            assert_eq!(
+                !host_core_languages(name).is_empty(),
+                host_served,
+                "{name}: host_core_languages and served_by disagree"
+            );
+            assert!(!host_core_languages(name).contains(&Cpp));
+        }
     }
 
     #[test]
@@ -1563,6 +1709,10 @@ mod tests {
         //   someip → `mesh_transport.h.jinja2` reliability flag
         //   zenoh/custom_tcp/dds → the address each arm bakes in
         //   wss    → the host core's peer table (`templates/mesh_router/`)
+        //
+        // `zenoh_inbox` is absent on purpose: the peer is named by `#peer`
+        // alone and the router endpoints are the host's client configuration,
+        // so there is no binding key for it to read.
         let with_fields: Vec<(&str, Vec<&str>)> = known_names()
             .iter()
             .copied()
@@ -1785,17 +1935,21 @@ mod tests {
     }
 
     #[test]
-    fn exactly_four_implemented_transports_require_runtime_ordering() {
+    fn exactly_five_implemented_transports_require_runtime_ordering() {
         // Regression guard mirroring the dedup counterpart below: today
-        // SOME/IP, Zenoh, DDS and wss are the implemented transports that
-        // may reorder. local/shm/custom_tcp preserve order by construction.
+        // SOME/IP, Zenoh, DDS, wss and zenoh_inbox are the implemented
+        // transports that may reorder. local/shm/custom_tcp preserve order
+        // by construction.
         // If this set changes, the classification table in
         // supplies_ordering comments MUST be updated in the same commit.
         let unordered_impls: Vec<&str> = implemented_names()
             .into_iter()
             .filter(|name| !lookup(name).unwrap().supplies_ordering)
             .collect();
-        assert_eq!(unordered_impls, ["someip", "zenoh", "dds", "wss"]);
+        assert_eq!(
+            unordered_impls,
+            ["someip", "zenoh", "dds", "wss", "zenoh_inbox"]
+        );
     }
 
     #[test]
@@ -1854,9 +2008,9 @@ mod tests {
     }
 
     #[test]
-    fn exactly_four_implemented_transports_require_runtime_dedup() {
-        // Regression guard: today SOME/IP, Zenoh, DDS and wss are the
-        // implemented transports that admit duplicates. local/shm/
+    fn exactly_five_implemented_transports_require_runtime_dedup() {
+        // Regression guard: today SOME/IP, Zenoh, DDS, wss and zenoh_inbox
+        // are the implemented transports that admit duplicates. local/shm/
         // custom_tcp are duplicate-free by construction. If this set
         // changes, the classification table in supplies_dedup comments
         // MUST be updated in the same commit — this test fails loudly
@@ -1865,7 +2019,10 @@ mod tests {
             .into_iter()
             .filter(|name| !lookup(name).unwrap().supplies_dedup)
             .collect();
-        assert_eq!(undeduped_impls, ["someip", "zenoh", "dds", "wss"]);
+        assert_eq!(
+            undeduped_impls,
+            ["someip", "zenoh", "dds", "wss", "zenoh_inbox"]
+        );
     }
 
     // ── capabilities ────────────────────────────────────────
@@ -2013,7 +2170,7 @@ mod tests {
 
         // Author-facing order: the three that need no middleware, then the
         // three that route through one, then the unimplemented bus, then
-        // the one the host cores serve.
+        // the two the host cores serve.
         const ORDER: &[&str] = &[
             "local",
             "shm",
@@ -2023,6 +2180,7 @@ mod tests {
             "dds",
             "can",
             "wss",
+            "zenoh_inbox",
         ];
         assert_eq!(
             ORDER.len(),

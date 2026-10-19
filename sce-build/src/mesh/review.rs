@@ -301,6 +301,11 @@ fn push_transport(name: &str, state: &TransportState, out: &mut Vec<Fact>) {
             }
             push_optional_scalar(&at("keepalive-ms"), keepalive_ms.as_ref(), out);
         }
+        // Nothing to settle: the binding names the peer and no more (the key
+        // is derived from the two machine names, and the router endpoints
+        // are the host's own client configuration), so the transport fact
+        // above is the whole of it.
+        TransportState::ZenohInbox => {}
         TransportState::Unimplemented { transport_name } => {
             out.push(Fact::new(at("unimplemented"), transport_name));
         }

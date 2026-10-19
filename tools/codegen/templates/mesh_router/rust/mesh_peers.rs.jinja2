@@ -66,6 +66,8 @@ pub const MACHINE: Machine = Machine {
                 url: "{{ peer.link.url | escape_rust }}",
                 keepalive_ms: {% if peer.link.keepalive_ms %}Some({{ peer.link.keepalive_ms }}){% else %}None{% endif %},
             },
+{%- elif peer.link.kind == "zenoh_inbox" %}
+            link: PeerLink::ZenohInbox,
 {%- else %}
             link: PeerLink::WssAccept {
                 keepalive_ms: {% if peer.link.keepalive_ms %}Some({{ peer.link.keepalive_ms }}){% else %}None{% endif %},

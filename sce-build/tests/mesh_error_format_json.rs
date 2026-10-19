@@ -268,7 +268,8 @@ topology:
 #[test]
 fn a_host_core_backend_refuses_a_transport_the_cpp_router_serves() {
     // The same rule from the other side: a Rust machine's peer table is
-    // read by a host core, which carries no zenoh arm. The repair offers
+    // read by a host core, which carries no arm for a C++ template transport
+    // (the host cores' own Zenoh binding is `zenoh_inbox`). The repair offers
     // what the host cores do carry.
     let dir = ScratchDir::new("mesh-served-by-host");
     let scxml = dir.write("client.scxml", CLIENT_SCXML);
@@ -300,9 +301,177 @@ topology:
     );
     assert_eq!(
         rec["fix"]["candidates"],
-        serde_json::json!(["wss"]),
+        serde_json::json!(["wss", "zenoh_inbox"]),
         "record: {rec}"
     );
+}
+
+/// A deploy.yaml whose one binding, `#server`, is on `transport` (written as
+/// YAML flow-mapping entries, so a test may add keys after the name).
+fn zenoh_inbox_deploy(binding: &str) -> String {
+    format!(
+        r##"
+version: "1.0"
+topology:
+  phone:
+    machines:
+      client:
+        source: client.scxml
+        bindings:
+          "#server": {{ {binding} }}
+  cloud:
+    machines:
+      server: {{ source: server.scxml }}
+"##
+    )
+}
+
+#[test]
+fn zenoh_inbox_is_refused_by_the_cpp_router_and_is_not_its_own_repair() {
+    // SCE_MESH.md §mesh-20: the Zenoh binding of the host cores is
+    // `zenoh_inbox`, which the C++ router has no arm for. A C++ machine bound
+    // over it is refused with the C++ core's own set, which is not empty and
+    // does not offer the refused name back.
+    let dir = ScratchDir::new("mesh-zenoh-mesh-cpp");
+    let scxml = dir.write("client.scxml", CLIENT_SCXML);
+    dir.write("server.scxml", SERVER_SCXML);
+    let deploy = dir.write("deploy.yaml", &zenoh_inbox_deploy("transport: zenoh_inbox"));
+    let out = run_with_deploy_for("cpp", &scxml, &deploy, dir.path());
+    assert!(
+        !out.status.success(),
+        "C++ must refuse a host-served transport"
+    );
+    let stderr = String::from_utf8(out.stderr).expect("stderr utf8");
+    let rec = sole_ndjson_record(&stderr);
+    assert_core_shape(&rec);
+    assert_eq!(
+        rec["code"], "mesh/codegen-unsupported-transport",
+        "record: {rec}"
+    );
+    assert_eq!(rec["actual"], "zenoh_inbox", "record: {rec}");
+    let candidates: Vec<&str> = rec["fix"]["candidates"]
+        .as_array()
+        .expect("fix.candidates")
+        .iter()
+        .filter_map(|c| c.as_str())
+        .collect();
+    assert!(
+        !candidates.is_empty() && !candidates.contains(&"zenoh_inbox"),
+        "the candidates are the C++ core's own: {candidates:?}"
+    );
+}
+
+#[test]
+fn zenoh_inbox_reaches_the_rust_peer_table_as_a_link_with_no_parameters() {
+    // SCE_MESH.md §mesh-20: the binding names the peer and nothing else, so
+    // the table's link carries no URL and no key; the host builds its Zenoh
+    // session itself. The peer's transport label is the registry name.
+    let dir = ScratchDir::new("mesh-zenoh-mesh-rust");
+    let scxml = dir.write("client.scxml", CLIENT_SCXML);
+    dir.write("server.scxml", SERVER_SCXML);
+    let deploy = dir.write("deploy.yaml", &zenoh_inbox_deploy("transport: zenoh_inbox"));
+    let out = run_with_deploy_for("rust", &scxml, &deploy, dir.path());
+    assert!(
+        out.status.success(),
+        "the Rust host core carries zenoh_inbox; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let table = peer_table_under(dir.path());
+    assert!(
+        table.contains("link: PeerLink::ZenohInbox,"),
+        "the peer is reached through the host's Zenoh session:\n{table}"
+    );
+    assert!(
+        table.contains("transport: \"zenoh_inbox\","),
+        "the peer carries the registry's name:\n{table}"
+    );
+    assert!(
+        !table.contains("PeerLink::Wss"),
+        "a Zenoh peer must not be read as a WebSocket one:\n{table}"
+    );
+}
+
+#[test]
+fn a_zenoh_inbox_binding_takes_no_key_of_its_own() {
+    // The key is derived from the two machine names (§mesh-20.1), so a
+    // `key:` here would be a setting that parses and then does nothing. It
+    // is refused as an unknown binding key: the registry's closed set for
+    // the transport is empty.
+    let dir = ScratchDir::new("mesh-zenoh-mesh-key");
+    let scxml = dir.write("client.scxml", CLIENT_SCXML);
+    dir.write("server.scxml", SERVER_SCXML);
+    let deploy = dir.write(
+        "deploy.yaml",
+        &zenoh_inbox_deploy("transport: zenoh_inbox, key: \"cal/server\""),
+    );
+    let out = run_with_deploy_for("rust", &scxml, &deploy, dir.path());
+    assert!(
+        !out.status.success(),
+        "a key on zenoh_inbox must be refused"
+    );
+    let stderr = String::from_utf8(out.stderr).expect("stderr utf8");
+    let rec = sole_ndjson_record(&stderr);
+    assert_core_shape(&rec);
+    assert_eq!(
+        rec["code"], "mesh/deploy-unknown-binding-field",
+        "record: {rec}"
+    );
+    assert_eq!(rec["stage"], "mesh-deploy", "record: {rec}");
+    assert_eq!(rec["actual"], "key", "record: {rec}");
+}
+
+#[test]
+fn the_kotlin_core_has_no_zenoh_adapter_so_its_peer_table_refuses_zenoh_inbox() {
+    // SCE_MESH.md §mesh-20: only the Rust core carries the Zenoh adapter. A
+    // Kotlin peer table naming it would have no `PeerLink` to read, so it is
+    // refused by name, and the repair points at the backend that has it.
+    let dir = ScratchDir::new("mesh-zenoh-mesh-kotlin");
+    let scxml = dir.write("client.scxml", CLIENT_SCXML);
+    dir.write("server.scxml", SERVER_SCXML);
+    let deploy = dir.write("deploy.yaml", &zenoh_inbox_deploy("transport: zenoh_inbox"));
+    let out = run_with_deploy_for("kotlin", &scxml, &deploy, dir.path());
+    assert!(
+        !out.status.success(),
+        "the Kotlin core must refuse a transport it has no adapter for"
+    );
+    let stderr = String::from_utf8(out.stderr).expect("stderr utf8");
+    let rec = sole_ndjson_record(&stderr);
+    assert_core_shape(&rec);
+    assert_eq!(
+        rec["code"], "mesh/codegen-host-core-unsupported",
+        "record: {rec}"
+    );
+    assert_eq!(rec["spec"], "SCE Mesh §19", "record: {rec}");
+    let message = rec["message"].as_str().expect("message");
+    assert!(
+        message.contains("transport 'zenoh_inbox'")
+            && message.contains("kotlin host Mesh core")
+            && message.contains("--lang rust"),
+        "record: {rec}"
+    );
+}
+
+/// The Rust peer table `sce-codegen generate --deploy` wrote under `dir`,
+/// wherever the generator put it.
+fn peer_table_under(dir: &std::path::Path) -> String {
+    fn find(dir: &std::path::Path) -> Option<PathBuf> {
+        for entry in std::fs::read_dir(dir).ok()?.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                if let Some(found) = find(&path) {
+                    return Some(found);
+                }
+            } else if path
+                .file_name()
+                .is_some_and(|name| name.to_string_lossy().ends_with("_mesh_peers.rs"))
+            {
+                return Some(path);
+            }
+        }
+        None
+    }
+    let path = find(dir).expect("the Rust backend writes `<document>_mesh_peers.rs`");
+    std::fs::read_to_string(path).expect("read the peer table")
 }
 
 #[test]

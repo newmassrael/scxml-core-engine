@@ -2664,12 +2664,9 @@ pub enum CodegenError {
     /// its bound peers and their deliveries, and nothing else. A
     /// deployment that also asks it for a feature only the generated C++
     /// router has is refused rather than emitted without it — the peer
-    /// table would build, and the feature would simply never happen.
-    #[error(
-        "machine '{machine}' declares {feature}, which the host Mesh cores do not \
-             carry (SCE_MESH.md §mesh-19). Generate this machine with `--lang cpp`, or \
-             remove it from deploy.yaml."
-    )]
+    /// table would build, and the feature would simply never happen. So is a
+    /// host-served transport the backend's own core has no adapter for.
+    #[error("machine '{machine}' declares {feature}, {}", .feature.refusal())]
     HostCoreUnsupported {
         machine: String,
         feature: HostCoreGap,
@@ -2690,11 +2687,18 @@ pub enum HostCoreGap {
     PartitionRoutes,
     /// §mesh-9.6 remote `<invoke type="scxml">` to or from a peer machine.
     RemoteScxmlInvoke { peer: String },
+    /// A binding on a host-served transport whose adapter the core of
+    /// `backend` does not have, though another host core does
+    /// ([`super::transport::host_core_languages`]).
+    CoreLacksTransport { transport: String, backend: String },
 }
 
 impl std::fmt::Display for HostCoreGap {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::CoreLacksTransport { transport, .. } => {
+                write!(f, "a binding on transport '{transport}'")
+            }
             Self::ServerBlock { transport } => {
                 write!(f, "a `server:` block on transport '{transport}'")
             }
@@ -2710,14 +2714,37 @@ impl std::fmt::Display for HostCoreGap {
 }
 
 impl HostCoreGap {
-    /// Stable short tag for `key_fragments`, so the three shapes keep
-    /// distinct diagnostic ids. Never rendered to users.
+    /// Stable short tag for `key_fragments`, so the shapes keep distinct
+    /// diagnostic ids. Never rendered to users.
     fn tag(&self) -> &'static str {
         match self {
             Self::ServerBlock { .. } => "server-block",
             Self::DeviceListen { .. } => "device-listen",
             Self::PartitionRoutes => "partition-routes",
             Self::RemoteScxmlInvoke { .. } => "remote-scxml-invoke",
+            Self::CoreLacksTransport { .. } => "core-lacks-transport",
+        }
+    }
+
+    /// Why the host cores refuse it and what repairs it: the tail of the
+    /// [`CodegenError::HostCoreUnsupported`] message, which follows the
+    /// feature's own [`std::fmt::Display`] text. A feature only the C++
+    /// router has is repaired by generating for C++; a transport one host
+    /// core lacks is repaired by the backend whose core has it.
+    fn refusal(&self) -> String {
+        match self {
+            Self::CoreLacksTransport { backend, .. } => format!(
+                "which the {backend} host Mesh core does not carry (SCE_MESH.md §mesh-19). \
+                 Generate this machine with `--lang rust`, or bind the peer over a \
+                 transport that core carries."
+            ),
+            Self::ServerBlock { .. }
+            | Self::DeviceListen { .. }
+            | Self::PartitionRoutes
+            | Self::RemoteScxmlInvoke { .. } => "which the host Mesh cores do not carry \
+                 (SCE_MESH.md §mesh-19). Generate this machine with `--lang cpp`, or \
+                 remove it from deploy.yaml."
+                .to_string(),
         }
     }
 }

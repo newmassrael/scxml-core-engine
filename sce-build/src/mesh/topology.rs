@@ -326,6 +326,12 @@ pub enum TransportState {
         #[serde(skip_serializing_if = "Option::is_none")]
         keepalive_ms: Option<u32>,
     },
+    /// Zenoh binding of the host Mesh cores (SCE_MESH.md section 20). The
+    /// binding carries no field: the peer is the `#peer` it is keyed by, the
+    /// key is derived from the two machine names, and the router endpoints
+    /// are the host's own client configuration. Not the variant of the C++
+    /// template Zenoh transport, which is a different wire.
+    ZenohInbox,
     /// Recognised in the registry but not yet implemented (can, …).
     /// Codegen rejects with `UnsupportedTransport` before this variant
     /// reaches the template — the variant exists so the sum type
@@ -350,6 +356,7 @@ impl TransportState {
             Self::CustomTcp { .. } => "custom_tcp",
             Self::Dds { .. } => "dds",
             Self::Wss { .. } => "wss",
+            Self::ZenohInbox => "zenoh_inbox",
             Self::Unimplemented { transport_name } => transport_name,
         }
     }
@@ -3079,6 +3086,9 @@ fn build_transport_state(
                 .and_then(|v| v.as_u64())
                 .and_then(|n| u32::try_from(n).ok()),
         },
+        // The registry lists no binding key for it, so `pt.extra` is empty
+        // here: an unknown key was rejected at parse time.
+        "zenoh_inbox" => TransportState::ZenohInbox,
         other => TransportState::Unimplemented {
             transport_name: other.to_string(),
         },

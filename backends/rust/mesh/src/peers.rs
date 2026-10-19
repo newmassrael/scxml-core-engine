@@ -31,6 +31,12 @@ pub enum PeerLink {
         /// The §mesh-18.3 ping interval, or `None` for the binding's 30 s.
         keepalive_ms: Option<u32>,
     },
+    /// SCE_MESH.md section 20: the host's one Zenoh client session reaches the peer, by the
+    /// key derived from the two machine names (section 20.1). The link carries
+    /// nothing: the router endpoints are the host's own client configuration
+    /// (the `zenoh` module's `client_config`), not a per-peer binding, and
+    /// who is ready is the peer's liveliness token (section 20.3).
+    ZenohInbox,
 }
 
 /// One peer: the name `#<name>` addresses, how the core treats envelopes to
@@ -111,6 +117,42 @@ mod tests {
         assert!(router.peer_ready("elsewhere", 0).is_err());
         assert_eq!(MACHINE.peer("cloud").map(|p| p.name), Some("cloud"));
         assert!(MACHINE.peer("elsewhere").is_none());
+    }
+
+    const ZENOH_MACHINE: Machine = Machine {
+        name: "server",
+        dedup_window: 8,
+        gap_timeout_ms: 50,
+        peers: &[Peer {
+            name: "phone",
+            config: PeerConfig {
+                transport: "zenoh_inbox",
+                buffer: None,
+                retry: None,
+                stamp_sequence: false,
+                delivery: Delivery {
+                    dedup: true,
+                    ordered: false,
+                },
+                responders: &["phone"],
+                deadline_ms: None,
+                reply_events: &[],
+            },
+            link: PeerLink::ZenohInbox,
+        }],
+    };
+
+    #[test]
+    fn a_zenoh_inbox_peer_is_held_like_any_other_and_its_link_has_no_parameters() {
+        let mut router = ZENOH_MACHINE.router().expect("a valid configuration");
+        assert!(router.peer_ready("phone", 0).is_ok());
+        assert!(router.peer_ready("elsewhere", 0).is_err());
+        // The link says only that the host's Zenoh session reaches the peer;
+        // there is no address in it to read.
+        assert_eq!(
+            ZENOH_MACHINE.peer("phone").map(|p| p.link),
+            Some(PeerLink::ZenohInbox)
+        );
     }
 
     #[test]

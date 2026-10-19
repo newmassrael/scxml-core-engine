@@ -67,7 +67,7 @@ object {{ document_pascal }}MeshPeers {
                     url = "{{ peer.link.url | escape_kotlin }}",
                     keepaliveMs = {% if peer.link.keepalive_ms %}{{ peer.link.keepalive_ms }}u{% else %}null{% endif %},
                 ),
-{%- else %}
+{%- elif peer.link.kind == "wss_accept" %}
                 link = PeerLink.WssAccept(
                     keepaliveMs = {% if peer.link.keepalive_ms %}{{ peer.link.keepalive_ms }}u{% else %}null{% endif %},
                 ),

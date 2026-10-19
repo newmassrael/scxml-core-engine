@@ -420,9 +420,10 @@ impl TargetStateView {
                 "TargetStateView::from_topology: unimplemented transport '{transport_name}' \
                  should have been rejected by the registry-lookup stage in generate_cpp_mesh"
             ),
-            TransportState::Wss { .. } => unreachable!(
-                "TargetStateView::from_topology: 'wss' is served by the host cores and \
-                 should have been rejected by refuse_transports_not_served_by in generate_cpp_mesh"
+            TransportState::Wss { .. } | TransportState::ZenohInbox => unreachable!(
+                "TargetStateView::from_topology: '{}' is served by the host cores and \
+                 should have been rejected by refuse_transports_not_served_by in generate_cpp_mesh",
+                state.transport_name()
             ),
         }
     }
@@ -2165,6 +2166,11 @@ enum HostLinkContext {
         #[serde(skip_serializing_if = "Option::is_none")]
         keepalive_ms: Option<u32>,
     },
+    /// The host's one Zenoh client session reaches the peer; the link has no
+    /// parameters, because the router endpoints are the host's own client
+    /// configuration and the key is derived from the two machine names
+    /// (SCE_MESH.md section 20).
+    ZenohInbox,
 }
 
 /// The peer-table template for a host-core backend, under
@@ -2234,6 +2240,20 @@ fn generate_host_mesh(
         feature,
     };
     refuse_transports_not_served_by(targets, transport::ServiceKind::HostCore)?;
+    // Served by a host core is not served by THIS one: the adapter is written
+    // per language, and a peer table naming a transport the backend's core
+    // has no `PeerLink` for would not compile there (or, worse, would be read
+    // as another link). `wss` is in every host core; `zenoh_inbox` is in the
+    // Rust one only.
+    for t in targets {
+        let name = t.state.transport_name();
+        if !transport::host_core_languages(name).contains(&language) {
+            return Err(refuse(HostCoreGap::CoreLacksTransport {
+                transport: name.to_string(),
+                backend: language.canonical_name().to_string(),
+            }));
+        }
+    }
     // What the C++ router has and a host core does not. Each would build a
     // peer table that silently leaves the feature out.
     if let Some(server) = server {
@@ -2278,6 +2298,7 @@ fn generate_host_mesh(
                 } => HostLinkContext::WssAccept {
                     keepalive_ms: *keepalive_ms,
                 },
+                TransportState::ZenohInbox => HostLinkContext::ZenohInbox,
                 other => unreachable!(
                     "generate_host_mesh: '{}' passed refuse_transports_not_served_by(HostCore) \
                      but has no host binding arm",
