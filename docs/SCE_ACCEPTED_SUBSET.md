@@ -7188,6 +7188,81 @@ generates byte-identical files to what it generated before the attribute
 existed. The only other value of the attribute is its absence; anything else is
 refused as `validation/attribute-rule-violated`. A forge root does not take it.
 
+### §2.21 A transition function — `sce:transition-function="emit"`
+
+A statechart root may declare `<scxml sce:transition-function="emit">`. The
+document is then also generated as a pure function of (current state, event),
+in a file beside the machine that depends on no SCE runtime or library and
+compiles alone with the language's standard library:
+`docs/SCE_TRANSITION_FUNCTION.md` states what the file holds and how each
+backend spells it. `generate` still writes the machine. The declaration is
+inside the source set the machine's `source-hash` covers, for the reason
+§2.20's is, and the function carries that hash as a value.
+
+The boundary is stated by meaning. A document is a transition function when
+every macrostep is exactly one microstep and one leaf state fixes the
+configuration, so that the next configuration depends on the current leaf and
+the event alone and is computed at build time by the W3C selection rule,
+without simulating an engine (`sce-build/src/transition_function.rs`). What
+that admits:
+
+- `<state>`, atomic and compound, nested to any depth. A compound state enters
+  its child by its `initial` attribute, by an `<initial>` element whose
+  transition holds no executable content, or by its first child state in
+  document order.
+- `<final>` as a child of `<scxml>`. Reaching it ends the machine, and it takes
+  no event.
+- `<transition>` with an `event`, with or without a `target`, of either `type`:
+  with nothing executed, the type changes which states are exited and entered
+  and not the leaf that results.
+- Event descriptors as W3C SCXML 3.12.1 defines them: a literal name, `*`, a
+  prefix (`error.*`, equivalent to `error`), several separated by spaces. The
+  events of the function are the literal names its transitions write, in the
+  order the transitions first name them; a pattern matches those and names
+  none.
+- Any `datamodel` value, since nothing is evaluated; and the annotations that
+  change no behaviour (`sce:req`, `sce:provenance`, `sce:transition-table`).
+
+What it refuses, each where it is written and every one in the same run, by
+`check`, `generate` and the library entry points alike:
+
+- As `scxml/transition-function-rule`, with the rule the construct breaks in
+  `expected`:
+  - `<parallel>`: its regions are active together, so the configuration is
+    more than one leaf;
+  - `<history>`: entering it restores a recorded configuration;
+  - executable content — `<datamodel>`/`<data>`, a top-level `<script>`, an
+    `<onentry>` or `<onexit>` holding anything, a transition's content, an
+    `<initial>` transition's content, `<invoke>`, `<donedata>`: it runs, and a
+    function of the state and the event runs nothing (an empty `<onentry/>`
+    runs nothing and is accepted);
+  - a transition without an `event`: it is taken inside the macrostep, a
+    second microstep;
+  - `cond`: the next state then depends on data;
+  - `<final>` inside a compound state: entering it raises
+    `done.state.<parent>`, a second microstep;
+  - a transition with several targets: only the regions of a `<parallel>` take
+    several targets together.
+- As `scxml/transition-function-unmatched-descriptor`: a descriptor that
+  matches no event the machine names (`foo.*` where no literal `foo...` event
+  is written), so its transition is never taken.
+- As `scxml/transition-function-dead-end`: a state that is not a `<final>` and
+  that no transition of it or of a state enclosing it takes anywhere. Under the
+  function it cannot be told from a final state that was never declared
+  terminal; make it a `<final>`, or give it a transition.
+- As `scxml/unreachable-state` or `scxml/dead-transition`: a state no path
+  reaches, a row of the function no caller can arrive at. Refused without
+  `--lint` for a document that declares the function.
+
+Each refusal is a property of the declaration and not of W3C SCXML: every such
+document is legal SCXML that an Interpreter runs, and one that does not declare
+the function is judged by none of this.
+
+Today the function is generated for Rust. The other five backends refuse a
+document that declares it with `generate/unsupported-feature`, naming the
+language, rather than writing the machine without it; `check` reports that
+refusal per backend, as it reports every backend gap.
+
 ---
 
 ## Appendix — `DiagnosticCode` index (384 codes)
@@ -7421,6 +7496,9 @@ Codes that the author can avoid by writing a better SCXML /
 | `scxml/parent-send-without-parent` | Validation |
 | `scxml/generated-name-collision` | Validation |
 | `scxml/undeclared-interface-event` | Validation |
+| `scxml/transition-function-rule` | Validation |
+| `scxml/transition-function-dead-end` | Validation |
+| `scxml/transition-function-unmatched-descriptor` | Validation |
 | `profile/interface-not-closed` | Validation |
 | `profile/name-style` | Validation |
 | `profile/name-limit` | Validation |

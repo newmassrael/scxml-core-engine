@@ -297,6 +297,10 @@ pub mod scxml_references;
 pub mod scxml_self_send;
 pub mod scxml_semantic;
 pub mod scxml_send_delay;
+/// What a statechart declaring `sce:transition-function="emit"` is held to:
+/// every construct a pure function of (leaf state, event) cannot represent,
+/// refused where it is written.
+pub mod scxml_transition_function;
 /// A number as the author wrote it, beside the number it denotes —
 /// so the pseudocode review surface can show `0x1a` where the model
 /// holds `26`. See [`source_literal`].
@@ -534,6 +538,7 @@ fn compile_model(scxml_path: &str) -> Result<ParsedSCXML, CompileError> {
     let mut model = parser.parse_file(scxml_path)?;
     analyzer::analyze(&mut model, scxml_path);
     guard_static_generatable(&model, scxml_path)?;
+    refuse_impure_transition_function(&model, scxml_path)?;
     lint_statechart(&model, scxml_path)?;
     // SCE Protocol-Synthesis RFC §synth-5-O — IR provenance pre-emit
     // guard. Runs *after* the analyzer (so synthesised IR additions
@@ -569,6 +574,7 @@ fn compile_model_from_string(
     let mut model = parser.parse_string(scxml_content, scxml_name)?;
     analyzer::analyze(&mut model, "");
     guard_static_generatable(&model, scxml_name)?;
+    refuse_impure_transition_function(&model, scxml_name)?;
     lint_statechart(&model, scxml_name)?;
     // SCE Protocol-Synthesis RFC §synth-5-O — IR provenance pre-emit
     // guard. WASM / parse_string callers share the same invariant
@@ -687,6 +693,42 @@ pub fn unhandled_declaration_findings(
         .into_iter()
         .map(|err| model.with_enclosing_anchor(err))
         .collect()
+}
+
+/// Every refusal a statechart declaring `sce:transition-function="emit"`
+/// earns (SCE Accepted Subset §2.21); none for one that does not declare it.
+///
+/// NOT a lint, for the reason [`unhandled_declaration_findings`] is not one:
+/// it asserts nothing about intent. The declaration says the document is a
+/// pure function of (leaf state, event), and a construct that contradicts it
+/// makes the declaration false whether or not anyone asked for design advice.
+/// So `check`, `generate` and the library entry points all ask it, at the same
+/// point — after [`analyzer::can_generate_static`], before the lints — and a
+/// document they accept is one whose function [`model::TransitionFunction::of`]
+/// computes.
+///
+/// Every refusal, not the first: each is a separate repair. The states no
+/// path reaches are among them ([`scxml_reachability::findings`]): opt-in for
+/// a document that declares nothing, they are a row of the function nobody
+/// can arrive at for one that does. Resolved at this boundary as the lints
+/// are, so each record carries the anchor enclosing what it names.
+pub fn transition_function_findings(model: &model::SCXMLModel, source: &str) -> Vec<CompileError> {
+    scxml_transition_function::findings(model, source)
+        .into_iter()
+        .map(|err| model.with_enclosing_anchor(err))
+        .collect()
+}
+
+/// The first of [`transition_function_findings`], for the library entry
+/// points whose result carries one error.
+fn refuse_impure_transition_function(
+    model: &model::SCXMLModel,
+    source: &str,
+) -> Result<(), CompileError> {
+    transition_function_findings(model, source)
+        .into_iter()
+        .next()
+        .map_or(Ok(()), Err)
 }
 
 /// Promote the `analyzer::can_generate_static` precondition into a

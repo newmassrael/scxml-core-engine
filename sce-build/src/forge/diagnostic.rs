@@ -1005,6 +1005,19 @@ pub enum DiagnosticCode {
     //    Not a W3C violation: the declaration is SCE's. ────────────────
     #[serde(rename = "scxml/undeclared-interface-event")]
     ScxmlUndeclaredInterfaceEvent,
+    // ── A statechart declaring `sce:transition-function="emit"` holds what a
+    //    pure function of (leaf state, event) cannot represent
+    //    (`crate::scxml_transition_function`, SCE Accepted Subset §2.21). Not
+    //    W3C violations: the declaration is SCE's. A construct the function
+    //    does not admit, a non-final state no event leaves, and a descriptor
+    //    that matches no event the machine names are three repairs, so three
+    //    codes. ─────────────────────────────────────────────────────────────
+    #[serde(rename = "scxml/transition-function-rule")]
+    ScxmlTransitionFunctionRule,
+    #[serde(rename = "scxml/transition-function-dead-end")]
+    ScxmlTransitionFunctionDeadEnd,
+    #[serde(rename = "scxml/transition-function-unmatched-descriptor")]
+    ScxmlTransitionFunctionUnmatchedDescriptor,
     // ── A statechart that is valid, and is not what the authoring profile
     //    it was judged under asks for: the profile requires
     //    `sce:interface="closed"` and the root does not declare it
@@ -3564,6 +3577,10 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ScxmlGeneratedNameCollision,
         // An event crossing a closed interface undeclared
         ScxmlUndeclaredInterfaceEvent,
+        // What a declared transition function cannot represent
+        ScxmlTransitionFunctionRule,
+        ScxmlTransitionFunctionDeadEnd,
+        ScxmlTransitionFunctionUnmatchedDescriptor,
         // A statechart that does not declare the interface a profile requires
         ProfileInterfaceNotClosed,
         // What a profile asks of the names a document defines, and of its evidence
@@ -4193,6 +4210,10 @@ impl DiagnosticCode {
             ScxmlGeneratedNameCollision => Some("SCE Accepted Subset §2.14.1"),
             // ── A closed interface is SCE's declaration, not W3C's. ──
             ScxmlUndeclaredInterfaceEvent => Some("SCE Accepted Subset §2.16"),
+            // ── A transition function is SCE's declaration, not W3C's. ──
+            ScxmlTransitionFunctionRule
+            | ScxmlTransitionFunctionDeadEnd
+            | ScxmlTransitionFunctionUnmatchedDescriptor => Some("SCE Accepted Subset §2.21"),
             // ── An authoring profile is the owner's expectation, not a
             //    rule of W3C SCXML or of the grammar. ────────────────────
             ProfileInterfaceNotClosed
@@ -5036,6 +5057,11 @@ impl DiagnosticCode {
             ScxmlParentSendWithoutParent => "scxml/parent-send-without-parent",
             ScxmlGeneratedNameCollision => "scxml/generated-name-collision",
             ScxmlUndeclaredInterfaceEvent => "scxml/undeclared-interface-event",
+            ScxmlTransitionFunctionRule => "scxml/transition-function-rule",
+            ScxmlTransitionFunctionDeadEnd => "scxml/transition-function-dead-end",
+            ScxmlTransitionFunctionUnmatchedDescriptor => {
+                "scxml/transition-function-unmatched-descriptor"
+            }
             ProfileInterfaceNotClosed => "profile/interface-not-closed",
             ProfileNameStyle => "profile/name-style",
             ProfileNameLimit => "profile/name-limit",
@@ -10827,6 +10853,60 @@ fn scxml_semantic_fields(e: &crate::scxml_semantic::ScxmlSemanticError) -> Diagn
                 event.clone(),
             ],
         },
+        ScxmlSemanticError::TransitionFunctionRule {
+            construct,
+            rule,
+            state,
+            observed,
+        } => DiagnosticPayload {
+            // The rule is what the construct breaks; `expected` names it
+            // rather than a value to substitute, because the repair — remove
+            // the construct, or withdraw the declaration — is the author's.
+            code: DiagnosticCode::ScxmlTransitionFunctionRule,
+            stage: Stage::Validation,
+            expected: Some(vec![rule.clone()]),
+            actual: observed.clone(),
+            fix: None,
+            key_fragments: {
+                let mut k = vec!["transition-function-rule".to_string(), construct.clone()];
+                if !state.is_empty() {
+                    k.push(format!("scxml-state:{state}"));
+                }
+                k
+            },
+        },
+        ScxmlSemanticError::TransitionFunctionDeadEnd { state } => DiagnosticPayload {
+            // Two repairs of different kinds — make the state a final, or give
+            // it a transition — so no fix, and the state is what is named.
+            code: DiagnosticCode::ScxmlTransitionFunctionDeadEnd,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(state.clone()),
+            fix: None,
+            key_fragments: vec![
+                format!("scxml-state:{state}"),
+                "transition-function-dead-end".to_string(),
+            ],
+        },
+        ScxmlSemanticError::TransitionFunctionUnmatchedDescriptor {
+            state,
+            descriptor,
+            events: _,
+        } => DiagnosticPayload {
+            // `actual` is the descriptor as written. The events the machine
+            // names are in the message and NOT a candidate set: naming the
+            // event the descriptor meant is the other repair.
+            code: DiagnosticCode::ScxmlTransitionFunctionUnmatchedDescriptor,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(descriptor.clone()),
+            fix: None,
+            key_fragments: vec![
+                format!("scxml-state:{state}"),
+                "transition-function-unmatched-descriptor".to_string(),
+                descriptor.clone(),
+            ],
+        },
         ScxmlSemanticError::SendDelayInvalid { delay, state } => DiagnosticPayload {
             // `actual` is the delay as written; no repair is named because the
             // unit (`10000` is ten seconds or ten thousand milliseconds) is the
@@ -12242,6 +12322,42 @@ mod tests {
                 }
                 .into(),
                 r##"{"v":1,"id":"fnv1a:49109c5dcd64e166","code":"scxml/send-delay-invalid","stage":"validation","spec":"W3C SCXML §6.2.4","message":"State 'waiting' sends with delay=\"10000\", which is not a time: a delay is a number followed directly by ms or s, such as 500ms or 1.5s, and anything else raises an error at the <send> and schedules nothing, so the wait it was meant to arm never starts. Write the unit the specification gives.","actual":"10000"}"##,
+            ),
+            (
+                // A statechart declaring a transition function holds a
+                // `<parallel>`, whose configuration is more than one leaf.
+                "forge/scxml-transition-function-rule",
+                crate::scxml_semantic::ScxmlSemanticError::TransitionFunctionRule {
+                    construct: "<parallel id=\"both\">".into(),
+                    rule: "its regions are active together, so the configuration is more \
+                           than one leaf and the current state is no longer one value"
+                        .into(),
+                    state: "both".into(),
+                    observed: Some("parallel".into()),
+                }
+                .into(),
+                r##"{"v":1,"id":"fnv1a:a7f58a462a2f99e5","code":"scxml/transition-function-rule","stage":"validation","spec":"SCE Accepted Subset §2.21","message":"<parallel id=\"both\"> cannot be part of a transition function: its regions are active together, so the configuration is more than one leaf and the current state is no longer one value","expected":["its regions are active together, so the configuration is more than one leaf and the current state is no longer one value"],"actual":"parallel"}"##,
+            ),
+            (
+                // A non-final state of a declared transition function that no
+                // event leaves.
+                "forge/scxml-transition-function-dead-end",
+                crate::scxml_semantic::ScxmlSemanticError::TransitionFunctionDeadEnd {
+                    state: "stuck".into(),
+                }
+                .into(),
+                r##"{"v":1,"id":"fnv1a:b071bcbced5316d9","code":"scxml/transition-function-dead-end","stage":"validation","spec":"SCE Accepted Subset §2.21","message":"State 'stuck' is not a <final>, and no transition of it or of a state enclosing it takes any event the machine names, so as a transition function it cannot be told from a final state. If the machine ends there, make it a <final> child of <scxml>; otherwise give it a transition.","actual":"stuck"}"##,
+            ),
+            (
+                // A prefix that no event the declared function names fills.
+                "forge/scxml-transition-function-unmatched-descriptor",
+                crate::scxml_semantic::ScxmlSemanticError::TransitionFunctionUnmatchedDescriptor {
+                    state: "idle".into(),
+                    descriptor: "door.*".into(),
+                    events: vec!["go".into(), "stop".into()],
+                }
+                .into(),
+                r##"{"v":1,"id":"fnv1a:30d04e25155e51d2","code":"scxml/transition-function-unmatched-descriptor","stage":"validation","spec":"SCE Accepted Subset §2.21","message":"State 'idle' takes the descriptor 'door.*', which matches no event the machine names (go, stop), so the transition is never taken. Name the event literally on a transition, or remove the descriptor.","actual":"door.*"}"##,
             ),
             (
                 // SCE Protocol-Synthesis RFC §synth-5-E sample-callback placement rule
@@ -16983,6 +17099,10 @@ mod tests {
             | ValidationBytesComparisonNotEquality
             | ScxmlNullDatamodelForbidsConstruct
             | ScxmlStaticDatamodelRule
+            // The rule a declared transition function holds the construct to
+            // rides `expected`; removing the construct or withdrawing the
+            // declaration is the author's choice, so no fix.
+            | ScxmlTransitionFunctionRule
             | TimerPeriodBelowTickRate
             | TimerSlotOverflow
             | MemReassemblySlotSizeBelowDeclaredMtu
@@ -17676,6 +17796,11 @@ mod tests {
             // schema, or use one declared — and the record names the
             // declared set in its message, so no closed candidate set.
             | ScxmlUndeclaredInterfaceEvent
+            // A state no event leaves: make it a final, or give it a
+            // transition. A descriptor that matches nothing: name the event
+            // it meant, or remove it. Two repairs each, no candidate set.
+            | ScxmlTransitionFunctionDeadEnd
+            | ScxmlTransitionFunctionUnmatchedDescriptor
             // Two repairs — declare the interface closed, or use a profile
             // that does not require it — and the second is the owner's
             // decision, not a value a fix could offer.
@@ -18042,6 +18167,9 @@ mod tests {
                 | ScxmlParentSendWithoutParent
                 | ScxmlGeneratedNameCollision
                 | ScxmlUndeclaredInterfaceEvent
+                | ScxmlTransitionFunctionRule
+                | ScxmlTransitionFunctionDeadEnd
+                | ScxmlTransitionFunctionUnmatchedDescriptor
                 | ProfileInterfaceNotClosed
                 | ProfileNameStyle
                 | ProfileNameLimit
@@ -18373,9 +18501,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            442,
+            445,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 442 distinct variants to match the DiagnosticCode \
+             expected 445 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -19344,6 +19472,13 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | MeshEventSchemaMismatch
             | ScxmlGeneratedNameCollision
             | ScxmlUndeclaredInterfaceEvent
+            // The transition-function refusals leave through
+            // `transition_function_findings`, which resolves the enclosing
+            // anchor as the lint boundary does; no scenario raises them yet,
+            // so the roster has not seen them carry.
+            | ScxmlTransitionFunctionRule
+            | ScxmlTransitionFunctionDeadEnd
+            | ScxmlTransitionFunctionUnmatchedDescriptor
             | ProfileInterfaceNotClosed
             | ProfileNameStyle
             | ProfileNameLimit

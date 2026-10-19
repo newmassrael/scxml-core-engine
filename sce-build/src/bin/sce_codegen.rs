@@ -4997,6 +4997,16 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
                 error_format.emit_forge_and_exit(&located);
             }
 
+            // Not a lint: a document declaring `sce:transition-function`
+            // that holds what a pure function cannot is refused whatever the
+            // flags, every refusal at once. Ahead of the lints, as in
+            // `generate` and the library, so the three agree on which
+            // records one run reports.
+            error_format.emit_all_and_exit(
+                &sce_build::transition_function_findings(&model, scxml_path),
+                "",
+            );
+
             // Document axis, opt-in: the design-time lints reject legal
             // SCXML, so the operator asks for them. Same call the
             // library entry points make, so a document cannot pass here
@@ -5851,6 +5861,12 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
         // ones arrive with the file alone.
         error_format.emit_and_exit(&located, "");
     }
+
+    // Not a lint — see the `check` call site, which sits at the same point.
+    error_format.emit_all_and_exit(
+        &sce_build::transition_function_findings(&model, scxml_path),
+        "",
+    );
 
     // SCE Protocol-Synthesis RFC §synth-5-J-2: Rust no_std variant
     // rejection. Only fires when `--no-std` is paired with `-l rust`

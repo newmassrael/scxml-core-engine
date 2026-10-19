@@ -980,6 +980,86 @@ pub enum ScxmlSemanticError {
         /// The state whose executable content sends it.
         state: String,
     },
+
+    /// A construct a statechart declaring `sce:transition-function="emit"`
+    /// cannot hold: one that makes a macrostep more than one microstep, makes
+    /// the configuration more than one leaf, or makes the next state depend on
+    /// something besides the current state and the event (SCE Accepted Subset
+    /// §2.21, [`crate::scxml_transition_function`]).
+    ///
+    /// Not a W3C violation: every such document is legal SCXML, and an
+    /// Interpreter runs it. What the construct contradicts is the document's
+    /// own declaration that it is a pure function, which is why there is no
+    /// C++ mirror. Its own code rather than a share of the static data model's
+    /// (`StaticDatamodelRule`), whose rules are a different section's.
+    #[error("{construct} cannot be part of a transition function: {rule}")]
+    TransitionFunctionRule {
+        /// What appeared, for the message (`<parallel id="both">`, the
+        /// `<transition event="go">` of a state).
+        construct: String,
+        /// Why it breaks the function, as a sentence.
+        rule: String,
+        /// Owning state id, empty at document scope.
+        state: String,
+        /// The construct as the document spells it — the element's name, or
+        /// the attribute's value — reported as `actual`.
+        observed: Option<String>,
+    },
+
+    /// A state of a declared transition function that is not a `<final>` and
+    /// that no event takes anywhere: no transition of it or of a state
+    /// enclosing it matches any event the machine names.
+    ///
+    /// Under the function such a state cannot be told from a final one,
+    /// except that it was never said to be terminal, so a reader cannot tell
+    /// "ends here by design" from "a transition was forgotten". Refused only
+    /// for a document that declares the function: a running machine may wait
+    /// in such a state for an event the document never names.
+    #[error(
+        "State '{state}' is not a <final>, and no transition of it or of a state \
+         enclosing it takes any event the machine names, so as a transition \
+         function it cannot be told from a final state. If the machine ends \
+         there, make it a <final> child of <scxml>; otherwise give it a \
+         transition."
+    )]
+    TransitionFunctionDeadEnd {
+        /// The state no event leaves.
+        state: String,
+    },
+
+    /// A descriptor of a declared transition function that matches no event
+    /// the machine names, so the transition carrying it is never taken.
+    ///
+    /// The events of a transition function are the closed set its transitions
+    /// name literally: a prefix such as `door.*` that no literal `door...`
+    /// event fills, or a `*` in a machine that names no event, describes no
+    /// pair of the table. A running machine could still be sent such an event
+    /// from outside, which is why this is judged only under the declaration.
+    #[error(
+        "State '{state}' takes the descriptor '{descriptor}', which matches no \
+         event the machine names ({}), so the transition is never taken. Name \
+         the event literally on a transition, or remove the descriptor.",
+        named_events(.events)
+    )]
+    TransitionFunctionUnmatchedDescriptor {
+        /// The state whose transition carries the descriptor.
+        state: String,
+        /// The descriptor as written.
+        descriptor: String,
+        /// Every event the machine names, so the record shows what the
+        /// descriptor failed to match.
+        events: Vec<String>,
+    },
+}
+
+/// The events of a transition function, for
+/// [`ScxmlSemanticError::TransitionFunctionUnmatchedDescriptor`]'s message.
+fn named_events(events: &[String]) -> String {
+    if events.is_empty() {
+        "it names none".to_string()
+    } else {
+        events.join(", ")
+    }
 }
 
 #[cfg(test)]
@@ -1236,6 +1316,20 @@ mod tests {
                 delay: "10000".into(),
                 state: "waiting".into(),
             },
+            ScxmlSemanticError::TransitionFunctionRule {
+                construct: "<parallel id=\"both\">".into(),
+                rule: "its regions are active together".into(),
+                state: "both".into(),
+                observed: Some("parallel".into()),
+            },
+            ScxmlSemanticError::TransitionFunctionDeadEnd {
+                state: "stuck".into(),
+            },
+            ScxmlSemanticError::TransitionFunctionUnmatchedDescriptor {
+                state: "idle".into(),
+                descriptor: "door.*".into(),
+                events: vec!["go".into()],
+            },
         ];
         // The list above is not self-checking: a new variant reaches
         // `ForgeError` through the blanket `From` impl, so omitting it
@@ -1265,7 +1359,7 @@ mod tests {
 
     /// Number of arms in [`variant_name`]. Kept next to it so the two
     /// move together.
-    const VARIANT_COUNT: usize = 22;
+    const VARIANT_COUNT: usize = 25;
 
     /// Exhaustive discriminant projection — the compile-time half of
     /// `every_variant_routes_through_forge_error`'s coverage claim.
@@ -1299,6 +1393,11 @@ mod tests {
             ScxmlSemanticError::RecordingIntercepted { .. } => "RecordingIntercepted",
             ScxmlSemanticError::SelfSendDiscarded { .. } => "SelfSendDiscarded",
             ScxmlSemanticError::SendDelayInvalid { .. } => "SendDelayInvalid",
+            ScxmlSemanticError::TransitionFunctionRule { .. } => "TransitionFunctionRule",
+            ScxmlSemanticError::TransitionFunctionDeadEnd { .. } => "TransitionFunctionDeadEnd",
+            ScxmlSemanticError::TransitionFunctionUnmatchedDescriptor { .. } => {
+                "TransitionFunctionUnmatchedDescriptor"
+            }
         }
     }
 
