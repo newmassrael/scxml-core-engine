@@ -21699,6 +21699,22 @@ mod anchor_contract_tests {
              {duplicated:#?}\n\n\
              Each code must sit in exactly one partition.",
         );
+        // The heading states how many codes the appendix indexes. Read from
+        // the slice, which `all_diagnostic_codes_is_exhaustive` holds to the
+        // enum, so the number cannot fall behind the rows: it said 384 while
+        // the tables held 445.
+        let heading = format!(
+            "## Appendix — `DiagnosticCode` index ({} codes)",
+            ALL_DIAGNOSTIC_CODES.len()
+        );
+        assert!(
+            doc.lines().any(|line| line == heading),
+            "docs/SCE_ACCEPTED_SUBSET.md does not head its appendix \
+             {heading:?}; it reads {:?}",
+            doc.lines()
+                .find(|line| line.starts_with("## Appendix"))
+                .unwrap_or("no appendix heading"),
+        );
     }
 
     /// Drift guard between [`SCHEMA_STATUS`] (the Rust source of

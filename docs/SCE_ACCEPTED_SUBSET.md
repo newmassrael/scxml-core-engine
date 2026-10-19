@@ -7269,13 +7269,15 @@ refusal per backend, as it reports every backend gap.
 
 ---
 
-## Appendix — `DiagnosticCode` index (384 codes)
+## Appendix — `DiagnosticCode` index (445 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
 `DiagnosticCode::as_str` appears in exactly one of the two tables
-below. The prose sections §1–§3 above reference a subset of these
-codes inline, but the appendix is the coverage contract.
+below, and the count in the heading is the length of
+`ALL_DIAGNOSTIC_CODES`, which the same test reads. The prose
+sections §1–§3 above reference a subset of these codes inline, but
+the appendix is the coverage contract.
 
 The guard matches each code against the table-row anchor
 `` | `code` | ``. Reformatting the tables (extra whitespace between
@@ -7760,9 +7762,10 @@ or SCE-internal issues.
   guard `all_diagnostic_codes_is_exhaustive` fires first (in
   `sce-build/src/forge/diagnostic.rs`). Add the variant to
   `ALL_DIAGNOSTIC_CODES`, then place its slash-path in exactly one
-  of the two appendix tables. The `acceptance_doc_covers_every_code`
-  runtime check will otherwise fail with the specific missing code
-  name.
+  of the two appendix tables and move the count in the appendix
+  heading. The `acceptance_doc_covers_every_code` runtime check will
+  otherwise fail with the specific missing code name, or with the
+  heading it expected.
 - If a code's *classification* changes (boundary ↔ diagnostic-only),
   move the row between tables. `acceptance_doc_covers_every_code`
   asserts exactly one appendix row per code, so duplication or
