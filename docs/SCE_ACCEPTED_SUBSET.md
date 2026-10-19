@@ -7280,10 +7280,10 @@ Each refusal is a property of the declaration and not of W3C SCXML: every such
 document is legal SCXML that an Interpreter runs, and one that does not declare
 the function is judged by none of this.
 
-Today the function is generated for Rust. The other five backends refuse a
-document that declares it with `generate/unsupported-feature`, naming the
-language, rather than writing the machine without it; `check` reports that
-refusal per backend, as it reports every backend gap.
+The function is generated for all six backends, each in a namespace of its own
+beside the machine — a module, a nested namespace, a package, a package
+directory, or for C a symbol prefix — so the two compile in one build unit;
+`docs/SCE_TRANSITION_FUNCTION.md` names each backend's file and accessors.
 
 ---
 
