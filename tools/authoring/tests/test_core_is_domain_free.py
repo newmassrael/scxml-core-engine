@@ -34,11 +34,20 @@ CORE = pathlib.Path(__file__).resolve().parent.parent / "sce_author"
 # cannot discriminate a specialised one, and spelling it around the guard
 # would have been defeating the guard rather than passing it. The vehicle
 # sense stays caught by its unambiguous neighbours below.
+#
+# ⚠ `ledger` WAS an entry, for the accounting sense, and is not one now, for the
+# same reason. This project's own word for a record kept by the hash of its
+# text is a ledger (Mnemosyne's frozen ledger, the spec ledger, the ledger
+# citation gate), and the division of a document (ADR 0040) is kept in one: the
+# word is the name of `make-ledger`, `check-ledger`, `ledger-scopes`, of
+# `ledger.v1.schema.json` and of the specs folder's `save_ledger`, all of them
+# wire surfaces that a rename would break for a reader that did nothing wrong.
+# The accounting sense stays caught by `invoice`, `portfolio` and `trading`.
 SUBJECT_WORDS = {
     "vehicle", "ignition", "telltale", "cluster", "odometer", "speedometer",
     "tachometer", "brake", "airbag", "seatbelt", "battery", "chassis",
     "powertrain", "transmission", "wiper", "headlamp", "mileage", "coolant",
-    "patient", "diagnosis", "prescription", "invoice", "ledger", "portfolio",
+    "patient", "diagnosis", "prescription", "invoice", "portfolio",
     "trading", "avionics", "autopilot", "thermostat", "elevator", "centrifuge",
 }
 
