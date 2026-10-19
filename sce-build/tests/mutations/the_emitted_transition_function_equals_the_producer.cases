@@ -4,20 +4,22 @@
 #
 # A document that declares `sce:transition-function="emit"` is generated with a pure function
 # of (current state, event) beside its machine. `TransitionFunction::of` computes it once
-# (`sce-build/src/transition_function.rs`), the Rust template renders it
-# (`tools/codegen/templates/rust/transition_function.rs.jinja2`), and
-# `the_emitted_transition_function_equals_the_producer` holds the template to the producer and
-# the producer to the engine. A test that has never been made to fail says nothing about
+# (`sce-build/src/transition_function.rs`), one template per backend renders it
+# (`tools/codegen/templates/{rust,c,go,kotlin,python}/transition_function.*.jinja2` and the C++
+# `tools/codegen/templates/transition_function.jinja2`), and
+# `the_emitted_transition_function_equals_the_producer` holds every template to the producer
+# and the producer to the engines. A test that has never been made to fail says nothing about
 # whether it could, so each half is made wrong here in a place that is its own.
 #
 # The producer cases are each caught by the full table the nested fixture is stated to yield,
-# and again by the generated machine run on the Rust runtime, which disagrees with a wrong
-# function on the pair that moved. The template cases are caught by the program that compiles
-# the generated file alone and prints every answer, and the first of them by reading the arms
-# back from the source too. The last case is the seam every backend goes through: written as a
-# silent skip for the backends other than Rust, the machine would be generated without the file
-# it was asked for, which the test that generates every backend and looks for the file catches
-# on any host.
+# and again by the generated machine run on its runtime, which disagrees with a wrong function
+# on the pair that moved. Each template is made wrong once, in a table cell or a configuration.
+# A cell is caught on any host by reading the table back from the source, and again by the
+# program that compiles the generated file alone and prints every answer; a configuration only
+# by that program, so those cases need the backend's toolchain to be judged. The last case is
+# the seam every backend goes through: written as a silent skip for the backends other than
+# Rust, the machine would be generated without the file it was asked for, which the test that
+# generates every backend and looks for the file catches on any host.
 #
 # Anchors are literal slices of the source; an edit that moves one is reported
 # INCONCLUSIVE with the anchor quoted, never as a pass.
@@ -26,6 +28,11 @@ mutation_tests -p sce-build --features cli --test the_emitted_transition_functio
 mutation_targets sce-build/src/transition_function.rs
 mutation_targets sce-build/src/generator.rs
 mutation_targets tools/codegen/templates/rust/transition_function.rs.jinja2
+mutation_targets tools/codegen/templates/transition_function.jinja2
+mutation_targets tools/codegen/templates/c/transition_function.h.jinja2
+mutation_targets tools/codegen/templates/go/transition_function.go.jinja2
+mutation_targets tools/codegen/templates/kotlin/transition_function.kt.jinja2
+mutation_targets tools/codegen/templates/python/transition_function.py.jinja2
 mutation_oracles sce-build/tests/the_emitted_transition_function_equals_the_producer.rs
 
 # ── The producer: the selection rule, and the leaf a target enters ──
@@ -72,6 +79,38 @@ mutation_case "Rust calls no state final" <<'PY'
 edit("tools/codegen/templates/rust/transition_function.rs.jinja2",
      '{% if finals %}',
      '{% if false %}')
+PY
+
+# ── The other five templates: one cell or one configuration each ──
+
+mutation_case "C++ writes the source state where the next state belongs" <<'PY'
+edit("tools/codegen/templates/transition_function.jinja2",
+     '            return State::{{ cell.to | capitalize }};',
+     '            return State::{{ state.id | capitalize }};')
+PY
+
+mutation_case "C writes a configuration innermost first" <<'PY'
+edit("tools/codegen/templates/c/transition_function.h.jinja2",
+     '{% for id in state.configuration %}',
+     '{% for id in state.configuration | reverse %}')
+PY
+
+mutation_case "Go writes the source state where the next state belongs" <<'PY'
+edit("tools/codegen/templates/go/transition_function.go.jinja2",
+     "\t\t\treturn State{{ cell.to | to_state_variant }}, true",
+     "\t\t\treturn State{{ state.id | to_state_variant }}, true")
+PY
+
+mutation_case "Kotlin leaves the outermost state out of a configuration" <<'PY'
+edit("tools/codegen/templates/kotlin/transition_function.kt.jinja2",
+     '-> listOf({% for id in state.configuration %}',
+     '-> listOf({% for id in state.configuration[1:] %}')
+PY
+
+mutation_case "Python writes the source state where the next state belongs" <<'PY'
+edit("tools/codegen/templates/python/transition_function.py.jinja2",
+     ': State.{{ cell.to | to_python_const }},',
+     ': State.{{ state.id | to_python_const }},')
 PY
 
 # ── The seam every backend's function goes through ──
