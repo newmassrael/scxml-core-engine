@@ -53,6 +53,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_history"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_host_call"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_host_call_arguments"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_host_duty"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_invoke"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_invoke_params"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_invoke_string"
@@ -1915,6 +1916,47 @@ func TestAHostActionTellsItsHostWhatTheDatamodelHeld(t *testing.T) {
 	m := drive[static_host_call.StaticHostCallState, static_host_call.StaticHostCallEvent](&policy, map[string]func() any{})
 	m.hostCalls = host.take
 	replay(t, "static_host_call", m)
+}
+
+// dutyHost is a host of `static_host_duty`, a machine that states a duty
+// (docs/adr/0038). It declares what it does with the duties in its own type and
+// keeps what the machine asked of it as a scenario writes it: the name the
+// document gives the action and no arguments, since none of its actions takes one.
+type dutyHost struct {
+	realization sce.ActionRealization
+	calls       []any
+}
+
+func (h *dutyHost) Realization() sce.ActionRealization { return h.realization }
+
+func (h *dutyHost) note(action string) {
+	h.calls = append(h.calls, map[string]any{"action": action, "args": []any{}})
+}
+
+func (h *dutyHost) StartKeepalive() { h.note("start_keepalive") }
+func (h *dutyHost) NoteEngaged()    { h.note("note_engaged") }
+func (h *dutyHost) StopKeepalive()  { h.note("stop_keepalive") }
+
+// take is the calls made since it was last called, oldest first, and forgets them.
+func (h *dutyHost) take() []any {
+	taken := h.calls
+	h.calls = nil
+	if taken == nil {
+		return []any{}
+	}
+	return taken
+}
+
+// A duty is taken on entering `engaged` and given back on leaving it, beside a
+// notice. The scenario's host only simulates, so the machine is built for it on
+// purpose (docs/adr/0038): the host's calls are what `host_calls` is read from.
+func TestAHostDutyIsTakenOnEntryAndGivenBackOnExit(t *testing.T) {
+	host := &dutyHost{realization: sce.ActionSimulates}
+	policy := static_host_duty.NewSimulatedStaticHostDutyPolicy(host)
+	policy.SessionID = sce.GenerateSessionID()
+	m := drive[static_host_duty.StaticHostDutyState, static_host_duty.StaticHostDutyEvent](&policy, map[string]func() any{})
+	m.hostCalls = host.take
+	replay(t, "static_host_duty", m)
 }
 
 // recordingHost keeps what a machine asked of its host, as `(value…)` text.

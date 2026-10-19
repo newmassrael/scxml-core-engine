@@ -176,7 +176,14 @@
 			// W3C SCXML 6.5: Generate child session ID
 			childSessionID := fmt.Sprintf("%s.%s", p.SessionID, pending.InvokeID)
 
+{% if child.child_states_duties %}
+{# docs/adr/0038: this child states a duty, so it is built through the one
+   construction that takes the caller's statement that a simulated host is
+   meant, which the caller gave this machine. #}
+			childPolicy := new{{ child_stem | to_machine_name }}Policy({{ child.child_host_call }}, p.acceptSimulatedHost)
+{% else %}
 			childPolicy := New{{ child_stem | to_machine_name }}Policy({{ child.child_host_call }})
+{% endif %}
 {% if child.child_needs_script_engine %}
 			childPolicy.ScriptEngine = p.ScriptEngine
 {% endif %}
@@ -264,7 +271,11 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 {# The host the child performs its acts through is asked of the parent's own
    host here, where the invocation starts, so a state invoked again is given a
    fresh one (docs/adr/0005, decision 6). It leads the policy's parameters. #}
+{% if invoke_info.child_states_duties %}
+			childPolicy := new{{ invoke_info.child_name | to_machine_name }}Policy({{ invoke_info.child_host_call }}, p.acceptSimulatedHost)
+{% else %}
 			childPolicy := New{{ invoke_info.child_name | to_machine_name }}Policy({{ invoke_info.child_host_call }})
+{% endif %}
 {% if invoke_info.child_needs_script_engine %}
 			childPolicy.ScriptEngine = p.ScriptEngine
 {% endif %}

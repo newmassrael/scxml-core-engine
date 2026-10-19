@@ -305,6 +305,13 @@ type {{ machine_name }}Policy struct {
 	// would arrive one act too late.
 	actions {{ native_actions_interface }}
 {% endif %}
+{% if accepts_simulated_host %}
+	// docs/adr/0038: whether the caller built this machine, through
+	// NewSimulated{{ machine_name }}Policy, for a host that only simulates its
+	// duties. The statement covers the children this machine builds with a
+	// host, so it is held to hand to each of them.
+	acceptSimulatedHost bool
+{% endif %}
 {% if event_payload_active %}
 	// NL→IR Item C1 Path A: the current event's typed `_event.data` payload,
 	// lifted from the dequeued event by PopulateEventMetadata and read by the
@@ -405,6 +412,43 @@ type {{ machine_name }}Policy struct {
 	pendingParams      map[string]interface{}
 }
 
+{% if accepts_simulated_host %}
+// New{{ machine_name }}Policy creates a new policy with default values.
+//
+// W3C SCXML G.7: `actions` is the host implementation of every `<sce:action>`
+// this document declares, taken here because the initial state's `<onentry>` can
+// already perform an act.
+{% if has_native_duties %}
+//
+// docs/adr/0038: this machine states a duty, so a host whose Realization() is
+// not sce.ActionPerforms is refused with a panic. Build the machine with
+// NewSimulated{{ machine_name }}Policy to run it on a recorder or a test double
+// on purpose.
+{% endif %}
+func New{{ machine_name }}Policy(actions {{ native_actions_interface }}) {{ machine_name }}Policy {
+	return new{{ machine_name }}Policy(actions, false)
+}
+
+// NewSimulated{{ machine_name }}Policy creates a policy for a host that only
+// simulates the duties of this machine and any child it builds with a host (a
+// recorder, a test double), as the caller's statement that it means to
+// (docs/adr/0038).
+func NewSimulated{{ machine_name }}Policy(actions {{ native_actions_interface }}) {{ machine_name }}Policy {
+	return new{{ machine_name }}Policy(actions, true)
+}
+
+// new{{ machine_name }}Policy is the one construction both entry points reach.
+func new{{ machine_name }}Policy(actions {{ native_actions_interface }}, acceptSimulatedHost bool) {{ machine_name }}Policy {
+{% if has_native_duties %}
+	if !acceptSimulatedHost && actions.Realization() != sce.ActionPerforms {
+		panic("{{ machine_name }} states a duty and its host declares that it only simulates the duties: " +
+			"build it with NewSimulated{{ machine_name }}Policy to run it on a recorder or a test double on purpose")
+	}
+{% endif %}
+	return {{ machine_name }}Policy{
+		actions: actions,
+		acceptSimulatedHost: acceptSimulatedHost,
+{% else %}
 // New{{ machine_name }}Policy creates a new policy with default values.
 {% if has_native_actions %}
 //
@@ -418,6 +462,7 @@ func New{{ machine_name }}Policy(actions {{ native_actions_interface }}) {{ mach
 {% else %}
 func New{{ machine_name }}Policy() {{ machine_name }}Policy {
 	return {{ machine_name }}Policy{
+{% endif %}
 {% endif %}
 {% for field in static_fields %}
 		{{ field.name }}: {{ field.init }},
