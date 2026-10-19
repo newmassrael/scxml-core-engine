@@ -1475,6 +1475,87 @@ fn a_refusal_names_every_declaration_left_unbound() {
     );
 }
 
+/// The Rust module index of `text`, generated as `kept`, bound to a digest
+/// when `bind` is set as a route that writes drift-headed files binds it.
+fn module_index(text: &str, bind: bool) -> String {
+    let mut model = SCXMLParser::new()
+        .parse_string(text, "kept")
+        .expect("the document parses");
+    sce_build::analyzer::analyze(&mut model, "kept.scxml");
+    if bind {
+        sce_build::bind_run_digest(&mut model, &"ef".repeat(32));
+    }
+    sce_build::generator::generate_rust_module_index(
+        &model,
+        &sce_build::find_template_dir_for(Language::Rust),
+        "kept",
+    )
+    .expect("the module index renders")
+}
+
+/// The Rust module index names a bound function's module beside the
+/// machine's, and adds nothing for a document that declares no function or
+/// whose function no route bound.
+#[test]
+fn the_rust_module_index_declares_a_bound_function_and_nothing_else() {
+    let machine_only = "pub use kept_sm::*;";
+    let undeclared = module_index(
+        &KEPT.replace(r#" sce:transition-function="emit""#, ""),
+        true,
+    );
+    assert!(
+        undeclared.trim_end().ends_with(machine_only)
+            && !undeclared.contains("transition_function"),
+        "{undeclared}"
+    );
+    let unbound = module_index(KEPT, false);
+    assert!(
+        unbound.trim_end().ends_with(machine_only) && !unbound.contains("transition_function"),
+        "{unbound}"
+    );
+    let bound = module_index(KEPT, true);
+    assert!(
+        bound
+            .trim_end()
+            .ends_with("pub use kept_sm::*;\npub mod kept_transition_function;"),
+        "{bound}"
+    );
+}
+
+/// `generate-w3c` declares a fixture's function module in the fixture's
+/// `mod.rs`, so the W3C Rust suite compiles the file it wrote.
+#[test]
+fn generate_w3c_declares_a_fixtures_function_in_its_module_index() {
+    let work = scratch("w3c_function_index");
+    let suite = W3cSuite::stage(&work, "904", KEPT);
+    let out = work.join("out");
+    output_ok(codegen(&suite.args(&out)), "generate-w3c -l rust");
+    let index = std::fs::read_to_string(w3c_rust_dir(&out, "904").join("mod.rs"))
+        .expect("read the fixture's mod.rs");
+    assert!(
+        index.contains("pub mod test904_transition_function;"),
+        "{index}"
+    );
+}
+
+/// `generate-w3c` declares an in-line child's function module in the
+/// fixture's `mod.rs`, beside the child's machine.
+#[test]
+fn generate_w3c_declares_an_inline_childs_function_in_its_module_index() {
+    let work = scratch("w3c_child_function_index");
+    let suite = W3cSuite::stage(&work, "905", &host_with_child(PURE_CHILD));
+    let out = work.join("out");
+    output_ok(codegen(&suite.args(&out)), "generate-w3c -l rust");
+    let index = std::fs::read_to_string(w3c_rust_dir(&out, "905").join("mod.rs"))
+        .expect("read the fixture's mod.rs");
+    let child = child_stem("test905");
+    assert!(
+        index.contains(&format!("mod {child}_sm;"))
+            && index.contains(&format!("pub mod {child}_transition_function;")),
+        "{index}"
+    );
+}
+
 /// The template reads the function the producer built, and nothing else: no
 /// line between its markers walks the model's states, transitions or events.
 #[test]

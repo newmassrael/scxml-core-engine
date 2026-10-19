@@ -78,8 +78,9 @@ with the document that holds it, its refusals placed on the rows its author wrot
 carries. `check` judges the declaration and writes nothing, on one document and on a set alike.
 
 The library entry points compute no source hash, so they cannot generate the function. A document
-that declares it is refused there with `generate/unsupported-feature`, naming the entry and saying
-to generate it with `sce-codegen generate`, rather than handed back as a machine without it; the
+that declares it is refused there with `generate/source-hash-unavailable`, naming the declaration
+and the entry and saying to generate it with `sce-codegen generate`, rather than handed back as a
+machine without it (a declared transition table is refused by the same check); the
 in-memory entry the WASM build calls is among them. `compile_scxml_with_imports` generates the
 function when the caller gives it `ForgeCompileOptions::source_hash`, and refuses it, naming that
 option, when the caller does not. A document the declaration does not admit is refused by them on
@@ -109,8 +110,9 @@ every selection rule), and:
   same records, the library's file and in-memory entry points the first of them;
 - holds every route that writes the machine to the function beside it: `orchestrate` and
   `generate-w3c` for a document, `generate` and `generate-w3c` for an in-line child, each file
-  carrying the hash its machine carries; an in-line child's refusal on the row its author wrote; and
-  the library entry points refusing, by name, the function they have no hash for.
+  carrying the hash its machine carries, and the W3C Rust module index naming each function module;
+  an in-line child's refusal on the row its author wrote; and the library entry points refusing, by
+  name, the function or the table they have no hash for.
 
 `sce-build/tests/mutations/the_emitted_transition_function_equals_the_producer.cases` makes the
 producer and the Rust template wrong once each in a mutation round, so the tests above are known to

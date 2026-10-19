@@ -65,3 +65,18 @@
    blanket would also swallow a real warning in the two lines below. #}
 #[allow(unused_imports)]
 pub use {{ module_stem }}_sm::*;
+{%- if not module_path and model.emitted_transition_function %}
+{#
+   The transition function a document declares (`sce:transition-function`)
+   is a file beside the machine, and in a source tree a sibling file is
+   compiled only when its parent `mod.rs` names it. Declared here, from the
+   value the generator bound, so a directory that holds the file names it.
+   The `-` on the tag above takes the newline before it, so a document
+   declaring nothing renders the lines above byte for byte. Not under
+   `module_path`: the `OUT_DIR` form names one file, and the routes that
+   write it bind no digest. Its own module, not re-exported: its `State`
+   and `Event` are names the machine's re-export would otherwise meet.
+#}
+
+pub mod {{ module_stem }}_transition_function;
+{%- endif %}

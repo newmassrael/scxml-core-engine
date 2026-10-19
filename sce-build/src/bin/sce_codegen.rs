@@ -7298,6 +7298,19 @@ trait W3cBackend {
         drift_ctx: &DriftContext,
     );
 
+    /// Declare a file written beside a child's machine (its transition
+    /// function, `filename`) where the backend's module index names the
+    /// files of a test directory. Only Rust has such an index: a sibling
+    /// file it does not name is never compiled. The others find a file by
+    /// its directory or its package, and declare nothing.
+    fn declare_child_sibling(
+        &self,
+        _test_mod_dir: &Path,
+        _filename: &str,
+        _drift_ctx: &DriftContext,
+    ) {
+    }
+
     /// Handle a child that failed codegen (Kotlin generates stubs, others skip).
     fn process_child_failure(
         &self,
@@ -7552,6 +7565,7 @@ fn generate_child_sms(
                                 code,
                                 drift_ctx,
                             );
+                            backend.declare_child_sibling(test_mod_dir, filename, drift_ctx);
                         }
                     }
                     Err(e) => {
@@ -8181,6 +8195,26 @@ impl W3cBackend for RustBackend {
                 write_if_changed_drift_aware(
                     &mod_file,
                     &format!("{existing}{addition}"),
+                    drift_ctx,
+                );
+            }
+        }
+    }
+
+    fn declare_child_sibling(&self, test_mod_dir: &Path, filename: &str, drift_ctx: &DriftContext) {
+        // Appended to the test's `mod.rs` as `process_child` appends the
+        // child's machine, and read back the same way. A parent's function
+        // is declared by `module_index.rs.jinja2` itself; a child's machine
+        // is appended here, so its function is too.
+        let Some(module) = filename.strip_suffix(".rs") else {
+            return;
+        };
+        let mod_file = test_mod_dir.join("mod.rs");
+        if let Some(existing) = read_generated(&mod_file) {
+            if !existing.contains(&format!("mod {module};")) {
+                write_if_changed_drift_aware(
+                    &mod_file,
+                    &format!("{existing}pub mod {module};\n"),
                     drift_ctx,
                 );
             }
