@@ -1897,6 +1897,16 @@ pub struct InvokeSessionCommon {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[cfg_attr(test, schemars(skip))]
     pub child_declares_host_acts: bool,
+    /// Codegen-internal: the child states a duty (docs/adr/0038), so its host
+    /// declares what it does with duties and the child refuses a host that only
+    /// simulates them unless it is built for one on purpose. The parent passes the
+    /// opt-in its own caller gave it on to such a child, and only to such a child:
+    /// a child with no duty has no seam to pass it to. Derived beside
+    /// [`Self::child_declares_host_acts`], of which it is a subset, and outside the
+    /// IR contract for the reason [`Param::native_seed`] gives.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(test, schemars(skip))]
+    pub child_declares_host_duties: bool,
     /// Codegen-internal: the call, in the target language, that answers the
     /// host the child is built with — the factory operation the parent's own host
     /// declares for this invoke. Empty for a child that declares no act. Set by
@@ -2389,6 +2399,12 @@ pub struct InvokeCandidate {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[cfg_attr(test, schemars(skip))]
     pub child_declares_host_acts: bool,
+    /// Codegen-internal: the candidate states a duty —
+    /// [`InvokeSessionCommon::child_declares_host_duties`], per candidate.
+    /// Outside the IR contract.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(test, schemars(skip))]
+    pub child_declares_host_duties: bool,
     /// Codegen-internal: the call that answers the host THIS candidate is built
     /// with — [`InvokeSessionCommon::child_host_call`], per candidate. Empty for a
     /// candidate that declares no act. Outside the IR contract.

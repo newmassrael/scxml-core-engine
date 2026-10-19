@@ -7774,6 +7774,8 @@ fn populate_child_metadata_from_model(child_model: &SCXMLModel, common: &mut Inv
     common.child_is_static = child_model.datamodel == Datamodel::SceStatic;
     common.child_declares_host_acts = common.child_is_static
         && crate::forge::native_action::document_has_native_actions(child_model);
+    common.child_declares_host_duties = common.child_declares_host_acts
+        && crate::forge::native_action::document_has_duties(child_model);
     // §scxml-6.2 (test187/207): mirror the child's own scheduler
     // requirement. The child's codegen emits `_tick` only when
     // its scheduler queue is non-empty; the parent's invoke driver
@@ -7817,6 +7819,7 @@ fn populate_candidate_metadata(
     candidate.child_static_variables = common.child_static_variables;
     candidate.child_is_static = common.child_is_static;
     candidate.child_declares_host_acts = common.child_declares_host_acts;
+    candidate.child_declares_host_duties = common.child_declares_host_duties;
     candidate.child_has_send_to_parent = common.child_has_send_to_parent;
     candidate.child_needs_event_scheduler = common.child_needs_event_scheduler;
 }
