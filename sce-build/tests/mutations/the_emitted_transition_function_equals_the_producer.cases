@@ -1,0 +1,89 @@
+# Mutation cases for "the transition function a backend emits equals the producer's".
+#
+# Run with `scripts/mutate sce-build/tests/mutations/the_emitted_transition_function_equals_the_producer.cases`.
+#
+# A document that declares `sce:transition-function="emit"` is generated with a pure function
+# of (current state, event) beside its machine. `TransitionFunction::of` computes it once
+# (`sce-build/src/transition_function.rs`), the Rust template renders it
+# (`tools/codegen/templates/rust/transition_function.rs.jinja2`), and
+# `the_emitted_transition_function_equals_the_producer` holds the template to the producer and
+# the producer to the engine. A test that has never been made to fail says nothing about
+# whether it could, so each half is made wrong here in a place that is its own.
+#
+# The producer cases are each caught by the full table the nested fixture is stated to yield,
+# and again by the generated machine run on the Rust runtime, which disagrees with a wrong
+# function on the pair that moved. The template cases are caught by the program that compiles
+# the generated file alone and prints every answer, and the first of them by reading the arms
+# back from the source too. The last case is the refusal of the five backends that do not
+# generate the function yet: written as a silent skip, the machine would be generated without
+# the file it was asked for.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test the_emitted_transition_function_equals_the_producer
+mutation_targets sce-build/src/transition_function.rs
+mutation_targets sce-build/src/generator.rs
+mutation_targets tools/codegen/templates/rust/transition_function.rs.jinja2
+mutation_oracles sce-build/tests/the_emitted_transition_function_equals_the_producer.rs
+
+# ── The producer: the selection rule, and the leaf a target enters ──
+
+mutation_case "the producer reads the leaf's transitions and not its ancestors'" <<'PY'
+edit("sce-build/src/transition_function.rs",
+     'ancestry(self.model, leaf).into_iter().find_map(|state| {',
+     'ancestry(self.model, leaf).into_iter().take(1).find_map(|state| {')
+PY
+
+mutation_case "the producer takes the last matching transition of a state, not the first" <<'PY'
+edit("sce-build/src/transition_function.rs",
+     'self.owned.get(state)?.iter().find(|record| {',
+     'self.owned.get(state)?.iter().rev().find(|record| {')
+PY
+
+mutation_case "the producer refuses an event a targetless transition takes" <<'PY'
+edit("sce-build/src/transition_function.rs",
+     'None => leaf.to_string(),',
+     'None => return None,')
+PY
+
+mutation_case "the producer enters a compound state by its first child whatever it names" <<'PY'
+edit("sce-build/src/transition_function.rs",
+     '.find(|child| model.states.contains_key(*child))',
+     '.find(|_| false)')
+PY
+
+# ── The Rust template: the arm, the configuration, the finals ──
+
+mutation_case "Rust writes the source state where the next state belongs" <<'PY'
+edit("tools/codegen/templates/rust/transition_function.rs.jinja2",
+     '=> Some(State::{{ cell.to | to_state_variant }}),',
+     '=> Some(State::{{ state.id | to_state_variant }}),')
+PY
+
+mutation_case "Rust writes a configuration innermost first" <<'PY'
+edit("tools/codegen/templates/rust/transition_function.rs.jinja2",
+     '{% for id in state.configuration %}',
+     '{% for id in state.configuration | reverse %}')
+PY
+
+mutation_case "Rust calls no state final" <<'PY'
+edit("tools/codegen/templates/rust/transition_function.rs.jinja2",
+     '{% if finals %}',
+     '{% if false %}')
+PY
+
+# ── The refusal of the backends without the function ──
+
+mutation_case "the five backends write the machine without the function they were asked for" <<'PY'
+edit("sce-build/src/generator.rs",
+     '''    match language {
+        Language::Rust => {
+            if model.emitted_transition_function.is_none() {''',
+     '''    if language != Language::Rust {
+        return Ok(Vec::new());
+    }
+    match language {
+        Language::Rust => {
+            if model.emitted_transition_function.is_none() {''')
+PY

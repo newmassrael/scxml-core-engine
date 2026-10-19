@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A nested lifecycle declared as a transition function (SCE Accepted Subset
+  §2.21), reaching every selection rule the function is computed by:
+
+  - `abort` is held by the ancestor `session` and taken from every leaf below
+    it that has no transition of its own for it;
+  - `session` enters its child by its `initial` attribute, `setup` by an
+    `<initial>` element, and `active` by its first child; the first two name a
+    child that is not their first, so each rule is the one that decides;
+  - in `retrying`, `data.ready` is written before the prefix `data.*`, so the
+    first match in document order decides between them;
+  - `pause` is an internal transition into a child of its source, and `reset`
+    an external one that re-enters `active` by default;
+  - `working` takes `resume` without a target, and `held` takes every other
+    event with the wildcard `*`, ahead of its ancestors' transitions;
+  - `closed` is a top-level final.
+
+  `working` handles `resume` as well as `held` does so that the two siblings
+  agree on the events they share (scxml/non-exhaustive-event-handling).
+
+  Held by sce-build/tests/the_emitted_transition_function_equals_the_producer.rs.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       name="nested_lifecycle"
+       initial="session"
+       datamodel="null"
+       sce:transition-function="emit">
+  <state id="session" initial="setup">
+    <transition event="abort" target="closed"/>
+    <state id="active">
+      <transition event="pause" type="internal" target="held"/>
+      <transition event="reset" target="active"/>
+      <state id="working">
+        <transition event="done" target="closed"/>
+        <transition event="resume"/>
+      </state>
+      <state id="held">
+        <transition event="resume" target="working"/>
+        <transition event="*"/>
+      </state>
+    </state>
+    <state id="setup">
+      <initial><transition target="loading"/></initial>
+      <state id="retrying">
+        <transition event="data.ready" target="ready"/>
+        <transition event="data.*" target="loading"/>
+      </state>
+      <state id="loading">
+        <transition event="data.ready" target="ready"/>
+        <transition event="data.failed" target="retrying"/>
+      </state>
+      <state id="ready">
+        <transition event="go" target="active"/>
+      </state>
+    </state>
+  </state>
+  <final id="closed"/>
+</scxml>

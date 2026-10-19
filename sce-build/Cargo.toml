@@ -1248,6 +1248,15 @@ name = "the_emitted_transition_table_equals_the_export"
 path = "tests/the_emitted_transition_table_equals_the_export.rs"
 required-features = ["cli"]
 
+# A document declaring `sce:transition-function="emit"` is generated with a
+# runtime-free transition function beside its machine; this compiles the Rust
+# file alone and holds it to the producer, and runs the generated machine on the
+# Rust runtime against it. It spawns `sce-codegen`, so it carries the `cli` gate.
+[[test]]
+name = "the_emitted_transition_function_equals_the_producer"
+path = "tests/the_emitted_transition_function_equals_the_producer.rs"
+required-features = ["cli"]
+
 # `machines.<m>.scheduler.session_runtime` (SCE Protocol-Synthesis RFC
 # §synth-5-Q, Session runtime of a tokio host). It runs `sce-codegen orchestrate` against a
 # deploy with and without the block, so it carries the `cli` gate.

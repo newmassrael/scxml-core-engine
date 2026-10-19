@@ -266,25 +266,13 @@ mod tests {
     /// A session with ancestor-held transitions, every way a compound state
     /// names its default child, an internal and an external transition, a
     /// prefix and a wildcard descriptor, a refused pair and a top-level final.
+    /// The children that `session`'s attribute and `setup`'s `<initial>` name
+    /// are not their first children, so each rule decides the entry.
     const NESTED: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
                               xmlns:sce="http://sce.dev/ext" sce:transition-function="emit"
                               version="1.0" initial="session" datamodel="null">
         <state id="session" initial="setup">
             <transition event="abort" target="closed"/>
-            <state id="setup">
-                <initial><transition target="loading"/></initial>
-                <state id="loading">
-                    <transition event="data.ready" target="ready"/>
-                    <transition event="data.failed" target="retrying"/>
-                </state>
-                <state id="retrying">
-                    <transition event="data.ready" target="ready"/>
-                    <transition event="data.*" target="loading"/>
-                </state>
-                <state id="ready">
-                    <transition event="go" target="active"/>
-                </state>
-            </state>
             <state id="active">
                 <transition event="pause" type="internal" target="held"/>
                 <transition event="reset" target="active"/>
@@ -295,6 +283,20 @@ mod tests {
                 <state id="held">
                     <transition event="resume" target="working"/>
                     <transition event="*"/>
+                </state>
+            </state>
+            <state id="setup">
+                <initial><transition target="loading"/></initial>
+                <state id="retrying">
+                    <transition event="data.ready" target="ready"/>
+                    <transition event="data.*" target="loading"/>
+                </state>
+                <state id="loading">
+                    <transition event="data.ready" target="ready"/>
+                    <transition event="data.failed" target="retrying"/>
+                </state>
+                <state id="ready">
+                    <transition event="go" target="active"/>
                 </state>
             </state>
         </state>
@@ -336,7 +338,7 @@ mod tests {
     fn the_states_are_the_leaves_in_document_order() {
         assert_eq!(
             ids(&function(NESTED)),
-            ["loading", "retrying", "ready", "working", "held", "closed"]
+            ["working", "held", "retrying", "loading", "ready", "closed"]
         );
         assert_eq!(ids(&function(FLAT)), ["idle", "running", "paused"]);
     }
@@ -348,13 +350,13 @@ mod tests {
             function(NESTED).events,
             [
                 "abort",
-                "data.ready",
-                "data.failed",
-                "go",
                 "pause",
                 "reset",
                 "done",
-                "resume"
+                "resume",
+                "data.ready",
+                "data.failed",
+                "go"
             ]
         );
         assert_eq!(

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A flat lifecycle declared as a transition function (SCE Accepted Subset
+  §2.21): three states in a cycle, no final state, a targetless transition
+  that leaves the state where it is (`ping`), and a self-transition with a
+  target (`tick`). Every macrostep is one microstep, so the next state is a
+  function of the current state and the event alone.
+
+  Held by sce-build/tests/the_emitted_transition_function_equals_the_producer.rs:
+  the generated function, compiled alone, against the producer's table, and the
+  generated machine, run on the Rust runtime, against the function.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       name="flat_lifecycle"
+       initial="idle"
+       datamodel="null"
+       sce:transition-function="emit">
+  <state id="idle">
+    <transition event="start" target="running"/>
+    <transition event="ping"/>
+  </state>
+  <state id="running">
+    <transition event="pause" target="paused"/>
+    <transition event="tick" target="running"/>
+    <transition event="ping"/>
+  </state>
+  <state id="paused">
+    <transition event="resume" target="running"/>
+    <transition event="stop" target="idle"/>
+  </state>
+</scxml>
