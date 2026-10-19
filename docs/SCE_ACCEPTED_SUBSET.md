@@ -2222,14 +2222,83 @@ and `uint32 → u32`, Go `[]byte` / `uint32`, Kotlin `ByteArray` / `UInt`,
 C++ `const std::vector<uint8_t>&`, Python `bytes` / `int`, C11 a
 `const uint8_t *` plus its `size_t` length sibling.
 
-Kotlin also generates `Recording<Machine>Actions`, from the same signatures:
-an implementation that performs nothing and records every call, in order,
-as a value of its sealed `Call` type (a `data class` per operation, a
-`data object` for one with no argument), read through `calls`. A test drives
-the machine with it and no hand-written host: send an event, read what the
-machine asked the host to do, answer with an event, check the snapshot. A
-`bytes` argument is recorded as a `List<Byte>` copy, so a recorded call
-compares by value. The other five backends do not generate one yet.
+Kotlin and Rust also generate `Recording<Machine>Actions`, from the same
+signatures: an implementation that performs nothing and records every call, in
+order, as a value of its `Call` type (Kotlin: a `data class` per operation, a
+`data object` for one with no argument; Rust: a variant of
+`<Interface>Call`), read through `calls`. A test drives the machine with it
+and no hand-written host: send an event, read what the machine asked the host
+to do, answer with an event, check the snapshot. A `bytes` argument is
+recorded as a copy, so a recorded call compares by value. The other four
+backends do not generate one yet.
+
+#### Effect and realization (docs/adr/0038)
+
+Every `<sce:action>` states whether the machine depends on the host
+performing it, with the required, unqualified attribute `effect`:
+
+```xml
+<state id="engaged">
+  <onentry>
+    <sce:action name="start_keepalive" effect="duty" released-by="stop_keepalive"/>
+    <sce:action name="note_engaged" effect="notice"/>
+  </onentry>
+  <onexit>
+    <sce:action name="stop_keepalive" effect="duty"/>
+  </onexit>
+</state>
+```
+
+- `effect="duty"`: the machine's correctness depends on the host performing the
+  operation. `effect="notice"`: it does not; the host may observe, record or
+  drop it. An action with no `effect` is refused at the element
+  (`validation/missing-attribute`); a value that is neither word is refused
+  with both as candidates (`validation/invalid-attribute`). One name carries
+  one effect at every call site, because the effect belongs to the one host
+  method that serves them (`validation/native-action-signature-conflict`).
+- A duty an `<onentry>` takes may name its release with `released-by`: an
+  action of the same machine, itself a duty, performed on the `<onexit>` of the
+  same state, so every way out of the state releases what the entry took. A
+  `released-by` off an `<onentry>`, on a notice, naming no action, naming one
+  that is not performed on this state's `<onexit>`, or naming a notice, is
+  refused (`validation/native-action-release`). A duty with no `released-by`
+  lasts the machine's life.
+- **The host declares what it does with the duties.** The generated interface of
+  a machine that states a duty carries one member with no default, whose value
+  is `performs` or `simulates`; a machine of notices has none and takes any
+  host. A machine refuses a host that only simulates the duties where it is
+  built with the host, unless the caller accepts a simulated host by name:
+
+  | backend | the member | refusal | accepting one on purpose |
+  |---|---|---|---|
+  | Rust | `const REALIZATION: ::sce_rust_runtime::ActionRealization` | compile time, in `Policy::new` | `Policy::new_simulated` |
+  | C++ | `virtual SCE::ActionRealization realization() const = 0` | at construction | a named constructor argument |
+  | Kotlin | `val realization: ActionRealization` | `require` at construction | `acceptSimulatedHost = true` |
+  | Go | `Realization() sce.ActionRealization` | `New<Machine>Policy` panics | `NewSimulated<Machine>Policy` |
+  | Python | `realization: ActionRealization` | `ValueError` at construction | `accept_simulated_host=True` |
+  | C11 | `sce_action_realization_t realization` in the vtable | `_init_with_actions` returns false | `_init_with_simulated_actions` |
+
+  `performs` is a statement the host's author makes about the bodies of the
+  methods, in a line a reviewer can find: SCE cannot read the bodies, and an
+  empty body under `performs` is that author's false statement and not an
+  unwritten fact. A child machine a parent's host answers is built the same way,
+  so its duties are checked at its own construction, and the opt-in a caller gave
+  the parent covers the children the parent builds. The generated recorder
+  (`Recording<Machine>Actions`) performs nothing and declares `simulates`.
+- **The Interpreter says the same.** `INativeActionHost::realization()` is pure
+  virtual, and `StateMachine::start()` refuses a simulating host of a document that
+  states a duty unless the host was installed through
+  `setSimulatedNativeActionHost`.
+- **The manifest publishes the duties.** The stdout manifest's `host_duties`
+  lists each site of a duty (`machine`, `action`, `state`, `on`, `released_by`),
+  omitted when there is none: published, not enforced
+  (`SCE_ERROR_CONTRACT.md` §10.1).
+- **The pseudocode says it too:** a native action is a `call <name>:` block whose
+  first clause is `effect <duty|notice>`, then `released-by <action>` when there is
+  one, then the `arg` lines, and the reading back takes them as written.
+
+The attribute is also what `schemas/sce-forge-ext.xsd` declares for the element,
+where a misspelled sibling such as `releasedby` is an undeclared attribute.
 
 **The Interpreter** loads a document at run time and has no interface to
 generate, so its host is `INativeActionHost` (`sce/include/runtime/`),
