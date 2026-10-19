@@ -29,15 +29,15 @@ use crate::figures::{FigureRequest, RenderError};
 use crate::journal::{Event, Journal};
 use crate::model_set::{Document, ModelError, ModelFiles};
 use crate::original::{MemberDraft, OriginalDraft, Role};
-use crate::proposals::DecisionKind;
+use crate::proposals::{DecisionKind, IntakeLink};
 use crate::requests::{ConnectionRef, Failure, FailureKind, Inputs, Lease, Pin};
 use crate::requirements::{Requirements, RequirementsError};
 use crate::review::{Product, Review, ReviewRequest, Verdict};
 use crate::revision::Revision;
 use crate::store::{
-    AdapterReport, AdapterStatus, AnswersText, CandidateWrite, HostStatus, ModelText,
-    ProposalRegistration, Published, Registration, RequestView, RequirementsText, SourceText,
-    SpecId, SpecStore,
+    AdapterReport, AdapterStatus, AnswersText, CandidateWrite, HostStatus, IntakeRegistration,
+    ModelText, ProposalRegistration, Published, Registration, RequestView, RequirementsText,
+    SourceText, SpecId, SpecStore,
 };
 
 /// Every command on the specs, in the order a person would meet them.
@@ -101,6 +101,12 @@ pub const COMMANDS: &[&str] = &[
     "accept_proposal",
     "reject_proposal",
     "rebase_proposal",
+    "start_intake",
+    "read_intake",
+    "list_intakes",
+    "save_ledger",
+    "bind_new_spec",
+    "give_intake_to_spec",
 ];
 
 /// The version of this command set. It moves when a command's arguments or
@@ -333,7 +339,17 @@ pub const COMMANDS: &[&str] = &[
 /// extraction and the report was made under it, and `read_proposal_documents` gives it back as
 /// `scope` when there is one. A screen written for 33 imports a chosen part; a core of 32 refuses the
 /// argument as a `bad-request`, and a screen written for 32 never sends it.
-pub const COMMAND_SET_VERSION: u32 = 33;
+///
+/// 34: a document can be divided among specs (ADR 0040): `start_intake` keeps the document and its extraction as
+/// an intake beside the specs, `save_ledger` keeps the owner's ledger of where each paragraph goes with SCE's
+/// count of it (a head moved by a save that names its base, `conflict` when it moved), `read_intake` says it and
+/// how far each spec has come, `list_intakes`, `bind_new_spec` records which spec a spec to be made was made as,
+/// and `give_intake_to_spec` copies the document into a spec. `propose_import` takes an `intake` and admits the
+/// proposal as that spec's part only when its scope is exactly what the ledger gives the spec; it is refused as
+/// `ledger-moved`, `ledger-incomplete` or `bad-proposal`, and a ledger as `bad-ledger` or `already-bound`. A screen
+/// written for 34 divides a document; a core of 33 refuses the six commands as `unknown-command`, and a screen
+/// written for 33 has no use for them.
+pub const COMMAND_SET_VERSION: u32 = 34;
 
 /// A command that did not do what was asked, in a shape every shell can pass on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -490,6 +506,91 @@ struct OriginalMemberArgs {
     renderer: Option<String>,
 }
 
+/// An original as the commands bring one: its members' bytes are base64, and the draft is made of them.
+fn original_draft(
+    label: Option<String>,
+    members: Vec<OriginalMemberArgs>,
+    missing: Vec<String>,
+) -> Result<OriginalDraft, CommandError> {
+    let mut drafts = Vec::with_capacity(members.len());
+    for member in members {
+        let bytes = crate::base64::decode(&member.data).map_err(|why| {
+            CommandError::bad_request(format!(
+                "the data of the member `{}` is not base64: {why}",
+                member.path
+            ))
+        })?;
+        drafts.push(MemberDraft {
+            path: member.path,
+            role: member.role,
+            bytes,
+            of: member.of,
+            renderer: member.renderer,
+        });
+    }
+    Ok(OriginalDraft {
+        label: label.unwrap_or_default(),
+        members: drafts,
+        missing,
+    })
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StartIntake {
+    /// What makes the same press sent again the intake it already made.
+    key: String,
+    /// Where it is asked from: `gui`, or the name of a client.
+    origin: String,
+    /// What the document is called.
+    title: String,
+    #[serde(default)]
+    label: Option<String>,
+    members: Vec<OriginalMemberArgs>,
+    #[serde(default)]
+    missing: Vec<String>,
+    /// The path of the member of the original the extraction was read from.
+    member: String,
+    /// The extraction, kept exactly as given.
+    extraction: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OneIntake {
+    id: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SaveLedger {
+    id: String,
+    /// The ledger, as `make-ledger` wrote it.
+    ledger: String,
+    /// SCE's count of it, as `check-ledger --json` wrote it.
+    report: String,
+    /// The ledger the caller read and is changing; absent for the first.
+    #[serde(default)]
+    base: Option<Revision>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BindNewSpec {
+    id: String,
+    /// The title the ledger gives the spec to be made.
+    title: String,
+    /// The spec it was made as.
+    spec: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GiveIntake {
+    id: String,
+    spec: String,
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct AddOriginal {
@@ -559,6 +660,9 @@ struct ProposeImport {
     /// The part of the extraction the owner chose, as `make-scope` wrote it; absent for the whole.
     #[serde(default)]
     scope: Option<String>,
+    /// The division of a document this is a spec's part of (ADR 0040); absent for an import of its own.
+    #[serde(default)]
+    intake: Option<IntakeLink>,
     /// The text head the caller read; absent for a spec that has no text.
     #[serde(default)]
     expect: Option<Revision>,
@@ -2157,30 +2261,54 @@ pub fn call_with<C: Clock>(
                 members,
                 missing,
             } = arguments(args)?;
-            let mut drafts = Vec::with_capacity(members.len());
-            for member in members {
-                let bytes = crate::base64::decode(&member.data).map_err(|why| {
-                    CommandError::bad_request(format!(
-                        "the data of the member `{}` is not base64: {why}",
-                        member.path
-                    ))
-                })?;
-                drafts.push(MemberDraft {
-                    path: member.path,
-                    role: member.role,
-                    bytes,
-                    of: member.of,
-                    renderer: member.renderer,
-                });
-            }
-            answer(&store.add_original(
-                &spec_id(&id)?,
-                OriginalDraft {
-                    label: label.unwrap_or_default(),
-                    members: drafts,
-                    missing,
-                },
-            )?)
+            let draft = original_draft(label, members, missing)?;
+            answer(&store.add_original(&spec_id(&id)?, draft)?)
+        }
+        "start_intake" => {
+            let StartIntake {
+                key,
+                origin,
+                title,
+                label,
+                members,
+                missing,
+                member,
+                extraction,
+            } = arguments(args)?;
+            let draft = original_draft(label, members, missing)?;
+            answer(&store.start_intake(IntakeRegistration {
+                key: &key,
+                origin: &origin,
+                title: &title,
+                draft,
+                member: &member,
+                extraction: &extraction,
+            })?)
+        }
+        "read_intake" => {
+            let OneIntake { id } = arguments(args)?;
+            answer(&store.read_intake(&id)?)
+        }
+        "list_intakes" => {
+            arguments::<Empty>(args)?;
+            Ok(json!({ "intakes": store.list_intakes()? }))
+        }
+        "save_ledger" => {
+            let SaveLedger {
+                id,
+                ledger,
+                report,
+                base,
+            } = arguments(args)?;
+            answer(&store.save_ledger(&id, &ledger, &report, base.as_ref())?)
+        }
+        "bind_new_spec" => {
+            let BindNewSpec { id, title, spec } = arguments(args)?;
+            answer(&store.bind_new_spec(&id, &title, &spec_id(&spec)?)?)
+        }
+        "give_intake_to_spec" => {
+            let GiveIntake { id, spec } = arguments(args)?;
+            answer(&store.give_intake_to_spec(&id, &spec_id(&spec)?)?)
         }
         "read_original" => {
             let OneOriginal { id, original } = arguments(args)?;
@@ -2236,6 +2364,7 @@ pub fn call_with<C: Clock>(
                 conversion,
                 report,
                 scope,
+                intake,
                 expect,
                 supersede,
             } = arguments(args)?;
@@ -2249,6 +2378,7 @@ pub fn call_with<C: Clock>(
                     conversion: &conversion,
                     report: &report,
                     scope: scope.as_deref(),
+                    intake,
                     expect,
                     supersede,
                 },

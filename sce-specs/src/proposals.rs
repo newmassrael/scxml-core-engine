@@ -81,6 +81,15 @@ pub struct Ask {
     pub id: String,
 }
 
+/// The division of a document a proposal is a part of (ADR 0040): the intake that holds the ledger, and the
+/// revision of the ledger the proposal was made under.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct IntakeLink {
+    pub id: String,
+    pub ledger: Revision,
+}
+
 /// One proposal, as it is kept.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Proposal {
@@ -103,6 +112,10 @@ pub struct Proposal {
     /// check was made under; `None` when the whole of it was.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scope: Option<Revision>,
+    /// The division of a document this proposal is one spec's part of, when it is; the store admits it only
+    /// when its scope is exactly what the ledger gives the spec.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intake: Option<IntakeLink>,
     pub converter: Converter,
     /// The text head the proposal was made against; `None` for a spec that had no text.
     pub against: Option<Revision>,
@@ -219,6 +232,7 @@ mod tests {
                 version: "1".to_string(),
             },
             scope: None,
+            intake: None,
             against: None,
             asks: asks
                 .iter()

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://sce.dev/schemas/authoring/ledger.v1.schema.json",
   "title": "Ledger",
-  "description": "Where each paragraph of a divided document went (docs/adr/0040-a-document-is-divided-among-specs-and-every-paragraph-has-a-place.md): a list of allotments, each a destination and the blocks of the extraction that go there. It is the owner's, and SCE counts it: which paragraphs went nowhere, which were both used and left out, and which went to several specs are SCE's counts, and the form has no field in which a ledger could say it is complete. One allotment to a destination, and parts left out for different reasons are different allotments; the tools write them in a fixed order. The extraction it is of is named by its revision, the SHA-256 of its canonical text.",
+  "description": "Where each paragraph of a divided document went (docs/adr/0040-a-document-is-divided-among-specs-and-every-paragraph-has-a-place.md): a list of allotments, each a destination and the blocks of the extraction that go there. It is the owner's, and SCE counts it: which paragraphs went nowhere, which were both used and left out, and which went to several specs are SCE's counts, and the form has no field in which a ledger could say it is complete. One allotment to a destination, and parts left out for different reasons are different allotments (a schema cannot say that two items are of one destination, so the tools and the specs folder refuse it as they read the ledger); the tools write them in a fixed order. The extraction it is of is named by its revision, the SHA-256 of its canonical text.",
   "x-sce-schema-status": "pre-release",
   "type": "object",
   "required": ["v", "extraction", "allotments"],

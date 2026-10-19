@@ -83,6 +83,7 @@ use crate::revision::Revision;
 mod adapter_store;
 mod bundle_store;
 mod host_store;
+mod intake_store;
 mod original_store;
 mod proposal_store;
 mod request_store;
@@ -93,6 +94,10 @@ pub use adapter_store::{
 };
 pub use bundle_store::{BundleRead, CandidateTexts, CandidateWrite, Published};
 pub use host_store::{Host, HostListing, HostReport, HostStatus, HostWaiting, WAITING_MAX};
+pub use intake_store::{
+    Binding, Bound, Intake, IntakeDestination, IntakeGiven, IntakeProposal, IntakeRegistration,
+    IntakeStarted, IntakeView, LedgerEntry, LedgerHead, LedgerSaved, MAX_LEDGER_BYTES,
+};
 pub use original_store::{ExtractionEntry, ExtractionSaved, OriginalAdded, OriginalEntry};
 pub use proposal_store::{
     Accepted, ProposalDocuments, ProposalRegistered, ProposalRegistration, ProposalView,

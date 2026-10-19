@@ -17,6 +17,7 @@ import jsonschema
 
 from sce_author import ledger, scope
 from sce_author.errors import IngestError
+from sce_author.extraction import Block, Extraction, Place
 from sce_author.ledger import LEFT_OUT, NEW, SPEC, Allotment, Destination, Ledger
 from sce_author.scope import Scope
 
@@ -40,6 +41,90 @@ def code_accepts(parse, wire: object) -> bool:
     except IngestError:
         return False
     return True
+
+
+CASES = json.loads(
+    (pathlib.Path(__file__).resolve().parent / "fixtures" / "ledger_wire_cases.json").read_text(encoding="utf-8")
+)
+WORDS = {
+    "$SPEC80": "a" * 80,
+    "$SPEC81": "a" * 81,
+    "$TITLE200": "t" * 200,
+    "$TITLE201": "t" * 201,
+    "$REASON1000": "r" * 1000,
+    "$REASON1001": "r" * 1001,
+}
+
+
+def extraction_of_cases() -> Extraction:
+    return Extraction(
+        "plain",
+        "1",
+        "spec.md",
+        tuple(
+            Block(identifier, "paragraph", f"words of {identifier}", Place("spec.md", ordinal=number))
+            for number, identifier in enumerate(CASES["blocks"], 1)
+        ),
+    )
+
+
+def filled(value, revision: str):
+    """A case with the words it stands for put in: the revision of the extraction, and text of a length."""
+    if isinstance(value, str):
+        return revision if value == "$EXTRACTION" else WORDS.get(value, value)
+    if isinstance(value, list):
+        return [filled(item, revision) for item in value]
+    if isinstance(value, dict):
+        return {key: filled(item, revision) for key, item in value.items()}
+    return value
+
+
+class TheToolsAndTheSpecsFolderReadALedgerTheSame(unittest.TestCase):
+    """`tools/authoring/tests/fixtures/ledger_wire_cases.json` is read by the specs folder's tests too
+    (`sce-specs/tests/ledger_cases.rs`): a ledger one side refuses and the other keeps is a ledger the
+    owner's screen can save and no tool can count."""
+
+    def setUp(self) -> None:
+        self.extraction = extraction_of_cases()
+        self.revision = self.extraction.revision()
+
+    def read(self, wire: dict) -> Ledger:
+        return Ledger.from_dict(wire).held_by(self.extraction)
+
+    def test_every_good_ledger_is_read_and_the_schema_takes_it(self):
+        for case in CASES["good"]:
+            wire = filled(case["wire"], self.revision)
+            with self.subTest(case["name"]):
+                self.read(wire)
+                self.assertTrue(valid(LEDGER, wire))
+
+    def test_every_bad_ledger_is_refused_by_the_code_and_a_form_fault_by_the_schema_too(self):
+        for case in CASES["bad"]:
+            wire = filled(case["wire"], self.revision)
+            with self.subTest(case["name"]):
+                with self.assertRaises(IngestError):
+                    self.read(wire)
+                if case["layer"] == "form":
+                    # A fault of the form is the form's own: the parse refuses it before any extraction is asked.
+                    with self.assertRaises(IngestError):
+                        Ledger.from_dict(wire)
+                    self.assertFalse(valid(LEDGER, wire), "the schema accepts what the code refuses")
+                elif case["layer"] == "list":
+                    # A fault of the allotments against each other is refused as the ledger is read, and is one
+                    # a schema cannot say (it has no way to say that two items are of one destination).
+                    with self.assertRaises(IngestError):
+                        Ledger.from_dict(wire)
+                    self.assertTrue(valid(LEDGER, wire))
+                else:
+                    # A fault against the blocks is one a schema cannot say, so it takes the ledger.
+                    Ledger.from_dict(wire)
+                    self.assertTrue(valid(LEDGER, wire))
+
+    def test_the_cases_cover_what_the_schema_says_each_way(self):
+        # A rule of the schema with no case in the file is a rule only one side is held to.
+        layers = {case["layer"] for case in CASES["bad"]}
+        self.assertEqual(layers, {"form", "list", "extraction"})
+        self.assertGreaterEqual(len(CASES["good"]), 5)
 
 
 class TheSchemasAndTheCodeAgree(unittest.TestCase):

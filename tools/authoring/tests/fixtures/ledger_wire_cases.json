@@ -1,0 +1,84 @@
+{
+  "about": "Ledgers the authoring tools (sce_author/ledger.py) and the specs folder (sce-specs/src/ledger.rs) must read the same way: each good one is accepted by both, each bad one refused by both. Read by tests on both sides, so that a rule added to one and not the other fails there. A string that is one of these words is replaced by what it stands for before the case is read: $EXTRACTION is the revision of an extraction whose blocks are `blocks`, in that order; $SPEC80 and $SPEC81 are a spec id of 80 and of 81 characters; $TITLE200 and $TITLE201 and $REASON1000 and $REASON1001 are text of that many characters. A bad case of layer `form` is also refused by the schema file (tools/authoring/schema/ledger.v1.schema.json). One of layer `list` is a fault of the allotments against each other (two to one destination), which both readers refuse as they read the ledger and a schema cannot say. One of layer `extraction` is a fault of the ledger against the blocks, which a schema cannot say either.",
+  "blocks": ["b1", "b2", "b3", "b4", "b5"],
+  "good": [
+    {
+      "name": "no allotment: nothing is placed yet",
+      "wire": { "v": 1, "extraction": "$EXTRACTION", "allotments": [] }
+    },
+    {
+      "name": "a spec, a spec to be made, and a part left out for a reason",
+      "wire": {
+        "v": 1,
+        "extraction": "$EXTRACTION",
+        "allotments": [
+          { "to": { "kind": "spec", "spec": "lamp-1" }, "blocks": ["b1", "b2"] },
+          { "to": { "kind": "new", "title": "Fan" }, "blocks": ["b3", "b4"] },
+          { "to": { "kind": "left-out" }, "reason": "the cover", "blocks": ["b5"] }
+        ]
+      }
+    },
+    {
+      "name": "a block in two specs: it is shared",
+      "wire": {
+        "v": 1,
+        "extraction": "$EXTRACTION",
+        "allotments": [
+          { "to": { "kind": "spec", "spec": "lamp-1" }, "blocks": ["b1", "b2"] },
+          { "to": { "kind": "spec", "spec": "fan-1" }, "blocks": ["b2", "b3"] }
+        ]
+      }
+    },
+    {
+      "name": "parts left out for different reasons are different allotments",
+      "wire": {
+        "v": 1,
+        "extraction": "$EXTRACTION",
+        "allotments": [
+          { "to": { "kind": "left-out" }, "reason": "the cover", "blocks": ["b1"] },
+          { "to": { "kind": "left-out" }, "reason": "", "blocks": ["b2"] }
+        ]
+      }
+    },
+    {
+      "name": "the longest spec id, title and reason",
+      "wire": {
+        "v": 1,
+        "extraction": "$EXTRACTION",
+        "allotments": [
+          { "to": { "kind": "spec", "spec": "$SPEC80" }, "blocks": ["b1"] },
+          { "to": { "kind": "new", "title": "$TITLE200" }, "blocks": ["b2"] },
+          { "to": { "kind": "left-out" }, "reason": "$REASON1000", "blocks": ["b3"] }
+        ]
+      }
+    }
+  ],
+  "bad": [
+    { "name": "another version", "layer": "form", "wire": { "v": 2, "extraction": "$EXTRACTION", "allotments": [] } },
+    { "name": "a field nobody defined", "layer": "form", "wire": { "v": 1, "extraction": "$EXTRACTION", "allotments": [], "colour": "red" } },
+    { "name": "allotments that are not a list", "layer": "form", "wire": { "v": 1, "extraction": "$EXTRACTION", "allotments": "b1" } },
+    { "name": "an allotment of no block", "layer": "form", "wire": { "v": 1, "extraction": "$EXTRACTION", "allotments": [ { "to": { "kind": "spec", "spec": "lamp-1" }, "blocks": [] } ] } },
+    { "name": "a block with no id", "layer": "form", "wire": { "v": 1, "extraction": "$EXTRACTION", "allotments": [ { "to": { "kind": "spec", "spec": "lamp-1" }, "blocks": ["b1", ""] } ] } },
+    { "name": "a block twice in an allotment", "layer": "form", "wire": { "v": 1, "extraction": "$EXTRACTION", "allotments": [ { "to": { "kind": "spec", "spec": "lamp-1" }, "blocks": ["b1", "b1"] } ] } },
+    { "name": "blocks that are not a list", "layer": "form", "wire": { "v": 1, "extraction": "$EXTRACTION", "allotments": [ { "to": { "kind": "spec", "spec": "lamp-1" }, "blocks": "b1" } ] } },
+    { "name": "a destination of a kind nobody defined", "layer": "form", "wire": { "v": 1, "extraction": "$EXTRACTION", "allotments": [ { "to": { "kind": "elsewhere" }, "blocks": ["b1"] } ] } },
+    { "name": "a spec with no id", "layer": "form", "wire": { "v": 1, "extraction": "$EXTRACTION", "allotments": [ { "to": { "kind": "spec" }, "blocks": ["b1"] } ] } },
+    { "name": "a spec id that is not one", "layer": "form", "wire": { "v": 1, "extraction": "$EXTRACTION", "allotments": [ { "to": { "kind": "spec", "spec": "Lamp/../x" }, "blocks": ["b1"] } ] } },
+    { "name": "a spec id that begins with a hyphen", "layer": "form", "wire": { "v": 1, "extraction": "$EXTRACTION", "allotments": [ { "to": { "kind": "spec", "spec": "-lamp" }, "blocks": ["b1"] } ] } },
+    { "name": "a spec id of more than eighty characters", "layer": "form", "wire": { "v": 1, "extraction": "$EXTRACTION", "allotments": [ { "to": { "kind": "spec", "spec": "$SPEC81" }, "blocks": ["b1"] } ] } },
+    { "name": "a spec with a title as well", "layer": "form", "wire": { "v": 1, "extraction": "$EXTRACTION", "allotments": [ { "to": { "kind": "spec", "spec": "lamp-1", "title": "x" }, "blocks": ["b1"] } ] } },
+    { "name": "a spec to be made with no title", "layer": "form", "wire": { "v": 1, "extraction": "$EXTRACTION", "allotments": [ { "to": { "kind": "new", "title": "   " }, "blocks": ["b1"] } ] } },
+    { "name": "a spec to be made with a title that is too long", "layer": "form", "wire": { "v": 1, "extraction": "$EXTRACTION", "allotments": [ { "to": { "kind": "new", "title": "$TITLE201" }, "blocks": ["b1"] } ] } },
+    { "name": "a part left out that names a spec", "layer": "form", "wire": { "v": 1, "extraction": "$EXTRACTION", "allotments": [ { "to": { "kind": "left-out", "spec": "lamp-1" }, "blocks": ["b1"] } ] } },
+    { "name": "a reason for a part that is not left out", "layer": "form", "wire": { "v": 1, "extraction": "$EXTRACTION", "allotments": [ { "to": { "kind": "spec", "spec": "lamp-1" }, "reason": "why", "blocks": ["b1"] } ] } },
+    { "name": "a reason that is too long", "layer": "form", "wire": { "v": 1, "extraction": "$EXTRACTION", "allotments": [ { "to": { "kind": "left-out" }, "reason": "$REASON1001", "blocks": ["b1"] } ] } },
+    { "name": "a field of an allotment nobody defined", "layer": "form", "wire": { "v": 1, "extraction": "$EXTRACTION", "allotments": [ { "to": { "kind": "spec", "spec": "lamp-1" }, "blocks": ["b1"], "colour": "red" } ] } },
+    { "name": "a field of a destination nobody defined", "layer": "form", "wire": { "v": 1, "extraction": "$EXTRACTION", "allotments": [ { "to": { "kind": "spec", "spec": "lamp-1", "x": 1 }, "blocks": ["b1"] } ] } },
+    { "name": "two allotments to one spec", "layer": "list", "wire": { "v": 1, "extraction": "$EXTRACTION", "allotments": [ { "to": { "kind": "spec", "spec": "lamp-1" }, "blocks": ["b1"] }, { "to": { "kind": "spec", "spec": "lamp-1" }, "blocks": ["b2"] } ] } },
+    { "name": "two allotments to one spec to be made", "layer": "list", "wire": { "v": 1, "extraction": "$EXTRACTION", "allotments": [ { "to": { "kind": "new", "title": "Fan" }, "blocks": ["b1"] }, { "to": { "kind": "new", "title": "Fan" }, "blocks": ["b2"] } ] } },
+    { "name": "two parts left out for one reason", "layer": "list", "wire": { "v": 1, "extraction": "$EXTRACTION", "allotments": [ { "to": { "kind": "left-out" }, "reason": "cover", "blocks": ["b1"] }, { "to": { "kind": "left-out" }, "reason": "cover", "blocks": ["b2"] } ] } },
+    { "name": "an extraction that is not the one the ledger is kept for", "layer": "extraction", "wire": { "v": 1, "extraction": "0000000000000000000000000000000000000000000000000000000000000000", "allotments": [] } },
+    { "name": "a block the extraction does not have", "layer": "extraction", "wire": { "v": 1, "extraction": "$EXTRACTION", "allotments": [ { "to": { "kind": "spec", "spec": "lamp-1" }, "blocks": ["b1", "b99"] } ] } },
+    { "name": "blocks out of the extraction's order", "layer": "extraction", "wire": { "v": 1, "extraction": "$EXTRACTION", "allotments": [ { "to": { "kind": "spec", "spec": "lamp-1" }, "blocks": ["b2", "b1"] } ] } }
+  ]
+}

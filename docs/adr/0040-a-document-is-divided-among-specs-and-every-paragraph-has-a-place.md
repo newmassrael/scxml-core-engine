@@ -67,19 +67,24 @@ paragraph with no words, such as an empty cell row, has nothing to place. This i
 for the same reason: the one who made the allotments must not be the one who decides that nothing was
 missed.
 
-**Confirming an intake makes the proposals, and each is the ADR 0037 machinery unchanged.** Confirming is
-refused unless the check says the ledger, at its current revision, is complete. It then makes, for each
-spec destination, an import proposal whose scope is that allotment (ADR 0039), registered under a key made
-of the intake, the destination and the ledger revision, so that pressing it again makes what is missing and
-nothing twice. A spec to be made is made then, and named by the title the owner gave. Each spec keeps the
-whole original and the extraction, which are named by hash and so are shared in content; the part of it
-that is the spec's is its scope. The proposals are then reviewed, decided and accepted one spec at a time,
-as ever. **Nothing here spans two specs in one step.** Each step takes one spec's lock, never two, so there
-is no order to deadlock in; before any proposal is made every destination is asked whether it already has
-an open one, and the confirm is refused naming it, but a race after that can leave an intake partly
-proposed, and that is a state the screen shows (*2 of 3 proposed*) and pressing confirm again finishes.
-A proposal made from an intake says so (`intake`, and the ledger revision), so that its review can say
-which other specs the document was divided into.
+**Confirming an intake is the host's walk, and the store admits only what the ledger says.** The store never
+runs the tools, and a proposal is made of a conversion and a check that the tools make, so the host, which
+runs them, walks the destinations: for each spec it makes the spec when it is to be made and says which spec
+it was made as (`bind_new_spec`, so that confirming again finds it and makes no second), copies the original and
+the extraction into it (`give_intake_to_spec`, by hash, so a copy made before is the same), converts and checks
+the part the ledger gives it (ADR 0039), and registers a proposal that says it is that spec's part of the
+intake (`intake`: the intake and the ledger revision). What the store holds is that nothing is admitted that
+the ledger does not say. A proposal of an intake is refused unless the ledger it names is the one the intake
+is at (`ledger-moved`), SCE counted that ledger complete (`ledger-incomplete`), the proposal is of the
+intake's document, the ledger gives the spec something, and the proposal's scope is exactly the blocks the
+ledger gives it, or none when the ledger gives it every block, which is no scope (`bad-proposal`). A proposal
+that says it is a part of a division and is not the part the ledger says would make the accounting a claim and
+not a count. The proposals are then reviewed, decided and accepted one spec at a time, as ever, and each
+keeps what it was made under, so that its review can say which other specs the document was divided into.
+**Nothing here spans two specs in one step.** Each call takes one lock, the intake's or a spec's, never two, so
+there is no order to deadlock in. A confirm that stops partway leaves some specs proposed and some not, and
+that is a state the screen shows (*2 of 3 proposed*, from `read_intake`) and walking again finishes: every
+step is the same when it is said twice.
 
 **An AI draws a draft of the ledger and the owner owns it.** Dividing a document is a job of a kind
 (ADR 0036), given the outline (each part's id, title, size and its first words) and answering with
@@ -121,9 +126,12 @@ Each step lands with its tests and is useful before the next.
    it and for the scope of ADR 0039, held to the code by a test), `make-ledger` for the expansion of parts
    to blocks, `check-ledger` for the count, and `ledger-scopes` for the scope each spec is imported under;
    paired tests for each way a ledger is wrong and the nearest one that is not.
-2. **The intake in the store.** The record, the ledger chain with its compare-and-set save, the confirm that
-   makes the proposals under their keys, the `intake` field of a proposal, and the commands that say them
-   (the command set's version moves, and the new forms are registered as `pre-release`).
+2. **The intake in the store** (built). The record in `.sce-intakes/`, held by the code that holds a spec's
+   original and extraction (a store rooted there reads an intake as a spec of its own folder), the ledger
+   with its compare-and-set save, `bind_new_spec` and `give_intake_to_spec` for the host's walk, the `intake`
+   field of a proposal and the admission above, and the commands that say them (the command set is at 34).
+   The ledger's form is read by the store (`crate::ledger`) as the tools read it, and both are held to one list
+   of cases (`tools/authoring/tests/fixtures/ledger_wire_cases.json`), which a test on each side reads.
 3. **The workbench commands and the board**, then the screen built from the board.
 4. **Carrying a revision**: `carry-ledger`, the read of two documents, and the screen that shows what was
    carried, what is asked and what is gone.

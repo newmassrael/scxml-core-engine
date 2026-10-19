@@ -52,7 +52,7 @@ use crate::error::StoreError;
 use crate::import_life::{self, Event, Verdict};
 use crate::lock;
 use crate::proposals::{
-    Ask, Converter, Decision, DecisionKind, Proposal, ProposalState, MAX_ASKS,
+    Ask, Converter, Decision, DecisionKind, IntakeLink, Proposal, ProposalState, MAX_ASKS,
     MAX_CONVERSION_BYTES, MAX_DECISIONS, MAX_DECISION_TEXT_BYTES, MAX_REPORT_BYTES,
     MAX_SCOPE_BYTES,
 };
@@ -65,7 +65,7 @@ const REPORTS_DIR: &str = "reports";
 const SCOPES_DIR: &str = "scopes";
 const ID_PREFIX: &str = "imp-";
 const ID_HEX: usize = 12;
-const KEY_MAX: usize = 200;
+pub(super) const KEY_MAX: usize = 200;
 
 static ID_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -88,6 +88,9 @@ pub struct ProposalRegistration<'a> {
     /// The part of the extraction the owner chose to import, as `make-scope` wrote it; `None` for the
     /// whole of it. The report is of this scope, and a proposal is refused when it is not.
     pub scope: Option<&'a str>,
+    /// The division of a document this proposal is a spec's part of (ADR 0040), when it is. It is admitted
+    /// only when its scope is exactly what the intake's ledger gives the spec.
+    pub intake: Option<IntakeLink>,
     /// The text head the caller read and is asking about; `None` for a spec that has no text. The
     /// proposal is refused as `moved` when the spec is no longer at it.
     pub expect: Option<Revision>,
@@ -247,7 +250,7 @@ fn not_found(id: &SpecId, proposal: &str) -> StoreError {
 
 /// The ids of the blocks a conversion or an extraction names, in the order it has them, or why its
 /// text is not one.
-fn block_id_list(text: &str, what: &str) -> Result<Vec<String>, StoreError> {
+pub(super) fn block_id_list(text: &str, what: &str) -> Result<Vec<String>, StoreError> {
     let value: Value = serde_json::from_str(text)
         .map_err(|e| bad(format!("the {what} is not JSON ({e})"), Value::Null))?;
     let blocks = value
@@ -523,13 +526,14 @@ impl<C: Clock> SpecStore<C> {
                 && same.extraction == registration.extraction
                 && same.conversion == conversion
                 && same.report == report
-                && same.scope == scope;
+                && same.scope == scope
+                && same.intake == registration.intake;
             if !same_inputs {
                 return Err(StoreError::refused(
                     "key-reused",
                     format!(
                         "the key was used for another proposal ({}), made of another original, \
-                         conversion, check or part of the original",
+                         conversion, check, part of the original or division",
                         same.id
                     ),
                     json!({ "proposal": same.id }),
@@ -563,14 +567,17 @@ impl<C: Clock> SpecStore<C> {
         let extraction_text = self.read_extraction(id, &registration.extraction)?;
         let extraction_order = block_id_list(&extraction_text, "extraction")?;
         let extraction_ids: BTreeSet<String> = extraction_order.iter().cloned().collect();
-        let scope_ids: Option<BTreeSet<String>> = match registration.scope {
-            Some(text) => Some(
-                read_scope(text, &registration.extraction, &extraction_order)?
-                    .into_iter()
-                    .collect(),
-            ),
+        let scope_blocks: Option<Vec<String>> = match registration.scope {
+            Some(text) => Some(read_scope(
+                text,
+                &registration.extraction,
+                &extraction_order,
+            )?),
             None => None,
         };
+        let scope_ids: Option<BTreeSet<String>> = scope_blocks
+            .as_ref()
+            .map(|blocks| blocks.iter().cloned().collect());
         let (of_extraction, converter) = read_conversion(registration.conversion)?;
         if of_extraction != registration.extraction.as_str() {
             return Err(bad(
@@ -627,6 +634,17 @@ impl<C: Clock> SpecStore<C> {
                     json!({ "block": stranger.id }),
                 ));
             }
+        }
+        // A proposal that says it is a spec's part of a divided document is exactly that part (ADR 0040).
+        if let Some(link) = &registration.intake {
+            self.admit_intake(
+                link,
+                id,
+                &registration.original,
+                &registration.extraction,
+                &extraction_order,
+                scope_blocks.as_deref(),
+            )?;
         }
 
         let now = self.stamp();
@@ -685,6 +703,7 @@ impl<C: Clock> SpecStore<C> {
             conversion,
             report,
             scope,
+            intake: registration.intake,
             converter,
             against: head,
             asks,

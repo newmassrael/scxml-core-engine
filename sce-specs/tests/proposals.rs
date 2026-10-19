@@ -123,6 +123,7 @@ impl Fixture {
             conversion: &made.conversion,
             report: &made.report,
             scope: None,
+            intake: None,
             expect: self.store.head(&self.spec).unwrap(),
             supersede: false,
         }
