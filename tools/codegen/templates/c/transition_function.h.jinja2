@@ -1,0 +1,270 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+{#
+   The C11 transition function a statechart declaring
+   `sce:transition-function="emit"` is generated with, beside its machine
+   (SCE Accepted Subset §2.21, docs/SCE_TRANSITION_FUNCTION.md).
+
+   Everything below is read from `model.emitted_transition_function`, the one
+   value `sce-build/src/transition_function.rs` computes. No block here walks
+   the model's states, transitions or events: a table a template derived for
+   itself would be a second producer, and this file and every other backend's
+   would then be free to disagree. The marked block is held to that by
+   `sce-build/tests/the_emitted_transition_function_equals_the_producer.rs`.
+
+   One header of `static inline` functions over constant storage: it includes
+   `<stdbool.h>`, `<stddef.h>` and `<string.h>` and nothing of the C runtime,
+   allocates nothing, and compiles alone. C has no namespace, so every symbol
+   carries `c_prefix` (`<machine>_transition_function`, computed by the
+   generator), which no symbol of the machine begins with: the machine's are
+   `<machine>_` followed by something else, so the two headers coexist in one
+   translation unit. Enumerators are spelled by the filter the machine's enums
+   use (`to_c11_upper_ident`), so a state is the same word in both.
+
+   The counts are enumerators of their own type (`_NUM_STATES`,
+   `_NUM_EVENTS`), the last of each enumeration: every other enumerator is
+   `_STATE_<id>` or `_EVENT_<name>`, so no name of the document can spell one.
+#}
+{% include 'license_header.jinja2' %}
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{# transition-function:begin #}
+{% set tf = model.emitted_transition_function %}
+{% set P = c_prefix | upper %}
+{% set finals = tf.states | selectattr("is_final") | list %}
+{% set used = namespace(event=false, offset=0, total=0) %}
+{% for state in tf.states %}
+{% set used.total = used.total + (state.configuration | length) %}
+{% for cell in state.next %}
+{% if cell.to %}{% set used.event = true %}{% endif %}
+{% endfor %}
+{% endfor %}
+
+{{ sce_map.source_marker(model.source_location, "c", module_level=true, symbol_artifact=sce_artifact.machine) }}
+
+/* The transition function of `{{ model.name }}`, generated because its
+   document declares `sce:transition-function="emit"`.
+
+   A pure function of (current state, event): `{{ c_prefix }}_transition`
+   answers whether an event is taken from a state and, when it is, where it
+   takes the machine. Every pair was computed when this file was generated, by
+   the selection rule the machine itself follows, so this file and the machine
+   generated beside it agree on every pair. It needs nothing beyond the C11
+   standard library and allocates nothing. */
+
+#ifndef SCE_GENERATED_{{ P }}_H
+#define SCE_GENERATED_{{ P }}_H
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <string.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* A state the machine can be in: an atomic state, or a `<final>` child of
+   `<scxml>`, in document order. A compound state is never the current state,
+   so it is none of these; `{{ c_prefix }}_configuration` names the compound
+   states active with each. `{{ P }}_NUM_STATES` is how many there are. */
+enum {{ c_prefix }}_state_e {
+{% for state in tf.states %}
+    {{ P }}_STATE_{{ state.id | to_c11_upper_ident }},
+{% endfor %}
+    {{ P }}_NUM_STATES
+};
+typedef enum {{ c_prefix }}_state_e {{ c_prefix }}_state_t;
+
+/* An event the machine names: every literal name its transitions write, in
+   the order they first name them. A descriptor such as `error.*` or `*` names
+   no event of its own. `{{ P }}_NUM_EVENTS` is how many there are. */
+enum {{ c_prefix }}_event_e {
+{% for event in tf.events %}
+    {{ P }}_EVENT_{{ event | to_c11_upper_ident }},
+{% endfor %}
+    {{ P }}_NUM_EVENTS
+};
+typedef enum {{ c_prefix }}_event_e {{ c_prefix }}_event_t;
+
+/* The state the machine starts in. */
+#define {{ P }}_INITIAL {{ P }}_STATE_{{ tf.initial | to_c11_upper_ident }}
+
+/* The digest of the source set this file was generated from: the
+   `source-hash` of its own header, as a value. */
+#define {{ P }}_SOURCE_HASH "{{ tf.source_hash | escape_c }}"
+
+/* Every state, in document order: `{{ P }}_NUM_STATES` of them. */
+static inline const {{ c_prefix }}_state_t *{{ c_prefix }}_all_states(void) {
+    static const {{ c_prefix }}_state_t all[{{ P }}_NUM_STATES] = {
+{% for state in tf.states %}
+        {{ P }}_STATE_{{ state.id | to_c11_upper_ident }},
+{% endfor %}
+    };
+    return all;
+}
+
+/* Every event, in the order the transitions first name them:
+   `{{ P }}_NUM_EVENTS` of them{% if not tf.events %}, so NULL{% endif %}. */
+static inline const {{ c_prefix }}_event_t *{{ c_prefix }}_all_events(void) {
+{% if tf.events %}
+    static const {{ c_prefix }}_event_t all[{{ P }}_NUM_EVENTS] = {
+{% for event in tf.events %}
+        {{ P }}_EVENT_{{ event | to_c11_upper_ident }},
+{% endfor %}
+    };
+    return all;
+{% else %}
+    return NULL;
+{% endif %}
+}
+
+/* Where `event` takes the machine from `state`. True when a transition takes
+   the event, and then `*next` is the state the machine is in afterwards,
+   which is `state` itself when the transition taken has no target. False when
+   no transition takes the event and the machine discards it; `*next` is then
+   left as it was. A final state takes no event. `next` must point to a
+   state. */
+static inline bool {{ c_prefix }}_transition({{ c_prefix }}_state_t state, {{ c_prefix }}_event_t event,
+                                  {{ c_prefix }}_state_t *next) {
+{% if not used.event %}
+    (void)event;
+    (void)next;
+{% endif %}
+    switch (state) {
+{% for state in tf.states %}
+{% set taken = state.next | selectattr("to") | list %}
+    case {{ P }}_STATE_{{ state.id | to_c11_upper_ident }}:
+{% if taken %}
+        switch (event) {
+{% for cell in taken %}
+        case {{ P }}_EVENT_{{ cell.event | to_c11_upper_ident }}:
+            *next = {{ P }}_STATE_{{ cell.to | to_c11_upper_ident }};
+            return true;
+{% endfor %}
+        default:
+            break;
+        }
+{% endif %}
+        return false;
+{% endfor %}
+    default:
+        break;
+    }
+    return false;
+}
+
+/* Whether `state` is a `<final>` child of `<scxml>`: reaching it ends the
+   machine, and it takes no event. */
+static inline bool {{ c_prefix }}_is_final({{ c_prefix }}_state_t state) {
+{% if finals %}
+    return {% for state in finals %}{% if not loop.first %} || {% endif %}state == {{ P }}_STATE_{{ state.id | to_c11_upper_ident }}{% endfor %};
+{% else %}
+    (void)state;
+    return false;
+{% endif %}
+}
+
+/* The ids of every state active while one state is the current state,
+   outermost first and that state last: `count` strings of static storage. */
+typedef struct {{ c_prefix }}_configuration_s {
+    const char *const *ids;
+    size_t count;
+} {{ c_prefix }}_configuration_t;
+
+/* The ids of every state active while `state` is the current state,
+   outermost first and `state` last; none for a value that is no state. */
+static inline {{ c_prefix }}_configuration_t {{ c_prefix }}_configuration({{ c_prefix }}_state_t state) {
+    static const char *const ids[{{ used.total }}] = {
+{% for state in tf.states %}
+{% for id in state.configuration %}
+        "{{ id | escape_c }}",
+{% endfor %}
+{% endfor %}
+    };
+    {{ c_prefix }}_configuration_t configuration = {NULL, 0};
+    switch (state) {
+{% for state in tf.states %}
+    case {{ P }}_STATE_{{ state.id | to_c11_upper_ident }}:
+        configuration.ids = ids + {{ used.offset }};
+        configuration.count = {{ state.configuration | length }};
+        break;
+{% set used.offset = used.offset + (state.configuration | length) %}
+{% endfor %}
+    default:
+        break;
+    }
+    return configuration;
+}
+
+/* The state's id, as the document writes it, or "" for a value that is no
+   state. The pointer is to a string literal of static storage. */
+static inline const char *{{ c_prefix }}_state_name({{ c_prefix }}_state_t state) {
+    switch (state) {
+{% for state in tf.states %}
+    case {{ P }}_STATE_{{ state.id | to_c11_upper_ident }}:
+        return "{{ state.id | escape_c }}";
+{% endfor %}
+    default:
+        break;
+    }
+    return "";
+}
+
+/* Writes the state the id `name` names through `out` and answers true;
+   answers false, leaving `*out` untouched, for a name that is no state's id
+   (and for a NULL `name`). */
+static inline bool {{ c_prefix }}_state_from_name(const char *name, {{ c_prefix }}_state_t *out) {
+    if (name == NULL) {
+        return false;
+    }
+{% for state in tf.states %}
+    if (strcmp(name, "{{ state.id | escape_c }}") == 0) {
+        *out = {{ P }}_STATE_{{ state.id | to_c11_upper_ident }};
+        return true;
+    }
+{% endfor %}
+    return false;
+}
+
+/* The event's name, as the document writes it, or "" for a value that is no
+   event. The pointer is to a string literal of static storage. */
+static inline const char *{{ c_prefix }}_event_name({{ c_prefix }}_event_t event) {
+    switch (event) {
+{% for event in tf.events %}
+    case {{ P }}_EVENT_{{ event | to_c11_upper_ident }}:
+        return "{{ event | escape_c }}";
+{% endfor %}
+    default:
+        break;
+    }
+    return "";
+}
+
+/* Writes the event `name` names through `out` and answers true; answers
+   false, leaving `*out` untouched, for a name that is none of the events (and
+   for a NULL `name`). A name is matched whole: the function's events are the
+   names its document writes, and a longer name a descriptor would match is
+   not one of them. */
+static inline bool {{ c_prefix }}_event_from_name(const char *name, {{ c_prefix }}_event_t *out) {
+{% if tf.events %}
+    if (name == NULL) {
+        return false;
+    }
+{% for event in tf.events %}
+    if (strcmp(name, "{{ event | escape_c }}") == 0) {
+        *out = {{ P }}_EVENT_{{ event | to_c11_upper_ident }};
+        return true;
+    }
+{% endfor %}
+{% else %}
+    (void)name;
+    (void)out;
+{% endif %}
+    return false;
+}
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* SCE_GENERATED_{{ P }}_H */
+{# transition-function:end #}

@@ -14,9 +14,10 @@
 # and again by the generated machine run on the Rust runtime, which disagrees with a wrong
 # function on the pair that moved. The template cases are caught by the program that compiles
 # the generated file alone and prints every answer, and the first of them by reading the arms
-# back from the source too. The last case is the refusal of the five backends that do not
-# generate the function yet: written as a silent skip, the machine would be generated without
-# the file it was asked for.
+# back from the source too. The last case is the seam every backend goes through: written as a
+# silent skip for the backends other than Rust, the machine would be generated without the file
+# it was asked for, which the test that generates every backend and looks for the file catches
+# on any host.
 #
 # Anchors are literal slices of the source; an edit that moves one is reported
 # INCONCLUSIVE with the anchor quoted, never as a pass.
@@ -73,17 +74,13 @@ edit("tools/codegen/templates/rust/transition_function.rs.jinja2",
      '{% if false %}')
 PY
 
-# ── The refusal of the backends without the function ──
+# ── The seam every backend's function goes through ──
 
-mutation_case "the five backends write the machine without the function they were asked for" <<'PY'
+mutation_case "a backend other than Rust writes the machine without the function it was asked for" <<'PY'
 edit("sce-build/src/generator.rs",
-     '''    match language {
-        Language::Rust => {
-            if model.emitted_transition_function.is_none() {''',
-     '''    if language != Language::Rust {
-        return Ok(Vec::new());
-    }
-    match language {
-        Language::Rust => {
-            if model.emitted_transition_function.is_none() {''')
+     "    if !model.transition_function_declared || model.emitted_transition_function.is_none() {",
+     "    if !model.transition_function_declared\n"
+     "        || model.emitted_transition_function.is_none()\n"
+     "        || language != Language::Rust\n"
+     "    {")
 PY

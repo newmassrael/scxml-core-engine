@@ -1,0 +1,162 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+{#
+   The Python transition function a statechart declaring
+   `sce:transition-function="emit"` is generated with, beside its machine
+   (SCE Accepted Subset §2.21, docs/SCE_TRANSITION_FUNCTION.md).
+
+   Everything below is read from `model.emitted_transition_function`, the one
+   value `sce-build/src/transition_function.rs` computes. No block here walks
+   the model's states, transitions or events: a table a template derived for
+   itself would be a second producer, and this file and every other backend's
+   would then be free to disagree. The marked block is held to that by
+   `sce-build/tests/the_emitted_transition_function_equals_the_producer.rs`.
+
+   A module of its own, beside the machine's, that imports the standard
+   library alone (`enum`, `typing`). Members are spelled by the filter the
+   machine's own enums use (`to_python_const`), so a state is the same member
+   name in both, and each member's value is the id as the document writes it.
+#}
+{% include 'license_header.py.jinja2' %}
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{# transition-function:begin #}
+{% set tf = model.emitted_transition_function %}
+{% set finals = tf.states | selectattr("is_final") | list %}
+
+{{ sce_map.source_marker(model.source_location, "python", module_level=true, symbol_artifact=sce_artifact.machine) }}
+
+"""The transition function of `{{ model.name }}`, generated because its
+document declares `sce:transition-function="emit"`.
+
+A pure function of (current state, event): `transition` answers where an event
+takes the machine from a state, or None when no transition takes the event
+and the machine discards it. Every pair was computed when this module was
+generated, by the selection rule the machine itself follows, so this module
+and the machine generated beside it agree on every pair. It imports the
+standard library alone.
+"""
+
+from __future__ import annotations
+
+from enum import Enum
+from typing import Dict, FrozenSet, Optional, Tuple
+
+
+class State(Enum):
+    """A state the machine can be in: an atomic state, or a `<final>` child of
+    `<scxml>`. A compound state is never the current state, so it is none of
+    these; `configuration` names the compound states active with each. A
+    member's value is the state's id, as the document writes it."""
+
+{% for state in tf.states %}
+    {{ state.id | to_python_const }} = {{ state.id | py_string_literal }}
+{% endfor %}
+
+    def __str__(self) -> str:
+        return self.value
+
+    @classmethod
+    def from_name(cls, name: str) -> Optional[State]:
+        """The state the id `name` names, or None when it names none of
+        `ALL_STATES`."""
+        return _STATES_BY_NAME.get(name)
+
+
+class Event(Enum):
+    """An event the machine names: every literal name its transitions write. A
+    descriptor such as `error.*` or `*` names no event of its own. A member's
+    value is the event's name, as the document writes it."""
+
+{% for event in tf.events %}
+    {{ event | to_python_const }} = {{ event | py_string_literal }}
+{% endfor %}
+
+    def __str__(self) -> str:
+        return self.value
+
+    @classmethod
+    def from_name(cls, name: str) -> Optional[Event]:
+        """The event `name` names, or None when it names none of
+        `ALL_EVENTS`. A name is matched whole: the function's events are the
+        names its document writes, and a longer name a descriptor would match
+        is not one of them."""
+        return _EVENTS_BY_NAME.get(name)
+
+
+#: Every state, in document order.
+ALL_STATES: Tuple[State, ...] = (
+{% for state in tf.states %}
+    State.{{ state.id | to_python_const }},
+{% endfor %}
+)
+
+#: Every event, in the order the transitions first name them.
+ALL_EVENTS: Tuple[Event, ...] = (
+{% for event in tf.events %}
+    Event.{{ event | to_python_const }},
+{% endfor %}
+)
+
+#: The state the machine starts in.
+INITIAL: State = State.{{ tf.initial | to_python_const }}
+
+#: The digest of the source set this file was generated from: the
+#: `source-hash` of its own header, as a value.
+SOURCE_HASH: str = {{ tf.source_hash | py_string_literal }}
+
+_NEXT: Dict[Tuple[State, Event], State] = {
+{% for state in tf.states %}
+{% for cell in state.next %}
+{% if cell.to %}
+    (State.{{ state.id | to_python_const }}, Event.{{ cell.event | to_python_const }}): State.{{ cell.to | to_python_const }},
+{% endif %}
+{% endfor %}
+{% endfor %}
+}
+
+_FINAL: FrozenSet[State] = frozenset(
+    (
+{% for state in finals %}
+        State.{{ state.id | to_python_const }},
+{% endfor %}
+    )
+)
+
+_CONFIGURATION: Dict[State, Tuple[str, ...]] = {
+{% for state in tf.states %}
+    State.{{ state.id | to_python_const }}: ({% for id in state.configuration %}{{ id | py_string_literal }}, {% endfor %}),
+{% endfor %}
+}
+
+_STATES_BY_NAME: Dict[str, State] = {
+{% for state in tf.states %}
+    {{ state.id | py_string_literal }}: State.{{ state.id | to_python_const }},
+{% endfor %}
+}
+
+_EVENTS_BY_NAME: Dict[str, Event] = {
+{% for event in tf.events %}
+    {{ event | py_string_literal }}: Event.{{ event | to_python_const }},
+{% endfor %}
+}
+
+
+def transition(state: State, event: Event) -> Optional[State]:
+    """Where `event` takes the machine from `state`: the state it is in
+    afterwards, which is `state` itself when the transition taken has no
+    target, or None when no transition takes the event and the machine
+    discards it. A final state takes no event."""
+    return _NEXT.get((state, event))
+
+
+def is_final(state: State) -> bool:
+    """Whether `state` is a `<final>` child of `<scxml>`: reaching it ends the
+    machine, and it takes no event."""
+    return state in _FINAL
+
+
+def configuration(state: State) -> Tuple[str, ...]:
+    """The ids of every state active while `state` is the current state,
+    outermost first and `state` last."""
+    return _CONFIGURATION[state]
+{# transition-function:end #}

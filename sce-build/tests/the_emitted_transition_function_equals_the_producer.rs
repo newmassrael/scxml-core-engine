@@ -5,13 +5,14 @@
 // pure function of (current state, event) beside its machine (SCE Accepted
 // Subset 2.21, docs/SCE_TRANSITION_FUNCTION.md). The function is computed once,
 // by `sce_build::model::TransitionFunction::of`, and this file holds the two
-// things that depend on it to it:
+// things that depend on it to it, in each of the six backends:
 //
-// - the Rust file `generate` writes, compiled ALONE — in a `#![no_std]` crate
-//   with no dependency, which is what proves it names no SCE crate and needs no
-//   allocator — and then run, answering every (state, event) pair, every
-//   configuration, every name and the hash exactly as the producer's table;
-// - the machine `generate` writes beside it, built against the real Rust
+// - the file `generate` writes, read back from its source on any host, and
+//   compiled ALONE with the language's own toolchain and nothing else — which
+//   is what proves it names no SCE library — then run, answering every
+//   (state, event) pair, every configuration, every name and the hash exactly
+//   as the producer's table;
+// - the machine `generate` writes beside it, built against the backend's real
 //   runtime and driven to every state of the function by the shortest event
 //   path the function itself gives, and sent every event there: the
 //   configuration the engine reaches, and whether it took or discarded the
@@ -20,9 +21,8 @@
 //   fact rather than two that happen to agree.
 //
 // The compiling checks run where a toolchain is found; the rest run anywhere.
-// The other five backends refuse the declaration by name, and the declaration,
-// its one value, the forge root that does not take it, and the refusals it
-// brings are held at the command line.
+// The declaration, its one value, the forge root that does not take it, and
+// the refusals it brings are held at the command line.
 
 mod common;
 
@@ -41,8 +41,19 @@ use sce_build::toolchain;
 /// lifecycle that reaches every selection rule.
 const FIXTURES: [&str; 2] = ["flat_lifecycle", "nested_lifecycle"];
 
-/// The five backends that do not generate the function yet.
-const REFUSING: [&str; 5] = ["cpp", "c11", "go", "kotlin", "python"];
+/// The six backends, by the identifier `generate -l` takes.
+const BACKENDS: [&str; 6] = ["rust", "cpp", "c11", "go", "kotlin", "python"];
+
+/// The template each backend renders the function with, under
+/// `tools/codegen/templates/`.
+const TEMPLATES: [&str; 6] = [
+    "rust/transition_function.rs.jinja2",
+    "transition_function.jinja2",
+    "c/transition_function.h.jinja2",
+    "go/transition_function.go.jinja2",
+    "kotlin/transition_function.kt.jinja2",
+    "python/transition_function.py.jinja2",
+];
 
 fn sce_codegen_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_sce-codegen"))
@@ -90,19 +101,59 @@ fn output_ok(output: Output, what: &str) -> String {
     String::from_utf8_lossy(&output.stdout).into_owned()
 }
 
-/// `generate -l rust` of `doc` into `out`.
-fn generate_rust(doc: &Path, out: &Path) {
+/// `generate -l <lang>` of `doc` into `out`.
+fn generate(lang: &str, doc: &Path, out: &Path) {
     output_ok(
         codegen(&[
             "generate",
             "-l",
-            "rust",
+            lang,
             "-o",
             out.to_str().unwrap(),
             doc.to_str().unwrap(),
         ]),
-        "generate -l rust",
+        &format!("generate -l {lang}"),
     );
+}
+
+/// The file `generate -l <lang>` writes the machine of `stem` to.
+fn machine_file(lang: &str, out: &Path, stem: &str) -> PathBuf {
+    out.join(match lang {
+        "rust" => format!("{stem}_sm.rs"),
+        "cpp" | "c11" => format!("{stem}_sm.h"),
+        "go" => format!("{stem}_sm.go"),
+        "kotlin" => format!("{stem}Sm.kt"),
+        "python" => format!("{stem}_sm.py"),
+        other => panic!("no machine file for {other}"),
+    })
+}
+
+/// The Go package the function of `stem` is generated as: the machine's
+/// package name, as the Go filters spell it, and `_transition_function`.
+fn go_package(stem: &str) -> String {
+    format!(
+        "{}_transition_function",
+        filters::to_snake_case(stem.to_string())
+    )
+}
+
+/// The file `generate -l <lang>` writes the function of `stem` to, as
+/// `docs/SCE_TRANSITION_FUNCTION.md` names it.
+fn function_file(lang: &str, out: &Path, stem: &str) -> PathBuf {
+    match lang {
+        "rust" => out.join(format!("{stem}_transition_function.rs")),
+        "cpp" | "c11" => out.join(format!("{stem}_transition_function.h")),
+        "go" => out
+            .join(go_package(stem))
+            .join(format!("{stem}_transition_function.go")),
+        "kotlin" => out.join(format!("{stem}TransitionFunction.kt")),
+        "python" => out.join(format!("{stem}_transition_function.py")),
+        other => panic!("no function file for {other}"),
+    }
+}
+
+fn read(path: &Path) -> String {
+    std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
 }
 
 /// The `code` of every record on a `--error-format=json` stderr, in order.
@@ -205,73 +256,184 @@ fn main() {{
     )
 }
 
-/// Both fixtures are accepted and generated for Rust: the machine, and the
-/// function beside it carrying the hash of its own header.
+/// Both fixtures are accepted and generated in every backend: the machine, and
+/// the function beside it under the name the reference doc gives it, carrying
+/// as a value the hash of its own header, which is the machine's.
 #[test]
-fn every_fixture_generates_its_machine_and_its_function() {
-    for stem in FIXTURES {
-        let out = scratch(&format!("generated_{stem}"));
-        generate_rust(&fixture(stem), &out);
-        let machine = out.join(format!("{stem}_sm.rs"));
-        let function = out.join(format!("{stem}_transition_function.rs"));
-        assert!(machine.is_file(), "[{stem}] no machine was written");
-        let source = std::fs::read_to_string(&function)
-            .unwrap_or_else(|e| panic!("[{stem}] no function was written: {e}"));
-        let hash = header_hash(&source);
-        assert!(
-            source.contains(&format!("pub const SOURCE_HASH: &str = \"{hash}\";")),
-            "[{stem}] the function does not carry the hash of its own header"
-        );
-        assert_eq!(
-            header_hash(&std::fs::read_to_string(&machine).expect("read the machine")),
-            hash,
-            "[{stem}] the machine and the function name different source sets"
-        );
+fn every_fixture_generates_its_machine_and_its_function_in_every_backend() {
+    // The constant each backend names the hash by (`SOURCE_HASH`, Go's
+    // `SourceHash`) and the literal after it, across a line break if a
+    // formatter put one there.
+    let carried = Regex::new(r#"(?:SOURCE_HASH|SourceHash)[^"]*"([0-9a-f]{64})""#).unwrap();
+    for lang in BACKENDS {
+        for stem in FIXTURES {
+            let out = scratch(&format!("generated_{lang}_{stem}"));
+            generate(lang, &fixture(stem), &out);
+            let machine = machine_file(lang, &out, stem);
+            assert!(machine.is_file(), "[{lang} {stem}] no machine was written");
+            let function = function_file(lang, &out, stem);
+            assert!(
+                function.is_file(),
+                "[{lang} {stem}] no function was written at {}",
+                function.display()
+            );
+            let source = read(&function);
+            let hash = header_hash(&source);
+            assert_eq!(
+                carried.captures(&source).map(|c| c[1].to_string()),
+                Some(hash.clone()),
+                "[{lang} {stem}] the function does not carry the hash of its own header"
+            );
+            assert_eq!(
+                header_hash(&read(&machine)),
+                hash,
+                "[{lang} {stem}] the machine and the function name different source sets"
+            );
+        }
     }
 }
 
-/// The table the generated source holds is the producer's, pair for pair, read
-/// back from the text — so this runs on a host with no toolchain.
-#[test]
-fn the_generated_source_holds_the_producers_table() {
-    let arm = Regex::new(r"\(State::(\w+), Event::(\w+)\) => Some\(State::(\w+)\),").unwrap();
-    for stem in FIXTURES {
-        let out = scratch(&format!("source_{stem}"));
-        generate_rust(&fixture(stem), &out);
-        let source = std::fs::read_to_string(out.join(format!("{stem}_transition_function.rs")))
-            .expect("read the function");
-        let function = produced(&fixture(stem), &header_hash(&source));
-        let mut written: Vec<(String, String, String)> = arm
-            .captures_iter(&source)
-            .map(|c| (c[1].to_string(), c[2].to_string(), c[3].to_string()))
-            .collect();
-        written.sort();
-        let mut expected: Vec<(String, String, String)> = function
-            .states
-            .iter()
-            .flat_map(|state| {
-                state.next.iter().filter_map(move |cell| {
-                    cell.to.as_ref().map(|to| {
-                        (
-                            filters::to_state_variant(state.id.clone()),
-                            filters::to_event_variant(cell.event.clone()),
-                            filters::to_state_variant(to.clone()),
-                        )
-                    })
+/// One taken pair of a function as a source spells it: the state, the event,
+/// and the state the event takes the machine to.
+type Cell = (String, String, String);
+
+/// The identifiers a backend names a state and an event by, from their ids,
+/// using the filters its template applies.
+#[derive(Clone, Copy)]
+struct Names {
+    state: fn(&str) -> String,
+    event: fn(&str) -> String,
+}
+
+fn names_of(lang: &str) -> Names {
+    match lang {
+        "rust" | "go" => Names {
+            state: |s| filters::to_state_variant(s.to_string()),
+            event: |e| filters::to_event_variant(e.to_string()),
+        },
+        "cpp" => Names {
+            state: |s| filters::capitalize_state(s.to_string()),
+            event: |e| filters::to_cpp_event_variant(e.into()),
+        },
+        "c11" => Names {
+            state: |s| filters::to_c11_upper_ident(s.into()),
+            event: |e| filters::to_c11_upper_ident(e.into()),
+        },
+        "kotlin" => Names {
+            state: |s| filters::to_state_class_name(s.to_string()),
+            event: |e| filters::to_event_variant(e.to_string()),
+        },
+        "python" => Names {
+            state: |s| filters::to_python_const(s.to_string()),
+            event: |e| filters::to_python_const(e.to_string()),
+        },
+        other => panic!("no names for {other}"),
+    }
+}
+
+/// The prefix every symbol of the C function of `stem` carries, upper case.
+fn c_prefix_upper(stem: &str) -> String {
+    format!("{}_TRANSITION_FUNCTION", stem.to_uppercase())
+}
+
+/// The taken pairs the producer's table holds, spelled as `lang` spells them.
+fn expected_cells(lang: &str, function: &TransitionFunction) -> Vec<Cell> {
+    let names = names_of(lang);
+    let mut cells: Vec<Cell> = function
+        .states
+        .iter()
+        .flat_map(|state| {
+            state.next.iter().filter_map(move |cell| {
+                cell.to.as_ref().map(|to| {
+                    (
+                        (names.state)(&state.id),
+                        (names.event)(&cell.event),
+                        (names.state)(to),
+                    )
                 })
             })
-            .collect();
-        expected.sort();
-        assert!(!expected.is_empty(), "[{stem}] the producer takes no pair");
-        assert_eq!(
-            written, expected,
-            "[{stem}] the generated arms are not the producer's"
-        );
-        assert_eq!(
-            source.contains("        _ => None,\n    }\n}"),
-            !function.every_pair_taken,
-            "[{stem}] the refusing arm is there exactly when some pair is refused"
-        );
+        })
+        .collect();
+    cells.sort();
+    cells
+}
+
+/// The taken pairs the generated source of `lang` holds, read back from its
+/// text. Rust and Python write one entry per pair; the others write one block
+/// per state (a `switch` or a `when` on the event), so a state's block is
+/// found first and its entries in it.
+fn written_cells(lang: &str, source: &str, stem: &str) -> Vec<Cell> {
+    let flat = |pattern: &str| -> Vec<Cell> {
+        Regex::new(pattern)
+            .unwrap()
+            .captures_iter(source)
+            .map(|c| (c[1].to_string(), c[2].to_string(), c[3].to_string()))
+            .collect()
+    };
+    let nested = |block: &str, entry: &str| -> Vec<Cell> {
+        let entry = Regex::new(entry).unwrap();
+        let mut cells = Vec::new();
+        for row in Regex::new(block).unwrap().captures_iter(source) {
+            for cell in entry.captures_iter(&row[2]) {
+                cells.push((row[1].to_string(), cell[1].to_string(), cell[2].to_string()));
+            }
+        }
+        cells
+    };
+    let mut cells = match lang {
+        "rust" => flat(r"\(State::(\w+), Event::(\w+)\) => Some\(State::(\w+)\),"),
+        "python" => flat(r"\(State\.(\w+), Event\.(\w+)\): State\.(\w+),"),
+        "cpp" => nested(
+            r"case State::(\w+):\s*switch \(event\) \{([^{}]*)\}",
+            r"case Event::(\w+):\s*return State::(\w+);",
+        ),
+        "c11" => {
+            let p = c_prefix_upper(stem);
+            nested(
+                &format!(r"case {p}_STATE_(\w+):\s*switch \(event\) \{{([^{{}}]*)\}}"),
+                &format!(r"case {p}_EVENT_(\w+):\s*\*next = {p}_STATE_(\w+);\s*return true;"),
+            )
+        }
+        "go" => nested(
+            r"case State(\w+):\s*switch event \{([^{}]*)\}",
+            r"case Event(\w+):\s*return State(\w+), true",
+        ),
+        "kotlin" => nested(
+            r"State\.(\w+) -> when \(event\) \{([^{}]*)\}",
+            r"Event\.(\w+) -> State\.(\w+)",
+        ),
+        other => panic!("no reader for {other}"),
+    };
+    cells.sort();
+    cells
+}
+
+/// The table every backend's generated source holds is the producer's, pair
+/// for pair, read back from the text — so this runs on a host with no
+/// toolchain.
+#[test]
+fn the_generated_source_holds_the_producers_table() {
+    for lang in BACKENDS {
+        for stem in FIXTURES {
+            let out = scratch(&format!("source_{lang}_{stem}"));
+            generate(lang, &fixture(stem), &out);
+            let source = read(&function_file(lang, &out, stem));
+            let function = produced(&fixture(stem), &header_hash(&source));
+            let expected = expected_cells(lang, &function);
+            assert!(!expected.is_empty(), "[{stem}] the producer takes no pair");
+            assert_eq!(
+                written_cells(lang, &source, stem),
+                expected,
+                "[{lang} {stem}] the generated table is not the producer's"
+            );
+            if lang == "rust" {
+                assert_eq!(
+                    source.contains("        _ => None,\n    }\n}"),
+                    !function.every_pair_taken,
+                    "[{stem}] the refusing arm is there exactly when some pair is refused"
+                );
+            }
+        }
     }
 }
 
@@ -360,9 +522,9 @@ fn the_generated_function_compiles_alone_and_answers_as_the_producer() {
     for stem in FIXTURES {
         let work = scratch(&format!("alone_{stem}"));
         let out = work.join("out");
-        generate_rust(&fixture(stem), &out);
-        let function_file = out.join(format!("{stem}_transition_function.rs"));
-        let source = std::fs::read_to_string(&function_file).expect("read the function");
+        generate("rust", &fixture(stem), &out);
+        let function_path = function_file("rust", &out, stem);
+        let source = read(&function_path);
 
         // No crate but `core`: a `#![no_std]` library with no `--extern`.
         let library = work.join("alone.rs");
@@ -370,7 +532,7 @@ fn the_generated_function_compiles_alone_and_answers_as_the_producer() {
             &library,
             format!(
                 "#![no_std]\n#[path = {:?}]\npub mod tf;\n",
-                function_file.to_str().unwrap()
+                function_path.to_str().unwrap()
             ),
         )
         .expect("write the library");
@@ -393,7 +555,7 @@ fn the_generated_function_compiles_alone_and_answers_as_the_producer() {
         );
 
         let program = work.join("listing.rs");
-        std::fs::write(&program, listing_program(&function_file)).expect("write the program");
+        std::fs::write(&program, listing_program(&function_path)).expect("write the program");
         let binary = work.join("listing");
         let mut build = Command::new(&rustc);
         build
@@ -571,9 +733,8 @@ fn the_generated_machine_and_the_generated_function_agree_on_every_pair() {
     for stem in FIXTURES {
         let work = scratch(&format!("engine_{stem}"));
         let out = work.join("out");
-        generate_rust(&fixture(stem), &out);
-        let source = std::fs::read_to_string(out.join(format!("{stem}_transition_function.rs")))
-            .expect("read the function");
+        generate("rust", &fixture(stem), &out);
+        let source = read(&function_file("rust", &out, stem));
         let function = produced(&fixture(stem), &header_hash(&source));
 
         let project = work.join("project");
@@ -621,11 +782,12 @@ fn the_generated_machine_and_the_generated_function_agree_on_every_pair() {
     }
 }
 
-/// A document that does not declare the function gets no file for it.
+/// A document that does not declare the function gets no file for it, in any
+/// backend.
 #[test]
 fn an_undeclared_document_is_generated_without_a_function() {
     let work = scratch("undeclared");
-    let text = std::fs::read_to_string(fixture("flat_lifecycle")).expect("read the fixture");
+    let text = read(&fixture("flat_lifecycle"));
     let without = text.replace("\n       sce:transition-function=\"emit\"", "");
     assert_ne!(
         without, text,
@@ -633,13 +795,43 @@ fn an_undeclared_document_is_generated_without_a_function() {
     );
     let doc = work.join("flat_lifecycle.scxml");
     std::fs::write(&doc, without).expect("write the document");
-    let out = work.join("out");
-    generate_rust(&doc, &out);
-    assert!(out.join("flat_lifecycle_sm.rs").is_file());
-    assert!(
-        !out.join("flat_lifecycle_transition_function.rs").exists(),
-        "a document that declares no function was generated with one"
-    );
+    for lang in BACKENDS {
+        let out = work.join(format!("out_{lang}"));
+        generate(lang, &doc, &out);
+        assert!(
+            machine_file(lang, &out, "flat_lifecycle").is_file(),
+            "[{lang}] no machine was written"
+        );
+        assert!(
+            !function_file(lang, &out, "flat_lifecycle").exists(),
+            "[{lang}] a document that declares no function was generated with one"
+        );
+    }
+}
+
+/// A document that declares the function is accepted by every backend:
+/// `check` naming each one passes, and a `check` sweep reports every backend
+/// `ok`.
+#[test]
+fn every_backend_accepts_the_declaration() {
+    let doc = fixture("flat_lifecycle");
+    let doc_str = doc.to_str().unwrap();
+    for lang in BACKENDS {
+        output_ok(
+            codegen(&["--error-format=json", "check", doc_str, "-l", lang]),
+            &format!("check -l {lang}"),
+        );
+    }
+    let swept = codegen(&["check", doc_str]);
+    let manifest: serde_json::Value = serde_json::from_str(output_ok(swept, "check sweep").trim())
+        .expect("the sweep emits a manifest");
+    let verdicts = manifest["languages"]
+        .as_array()
+        .expect("per-backend verdicts");
+    for verdict in verdicts {
+        assert_eq!(verdict["status"], "ok", "{verdict}");
+    }
+    assert_eq!(verdicts.len(), BACKENDS.len(), "{manifest}");
 }
 
 /// The declaration has one value; any other is refused with the attribute's
@@ -721,68 +913,6 @@ fn a_forge_root_does_not_take_the_declaration() {
         "{stderr}"
     );
     assert!(stderr.contains("sce:transition-function"), "{stderr}");
-}
-
-/// The five backends that do not generate the function refuse the declaration,
-/// naming the language, rather than writing the machine without it: `generate`
-/// fails, `check` naming the backend fails the same way, and a `check` sweep
-/// reports each of them rejected beside Rust's `ok`.
-#[test]
-fn every_other_backend_refuses_the_declaration_by_name() {
-    let doc = fixture("flat_lifecycle");
-    let doc_str = doc.to_str().unwrap();
-    for lang in REFUSING {
-        let out = scratch(&format!("refused_{lang}"));
-        for args in [
-            vec![
-                "--error-format=json",
-                "generate",
-                doc_str,
-                "-l",
-                lang,
-                "-o",
-                out.to_str().unwrap(),
-            ],
-            vec!["--error-format=json", "check", doc_str, "-l", lang],
-        ] {
-            let refused = codegen(&args);
-            assert!(
-                !refused.status.success(),
-                "{args:?}: the declaration was not refused"
-            );
-            let stderr = String::from_utf8_lossy(&refused.stderr);
-            assert_eq!(
-                wire_codes(&stderr),
-                ["generate/unsupported-feature"],
-                "{stderr}"
-            );
-            assert!(
-                stderr.contains("sce:transition-function") && stderr.contains(lang),
-                "{args:?}: the refusal does not name the declaration and the language:\n{stderr}"
-            );
-        }
-        assert!(
-            !out.join("flat_lifecycle_transition_function.rs").exists(),
-            "[{lang}] a refused backend wrote a function"
-        );
-    }
-
-    let swept = codegen(&["check", doc_str]);
-    let manifest: serde_json::Value = serde_json::from_str(output_ok(swept, "check sweep").trim())
-        .expect("the sweep emits a manifest");
-    let verdicts = manifest["languages"]
-        .as_array()
-        .expect("per-backend verdicts");
-    for verdict in verdicts {
-        let language = verdict["language"].as_str().expect("language");
-        if language == "rust" {
-            assert_eq!(verdict["status"], "ok", "{verdict}");
-        } else {
-            assert_eq!(verdict["status"], "rejected", "{verdict}");
-            assert_eq!(verdict["code"], "generate/unsupported-feature", "{verdict}");
-        }
-    }
-    assert_eq!(verdicts.len(), 1 + REFUSING.len(), "{manifest}");
 }
 
 /// A document that declares the function and holds what it refuses, several
@@ -1556,33 +1686,36 @@ fn generate_w3c_declares_an_inline_childs_function_in_its_module_index() {
     );
 }
 
-/// The template reads the function the producer built, and nothing else: no
-/// line between its markers walks the model's states, transitions or events.
+/// Every backend's template reads the function the producer built, and nothing
+/// else: no line between its markers walks the model's states, transitions or
+/// events.
 #[test]
-fn the_template_reads_the_function_and_not_the_model() {
-    let text = std::fs::read_to_string(
-        repo_root().join("tools/codegen/templates/rust/transition_function.rs.jinja2"),
-    )
-    .expect("read the template");
-    let start = text
-        .find("transition-function:begin")
-        .expect("the template marks its block");
-    let end = text
-        .find("transition-function:end")
-        .expect("the block has an end marker");
-    let block = &text[start..end];
-    for forbidden in [
-        "model.states",
-        "model.events",
-        "model.initial",
-        "model.history_states",
-        ".transitions",
-        "model.emitted_transition_table",
-    ] {
+fn every_template_reads_the_function_and_not_the_model() {
+    for template in TEMPLATES {
+        let text = read(&repo_root().join("tools/codegen/templates").join(template));
+        let start = text
+            .find("transition-function:begin")
+            .unwrap_or_else(|| panic!("{template}: the template marks its block"));
+        let end = text
+            .find("transition-function:end")
+            .unwrap_or_else(|| panic!("{template}: the block has an end marker"));
+        let block = &text[start..end];
+        for forbidden in [
+            "model.states",
+            "model.events",
+            "model.initial",
+            "model.history_states",
+            ".transitions",
+            "model.emitted_transition_table",
+        ] {
+            assert!(
+                !block.contains(forbidden),
+                "{template}: reads `{forbidden}` from the model instead of the function"
+            );
+        }
         assert!(
-            !block.contains(forbidden),
-            "the template reads `{forbidden}` from the model instead of the function"
+            block.contains("model.emitted_transition_function"),
+            "{template}: does not read the function"
         );
     }
-    assert!(block.contains("model.emitted_transition_function"));
 }

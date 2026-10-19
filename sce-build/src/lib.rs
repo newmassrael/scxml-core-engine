@@ -1384,14 +1384,15 @@ pub fn compile_from_string_lang_typed(
                 .map_err(|e| locate_codegen_error(e, scxml_name, &model))
         }
     }?;
-    // The same seam as the file entry's, so a backend that does not generate a
-    // declared transition function refuses here too.
+    // The same seam as the file entry's, under the default roots the machine
+    // above is generated under too: this entry takes no naming prefix.
     output.files.extend(
         generator::transition_function_files(
             &model,
             generator::TemplateSource::Strings(templates),
             scxml_name,
             language,
+            generator::TransitionFunctionNaming::default(),
         )
         .map_err(|e| locate_codegen_error(e, scxml_name, &model))?,
     );
@@ -1738,13 +1739,18 @@ pub fn emit_model_artifacts(
     // The transition function a document may declare (SCE Accepted Subset
     // §2.21) is a file beside the machine's, emitted at this one site for the
     // reason the inline kinds below are: a caller cannot have the machine
-    // without it. A backend that does not generate it yet refuses here.
+    // without it. It is named under the roots the run gave the machine.
     output.files.extend(
         generator::transition_function_files(
             model,
             generator::TemplateSource::Directory(template_dir),
             input_stem,
             language,
+            generator::TransitionFunctionNaming {
+                cpp_namespace_prefix: options.cpp_namespace_prefix,
+                kotlin_package_prefix: options.kotlin_package_prefix,
+                c_symbol_prefix: options.c_symbol_prefix,
+            },
         )
         .map_err(|e| locate_codegen_error(e, source_name, model))?,
     );

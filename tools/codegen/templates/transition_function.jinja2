@@ -1,0 +1,224 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+{#
+   The C++ transition function a statechart declaring
+   `sce:transition-function="emit"` is generated with, beside its machine
+   (SCE Accepted Subset §2.21, docs/SCE_TRANSITION_FUNCTION.md).
+
+   Everything below is read from `model.emitted_transition_function`, the one
+   value `sce-build/src/transition_function.rs` computes. No block here walks
+   the model's states, transitions or events: a table a template derived for
+   itself would be a second producer, and this file and every other backend's
+   would then be free to disagree. The marked block is held to that by
+   `sce-build/tests/the_emitted_transition_function_equals_the_producer.rs`.
+
+   Header-only and C++17, as the rest of the C++ output is; it includes the
+   standard library alone. Its names live in a namespace nested in the
+   machine's (`cpp_namespace`, computed by the generator), so the function's
+   `State` and `Event` and the machine's own are different types in one build
+   unit. Enumerators are spelled by the filters the machine's enums use
+   (`capitalize`, `to_cpp_event_variant`), so a state is the same identifier in
+   both, and the functions are `constexpr`, so every answer is a constant
+   expression.
+#}
+{% include 'license_header.jinja2' %}
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{# transition-function:begin #}
+{% set tf = model.emitted_transition_function %}
+{% set finals = tf.states | selectattr("is_final") | list %}
+{% set used = namespace(event=false, offset=0, total=0) %}
+{% for state in tf.states %}
+{% set used.total = used.total + (state.configuration | length) %}
+{% for cell in state.next %}
+{% if cell.to %}{% set used.event = true %}{% endif %}
+{% endfor %}
+{% endfor %}
+
+{{ sce_map.source_marker(model.source_location, "cpp", module_level=true, symbol_artifact=sce_artifact.machine) }}
+
+// The transition function of `{{ model.name }}`, generated because its
+// document declares `sce:transition-function="emit"`.
+//
+// A pure function of (current state, event): `transition` answers where an
+// event takes the machine from a state, or `std::nullopt` when no transition
+// takes the event and the machine discards it. Every pair was computed when
+// this file was generated, by the selection rule the machine itself follows,
+// so this file and the machine generated beside it agree on every pair. It
+// needs nothing beyond the C++17 standard library.
+#pragma once
+
+#include <array>
+#include <cstddef>
+#include <optional>
+#include <string_view>
+
+namespace {{ cpp_namespace }} {
+
+/// A state the machine can be in: an atomic state, or a `<final>` child of
+/// `<scxml>`. A compound state is never the current state, so it is none of
+/// these; `configuration` names the compound states active with each.
+enum class State {
+{% for state in tf.states %}
+    {{ state.id | capitalize }},
+{% endfor %}
+};
+
+/// An event the machine names: every literal name its transitions write. A
+/// descriptor such as `error.*` or `*` names no event of its own.
+enum class Event {
+{% for event in tf.events %}
+    {{ event | to_cpp_event_variant }},
+{% endfor %}
+};
+
+/// Every state, in document order.
+inline constexpr std::array<State, {{ tf.states | length }}> ALL_STATES = {
+{% for state in tf.states %}
+    State::{{ state.id | capitalize }},
+{% endfor %}
+};
+
+/// Every event, in the order the transitions first name them.
+inline constexpr std::array<Event, {{ tf.events | length }}> ALL_EVENTS = {
+{% for event in tf.events %}
+    Event::{{ event | to_cpp_event_variant }},
+{% endfor %}
+};
+
+/// The state the machine starts in.
+inline constexpr State INITIAL = State::{{ tf.initial | capitalize }};
+
+/// The digest of the source set this file was generated from: the
+/// `source-hash` of its own header, as a value.
+inline constexpr std::string_view SOURCE_HASH = "{{ tf.source_hash | escape_cpp }}";
+
+/// Where `event` takes the machine from `state`: the state it is in
+/// afterwards, which is `state` itself when the transition taken has no
+/// target, or `std::nullopt` when no transition takes the event and the
+/// machine discards it. A final state takes no event.
+[[nodiscard]] constexpr std::optional<State> transition(State state, {% if not used.event %}[[maybe_unused]] {% endif %}Event event) noexcept {
+    switch (state) {
+{% for state in tf.states %}
+{% set taken = state.next | selectattr("to") | list %}
+    case State::{{ state.id | capitalize }}:
+{% if taken %}
+        switch (event) {
+{% for cell in taken %}
+        case Event::{{ cell.event | to_cpp_event_variant }}:
+            return State::{{ cell.to | capitalize }};
+{% endfor %}
+        default:
+            break;
+        }
+{% endif %}
+        return std::nullopt;
+{% endfor %}
+    }
+    return std::nullopt;
+}
+
+/// Whether `state` is a `<final>` child of `<scxml>`: reaching it ends the
+/// machine, and it takes no event.
+[[nodiscard]] constexpr bool isFinal({% if not finals %}[[maybe_unused]] {% endif %}State state) noexcept {
+{% if finals %}
+    return {% for state in finals %}{% if not loop.first %} || {% endif %}state == State::{{ state.id | capitalize }}{% endfor %};
+{% else %}
+    return false;
+{% endif %}
+}
+
+/// The ids of every state active while one state is the current state,
+/// outermost first and that state last: a view of constant storage.
+struct Configuration {
+    const std::string_view *ids;
+    std::size_t count;
+
+    [[nodiscard]] constexpr const std::string_view *begin() const noexcept {
+        return ids;
+    }
+    [[nodiscard]] constexpr const std::string_view *end() const noexcept {
+        return ids + count;
+    }
+    [[nodiscard]] constexpr std::size_t size() const noexcept {
+        return count;
+    }
+    [[nodiscard]] constexpr std::string_view operator[](std::size_t index) const noexcept {
+        return ids[index];
+    }
+};
+
+namespace detail {
+/// Every state's configuration, one after another, in the order of
+/// `ALL_STATES`; `configuration` hands out a range of it.
+inline constexpr std::array<std::string_view, {{ used.total }}> CONFIGURATION_IDS = {
+{% for state in tf.states %}
+{% for id in state.configuration %}
+    "{{ id | escape_cpp }}",
+{% endfor %}
+{% endfor %}
+};
+} // namespace detail
+
+/// The ids of every state active while `state` is the current state,
+/// outermost first and `state` last.
+[[nodiscard]] constexpr Configuration configuration(State state) noexcept {
+    switch (state) {
+{% for state in tf.states %}
+    case State::{{ state.id | capitalize }}:
+        return Configuration{detail::CONFIGURATION_IDS.data() + {{ used.offset }}, {{ state.configuration | length }}};
+{% set used.offset = used.offset + (state.configuration | length) %}
+{% endfor %}
+    }
+    return Configuration{nullptr, 0};
+}
+
+/// The state's id, as the document writes it; empty for a value that is none
+/// of `ALL_STATES`.
+[[nodiscard]] constexpr std::string_view getStateName(State state) noexcept {
+    switch (state) {
+{% for state in tf.states %}
+    case State::{{ state.id | capitalize }}:
+        return "{{ state.id | escape_cpp }}";
+{% endfor %}
+    }
+    return {};
+}
+
+/// The state the id `name` names, or `std::nullopt` when it names none of
+/// `ALL_STATES`.
+[[nodiscard]] constexpr std::optional<State> getStateFromName(std::string_view name) noexcept {
+{% for state in tf.states %}
+    if (name == "{{ state.id | escape_cpp }}") {
+        return State::{{ state.id | capitalize }};
+    }
+{% endfor %}
+    return std::nullopt;
+}
+
+/// The event's name, as the document writes it; empty for a value that is
+/// none of `ALL_EVENTS`.
+[[nodiscard]] constexpr std::string_view getEventName(Event event) noexcept {
+    switch (event) {
+{% for event in tf.events %}
+    case Event::{{ event | to_cpp_event_variant }}:
+        return "{{ event | escape_cpp }}";
+{% endfor %}
+    }
+    return {};
+}
+
+/// The event `name` names, or `std::nullopt` when it names none of
+/// `ALL_EVENTS`. A name is matched whole: the function's events are the names
+/// its document writes, and a longer name a descriptor would match is not one
+/// of them.
+[[nodiscard]] constexpr std::optional<Event> getEventFromName({% if not tf.events %}[[maybe_unused]] {% endif %}std::string_view name) noexcept {
+{% for event in tf.events %}
+    if (name == "{{ event | escape_cpp }}") {
+        return Event::{{ event | to_cpp_event_variant }};
+    }
+{% endfor %}
+    return std::nullopt;
+}
+
+} // namespace {{ cpp_namespace }}
+{# transition-function:end #}

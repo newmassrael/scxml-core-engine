@@ -1,0 +1,174 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+{#
+   The Kotlin transition function a statechart declaring
+   `sce:transition-function="emit"` is generated with, beside its machine
+   (SCE Accepted Subset §2.21, docs/SCE_TRANSITION_FUNCTION.md).
+
+   Everything below is read from `model.emitted_transition_function`, the one
+   value `sce-build/src/transition_function.rs` computes. No block here walks
+   the model's states, transitions or events: a table a template derived for
+   itself would be a second producer, and this file and every other backend's
+   would then be free to disagree. The marked block is held to that by
+   `sce-build/tests/the_emitted_transition_function_equals_the_producer.rs`.
+
+   A package of its own (`kotlin_package`, computed by the generator), so its
+   `State` and `Event` and the machine's `<Machine>State` and `<Machine>Event`
+   never meet; it imports nothing, the standard library included. Entries are
+   spelled by the filters the machine uses: a state as the machine names its
+   state object (`to_state_class_name`), an event as one flat name
+   (`to_event_variant`, the machine's spelling of an event's payload type),
+   since an enum has no nested entries for the machine's event tree to
+   follow. Every function is top-level: an enum entry is PascalCase, so a
+   `companion object`, whose default name `Companion` an entry can carry,
+   would be the one member a document could collide with.
+#}
+// GENERATED CODE — DO NOT EDIT
+// Source: {{ model.scxml_source_path }}
+// Generator: SCE Kotlin Code Generator v1.0
+{% import '_macros/sce_map_marker.jinja2' as sce_map %}
+{# transition-function:begin #}
+{% set tf = model.emitted_transition_function %}
+{% set finals = tf.states | selectattr("is_final") | list %}
+{% set used = namespace(event=false) %}
+{% for state in tf.states %}
+{% for cell in state.next %}
+{% if cell.to %}{% set used.event = true %}{% endif %}
+{% endfor %}
+{% endfor %}
+{{ sce_map.source_marker(model.source_location, "kotlin", module_level=true, symbol_artifact=sce_artifact.machine) }}
+
+package {{ kotlin_package }}
+
+/*
+ * The transition function of `{{ model.name }}`, generated because its
+ * document declares `sce:transition-function="emit"`.
+ *
+ * A pure function of (current state, event): [transition] answers where an
+ * event takes the machine from a state, or `null` when no transition takes
+ * the event and the machine discards it. Every pair was computed when this
+ * file was generated, by the selection rule the machine itself follows, so
+ * this file and the machine generated beside it agree on every pair. It
+ * needs nothing beyond the Kotlin standard library.
+ */
+
+/**
+ * A state the machine can be in: an atomic state, or a `<final>` child of
+ * `<scxml>`. A compound state is never the current state, so it is none of
+ * these; [configuration] names the compound states active with each.
+ * [scxmlName] is the state's id, as the document writes it.
+ */
+enum class State(val scxmlName: String) {
+{% for state in tf.states %}
+    {{ state.id | to_state_class_name }}("{{ state.id | escape_kotlin }}"),
+{% endfor %}
+}
+
+/**
+ * An event the machine names: every literal name its transitions write. A
+ * descriptor such as `error.*` or `*` names no event of its own. [scxmlName]
+ * is the event's name, as the document writes it.
+ */
+enum class Event(val scxmlName: String) {
+{% for event in tf.events %}
+    {{ event | to_event_variant }}("{{ event | escape_kotlin }}"),
+{% endfor %}
+}
+
+/** Every state, in document order. */
+val ALL_STATES: List<State> = listOf(
+{% for state in tf.states %}
+    State.{{ state.id | to_state_class_name }},
+{% endfor %}
+)
+
+/** Every event, in the order the transitions first name them. */
+val ALL_EVENTS: List<Event> = listOf(
+{% for event in tf.events %}
+    Event.{{ event | to_event_variant }},
+{% endfor %}
+)
+
+/** The state the machine starts in. */
+val INITIAL: State = State.{{ tf.initial | to_state_class_name }}
+
+/**
+ * The digest of the source set this file was generated from: the
+ * `source-hash` of its own header, as a value.
+ */
+const val SOURCE_HASH: String = "{{ tf.source_hash | escape_kotlin }}"
+
+/**
+ * Where [event] takes the machine from [state]: the state it is in
+ * afterwards, which is [state] itself when the transition taken has no
+ * target, or `null` when no transition takes the event and the machine
+ * discards it. A final state takes no event.
+ */
+{% if not used.event %}
+@Suppress("UNUSED_PARAMETER")
+{% endif %}
+fun transition(state: State, event: Event): State? = when (state) {
+{% for state in tf.states %}
+{% set taken = state.next | selectattr("to") | list %}
+{% if taken %}
+    State.{{ state.id | to_state_class_name }} -> when (event) {
+{% for cell in taken %}
+        Event.{{ cell.event | to_event_variant }} -> State.{{ cell.to | to_state_class_name }}
+{% endfor %}
+{% if (taken | length) < (state.next | length) %}
+        else -> null
+{% endif %}
+    }
+{% else %}
+    State.{{ state.id | to_state_class_name }} -> null
+{% endif %}
+{% endfor %}
+}
+
+/**
+ * Whether [state] is a `<final>` child of `<scxml>`: reaching it ends the
+ * machine, and it takes no event.
+ */
+{% if finals %}
+fun isFinal(state: State): Boolean = {% for state in finals %}{% if not loop.first %} || {% endif %}state == State.{{ state.id | to_state_class_name }}{% endfor %}
+
+{% else %}
+@Suppress("UNUSED_PARAMETER")
+fun isFinal(state: State): Boolean = false
+{% endif %}
+
+/**
+ * The ids of every state active while [state] is the current state,
+ * outermost first and [state] last.
+ */
+fun configuration(state: State): List<String> = when (state) {
+{% for state in tf.states %}
+    State.{{ state.id | to_state_class_name }} -> listOf({% for id in state.configuration %}{% if not loop.first %}, {% endif %}"{{ id | escape_kotlin }}"{% endfor %})
+{% endfor %}
+}
+
+/** The state the id [name] names, or `null` when it names none of [ALL_STATES]. */
+fun stateFromName(name: String): State? = when (name) {
+{% for state in tf.states %}
+    "{{ state.id | escape_kotlin }}" -> State.{{ state.id | to_state_class_name }}
+{% endfor %}
+    else -> null
+}
+
+/**
+ * The event [name] names, or `null` when it names none of [ALL_EVENTS]. A
+ * name is matched whole: the function's events are the names its document
+ * writes, and a longer name a descriptor would match is not one of them.
+ */
+{% if tf.events %}
+fun eventFromName(name: String): Event? = when (name) {
+{% for event in tf.events %}
+    "{{ event | escape_kotlin }}" -> Event.{{ event | to_event_variant }}
+{% endfor %}
+    else -> null
+}
+{% else %}
+@Suppress("UNUSED_PARAMETER")
+fun eventFromName(name: String): Event? = null
+{% endif %}
+{# transition-function:end #}

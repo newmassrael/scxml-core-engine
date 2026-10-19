@@ -5229,7 +5229,8 @@ fn rewrite_child_package(
     let child_pkg = sce_build::filters::to_snake_case(stem.to_string());
     let (machine_file, from, to) = match lang {
         Language::Kotlin => {
-            let prefix = kotlin_package_prefix.unwrap_or("com.sce.generated");
+            let prefix = kotlin_package_prefix
+                .unwrap_or(sce_build::generator::KOTLIN_DEFAULT_PACKAGE_PREFIX);
             (
                 format!("{stem}Sm.kt"),
                 format!("package {prefix}.{child_pkg}"),
@@ -7256,6 +7257,11 @@ trait W3cBackend {
     /// none. Through the one seam every route renders the function by,
     /// `generator::transition_function_files`, so a parent and a child of
     /// this suite get what `generate` gives the same document.
+    ///
+    /// Named under the default roots: this route hands no backend's machine a
+    /// namespace, package or symbol prefix, so the function has none to
+    /// follow. What a suite does to the machine's names on the way out it
+    /// does to the function's too ([`Self::rewrite_beside_machine`]).
     fn transition_function_files(
         &self,
         model: &SCXMLModel,
@@ -7263,13 +7269,25 @@ trait W3cBackend {
     ) -> Result<Vec<(String, String)>, ForgeError> {
         let language = self.language();
         let template_dir = sce_build::find_template_dir_for(language);
-        sce_build::generator::transition_function_files(
+        let files = sce_build::generator::transition_function_files(
             model,
             sce_build::generator::TemplateSource::Directory(&template_dir),
             input_stem,
             language,
+            sce_build::generator::TransitionFunctionNaming::default(),
         )
-        .map_err(ForgeError::from)
+        .map_err(ForgeError::from)?;
+        Ok(files
+            .into_iter()
+            .map(|(filename, code)| (filename, self.rewrite_beside_machine(code)))
+            .collect())
+    }
+
+    /// The rewrite this suite applies to a machine's source on the way out,
+    /// applied to a file written beside it. The identity unless the suite
+    /// renames what the templates spell (Kotlin's package root).
+    fn rewrite_beside_machine(&self, code: String) -> String {
+        code
     }
 
     /// Hook after writing parent SM (e.g. Rust writes mod.rs).
@@ -8810,6 +8828,12 @@ impl W3cBackend for KotlinBackend {
             format!("{input_stem}Sm.kt"),
             self.suite.rewrite_kotlin_source(&code),
         )])
+    }
+
+    /// The transition function's package sits under the same root as the
+    /// machine's, so a renamed suite renames both.
+    fn rewrite_beside_machine(&self, code: String) -> String {
+        self.suite.rewrite_kotlin_source(&code)
     }
 
     fn process_child(

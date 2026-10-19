@@ -1,0 +1,198 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+{#
+   The Go transition function a statechart declaring
+   `sce:transition-function="emit"` is generated with, beside its machine
+   (SCE Accepted Subset §2.21, docs/SCE_TRANSITION_FUNCTION.md).
+
+   Everything below is read from `model.emitted_transition_function`, the one
+   value `sce-build/src/transition_function.rs` computes. No block here walks
+   the model's states, transitions or events: a table a template derived for
+   itself would be a second producer, and this file and every other backend's
+   would then be free to disagree. The marked block is held to that by
+   `sce-build/tests/the_emitted_transition_function_equals_the_producer.rs`.
+
+   A package of its own (`go_package`, computed by the generator, which also
+   puts the file in a directory of that name): a Go package is a directory, so
+   the function cannot share the machine's and still be imported without it.
+   It imports nothing. Constants are spelled by the filters the machine's own
+   constants use (`to_state_variant`, `to_event_variant`), after `State` and
+   `Event` where the machine writes `<Machine>State` and `<Machine>Event`, so
+   a state is the same word in both. Nothing else the package declares begins
+   with `State` or `Event`, so no name of the document can spell one of its
+   other identifiers.
+#}
+{% include 'license_header.go.jinja2' %}
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{# transition-function:begin #}
+{% set tf = model.emitted_transition_function %}
+{% set finals = tf.states | selectattr("is_final") | list %}
+{% set used = namespace(event=false) %}
+{% for state in tf.states %}
+{% for cell in state.next %}
+{% if cell.to %}{% set used.event = true %}{% endif %}
+{% endfor %}
+{% endfor %}
+
+{{ sce_map.source_marker(model.source_location, "go", module_level=true, symbol_artifact=sce_artifact.machine) }}
+
+// Package {{ go_package }} is the transition function of `{{ model.name }}`,
+// generated because its document declares `sce:transition-function="emit"`.
+//
+// A pure function of (current state, event): Transition answers where an
+// event takes the machine from a state, and false when no transition takes
+// the event and the machine discards it. Every pair was computed when this
+// file was generated, by the selection rule the machine itself follows, so
+// this package and the machine generated beside it agree on every pair. It
+// imports nothing.
+package {{ go_package }}
+
+// State is a state the machine can be in: an atomic state, or a <final> child
+// of <scxml>. A compound state is never the current state, so it is none of
+// these; Configuration names the compound states active with each.
+type State int
+
+const (
+{% for state in tf.states %}
+	State{{ state.id | to_state_variant }} State = {{ loop.index0 }}
+{% endfor %}
+)
+
+// Event is an event the machine names: every literal name its transitions
+// write. A descriptor such as `error.*` or `*` names no event of its own.
+type Event int
+{% if tf.events %}
+
+const (
+{% for event in tf.events %}
+	Event{{ event | to_event_variant }} Event = {{ loop.index0 }}
+{% endfor %}
+)
+{% endif %}
+
+// AllStates is every state, in document order.
+var AllStates = []State{
+{% for state in tf.states %}
+	State{{ state.id | to_state_variant }},
+{% endfor %}
+}
+
+// AllEvents is every event, in the order the transitions first name them.
+var AllEvents = []Event{
+{% for event in tf.events %}
+	Event{{ event | to_event_variant }},
+{% endfor %}
+}
+
+// Initial is the state the machine starts in.
+const Initial = State{{ tf.initial | to_state_variant }}
+
+// SourceHash is the digest of the source set this file was generated from:
+// the `source-hash` of its own header, as a value.
+const SourceHash = "{{ tf.source_hash | escape_go }}"
+
+// Transition reports where event takes the machine from state: the state it
+// is in afterwards, which is state itself when the transition taken has no
+// target, and true. It reports the zero State and false when no transition
+// takes the event and the machine discards it. A final state takes no event.
+func Transition(state State, event Event) (State, bool) {
+{% if used.event %}
+	switch state {
+{% for state in tf.states %}
+{% set taken = state.next | selectattr("to") | list %}
+{% if taken %}
+	case State{{ state.id | to_state_variant }}:
+		switch event {
+{% for cell in taken %}
+		case Event{{ cell.event | to_event_variant }}:
+			return State{{ cell.to | to_state_variant }}, true
+{% endfor %}
+		}
+{% endif %}
+{% endfor %}
+	}
+{% endif %}
+	var zero State
+	return zero, false
+}
+
+// IsFinal reports whether state is a <final> child of <scxml>: reaching it
+// ends the machine, and it takes no event.
+func IsFinal(state State) bool {
+{% if finals %}
+	switch state {
+	case {% for state in finals %}{% if not loop.first %}, {% endif %}State{{ state.id | to_state_variant }}{% endfor %}:
+		return true
+	}
+{% endif %}
+	return false
+}
+
+// Configuration is the ids of every state active while state is the current
+// state, outermost first and state last; nil for a value that is no state.
+func Configuration(state State) []string {
+	switch state {
+{% for state in tf.states %}
+	case State{{ state.id | to_state_variant }}:
+		return []string{ {%- for id in state.configuration %}{% if not loop.first %}, {% endif %}"{{ id | escape_go }}"{% endfor -%} }
+{% endfor %}
+	}
+	return nil
+}
+
+// String is the state's id, as the document writes it; empty for a value
+// that is no state.
+func (s State) String() string {
+	switch s {
+{% for state in tf.states %}
+	case State{{ state.id | to_state_variant }}:
+		return "{{ state.id | escape_go }}"
+{% endfor %}
+	}
+	return ""
+}
+
+// ParseState reports the state the id name names, and false when it names
+// none of AllStates.
+func ParseState(name string) (State, bool) {
+	switch name {
+{% for state in tf.states %}
+	case "{{ state.id | escape_go }}":
+		return State{{ state.id | to_state_variant }}, true
+{% endfor %}
+	}
+	var zero State
+	return zero, false
+}
+
+// String is the event's name, as the document writes it; empty for a value
+// that is no event.
+func (e Event) String() string {
+{% if tf.events %}
+	switch e {
+{% for event in tf.events %}
+	case Event{{ event | to_event_variant }}:
+		return "{{ event | escape_go }}"
+{% endfor %}
+	}
+{% endif %}
+	return ""
+}
+
+// ParseEvent reports the event name names, and false when it names none of
+// AllEvents. A name is matched whole: the function's events are the names
+// its document writes, and a longer name a descriptor would match is not one
+// of them.
+func ParseEvent(name string) (Event, bool) {
+{% if tf.events %}
+	switch name {
+{% for event in tf.events %}
+	case "{{ event | escape_go }}":
+		return Event{{ event | to_event_variant }}, true
+{% endfor %}
+	}
+{% endif %}
+	var zero Event
+	return zero, false
+}
+{# transition-function:end #}

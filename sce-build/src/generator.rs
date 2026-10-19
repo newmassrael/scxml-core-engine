@@ -2306,50 +2306,180 @@ pub fn generate_rust_include_shim(
 /// §2.21, `docs/SCE_TRANSITION_FUNCTION.md`); none for a document that does
 /// not declare it.
 ///
-/// The seam every backend's function goes through. Each language is one arm:
-/// a template that renders [`crate::model::TransitionFunction`] and nothing
-/// else, and the name of the file it writes. The value is the generator's
+/// The seam every backend's function goes through. Each language is one arm
+/// of [`TransitionFunctionTarget::of`]: a template that renders
+/// [`crate::model::TransitionFunction`] and nothing else, the file it writes,
+/// and the names the file is spelled under. The value is the generator's
 /// ([`crate::model::SCXMLModel::emitted_transition_function`], set where the
-/// run's digest is known), so adding a backend adds an arm and a template and
-/// leaves the producer alone.
+/// run's digest is known), so a backend is an arm and a template and leaves
+/// the producer alone.
 ///
-/// A backend with no arm yet REFUSES the declaration, naming the language,
-/// rather than writing the machine without the function: a build that asked
-/// for the file and received none would find out only when it went looking.
+/// `naming` is the run's choice of where the MACHINE's names live — the
+/// prefixes `--cpp-namespace-prefix`, `--kotlin-package-prefix` and
+/// `--c-symbol-prefix` set — which the function follows, so that the two
+/// files of one machine share one root wherever the run put it.
 ///
-/// A declared document reached without the value — `check`, which renders
-/// nothing it keeps, and the library entry points, which compute no digest —
-/// gets no file in Rust; the refusals above stand whoever asks.
+/// A declared document reached without the value gets no file in any backend.
+/// Only `check` reaches here so, and it renders nothing it keeps: a route that
+/// keeps what it renders and computes no digest refuses the declaration first
+/// (`crate::bind_run_digest` is how a route that has one sets the value), and
+/// what the declaration does not admit is refused before this, whoever asks.
 pub fn transition_function_files(
     model: &SCXMLModel,
     templates: TemplateSource<'_>,
     input_stem: &str,
     language: Language,
+    naming: TransitionFunctionNaming<'_>,
 ) -> Result<Vec<(String, String)>, GenerateError> {
-    if !model.transition_function_declared {
+    if !model.transition_function_declared || model.emitted_transition_function.is_none() {
         return Ok(Vec::new());
     }
+    let target = TransitionFunctionTarget::of(model, input_stem, language, naming);
+    let mut env = new_env();
+    templates.load(&mut env, language)?;
+    let scope = document_scope(model);
     match language {
-        Language::Rust => {
-            if model.emitted_transition_function.is_none() {
-                return Ok(Vec::new());
+        Language::Rust => filters::register_filters(&mut env, &scope),
+        Language::Cpp => filters::register_cpp_filters(&mut env, &scope),
+        Language::C11 => filters::register_c11_filters(&mut env, &scope),
+        Language::Go => filters::register_go_filters(&mut env, &scope),
+        Language::Kotlin => filters::register_kotlin_filters(&mut env, &scope),
+        Language::Python => filters::register_python_filters(&mut env, &scope),
+    }
+    let code = render_transition_function(&mut env, model, &target)?;
+    Ok(vec![(target.file, code)])
+}
+
+/// Where the run put the machine's names, which the transition function
+/// generated beside it follows (see [`transition_function_files`]). `None`
+/// in a field is that backend's default root, as it is for the machine.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct TransitionFunctionNaming<'a> {
+    /// `--cpp-namespace-prefix`: the machine is `SCE::Generated::<prefix>::<name>`.
+    pub cpp_namespace_prefix: Option<&'a str>,
+    /// `--kotlin-package-prefix`: the machine's package is `<prefix>.<name>`.
+    pub kotlin_package_prefix: Option<&'a str>,
+    /// `--c-symbol-prefix`: every C11 symbol of the machine is `<prefix>_<name>_…`.
+    pub c_symbol_prefix: Option<&'a str>,
+}
+
+/// One backend's transition function: the template that renders it, the file
+/// it is written to (relative to the output directory), and the names the
+/// template is handed, each computed here once.
+///
+/// The names are the language's own root for the function, chosen so that it
+/// and the machine never declare the same name in one build unit: Rust,
+/// Python, Go and Kotlin put it in a module, package directory or package of
+/// its own named `<machine>_transition_function`; C++ nests a
+/// `transition_function` namespace in the machine's; C, which has no
+/// namespace, prefixes every symbol with `<machine>_transition_function_`,
+/// where every symbol of the machine is `<machine>_` followed by something
+/// else (`docs/SCE_TRANSITION_FUNCTION.md`).
+struct TransitionFunctionTarget {
+    template: &'static str,
+    file: String,
+    names: minijinja::Value,
+}
+
+impl TransitionFunctionTarget {
+    fn of(
+        model: &SCXMLModel,
+        input_stem: &str,
+        language: Language,
+        naming: TransitionFunctionNaming<'_>,
+    ) -> Self {
+        match language {
+            Language::Rust => Self {
+                template: "transition_function.rs.jinja2",
+                file: format!("{input_stem}_transition_function.rs"),
+                // The machine's own state and event derives, without a
+                // caller's extras: an extra names a crate
+                // (`serde::Serialize`), and this file names none.
+                names: minijinja::context! {
+                    state_derives_attr =>
+                        crate::rust_derive_policy::RustDeriveCategory::StatechartState.derives_attr(),
+                    event_derives_attr =>
+                        crate::rust_derive_policy::RustDeriveCategory::StatechartEvent.derives_attr(),
+                },
+            },
+            Language::Cpp => Self {
+                template: "transition_function.jinja2",
+                file: format!("{input_stem}_transition_function.h"),
+                names: minijinja::context! {
+                    cpp_namespace => format!(
+                        "SCE::Generated::{}{}::transition_function",
+                        cpp_namespace_segment(naming.cpp_namespace_prefix),
+                        model.name
+                    ),
+                },
+            },
+            Language::C11 => Self {
+                template: "c/transition_function.h.jinja2",
+                file: format!("{input_stem}_transition_function.h"),
+                names: minijinja::context! {
+                    c_prefix => format!(
+                        "{}{}_transition_function",
+                        c_symbol_segment(naming.c_symbol_prefix),
+                        model.name
+                    ),
+                },
+            },
+            Language::Go => {
+                // A Go package is a directory, so the function's package is
+                // one of its own inside the machine's output directory, named
+                // as the machine's package is (`to_snake_case`, which the
+                // machine template applies to the same name).
+                let package = format!(
+                    "{}_transition_function",
+                    filters::to_snake_case(model.name.clone())
+                );
+                Self {
+                    template: "transition_function.go.jinja2",
+                    file: format!("{package}/{input_stem}_transition_function.go"),
+                    names: minijinja::context! { go_package => package },
+                }
             }
-            let mut env = new_env();
-            templates.load(&mut env, Language::Rust)?;
-            filters::register_filters(&mut env, &document_scope(model));
-            let code = render_rust_transition_function(&mut env, model)?;
-            Ok(vec![(format!("{input_stem}_transition_function.rs"), code)])
+            Language::Kotlin => Self {
+                template: "transition_function.kt.jinja2",
+                file: format!("{input_stem}TransitionFunction.kt"),
+                names: minijinja::context! {
+                    kotlin_package => format!(
+                        "{}.{}_transition_function",
+                        naming
+                            .kotlin_package_prefix
+                            .unwrap_or(KOTLIN_DEFAULT_PACKAGE_PREFIX),
+                        model.name.to_lowercase()
+                    ),
+                },
+            },
+            Language::Python => Self {
+                template: "transition_function.py.jinja2",
+                file: format!("{input_stem}_transition_function.py"),
+                names: minijinja::context! {},
+            },
         }
-        Language::Cpp | Language::C11 | Language::Go | Language::Kotlin | Language::Python => {
-            Err(GenerateError::unsupported_at(
-                format!(
-                    "the transition function that sce:transition-function=\"emit\" declares \
-                     is not yet generated for {}; it is generated for rust",
-                    language.canonical_name()
-                ),
-                model.source_location.clone(),
-            ))
-        }
+    }
+}
+
+/// The package a generated Kotlin machine lives under when the run names no
+/// `--kotlin-package-prefix`: `<this>.<machine name>`.
+pub const KOTLIN_DEFAULT_PACKAGE_PREFIX: &str = "com.sce.generated";
+
+/// The `<prefix>::` segment `--cpp-namespace-prefix` nests a machine's
+/// namespace under (`SCE::Generated::<prefix>::<name>`), empty when unset.
+fn cpp_namespace_segment(prefix: Option<&str>) -> String {
+    match prefix {
+        Some(p) if !p.is_empty() => format!("{p}::"),
+        _ => String::new(),
+    }
+}
+
+/// The `<prefix>_` `--c-symbol-prefix` writes before every C11 symbol of a
+/// machine, empty when unset.
+fn c_symbol_segment(prefix: Option<&str>) -> String {
+    match prefix {
+        Some(p) if !p.is_empty() => format!("{p}_"),
+        _ => String::new(),
     }
 }
 
@@ -2374,21 +2504,16 @@ impl TemplateSource<'_> {
     }
 }
 
-/// The Rust module of a declared transition function: `core` only, its own
-/// `State` and `Event`, and the table as one match.
-fn render_rust_transition_function(
+/// One backend's transition function file: the model the templates read the
+/// value through, the license header's configuration, and the target's names.
+fn render_transition_function(
     env: &mut Environment,
     model: &SCXMLModel,
+    target: &TransitionFunctionTarget,
 ) -> Result<String, GenerateError> {
     let tmpl = env
-        .get_template("transition_function.rs.jinja2")
+        .get_template(target.template)
         .map_err(|e| GenerateError::TemplateLoad(format!("Template load error: {e}")))?;
-    // The machine's own state and event derives, without a caller's extras:
-    // an extra names a crate (`serde::Serialize`), and this file names none.
-    let state_derives_attr =
-        crate::rust_derive_policy::RustDeriveCategory::StatechartState.derives_attr();
-    let event_derives_attr =
-        crate::rust_derive_policy::RustDeriveCategory::StatechartEvent.derives_attr();
     // The marker names the machine's position as the machine's own marker
     // does, in the coordinates a generated file carries.
     let mut model_artifact = model.clone();
@@ -2396,8 +2521,7 @@ fn render_rust_transition_function(
     let ctx = minijinja::context! {
         model => minijinja::Value::from_serialize(&model_artifact),
         license_config => minijinja::Value::from_serialize(license_config()),
-        state_derives_attr => &state_derives_attr,
-        event_derives_attr => &event_derives_attr,
+        ..target.names.clone()
     };
     tmpl.render(ctx).map_err(render_error)
 }
@@ -2865,10 +2989,7 @@ fn render_cpp(
     // Rust-computed-prepend shape as the C11 backend's `csym_prefix`,
     // rather than a conditional repeated at each template site. Empty =
     // the historical un-nested shape (byte-identical).
-    let cpp_ns_prefix = match cpp_namespace_prefix {
-        Some(p) if !p.is_empty() => format!("{p}::"),
-        _ => String::new(),
-    };
+    let cpp_ns_prefix = cpp_namespace_segment(cpp_namespace_prefix);
     let native = crate::forge::native_action::render_in_namespace(
         &mut model_lowered,
         &native_machine_name,
@@ -3066,10 +3187,7 @@ fn render_c11(
     // would not link. Both this and the guard writes must happen before
     // `model_lowered` is serialised — a guard attached after that never
     // reaches the template.
-    let csym_prefix = match c_symbol_prefix {
-        Some(p) if !p.is_empty() => format!("{p}_"),
-        _ => String::new(),
-    };
+    let csym_prefix = c_symbol_segment(c_symbol_prefix);
     // SCE Accepted Subset §2.15: a `sce-static` document's every expression
     // lowered to C — its variables as members of the policy — before the
     // payload channel is built, as every backend that lowers one does. The
@@ -3391,7 +3509,7 @@ fn render_kotlin(
         event_members => event_members,
         leaf_events => minijinja::Value::from_serialize(&leaf_events),
         license_config => minijinja::Value::from_serialize(license_config()),
-        kotlin_package_prefix => package_prefix.unwrap_or("com.sce.generated"),
+        kotlin_package_prefix => package_prefix.unwrap_or(KOTLIN_DEFAULT_PACKAGE_PREFIX),
         parent_map => minijinja::Value::from_serialize(&parent_map),
         invoke_entries => minijinja::Value::from_serialize(&invoke_entries),
         event_payload_active => payload.active,
@@ -5510,8 +5628,47 @@ mod tests {
         model: &SCXMLModel,
         language: Language,
     ) -> Result<Vec<(String, String)>, GenerateError> {
+        named_function_files(model, language, TransitionFunctionNaming::default())
+    }
+
+    fn named_function_files(
+        model: &SCXMLModel,
+        language: Language,
+        naming: TransitionFunctionNaming<'_>,
+    ) -> Result<Vec<(String, String)>, GenerateError> {
         let templates = crate::template_registry::embedded_templates_for(language);
-        transition_function_files(model, TemplateSource::Strings(&templates), "lamp", language)
+        transition_function_files(
+            model,
+            TemplateSource::Strings(&templates),
+            "lamp",
+            language,
+            naming,
+        )
+    }
+
+    /// The one file `language` writes for the lamp, and its text.
+    fn the_function_file(language: Language) -> (String, String) {
+        let model = transition_function_model(true, true);
+        let mut files = function_files(&model, language)
+            .unwrap_or_else(|e| panic!("{language:?} renders the function: {e:?}"));
+        assert_eq!(files.len(), 1, "{language:?} writes one file");
+        files.remove(0)
+    }
+
+    /// Every line of `expected` is in `code`, and none of `forbidden` is.
+    fn holds(language: Language, code: &str, expected: &[&str], forbidden: &[&str]) {
+        for line in expected {
+            assert!(
+                code.contains(line),
+                "{language:?}: missing `{line}` in:\n{code}"
+            );
+        }
+        for word in forbidden {
+            assert!(
+                !code.contains(word),
+                "{language:?}: the file names `{word}`:\n{code}"
+            );
+        }
     }
 
     /// A document that declares nothing gets nothing, in every backend.
@@ -5528,33 +5685,219 @@ mod tests {
         }
     }
 
-    /// The five backends without the function refuse the declaration by name,
-    /// whether or not the run built the value: a build that asked for the file
-    /// is told it will not get one.
+    /// Every backend writes the function for a declared document where the run
+    /// built the value, one file under the name the reference doc gives it,
+    /// carrying the run's hash; and nothing where the run built none.
     #[test]
-    fn a_backend_that_does_not_generate_the_function_refuses_the_declaration() {
-        for with_value in [false, true] {
-            let model = transition_function_model(true, with_value);
-            for &language in Language::ALL {
-                if language == Language::Rust {
-                    continue;
-                }
-                match function_files(&model, language) {
-                    Err(GenerateError::UnsupportedFeature { detail, at }) => {
-                        assert!(
-                            detail.contains(language.canonical_name())
-                                && detail.contains("sce:transition-function"),
-                            "{language:?}: {detail}"
-                        );
-                        assert!(
-                            at.is_some(),
-                            "{language:?}: the refusal is placed on <scxml>"
-                        );
-                    }
-                    other => panic!("{language:?} did not refuse: {other:?}"),
-                }
-            }
+    fn every_backend_writes_the_function_when_the_run_built_it() {
+        let without = transition_function_model(true, false);
+        let hash = "ef".repeat(32);
+        for &language in Language::ALL {
+            assert!(
+                function_files(&without, language)
+                    .expect("nothing to refuse")
+                    .is_empty(),
+                "{language:?} wrote a function the run built no value for"
+            );
+            let (name, code) = the_function_file(language);
+            let expected_name = match language {
+                Language::Rust => "lamp_transition_function.rs",
+                Language::Cpp | Language::C11 => "lamp_transition_function.h",
+                Language::Go => "lamp_transition_function/lamp_transition_function.go",
+                Language::Kotlin => "lampTransitionFunction.kt",
+                Language::Python => "lamp_transition_function.py",
+            };
+            assert_eq!(name, expected_name, "{language:?}");
+            assert!(code.contains(&hash), "{language:?}: no hash in:\n{code}");
         }
+    }
+
+    /// C++: a header in a namespace nested in the machine's, `constexpr`
+    /// throughout, including the standard library alone.
+    #[test]
+    fn cpp_writes_the_function_in_a_namespace_nested_in_the_machines() {
+        let (_, code) = the_function_file(Language::Cpp);
+        let hash_line = format!(
+            "inline constexpr std::string_view SOURCE_HASH = \"{}\";",
+            "ef".repeat(32)
+        );
+        holds(
+            Language::Cpp,
+            &code,
+            &[
+                "namespace SCE::Generated::lamp::transition_function {",
+                "enum class State {\n    Idle,\n    Lit,\n    Done,\n};",
+                "enum class Event {\n    On,\n    Off_hard,\n    Off,\n};",
+                "inline constexpr State INITIAL = State::Idle;",
+                hash_line.as_str(),
+                "    case State::Idle:\n        switch (event) {\n        case Event::On:\n            return State::Lit;",
+                "        case Event::Off_hard:\n            return State::Done;",
+                "        case Event::Off:\n            return State::Idle;",
+                "    case State::Done:\n        return std::nullopt;",
+                "return state == State::Done;",
+                "    case State::Lit:\n        return Configuration{detail::CONFIGURATION_IDS.data() + 1, 1};",
+                "    if (name == \"off.hard\") {\n        return Event::Off_hard;",
+            ],
+            &["#include \"", "SCE::Core", "SCE::Common"],
+        );
+        let suite = transition_function_model(true, true);
+        let (_, prefixed) = named_function_files(
+            &suite,
+            Language::Cpp,
+            TransitionFunctionNaming {
+                cpp_namespace_prefix: Some("suite"),
+                ..Default::default()
+            },
+        )
+        .expect("C++ renders it")
+        .remove(0);
+        assert!(
+            prefixed.contains("namespace SCE::Generated::suite::lamp::transition_function {"),
+            "{prefixed}"
+        );
+    }
+
+    /// C11: one header of `static inline` functions, every symbol under a
+    /// prefix no symbol of the machine begins with, nothing allocated.
+    #[test]
+    fn c11_writes_the_function_under_a_prefix_of_its_own() {
+        let (_, code) = the_function_file(Language::C11);
+        let hash_line = format!(
+            "#define LAMP_TRANSITION_FUNCTION_SOURCE_HASH \"{}\"",
+            "ef".repeat(32)
+        );
+        holds(
+            Language::C11,
+            &code,
+            &[
+                "#ifndef SCE_GENERATED_LAMP_TRANSITION_FUNCTION_H",
+                "enum lamp_transition_function_state_e {\n    LAMP_TRANSITION_FUNCTION_STATE_IDLE,\n    LAMP_TRANSITION_FUNCTION_STATE_LIT,\n    LAMP_TRANSITION_FUNCTION_STATE_DONE,\n    LAMP_TRANSITION_FUNCTION_NUM_STATES\n};",
+                "    LAMP_TRANSITION_FUNCTION_EVENT_OFF_HARD,",
+                "#define LAMP_TRANSITION_FUNCTION_INITIAL LAMP_TRANSITION_FUNCTION_STATE_IDLE",
+                hash_line.as_str(),
+                "        case LAMP_TRANSITION_FUNCTION_EVENT_OFF_HARD:\n            *next = LAMP_TRANSITION_FUNCTION_STATE_DONE;\n            return true;",
+                "    case LAMP_TRANSITION_FUNCTION_STATE_DONE:\n        return false;",
+                "return state == LAMP_TRANSITION_FUNCTION_STATE_DONE;",
+                "static inline bool lamp_transition_function_state_from_name(const char *name, lamp_transition_function_state_t *out) {",
+                "    if (strcmp(name, \"off.hard\") == 0) {\n        *out = LAMP_TRANSITION_FUNCTION_EVENT_OFF_HARD;",
+            ],
+            &["#include \"", "malloc", "calloc"],
+        );
+        let suite = transition_function_model(true, true);
+        let (_, prefixed) = named_function_files(
+            &suite,
+            Language::C11,
+            TransitionFunctionNaming {
+                c_symbol_prefix: Some("suite"),
+                ..Default::default()
+            },
+        )
+        .expect("C11 renders it")
+        .remove(0);
+        assert!(
+            prefixed.contains("enum suite_lamp_transition_function_state_e {")
+                && prefixed.contains("    SUITE_LAMP_TRANSITION_FUNCTION_STATE_IDLE,"),
+            "{prefixed}"
+        );
+    }
+
+    /// Go: a package of its own, in a directory of its own, importing nothing.
+    #[test]
+    fn go_writes_the_function_as_a_package_of_its_own() {
+        let (_, code) = the_function_file(Language::Go);
+        let hash_line = format!("const SourceHash = \"{}\"", "ef".repeat(32));
+        holds(
+            Language::Go,
+            &code,
+            &[
+                "package lamp_transition_function\n",
+                "\tStateIdle State = 0\n\tStateLit State = 1\n\tStateDone State = 2\n",
+                "\tEventOffHard Event = 1\n",
+                "const Initial = StateIdle",
+                hash_line.as_str(),
+                "\tcase StateLit:\n\t\tswitch event {\n\t\tcase EventOffHard:\n\t\t\treturn StateDone, true\n\t\tcase EventOff:\n\t\t\treturn StateIdle, true\n\t\t}",
+                "\tswitch state {\n\tcase StateDone:\n\t\treturn true\n\t}",
+                "\tcase StateLit:\n\t\treturn []string{\"lit\"}",
+                "\tcase \"off.hard\":\n\t\treturn EventOffHard, true",
+            ],
+            &["\nimport"],
+        );
+    }
+
+    /// Kotlin: a package of its own, under the machine's prefix, importing
+    /// nothing.
+    #[test]
+    fn kotlin_writes_the_function_as_a_package_of_its_own() {
+        let (_, code) = the_function_file(Language::Kotlin);
+        let hash_line = format!("const val SOURCE_HASH: String = \"{}\"", "ef".repeat(32));
+        holds(
+            Language::Kotlin,
+            &code,
+            &[
+                "package com.sce.generated.lamp_transition_function\n",
+                "enum class State(val scxmlName: String) {\n    Idle(\"idle\"),\n    Lit(\"lit\"),\n    Done(\"done\"),\n}",
+                "    OffHard(\"off.hard\"),",
+                "val INITIAL: State = State.Idle",
+                hash_line.as_str(),
+                "    State.Lit -> when (event) {\n        Event.OffHard -> State.Done\n        Event.Off -> State.Idle\n        else -> null\n    }",
+                "    State.Done -> null",
+                "fun isFinal(state: State): Boolean = state == State.Done\n",
+                "    State.Lit -> listOf(\"lit\")",
+                "    \"off.hard\" -> Event.OffHard",
+            ],
+            &["\nimport"],
+        );
+        let suite = transition_function_model(true, true);
+        let (_, prefixed) = named_function_files(
+            &suite,
+            Language::Kotlin,
+            TransitionFunctionNaming {
+                kotlin_package_prefix: Some("com.example"),
+                ..Default::default()
+            },
+        )
+        .expect("Kotlin renders it")
+        .remove(0);
+        assert!(
+            prefixed.contains("package com.example.lamp_transition_function\n"),
+            "{prefixed}"
+        );
+    }
+
+    /// Python: a module of its own that imports the standard library alone.
+    #[test]
+    fn python_writes_the_function_as_a_module_of_its_own() {
+        let (_, code) = the_function_file(Language::Python);
+        let hash_line = format!("SOURCE_HASH: str = \"{}\"", "ef".repeat(32));
+        holds(
+            Language::Python,
+            &code,
+            &[
+                "class State(Enum):",
+                "    IDLE = \"idle\"\n    LIT = \"lit\"\n    DONE = \"done\"\n",
+                "    OFF_HARD = \"off.hard\"\n",
+                "INITIAL: State = State.IDLE",
+                hash_line.as_str(),
+                "    (State.LIT, Event.OFF_HARD): State.DONE,\n    (State.LIT, Event.OFF): State.IDLE,\n",
+                "        State.DONE,\n",
+                "    State.LIT: (\"lit\", ),\n",
+                "    \"off.hard\": Event.OFF_HARD,\n",
+            ],
+            &[],
+        );
+        let imports: Vec<&str> = code
+            .lines()
+            .filter(|line| line.starts_with("import ") || line.starts_with("from "))
+            .collect();
+        assert_eq!(
+            imports,
+            [
+                "from __future__ import annotations",
+                "from enum import Enum",
+                "from typing import Dict, FrozenSet, Optional, Tuple",
+            ],
+            "{code}"
+        );
     }
 
     /// Rust renders the value into its own module file, and renders nothing
