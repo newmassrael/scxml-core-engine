@@ -664,20 +664,36 @@ impl<C: Clock> SpecStore<C> {
         let conversion_ids = block_ids(&documents.conversion, "conversion")?;
         let extraction_ids =
             block_ids(&self.read_extraction(id, &found.extraction)?, "extraction")?;
-        let known = if what == DecisionKind::Add {
-            extraction_ids.contains(block)
-        } else {
-            conversion_ids.contains(block) || extraction_ids.contains(block)
-        };
-        if !known {
-            return Err(bad(
-                if what == DecisionKind::Add {
-                    format!("the original has no block `{block}` to add")
+        // Whose a block is decides what may be said of it: the conversion's blocks are kept, corrected
+        // or dropped; the original's, which the conversion left out, are added or dropped (left out).
+        let refusal = match what {
+            DecisionKind::Add if !extraction_ids.contains(block) => {
+                Some(format!("the original has no block `{block}` to add"))
+            }
+            DecisionKind::Add => None,
+            DecisionKind::Drop
+                if !conversion_ids.contains(block) && !extraction_ids.contains(block) =>
+            {
+                Some(format!(
+                    "neither the conversion nor the original has a block `{block}`"
+                ))
+            }
+            DecisionKind::Drop => None,
+            DecisionKind::Keep | DecisionKind::Correct if !conversion_ids.contains(block) => {
+                Some(if extraction_ids.contains(block) {
+                    format!(
+                        "the conversion has no block `{block}` to {}: only an add or a drop says \
+                         what becomes of a block of the original it left out",
+                        what.word()
+                    )
                 } else {
                     format!("neither the conversion nor the original has a block `{block}`")
-                },
-                json!({ "block": block }),
-            ));
+                })
+            }
+            DecisionKind::Keep | DecisionKind::Correct => None,
+        };
+        if let Some(message) = refusal {
+            return Err(bad(message, json!({ "block": block, "what": what.word() })));
         }
         let path = decisions_path(&dir, proposal);
         let held = read_log::<Decision>(&path)?;

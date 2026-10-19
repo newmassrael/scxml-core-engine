@@ -78,9 +78,12 @@ of the original, says what the owner did (`keep`, `correct` with the words, `dro
 block) and when. They are appended to `decisions/<proposal>.log`, one JSON line each, never edited and
 never applied by changing the conversion. The latest decision on a block stands, and an earlier one is
 kept as history. A block is decided when any decision names it, and a question is answered when the
-block it asks about is decided. A decision is refused when the proposal has ended, when it names a block
-that neither the conversion nor the original has, when it corrects with no words, and when it adds a
-block the original does not have.
+block it asks about is decided. What may be said of a block depends on whose it is. A block of the
+conversion is kept, corrected or dropped. A block of the original that the conversion left out is added,
+or dropped, which says the owner leaves it out; there is nothing in it to keep or to correct. A decision
+is refused when the proposal has ended, when it names a block that neither the conversion nor the
+original has, when it keeps or corrects a block the conversion does not have, when it corrects with no
+words, and when it adds a block the original does not have.
 
 **Whoever makes the final text says what it was made from.** The text that becomes the spec is a function
 of the conversion, the original's extraction and the decisions, and the assembly is written once, in the

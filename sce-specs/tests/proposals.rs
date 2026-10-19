@@ -677,8 +677,47 @@ fn a_decision_names_a_block_that_is_there_and_add_names_one_of_the_original() {
         assert_eq!(refusal(error).0, "bad-proposal", "{block:?} {what:?}");
     }
     f.decide(&proposal.id, "b3", DecisionKind::Add);
-    f.decide(&proposal.id, "b1", DecisionKind::Keep);
     f.decide(&proposal.id, "m2", DecisionKind::Drop);
+}
+
+#[test]
+fn what_may_be_said_of_a_block_depends_on_whose_it_is() {
+    let f = fixture("dec-whose");
+    let proposal = f.propose("k", &[("check", "m1"), ("missing", "b3")]);
+
+    // A block of the original the conversion left out has nothing in it to keep or to correct.
+    for what in [DecisionKind::Keep, DecisionKind::Correct] {
+        let words = (what == DecisionKind::Correct).then_some("words");
+        let error = f
+            .store
+            .decide_block(&f.spec, &proposal.id, "b3", what, words)
+            .unwrap_err();
+        let (kind, detail) = refusal(error);
+        assert_eq!(kind, "bad-proposal", "{what:?}");
+        assert_eq!(detail["block"], "b3");
+    }
+    // It is added, or it is left out, and both answer the question that was asked about it.
+    f.decide(&proposal.id, "b3", DecisionKind::Drop);
+    assert!(f
+        .store
+        .read_proposal(&f.spec, &proposal.id)
+        .unwrap()
+        .undecided
+        .iter()
+        .all(|ask| ask.id != "b3"));
+    f.decide(&proposal.id, "b3", DecisionKind::Add);
+    // A block of the conversion is kept, corrected or dropped.
+    f.decide(&proposal.id, "m1", DecisionKind::Keep);
+    f.store
+        .decide_block(
+            &f.spec,
+            &proposal.id,
+            "m1",
+            DecisionKind::Correct,
+            Some("words"),
+        )
+        .unwrap();
+    f.decide(&proposal.id, "m1", DecisionKind::Drop);
 }
 
 #[test]

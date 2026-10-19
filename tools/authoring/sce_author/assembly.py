@@ -10,7 +10,8 @@ log it did not read.
 
 - `keep`: the block is written as the conversion has it.
 - `correct`: the owner's words stand where the block was.
-- `drop`: the block is left out.
+- `drop`: the block is left out. Of a block of the original that the conversion left out, it says the
+  owner leaves it out, which writes nothing and answers the question that was asked about it.
 - `add`: a block of the original that the conversion left out is written as the rules writer would write
   it, after the block that carries the nearest earlier block of the original (at the start when none
   does). Two added blocks keep the order they have in the original.
@@ -139,8 +140,23 @@ def assemble(conversion: Conversion, extraction: Extraction, decisions: list[Dec
                 )
             if not plain_of_block(in_original[decision.block]):
                 raise _refuse(f"cannot add {decision.block!r}: it has no words to add")
-        elif decision.block not in in_conversion:
-            raise _refuse(f"has decision {decision.n} ({decision.what}) on {decision.block!r}, which is no block of the conversion")
+        elif decision.block in in_conversion:
+            continue
+        elif decision.what == "drop" and decision.block in carried_by:
+            raise _refuse(
+                f"has decision {decision.n} (drop) on {decision.block!r}, which the conversion carries in "
+                f"{carried_by[decision.block]!r}: decide on that block"
+            )
+        elif decision.what == "drop" and decision.block in in_original:
+            # The owner leaves a block of the original out that the conversion already left out: there is
+            # nothing to write, and the decision is the answer to the question that was asked about it.
+            continue
+        else:
+            raise _refuse(
+                f"has decision {decision.n} ({decision.what}) on {decision.block!r}, which is no block of the "
+                f"conversion"
+                + (" (only an add or a drop says what becomes of a block of the original)" if decision.block in in_original else "")
+            )
     by_block = {decision.block: decision for decision in decided}
 
     # Where each added block goes: after the conversion block that carries the nearest earlier block of
@@ -179,6 +195,9 @@ def assemble(conversion: Conversion, extraction: Extraction, decisions: list[Dec
             paragraphs.append(block.markdown)
             kept.append(block.id)
         put_added(block.id)
+    # What the owner left out of a block of the original the conversion had left out is dropped too, and
+    # said so, since the question that was asked about it was answered.
+    dropped.extend(d.block for d in decided if d.what == "drop" and d.block not in in_conversion)
     if not paragraphs:
         raise _refuse("would leave nothing: every block of the conversion was dropped")
     return Assembly(

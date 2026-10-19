@@ -198,6 +198,23 @@ class TheLatestDecisionOnABlockStands(unittest.TestCase):
         with self.assertRaisesRegex(IngestError, "no block of the conversion"):
             assembled(decision(1, "m99", "keep"))
 
+    def test_leaving_out_a_block_the_conversion_left_out_writes_nothing_and_is_said(self):
+        made = assembled(decision(1, "b3", "drop"))
+
+        self.assertEqual(made.text, assembled().text)
+        self.assertEqual((made.dropped, made.added), (("b3",), ()))
+        self.assertEqual(made.decisions, 1)
+
+    def test_only_an_add_or_a_drop_says_what_becomes_of_a_block_of_the_original(self):
+        for what, words in (("keep", None), ("correct", "words")):
+            with self.subTest(what=what):
+                with self.assertRaisesRegex(IngestError, "only an add or a drop"):
+                    assembled(decision(1, "b3", what, words))
+
+    def test_a_block_the_conversion_carries_is_decided_by_the_block_that_carries_it(self):
+        with self.assertRaisesRegex(IngestError, "decide on that block"):
+            assembled(decision(1, "b2", "drop"))
+
 
 class ADecisionIsReadFromTheLogTheSpecsFolderGives(unittest.TestCase):
     def test_the_list_read_proposal_gives_is_read_and_its_other_fields_are_ignored(self):
