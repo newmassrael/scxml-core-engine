@@ -171,6 +171,21 @@ fn every_fixture_is_lowered_or_refused_by_name() {
         lowered.iter().any(|name| name == "static_host_call"),
         "static_host_call is lowered for the Interpreter: lowered {lowered:?}"
     );
+    // An action states its effect, and the Interpreter reads `effect` and
+    // `released-by` as the generated engines do (docs/adr/0038), so the machine
+    // that states a duty with its release lowers too: the two attributes travel
+    // in the document as the author wrote them.
+    assert!(
+        lowered.iter().any(|name| name == "static_host_duty"),
+        "static_host_duty is lowered for the Interpreter: lowered {lowered:?}"
+    );
+    let duty = lowered_fixture("static_host_duty");
+    assert!(
+        duty.contains(
+            r#"<sce:action name="start_keepalive" effect="duty" released-by="stop_keepalive"/>"#
+        ),
+        "the effect and the release are carried as written: {duty}"
+    );
     // What is refused says which construct, so an author knows what to change.
     for (name, text) in &refused {
         assert!(
