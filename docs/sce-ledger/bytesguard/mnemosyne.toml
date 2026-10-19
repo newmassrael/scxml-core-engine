@@ -126,6 +126,10 @@ scan_exclusions = [
     # so excluding it swallows no section from this gate.
     "sce-build/build.rs",
     "backends/go/forge-runtime/conformance/",
+    # The Rust artifacts SCE writes from a deploy, compiled and run. Measured
+    # 2026-10-19: its three cites are §synth-5-K and §synth-5-N, no §bytesguard-
+    # among them, so excluding it swallows no section from this gate.
+    "backends/rust/deploy-conformance/",
     "backends/rust/link-runtime/",
     # The Rust Mesh crate. Measured 2026-09-27: no §bytesguard- cite in it —
     # its own are the Mesh ledger's `§mesh-*` and, in generated codecs,

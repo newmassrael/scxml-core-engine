@@ -4022,6 +4022,14 @@
           "file": "sce-build/src/mesh/deploy.rs",
           "symbol": "validate_scheduler_session_runtime",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/deploy-conformance/tests/busy_poll.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/deploy-conformance/tests/session_runtime.rs",
+          "kind": "references"
         }
       ]
     },
@@ -4676,6 +4684,10 @@
           "file": "sce-build/src/lib.rs",
           "symbol": "compile_document_set",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/deploy-conformance/tests/concurrency_artifacts.rs",
+          "kind": "references"
         }
       ]
     },

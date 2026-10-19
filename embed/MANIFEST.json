@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)",
-  "embed_version": "a3fc822761",
+  "embed_version": "96cf8d3373",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 308,
+  "symbol_count": 311,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -1754,6 +1754,15 @@
       "name": "SCE::TransitionNode"
     },
     {
+      "header": "runtime/ActionRealization.h",
+      "kind": "enum",
+      "name": "SCE::ActionRealization",
+      "values": [
+        "Performs",
+        "Simulates"
+      ]
+    },
+    {
       "header": "runtime/BindingHelper.h",
       "kind": "class",
       "members": [],
@@ -1911,6 +1920,21 @@
       "kind": "typedef",
       "name": "SCE::json",
       "type": "nlohmann::json"
+    },
+    {
+      "header": "runtime/SimulatedHost.h",
+      "kind": "enum",
+      "name": "SCE::SimulatedHost",
+      "values": [
+        "Refuse",
+        "Accept"
+      ]
+    },
+    {
+      "header": "runtime/SimulatedHost.h",
+      "kind": "function",
+      "name": "SCE::requireHostPerforms",
+      "signature": "void SCE::requireHostPerforms(const char *, ActionRealization, SimulatedHost)"
     },
     {
       "header": "runtime/StateHierarchyManager.h",

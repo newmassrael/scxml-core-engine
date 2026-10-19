@@ -178,6 +178,10 @@ scan_exclusions = [
     "sce-build/build.rs",
     "backends/rust/forge-runtime/",
     "backends/rust/forge-conformance/",
+    # The Rust artifacts SCE writes from a deploy, compiled and run. Measured
+    # 2026-10-19: its three cites are §synth-5-K and §synth-5-N, none in this
+    # workspace's namespace, so excluding it swallows no section from this gate.
+    "backends/rust/deploy-conformance/",
     "backends/rust/link-runtime/",
     # The Rust Mesh crate: the `sce:std/mesh` documents generated for Rust and
     # the router core that applies them. Measured 2026-09-27: it carries no

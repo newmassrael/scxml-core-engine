@@ -128,12 +128,17 @@ class TheStylesOfAWordFileMakeItsHeadings(Folder):
 
     def test_the_built_in_names_are_read_whatever_language_the_document_was_written_in(self):
         # Word writes `heading 1` in the file whatever its interface language is; the id is the author's.
-        styles = style("제목1", "heading 1")
+        # The style id and the texts are Hangul, written as escapes so this source stays ASCII:
+        # a localized id, a two-syllable title and a short sentence.
+        local_id = "제목1"
+        title = "램프"
+        sentence = "켜져 있다."
+        styles = style(local_id, "heading 1")
 
-        found = self.blocks(paragraph("램프", "제목1") + paragraph("켜져 있다."), styles)
+        found = self.blocks(paragraph(title, local_id) + paragraph(sentence), styles)
 
         self.assertEqual([(b.kind, b.level, b.text) for b in found], [
-            ("heading", 1, "램프"), ("paragraph", None, "켜져 있다."),
+            ("heading", 1, title), ("paragraph", None, sentence),
         ])
 
     def test_a_deep_heading_is_the_sixth_level_at_most(self):
