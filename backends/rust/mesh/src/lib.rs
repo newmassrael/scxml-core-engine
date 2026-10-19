@@ -42,6 +42,7 @@ pub mod inbox;
 pub mod link;
 pub mod outbound;
 pub mod peers;
+pub mod reconnect;
 pub mod router;
 pub mod rpc;
 pub mod signal;

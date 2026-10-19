@@ -353,6 +353,13 @@ impl ZenohEvents {
         ZenohEvents { events, session }
     }
 
+    /// Events whose session never ends for good: a binding that opens its own successors reads
+    /// one channel through all of them, and answers [`session_ended`](Self::session_ended) with
+    /// `None` throughout.
+    pub(crate) fn unending(events: mpsc::Receiver<LinkEvent>) -> Self {
+        Self::new(events, SharedSession::default())
+    }
+
     /// The client's words if the session this binding was opened on has ended, and `None` while
     /// it has not. It never blocks. Once it answers, the binding has told the core every peer it
     /// had ready is lost, its transport refuses sends as retryable, and nothing more will come
