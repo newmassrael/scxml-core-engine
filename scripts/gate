@@ -7,6 +7,7 @@
 #   scripts/gate <slug> [<slug>...]   run named gates (plus their deps)
 #   scripts/gate --all                run every gate
 #   scripts/gate --changed-from FILE  run the gates a change set requires
+#   scripts/gate --changed-in A..B    the same, the set being what A..B changes
 #   scripts/gate --list               show every gate in run order
 #   scripts/gate --measure --all      run and report each gate's wall clock
 #
@@ -26,8 +27,10 @@ cd "$REPO_ROOT"
 REGISTRY="$REPO_ROOT/tools/git-hooks/gate_registry.py"
 MEASURE=0
 SLUGS=()
+ORDER=()
 MODE=""
 CHANGED_FILE=""
+CHANGED_RANGES=()
 
 while (( $# )); do
     case "$1" in
@@ -35,12 +38,52 @@ while (( $# )); do
         --list)         MODE="list" ;;
         --measure)      MEASURE=1 ;;
         --changed-from) MODE="changed"; CHANGED_FILE="$2"; shift ;;
-        -h|--help)      sed -n '5,20p' "$0"; exit 0 ;;
+        --changed-in)   MODE="changed"; CHANGED_RANGES+=("$2"); shift ;;
+        -h|--help)      sed -n '5,21p' "$0"; exit 0 ;;
         -*)             printf 'gate: unknown option %s\n' "$1" >&2; exit 2 ;;
         *)              SLUGS+=("$1"); MODE="${MODE:-named}" ;;
     esac
     shift
 done
+
+# ── A change set named by commits rather than by a file ────────────────
+#
+# `--changed-from` names a file on the machine that wrote it, so it cannot
+# travel: the push hook hands its gates to a build machine through bx, and bx
+# keeps a command that names a path only this machine has (`/tmp`, the home
+# directory) on this machine — correctly, since the far side has no such file
+# or a different one. Two commits mean the same thing everywhere the history
+# went, and bx sends the history, so the set is derived where the gates run.
+#
+# A range that does not resolve is refused, not widened to every gate: the
+# caller resolved both ends before handing them over, so a missing commit here
+# means the history did not arrive, and that is the thing to report.
+if (( ${#CHANGED_RANGES[@]} )); then
+    if [[ -n "$CHANGED_FILE" ]]; then
+        printf 'gate: --changed-from and --changed-in name the change set twice; pass one\n' >&2
+        exit 2
+    fi
+    CHANGED_FILE="$(mktemp)"
+    trap 'rm -f "$CHANGED_FILE"' EXIT
+    for range in "${CHANGED_RANGES[@]}"; do
+        base="${range%%..*}"
+        tip="${range#*..}"
+        if [[ "$range" != *..* || -z "$base" || -z "$tip" || "$tip" == *..* ]]; then
+            printf 'gate: --changed-in takes <base>..<tip>, got %q\n' "$range" >&2
+            exit 2
+        fi
+        for end in "$base" "$tip"; do
+            if ! git cat-file -e "${end}^{commit}" 2>/dev/null; then
+                printf 'gate: --changed-in %s: %s is no commit this checkout has\n' "$range" "$end" >&2
+                exit 2
+            fi
+        done
+        git diff --name-only "$base" "$tip" >>"$CHANGED_FILE"
+    done
+    sort -u "$CHANGED_FILE" -o "$CHANGED_FILE"
+    printf 'gate: %s changed path(s) in %s\n' \
+        "$(wc -l <"$CHANGED_FILE" | tr -d ' ')" "${CHANGED_RANGES[*]}" >&2
+fi
 
 # The registry decides what runs and in what order, so a broken registry is
 # a silent coverage loss rather than a loud failure. Exercise its own cases
@@ -65,8 +108,19 @@ PYEOF
 )
         ;;
     changed)
-        mapfile -t ORDER < <(python3 "$REGISTRY" --repo-root "$REPO_ROOT" \
-            --changed-from "$CHANGED_FILE" --explain)
+        # Captured and THEN split, for the reason the `named` branch below
+        # gives: `mapfile < <(cmd)` reports `mapfile`'s status, so a registry
+        # that failed here left `ORDER` empty, and an empty `ORDER` is the
+        # "no gate applies" exit 0 — a push told it had passed every gate
+        # because the one program choosing them had died.
+        if ! ORDER_TEXT="$(python3 "$REGISTRY" --repo-root "$REPO_ROOT" \
+                --changed-from "$CHANGED_FILE" --explain)"; then
+            printf 'gate: the registry could not select gates for %s\n' "$CHANGED_FILE" >&2
+            exit 2
+        fi
+        while IFS= read -r _slug; do
+            [[ -n "$_slug" ]] && ORDER+=("$_slug")
+        done <<<"$ORDER_TEXT"
         # The change set decides WHICH gates run, and until now that was all
         # it decided — a gate could not see it, so a gate whose work is
         # per-path had to do all of it or none. `mutation-rounds` is the

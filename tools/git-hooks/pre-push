@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 #
 # SCE pre-push hook: work out what this push changes, and hand that to the
-# gate runner.
+# gate runner, through bx when `$BX` names it (see "Where the gates run").
 #
 # The hook used to carry every gate inline, guarded by `stage_on "N"` blocks
 # whose physical order in the file WAS the run order. That coupling is what
@@ -119,16 +119,90 @@ RUNNER="$REPO_ROOT/scripts/gate"
     exit 1
 }
 
+# ── The tree the gates read is the commit this push publishes.
+#
+# The gates judge the checkout, and the push publishes commits. Those are the
+# same thing only when every ref goes out at HEAD and the tracked tree is
+# HEAD's: an uncommitted edit, or a push of some other commit, was judged in
+# the checkout's place and the verdict was printed as the push's. bx makes the
+# gap one machine wider (it sends the working tree, not a commit), but it was
+# there before bx was.
+#
+# Untracked files are not this check's business: a local run reads them as it
+# always has, and bx refuses a tree that has any, by name, before it sends.
+#
+# A push that publishes no commit (an up-to-date push, a deletion) runs no gate
+# below, so it has no tree to be judged and is not asked for one.
+HEAD_SHA="$(git rev-parse HEAD)"
+tree_mismatch=0
+publishes=0
+while read -r href hlocal _hrref _hremote; do
+    [[ -z "${hlocal:-}" ]] && continue
+    [[ "$hlocal" =~ ^0+$ ]] && continue   # a deletion publishes no commits
+    publishes=1
+    if [[ "$hlocal" != "$HEAD_SHA" ]]; then
+        printf '\nERROR pre-push: %s is pushed at %s, but the gates would read HEAD (%s)\n' \
+            "$href" "${hlocal:0:12}" "${HEAD_SHA:0:12}" >&2
+        tree_mismatch=1
+    fi
+done <<<"$PUSHED_REFS"
+if (( publishes )) && ! git diff --quiet HEAD --; then
+    printf '\nERROR pre-push: the tracked tree differs from HEAD, so the gates would\n' >&2
+    printf 'pre-push: judge edits this push does not publish:\n' >&2
+    git diff --name-only HEAD -- | sed 's/^/      /' >&2
+    tree_mismatch=1
+fi
+if (( tree_mismatch )); then
+    printf '\npre-push: push from a checkout whose HEAD is the pushed commit and whose\n' >&2
+    printf 'pre-push: tracked tree is clean (commit or stash the edits, or push HEAD).\n' >&2
+    exit 1
+fi
+
+# ── Where the gates run.
+#
+# The hook used to start the runner in place, so every gate a push selected
+# ran on this workstation and bx, which decides where heavy work goes, never
+# saw it. Measured 2026-10-20: one push took 46 minutes here, with the Gradle
+# daemon at 450% CPU and 15 GB of swap in use, while the build machines idled.
+#
+# `$BX` is the opt-in, and only its NAME lives in the tree: the path is this
+# machine's, set in its environment. Unset, the runner starts here as before.
+# Set, bx decides where the runner goes and says why; it falls back to this
+# machine by itself when no build machine can take the run. Its refusals (an
+# untracked file, a tree the far side does not agree with) are verdicts about
+# this checkout, so the hook adds no fallback of its own: running the gates
+# here after bx refused would answer a question bx already answered.
+#
+# One bx call carries the whole run, so the tree crosses once and the gates
+# share the far side's build products. Each gate computes its verdict where it
+# runs, which is also where any tree it regenerates is compared. Nothing is
+# piped: bx's exit status is the runner's.
+run_gates() {
+    if [[ -n "${BX:-}" && -x "${BX}" ]]; then
+        "$BX" --label pre-push -- scripts/gate "$@"
+    else
+        "$RUNNER" "$@"
+    fi
+}
+
 if [[ "${PREPUSH_FULL:-0}" == "1" ]]; then
     printf '\n==> pre-push: PREPUSH_FULL=1 — running every gate\n' >&2
-    exec "$RUNNER" --all
+    full_rc=0
+    run_gates --all || full_rc=$?
+    exit "$full_rc"
 fi
 
 # git feeds `<local ref> <local sha> <remote ref> <remote sha>` per pushed
 # ref on stdin. Union the changed paths over every ref in the push.
+#
+# Each ref yields a commit range as well as its paths. The runner is handed
+# the ranges (`--changed-in`), which mean the same thing on whichever machine
+# bx sends it to; the path list stays here for the notices at the end, which
+# this machine prints.
 ZERO="0000000000000000000000000000000000000000"
 CHANGED_FILE="$(mktemp)"
 trap 'rm -f "$CHANGED_FILE"' EXIT
+RANGE_ARGS=()
 
 saw_ref=0
 force_full=0
@@ -145,10 +219,11 @@ while read -r _local_ref local_sha _remote_ref remote_sha; do
             force_full=1
             continue
         fi
-        git diff --name-only "$base" "$local_sha" >>"$CHANGED_FILE"
     else
-        git diff --name-only "$remote_sha" "$local_sha" >>"$CHANGED_FILE"
+        base="$remote_sha"
     fi
+    git diff --name-only "$base" "$local_sha" >>"$CHANGED_FILE"
+    RANGE_ARGS+=(--changed-in "${base}..${local_sha}")
 done <<<"$PUSHED_REFS"
 
 # githooks(5): git writes one line per ref it is about to push. No lines
@@ -171,8 +246,16 @@ fi
 # exec replaces the shell without running it.
 if (( force_full )); then
     printf '\n==> pre-push: push range unresolvable — running every gate\n' >&2
-    "$RUNNER" --all
-    exit $?
+    full_rc=0
+    run_gates --all || full_rc=$?
+    exit "$full_rc"
+fi
+
+# Every ref was a deletion: refs went out, commits did not, and a runner
+# handed no range has nothing to select from.
+if (( ${#RANGE_ARGS[@]} == 0 )); then
+    printf '\n==> pre-push: the push publishes no commits — nothing to verify\n' >&2
+    exit 0
 fi
 
 sort -u "$CHANGED_FILE" -o "$CHANGED_FILE"
@@ -183,7 +266,7 @@ printf '\n==> pre-push: %s changed path(s)\n' \
 # failing runner would end the script before the assignment ran and the
 # exit status below would never be reached.
 gate_rc=0
-"$RUNNER" --changed-from "$CHANGED_FILE" || gate_rc=$?
+run_gates "${RANGE_ARGS[@]}" || gate_rc=$?
 
 # What this push did NOT verify, said out loud.
 #
