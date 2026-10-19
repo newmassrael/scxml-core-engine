@@ -15,7 +15,9 @@
 //! What it holds: two machines that only know each other's names learn each is up through the
 //! router (§mesh-20.3), an envelope one sends reaches the other's engine under the sender's name
 //! (§mesh-20.1, §mesh-20.2), and a machine that goes away is told to the other as a lost link
-//! (§mesh-20.3), all through a real watching-zenoh router with upstream's client (§mesh-20.4).
+//! (§mesh-20.3), all through a real watching-zenoh router with upstream's client (§mesh-20.4). A
+//! machine that loses its session when the router is killed and started again on the same port
+//! comes back knowing only who is still there.
 //! Nothing here is a timing claim; every wait has a generous bound and the assertions are on what
 //! arrived.
 //!
@@ -28,10 +30,11 @@
 
 use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 
-use sce_rust_mesh::conformance::{self, Harness};
+use sce_rust_mesh::conformance::{self, Disruptable, Harness};
+use sce_rust_mesh::inbox::ClientError;
 use sce_rust_mesh::zenoh::{client_config, UpstreamClient};
 
 /// The router process, killed when the test ends however it ends.
@@ -49,10 +52,25 @@ impl Drop for RouterProcess {
 
 /// Start a router, federated with the router listening on `connect_to` when one is named.
 fn start_router(connect_to: Option<u16>) -> RouterProcess {
+    start_router_on(connect_to, None)
+}
+
+/// [`start_router`], listening on `listen` when a port is named and on one the system picks when
+/// not.
+fn start_router_on(connect_to: Option<u16>, listen: Option<u16>) -> RouterProcess {
+    try_start_router(connect_to, listen).expect("the router starts and says which port it is on")
+}
+
+/// Start a router and wait until it says which port it listens on. Fails when the process ends
+/// first, which is what a port that is still held gives.
+fn try_start_router(connect_to: Option<u16>, listen: Option<u16>) -> Result<RouterProcess, String> {
     let binary = std::env::var("WZ_ROUTER_BIN").expect(
         "WZ_ROUTER_BIN names a wz-ap-demo built with `router-hat-router,routing-token-tables`",
     );
-    let mut args = vec!["--router-hat".to_string(), "127.0.0.1:0".to_string()];
+    let mut args = vec![
+        "--router-hat".to_string(),
+        format!("127.0.0.1:{}", listen.unwrap_or(0)),
+    ];
     if let Some(port) = connect_to {
         args.push("--connect".to_string());
         args.push(format!("127.0.0.1:{port}"));
@@ -63,7 +81,7 @@ fn start_router(connect_to: Option<u16>) -> RouterProcess {
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .spawn()
-        .expect("the router starts");
+        .map_err(|e| format!("the router did not start: {e}"))?;
     let stderr = child.stderr.take().expect("stderr is piped");
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
@@ -76,10 +94,18 @@ fn start_router(connect_to: Option<u16>) -> RouterProcess {
             }
         }
     });
-    let port = rx
+    // The process is owned from here, so a failure below kills it and waits for it.
+    let mut process = RouterProcess { child, port: 0 };
+    process.port = rx
         .recv_timeout(Duration::from_secs(30))
-        .expect("the router said which port it listens on");
-    RouterProcess { child, port }
+        .map_err(|e| format!("the router did not say which port it listens on: {e}"))?;
+    Ok(process)
+}
+
+/// The address a client dials to reach the router on `port`.
+fn dial(port: u16) -> Result<UpstreamClient, ClientError> {
+    let config = client_config(&[&format!("tcp/127.0.0.1:{port}")]).map_err(ClientError::new)?;
+    UpstreamClient::connect(config).map_err(ClientError::new)
 }
 
 /// Upstream's client, dialing the router listening on `port`. Every machine gets a session of its
@@ -92,8 +118,70 @@ impl Harness for UpstreamHarness {
     type Client = UpstreamClient;
 
     fn connect(&self) -> UpstreamClient {
-        let config = client_config(&[&format!("tcp/127.0.0.1:{}", self.port)]).expect("a config");
-        UpstreamClient::connect(config).expect("a session opens")
+        dial(self.port).expect("a session opens")
+    }
+}
+
+/// A router that is killed and started again on the same port, and the process that is the
+/// router at the moment.
+struct RestartableRouter {
+    port: u16,
+    process: Mutex<Option<RouterProcess>>,
+}
+
+/// Upstream's client on a router that can be lost: [`Disruptable::drop_every_session`] kills it and
+/// starts it again on the same port. Clones share the router.
+#[derive(Clone)]
+struct RestartingHarness {
+    router: Arc<RestartableRouter>,
+}
+
+impl RestartingHarness {
+    fn start() -> Self {
+        let process = start_router(None);
+        RestartingHarness {
+            router: Arc::new(RestartableRouter {
+                port: process.port,
+                process: Mutex::new(Some(process)),
+            }),
+        }
+    }
+}
+
+impl Harness for RestartingHarness {
+    type Client = UpstreamClient;
+
+    fn connect(&self) -> UpstreamClient {
+        dial(self.router.port).expect("a session opens")
+    }
+}
+
+impl Disruptable for RestartingHarness {
+    fn drop_every_session(&self) {
+        let mut process = self.router.process.lock().unwrap();
+        // Dropping the process kills it and waits for it, which closes every session it carried.
+        drop(process.take());
+        // The port can be held for a moment after the process is gone: ask again until it is free.
+        let mut last = String::new();
+        for _ in 0..40 {
+            match try_start_router(None, Some(self.router.port)) {
+                Ok(restarted) => {
+                    assert_eq!(restarted.port, self.router.port, "the same address");
+                    *process = Some(restarted);
+                    return;
+                }
+                Err(why) => last = why,
+            }
+            std::thread::sleep(Duration::from_millis(250));
+        }
+        panic!(
+            "the router did not start again on port {}: {last}",
+            self.router.port
+        );
+    }
+
+    fn try_connect(&self) -> Result<UpstreamClient, ClientError> {
+        dial(self.router.port)
     }
 }
 
@@ -139,4 +227,16 @@ fn a_device_that_was_away_catches_up_from_a_hub_that_stayed_up() {
     conformance::a_device_that_was_away_catches_up_from_a_hub_that_stayed_up(&UpstreamHarness {
         port: router.port,
     });
+}
+
+/// The router goes away and comes back on the same address. Machines on `open_reconnecting` are
+/// told every peer they had ready is lost, then find each other again from the presence history,
+/// and a machine that left during the gap is never believed to be up. Upstream's client tells the
+/// binding its session ended by watching the node ids the session is connected to and closes the
+/// session itself, so the machine that does not reconnect does not return on its own.
+#[test]
+#[ignore = "needs WZ_ROUTER_BIN: a built wz-ap-demo with router-hat-router and routing-token-tables"]
+fn a_machine_that_loses_its_session_comes_back_and_resyncs_through_a_wz_router() {
+    let harness = RestartingHarness::start();
+    conformance::a_machine_that_loses_its_session_comes_back_and_resyncs(&harness);
 }

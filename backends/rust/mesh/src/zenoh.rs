@@ -105,7 +105,14 @@ fn watch_session(session: Session, stopped: mpsc::Receiver<()>, on_end: impl FnO
         }
         let now = connected_nodes(&session);
         if session_lost(&before, &now) {
-            on_end("the link to the router closed".to_string());
+            // Upstream's session would dial its router again by itself and declare its token
+            // again, as if nothing had been missed. The notice says the client will not carry on
+            // by itself, so the session is closed first: what comes back is a new client.
+            let words = match session.close().wait() {
+                Ok(()) => "the link to the router closed".to_string(),
+                Err(error) => format!("the link to the router closed ({error})"),
+            };
+            on_end(words);
             return;
         }
         before = now;
@@ -133,17 +140,25 @@ impl Drop for SessionWatch {
 /// subscribers, token and puts are made.
 ///
 /// Upstream's session does not end when its router goes away. A client-mode session dials its
-/// router again by itself, forever, and declares again what it held (subscribers and token);
-/// `Session::is_closed` stays false, no configuration key turns the reconnection off, and the
-/// transport-events listener that would announce the loss is behind upstream's `unstable` feature,
-/// which this crate does not enable. So [`ZenohClient::on_session_end`] is made by a thread that
-/// looks, every 50 ms, at the ids of the nodes the session is connected to, and says the session
-/// ended when it has none left or none it had before (a router that came back is a different
-/// node, with an id of its own). Its limit is the interval: a link that closes and is made again
-/// to the very same node between two looks is not told, and the binding then keeps believing in
-/// peers that left in that moment. After the notice, the binding is over and the
-/// session underneath is still reconnecting by itself until the client is dropped; a host that
-/// wants a session after the end opens a new one (see `reconnect::open_reconnecting`).
+/// router again by itself, until it is closed, and declares again what it held (subscribers and
+/// token); `Session::is_closed` stays false, no configuration key turns the reconnection off (the
+/// `connect/retry` keys only set its pace), and the transport-events listener that would announce
+/// the loss is behind upstream's `unstable` feature, which this crate does not enable. So
+/// [`ZenohClient::on_session_end`] is made by a thread that looks, every 50 ms, at the ids of the
+/// nodes the session is connected to, and says the session ended when it has none left or none it
+/// had before (a router that came back is a different node, with an id of its own).
+///
+/// When the thread finds the session lost it closes the session itself and only then tells the
+/// binding, so the notice is true: this client does not carry on by itself, and what reconnects is
+/// a new client from a new session (see `reconnect::open_reconnecting`). Without that, upstream
+/// would declare this machine's token again behind the binding's back, announcing it to peers the
+/// binding told the core it had lost.
+///
+/// The limit is the interval: a link that closes and is made again to the very same node between
+/// two looks is not told, upstream carries on by itself, and the binding keeps believing in peers
+/// that left in that moment. A router that restarts takes longer than 50 ms to answer again, so
+/// the usual loss is seen; a client that must not miss even that one needs upstream's transport
+/// events, which are `unstable`.
 pub struct UpstreamClient {
     // Declared before the session so that the watching thread, which holds a handle on it, is
     // stopped and joined first.
