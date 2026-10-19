@@ -217,9 +217,17 @@ class ClosedLoopTest(unittest.TestCase):
             self.assertEqual(imp.returncode, 0, imp.stderr + imp.stdout)
             chk = run("validate-code-refs")
             self.assertEqual(chk.returncode, 0, chk.stderr + chk.stdout)
-            # A hallucinated synth cite must reject.
+            # A hallucinated synth cite must reject. The section is the first
+            # lettered 5-X the manifest does not hold, so the RFC growing a
+            # section cannot turn it into a real one.
+            held = {entry["section_id"] for entry in manifest}
+            missing = next(
+                f"synth-5-{letter}"
+                for letter in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                if f"synth-5-{letter}" not in held
+            )
             (ws / "src" / "lib.rs").write_text(
-                "// RFC §synth-5-Q does not exist.\npub fn f() {}\n", encoding="utf-8"
+                f"// RFC §{missing} does not exist.\npub fn f() {{}}\n", encoding="utf-8"
             )
             bad = run("validate-code-refs")
             self.assertNotEqual(bad.returncode, 0, bad.stderr + bad.stdout)
