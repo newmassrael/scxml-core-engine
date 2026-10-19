@@ -49,6 +49,7 @@
 #include "static_history_sm.h"
 #include "static_host_call_arguments_sm.h"
 #include "static_host_call_sm.h"
+#include "static_host_duty_child_sm.h"
 #include "static_host_duty_sm.h"
 #include "static_invoke_hybrid_saved_sm.h"
 #include "static_invoke_hybrid_sm.h"
