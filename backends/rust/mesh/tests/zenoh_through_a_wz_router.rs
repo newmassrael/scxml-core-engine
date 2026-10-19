@@ -23,6 +23,7 @@
 
 use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
@@ -36,11 +37,22 @@ use sce_rust_mesh::router::{PeerConfig, Router};
 use sce_rust_mesh::zenoh::{client_config, open, ZenohBinding, ZenohEvents, ZenohTransport};
 use sce_rust_runtime::HostSendRequest;
 
-/// A clock that counts, and ids that count.
-#[derive(Default)]
+/// A clock that counts, and ids that count. Each one starts its ids where no earlier one reached:
+/// a real envelope id is a UUID v7 and never repeats, and a machine that comes back under the same
+/// name must not send a first envelope the receiver has already seen.
 struct Counting {
     now: i64,
     ids: u8,
+}
+
+impl Default for Counting {
+    fn default() -> Self {
+        static NEXT_SEED: AtomicU8 = AtomicU8::new(0);
+        Counting {
+            now: 0,
+            ids: NEXT_SEED.fetch_add(8, Ordering::Relaxed),
+        }
+    }
 }
 
 impl Environment for Counting {
@@ -134,18 +146,32 @@ fn endpoint(
     peer: &'static str,
     transport: ZenohTransport,
 ) -> Endpoint<ZenohTransport, Counting> {
+    endpoint_with_peers(machine, &[peer], transport)
+}
+
+fn endpoint_with_peers(
+    machine: &str,
+    peers: &[&'static str],
+    transport: ZenohTransport,
+) -> Endpoint<ZenohTransport, Counting> {
     let mut router = Router::new(machine, 8, 50).expect("a router");
-    router.add_peer(peer, peer_config(peer));
+    for peer in peers {
+        router.add_peer(peer, peer_config(peer));
+    }
     Endpoint::new(router, transport, Counting::default())
 }
 
 fn send(event: &str, target: &str) -> HostSendRequest {
+    send_with(event, target, r#"{"v":1}"#)
+}
+
+fn send_with(event: &str, target: &str, data: &str) -> HostSendRequest {
     HostSendRequest {
         processor_type: MESH_PROCESSOR_TYPE.to_string(),
         event_name: event.to_string(),
         target: format!("#{target}"),
         send_id: "s-1".to_string(),
-        event_data: r#"{"v":1}"#.to_string(),
+        event_data: data.to_string(),
         ..HostSendRequest::default()
     }
 }
@@ -277,5 +303,203 @@ fn two_machines_meet(server_port: u16, phone_port: u16) {
     eprintln!(
         "the server was told the phone is gone after {:?}",
         started.elapsed()
+    );
+}
+
+/// The machine that stays up and holds the state, which is what a device that is on only while its
+/// user presses sync catches up from. The router keeps nothing for an absent machine, so the
+/// hub's own `notes` are the whole of what a later visit can be given.
+struct Hub {
+    endpoint: Endpoint<ZenohTransport, Counting>,
+    events: ZenohEvents,
+    notes: Vec<String>,
+    /// The machines it was told are gone, in the order it was told.
+    lost: Vec<String>,
+}
+
+impl Hub {
+    /// One turn: take what has arrived, keep a pushed note, and answer a request for the notes after
+    /// the number the asker has seen.
+    fn step(&mut self) {
+        let mut arrived = Vec::new();
+        if let Some(event) = self.events.next_within(Duration::from_millis(10)) {
+            arrived.push(event);
+        }
+        while let Some(event) = self.events.next_within(Duration::ZERO) {
+            arrived.push(event);
+        }
+        for event in arrived {
+            if let LinkEvent::Lost(peer, _) = &event {
+                self.lost.push(peer.clone());
+            }
+            deliver(&mut self.endpoint, event);
+        }
+        self.endpoint.tick();
+        for event in raised(&mut self.endpoint) {
+            let data = event.metadata.data.to_string();
+            match event.name.as_str() {
+                "note.added" => self.notes.push(json_text(&data, "note").expect("a note")),
+                "sync.since" => {
+                    let from = json_text(&data, "from").expect("who asks");
+                    let since: usize = json_text(&data, "since")
+                        .and_then(|n| n.parse().ok())
+                        .expect("what they have seen");
+                    let after = self.notes.get(since..).unwrap_or_default();
+                    let reply = format!(
+                        r#"{{"notes":[{}],"seen":{}}}"#,
+                        after
+                            .iter()
+                            .map(|note| format!("\"{note}\""))
+                            .collect::<Vec<_>>()
+                            .join(","),
+                        self.notes.len()
+                    );
+                    self.endpoint.send(&send_with("sync.reply", &from, &reply));
+                }
+                // How the core tells its engine a machine went away (§mesh-20.3): the link is lost,
+                // and a send to it would find no transport. It names a machine this hub was just
+                // told is gone, and nothing else is held against it.
+                "error.communication" => {
+                    let target = json_text(&data, "target").expect("who is gone");
+                    assert!(data.contains("TRANSPORT_UNAVAILABLE"), "{data}");
+                    assert!(self.lost.contains(&target), "{target} was not lost: {data}");
+                }
+                other => panic!("the hub was sent an event it does not know: {other} {data}"),
+            }
+        }
+    }
+}
+
+/// The text of `key` in a flat JSON object this file wrote: a quoted string, or a bare number.
+fn json_text(data: &str, key: &str) -> Option<String> {
+    let after = data.split(&format!("\"{key}\":")).nth(1)?;
+    let after = after.trim_start();
+    match after.strip_prefix('"') {
+        Some(quoted) => quoted.split('"').next().map(str::to_string),
+        None => Some(
+            after
+                .chars()
+                .take_while(char::is_ascii_digit)
+                .collect::<String>(),
+        ),
+    }
+}
+
+/// One visit of a device: it comes up as `name`, sends `requests` to the hub, and stays until
+/// `done` holds of what it raised, then goes and the hub is told it is gone. The requests are sent
+/// at once, before the hub is known to be up, and wait in the device's buffer for it.
+fn visit(
+    port: u16,
+    hub: &mut Hub,
+    name: &'static str,
+    requests: &[(&str, String)],
+    done: impl Fn(&Hub, &[EngineEvent]) -> bool,
+) -> Vec<EngineEvent> {
+    let ZenohBinding { transport, events } = open(
+        client_config(&[&format!("tcp/127.0.0.1:{port}")]).expect("a config"),
+        name,
+    )
+    .expect("the device's binding opens");
+    let mut device = endpoint(name, "hub", transport);
+    for (event, data) in requests {
+        device.send(&send_with(event, "hub", data));
+    }
+
+    let lost_before = hub.lost.iter().filter(|peer| *peer == name).count();
+    let mut seen: Vec<EngineEvent> = Vec::new();
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while Instant::now() < deadline && !done(hub, &seen) {
+        if let Some(event) = events.next_within(Duration::from_millis(10)) {
+            deliver(&mut device, event);
+            events.pump(&mut device);
+        }
+        device.tick();
+        seen.extend(raised(&mut device));
+        hub.step();
+    }
+    assert!(done(hub, &seen), "{name}'s visit did not complete in time");
+
+    drop(device);
+    drop(events);
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while Instant::now() < deadline
+        && hub.lost.iter().filter(|peer| *peer == name).count() == lost_before
+    {
+        hub.step();
+    }
+    assert!(
+        hub.lost.iter().filter(|peer| *peer == name).count() > lost_before,
+        "the hub was told {name} is gone"
+    );
+    seen
+}
+
+fn note_pushed(note: &str) -> Vec<(&'static str, String)> {
+    vec![("note.added", format!(r#"{{"note":"{note}"}}"#))]
+}
+
+fn sync_since(from: &str, seen: usize) -> Vec<(&'static str, String)> {
+    vec![(
+        "sync.since",
+        format!(r#"{{"from":"{from}","since":{seen}}}"#),
+    )]
+}
+
+fn reply_data(events: &[EngineEvent]) -> Option<String> {
+    events
+        .iter()
+        .find(|event| event.name == "sync.reply")
+        .map(|event| event.metadata.data.to_string())
+}
+
+/// A device that was not there when a note was pushed asks the hub, on its own visit, for what it
+/// has not seen, and gets it: the shape of a shared list whose devices are on only while their
+/// user presses sync. Alice comes, pushes, and goes; she comes again and pushes another; Bob, who
+/// was away for both, comes and asks for everything, goes, and comes back to ask for what is new.
+/// The router holds nothing for an absent machine; what Bob is given is the hub's state.
+#[test]
+#[ignore = "needs WZ_ROUTER_BIN: a built wz-ap-demo with router-hat-router and routing-token-tables"]
+fn a_device_that_was_away_catches_up_from_a_hub_that_stayed_up() {
+    let router = start_router(None);
+    let port = router.port;
+    let ZenohBinding { transport, events } = open(
+        client_config(&[&format!("tcp/127.0.0.1:{port}")]).expect("a config"),
+        "hub",
+    )
+    .expect("the hub's binding opens");
+    let mut hub = Hub {
+        endpoint: endpoint_with_peers("hub", &["alice", "bob"], transport),
+        events,
+        notes: Vec::new(),
+        lost: Vec::new(),
+    };
+
+    visit(port, &mut hub, "alice", &note_pushed("milk"), |hub, _| {
+        hub.notes == ["milk"]
+    });
+    visit(port, &mut hub, "alice", &note_pushed("eggs"), |hub, _| {
+        hub.notes == ["milk", "eggs"]
+    });
+    assert_eq!(hub.lost, ["alice", "alice"], "both visits ended");
+
+    let first = visit(port, &mut hub, "bob", &sync_since("bob", 0), |_, seen| {
+        reply_data(seen).is_some()
+    });
+    assert_eq!(
+        reply_data(&first).as_deref(),
+        Some(r#"{"notes":["milk","eggs"],"seen":2}"#),
+        "bob, who was away for both pushes, is given both"
+    );
+
+    visit(port, &mut hub, "alice", &note_pushed("bread"), |hub, _| {
+        hub.notes.len() == 3
+    });
+    let second = visit(port, &mut hub, "bob", &sync_since("bob", 2), |_, seen| {
+        reply_data(seen).is_some()
+    });
+    assert_eq!(
+        reply_data(&second).as_deref(),
+        Some(r#"{"notes":["bread"],"seen":3}"#),
+        "bob's second visit is given only what is new since the two he saw"
     );
 }
