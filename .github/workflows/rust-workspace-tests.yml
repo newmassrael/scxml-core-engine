@@ -120,6 +120,10 @@ on:
       # `sce-build/**`, and an edit to one changes what that test asserts.
       - 'integration_resources/flat_lifecycle/**'
       - 'integration_resources/nested_lifecycle/**'
+      # The conformance documents the same test holds to declaring no
+      # transition function, which the hand-kept outputs of the W3C CMake
+      # route rely on.
+      - 'resources/**'
   pull_request:
     branches: [ main ]
     paths:
@@ -186,6 +190,10 @@ on:
       # `sce-build/**`, and an edit to one changes what that test asserts.
       - 'integration_resources/flat_lifecycle/**'
       - 'integration_resources/nested_lifecycle/**'
+      # The conformance documents the same test holds to declaring no
+      # transition function, which the hand-kept outputs of the W3C CMake
+      # route rely on.
+      - 'resources/**'
 
 # This lane is not superseded by the push that follows it.
 #

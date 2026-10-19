@@ -3106,3 +3106,36 @@ fn every_template_reads_the_function_and_not_the_model() {
         );
     }
 }
+
+/// The CMake route of the conformance suite (`cmake/SCEStaticW3CTest.cmake`)
+/// declares by hand the files a C++ or C11 fixture's generation writes — the
+/// machine, its children and their headers — where the integration route asks
+/// `sce-codegen --plan generate`. A fixture declaring the function would write
+/// `<stem>_transition_function.h` beside them, undeclared, and its depfile
+/// would name an output no rule owns. That route reads the documents under
+/// `resources/` and nothing else, so it is complete exactly while none of them
+/// declares the function, which this holds: a fixture that comes to declare
+/// one has to be declared in that file first.
+#[test]
+fn no_document_the_conformance_cmake_route_reads_declares_the_function() {
+    let documents: Vec<String> = common::repository::paths_git_holds(&["resources"])
+        .into_iter()
+        .filter(|path| path.ends_with(".scxml") || path.ends_with(".txml"))
+        .collect();
+    // A scan that found nothing would pass for the wrong reason; the
+    // conformance corpus holds a few hundred documents.
+    assert!(
+        documents.len() >= 200,
+        "found {} conformance documents under resources/; the scan is broken, not the tree",
+        documents.len()
+    );
+    let declaring: Vec<&String> = documents
+        .iter()
+        .filter(|path| read(&repo_root().join(path)).contains("sce:transition-function"))
+        .collect();
+    assert!(
+        declaring.is_empty(),
+        "conformance documents declare the transition function, whose header \
+         cmake/SCEStaticW3CTest.cmake does not declare as an output: {declaring:?}"
+    );
+}

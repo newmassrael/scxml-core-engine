@@ -717,6 +717,9 @@ GATES: dict[str, dict] = {
             # generates and states the table of.
             "integration_resources/flat_lifecycle/**",
             "integration_resources/nested_lifecycle/**",
+            # The conformance documents the same test holds to declaring no
+            # transition function, which the W3C CMake route relies on.
+            "resources/**",
         ],
         # The crate whose test suite this gate runs. `include-str-coverage`
         # in the self-test reads it: every file the sources under this root
