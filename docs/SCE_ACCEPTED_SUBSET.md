@@ -7199,6 +7199,18 @@ backend spells it. `generate` still writes the machine. The declaration is
 inside the source set the machine's `source-hash` covers, for the reason
 §2.20's is, and the function carries that hash as a value.
 
+Every way of generating the document produces the same machine and the same
+function: `generate`, `orchestrate` and `generate-w3c` each write the function
+beside the machine, bound to the hash their files carry, and the transition
+table of §2.20 is bound on the same three routes by the same call. A root
+declares the function wherever it stands: an in-line child
+(`<invoke><content><scxml sce:transition-function="emit">`) is judged with the
+document that holds it and generated with its own function beside its machine,
+named after its stem. The library entry points compute no hash and so refuse a
+document that declares the function, with `generate/unsupported-feature`
+naming the entry and `sce-codegen generate`, rather than return the machine
+without it.
+
 The boundary is stated by meaning. A document is a transition function when
 every macrostep is exactly one microstep and one leaf state fixes the
 configuration, so that the next configuration depends on the current leaf and
@@ -7226,9 +7238,11 @@ that admits:
 What it refuses, each where it is written and every one in the same run, with
 the same codes and the same locations whichever route is asked: `check` and
 `generate` on one document, `check` and `orchestrate` on a document set, and
-`generate-w3c` for each fixture it is given. The library entry points, the
-in-memory ones included, refuse the same documents and reject on the first of
-these records, since their result carries one error:
+`generate-w3c` for each fixture it is given. An in-line child's refusals come
+with the refusals of the document that holds it, on the rows its author wrote
+there. The library entry points, the in-memory ones included, refuse the same
+documents and reject on the first of these records, since their result carries
+one error:
 
 - As `scxml/transition-function-rule`, with the rule the construct breaks in
   `expected`:
