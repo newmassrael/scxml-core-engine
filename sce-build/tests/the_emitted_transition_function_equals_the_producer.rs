@@ -232,13 +232,13 @@ fn every_fixture_generates_its_machine_and_its_function() {
 /// back from the text — so this runs on a host with no toolchain.
 #[test]
 fn the_generated_source_holds_the_producers_table() {
+    let arm = Regex::new(r"\(State::(\w+), Event::(\w+)\) => Some\(State::(\w+)\),").unwrap();
     for stem in FIXTURES {
         let out = scratch(&format!("source_{stem}"));
         generate_rust(&fixture(stem), &out);
         let source = std::fs::read_to_string(out.join(format!("{stem}_transition_function.rs")))
             .expect("read the function");
         let function = produced(&fixture(stem), &header_hash(&source));
-        let arm = Regex::new(r"\(State::(\w+), Event::(\w+)\) => Some\(State::(\w+)\),").unwrap();
         let mut written: Vec<(String, String, String)> = arm
             .captures_iter(&source)
             .map(|c| (c[1].to_string(), c[2].to_string(), c[3].to_string()))
@@ -684,8 +684,9 @@ fn a_value_other_than_emit_is_refused() {
     }
 }
 
-/// A forge root does not take the declaration: no reader of a forge kind asks
-/// for it, so it is refused as an attribute nothing reads.
+/// A forge root does not take the declaration: the forge pipeline knows the
+/// root attributes each kind takes by name, and this is none of them, so it is
+/// refused as an `sce:` attribute that kind does not know.
 #[test]
 fn a_forge_root_does_not_take_the_declaration() {
     let work = scratch("forge_root");
@@ -714,7 +715,7 @@ fn a_forge_root_does_not_take_the_declaration() {
     let stderr = String::from_utf8_lossy(&refused.stderr);
     assert_eq!(
         wire_codes(&stderr),
-        ["validation/sce-attribute-unread"],
+        ["validation/unknown-sce-attribute"],
         "{stderr}"
     );
     assert!(stderr.contains("sce:transition-function"), "{stderr}");
