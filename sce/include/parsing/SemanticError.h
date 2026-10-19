@@ -547,6 +547,146 @@ private:
     std::string attr_;
 };
 
+// An attribute carries a value outside the closed set its element accepts.
+// Mirrors Rust `ValidationError::InvalidAttribute { element, attr, value,
+// allowed }` — `validation/invalid-attribute`, the message "<element>:
+// unknown <attr> value '<value>' (expected: a, b)", key fragments (element,
+// attr, value), `actual` = the value, and the candidates as a
+// `replace_one_of` fix. First raised by `ActionParser` for an
+// `<sce:action effect>` that is neither `duty` nor `notice` (docs/adr/0038).
+class SemanticInvalidAttribute : public SemanticError {
+public:
+    SemanticInvalidAttribute(std::string element, std::string attr, std::string value, std::vector<std::string> allowed)
+        : SemanticError(message(element, attr, value, allowed), {element, attr, value}), element_(std::move(element)),
+          attr_(std::move(attr)), value_(std::move(value)), allowed_(std::move(allowed)) {}
+
+    std::string_view code() const noexcept override {
+        return "validation/invalid-attribute";
+    }
+
+    nlohmann::ordered_json to_json() const override;
+
+    std::unique_ptr<Diagnostic> clone() const override {
+        return std::make_unique<SemanticInvalidAttribute>(*this);
+    }
+
+    const std::string &element() const noexcept {
+        return element_;
+    }
+
+    const std::string &attr() const noexcept {
+        return attr_;
+    }
+
+    const std::string &value() const noexcept {
+        return value_;
+    }
+
+    const std::vector<std::string> &allowed() const noexcept {
+        return allowed_;
+    }
+
+private:
+    // The Rust `#[error]` text, word for word.
+    static std::string message(const std::string &element, const std::string &attr, const std::string &value,
+                               const std::vector<std::string> &allowed) {
+        std::string expected;
+        for (size_t i = 0; i < allowed.size(); ++i) {
+            expected += (i == 0 ? "" : ", ") + allowed[i];
+        }
+        return element + ": unknown " + attr + " value '" + value + "' (expected: " + expected + ")";
+    }
+
+    std::string element_;
+    std::string attr_;
+    std::string value_;
+    std::vector<std::string> allowed_;
+};
+
+// One `<sce:action>` name is a duty at one call site and a notice at another
+// (docs/adr/0038, decision 1), so the one host operation that serves them has
+// no one answer to give. Mirrors the effect arm of Rust
+// `ValidationError::NativeActionSignatureConflict { name, detail }` —
+// `validation/native-action-signature-conflict`, message `<sce:action
+// name="<name>">: <detail>`, key fragments (name, detail), `actual` = the
+// name, and no fix. The Rust variant also carries a conflict of argument
+// types, which has no counterpart here: the Interpreter's arguments are
+// untyped values.
+class SemanticNativeActionSignatureConflict : public SemanticError {
+public:
+    SemanticNativeActionSignatureConflict(std::string name, std::string detail)
+        : SemanticError("<sce:action name=\"" + name + "\">: " + detail, {name, detail}), name_(std::move(name)),
+          detail_(std::move(detail)) {}
+
+    std::string_view code() const noexcept override {
+        return "validation/native-action-signature-conflict";
+    }
+
+    nlohmann::ordered_json to_json() const override;
+
+    std::unique_ptr<Diagnostic> clone() const override {
+        return std::make_unique<SemanticNativeActionSignatureConflict>(*this);
+    }
+
+    const std::string &name() const noexcept {
+        return name_;
+    }
+
+    const std::string &detail() const noexcept {
+        return detail_;
+    }
+
+private:
+    std::string name_;
+    std::string detail_;
+};
+
+// A `released-by` that cannot be honoured (docs/adr/0038, decision 2): it sits
+// off an `<onentry>`, on an action that is not a duty, names no action of the
+// document, names one that is not performed on the `<onexit>` of the same
+// state, or names a release that is not itself a duty. Mirrors Rust
+// `ValidationError::NativeActionRelease { name, released_by, detail }` —
+// `validation/native-action-release`, message `<sce:action name="<name>"
+// released-by="<released_by>">: <detail>`, key fragments (name, released_by,
+// detail), `actual` = the release the document spells, and no fix: moving the
+// release, stating a duty or naming another action is the author's call. The
+// five detail sentences are SCE's own and both producers spell them alike;
+// `CrossProducerDiagnosticId_test` holds them to it.
+class SemanticNativeActionRelease : public SemanticError {
+public:
+    SemanticNativeActionRelease(std::string name, std::string releasedBy, std::string detail)
+        : SemanticError("<sce:action name=\"" + name + "\" released-by=\"" + releasedBy + "\">: " + detail,
+                        {name, releasedBy, detail}),
+          name_(std::move(name)), releasedBy_(std::move(releasedBy)), detail_(std::move(detail)) {}
+
+    std::string_view code() const noexcept override {
+        return "validation/native-action-release";
+    }
+
+    nlohmann::ordered_json to_json() const override;
+
+    std::unique_ptr<Diagnostic> clone() const override {
+        return std::make_unique<SemanticNativeActionRelease>(*this);
+    }
+
+    const std::string &name() const noexcept {
+        return name_;
+    }
+
+    const std::string &releasedBy() const noexcept {
+        return releasedBy_;
+    }
+
+    const std::string &detail() const noexcept {
+        return detail_;
+    }
+
+private:
+    std::string name_;
+    std::string releasedBy_;
+    std::string detail_;
+};
+
 // Attributes, or an attribute and content, that cannot occur together on
 // one element. Mirrors Rust `ValidationError::IncompatibleAttributes
 // { element, detail }` — `validation/incompatible-attributes`, message

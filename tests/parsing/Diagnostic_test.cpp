@@ -1205,6 +1205,51 @@ TEST(SemanticErrorWire, ExactlyOneAttributeWithNoneWrittenOmitsActual) {
     EXPECT_FALSE(j.contains("fix"));
 }
 
+TEST(SemanticErrorWire, InvalidAttributeConformsToV1Schema) {
+    // An `<sce:action effect>` that is neither word (docs/adr/0038). The Rust
+    // arm of `validation/invalid-attribute` puts the value written on `actual`
+    // and the closed set on `fix` alone, never on `expected` too.
+    const SemanticInvalidAttribute err(/*element=*/"<sce:action>", /*attr=*/"effect", /*value=*/"must",
+                                       /*allowed=*/{"duty", "notice"});
+    const auto j = err.to_json();
+    semantic_conformance::assertSemanticBase(j, "validation/invalid-attribute");
+    conformance::assertNoUnexpectedKeys(j);
+    EXPECT_EQ(j.at("message").get<std::string>(), "<sce:action>: unknown effect value 'must' (expected: duty, notice)");
+    EXPECT_EQ(j.at("actual").get<std::string>(), "must");
+    EXPECT_FALSE(j.contains("expected")) << "the candidates ride `fix` alone: " << j.dump();
+    ASSERT_TRUE(j.contains("fix")) << j.dump();
+    EXPECT_EQ(j.at("fix").at("kind").get<std::string>(), "replace_one_of");
+    EXPECT_EQ(j.at("fix").at("candidates"), nlohmann::ordered_json::array({"duty", "notice"}));
+}
+
+TEST(SemanticErrorWire, NativeActionSignatureConflictConformsToV1Schema) {
+    // One action name that is a duty at one call site and a notice at another
+    // (docs/adr/0038). The Rust arm carries the name on `actual` and no fix.
+    const SemanticNativeActionSignatureConflict err(/*name=*/"f", /*detail=*/"effect 'notice' here disagrees");
+    const auto j = err.to_json();
+    semantic_conformance::assertSemanticBase(j, "validation/native-action-signature-conflict");
+    conformance::assertNoUnexpectedKeys(j);
+    EXPECT_EQ(j.at("message").get<std::string>(), "<sce:action name=\"f\">: effect 'notice' here disagrees");
+    EXPECT_EQ(j.at("actual").get<std::string>(), "f");
+    EXPECT_FALSE(j.contains("fix"));
+    EXPECT_FALSE(j.contains("expected"));
+}
+
+TEST(SemanticErrorWire, NativeActionReleaseConformsToV1Schema) {
+    // A `released-by` that cannot be honoured (docs/adr/0038). The Rust arm
+    // carries the release the document spells on `actual`, and no fix: the
+    // repair is the author's.
+    const SemanticNativeActionRelease err(/*name=*/"start_x", /*releasedBy=*/"stop_x", /*detail=*/"names no thing");
+    const auto j = err.to_json();
+    semantic_conformance::assertSemanticBase(j, "validation/native-action-release");
+    conformance::assertNoUnexpectedKeys(j);
+    EXPECT_EQ(j.at("message").get<std::string>(),
+              "<sce:action name=\"start_x\" released-by=\"stop_x\">: names no thing");
+    EXPECT_EQ(j.at("actual").get<std::string>(), "stop_x");
+    EXPECT_FALSE(j.contains("fix"));
+    EXPECT_FALSE(j.contains("expected"));
+}
+
 TEST(SemanticErrorWire, TopLevelScriptUnloadedConformsToV1Schema) {
     // The 1 NEW wire code §wire-W5 D2 introduces. Carries `spec` field
     // ("W3C SCXML §5.8") because the code has a spec_anchor on the

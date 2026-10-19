@@ -222,6 +222,33 @@ nlohmann::ordered_json SemanticMissingAttribute::to_json() const {
     return out;
 }
 
+nlohmann::ordered_json SemanticInvalidAttribute::to_json() const {
+    // The Rust arm: `actual` is the value written, the closed set rides `fix`
+    // alone (`expected` stays empty, the same list is never in both).
+    auto out = baseEnvelope();
+    out["actual"] = value_;
+    nlohmann::ordered_json fix;
+    fix["kind"] = "replace_one_of";
+    fix["candidates"] = allowed_;
+    out["fix"] = std::move(fix);
+    return out;
+}
+
+nlohmann::ordered_json SemanticNativeActionSignatureConflict::to_json() const {
+    // `actual` is the action's name at this call; no `expected` and no fix.
+    auto out = baseEnvelope();
+    out["actual"] = name_;
+    return out;
+}
+
+nlohmann::ordered_json SemanticNativeActionRelease::to_json() const {
+    // `actual` is the release the document spells; the repair is the author's,
+    // so there is no closed candidate set and no fix.
+    auto out = baseEnvelope();
+    out["actual"] = releasedBy_;
+    return out;
+}
+
 nlohmann::ordered_json SemanticIncompatibleAttributes::to_json() const {
     // No `expected`, `actual` or `fix` on the Rust arm: which of the two to
     // drop is the author's call, so no single repair is proposed.

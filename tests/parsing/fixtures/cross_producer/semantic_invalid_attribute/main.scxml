@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Cross-producer fixture: an <sce:action> whose `effect` is neither word
+  (docs/adr/0038, decision 1). key_fragments are ("<sce:action>", "effect",
+  the value written), and the two words ride the fix as candidates.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" datamodel="ecmascript" initial="s">
+  <state id="s">
+    <onentry>
+      <sce:action name="start_worker" effect="must"/>
+    </onentry>
+  </state>
+</scxml>

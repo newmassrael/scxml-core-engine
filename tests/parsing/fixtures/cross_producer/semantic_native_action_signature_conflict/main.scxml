@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Cross-producer fixture: one <sce:action> name that is a duty on the <onentry>
+  and a notice on the <onexit> of the same state (docs/adr/0038, decision 1).
+  key_fragments are the name and the detail sentence both producers write; the
+  later site, the <onexit>, is the one that contradicts.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" datamodel="ecmascript" initial="s">
+  <state id="s">
+    <onentry>
+      <sce:action name="worker" effect="duty"/>
+    </onentry>
+    <onexit>
+      <sce:action name="worker" effect="notice"/>
+    </onexit>
+  </state>
+</scxml>

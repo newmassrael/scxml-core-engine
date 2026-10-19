@@ -28,6 +28,8 @@ std::string NativeAction::getActionType() const {
 
 std::shared_ptr<IActionNode> NativeAction::clone() const {
     auto cloned = std::make_shared<NativeAction>(operation_, getId());
+    cloned->setEffect(effect_);
+    cloned->setReleasedBy(releasedBy_);
     for (const auto &argument : arguments_) {
         cloned->addArgument(argument.expr, argument.name);
     }
@@ -36,6 +38,34 @@ std::shared_ptr<IActionNode> NativeAction::clone() const {
 
 const std::string &NativeAction::getOperation() const {
     return operation_;
+}
+
+const char *NativeAction::effectWord(Effect effect) {
+    switch (effect) {
+    case Effect::Duty:
+        return "duty";
+    case Effect::Notice:
+        return "notice";
+    case Effect::Unstated:
+        break;
+    }
+    return "";
+}
+
+NativeAction::Effect NativeAction::getEffect() const {
+    return effect_;
+}
+
+void NativeAction::setEffect(Effect effect) {
+    effect_ = effect;
+}
+
+const std::string &NativeAction::getReleasedBy() const {
+    return releasedBy_;
+}
+
+void NativeAction::setReleasedBy(const std::string &releasedBy) {
+    releasedBy_ = releasedBy;
 }
 
 void NativeAction::addArgument(const std::string &expr, const std::string &name) {
@@ -51,6 +81,10 @@ std::vector<std::string> NativeAction::validateSpecific() const {
     if (isEmptyString(operation_)) {
         errors.push_back("<sce:action> requires a name: the host operation it performs");
     }
+    if (effect_ == Effect::Unstated) {
+        errors.push_back("<sce:action> requires an effect: duty when the machine depends on the host performing "
+                         "the operation, notice when it does not");
+    }
     for (const auto &argument : arguments_) {
         if (isEmptyString(argument.expr)) {
             errors.push_back("<sce:arg> requires an expr: the value the host operation takes");
@@ -61,6 +95,12 @@ std::vector<std::string> NativeAction::validateSpecific() const {
 
 std::string NativeAction::getSpecificDescription() const {
     std::string desc = "native_action name=\"" + operation_ + "\"";
+    if (effect_ != Effect::Unstated) {
+        desc += std::string(" effect=\"") + effectWord(effect_) + "\"";
+    }
+    if (!releasedBy_.empty()) {
+        desc += " released-by=\"" + releasedBy_ + "\"";
+    }
     for (const auto &argument : arguments_) {
         desc += " arg=\"" + argument.expr + "\"";
     }

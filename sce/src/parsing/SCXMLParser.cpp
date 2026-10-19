@@ -3,6 +3,7 @@
 
 #include "parsing/SCXMLParser.h"
 #include "GuardUtils.h"
+#include "actions/NativeActionContract.h"
 #include "backends/LogUtils.h"
 #include "core/ConfigurationHelper.h"
 #include "core/LogMacros.h"
@@ -797,6 +798,11 @@ bool SCE::SCXMLParser::validateModel(std::shared_ptr<SCXMLModel> model) {
             requireSpecification(state->getId(), Position::StateInitial, initials, state->getId());
         }
     }
+
+    // The rules between a document's `<sce:action>`s: one effect per name, and a
+    // `released-by` that names a duty on the same state's `<onexit>`
+    // (docs/adr/0038). The build tool refuses the same documents.
+    SCE::NativeActionContract::require(*model);
 
     // 4. Validate guards (warning-only — does not throw)
     for (const auto &guard : model->getGuards()) {

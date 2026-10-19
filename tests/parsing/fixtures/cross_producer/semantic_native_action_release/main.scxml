@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Cross-producer fixture: a duty an <onentry> takes whose `released-by` names an
+  action that is not performed on the <onexit> of the same state
+  (docs/adr/0038, decision 2). key_fragments are the action, the release and the
+  detail sentence both producers write.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" datamodel="ecmascript" initial="s">
+  <state id="s">
+    <onentry>
+      <sce:action name="start_worker" effect="duty" released-by="stop_worker"/>
+    </onentry>
+    <transition event="go" target="t"/>
+  </state>
+  <state id="t">
+    <onexit>
+      <sce:action name="stop_worker" effect="duty"/>
+    </onexit>
+  </state>
+</scxml>

@@ -536,6 +536,7 @@ add_library(sce_runtime
     src/actions/CancelAction.cpp
     src/actions/ForeachAction.cpp
     src/actions/NativeAction.cpp
+    src/actions/NativeActionContract.cpp
 
     # Events implementation
     src/events/EventDescriptor.cpp

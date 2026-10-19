@@ -265,8 +265,37 @@ SCE::ActionParser::parseNativeAction(const std::shared_ptr<IXMLElement> &actionE
     // `name` names no operation, which the host answers by providing none, and
     // that is an `error.execution` where it runs rather than a node that was
     // never made.
-    const std::string operation = actionElement->hasAttribute("name") ? actionElement->getAttribute("name") : "";
+    //
+    // The three attributes are read trimmed, as the build tool reads them, so
+    // that a name the release of a duty spells is the name it is performed by.
+    const auto attributeOf = [&actionElement](const char *attribute) {
+        return actionElement->hasAttribute(attribute)
+                   ? ParsingCommon::trimString(actionElement->getAttribute(attribute))
+                   : std::string{};
+    };
+    const std::string operation = attributeOf("name");
     auto action = std::make_shared<SCE::NativeAction>(operation);
+
+    // docs/adr/0038: an action states whether the machine depends on the host
+    // performing it, and one that does not is refused here, at the element, as
+    // the build tool refuses it: missing as `validation/missing-attribute`, and a
+    // word that is neither as `validation/invalid-attribute` with both words as
+    // the candidates. Unlike the name, which the host may answer by providing no
+    // such operation, the effect is what the machine's host contract is made of,
+    // so there is no run-time answer to give for its absence.
+    const std::string effect = attributeOf("effect");
+    if (effect.empty()) {
+        throw SCE::parsing::SemanticMissingAttribute("<sce:action>", "effect");
+    }
+    if (effect == "duty") {
+        action->setEffect(SCE::NativeAction::Effect::Duty);
+    } else if (effect == "notice") {
+        action->setEffect(SCE::NativeAction::Effect::Notice);
+    } else {
+        throw SCE::parsing::SemanticInvalidAttribute("<sce:action>", "effect", effect,
+                                                     std::vector<std::string>{"duty", "notice"});
+    }
+    action->setReleasedBy(attributeOf("released-by"));
     for (const auto &child : actionElement->getChildren()) {
         if (ParsingCommon::isSceNamespace(child) && ParsingCommon::matchNodeName(child->getName(), "arg")) {
             action->addArgument(child->hasAttribute("expr") ? child->getAttribute("expr") : "",
