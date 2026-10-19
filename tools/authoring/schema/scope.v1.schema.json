@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sce.dev/schemas/authoring/scope.v1.schema.json",
+  "title": "Scope",
+  "description": "The part of an extraction one import is of, chosen by its owner (docs/adr/0039-the-scope-of-an-import-is-the-owners-and-is-an-input-to-the-check.md): the ids of the blocks, each once, in the order the extraction has them. It is an input to the cut and to the check and never a field of a conversion, whose maker would then decide what counts as missing. The extraction it is of is named by its revision, the SHA-256 of its canonical text.",
+  "x-sce-schema-status": "pre-release",
+  "type": "object",
+  "required": ["v", "extraction", "blocks"],
+  "additionalProperties": false,
+  "properties": {
+    "v": { "const": 1 },
+    "extraction": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "blocks": {
+      "description": "At least one block, each once. The order is the extraction's, which a schema cannot say and the tools check.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    }
+  }
+}

@@ -226,9 +226,12 @@ class TheServerSpeaksTheProtocol(unittest.TestCase):
         # model is asked and put its answers together, and the host is what reaches the model.
         # `outline` and `make-scope` are the owner's choosing of a part of a document (docs/adr/0039): a
         # host shows the sections and sends their ids, and a model is never asked which part to import.
+        # `make-ledger`, `check-ledger` and `ledger-scopes` are the same owner's act for a document that holds
+        # several specs (docs/adr/0040): the ledger is theirs, and the count of it is SCE's.
         cli_only = {
             "revise-gate", "views", "extract", "convert", "check-conversion", "assemble",
             "prepare-conversion", "finish-conversion", "outline", "make-scope",
+            "make-ledger", "check-ledger", "ledger-scopes",
         }
         self.assertLessEqual(cli_only, commands, "a command-line-only name that is not a command")
         self.assertEqual(commands - cli_only, {t["name"] for t in mcp.TOOLS} - mcp_only)

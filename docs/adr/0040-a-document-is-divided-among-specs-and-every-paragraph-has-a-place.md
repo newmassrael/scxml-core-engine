@@ -60,9 +60,12 @@ to blocks, so that no host computes a block range.
 **The ledger is counted by SCE and never reports itself complete.** `check-ledger` takes the extraction and
 a ledger and says, by id: which blocks with words are in no allotment (*unplaced*), which are both left out
 and in a spec (*contradicting*), which are in more than one spec (*shared*), and which ids the extraction
-does not have. The ledger is complete when none is unplaced and none contradicts. This is ADR 0026's rule
-again, for the same reason: the one who made the allotments must not be the one who decides that nothing
-was missed.
+does not have. The ledger is complete when none is unplaced, none contradicts, and no spec is *empty*: a
+spec given no paragraph with words has nothing to convert, and a proposal made of it would be an empty spec
+waiting to be accepted (ADR 0026 refuses that for a document, and it is refused here before it is made). A
+paragraph with no words, such as an empty cell row, has nothing to place. This is ADR 0026's rule again,
+for the same reason: the one who made the allotments must not be the one who decides that nothing was
+missed.
 
 **Confirming an intake makes the proposals, and each is the ADR 0037 machinery unchanged.** Confirming is
 refused unless the check says the ledger, at its current revision, is complete. It then makes, for each
@@ -114,8 +117,10 @@ save does), and, once confirmed, how many specs were proposed and which are wait
 
 Each step lands with its tests and is useful before the next.
 
-1. **The ledger in the tools.** The ledger's form and revision, `check-ledger`, and the expansion of parts
-   to blocks; paired tests for each way a ledger is wrong and the nearest one that is not.
+1. **The ledger in the tools** (built). The ledger's form and revision (`ledger.py`, with a schema file for
+   it and for the scope of ADR 0039, held to the code by a test), `make-ledger` for the expansion of parts
+   to blocks, `check-ledger` for the count, and `ledger-scopes` for the scope each spec is imported under;
+   paired tests for each way a ledger is wrong and the nearest one that is not.
 2. **The intake in the store.** The record, the ledger chain with its compare-and-set save, the confirm that
    makes the proposals under their keys, the `intake` field of a proposal, and the commands that say them
    (the command set's version moves, and the new forms are registered as `pre-release`).

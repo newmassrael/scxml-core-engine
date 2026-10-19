@@ -54,6 +54,7 @@ from .revision_gate import hold as hold_revision
 from .revision_gate import judge as judge_revision
 from .scaffold import KINDS
 from .scaffold import write as write_scaffold
+from .ledger import Ledger, check_ledger, make_ledger, scopes_of
 from .scope import OUTLINES, Scope, outline as outline_of, scope_of
 from .verify import product_findings_of_binding
 from .verify import verify as run_verify
@@ -197,6 +198,89 @@ def cmd_make_scope(args) -> int:
     else:
         print(f"scope: {len(made.blocks)} of {len(extraction.blocks)} block(s), revision {made.revision()} -> {args.out}"
               f"{' (every block, which is no scope)' if whole else ''}")
+    return 0
+
+
+def _read_ledger(path: str) -> Ledger:
+    try:
+        return Ledger.from_json(pathlib.Path(path).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError) as exc:
+        raise IngestError(f"{path}: not readable as a ledger ({exc})") from exc
+
+
+def _ledger_summary(report) -> str:
+    said = report.to_dict()
+    return (
+        f"{'complete' if said['complete'] else 'not complete'}: {said['in_specs']} of {said['words']} "
+        f"paragraph(s) in specs, {said['left_out']} left out, {len(said['unplaced'])} unplaced, "
+        f"{len(said['contradicting'])} both used and left out, {len(said['shared'])} shared, "
+        f"{len(said['empty'])} spec(s) with nothing for them"
+    )
+
+
+def cmd_make_ledger(args) -> int:
+    """Write the ledger of a plan: for each destination, the parts of the outline it was given."""
+    extraction = _read_extraction(args.extraction)
+    try:
+        plan = json.loads(pathlib.Path(args.plan).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
+        raise IngestError(f"{args.plan}: not readable as a plan ({exc})") from exc
+    made = make_ledger(extraction, plan, args.by)
+    try:
+        pathlib.Path(args.out).write_text(made.to_json(), encoding="utf-8")
+    except OSError as exc:
+        raise IngestError(f"{args.out}: cannot be written ({exc})") from exc
+    report = check_ledger(extraction, made)
+    if args.json:
+        # Counts and ids only: the blocks hold the document's own words.
+        print(json.dumps({"revision": made.revision(), **report.to_dict()}, sort_keys=True))
+    else:
+        print(f"ledger: {len(made.allotments)} allotment(s), revision {made.revision()} -> {args.out}")
+        print(f"check: {_ledger_summary(report)}")
+    return 0
+
+
+def cmd_check_ledger(args) -> int:
+    """SCE's count of a ledger against the extraction it names. The exit code says whether it is complete."""
+    report = check_ledger(_read_extraction(args.extraction), _read_ledger(args.ledger))
+    if args.json:
+        print(json.dumps(report.to_dict(), sort_keys=True))
+    else:
+        print(f"check: {_ledger_summary(report)}")
+        for block_id in report.unplaced:
+            print(f"  ask: unplaced {block_id}")
+        for block_id in report.contradicting:
+            print(f"  ask: both used and left out {block_id}")
+        for index in report.empty:
+            print(f"  ask: a spec with nothing for it (allotment {index + 1})")
+    return 0 if report.complete else 1
+
+
+def cmd_ledger_scopes(args) -> int:
+    """Write the scope each spec of a complete ledger is imported under, one file for each.
+
+    A ledger that is not complete writes nothing and exits 1 with what it is missing. A spec given the whole
+    extraction has no scope and no file (`scope` is null): that is no scope, and the specs folder refuses one.
+    """
+    extraction = _read_extraction(args.extraction)
+    ledger = _read_ledger(args.ledger)
+    report = check_ledger(extraction, ledger)
+    if not report.complete:
+        print(f"ledger: {_ledger_summary(report)}; no scope is written for it", file=sys.stderr)
+        return 1
+    out = pathlib.Path(args.out_dir)
+    listing = []
+    try:
+        out.mkdir(parents=True, exist_ok=True)
+        for number, (allotment, scope) in enumerate(scopes_of(extraction, ledger), 1):
+            name = None
+            if scope is not None:
+                name = f"scope-{number:03d}.json"
+                (out / name).write_text(scope.to_json(), encoding="utf-8")
+            listing.append({"to": allotment.to.to_dict(), "blocks": len(allotment.blocks), "scope": name})
+    except OSError as exc:
+        raise IngestError(f"{out}: cannot be written ({exc})") from exc
+    print(json.dumps({"ledger": ledger.revision(), "scopes": listing}, sort_keys=True))
     return 0
 
 
@@ -857,6 +941,29 @@ def main(argv=None) -> int:
     mks.add_argument("--out", required=True, help="where to write the scope (JSON)")
     mks.add_argument("--json", action="store_true", help="print the counts and whether it is every block, as JSON")
     mks.set_defaults(fn=cmd_make_scope)
+
+    mkl = sub.add_parser(
+        "make-ledger", help="write the ledger of a plan: the parts of the outline each destination was given")
+    mkl.add_argument("--extraction", required=True, help="the extraction (JSON) `extract` wrote")
+    mkl.add_argument("--plan", required=True, help="the plan (JSON): for each destination, the part ids it was given")
+    mkl.add_argument("--by", choices=OUTLINES, help="the division `outline` was asked for, when it was asked")
+    mkl.add_argument("--out", required=True, help="where to write the ledger (JSON)")
+    mkl.add_argument("--json", action="store_true", help="print the ledger's revision and its check, as JSON")
+    mkl.set_defaults(fn=cmd_make_ledger)
+
+    cdl = sub.add_parser(
+        "check-ledger", help="count where the paragraphs went: unplaced, contradicting and shared (no model)")
+    cdl.add_argument("--extraction", required=True, help="the extraction the ledger names")
+    cdl.add_argument("--ledger", required=True, help="the ledger (JSON) to count")
+    cdl.add_argument("--json", action="store_true", help="print the counts and ids as JSON")
+    cdl.set_defaults(fn=cmd_check_ledger)
+
+    lsc = sub.add_parser(
+        "ledger-scopes", help="write the scope each spec of a complete ledger is imported under")
+    lsc.add_argument("--extraction", required=True, help="the extraction the ledger names")
+    lsc.add_argument("--ledger", required=True, help="the ledger (JSON); it has to be complete")
+    lsc.add_argument("--out-dir", required=True, help="where to write one scope file for each spec")
+    lsc.set_defaults(fn=cmd_ledger_scopes)
 
     chk = sub.add_parser(
         "check-conversion", help="count what a conversion matched, left out and invented, against its original")

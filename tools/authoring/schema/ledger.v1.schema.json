@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sce.dev/schemas/authoring/ledger.v1.schema.json",
+  "title": "Ledger",
+  "description": "Where each paragraph of a divided document went (docs/adr/0040-a-document-is-divided-among-specs-and-every-paragraph-has-a-place.md): a list of allotments, each a destination and the blocks of the extraction that go there. It is the owner's, and SCE counts it: which paragraphs went nowhere, which were both used and left out, and which went to several specs are SCE's counts, and the form has no field in which a ledger could say it is complete. One allotment to a destination, and parts left out for different reasons are different allotments; the tools write them in a fixed order. The extraction it is of is named by its revision, the SHA-256 of its canonical text.",
+  "x-sce-schema-status": "pre-release",
+  "type": "object",
+  "required": ["v", "extraction", "allotments"],
+  "additionalProperties": false,
+  "properties": {
+    "v": { "const": 1 },
+    "extraction": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "allotments": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/allotment" }
+    }
+  },
+  "$defs": {
+    "allotment": {
+      "type": "object",
+      "required": ["to", "blocks"],
+      "additionalProperties": false,
+      "properties": {
+        "to": { "$ref": "#/$defs/destination" },
+        "reason": {
+          "description": "Why a part was left out. Asked for, and allowed to be empty: leaving a part out is an act, and an empty reason is still that act. Only what is left out has one.",
+          "type": "string",
+          "maxLength": 1000
+        },
+        "blocks": {
+          "description": "At least one block, each once, in the extraction's order (which a schema cannot say and the tools check).",
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        }
+      },
+      "if": { "properties": { "to": { "properties": { "kind": { "enum": ["spec", "new"] } } } } },
+      "then": { "not": { "required": ["reason"] } }
+    },
+    "destination": {
+      "oneOf": [
+        {
+          "description": "A spec that exists, by the id the specs folder gave it.",
+          "type": "object",
+          "required": ["kind", "spec"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "spec" },
+            "spec": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,79}$" }
+          }
+        },
+        {
+          "description": "A spec to be made when the division is confirmed, by the title the owner gave it.",
+          "type": "object",
+          "required": ["kind", "title"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "new" },
+            "title": { "type": "string", "minLength": 1, "maxLength": 200, "pattern": "\\S" }
+          }
+        },
+        {
+          "description": "Out of the document, on purpose.",
+          "type": "object",
+          "required": ["kind"],
+          "additionalProperties": false,
+          "properties": { "kind": { "const": "left-out" } }
+        }
+      ]
+    }
+  }
+}
