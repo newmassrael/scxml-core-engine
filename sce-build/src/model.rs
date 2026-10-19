@@ -3274,6 +3274,69 @@ pub struct EmittedTransitionTable {
     pub transitions: Vec<EmittedTransition>,
 }
 
+/// A statechart as a pure function of (leaf state, event), for a document
+/// that declares it ([`SCXMLModel::transition_function_declared`]): every
+/// state the machine can be in, every event it names, where each event takes
+/// each state, and the digest of the source set it was generated from.
+///
+/// The whole table is computed once, at build time, by
+/// [`TransitionFunction::of`], which lives with the rule that computes it
+/// (`crate::transition_function`). Every backend renders this value and
+/// nothing else, so a generated function cannot disagree with the table, and
+/// two backends cannot disagree with each other.
+///
+/// Defined here, beside the model the templates read it through, for the
+/// reason [`EmittedTransitionTable`] is: the gate that holds every attribute a
+/// template reads to a declared one builds its list from this file.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct TransitionFunction {
+    /// The §synth-6.2.6 digest the generated files of the same invocation
+    /// embed, as 64 lowercase hex characters.
+    pub source_hash: String,
+    /// The states the machine can be in, in document order: every atomic
+    /// `<state>` and every top-level `<final>`. A compound state is never the
+    /// current state, so it is not one of these.
+    pub states: Vec<TransitionFunctionState>,
+    /// Every event the document names literally, in the order the
+    /// transitions first name them (states in document order, each state's
+    /// transitions by position). A descriptor such as `error.*` or `*` names
+    /// no event: it matches the ones listed here.
+    pub events: Vec<String>,
+    /// The state the machine starts in: the default entry of the document.
+    pub initial: String,
+    /// Whether every event takes every state somewhere, so that no pair is
+    /// refused. A backend that writes the table as one match needs to know
+    /// whether a refusing arm is reachable.
+    pub every_pair_taken: bool,
+}
+
+/// One state of a [`TransitionFunction`].
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct TransitionFunctionState {
+    /// The state's id, as written.
+    pub id: String,
+    /// A top-level `<final>`: reaching it ends the machine, and it takes no
+    /// event.
+    pub is_final: bool,
+    /// The ids of every state active while this one is the current state,
+    /// outermost first and this one last.
+    pub configuration: Vec<String>,
+    /// Where each event takes this state: one cell per member of
+    /// [`TransitionFunction::events`], in that order.
+    pub next: Vec<TransitionFunctionCell>,
+}
+
+/// One (state, event) pair of a [`TransitionFunction`].
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct TransitionFunctionCell {
+    /// The event, as [`TransitionFunction::events`] spells it.
+    pub event: String,
+    /// The state the event leaves the machine in, which is the state it was
+    /// in when the transition taken has no target. `None` when no transition
+    /// takes the event, which the machine then discards.
+    pub to: Option<String>,
+}
+
 /// W3C SCXML: Complete state machine model
 #[derive(Debug, Clone, Serialize, Default)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
@@ -3717,6 +3780,20 @@ pub struct SCXMLModel {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, schemars(skip))]
     pub emitted_transition_table: Option<EmittedTransitionTable>,
+    /// This document's transition function, when it declares one
+    /// ([`Self::transition_function_declared`]) and was accepted.
+    ///
+    /// Built by the generator after the document was accepted, for the
+    /// reason [`Self::emitted_transition_table`] is: the function holds the
+    /// digest of the source set the run read, which the model does not know.
+    /// `None`, the default, emits nothing. Set by [`TransitionFunction::of`]
+    /// and read by the template that writes the function beside the machine.
+    ///
+    /// Not part of the AST export's schema, for the table's reason: the
+    /// envelope is written before it is set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, schemars(skip))]
+    pub emitted_transition_function: Option<TransitionFunction>,
     /// Whether any host-served `<send>` in this document carries a delay
     /// (§scxml-6.2.4 + §scxml-6.2.5).
     ///

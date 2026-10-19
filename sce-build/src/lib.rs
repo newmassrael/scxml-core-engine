@@ -337,6 +337,9 @@ mod test_executable;
 /// verification harness compiles with. Searches beyond `PATH` because a
 /// tool it cannot find is a check that silently does not run.
 pub mod toolchain;
+/// A statechart that declares `sce:transition-function="emit"` as a pure
+/// function of (leaf state, event), computed once for every backend.
+pub mod transition_function;
 /// The transitions of a machine as one list produced once — the record every
 /// transition surface renders.
 pub mod transition_records;
