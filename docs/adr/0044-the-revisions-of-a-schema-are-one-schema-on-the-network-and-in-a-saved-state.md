@@ -120,21 +120,38 @@ variant to be as safe as adding a field).
   revision — the fields' rule over variants, implemented by the same function
   (`forge::schema_revision::enum_divergence` over the shared `parting`). Removing, renaming or
   re-valuing a variant is refused; declaration order is not part of an enum.
-- *The network.* For each enum field two schemas both declare alike, the enum each machine imports
-  under the field's alias is held to the rule (`divergence_with_enums`), and a refusal names the
-  field, the variant and both enums' revisions. At run time an older receiver still refuses a
+- *An enum is its document.* As every reader of an enum identifies it (`forge::stdlib::identity`,
+  the identity a record schema has), an enum here is the document an import resolves to, never the
+  alias one document imports it under: two aliases or paths of one file are one enum, and an alias
+  renamed leaves it as it was. The parse resolves, for each enum import of the statechart and each
+  enum field of each schema it imports (from the schema's own import), the document and its enum
+  (`EnumDocuments`, on the model).
+- *The network.* For each enum field two schemas both declare alike, the enum document each side's
+  schema names for that field is held to the rule (`divergence_with_enums`), and a refusal names
+  the field, the variant and both enums' revisions. At run time an older receiver still refuses a
   delivery that carries a variant it does not declare (`error.execution`, as for any value its
   field cannot hold): its generated type has no member that represents the value, and reading it as
   some other variant, or as a default, would make the receiver act on a value the sender never
   sent. A deployment that adds a variant therefore upgrades its receivers before its senders use it,
   and the build tells it which machines exchange the event.
 - *A saved state.* The shape names the first-revision variants of each enum a value is held in (a
-  variable of it, a record field of it). An enum past its first revision is named in `revisions` by
-  `enum:<alias>`, after the record schemas, with the digest of its variant names at that revision
-  (sorted; not the values, since a saved state holds an enum by its name). A restore refuses a
-  later revision than the machine's, a disagreeing digest, and an enum value held in the state that
-  names a variant added after the revision it was saved at; nothing needs growing, since every
-  earlier variant is still a variant.
+  variable of it, a record field of it). An enum past its first revision is named in `revisions`
+  after the record schemas, by `enum:` and its document's key (`schema_revision::document_key`):
+  a standard document by its folded `sce:std/...` name, any other file by its path relative to the
+  directory of the machine's own document, `.` and `..` folded, components joined by `/`. The
+  generator writes it, so it is one text on every backend; it holds no absolute path, so it is one
+  text in every checkout; and both sides of the relative path are the canonical paths the identity
+  compares, so it is one text for one document however it is imported. The digest of each revision
+  is of the key and the variant names at that revision (sorted; not the values, since a saved state
+  holds an enum by its name). A restore refuses a later revision than the machine's, a
+  disagreeing digest, and an enum value held in the state that names a variant added after the
+  revision it was saved at; nothing needs growing, since every earlier variant is still a variant.
+  Moving the enum's file moves its key, as it makes it another document to every reader.
+- *What still names an alias.* The shape's text has spelled every enum-typed variable and record
+  field by `enum:<alias>` since before revisions existed, and an enum that never grew keeps hashing
+  exactly as it did, so states already saved restore. Renaming the alias of an enum therefore still
+  changes the shape and refuses a restore, as it always has; what the document identity removes is
+  the second place an alias would have keyed a saved state (`revisions`) and the Mesh check.
 
 **7. The partial-coverage refusals carry no `actual`.** `mesh/event-schema-mismatch` is located in
 the deploy file, and neither a schema's presence nor a field is a token of it, so `SenderOnly` and
@@ -165,9 +182,17 @@ the deploy file, and neither a schema's presence nor a field is a token of it, s
   generated type has no member for it, and a fallback the sender did not choose is a value the
   sender did not send. An open enum (`sce:strict-variants="false"`) already carries any carrier
   value; a closed one that wants that reads as an open one, which is the author's choice.
-- **Keying an enum's revision by its document name.** The alias is what the shape already names an
-  enum's values by (`enum:<alias>` types), so a key that moves with it moves only when the shape
-  does.
+- **Keying an enum's revision, and the Mesh comparison, by the import alias.** Taken first and
+  reversed (the owner, 2026-10-20): every other reader of an enum identifies it by its document
+  (the record-field and algorithm work on `algo-enum-fields` refuses a record field whose alias names
+  another document than its schema's), so an alias key would have been the one place the rule
+  differed, and would have refused a restore of an unchanged enum whose alias was renamed.
+- **The absolute canonical path as the saved key.** It is what the identity compares in a process,
+  and it differs between checkouts and machines, so a state saved on one could not be restored on
+  another.
+- **Spelling the shape's enum types by document.** It would make an alias rename leave the shape as
+  it was, and it would change the shape of every state already saved with an enum, which the
+  first-revision rule exists to keep.
 
 ## Consequences
 

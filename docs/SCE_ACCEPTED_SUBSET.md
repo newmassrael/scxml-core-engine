@@ -5268,9 +5268,17 @@ and the Interpreter have no saved state.
 An enum grows the same way ("An enum that grows", in the EventSchema kind
 section). The shape names the variants of an enum's first revision only — of a
 variable of it, and of a record field of it — and a state whose enum is past its
-first revision names it in `revisions` by `enum:<alias>`, after the record
-schemas, with the digest of its variant names at that revision (sorted; a saved
-state holds an enum by its declared name, so not the values). A restore refuses
+first revision names it in `revisions` after the record schemas, by `enum:` and
+its document — the document the import resolves to, as every reader of an enum
+identifies it, not the alias it is imported under: a standard document by its
+`sce:std/...` name, any other by its path relative to the directory of the
+machine's own document, `.` and `..` folded, joined by `/`, so one text on every
+backend and in every checkout (`enum:enum_signal_level.scxml` for the fixture
+below) — with the digest of its variant names at that revision (sorted; a saved
+state holds an enum by its declared name, so not the values). The shape still
+spells an enum-typed variable or field by `enum:<alias>`, as it did before
+revisions, so an enum that never grew hashes as it always did, and renaming an
+alias changes the shape as it always has. A restore refuses
 a later revision and a disagreeing digest, as for a record schema, and an enum
 value held in the state (a variable, a record field, a field of each element of
 a list of records) that names a variant added after the revision it was saved
@@ -7183,8 +7191,9 @@ the send's event name must be revisions of one schema (docs/adr/0044):
 every field both declare is declared alike (type, bound, quantity,
 `sce:since`, `sce:default`), and every field only one declares was
 added after the other's `sce:revision`; and for each enum field both
-declare, the enums the two machines import under its alias are
-revisions of one enum ("An enum that grows" below). Two builds of one
+declare, the enum documents each side's schema imports for it are
+revisions of one enum ("An enum that grows" below; an enum is its
+document, not the alias it is read by). Two builds of one
 deployment that hold two revisions of one schema, as during an upgrade,
 therefore build, and exchange the event as "An event schema that grows"
 says. One rejection, which carries no `actual` or `expected` (it is
@@ -7523,9 +7532,11 @@ was added after the other's revision. Removing, renaming or re-valuing a variant
 is not a revision. The rule is the one an event schema's fields are held to,
 and it applies where that one does:
 
-- `mesh/event-schema-mismatch` holds the enum each machine imports under an enum
-  field's alias to it, and names the field and the variant two enums part on
-  ("Mesh cross-machine validation" above).
+- `mesh/event-schema-mismatch` holds the enum document each side's schema
+  imports for an enum field to it, and names the field and the variant two
+  enums part on ("Mesh cross-machine validation" above). An enum is its
+  document, as every reader of an enum identifies it, never the alias one
+  document imports it under.
 - A saved state names the first-revision variants in its shape and an enum past
   its first revision in `revisions` (§2.15, "A record schema that grew"), so a
   state saved before a variant was added restores, and one that holds a variant
