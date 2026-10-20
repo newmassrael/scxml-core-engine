@@ -102,7 +102,44 @@ a variable, so the generated readers are unchanged. The Go, Python, C11 and C++ 
 Interpreter have no saved state, so nothing changes there.
 
 **5. The saved-state format changes additively.** `revisions` is an optional member of
-`sce-saved-state.v1`, absent when no record schema is past its first revision; `format` stays 1.
+`sce-saved-state.v1`, absent when no record schema or enum is past its first revision; `format`
+stays 1.
+
+**6. An enum grows the same way** (decided after the first five, when the owner asked for adding a
+variant to be as safe as adding a field).
+
+- *What it declares.* `sce:revision` on an enum's root, `sce:since` on a `<sce:variant>` a later
+  revision added (from 2 up to the root's revision). A variant of the first revision declares none.
+  There is no default: a variant is a value, not a member a delivery may lack. Both names are in the
+  grammar (`schemas/sce-forge-ext.xsd`), the forge roster of known names, the reader and the
+  rendering, and a test reads the committed fixtures through the calls `check` and `generate` make,
+  so the grammar cannot lag the reader.
+- *The rule.* Two enums are revisions of one enum when they declare one carrier
+  (`sce:underlying-type`) and one openness (`sce:strict-variants`), every variant both declare has
+  one value and one `since`, and every variant only one declares was added after the other's
+  revision — the fields' rule over variants, implemented by the same function
+  (`forge::schema_revision::enum_divergence` over the shared `parting`). Removing, renaming or
+  re-valuing a variant is refused; declaration order is not part of an enum.
+- *The network.* For each enum field two schemas both declare alike, the enum each machine imports
+  under the field's alias is held to the rule (`divergence_with_enums`), and a refusal names the
+  field, the variant and both enums' revisions. At run time an older receiver still refuses a
+  delivery that carries a variant it does not declare (`error.execution`, as for any value its
+  field cannot hold): its generated type has no member that represents the value, and reading it as
+  some other variant, or as a default, would make the receiver act on a value the sender never
+  sent. A deployment that adds a variant therefore upgrades its receivers before its senders use it,
+  and the build tells it which machines exchange the event.
+- *A saved state.* The shape names the first-revision variants of each enum a value is held in (a
+  variable of it, a record field of it). An enum past its first revision is named in `revisions` by
+  `enum:<alias>`, after the record schemas, with the digest of its variant names at that revision
+  (sorted; not the values, since a saved state holds an enum by its name). A restore refuses a
+  later revision than the machine's, a disagreeing digest, and an enum value held in the state that
+  names a variant added after the revision it was saved at; nothing needs growing, since every
+  earlier variant is still a variant.
+
+**7. The partial-coverage refusals carry no `actual`.** `mesh/event-schema-mismatch` is located in
+the deploy file, and neither a schema's presence nor a field is a token of it, so `SenderOnly` and
+`ReceiverOnly` drop the `schema-declared` / `schema-absent` tags they carried (SCE_ERROR_CONTRACT.md
+§2.1); their ids are unchanged.
 
 ## Alternatives not taken
 
@@ -124,15 +161,21 @@ Interpreter have no saved state, so nothing changes there.
   delivery reads.
 - **Restoring a newer state into an older build, dropping what it does not know.** Refused, as every
   shape change was before: the dropped values cannot be recovered by the next upgrade.
+- **An older receiver reading an unknown variant as a default or as "unknown".** A closed enum's
+  generated type has no member for it, and a fallback the sender did not choose is a value the
+  sender did not send. An open enum (`sce:strict-variants="false"`) already carries any carrier
+  value; a closed one that wants that reads as an open one, which is the author's choice.
+- **Keying an enum's revision by its document name.** The alias is what the shape already names an
+  enum's values by (`enum:<alias>` types), so a key that moves with it moves only when the shape
+  does.
 
 ## Consequences
 
 - A deployment upgraded device by device builds when one machine is pinned to an older revision of a
   schema; a deployment whose machines disagree about a field is refused with that field's name.
 - An application that adds a field to a record schema keeps its users' saved states.
-- What is still refused is unchanged in kind: a renamed, re-typed or removed field, a state, history
-  or variable changed, a variant of an enum a record field is of renamed or added (the shape names
-  the variants, as before).
-- `mesh/event-schema-mismatch`'s `SenderOnly` and `ReceiverOnly` reasons still put a tag in `actual`
-  that no document holds (SCE_ERROR_CONTRACT.md §2.1); the new reason carries none. That older gap is
-  not changed here.
+- An application that adds a variant to an enum, declared with `sce:since`, keeps its users' saved
+  states and builds against older devices; one that adds a variant without declaring it has changed
+  the enum's first revision, and is refused both places, as before.
+- What is still refused is unchanged in kind: a renamed, re-typed or removed field or variant, a
+  re-valued variant, and a state, history or variable changed.

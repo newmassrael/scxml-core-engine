@@ -5265,6 +5265,23 @@ saved by builds of its first and second revisions, one with a delivery of the
 first revision still queued; both backends restore each. Go, Python, C11, C++
 and the Interpreter have no saved state.
 
+An enum grows the same way ("An enum that grows", in the EventSchema kind
+section). The shape names the variants of an enum's first revision only — of a
+variable of it, and of a record field of it — and a state whose enum is past its
+first revision names it in `revisions` by `enum:<alias>`, after the record
+schemas, with the digest of its variant names at that revision (sorted; a saved
+state holds an enum by its declared name, so not the values). A restore refuses
+a later revision and a disagreeing digest, as for a record schema, and an enum
+value held in the state (a variable, a record field, a field of each element of
+a list of records) that names a variant added after the revision it was saved
+at; nothing needs growing, since every earlier variant is still a variant. That
+is judged on the values as saved, before a record takes its defaults, which are
+this build's. `static_schema_pending.scxml` holds a record whose schema and
+whose enum both grew and waits on a delayed `<send>` of that schema's event;
+`saved/static_schema_pending_first.json` is it saved, armed, by a build of the
+first revisions, and both backends restore it, deliver the send at its moment
+with the urgency's default, and save it again naming both revisions.
+
 A Mesh request (`<invoke type="sce:mesh-rpc">`) is saved, and is the one host-run
 invocation a restore does not start again. Its one request may already have
 reached its peer, which would act on it twice if it were sent again, and the router
@@ -7165,16 +7182,22 @@ deploy.yaml topology), the sender and receiver EventSchemas for
 the send's event name must be revisions of one schema (docs/adr/0044):
 every field both declare is declared alike (type, bound, quantity,
 `sce:since`, `sce:default`), and every field only one declares was
-added after the other's `sce:revision`. Two builds of one deployment
-that hold two revisions of one schema, as during an upgrade, therefore
-build, and exchange the event as "An event schema that grows" says.
-One rejection:
+added after the other's `sce:revision`; and for each enum field both
+declare, the enums the two machines import under its alias are
+revisions of one enum ("An enum that grows" below). Two builds of one
+deployment that hold two revisions of one schema, as during an upgrade,
+therefore build, and exchange the event as "An event schema that grows"
+says. One rejection, which carries no `actual` or `expected` (it is
+located in the deploy file, which holds neither a schema's presence nor
+a field; SCE_ERROR_CONTRACT.md §2.1):
 
 - `mesh/event-schema-mismatch` — either (a) both sides declare an
   EventSchema and the two are not revisions of one schema (a field
   re-typed, removed or renamed, two schemas of one revision that
-  declare different fields, or two that disagree about which revision
-  added a field or what its default is), (b) sender declares a schema
+  declare different fields, two that disagree about which revision
+  added a field or what its default is, or an enum field whose two
+  enums part: a variant removed, renamed or re-valued, or another
+  carrier or openness), (b) sender declares a schema
   while receiver does not, or (c) receiver declares a schema while
   sender does not. The `Display` form names the specific divergence
   reason — for (a) the field and both revisions — so consumers do not
@@ -7469,6 +7492,51 @@ accessor returns the name unconditionally. C++, C11 and Go types hold
 every carrier value whatever the set, so their accessor is always the
 fallible form. The conformance harness pins the accessor against the
 document's names on all six backends.
+
+#### An enum that grows — `sce:revision`, `sce:since` (docs/adr/0044)
+
+An enum grows as an event schema does. `sce:revision` on its root says which
+revision it is (a positive integer, the first when absent), and a
+`<sce:variant>` a later revision added declares `sce:since`, from 2 up to the
+root's revision; a variant of the first revision declares none. Anything else is
+`validation/attribute-rule-violated` on the attribute. There is no default: a
+variant is a value, and nothing lacks it.
+
+```xml
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="enum" name="signal_level"
+       sce:underlying-type="uint8" sce:revision="2">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="low" value="0"/>
+      <sce:variant name="high" value="1"/>
+      <sce:variant name="critical" value="2" sce:since="2"/>
+    </data>
+  </datamodel>
+</scxml>
+```
+
+Two enums are revisions of one enum when they declare one carrier and one
+openness (`sce:underlying-type`, `sce:strict-variants`), every variant both
+declare has one value and one `sce:since`, and every variant only one declares
+was added after the other's revision. Removing, renaming or re-valuing a variant
+is not a revision. The rule is the one an event schema's fields are held to,
+and it applies where that one does:
+
+- `mesh/event-schema-mismatch` holds the enum each machine imports under an enum
+  field's alias to it, and names the field and the variant two enums part on
+  ("Mesh cross-machine validation" above).
+- A saved state names the first-revision variants in its shape and an enum past
+  its first revision in `revisions` (§2.15, "A record schema that grew"), so a
+  state saved before a variant was added restores, and one that holds a variant
+  later than the revision it was saved at is refused.
+- At run time a receiver that does not declare a variant refuses a delivery that
+  carries it, as `error.execution`, as it refuses any value its field cannot
+  hold. Its generated type has no member for the value, and reading it as another
+  variant or as a default would act on something the sender did not send. A
+  deployment that adds a variant upgrades the machines that receive it before
+  the ones that send it, and an open enum (`sce:strict-variants="false"`)
+  carries any value of its carrier already.
 
 ### §2.20 A transition table — `sce:transition-table="emit"`
 
