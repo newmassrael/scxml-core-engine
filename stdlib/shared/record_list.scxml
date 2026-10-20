@@ -101,9 +101,9 @@
   a person's own is the one judged, and what a person sent is taken in as it is, so the
   room is kept below the build's by what the people of one list can write at once.
 
-  Every bound of the list is a name a build may give another number
-  (`sce-codegen --limit name=N`, docs/SCE_ACCEPTED_SUBSET.md, "A bound a deployment
-  chooses"), and a build that names none is the list as written: `merge_entries` (1024
+  Every bound of the list is a name a build may give another number (the limit option
+  of sce-codegen, docs/SCE_ACCEPTED_SUBSET.md, "A bound a deployment chooses"), and a
+  build that names none is the list as written: `merge_entries` (1024
   adds, tombstones and the lists a change is judged by), `merge_values` (512 values),
   `merge_digest` (2048 nodes of the digest), `merge_text` (the 96 bytes of text a write
   carries and a value keeps), `shared_typed_text` (the 32 bytes of text a person types,

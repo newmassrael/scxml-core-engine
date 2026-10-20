@@ -9,9 +9,9 @@
   stamped to sort after everything it has seen (record_write).
 
   `text` is what a person typed: at most 32 bytes of UTF-8 as written, a bound a build
-  moves by naming `shared_typed_text` (`sce-codegen --limit shared_typed_text=N`), and the
-  copy holds a text past it to the same bound and refuses the change whole. A write
-  carries more (record_write), for what a host puts there in place of the text.
+  moves by giving the limit `shared_typed_text` another number, and the copy holds a
+  text past it to the same bound and refuses the change whole. A write carries more
+  (record_write), for what a host puts there in place of the text.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
