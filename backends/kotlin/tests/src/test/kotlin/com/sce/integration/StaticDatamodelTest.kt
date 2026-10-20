@@ -46,6 +46,7 @@ import com.sce.integration.static_record.StaticRecordStateMachine
 import com.sce.integration.static_record_bytes.StaticRecordBytesEvent
 import com.sce.integration.static_record_bytes.StaticRecordBytesStateMachine
 import com.sce.integration.static_record_string.StaticRecordStringStateMachine
+import com.sce.integration.static_schema_pending.StaticSchemaPendingStateMachine
 import com.sce.integration.static_schema_revision.StaticSchemaRevisionStateMachine
 import com.sce.integration.static_string_capacity.StaticStringCapacityStateMachine
 import com.sce.integration.static_timers.StaticTimersEvent
@@ -851,7 +852,7 @@ class StaticDatamodelTest {
             "d9ba6a71207a3f219929c8fda298d7a35c76cb7950cc287ae2fa8a8b8ff45ad7",
             "e511eddacf1d4e220c85f78c95988fe26a2a1319cf119cb085f1a84f4f197f8d",
         )
-        assertTrue(refusalOf(other).contains("declared other fields"))
+        assertTrue(refusalOf(other).contains("declared other members"))
         // A record saved at the first revision that holds a field the second added.
         val early = sharedFixture("static_schema_revision_first")
             .replace("""{"level":4}""", """{"level":4,"layout":"day"}""")
@@ -864,6 +865,69 @@ class StaticDatamodelTest {
             "11dbc3cc8b1f883cc9da011d2d5c3968ac0eeb404a0f494deede91552cd6623d",
         )
         assertTrue(refusalOf(unmarked).contains("names revisions"))
+    }
+
+    // ── static_schema_pending: a waiting send saved at an earlier revision ──
+    //
+    // `last` is a record of `schema_signal.scxml`, whose second revision added the
+    // urgency (default `true`), and whose level is of `enum_signal_level.scxml`,
+    // whose second revision added `critical`. The shared fixture is the machine
+    // saved, armed, by a build of the first revisions of both (docs/adr/0044). The
+    // Rust suite holds the same.
+
+    /** The wall-clock moment the pending fixture was saved at, as the Rust suite has it. */
+    private val pendingSavedAtMs = 1_700_000_000_000L
+
+    /** What [sm]'s `last` holds, as a saved state writes it. */
+    private fun pendingLast(sm: StaticSchemaPendingStateMachine): String =
+        Json.write(sm.save(pendingSavedAtMs).variable("last"))
+
+    @Test
+    fun aWaitingSendSavedAtTheFirstRevisionIsDeliveredWithTheLaterDefaults() {
+        val sm = StaticSchemaPendingStateMachine()
+        try {
+            sm.clock = ManualClock(0)
+            sm.restore(SavedState.fromJson(sharedFixture("static_schema_pending_first")), pendingSavedAtMs)
+            // The record saved without the urgency takes its default.
+            assertEquals("""{"level":"low","count":0,"urgent":true}""", pendingLast(sm))
+            assertEquals(0u, sm.taken)
+            // The send still waits its second, and its data, which lacks the
+            // urgency, is lifted with the default when it is delivered.
+            sm.advanceTimeMs(999)
+            assertEquals(0u, sm.taken, "not due yet")
+            sm.advanceTimeMs(1)
+            assertEquals(1u, sm.taken, "delivered at its moment")
+            assertEquals(0u, sm.refusals)
+            assertEquals("""{"level":"high","count":7,"urgent":true}""", pendingLast(sm))
+            // Saved again, the state names both revisions it now holds: the
+            // schema's by its event, then the enum's by its key.
+            val saved = sm.save(pendingSavedAtMs + 1000)
+            assertEquals(
+                listOf("signal.raised" to 2, "enum:SignalLevel" to 2),
+                saved.revisions.map { (key, revision) -> key to revision.revision },
+            )
+            assertEquals("2619b075d4aa2597ecf884cba0f3b6d95715e5dbdca9bb22dc2d20be2f4dead2", saved.shape)
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun aValueOfAVariantItsSavedRevisionLacksIsRefused() {
+        // `critical` came with the enum's second revision, so a state saved at the
+        // first cannot hold it.
+        val text = sharedFixture("static_schema_pending_first")
+            .replace("\"level\":\"low\"", "\"level\":\"critical\"")
+        val sm = StaticSchemaPendingStateMachine()
+        try {
+            sm.clock = ManualClock(0)
+            val refusal = assertThrows(StateRefusal::class.java) {
+                sm.restore(SavedState.fromJson(text), pendingSavedAtMs)
+            }
+            assertTrue(refusal.message!!.contains("'last.level' holds 'critical'"), refusal.message)
+        } finally {
+            sm.cleanup()
+        }
     }
 
     // ── static_enum: a variable that holds a variant of an imported enum ──

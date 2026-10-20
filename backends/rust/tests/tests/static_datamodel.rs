@@ -49,6 +49,9 @@ use sce_rust_tests::integration::static_datamodel::static_record_sm::{
 use sce_rust_tests::integration::static_datamodel::static_record_string_sm::{
     StaticRecordStringPersist, StaticRecordStringPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_schema_pending_sm::{
+    StaticSchemaPendingPersist, StaticSchemaPendingPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_schema_revision_sm::{
     StaticSchemaRevisionPersist, StaticSchemaRevisionPolicy,
 };
@@ -753,7 +756,7 @@ fn a_state_of_a_later_or_another_revision_is_refused() {
     );
     let refusal = refusal_of(&other);
     assert!(
-        refusal.reason().contains("declared other fields"),
+        refusal.reason().contains("declared other members"),
         "{refusal}"
     );
     // A record saved at the first revision that holds a field the second added.
@@ -773,6 +776,90 @@ fn a_state_of_a_later_or_another_revision_is_refused() {
     );
     let refusal = refusal_of(&unmarked);
     assert!(refusal.reason().contains("names revisions"), "{refusal}");
+}
+
+// ── static_schema_pending: a waiting send saved at an earlier revision ──────
+//
+// `last` is a record of `schema_signal.scxml`, whose second revision added the
+// urgency (default `true`), and whose level is of `enum_signal_level.scxml`,
+// whose second revision added `critical`. The shared fixture is the machine
+// saved, armed, by a build of the first revisions of both: the record lacks the
+// urgency, and the send waiting to deliver `signal.raised` a second later carries
+// data written before the urgency existed (docs/adr/0044). The Kotlin suite holds
+// the same.
+
+const SHARED_PENDING_FIRST: &str = include_str!(
+    "../../../../sce-build/tests/fixtures/static_datamodel/saved/static_schema_pending_first.json"
+);
+
+/// The fixture restored at the wall-clock moment it was saved, into a process
+/// whose own clock starts at 0.
+fn pending_restored(text: &str) -> Result<Engine<StaticSchemaPendingPolicy>, StateRefusal> {
+    Engine::<StaticSchemaPendingPolicy>::restore_with(
+        StaticSchemaPendingPolicy::new(),
+        &SavedState::from_json(text).expect("reads"),
+        SceClock::Manual(0),
+        SAVED_AT_MS,
+    )
+}
+
+/// What the machine's `last` holds, as a saved state writes it.
+fn pending_last(engine: &Engine<StaticSchemaPendingPolicy>) -> sce_rust_runtime::json::Value {
+    engine
+        .save_at(SAVED_AT_MS)
+        .expect("saves")
+        .variable("last")
+        .expect("a saved state holds `last`")
+        .clone()
+}
+
+#[test]
+fn a_waiting_send_saved_at_the_first_revision_is_delivered_with_the_later_defaults() {
+    let mut engine = pending_restored(SHARED_PENDING_FIRST).expect("restores");
+    // The record saved without the urgency takes its default.
+    assert_eq!(
+        pending_last(&engine),
+        json_value(r#"{"level":"low","count":0,"urgent":true}"#)
+    );
+    assert_eq!(engine.policy().taken(), 0);
+
+    // The send still waits its second, and its data, which lacks the urgency,
+    // is lifted with the default when it is delivered.
+    engine.advance_time_ms(999);
+    assert_eq!(engine.policy().taken(), 0, "not due yet");
+    engine.advance_time_ms(1);
+    assert_eq!(engine.policy().taken(), 1, "delivered at its moment");
+    assert_eq!(engine.policy().refusals(), 0);
+    assert_eq!(
+        pending_last(&engine),
+        json_value(r#"{"level":"high","count":7,"urgent":true}"#)
+    );
+
+    // Saved again, the state names both revisions it now holds: the schema's by
+    // its event, then the enum's by its key.
+    let saved = engine.save_at(SAVED_AT_MS + 1000).expect("saves");
+    let named: Vec<(&str, u32)> = saved
+        .revisions
+        .iter()
+        .map(|(key, revision)| (key.as_str(), revision.revision))
+        .collect();
+    assert_eq!(named, [("signal.raised", 2), ("enum:SignalLevel", 2)]);
+    assert_eq!(
+        saved.shape,
+        "2619b075d4aa2597ecf884cba0f3b6d95715e5dbdca9bb22dc2d20be2f4dead2"
+    );
+}
+
+#[test]
+fn a_value_of_a_variant_its_saved_revision_lacks_is_refused() {
+    // `critical` came with the enum's second revision, so a state saved at the
+    // first cannot hold it.
+    let text = SHARED_PENDING_FIRST.replace(r#""level":"low""#, r#""level":"critical""#);
+    let refusal = refused(pending_restored(&text));
+    assert!(
+        refusal.reason().contains("'last.level' holds 'critical'"),
+        "{refusal}"
+    );
 }
 
 // ── static_enum: a variable that holds a variant of an imported enum ──────
