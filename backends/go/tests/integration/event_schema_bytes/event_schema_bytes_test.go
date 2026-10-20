@@ -31,11 +31,11 @@ func TestBytesPayloadGuardFiresOnMatch(t *testing.T) {
 		t.Fatalf("initial state = %v, want Waiting", got)
 	}
 
-	RaiseSignalReceived(engine, []byte("ack"))
+	StatechartBytesRaiseSignalReceived(engine, []byte("ack"))
 	engine.Step()
 
 	if got := engine.GetCurrentState(); got != StatechartBytesStateDone {
-		t.Fatalf("after RaiseSignalReceived([]byte(\"ack\")): state = %v, want Done "+
+		t.Fatalf("after StatechartBytesRaiseSignalReceived([]byte(\"ack\")): state = %v, want Done "+
 			"(raw == \"ack\" must fire the native bytes guard)", got)
 	}
 }
@@ -46,11 +46,11 @@ func TestBytesPayloadGuardMissesOnNonmatch(t *testing.T) {
 	engine := sce.NewEngine[StatechartBytesState, StatechartBytesEvent](&policy)
 	engine.Initialize()
 
-	RaiseSignalReceived(engine, []byte("no"))
+	StatechartBytesRaiseSignalReceived(engine, []byte("no"))
 	engine.Step()
 
 	if got := engine.GetCurrentState(); got != StatechartBytesStateWaiting {
-		t.Fatalf("after RaiseSignalReceived([]byte(\"no\")): state = %v, want Waiting "+
+		t.Fatalf("after StatechartBytesRaiseSignalReceived([]byte(\"no\")): state = %v, want Waiting "+
 			"(raw == \"no\" must leave the machine in waiting)", got)
 	}
 }

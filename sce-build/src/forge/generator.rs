@@ -3571,8 +3571,8 @@ switch (evt->event) {{\n{lift_arms}    default:\n        return;\n    }}\n{repor
 /// `evt.payload` into `sm->pending_payload`.
 ///
 /// `defs` is the top-level type block (the `<Machine>PayloadTag` enum, one
-/// payload struct per guarded event, and the per-event `Raise<Event>` inject
-/// seams); `policy_fields` are the lines added to the generated policy
+/// payload struct per guarded event, and the per-event `<Machine>Raise<Event>`
+/// inject seams); `policy_fields` are the lines added to the generated policy
 /// struct; `populate` is the `PopulateEventMetadata` type-switch body;
 /// `clear` resets the tag in `ClearEventMetadata`; `guard_writes` carries
 /// the native guard expressions (each a tag check ANDed with the lowered
@@ -3767,7 +3767,7 @@ pub fn build_go_event_payload(
         // the verbatim property emit of `expr.rs::emit_go`) and unexported —
         // the policy reads them in the native guard within the same package,
         // and consumers never name a field directly (they pass the values to
-        // the `Raise<Event>` seam below).
+        // the `<Machine>Raise<Event>` seam below).
         let mut field_lines = String::new();
         let mut params = String::new();
         let mut struct_lits = String::new();
@@ -3810,10 +3810,17 @@ if err != nil {{\n\t\t\treturn err\n\t\t}}\n\t\t\
 var payload {struct_name}\n{field_reads}\t\t\
 p.{field} = payload\n\t\tp.pendingPayloadTag = {tag_type}{variant}\n"
         ));
+        // The seam's name. A package holds more than one machine — a parent and
+        // every child it invokes are generated into one, and two of them may
+        // import the same schema — so the seam is named by its machine, as the
+        // payload struct and every other package-level declaration of a machine
+        // is: a bare `Raise{variant}` was declared once per machine and the
+        // package did not compile.
+        let raise_fn = format!("{machine}Raise{variant}");
         structs.push_str(&format!(
             "// {struct_name} is the NL\u{2192}IR Item C1 Path A typed `_event.data`\n\
 // payload for `{event}`. Internal to the package; consumers inject it via\n\
-// the `Raise{variant}` seam below (fields are unexported by design).\n\
+// the `{raise_fn}` seam below (fields are unexported by design).\n\
 type {struct_name} struct {{\n{field_lines}}}\n\n"
         ));
         tag_consts.push_str(&format!("\t{tag_type}{variant}\n"));
@@ -3828,20 +3835,21 @@ type {struct_name} struct {{\n{field_lines}}}\n\n"
             continue;
         }
         // Per-event typed inject seam: binds the event name and the payload
-        // field values in one call (the Go twin of the Rust `Raise{variant}`
-        // extension-trait method and the C11 `raise_<event>_typed` entry).
-        // A free function because `Engine` is a foreign type (the Go
-        // equivalent of Rust's orphan rule). The values are packed into the
-        // type-erased `TypedPayload` carrier; the populate seam asserts them
-        // back into the typed policy field.
+        // field values in one call (the Go twin of the Rust
+        // `<Machine>Inject::raise_<event>` extension-trait method and the C11
+        // `<machine>_raise_<event>_typed` entry). A free function because
+        // `Engine` is a foreign type (the Go equivalent of Rust's orphan
+        // rule), and so one named by its machine (`raise_fn` above). The
+        // values are packed into the type-erased `TypedPayload` carrier; the
+        // populate seam asserts them back into the typed policy field.
         let data_pairs = data_items.trim_end_matches(", ");
         raise_fns.push_str(&format!(
-            "// Raise{variant} is the NL\u{2192}IR Item C1 Path A per-event typed `_event.data`\n\
+            "// {raise_fn} is the NL\u{2192}IR Item C1 Path A per-event typed `_event.data`\n\
 // inject seam for `{event}` — binds the event name and the payload field\n\
 // values in one call so the name\u{2194}type pairing cannot be constructed\n\
-// inconsistently. Twin of the Rust `Raise{variant}` extension-trait method\n\
+// inconsistently. Twin of the Rust `{machine}Inject` extension-trait method\n\
 // and the C11 `raise_<event>_typed` entry.\n\
-func Raise{variant}(e *sce.Engine[{machine}State, {machine}Event]{params}) {{\n\
+func {raise_fn}(e *sce.Engine[{machine}State, {machine}Event]{params}) {{\n\
 \te.RaiseExternalWithMeta(sce.EventWithMetadata[{machine}Event]{{\n\
 \t\tEvent:    {machine}Event{variant},\n\
 \t\tMetadata: sce.EventMetadata{{\n\
@@ -4158,7 +4166,8 @@ pendingPayloadTag_ = {tag_type}::{variant};\n            \
         }
         // Per-event typed inject seam on the generated engine class — binds the
         // event name + payload field values in one call (the C++ twin of the
-        // Rust `raise_<event>` extension trait and the Go `Raise<Event>` func).
+        // Rust `raise_<event>` extension trait and the Go
+        // `<Machine>Raise<Event>` func).
         inject.push_str(&format!(
             "    /// Typed `_event.data` inject for `{event}` —\n    \
 /// binds the event name and the payload field values in one call so the\n    \
@@ -4438,7 +4447,7 @@ data class {class_name}({ctor_params})\n\n"
         // Per-event typed inject seam on the generated machine class: binds the
         // event name and the payload field values in one call so the name↔type
         // pairing cannot be constructed inconsistently. The Kotlin twin of the
-        // Rust `raise<Event>` extension trait / Go `Raise<Event>` func / C++
+        // Rust `raise<Event>` extension trait / Go `<Machine>Raise<Event>` func / C++
         // `raise<Event>` method. A member (not a free function) because the
         // generated machine *is* the engine subclass — no orphan-rule barrier.
         inject.push_str(&format!(
@@ -4718,7 +4727,7 @@ _engine, \"`{event}` payload: \" + str(_exc))\n"
             continue;
         }
         // Per-event typed inject seam: a module-level free function (the Python
-        // twin of the Go `Raise<Event>` func — the runtime `Engine` is a
+        // twin of the Go `<Machine>Raise<Event>` func — the runtime `Engine` is a
         // foreign type, so no method can be added) binding the event name and
         // the payload field values in one call so the name↔type pairing cannot
         // be constructed inconsistently.

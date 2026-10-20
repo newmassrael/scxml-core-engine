@@ -4004,8 +4004,8 @@ fn render_go(
     // EventSchema MCU native lowering — the Go typed
     // `_event.data` payload channel: a tag enum + per-event payload structs,
     // the policy fields / populate type-switch that lift the dequeued event's
-    // typed payload, the per-event `Raise<Event>` inject seams, and the
-    // per-transition native guard (`p.pendingPayloadTag == … && (…)`). The
+    // typed payload, the per-event `<Machine>Raise<Event>` inject seams, and
+    // the per-transition native guard (`p.pendingPayloadTag == … && (…)`). The
     // per-machine defs ride in the render context; the per-transition guards
     // ride home on the transition's `native_guard` via a
     // single-language clone (same SSOT guard selection as every backend).

@@ -9,14 +9,14 @@
 // sce-build/tests/fixtures/event_schema/statechart_minimal.scxml
 // (regen: scripts/regen_event_schema_native_go.sh). Because it compiles as
 // part of this package, the generated payload struct, the type-erased
-// `TypedPayload` carrier round-trip, and the per-event `RaiseJobCompleted`
+// `TypedPayload` carrier round-trip, and the per-event `StatechartMinimalRaiseJobCompleted`
 // inject seam are really type-checked.
 //
 // The transition guard `cond="_event.data.elapsed_ms === 0"` lowers to a
 // native `p.pendingPayloadTag == … && (…)` tag-checked field comparison with
 // NO script engine, so the policy is constructed WITHOUT a `ScriptEngine`
 // (the MCU-relevant property: a typed-guard machine links no Lua). The
-// per-event `RaiseJobCompleted` seam binds the event name and the payload
+// per-event `StatechartMinimalRaiseJobCompleted` seam binds the event name and the payload
 // field value in one call.
 
 package statechart_minimal
@@ -39,11 +39,11 @@ func TestTypedPayloadGuardFiresNatively(t *testing.T) {
 	}
 
 	// Per-event typed inject. elapsed_ms == 0 satisfies the native guard.
-	RaiseJobCompleted(engine, 0)
+	StatechartMinimalRaiseJobCompleted(engine, 0)
 	engine.Step()
 
 	if got := engine.GetCurrentState(); got != StatechartMinimalStateDone {
-		t.Fatalf("after RaiseJobCompleted(0): state = %v, want Done "+
+		t.Fatalf("after StatechartMinimalRaiseJobCompleted(0): state = %v, want Done "+
 			"(elapsed_ms == 0 must fire the native typed guard)", got)
 	}
 }
@@ -55,11 +55,11 @@ func TestTypedPayloadGuardMissesOnNonzero(t *testing.T) {
 	engine.Initialize()
 
 	// Same event, a payload the guard rejects — the machine stays put.
-	RaiseJobCompleted(engine, 5)
+	StatechartMinimalRaiseJobCompleted(engine, 5)
 	engine.Step()
 
 	if got := engine.GetCurrentState(); got != StatechartMinimalStateWaiting {
-		t.Fatalf("after RaiseJobCompleted(5): state = %v, want Waiting "+
+		t.Fatalf("after StatechartMinimalRaiseJobCompleted(5): state = %v, want Waiting "+
 			"(elapsed_ms == 5 must leave the machine in waiting)", got)
 	}
 }

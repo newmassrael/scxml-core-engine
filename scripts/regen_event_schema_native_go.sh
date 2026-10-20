@@ -16,8 +16,8 @@
 #
 # The committed SM compiles as part of `go test ./...` in sce-go-tests, so
 # the generated payload struct, the type-erased `TypedPayload` carrier
-# round-trip, and the per-event `RaiseJobCompleted` inject seam are really
-# type-checked; the hand-authored `event_schema_native_test.go` drives the
+# round-trip, and the per-event `StatechartMinimalRaiseJobCompleted` inject
+# seam are really type-checked; the hand-authored `event_schema_native_test.go` drives the
 # native typed guard. The guard `cond="_event.data.elapsed_ms === 0"` lowers
 # to a tag-checked field comparison with NO script engine, so the policy is
 # constructed without a `ScriptEngine` (the MCU-relevant property).

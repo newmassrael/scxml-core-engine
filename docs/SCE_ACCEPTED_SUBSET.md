@@ -7230,7 +7230,7 @@ the Enum document remains the single source of truth.
 sources, and a natively lowered guard reads the same value from either:
 
 - The generated per-event inject seam (`raise_<event>` on Rust and
-  Python, `Raise<Event>` on Go, `raise<Event>` on C++ and Kotlin,
+  Python, `<Machine>Raise<Event>` on Go, `raise<Event>` on C++ and Kotlin,
   `<machine>_raise_<event>_typed` on C11) supplies the typed payload and
   the `_event.data` wire, so a document that also reads
   `_event.data.<field>` through the script engine — an `<assign>`, a

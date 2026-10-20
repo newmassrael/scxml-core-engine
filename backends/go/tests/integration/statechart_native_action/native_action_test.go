@@ -87,7 +87,7 @@ func TestNativeActionDispatchesTypedPayloadToHostInterface(t *testing.T) {
 
 	// Per-event typed inject: deliver `fragment.received` with a bytes payload
 	// and an offset. The transition fires `append_fragment_payload`.
-	RaiseFragmentReceived(s.engine, []byte("abc"), 7)
+	StatechartNativeActionRaiseFragmentReceived(s.engine, []byte("abc"), 7)
 	s.engine.Step()
 
 	if got := s.engine.GetCurrentState(); got != StatechartNativeActionStateAssembling {

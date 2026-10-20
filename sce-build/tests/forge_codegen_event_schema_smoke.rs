@@ -325,9 +325,10 @@ fn statechart_native_lowering_go_emits_engine_free_typed_guard() {
     // extension trait — `Engine` is foreign, so no method can be added) that
     // binds the event name + payload field values in one call, packing them
     // into the type-erased `TypedPayload` carrier AND onto the `Data` wire.
+    // Named by its machine, as a package may hold more than one.
     assert!(
         src.contains(
-            "func RaiseJobCompleted(e *sce.Engine[StatechartMinimalState, StatechartMinimalEvent], elapsed_ms uint32)"
+            "func StatechartMinimalRaiseJobCompleted(e *sce.Engine[StatechartMinimalState, StatechartMinimalEvent], elapsed_ms uint32)"
         ) && src.contains("TypedPayload: StatechartMinimalJobCompletedPayload{"),
         "expected the per-event typed inject seam; got:\n{src}"
     );
@@ -359,6 +360,133 @@ fn statechart_native_lowering_go_emits_engine_free_typed_guard() {
     assert!(
         !src.contains("if _event.data.elapsed_ms === 0 {"),
         "the raw ECMAScript guard must be fully lowered away (not leaked into the else arm)"
+    );
+}
+
+/// The names a Go source declares at package level: each function, type,
+/// variable and constant, in the single and the parenthesised form, and each
+/// method as `Receiver.Method`. `_` and `init` may be declared any number of
+/// times in a package and are left out.
+fn go_package_level_names(src: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    let mut in_block = false;
+    for line in src.lines() {
+        if in_block {
+            if line.starts_with(')') {
+                in_block = false;
+            } else if let Some(entry) = line.strip_prefix('\t') {
+                names.extend(go_leading_identifier(entry));
+            }
+            continue;
+        }
+        if matches!(line, "const (" | "var (" | "type (") {
+            in_block = true;
+        } else if let Some(rest) = line.strip_prefix("func (") {
+            let Some((receiver, after)) = rest.split_once(')') else {
+                continue;
+            };
+            let receiver = receiver
+                .split_whitespace()
+                .last()
+                .unwrap_or_default()
+                .trim_start_matches('*');
+            let receiver = receiver.split('[').next().unwrap_or_default();
+            if let Some(method) = go_leading_identifier(after.trim_start()) {
+                names.push(format!("{receiver}.{method}"));
+            }
+        } else if let Some(rest) = line.strip_prefix("func ") {
+            names.extend(go_leading_identifier(rest).filter(|name| name != "init"));
+        } else if let Some(rest) = ["type ", "var ", "const "]
+            .into_iter()
+            .find_map(|keyword| line.strip_prefix(keyword))
+        {
+            names.extend(go_leading_identifier(rest));
+        }
+    }
+    names
+}
+
+/// The identifier `text` begins with, unless it is the blank one.
+fn go_leading_identifier(text: &str) -> Option<String> {
+    let name: String = text
+        .chars()
+        .take_while(|c| c.is_alphanumeric() || *c == '_')
+        .collect();
+    let first = name.chars().next()?;
+    (name != "_" && !first.is_ascii_digit()).then_some(name)
+}
+
+/// A parent and every child it invokes are generated into one Go package, and
+/// the two may import the same EventSchema: `record_list_parent` guards on four
+/// events of the standard record list it invokes, whose machine guards on them
+/// too. Each machine has a typed inject seam for each of them, and a seam named
+/// by its event alone (`RaiseRecordListEdit`) was declared once by each machine,
+/// so the package did not compile. Every package-level name the package's
+/// machines declare is declared once.
+#[test]
+fn a_go_package_declares_each_name_once_where_a_parent_and_its_child_share_a_schema() {
+    let out_dir = reset_scratch("go_shared_package");
+    let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/static_datamodel/record_list_parent.scxml");
+    let output = Command::new(sce_codegen_bin())
+        .args(["generate", "-l", "go", "-o"])
+        .arg(&out_dir)
+        .args([
+            "--go-module-prefix",
+            "example.com/sce-forge/event-schema-smoke",
+        ])
+        .arg(&fixture)
+        .current_dir(repo_root())
+        .output()
+        .expect("spawn sce-codegen");
+    assert!(
+        output.status.success(),
+        "sce-codegen generate -l go record_list_parent failed (exit {:?})\nstderr: {}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stderr),
+    );
+
+    let machines: Vec<PathBuf> = find_by_ext(&out_dir, "go")
+        .into_iter()
+        .filter(|path| path.to_string_lossy().ends_with("_sm.go"))
+        .collect();
+    let file_names: Vec<String> = machines
+        .iter()
+        .map(|path| path.file_name().unwrap().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(
+        file_names,
+        [
+            "record_list_parent__sce_synth_invoke__list_sm.go",
+            "record_list_parent_sm.go"
+        ],
+        "the parent and its in-line child are generated into one package"
+    );
+
+    let mut declared: std::collections::BTreeMap<String, Vec<String>> =
+        std::collections::BTreeMap::new();
+    for (path, file_name) in machines.iter().zip(&file_names) {
+        let src = std::fs::read_to_string(path).expect("read go");
+        let names = go_package_level_names(&src);
+        // The shared event's seam is there in each machine, so the check below
+        // reads the declarations that collided rather than a file it misread.
+        assert!(
+            names
+                .iter()
+                .any(|name| name.ends_with("RaiseRecordListEdit")),
+            "{file_name} declares no inject seam for `record_list.edit`: {names:?}"
+        );
+        for name in names {
+            declared.entry(name).or_default().push(file_name.clone());
+        }
+    }
+    let twice: Vec<(&String, &Vec<String>)> = declared
+        .iter()
+        .filter(|(_, files)| files.len() > 1)
+        .collect();
+    assert!(
+        twice.is_empty(),
+        "names declared more than once in the package: {twice:?}"
     );
 }
 

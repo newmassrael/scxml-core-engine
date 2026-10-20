@@ -15,9 +15,9 @@ import (
 //
 // NL→IR Item C1 Path A gives a schema'd event a typed payload that the
 // natively lowered guards read. One producer fills it: the generated
-// `Raise<Event>` inject seam. Every other producer — `<send>` with `<param>`,
-// namelist or `<content>`, an invoke forwarding an event either way,
-// autoforward, BasicHTTP, mesh — fills `EventMetadata.Data`, the wire W3C
+// `<Machine>Raise<Event>` inject seam. Every other producer — `<send>` with
+// `<param>`, namelist or `<content>`, an invoke forwarding an event either
+// way, autoforward, BasicHTTP, mesh — fills `EventMetadata.Data`, the wire W3C
 // SCXML 5.10 describes and §scxml-B-2-8-1 reads.
 //
 // Until this file the two never met, so the same guard answered differently

@@ -11,7 +11,7 @@
 // (regen: scripts/regen_event_schema_native_go.sh).
 //
 // A schema'd event's typed payload is filled by ONE producer: the generated
-// `RaiseJobCompleted` seam. Every other producer — `<send>` with `<param>`, an
+// `StatechartLiftedRaiseJobCompleted` seam. Every other producer — `<send>` with `<param>`, an
 // invoke forwarding an event either way, autoforward, BasicHTTP, mesh — fills
 // `EventMetadata.Data`, and until 2026-09-22 a natively lowered guard could
 // read nothing but the typed carrier. The same guard therefore answered
@@ -71,7 +71,7 @@ func TestPayloadOnTheDataWireFiresTheSameGuard(t *testing.T) {
 func TestInjectSeamStillFiresItsOwnGuard(t *testing.T) {
 	engine, _ := newLifted(t)
 
-	RaiseJobCompleted(engine, 0)
+	StatechartLiftedRaiseJobCompleted(engine, 0)
 	engine.Step()
 
 	if got := engine.GetCurrentState(); got != StatechartLiftedStateDone {

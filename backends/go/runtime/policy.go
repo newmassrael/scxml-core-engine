@@ -292,7 +292,7 @@ type StatePolicy[S comparable, E comparable] interface {
 	// guards read (NL→IR Item C1 Path A), for the event being dequeued.
 	//
 	// The typed carrier `PopulateEventMetadata` reads is filled by ONE
-	// producer: the generated `Raise<Event>` inject seam. Every other producer
+	// producer: the generated `<Machine>Raise<Event>` inject seam. Every other producer
 	// fills `EventMetadata.Data`, so the fields are lifted out of that here and
 	// the same guard answers the same way whichever producer sent the event —
 	// including one on the far side of an invoke boundary.

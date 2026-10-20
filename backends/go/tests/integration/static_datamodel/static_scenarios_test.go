@@ -1206,7 +1206,7 @@ func TestAHostThatWritesIntoTheBytesItRaisedAnEventWithChangesNothingOfTheMachin
 	engine.Initialize()
 
 	toVariable := []byte("wxyz")
-	static_payload_bytes.RaiseFramedTaken(engine, 100, toVariable)
+	static_payload_bytes.StaticPayloadBytesRaiseFramedTaken(engine, 100, toVariable)
 	engine.Step()
 	toVariable[0] = 'X'
 	if got := sce.BytesAsPayloadText(policy.Held()); got != "wxyz" {
@@ -1214,7 +1214,7 @@ func TestAHostThatWritesIntoTheBytesItRaisedAnEventWithChangesNothingOfTheMachin
 	}
 
 	toField := []byte("abcd")
-	static_payload_bytes.RaiseFramedTaken(engine, 7, toField)
+	static_payload_bytes.StaticPayloadBytesRaiseFramedTaken(engine, 7, toField)
 	engine.Step()
 	toField[0] = 'X'
 	if got := sce.BytesAsPayloadText(policy.Last().Frame()); got != "abcd" {
@@ -1222,7 +1222,7 @@ func TestAHostThatWritesIntoTheBytesItRaisedAnEventWithChangesNothingOfTheMachin
 	}
 
 	whole := []byte("whole")
-	static_payload_bytes.RaiseFramedTaken(engine, 200, whole)
+	static_payload_bytes.StaticPayloadBytesRaiseFramedTaken(engine, 200, whole)
 	engine.Step()
 	whole[0] = 'X'
 	if got := sce.BytesAsPayloadText(policy.Last().Frame()); got != "whole" {
