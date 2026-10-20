@@ -27,7 +27,12 @@ needs_pack = unittest.skipUnless(PACK_PRESENT, "the pack pypdfium2 is not instal
 
 
 def build_pdf(pages: list[dict]) -> bytes:
-    """A PDF of `pages`, each `{"lines": [(x, y, size, text)], "images": n, "size": (w, h)}`."""
+    """A PDF of `pages`, each `{"lines": [(x, y, size, text)], "images": n, "size": (w, h)}`.
+
+    `images` is a count of one-pixel gray images in a row, or a list of `{"at": (x, y, w, h), "pixels":
+    (columns, rows), "space": "DeviceRGB", "data": bytes}` placed where `at` says, in points from the
+    bottom-left corner. A list gives each image its own bytes, and so its own identity.
+    """
     objects: list[bytes] = []
 
     def add(body: bytes) -> int:
@@ -47,14 +52,30 @@ def build_pdf(pages: list[dict]) -> bytes:
         content = "".join(
             f"BT /F1 {size} Tf {x} {y} Td ({text}) Tj ET\n" for x, y, size, text in page.get("lines", [])
         )
-        content += "".join(f"q 40 0 0 40 {100 + 60 * i} 300 cm /Im1 Do Q\n" for i in range(page.get("images", 0)))
+        drawn = page.get("images", 0)
+        names = {"Im1": image}
+        if isinstance(drawn, int):
+            content += "".join(f"q 40 0 0 40 {100 + 60 * i} 300 cm /Im1 Do Q\n" for i in range(drawn))
+        else:
+            for i, spec in enumerate(drawn, 1):
+                columns, rows = spec["pixels"]
+                names[f"Im{i + 1}"] = add(
+                    b"<< /Type /XObject /Subtype /Image /Width %d /Height %d /ColorSpace /%s "
+                    b"/BitsPerComponent 8 /Length %d >>\nstream\n"
+                    % (columns, rows, spec["space"].encode(), len(spec["data"]))
+                    + spec["data"]
+                    + b"\nendstream"
+                )
+                x, y, w, h = spec["at"]
+                content += f"q {w} 0 0 {h} {x} {y} cm /Im{i + 1} Do Q\n"
         data = content.encode("latin-1")
         stream = add(b"<< /Length %d >>\nstream\n" % len(data) + data + b"endstream")
+        xobjects = " ".join(f"/{name} {number} 0 R" for name, number in names.items())
         kids.append(
             add(
                 b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 %d %d] "
-                b"/Resources << /Font << /F1 %d 0 R >> /XObject << /Im1 %d 0 R >> >> /Contents %d 0 R >>"
-                % (width, height, font, image, stream)
+                b"/Resources << /Font << /F1 %d 0 R >> /XObject << %s >> >> /Contents %d 0 R >>"
+                % (width, height, font, xobjects.encode(), stream)
             )
         )
     objects[0] = b"<< /Type /Catalog /Pages 2 0 R >>"
@@ -434,15 +455,14 @@ class PagesArePlacedAndAPageWithNoTextIsSaid(Folder):
 
 @needs_pack
 class WhatIsNotCarriedIsAlwaysSaid(Folder):
-    def test_a_picture_is_counted_with_its_pages_and_not_placed(self):
-        pages = [{"lines": [(72, 700, 11, "See below.")], "images": 2}, {"lines": [(72, 700, 11, "Next.")]}]
+    def test_a_drawing_that_is_not_an_image_is_never_claimed_to_be_placed(self):
+        # A diagram drawn with strokes is no image object, and the extraction cannot tell whether a page
+        # holds one, so it says so for every document with text.
+        done = builtin().extract(self.pdf([{"lines": LAMP}]))
 
-        done = builtin().extract(self.pdf(pages))
-
-        entry = next(n for n in done.not_carried if "picture" in n.what)
-        self.assertEqual(entry.count, 2)
-        self.assertIn("page(s) 1", entry.what)
-        self.assertEqual([b.kind for b in done.blocks], ["paragraph", "paragraph"])
+        drawings = [n for n in done.not_carried if "drawings" in n.what]
+        self.assertEqual(len(drawings), 1)
+        self.assertIn("not an image object", drawings[0].why)
 
     def test_the_layout_is_never_claimed_to_be_recovered(self):
         # A table comes out as lines. The extraction says so for every document with text, whether or

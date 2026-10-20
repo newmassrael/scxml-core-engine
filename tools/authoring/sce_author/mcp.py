@@ -2995,7 +2995,7 @@ def _picture_tool(args: dict) -> dict:
         said = "; ".join(f"{path}: {', '.join(names) or 'none'}" for path, names in held.items())
         return _failure(
             f"no specification file holds a picture named {wanted!r}."
-            + (f" The word documents hold: {said}." if said else
+            + (f" The documents hold: {said}." if said else
                " A plain-text specification names a picture that is the file of that name beside it."))
     blocks: list[dict] = []
     for one in found:

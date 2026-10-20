@@ -208,8 +208,12 @@ of many pages), as step 6 says. In order:
   passes, as above; the others declare nothing until theirs do.
 - **The import reads what the owner marked**, in the import's own step, and the screen gives a figure a third
   state beside chosen and left out.
-- **A picture in a PDF** next: its reader makes no figure blocks yet, and the rendition of ADR 0032 is what is
-  handed over.
+- **A picture in a PDF** (landed): an image object a page holds is a figure block named by its page and place
+  (`page-0003-image-02.png`) and by the hash of the bytes the document stores for it, and what is handed over
+  is a PNG drawn from its decoded samples (`pdf_pictures.py`). The picture is drawn from the document each time
+  it is read, so the bundle keeps no rendition member for it yet; the hash a reading records is of the PNG
+  that was handed over, and a rendition stored at import (ADR 0032) is the step that follows. A drawing made
+  of strokes is not an image object and is not placed; the extraction says so.
 
 ## Alternatives rejected
 

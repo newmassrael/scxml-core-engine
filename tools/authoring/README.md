@@ -2158,10 +2158,14 @@ pypdfium2`; not a dependency of this package, and without it the registry says s
 the box it sits in, so a block is placed by its page and an exact box (points from the top-left of the
 page). It gathers lines into paragraphs, headings and list items by their own spacing and type size,
 and it says what it does not do on every document: **it does not recover a table's cells** (a decision
-table read as lines loses which value goes with which condition), does not place pictures (it counts
-them) and does not untangle columns. A page that carries no text is listed by number and is not read as
-an empty page: reading pixels is a reader's work (`docs/adr/0035`). A file or page count past the
-limits, and a page larger than any sheet, is refused with its numbers.
+table read as lines loses which value goes with which condition), does not place drawings made of lines
+and shapes and does not untangle columns. An image a page holds is a figure block at its box, named
+`page-0003-image-02.png` after its page and its place among that page's images and carrying the hash of
+the bytes the document stores for it; `picture` and `prepare-reading` draw it as PNG from the samples the
+document holds, so a PDF's pictures are read the way a word document's are (`pdf_pictures.py`). A page
+that carries no text is listed by number and is not read as an empty page: reading pixels is a reader's
+work (`docs/adr/0035`). A file or page count past the limits, and a page larger than any sheet, is
+refused with its numbers.
 
 ### What "precision" means here, and where it can actually go wrong
 

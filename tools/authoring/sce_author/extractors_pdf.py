@@ -14,8 +14,13 @@ own geometry: lines that follow each other closely at one margin and one size ar
 set clearly larger than the page's body text is a heading, and a line that begins as a list item is one.
 The order is the one the document's text is in. It does not recover a table's cells (a table comes out as
 its lines, and a decision table read as lines loses which value goes with which condition, which is why
-the extraction always says so), does not place pictures and drawings (it counts them), and does not
-untangle columns. Each of those is an entry in what was not carried.
+the extraction always says so), does not place drawings made of lines and shapes, and does not untangle
+columns. Each of those is an entry in what was not carried.
+
+**A picture is a figure.** Each image object a page holds is a figure block at the box it is drawn in,
+named `page-0003-image-02.png` after its page and its place among that page's images and carrying the hash of
+the bytes the document stores for it (`pdf_pictures.py`). Reading its pixels is a reader's work and is asked
+for by the owner (ADR 0036); the picture a client is shown is drawn from the document when it is read.
 
 **Limits are refused before the file is read.** A file or a page count past the limits below, and a page
 larger than any sheet that is printed, is refused with its numbers. ADR 0035 runs reading in a jail with a
@@ -29,12 +34,13 @@ import pathlib
 import re
 from dataclasses import dataclass
 
+from . import pdf_pictures
 from .errors import READ_ERRORS, IngestError
 from .extraction import Block, Extraction, NotCarried, Place
 from .extractor_contract import Declaration
 
 NAME = "pdf-text"
-VERSION = "1"
+VERSION = "2"
 PACK = "pdf-text"
 MODULES = ("pypdfium2",)
 
@@ -54,6 +60,9 @@ MAX_BYTES = 200 * 1024 * 1024
 MAX_PAGES = 5000
 # The longest side of a page, in points: the PDF format's own ceiling is 14400.
 MAX_PAGE_POINTS = 14400
+# The most images of one page that become figures. A drawing exported as thousands of image strips is not
+# thousands of pictures a person can decide about; the rest are counted by page and not placed.
+MAX_PICTURES_PER_PAGE = 200
 
 # A line closer than this many line heights to the one before belongs to the same paragraph.
 PARAGRAPH_GAP = 0.8
@@ -97,6 +106,16 @@ class Line:
     # The type size the line is set in, which is what the document says and not what its letters
     # happen to reach: the box of a line of capitals is taller than the box of one without ascenders.
     size: float
+
+
+@dataclass
+class Figure:
+    """One image object of a page: its name, its box from the page's top-left corner in points, and the hash
+    of what the document stores for it (`None` when that could not be read)."""
+
+    name: str
+    box: tuple[float, float, float, float]
+    identity: str | None
 
 
 def _listed(numbers: list[int]) -> str:
@@ -295,8 +314,9 @@ class PdfTextExtractor:
             raise IngestError(f"{path}: a PDF with no pages says nothing, which is not the same as a clean read")
         pages: list[tuple[int, list[list[Line]], list[Line]]] = []
         blank: list[int] = []
-        pictured: list[int] = []
-        pictures = 0
+        figures: dict[int, list[Figure]] = {}
+        crowded: list[int] = []
+        unplaced = unidentified = 0
         for number in range(1, count + 1):
             page = document[number - 1]
             try:
@@ -311,12 +331,19 @@ class PdfTextExtractor:
                     lines = _page_lines(textpage, height, pdfium.raw)
                 finally:
                     textpage.close()
-                here = sum(1 for _ in page.get_objects(filter=[pdfium.raw.FPDF_PAGEOBJ_IMAGE]))
+                images = pdf_pictures.images_of(page, pdfium)
+                for ordinal, image in enumerate(images[:MAX_PICTURES_PER_PAGE], 1):
+                    identity = pdf_pictures.identity_of(image)
+                    if identity is None:
+                        unidentified += 1
+                    figures.setdefault(number, []).append(
+                        Figure(pdf_pictures.picture_name(number, ordinal), pdf_pictures.box_of(image, height), identity)
+                    )
             finally:
                 page.close()
-            if here:
-                pictured.append(number)
-                pictures += here
+            if len(images) > MAX_PICTURES_PER_PAGE:
+                crowded.append(number)
+                unplaced += len(images) - MAX_PICTURES_PER_PAGE
             if lines:
                 pages.append((number, _group(lines), lines))
             else:
@@ -334,8 +361,26 @@ class PdfTextExtractor:
         member = path.name
         larger = [s for s in sizes if s >= HEADING_RATIO * body]
         base = _numbering_base(pages, body, larger)
-        for number, groups, lines in pages:
-            for group in groups:
+        grouped = {number: groups for number, groups, _ in pages}
+        for number in sorted(grouped.keys() | figures.keys()):
+            ahead = sorted(figures.get(number, []), key=lambda figure: figure.box[1])
+            # A figure sits before the first paragraph that begins below its top, and the rest after the last.
+            for group in [*grouped.get(number, []), None]:
+                below = _box(group)[1] if group is not None else float("inf")
+                while ahead and ahead[0].box[1] < below:
+                    figure = ahead.pop(0)
+                    ordinal = len(blocks) + 1
+                    blocks.append(
+                        Block(
+                            id=f"b{ordinal:04d}",
+                            kind="figure",
+                            text=f"[picture: {figure.name}]",
+                            place=Place(member, ordinal=ordinal, page=number, box=figure.box, precision="exact"),
+                            picture=figure.identity,
+                        )
+                    )
+                if group is None:
+                    break
                 text = " ".join(l.text for l in group)
                 tall = group[0].size >= HEADING_RATIO * body and len(group) == 1
                 kind, extra = "paragraph", {}
@@ -368,16 +413,26 @@ class PdfTextExtractor:
             carried.append(
                 NotCarried(
                     f"{len(blank)} of {count} page(s) carry no text: {_listed(blank)}",
-                    "each is a picture or empty, and reading pixels is a reader's work, not this extractor's",
+                    "each is a picture or empty, and reading pixels is a reader's work, not this extractor's; "
+                    "an image on it is a figure, and a drawing of lines and shapes is not placed",
                     len(blank),
                 )
             )
-        if pictures:
+        if unplaced:
             carried.append(
                 NotCarried(
-                    f"{pictures} picture(s) on page(s) {_listed(pictured)}",
-                    "counted and not placed or read; a picture is not text",
-                    pictures,
+                    f"{unplaced} picture(s) past the {MAX_PICTURES_PER_PAGE} a page places, on page(s) {_listed(crowded)}",
+                    "counted and not placed as figures; a page of that many images is a drawing cut into strips "
+                    "and not that many pictures a person can decide about",
+                    unplaced,
+                )
+            )
+        if unidentified:
+            carried.append(
+                NotCarried(
+                    f"{unidentified} picture(s) whose stored bytes could not be read",
+                    "each is a figure that names no picture by hash, so a reading cannot tell it from another",
+                    unidentified,
                 )
             )
         if pages:
@@ -387,6 +442,13 @@ class PdfTextExtractor:
                     "lines are read in the order the document's text is in and gathered by their own spacing; "
                     "a table comes out as its lines and its cells are not recovered, so a value may be "
                     "separated from the condition it goes with",
+                )
+            )
+            carried.append(
+                NotCarried(
+                    "drawings of lines and shapes: a diagram that is not an image",
+                    "only an image the page holds is placed as a figure; a drawing made of strokes is not an "
+                    "image object, so a page can show one that this extraction does not mention",
                 )
             )
         if not blocks and not blank:

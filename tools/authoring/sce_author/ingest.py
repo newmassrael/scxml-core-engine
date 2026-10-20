@@ -56,6 +56,7 @@ class Ingested:
 
 
 from .errors import READ_ERRORS, IngestError, PictureTooLarge, describe_path  # noqa: E402,F401
+from . import pdf_pictures  # noqa: E402
 
 
 # ---------------------------------------------------------------- plain text
@@ -1325,6 +1326,9 @@ class PictureFile:
     name: str  # the NAME of its `[picture: NAME]` mark
     mime: str | None  # None: a format that cannot be shown (a metafile, a bitmap)
     data: bytes
+    # What a figure block names the picture by when that is not the hash of `data`: a picture in a PDF is
+    # drawn from an image object, and the extraction names the object's stored bytes (`pdf_pictures.py`).
+    identity: str | None = None
 
 
 def _plain_name(name: str) -> str:
@@ -1360,6 +1364,17 @@ def read_pictures(paths: Iterable[pathlib.Path], name: str,
         path = pathlib.Path(given)
         if not path.is_file():
             raise IngestError(describe_path(path))
+        if path.suffix.lower() == ".pdf":
+            drawn = pdf_pictures.draw_named(path, name)
+            if drawn is None:
+                continue
+            if drawn.png is not None and len(drawn.png) > limit:
+                raise PictureTooLarge(
+                    f"{path}: the picture {name} is {len(drawn.png)} bytes drawn and the most handed over is "
+                    f"{limit}. Open it from the document itself.")
+            found.append(PictureFile(path, name, "image/png" if drawn.png else None, drawn.png or b"",
+                                     drawn.identity))
+            continue
         if path.suffix.lower() == ".docx":
             try:
                 with zipfile.ZipFile(path) as zf:
@@ -1390,13 +1405,16 @@ def read_pictures(paths: Iterable[pathlib.Path], name: str,
 
 
 def picture_names_held(paths: Iterable[pathlib.Path]) -> dict[pathlib.Path, list[str]]:
-    """The pictures each WORD document holds, by name, for saying what could have been asked for.
+    """The pictures each WORD document or PDF holds, by name, for saying what could have been asked for.
 
     A plain-text file holds none by itself (its pictures are files beside it), so it has no entry.
     """
     held: dict[pathlib.Path, list[str]] = {}
     for given in paths:
         path = pathlib.Path(given)
+        if path.suffix.lower() == ".pdf" and path.is_file():
+            held[path] = pdf_pictures.names_in(path)
+            continue
         if path.suffix.lower() != ".docx" or not path.is_file():
             continue
         try:

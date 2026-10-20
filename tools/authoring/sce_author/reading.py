@@ -237,7 +237,7 @@ def units_for(
                                        picture=name))
                 continue
             seen = Seen(name, hashlib.sha256(picture.data).hexdigest(), picture.mime)
-            if block.picture is not None and block.picture != seen.sha256:
+            if block.picture is not None and block.picture != (picture.identity or seen.sha256):
                 # The extraction names the picture it read by hash (ADR 0032): a document whose picture of
                 # that name is another one is not the document the extraction was read from.
                 refused.append(Refused(block_id, OTHER_PICTURE, "the document's picture by this name is not the "

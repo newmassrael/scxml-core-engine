@@ -90,7 +90,7 @@ def cmd_picture(args) -> int:
         held = picture_names_held(paths)
         said = "; ".join(f"{path}: {', '.join(names) or 'none'}" for path, names in held.items())
         raise IngestError(f"no specification file holds a picture named {args.name!r}."
-                          + (f" The word documents hold: {said}." if said else ""))
+                          + (f" The documents hold: {said}." if said else ""))
     if len(found) > 1:
         raise IngestError(f"{len(found)} specification files hold a picture named {args.name!r} "
                           f"({', '.join(str(one.source) for one in found)}); name one file in --prose")
