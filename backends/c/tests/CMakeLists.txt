@@ -3012,6 +3012,17 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         )
     endforeach()
 
+    # A child session that talks to a Mesh peer is given a router of its own by
+    # its parent (SCE_MESH.md, Child Sessions in Mesh): `static_child_mesh` starts
+    # an inline child that sends to `#server`, and a hybrid candidate,
+    # `static_mesh_relay`, whose own inline child does. Generated once and used
+    # by two executables: the scenarios below, and the cases of a child given no
+    # router further down.
+    sce_generate_static_integration_c_test(static_child_mesh
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_child_mesh.scxml"
+    )
+
     # A machine with a `<history>` and a `<parallel>`: what its history brought
     # back is read from the machine's whole active configuration.
     sce_generate_static_integration_c_test(static_history
@@ -3050,6 +3061,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_host_duty_SOURCES}
         ${INTEGRATION_C_TEST_static_child_host_SOURCES}
         ${INTEGRATION_C_TEST_static_child_host_hybrid_SOURCES}
+        ${INTEGRATION_C_TEST_static_child_mesh_SOURCES}
         ${INTEGRATION_C_TEST_static_invoke_SOURCES}
         ${INTEGRATION_C_TEST_static_invoke_params_SOURCES}
         ${INTEGRATION_C_TEST_static_invoke_string_SOURCES}
@@ -3364,6 +3376,33 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         COMMAND sce_c_integration_static_child_host
     )
     set_tests_properties(c11_integration_static_child_host PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
+    # The cases of the Mesh router a child is given, beyond what its scenario
+    # says: a child given none has its peer send refused, and the machine's own
+    # router is never asked; each start asks the factory and each end detaches.
+    add_executable(sce_c_integration_static_child_mesh
+        integration/test_static_child_mesh.c
+        ${INTEGRATION_C_TEST_static_child_mesh_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_static_child_mesh PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base
+    )
+    target_include_directories(sce_c_integration_static_child_mesh PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
+    )
+    set_target_properties(sce_c_integration_static_child_mesh PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_static_child_mesh
+        COMMAND sce_c_integration_static_child_mesh
+    )
+    set_tests_properties(c11_integration_static_child_mesh PROPERTIES
         TIMEOUT 30
         LABELS "integration;c11;aot"
     )

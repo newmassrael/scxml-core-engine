@@ -724,6 +724,22 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
 {{ invoke_seed_child(invoke_info, invoke_info, "sm->child_" ~ invoke_info.field_suffix ~ ".L", model, csym_prefix, se) }}
             {% if invoke_info.child_is_static %}
 {{ seed_static_child('sm->child_' ~ invoke_info.field_suffix, invoke_info.params, [], model, csym_prefix) }}
+{% if model.host_processor_types %}
+            {
+                /* SCE_MESH.md, Child Sessions in Mesh: the child's router,
+                   asked of this machine's factory with the invoke's id and the
+                   stem of the child's document (empty for one written inline),
+                   and installed before the child is entered, since its first
+                   `<onentry>` may already send to a peer. */
+                sce_child_mesh_router_t _mesh_router;
+                const sce_child_mesh_router_t *_mesh = sce_child_mesh_routers_ask(
+                    &sm->host_processors.child_mesh_routers, "{{ invoke_info.invoke_id | escape_c }}",
+                    "{% if not invoke_info.src.startswith('#') %}{{ invoke_info.child_name | escape_c }}{% endif %}", &_mesh_router);
+                if (_mesh != NULL) {
+                    {{ csym_prefix }}{{ invoke_info.child_name }}_install_mesh_router(&sm->child_{{ invoke_info.field_suffix }}, _mesh);
+                }
+            }
+{% endif %}
             {{ csym_prefix }}{{ invoke_info.child_name }}_invoked_enter(&sm->child_{{ invoke_info.field_suffix }});
             {% endif %}
             /* W3C SCXML 6.4: drive the child's deferred main event loop
@@ -943,6 +959,20 @@ sce_copy_bounded_id(_done_evt.name, "done.invoke.{{ invoke_info.invoke_id | esca
 {{ invoke_seed_child(invoke_info, candidate, "sm->child_" ~ invoke_info.field_suffix ~ "_" ~ candidate.stem ~ ".L", model, csym_prefix, se) }}
 {% if candidate.child_is_static %}
 {{ seed_static_child("sm->child_" ~ invoke_info.field_suffix ~ "_" ~ candidate.stem, candidate.seeds, candidate.unkept, model, csym_prefix) }}
+{% if model.host_processor_types %}
+                {
+                    /* SCE_MESH.md, Child Sessions in Mesh: the router of the
+                       candidate this start chose, asked with its stem and
+                       installed before it is entered. */
+                    sce_child_mesh_router_t _mesh_router;
+                    const sce_child_mesh_router_t *_mesh = sce_child_mesh_routers_ask(
+                        &sm->host_processors.child_mesh_routers, "{{ invoke_info.invoke_id | escape_c }}",
+                        "{{ candidate.stem | escape_c }}", &_mesh_router);
+                    if (_mesh != NULL) {
+                        {{ csym_prefix }}{{ candidate.stem }}_install_mesh_router(&sm->child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}, _mesh);
+                    }
+                }
+{% endif %}
                 {{ csym_prefix }}{{ candidate.stem }}_invoked_enter(&sm->child_{{ invoke_info.field_suffix }}_{{ candidate.stem }});
                 /* The macrostep that follows the entry walk, now that the values
                    are in and parent routing is live: a candidate that ends on
@@ -1056,6 +1086,11 @@ static void {{ csym_prefix }}{{ model.name }}_drive_active_children({{ csym_pref
 {% set slot = ('child_' ~ invoke_info.field_suffix ~ '_' ~ target.stem) if invoke_info.candidates else ('child_' ~ invoke_info.field_suffix) %}
     if (sm->{{ slot }}_active
         && !{{ csym_prefix }}{{ target.stem }}_is_in_final_state(&sm->{{ slot }})) {
+{% if target.child_is_static is defined and target.child_is_static %}
+        /* SCE_MESH.md, Child Sessions in Mesh: what arrived for the child on
+           the router it was given, before its macrostep. */
+        {{ csym_prefix }}{{ target.stem }}_apply_mesh_calls(&sm->{{ slot }});
+{% endif %}
 {% if target.child_needs_event_scheduler %}
         /* §scxml-6.2: the candidate carries `<send delay>` in its own session,
            so its `_tick` promotes the elapsed events and runs a macrostep;
@@ -1089,6 +1124,11 @@ sce_copy_bounded_id(_done_evt.name, "done.invoke.{{ invoke_info.invoke_id | esca
     {% for invoke_info in state.invokes | scxml %}
     if (sm->child_{{ invoke_info.field_suffix }}_active
         && !{{ csym_prefix }}{{ invoke_info.child_name }}_is_in_final_state(&sm->child_{{ invoke_info.field_suffix }})) {
+        {% if invoke_info.child_is_static %}
+        /* SCE_MESH.md, Child Sessions in Mesh: what arrived for the child on
+           the router it was given, before its macrostep. */
+        {{ csym_prefix }}{{ invoke_info.child_name }}_apply_mesh_calls(&sm->child_{{ invoke_info.field_suffix }});
+        {% endif %}
         {% if invoke_info.child_needs_event_scheduler %}
         /* W3C SCXML 6.2 (test207): the child carries `<send delay>`
            in its own session, so call its `_tick` (which promotes
@@ -1100,6 +1140,11 @@ sce_copy_bounded_id(_done_evt.name, "done.invoke.{{ invoke_info.invoke_id | esca
         {{ csym_prefix }}{{ invoke_info.child_name }}_step(&sm->child_{{ invoke_info.field_suffix }});
         {% endif %}
         if ({{ csym_prefix }}{{ invoke_info.child_name }}_is_in_final_state(&sm->child_{{ invoke_info.field_suffix }})) {
+            {% if invoke_info.child_is_static %}
+            /* SCE_MESH.md, Child Sessions in Mesh: the session ended; its
+               router is told so. */
+            {{ csym_prefix }}{{ invoke_info.child_name }}_detach_mesh(&sm->child_{{ invoke_info.field_suffix }});
+            {% endif %}
             /* W3C SCXML 6.4 / 6.3.1: child completed asynchronously
                (post-init parent→child message drove it to <final>).
                Raise done.invoke with the spawn-time invoke_id stamped

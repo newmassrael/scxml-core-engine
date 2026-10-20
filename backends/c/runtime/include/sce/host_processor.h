@@ -246,9 +246,33 @@ typedef struct sce_host_processor_entry_s {
  * `SCE_MAX_HOST_PROCESSORS * (SCE_MAX_ID_LEN + 2 pointers)` to every
  * generated struct in the corpus.
  */
+/* The router a child session is given by its parent; defined with the
+   invoker types below, which it carries. */
+struct sce_child_mesh_router_s;
+
+/**
+ * The factory of the routers of a machine's children (SCE_MESH.md, Child
+ * Sessions in Mesh; docs/adr/0043): asked, each time an invocation starts a
+ * child, with the invoke's id and the stem of the child's document (empty for a
+ * child written inline). It fills `out` and answers true to give the child a
+ * router, or answers false to leave the child with none, whose peer sends then
+ * raise `error.execution` in the child.
+ */
+typedef bool (*sce_child_mesh_routers_fn)(void *user_data, const char *invoke_id, const char *document,
+                                          struct sce_child_mesh_router_s *out);
+
+/** A registered factory of children's routers and the pointer it is called with. */
+typedef struct sce_child_mesh_routers_s {
+    sce_child_mesh_routers_fn ask;
+    void *user_data;
+} sce_child_mesh_routers_t;
+
 typedef struct sce_host_processor_registry_s {
     sce_host_processor_entry_t entries[SCE_MAX_HOST_PROCESSORS];
     int count;
+    /* The factory of the routers of the machine's children, beside the router
+       the machine's own sends reach: `sce_host_registry_register_child_mesh_routers`. */
+    sce_child_mesh_routers_t child_mesh_routers;
 } sce_host_processor_registry_t;
 
 /**
@@ -371,6 +395,25 @@ static inline bool sce_host_registry_register(sce_host_processor_registry_t *reg
 static inline bool sce_host_registry_register_mesh_router(sce_host_processor_registry_t *registry,
                                                           sce_host_send_handler_fn router, void *user_data) {
     return sce_host_registry_put(registry, SCE_MESH_PROCESSOR_TYPE, router, user_data);
+}
+
+/**
+ * Register the factory of the routers of the machine's children (SCE_MESH.md,
+ * Child Sessions in Mesh; docs/adr/0043). A child session is given none of the
+ * machine's registrations, since its peer sends would leave under the
+ * machine's name; the generated parent asks `ask` each time an invocation
+ * starts a child, and installs what it answers on the child before the child is
+ * entered. Registered in the registry the machine is started with, so the
+ * children of its initial configuration, started by `_init`, are asked too.
+ */
+static inline bool sce_host_registry_register_child_mesh_routers(sce_host_processor_registry_t *registry,
+                                                                 sce_child_mesh_routers_fn ask, void *user_data) {
+    if (registry == NULL) {
+        return false;
+    }
+    registry->child_mesh_routers.ask = ask;
+    registry->child_mesh_routers.user_data = user_data;
+    return true;
 }
 
 /** The entry serving `type`, or NULL when nothing is registered. */
@@ -804,6 +847,79 @@ static inline bool sce_host_invocation_take_token(sce_host_invocation_set_t *set
     }
     sce_host_invocation_remove_(set, i);
     return true;
+}
+
+/* ── The Mesh router a child session is given by its parent ─────── */
+/*
+ * SCE_MESH.md, Child Sessions in Mesh (docs/adr/0043). The C11 port of the
+ * Rust runtime's `ChildMeshRouter` and `MeshCall`: a table of functions and the
+ * pointer they are called with, since the freestanding profile has no trait
+ * objects, and a tagged struct for a call, since C has no sum type.
+ */
+
+/** `_event.origin` of a Mesh-delivered event is this scheme and the sending
+    machine's name (SCE_MESH.md §mesh-10.7). */
+#define SCE_MESH_ORIGIN_SCHEME "mesh://"
+
+/** Which of a `sce_mesh_call_t`'s two shapes it is. */
+typedef enum sce_mesh_call_kind_e {
+    /* Raise `name` on the external queue with `data`, `send_id`, `origin`
+       (the sending machine's name, which the origin scheme leads) and the
+       SCXML processor as origin type. */
+    SCE_MESH_CALL_RAISE = 0,
+    /* End the start `token` of the Mesh request `invoke_id` — with
+       `done.invoke`, or with `error.invoke` when `failed` — carrying `data`;
+       `source` is the machine that answered, empty for a deadline the
+       requester reached itself. */
+    SCE_MESH_CALL_END_INVOKE = 1
+} sce_mesh_call_kind_t;
+
+/** One thing a Mesh endpoint has for the machine it serves. */
+typedef struct sce_mesh_call_s {
+    sce_mesh_call_kind_t kind;
+    char name[SCE_MAX_ID_LEN];
+    char data[SCE_MAX_DATA_LEN];
+    char send_id[SCE_MAX_ID_LEN];
+    char source[SCE_MAX_ID_LEN];
+    char invoke_id[SCE_MAX_ID_LEN];
+    uint64_t token;
+    bool failed;
+} sce_mesh_call_t;
+
+/**
+ * The Mesh router a child session is given by its parent: the child's
+ * endpoint attached to that one session.
+ *
+ * What a host installs on a machine it starts, the parent installs on the
+ * child it starts, before the child is entered: the child's
+ * `<send type="sce:mesh">` goes to `send` and its `<invoke type="sce:mesh-rpc">`
+ * to `invoke` (NULL for a router that serves no request). What arrives for the
+ * child waits in the router until the parent drives the child, which takes it
+ * one call at a time with `take_call` (true while one waits) before the
+ * child's macrostep. When the session ends the parent says so with `detach`,
+ * once, after the child has stopped. `child_router` answers for the child's own
+ * children, as the parent's factory is asked (NULL for none).
+ */
+typedef struct sce_child_mesh_router_s {
+    void *user_data;
+    sce_host_send_handler_fn send;
+    sce_host_invoke_handler_fn invoke;
+    bool (*take_call)(void *user_data, sce_mesh_call_t *out);
+    void (*detach)(void *user_data);
+    sce_child_mesh_routers_fn child_router;
+} sce_child_mesh_router_t;
+
+/** Ask `routers` for the router of a child the invoke `invoke_id` starts from
+    the document whose stem is `document`: `out` when it answered one, NULL
+    when there is no factory or it answered none. */
+static inline const sce_child_mesh_router_t *sce_child_mesh_routers_ask(const sce_child_mesh_routers_t *routers,
+                                                                        const char *invoke_id, const char *document,
+                                                                        sce_child_mesh_router_t *out) {
+    if (routers == NULL || routers->ask == NULL || out == NULL) {
+        return NULL;
+    }
+    memset(out, 0, sizeof(*out));
+    return routers->ask(routers->user_data, invoke_id, document, out) ? out : NULL;
 }
 
 #ifdef __cplusplus

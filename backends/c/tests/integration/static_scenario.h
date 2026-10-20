@@ -141,6 +141,14 @@ typedef struct {
     // children are not given hosts that record: a step that states `child_hosts` then
     // fails.
     const char *(*child_hosts)(void *sm);
+    // Hand `event`, with `data` as its `_event.data` (NULL for none), to the
+    // running child session of `path` — a path of invoke ids joined by `/` — through
+    // the Mesh router the driver gave it (SCE_MESH.md, Child Sessions in Mesh), and
+    // run the rounds that let its parent apply it. False when no child of that path
+    // is running. A scenario states it as a step's `invoke`; unset for a driver that
+    // gives children no routers, and a step that states `invoke` then fails. A
+    // child's sends reach `sent` with the path and the start of the child.
+    bool (*deliver)(void *sm, const char *path, const char *event, const char *data);
 } sce_scenario_driver_t;
 
 // `index` of a record that is a variable of its own, not an element of a list.
@@ -1171,6 +1179,10 @@ static int sce_scenario_step(sce_scenario_cursor_t *c, const sce_scenario_driver
     // machine matches the name. Without it, a name nothing matches is a misspelt
     // step.
     bool dropped = false;
+    // The child session the step's event is for, by the path of invoke ids that
+    // started it; the event then goes to it through its Mesh router.
+    char invoke[128] = "";
+    bool has_invoke = false;
     sce_scenario_cursor_t expect = {NULL};
     if (!sce_scenario_take(c, '{')) {
         return sce_scenario_fail(d, step, "a step is not an object");
@@ -1185,6 +1197,11 @@ static int sce_scenario_step(sce_scenario_cursor_t *c, const sce_scenario_driver
                     return sce_scenario_fail(d, step, "`event` is not a string");
                 }
                 has_event = true;
+            } else if (strcmp(key, "invoke") == 0) {
+                if (!sce_scenario_string(c, invoke, sizeof(invoke))) {
+                    return sce_scenario_fail(d, step, "`invoke` is not a path of invoke ids");
+                }
+                has_invoke = true;
             } else if (strcmp(key, "dropped") == 0) {
                 int64_t want = 0;
                 if (!sce_scenario_number(c, &want)) {
@@ -1226,7 +1243,22 @@ static int sce_scenario_step(sce_scenario_cursor_t *c, const sce_scenario_driver
             }
         }
     }
-    if (has_event && d->raise(d->sm, event, has_data ? data : NULL) == dropped) {
+    if (has_invoke) {
+        // A peer's event for the running child of that invoke, through the router
+        // the child was given. The child's events are not the machine's, so the
+        // machine is not asked whether it matches.
+        if (!has_event) {
+            return sce_scenario_fail(d, step, "`invoke` belongs to a step that sends an event");
+        }
+        if (d->deliver == NULL) {
+            return sce_scenario_fail(d, step, "this driver gives children no routers, so it cannot send to one");
+        }
+        if (!d->deliver(d->sm, invoke, event, has_data ? data : NULL)) {
+            char message[256];
+            (void)snprintf(message, sizeof(message), "no child of `%s` is running to be sent `%s`", invoke, event);
+            return sce_scenario_fail(d, step, message);
+        }
+    } else if (has_event && d->raise(d->sm, event, has_data ? data : NULL) == dropped) {
         char message[128];
         (void)snprintf(message, sizeof(message), "the machine's events %s `%s`", dropped ? "match" : "do not match",
                        event);

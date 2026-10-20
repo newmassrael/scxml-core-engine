@@ -864,8 +864,12 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_basic_http({{ cs
    not FIT is not dropped: `overflowed` says this build reserved less
    room than the act produced, and an act that reported two events and
    delivered one leaves the machine somewhere the document never
-   described. */
-SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csym_prefix }}{{ model.name }}_t *sm,
+   described.
+
+   Marked as possibly unused: a machine that carries the registry only for
+   the factory of its children's Mesh routers (SCE_MESH.md, Child Sessions in
+   Mesh) has no host-served send of its own to call it. */
+SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csym_prefix }}{{ model.name }}_t *sm,
                                   const sce_host_send_request_t *request) {
     const sce_host_processor_entry_t *_entry =
         sce_host_registry_find(&sm->host_processors, request->processor_type);
@@ -5504,6 +5508,14 @@ SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_register_mesh_router({{ csym_pr
     return sce_host_registry_register_mesh_router(&sm->host_processors, router, user_data);
 }
 
+SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_register_child_mesh_routers({{ csym_prefix }}{{ model.name }}_t *sm,
+                                                                             sce_child_mesh_routers_fn ask, void *user_data) {
+    if (sm == NULL) {
+        return false;
+    }
+    return sce_host_registry_register_child_mesh_routers(&sm->host_processors, ask, user_data);
+}
+
 SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_has_event_processor(const {{ csym_prefix }}{{ model.name }}_t *sm, const char *processor_type) {
     if (sm == NULL) {
         return false;
@@ -6272,6 +6284,95 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_invoked_enter({{ csym_prefix }}
     end_turn(sm, _turn_opened);
 {% endif %}
 }
+
+/* SCE_MESH.md, Child Sessions in Mesh (docs/adr/0043): install the router this
+   child's parent gave it. What a host installs on a machine it starts, the
+   parent installs here, between `_invoked_begin` (which zeroes the struct) and
+   `_invoked_enter` (whose first `<onentry>` may already send): the child's
+   peer sends, its Mesh requests and the factory of its own children's routers
+   are all the router's. */
+SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_install_mesh_router({{ csym_prefix }}{{ model.name }}_t *sm,
+                                       const sce_child_mesh_router_t *router) {
+    if (sm == NULL || router == NULL) {
+        return;
+    }
+    sm->mesh_router = *router;
+    sm->has_mesh_router = true;
+{% if model.host_processor_types %}
+    if (router->send != NULL) {
+        (void)sce_host_registry_register_mesh_router(&sm->host_processors, router->send, router->user_data);
+    }
+    sm->host_processors.child_mesh_routers.ask = router->child_router;
+    sm->host_processors.child_mesh_routers.user_data = router->user_data;
+{% endif %}
+{% if 'sce:mesh-rpc' in model.host_invoker_types %}
+    if (router->invoke != NULL) {
+        (void)sce_host_invoker_register_mesh_rpc_invoker(&sm->host_invokers, router->invoke, router->user_data);
+    }
+{% endif %}
+}
+
+/* Apply what arrived for this child on its router, in the order the router
+   released it. An event the machine does not declare is dropped, as the engine
+   drops any such event; one from a peer carries `_event.origin`
+   `mesh://<source>` and the SCXML processor as origin type (SCE_MESH.md
+   §mesh-10.7). An end of a Mesh request ends it through the host-invoke door,
+   whose token check refuses one the machine no longer waits for. */
+SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_apply_mesh_calls({{ csym_prefix }}{{ model.name }}_t *sm) {
+    if (sm == NULL || !sm->has_mesh_router || sm->mesh_router.take_call == NULL) {
+        return;
+    }
+    sce_mesh_call_t _call;
+    while (sm->mesh_router.take_call(sm->mesh_router.user_data, &_call)) {
+        char _origin[SCE_MAX_URI_LEN];
+        _origin[0] = '\0';
+        if (_call.source[0] != '\0') {
+            (void)snprintf(_origin, sizeof(_origin), "%s%s", SCE_MESH_ORIGIN_SCHEME, _call.source);
+        }
+        if (_call.kind == SCE_MESH_CALL_RAISE) {
+            {{ csym_prefix }}{{ model.name }}_event_t _event;
+            if (!{{ csym_prefix }}{{ model.name }}_resolve_event_by_name(_call.name, &_event)) {
+                continue;
+            }
+            {{ csym_prefix }}{{ model.name }}_event_with_meta_t _meta;
+            memset(&_meta, 0, sizeof(_meta));
+            _meta.event = _event;
+            sce_copy_bounded_data(_meta.data, _call.data);
+            sce_copy_bounded_id(_meta.send_id, _call.send_id);
+            sce_copy_bounded_event_type(_meta.type, "external");
+            if (_origin[0] != '\0') {
+                sce_copy_bounded_origin(_meta.origin, _origin);
+                sce_copy_bounded_id(_meta.origin_type, "http://www.w3.org/TR/scxml/#SCXMLEventProcessor");
+            }
+            {{ csym_prefix }}{{ model.name }}_raise_external(sm, &_meta);
+            continue;
+        }
+{% if 'sce:mesh-rpc' in model.host_invoker_types %}
+        {
+            const char *_origin_type = (_origin[0] != '\0') ? SCE_MESH_RPC_INVOKE_TYPE : "";
+            if (_call.failed) {
+                (void){{ csym_prefix }}{{ model.name }}_fail_host_invoke(sm, SCE_MESH_RPC_INVOKE_TYPE, _call.invoke_id,
+                                                                        _call.token, _call.data, _origin, _origin_type);
+            } else {
+                (void){{ csym_prefix }}{{ model.name }}_complete_host_invoke_from(sm, SCE_MESH_RPC_INVOKE_TYPE,
+                                                                                 _call.invoke_id, _call.token,
+                                                                                 _call.data, _origin, _origin_type);
+            }
+        }
+{% endif %}
+    }
+}
+
+/* The session ended: tell its router, once. */
+SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_detach_mesh({{ csym_prefix }}{{ model.name }}_t *sm) {
+    if (sm == NULL || !sm->has_mesh_router) {
+        return;
+    }
+    sm->has_mesh_router = false;
+    if (sm->mesh_router.detach != NULL) {
+        sm->mesh_router.detach(sm->mesh_router.user_data);
+    }
+}
 {% endif %}
 
 SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_destroy({{ csym_prefix }}{{ model.name }}_t *sm) {
@@ -6287,6 +6388,13 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_destroy({{ csym_prefix }}{{ mod
        — its pending entry lives in the bounded queue the parent owns
        outright. */
     {{ csym_prefix }}{{ model.name }}_destroy_active_children(sm);
+    {% endif %}
+    {% if static_datamodel %}
+    /* SCE_MESH.md, Child Sessions in Mesh: a child session's end, after its
+       own children were torn down above, so a grandchild is detached before
+       its parent. Nothing for a machine given no router, or detached already
+       when it reached its final. */
+    {{ csym_prefix }}{{ model.name }}_detach_mesh(sm);
     {% endif %}
     {% if model.needs_script_engine %}
 {{ se.lua_destroy_engine() }}

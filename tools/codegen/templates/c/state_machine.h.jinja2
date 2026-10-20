@@ -97,7 +97,10 @@
 #include "sce/sample.h"
 {% endif %}
 
-{% if model.host_processor_types or model.host_invoker_types or model.needs_http_send %}
+{% if model.host_processor_types or model.host_invoker_types or model.needs_http_send or static_datamodel %}
+{# A `datamodel="sce-static"` machine may be started as a child session, and
+   holds the Mesh router its parent gives it (SCE_MESH.md, Child Sessions in
+   Mesh), whose type this header declares. #}
 /* §scxml-6.2.5 + §scxml-6.4.1: host-served Event I/O Processor types and
    host-run `<invoke>` types + the bounded registries this machine
    dispatches through
@@ -801,6 +804,14 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
        against its own contract. */
     sce_host_processor_registry_t host_processors;
 {% endif %}
+{% if static_datamodel %}
+    /* SCE_MESH.md, Child Sessions in Mesh: the router this machine was given
+       when its parent started it as a child session (`_install_mesh_router`),
+       which its peer sends reach and what arrives for it waits in; unset for
+       a machine its host started, and for a child given none. */
+    sce_child_mesh_router_t mesh_router;
+    bool has_mesh_router;
+{% endif %}
 {% if model.host_invoker_types %}
     /* W3C SCXML 6.4.1: what RUNS each `<invoke type>` this host declared, and
        which of those invocations are in flight. Two members rather than one
@@ -1187,6 +1198,35 @@ void {{ csym_prefix }}{{ model.name }}_invoked_begin({{ csym_prefix }}{{ model.n
                                        const char *invoke_id,
                                        sce_clock_t clock);
 void {{ csym_prefix }}{{ model.name }}_invoked_enter({{ csym_prefix }}{{ model.name }}_t *sm);
+
+/* SCE_MESH.md, Child Sessions in Mesh (docs/adr/0043): the Mesh router this
+   machine's parent gave it as a child session, installed between
+   `_invoked_begin` and `_invoked_enter`, before its first `<onentry>` can send.
+   Its peer sends reach `router->send`, its Mesh requests `router->invoke`, and
+   the children it starts are asked of `router->child_router`. */
+void {{ csym_prefix }}{{ model.name }}_install_mesh_router({{ csym_prefix }}{{ model.name }}_t *sm,
+                                       const sce_child_mesh_router_t *router);
+
+/* Apply what arrived for this child on its router, oldest first: an event is
+   raised on its external queue with the `_event` a Mesh event carries
+   (SCE_MESH.md §mesh-10.7), the end of a Mesh request ends it. The parent
+   calls it each time it drives the child, before the child's macrostep. */
+void {{ csym_prefix }}{{ model.name }}_apply_mesh_calls({{ csym_prefix }}{{ model.name }}_t *sm);
+
+/* The session ended: tell its router, once. Called by the parent after the
+   child reached a top-level `<final>`, and by `_destroy`, after its own
+   children were torn down, so a grandchild is detached before its parent. */
+void {{ csym_prefix }}{{ model.name }}_detach_mesh({{ csym_prefix }}{{ model.name }}_t *sm);
+{% endif %}
+{% if model.host_processor_types %}
+
+/* SCE_MESH.md, Child Sessions in Mesh: the factory of the routers of this
+   machine's children, kept in its registry beside the router its own sends
+   reach. For every moment after `_init`; the registry the machine is started
+   with (`sce_host_registry_register_child_mesh_routers`) carries it for the
+   children of the initial configuration. */
+bool {{ csym_prefix }}{{ model.name }}_register_child_mesh_routers({{ csym_prefix }}{{ model.name }}_t *sm,
+                                       sce_child_mesh_routers_fn ask, void *user_data);
 {% endif %}
 
 /* W3C SCXML 5.10: Tear down any owned datamodel resources. Idempotent —

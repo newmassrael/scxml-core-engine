@@ -120,6 +120,7 @@
 #include "static_cancel_expr_sm.h"
 #include "static_child_host_hybrid_sm.h"
 #include "static_child_host_sm.h"
+#include "static_child_mesh_sm.h"
 #include "static_counter_sm.h"
 #include "static_donedata_content_sm.h"
 #include "static_donedata_record_sm.h"
@@ -328,8 +329,11 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
 // answers what the machine asked of its host, SENT what it sent its Mesh peers
 // and CHILD_HOSTS the child hosts its host was asked for and what the children
 // asked of them, each since it was last asked, or is NULL for a machine with none.
+// DELIVER hands a step's `invoke` event to the running child of that path through
+// the Mesh router the driver gave it, or is NULL for a machine whose children are
+// given none.
 #define STATIC_SCENARIO_CORE(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, DONE, REAL, REAL_LIST, RECORD_REAL, INIT,     \
-                             ADVANCE, HOST_CALLS, SENT, CHILD_HOSTS)                                                   \
+                             ADVANCE, HOST_CALLS, SENT, CHILD_HOSTS, DELIVER)                                          \
     static bool M##_read_record_field(void *sm, const char *name, size_t index, const char *field, int64_t *out) {     \
         for (size_t i = 0; RECORDS[i].name != NULL; ++i) {                                                             \
             if (strcmp(RECORDS[i].name, name) == 0) {                                                                  \
@@ -432,7 +436,8 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
                                               M##_active_count,                                                        \
                                               HOST_CALLS,                                                              \
                                               SENT,                                                                    \
-                                              CHILD_HOSTS};                                                            \
+                                              CHILD_HOSTS,                                                             \
+                                              DELIVER};                                                                \
         char path[512];                                                                                                \
         (void)snprintf(path, sizeof(path), "%s/%s.json", SCE_STATIC_SCENARIO_DIR, scenario);                           \
         int replayed = 0;                                                                                              \
@@ -449,14 +454,14 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
 // A machine that waits on no clock, started as `_init` starts it.
 #define STATIC_SCENARIO_FULL(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, DONE, REAL, REAL_LIST, RECORD_REAL)           \
     STATIC_SCENARIO_CORE(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, DONE, REAL, REAL_LIST, RECORD_REAL,               \
-                         M##_init(&sm), NULL, NULL, NULL, NULL)
+                         M##_init(&sm), NULL, NULL, NULL, NULL, NULL)
 
 // A machine whose `<sce:action>`s go to a host that records them: INIT starts it
 // with that host installed, which it must be before the first entry runs, and
 // HOST_CALLS answers what the host heard since it was last asked.
 #define STATIC_SCENARIO_HOSTED(M, STATES, VARIABLES, INIT, HOST_CALLS)                                                 \
     STATIC_SCENARIO_CORE(M, STATES, VARIABLES, NULL, no_lists, no_records, NULL, NULL, NULL, NULL, INIT, NULL,         \
-                         HOST_CALLS, NULL, NULL)
+                         HOST_CALLS, NULL, NULL, NULL)
 
 // A machine that declares no act of its own and whose children are given hosts
 // that record: INIT starts it with the table of the host that answers each child's
@@ -464,7 +469,7 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
 // what those hosts were asked since it was last asked.
 #define STATIC_SCENARIO_CHILD_HOSTED(M, STATES, VARIABLES, INIT, CHILD_HOSTS)                                          \
     STATIC_SCENARIO_CORE(M, STATES, VARIABLES, NULL, no_lists, no_records, NULL, NULL, NULL, NULL, INIT, NULL, NULL,   \
-                         NULL, CHILD_HOSTS)
+                         NULL, CHILD_HOSTS, NULL)
 
 // What the machines below sent their Mesh peers, kept by the router installed
 // here as the compact JSON a scenario's `sent` states: each send its target, its
@@ -490,9 +495,11 @@ static struct {
     bool lost;
 } peers_heard;
 
-static void peers_router(void *user_data, const sce_host_send_request_t *request, sce_host_send_response_list_t *out) {
-    (void)user_data;
-    (void)out;
+/* Write `request` down as a scenario's `sent` states it. `members` are written
+   after the send's own, already spelled with their leading comma: a child
+   session's path and start (SCE_MESH.md, Child Sessions in Mesh), NULL for the
+   machine's own send. */
+static void peers_record(const sce_host_send_request_t *request, const char *members) {
     char send[PEER_SEND_SIZE];
     sce_forge_wire_t wire;
     sce_forge_wire_begin(&wire, send, sizeof(send));
@@ -502,6 +509,9 @@ static void peers_router(void *user_data, const sce_host_send_request_t *request
         static const char data_key[] = ",\"data\":";
         sce_forge_wire_put(&wire, data_key, sizeof(data_key) - 1u);
         sce_forge_wire_put(&wire, request->event_data, strlen(request->event_data));
+    }
+    if (members != NULL) {
+        sce_forge_wire_put(&wire, members, strlen(members));
     }
     if (!sce_forge_wire_end(&wire)) {
         peers_heard.lost = true;
@@ -517,6 +527,12 @@ static void peers_router(void *user_data, const sce_host_send_request_t *request
     }
     memcpy(peers_heard.text + peers_heard.len, send, size + 1u);
     peers_heard.len += size;
+}
+
+static void peers_router(void *user_data, const sce_host_send_request_t *request, sce_host_send_response_list_t *out) {
+    (void)user_data;
+    (void)out;
+    peers_record(request, NULL);
 }
 
 static void peers_forget(void) {
@@ -550,7 +566,7 @@ static const char *peers_sent(void *sm) {
         M##_init_with_host_processors(sm, &wiring);                                                                    \
     }                                                                                                                  \
     STATIC_SCENARIO_CORE(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, NULL, NULL, NULL, NULL,                           \
-                         M##_start_with_router(&sm), NULL, NULL, peers_sent, NULL)
+                         M##_start_with_router(&sm), NULL, NULL, peers_sent, NULL, NULL)
 
 // A machine whose delayed sends wait on a clock the scenario owns: it is started
 // on a manual one, and an `advance_ms` step moves it on and runs what came due.
@@ -561,7 +577,7 @@ static const char *peers_sent(void *sm) {
         return true;                                                                                                   \
     }                                                                                                                  \
     STATIC_SCENARIO_CORE(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, NULL, NULL, NULL, NULL,                           \
-                         M##_init_with_clock(&sm, sce_clock_manual(0u)), M##_advance_clock, NULL, NULL, NULL)
+                         M##_init_with_clock(&sm, sce_clock_manual(0u)), M##_advance_clock, NULL, NULL, NULL, NULL)
 
 // A machine that does both: it sends to Mesh peers and its delayed sends wait on a
 // clock the scenario owns. It is started with the router installed and on a manual
@@ -583,7 +599,164 @@ static const char *peers_sent(void *sm) {
         return true;                                                                                                   \
     }                                                                                                                  \
     STATIC_SCENARIO_CORE(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, NULL, NULL, NULL, NULL,                           \
-                         M##_start_with_router_and_clock(&sm), M##_advance_clock, NULL, peers_sent, NULL)
+                         M##_start_with_router_and_clock(&sm), M##_advance_clock, NULL, peers_sent, NULL, NULL)
+
+// The routers the driver gives the child sessions of a machine (SCE_MESH.md, Child
+// Sessions in Mesh): the factory answers one for every child, which writes what
+// the child sends into the record above with the path of invoke ids that started
+// it and the start of that path, holds what a step's `invoke` hands the child
+// until its parent applies it, and answers for the child's own children under
+// `<path>/<invoke>`. A table of fixed size, since the freestanding profile the
+// machines are written for has no allocator; a start past it is no router, which
+// the step it was made in fails on as a child whose send was refused.
+enum {
+    CHILD_ROUTERS_KEPT = 16,
+    CHILD_CALLS_KEPT = 4,
+    CHILD_PATH_LEN = 128,
+};
+
+typedef struct {
+    char path[CHILD_PATH_LEN];
+    int start;
+    bool running;
+    sce_mesh_call_t calls[CHILD_CALLS_KEPT];
+    size_t queued;
+} child_router_t;
+
+static struct {
+    child_router_t routers[CHILD_ROUTERS_KEPT];
+    size_t count;
+} child_routers;
+
+static void child_routers_forget(void) {
+    memset(&child_routers, 0, sizeof(child_routers));
+}
+
+static bool child_router_open(const char *path, sce_child_mesh_router_t *out);
+
+static void child_router_send(void *user_data, const sce_host_send_request_t *request,
+                              sce_host_send_response_list_t *out) {
+    const child_router_t *router = (const child_router_t *)user_data;
+    char members[CHILD_PATH_LEN + 48];
+    (void)snprintf(members, sizeof(members), ",\"invoke\":\"%s\",\"start\":%d", router->path, router->start);
+    peers_record(request, members);
+    (void)out;
+}
+
+static bool child_router_take_call(void *user_data, sce_mesh_call_t *out) {
+    child_router_t *router = (child_router_t *)user_data;
+    if (router->queued == 0u) {
+        return false;
+    }
+    *out = router->calls[0];
+    memmove(&router->calls[0], &router->calls[1], (router->queued - 1u) * sizeof(router->calls[0]));
+    router->queued--;
+    return true;
+}
+
+static void child_router_detach(void *user_data) {
+    ((child_router_t *)user_data)->running = false;
+}
+
+static bool child_router_child(void *user_data, const char *invoke_id, const char *document,
+                               sce_child_mesh_router_t *out) {
+    const child_router_t *router = (const child_router_t *)user_data;
+    char path[CHILD_PATH_LEN];
+    (void)document;
+    const size_t base = strlen(router->path);
+    const size_t tail = strlen(invoke_id);
+    if (base + 1u + tail >= sizeof(path)) {
+        return false;
+    }
+    memcpy(path, router->path, base);
+    path[base] = '/';
+    memcpy(path + base + 1u, invoke_id, tail + 1u);
+    return child_router_open(path, out);
+}
+
+static bool child_router_open(const char *path, sce_child_mesh_router_t *out) {
+    if (child_routers.count >= CHILD_ROUTERS_KEPT || strlen(path) >= CHILD_PATH_LEN) {
+        return false;
+    }
+    int start = 1;
+    for (size_t i = 0; i < child_routers.count; ++i) {
+        if (strcmp(child_routers.routers[i].path, path) == 0) {
+            ++start;
+        }
+    }
+    child_router_t *router = &child_routers.routers[child_routers.count++];
+    memset(router, 0, sizeof(*router));
+    memcpy(router->path, path, strlen(path) + 1u);
+    router->start = start;
+    router->running = true;
+    out->user_data = router;
+    out->send = child_router_send;
+    out->invoke = NULL;
+    out->take_call = child_router_take_call;
+    out->detach = child_router_detach;
+    out->child_router = child_router_child;
+    return true;
+}
+
+static bool child_routers_ask(void *user_data, const char *invoke_id, const char *document,
+                              sce_child_mesh_router_t *out) {
+    (void)user_data;
+    (void)document;
+    return child_router_open(invoke_id, out);
+}
+
+/* Hand `event` to the running child of `path`, the latest start of it. */
+static bool child_routers_deliver(const char *path, const char *event, const char *data) {
+    for (size_t i = child_routers.count; i > 0u; --i) {
+        child_router_t *router = &child_routers.routers[i - 1u];
+        if (!router->running || strcmp(router->path, path) != 0) {
+            continue;
+        }
+        if (router->queued >= CHILD_CALLS_KEPT || strlen(event) >= SCE_MAX_ID_LEN ||
+            (data != NULL && strlen(data) >= SCE_MAX_DATA_LEN)) {
+            return false;
+        }
+        sce_mesh_call_t *call = &router->calls[router->queued++];
+        memset(call, 0, sizeof(*call));
+        call->kind = SCE_MESH_CALL_RAISE;
+        memcpy(call->name, event, strlen(event) + 1u);
+        if (data != NULL) {
+            memcpy(call->data, data, strlen(data) + 1u);
+        }
+        return true;
+    }
+    return false;
+}
+
+// A machine whose child sessions talk to Mesh peers: it is started with the
+// router that records its own sends and the factory of its children's routers in
+// the registry it is started with, which the children of its initial
+// configuration, started inside `_init`, are asked of. A step's `invoke` reaches a
+// running child through its router, and the rounds after it let the parent apply
+// it as it drives the child.
+#define STATIC_SCENARIO_CHILD_MESH(M, STATES, VARIABLES)                                                               \
+    static void M##_start_with_routers(M##_t *sm) {                                                                    \
+        sce_host_processor_registry_t wiring;                                                                          \
+        memset(&wiring, 0, sizeof(wiring));                                                                            \
+        peers_forget();                                                                                                \
+        child_routers_forget();                                                                                        \
+        if (!sce_host_registry_register_mesh_router(&wiring, peers_router, NULL) ||                                    \
+            !sce_host_registry_register_child_mesh_routers(&wiring, child_routers_ask, NULL)) {                        \
+            (void)fprintf(stderr, "%s: FAIL - the router doors refused the routers\n", #M);                            \
+        }                                                                                                              \
+        M##_init_with_host_processors(sm, &wiring);                                                                    \
+    }                                                                                                                  \
+    static bool M##_deliver(void *sm, const char *path, const char *event, const char *data) {                         \
+        if (!child_routers_deliver(path, event, data)) {                                                               \
+            return false;                                                                                              \
+        }                                                                                                              \
+        for (int round = 0; round < 5; ++round) {                                                                      \
+            M##_step((M##_t *)sm);                                                                                     \
+        }                                                                                                              \
+        return true;                                                                                                   \
+    }                                                                                                                  \
+    STATIC_SCENARIO_CORE(M, STATES, VARIABLES, NULL, no_lists, no_records, NULL, NULL, NULL, NULL,                     \
+                         M##_start_with_routers(&sm), NULL, NULL, peers_sent, NULL, M##_deliver)
 
 // A machine that publishes no real: DONE as above, and REAL, REAL_LIST and
 // RECORD_REAL — the readers of a real variable, of a list of reals and of a real
@@ -2177,6 +2350,23 @@ static const variable_t child_host_hybrid_variables[] = {
 STATIC_SCENARIO_CHILD_HOSTED(static_child_host_hybrid, child_host_hybrid_states, child_host_hybrid_variables,
                              child_host_hybrid_start(&sm), child_hosts_heard)
 
+// static_child_mesh: a child session that talks to a Mesh peer is given a router of
+// its own by the factory the driver registers (SCE_MESH.md, Child Sessions in
+// Mesh). What `list` and `inner` send is heard under their path and start, and a
+// step's `invoke` reaches them through their routers, `inner`'s answered by the
+// router of the hybrid candidate `static_mesh_relay`.
+VARIABLE_READER(static_child_mesh, refusals)
+static const name_value_t child_mesh_states[] = {
+    {"working", STATIC_CHILD_MESH_STATE_WORKING},
+    {"alone", STATIC_CHILD_MESH_STATE_ALONE},
+    {"joined", STATIC_CHILD_MESH_STATE_JOINED},
+    {"idle", STATIC_CHILD_MESH_STATE_IDLE},
+};
+static const variable_t child_mesh_variables[] = {
+    {"refusals", static_child_mesh_read_refusals},
+};
+STATIC_SCENARIO_CHILD_MESH(static_child_mesh, child_mesh_states, child_mesh_variables)
+
 // static_invoke: a child session an `<invoke>` started is driven through its
 // parent by autoforward, takes the events it waits for in order, and its end
 // reaches the parent as `done.invoke`, which the parent counts. Leaving the state
@@ -2745,6 +2935,7 @@ int main(void) {
     bad |= static_host_duty_scenario("static_host_duty", 4);
     bad |= static_child_host_scenario("static_child_host", 8);
     bad |= static_child_host_hybrid_scenario("static_child_host_hybrid", 3);
+    bad |= static_child_mesh_scenario("static_child_mesh", 7);
     bad |= static_invoke_scenario("static_invoke", 6);
     bad |= static_invoke_scenario("static_invoke_abort", 4);
     bad |= static_invoke_params_scenario("static_invoke_params", 2);

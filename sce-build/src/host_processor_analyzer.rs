@@ -819,12 +819,40 @@ pub fn child_mesh_sites(model: &SCXMLModel) -> Vec<crate::model::ChildMeshSite> 
 /// its own route; the model is borrowed untouched when there is nothing to
 /// lower.
 pub fn lower_mesh(model: &SCXMLModel, language: Language) -> Cow<'_, SCXMLModel> {
-    let sends = lower_mesh_sends(model, language);
+    let sends = carry_child_mesh_routers(lower_mesh_sends(model, language), language);
     if !routes_mesh_through_host(language) || !model.has_mesh_rpc_invoke() {
         return sends;
     }
     let mut lowered = sends.into_owned();
     lower_mesh_invokes(&mut lowered);
+    Cow::Owned(lowered)
+}
+
+/// On C11, a machine one of whose `<invoke>` sites starts a child that needs a
+/// Mesh router (SCE_MESH.md, Child Sessions in Mesh) carries the host registry
+/// even when it sends to no peer itself: the factory of its children's routers
+/// is held in that registry, which the host hands the machine when it starts
+/// it, so the children of the initial configuration, started inside `_init`,
+/// are asked too. The registry is emitted only for a machine whose host types
+/// name one, so the type its children's routers stand for is recorded on the
+/// lowered copy, as a lowered send records it.
+fn carry_child_mesh_routers(model: Cow<'_, SCXMLModel>, language: Language) -> Cow<'_, SCXMLModel> {
+    let carries = model
+        .host_processor_types
+        .iter()
+        .any(|t| t == MESH_PROCESSOR_TYPE);
+    if !matches!(language, Language::C11)
+        || carries
+        || !child_mesh_sites(&model)
+            .iter()
+            .any(|site| site.child.needs_router())
+    {
+        return model;
+    }
+    let mut lowered = model.into_owned();
+    lowered
+        .host_processor_types
+        .push(MESH_PROCESSOR_TYPE.to_string());
     Cow::Owned(lowered)
 }
 
@@ -1106,6 +1134,35 @@ mod tests {
 
     fn parse(scxml: &str) -> SCXMLModel {
         SCXMLParser::new().parse_string(scxml, "test").unwrap()
+    }
+
+    /// C11 keeps the factory of children's Mesh routers in the host registry,
+    /// so a machine whose child talks to a peer carries one even when it sends
+    /// to none itself (SCE_MESH.md, Child Sessions in Mesh); the other backends
+    /// keep it on the engine and are left as they were, and a machine whose
+    /// child talks to nobody carries nothing new.
+    #[test]
+    fn a_c11_machine_whose_child_talks_carries_the_registry_its_factory_is_kept_in() {
+        let child = |body: &str| {
+            parse(&doc(&format!(
+                r#"<state id="s"><invoke type="scxml" id="list"><content>
+                     <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="c">
+                       <state id="c">{body}</state>
+                     </scxml></content></invoke></state>"#
+            )))
+        };
+        let talking = child(r##"<onentry><send target="#server" event="hello"/></onentry>"##);
+        assert_eq!(
+            lower_mesh(&talking, Language::C11).host_processor_types,
+            [MESH_PROCESSOR_TYPE]
+        );
+        assert!(lower_mesh(&talking, Language::Rust)
+            .host_processor_types
+            .is_empty());
+        let quiet = child("");
+        assert!(lower_mesh(&quiet, Language::C11)
+            .host_processor_types
+            .is_empty());
     }
 
     /// tests/mesh/mesh_target_cases.json: the table every copy of the

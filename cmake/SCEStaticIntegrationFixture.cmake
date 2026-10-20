@@ -294,6 +294,26 @@ function(sce_generate_static_integration_test STEM OUTPUT_DIR)
 
         set(_HYBRID_DEPFILE "${_HYBRID_HEADER}.d")
 
+        # A candidate that starts children of its own written inline (SCE_MESH.md,
+        # Child Sessions in Mesh: `static_mesh_relay` and its `inner`) has its
+        # generation emit them beside it, so they are declared as its outputs,
+        # from the plan of the candidate's own document.
+        # A stub the parent's generation wrote is no document of the fixture's
+        # and starts nothing.
+        set(_HYBRID_PLAN_SYNTH "")
+        if(EXISTS "${FIXTURE_ROOT}/${_HYBRID}.scxml")
+            _sce_plan_integration_fixture(_HYBRID_PLAN "${_HYBRID}" "${OUTPUT_DIR}" cpp
+                "${FIXTURE_ROOT}/${_HYBRID}.scxml" "${FIXTURE_ROOT}" --as-child)
+        endif()
+        # One the parent's own generation already declares is its, not this one's.
+        if(_HYBRID_PLAN_SYNTH AND _PLAN_SYNTH)
+            list(REMOVE_ITEM _HYBRID_PLAN_SYNTH ${_PLAN_SYNTH})
+        endif()
+        set(_HYBRID_BYPRODUCTS "${_HYBRID_INL}")
+        foreach(_CHILD ${_HYBRID_PLAN_SYNTH})
+            list(APPEND _HYBRID_BYPRODUCTS "${OUTPUT_DIR}/${_CHILD}_sm.h")
+        endforeach()
+
         add_custom_command(
             OUTPUT "${_HYBRID_HEADER}"
             COMMAND "${SCE_CODEGEN}" generate "${_HYBRID_SCXML}"
@@ -304,11 +324,14 @@ function(sce_generate_static_integration_test STEM OUTPUT_DIR)
                     ${_FORMAT_ARGS}
             DEPENDS "${PARENT_HEADER}" "${SCE_CODEGEN}"
             DEPFILE "${_HYBRID_DEPFILE}"
-            BYPRODUCTS "${_HYBRID_INL}"
+            BYPRODUCTS ${_HYBRID_BYPRODUCTS}
             COMMENT "Generating C++ integration hybrid child: ${_HYBRID}_sm.h"
             VERBATIM
         )
         list(APPEND _ALL_HEADERS "${_HYBRID_HEADER}")
+        foreach(_CHILD ${_HYBRID_PLAN_SYNTH})
+            list(APPEND _ALL_HEADERS "${OUTPUT_DIR}/${_CHILD}_sm.h")
+        endforeach()
     endforeach()
 
     list(APPEND GENERATED_INTEGRATION_HEADERS ${_ALL_HEADERS})
@@ -504,6 +527,26 @@ function(sce_generate_static_integration_c_test STEM OUTPUT_DIR)
 
         set(_HYBRID_DEPFILE "${_HYBRID_SOURCE}.d")
 
+        # A candidate that starts children of its own written inline (SCE_MESH.md,
+        # Child Sessions in Mesh: `static_mesh_relay` and its `inner`) has its
+        # generation emit them beside it, so they are declared as its outputs and
+        # compiled, from the plan of the candidate's own document. A stub the
+        # parent's generation wrote is no document of the fixture's and starts
+        # nothing.
+        set(_HYBRID_PLAN_SYNTH "")
+        if(EXISTS "${FIXTURE_ROOT}/${_HYBRID}.scxml")
+            _sce_plan_integration_fixture(_HYBRID_PLAN "${_HYBRID}" "${OUTPUT_DIR}" c11
+                "${FIXTURE_ROOT}/${_HYBRID}.scxml" "${FIXTURE_ROOT}" --as-child)
+        endif()
+        # One the parent's own generation already declares is its, not this one's.
+        if(_HYBRID_PLAN_SYNTH AND _PLAN_SYNTH)
+            list(REMOVE_ITEM _HYBRID_PLAN_SYNTH ${_PLAN_SYNTH})
+        endif()
+        set(_HYBRID_BYPRODUCTS "")
+        foreach(_CHILD ${_HYBRID_PLAN_SYNTH})
+            list(APPEND _HYBRID_BYPRODUCTS "${OUTPUT_DIR}/${_CHILD}_sm.h" "${OUTPUT_DIR}/${_CHILD}_sm.c")
+        endforeach()
+
         add_custom_command(
             OUTPUT "${_HYBRID_HEADER}" "${_HYBRID_SOURCE}"
             COMMAND "${SCE_CODEGEN}" generate "${_HYBRID_SCXML}"
@@ -513,11 +556,16 @@ function(sce_generate_static_integration_c_test STEM OUTPUT_DIR)
                     --write-deps "${_HYBRID_DEPFILE}"
             DEPENDS "${PARENT_SOURCE}" "${SCE_CODEGEN}"
             DEPFILE "${_HYBRID_DEPFILE}"
+            BYPRODUCTS ${_HYBRID_BYPRODUCTS}
             COMMENT "Generating C11 integration hybrid child: ${_HYBRID}_sm.{h,c}"
             VERBATIM
         )
         list(APPEND _ALL_SOURCES "${_HYBRID_SOURCE}")
         list(APPEND _ALL_HEADERS "${_HYBRID_HEADER}")
+        foreach(_CHILD ${_HYBRID_PLAN_SYNTH})
+            list(APPEND _ALL_SOURCES "${OUTPUT_DIR}/${_CHILD}_sm.c")
+            list(APPEND _ALL_HEADERS "${OUTPUT_DIR}/${_CHILD}_sm.h")
+        endforeach()
     endforeach()
 
     # Sources include both .c (compilation units) and .h (generated header
