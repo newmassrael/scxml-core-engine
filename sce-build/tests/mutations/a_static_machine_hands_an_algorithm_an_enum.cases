@@ -1,0 +1,56 @@
+# Mutation cases for "a sce-static statechart hands an algorithm a record whose field is
+# a value of an enum, and a value of the enum itself, and takes one back; the enum is
+# identified by its document, and a value crosses by the name its variant declares"
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A value of an enum").
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_static_machine_hands_an_algorithm_an_enum.cases`.
+#
+# The judge is `a_static_machine_hands_algorithms_the_state_it_holds`: the machine over
+# the item-status documents lowers on every backend, the Interpreter's lowering hands the
+# algorithm a variant as its declared name, and a value of another enum, a number, a
+# field of another enum document and an open enum are refused at the call. The mutants
+# take one decision away each:
+#
+#   an enum field whose document is not the statechart's crosses;
+#   a value of another enum is handed to an enum parameter;
+#   a number is handed to an enum parameter;
+#   an open enum crosses;
+#   the Interpreter's algorithm has no value form for an enum.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test a_static_machine_hands_algorithms_the_state_it_holds
+mutation_targets sce-build/src/forge/static_imports.rs sce-build/src/forge/static_enum.rs sce-build/src/forge/static_js_algorithm.rs
+mutation_oracles sce-build/tests/a_static_machine_hands_algorithms_the_state_it_holds.rs
+
+mutation_case "an enum field of another document crosses" <<'PY'
+edit("sce-build/src/forge/static_imports.rs",
+     "                        Some(own) if own.identity == held.identity => {}\n",
+     "                        Some(own) if !own.identity.is_empty() => {}\n")
+PY
+
+mutation_case "a value of another enum is handed to an enum parameter" <<'PY'
+edit("sce-build/src/forge/static_enum.rs",
+     "                    (Some(wanted), Some(held)) if wanted == held => {}\n",
+     "                    (Some(wanted), Some(held)) if wanted == held || !held.is_empty() => {}\n")
+PY
+
+mutation_case "a number is handed to an enum parameter" <<'PY'
+edit("sce-build/src/forge/static_enum.rs",
+     "                let wanted = slots.params.get(index).cloned().flatten();\n",
+     "                let wanted = slots.params.get(index).cloned().flatten().filter(|_| held.is_some());\n")
+PY
+
+mutation_case "an open enum crosses" <<'PY'
+edit("sce-build/src/forge/static_imports.rs",
+     "    if !held.strict {\n",
+     "    if !held.strict && held.identity.is_empty() {\n")
+PY
+
+mutation_case "the Interpreter's algorithm has no value form for an enum" <<'PY'
+edit("sce-build/src/forge/static_js_algorithm.rs",
+     "    !matches!(ty, SceType::Bytes)\n",
+     "    !matches!(ty, SceType::Bytes | SceType::Enum(_))\n")
+PY
