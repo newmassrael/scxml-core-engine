@@ -1136,8 +1136,10 @@ mod tests {
 
     /// An enum document whose root carries `root` and whose variants are
     /// `month` and `week` of the first revision and then `added`, read as the
-    /// forge parser reads it: the enum, or the refusal's validation error.
-    fn parse_enum_doc(root: &str, added: &str) -> Result<EnumModel, ValidationError> {
+    /// forge parser reads it: the enum, or the refusal's validation error,
+    /// boxed as the parser hands it over (the error is past
+    /// `clippy::result_large_err`).
+    fn parse_enum_doc(root: &str, added: &str) -> Result<EnumModel, Box<ValidationError>> {
         let xml = format!(
             r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
@@ -1162,7 +1164,7 @@ mod tests {
             },
             Ok(None) => panic!("not read as a forge document"),
             Err(located) => match located.error {
-                ForgeError::Validation(validation) => Err(*validation),
+                ForgeError::Validation(validation) => Err(validation),
                 other => panic!("refused, but not by validation: {other:?}"),
             },
         }
@@ -1201,13 +1203,13 @@ mod tests {
             let added = format!(r#"<sce:variant name="agenda" value="2" sce:since="{since}"/>"#);
             let error = parse_enum_doc(root, &added).expect_err("no such revision added it");
             assert_eq!(
-                refused(error),
+                refused(&error),
                 ("rule", "sce:since".to_string()),
                 "{root} {since}"
             );
         }
         let error = parse_enum_doc(r#" sce:revision="zero""#, "").expect_err("no such revision");
-        assert_eq!(refused(error), ("rule", "sce:revision".to_string()));
+        assert_eq!(refused(&error), ("rule", "sce:revision".to_string()));
     }
 
     #[test]
