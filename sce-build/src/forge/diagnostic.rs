@@ -16339,9 +16339,11 @@ mod tests {
                     reason: crate::mesh::error::EventSchemaMismatchReason::NotOneSchema {
                         sender_revision: 1,
                         receiver_revision: 2,
-                        divergence: crate::forge::schema_revision::Divergence::Redeclared {
-                            field: "elapsed_ms".into(),
-                        },
+                        divergence: Box::new(
+                            crate::forge::schema_revision::Divergence::Redeclared {
+                                field: "elapsed_ms".into(),
+                            },
+                        ),
                     },
                 }
                 .into(),

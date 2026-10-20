@@ -801,9 +801,9 @@ fn two_schemas_that_are_not_revisions_of_one_are_refused_with_the_field_they_par
         EventSchemaMismatchReason::NotOneSchema {
             sender_revision: 1,
             receiver_revision: 2,
-            divergence: Divergence::Redeclared {
+            divergence: Box::new(Divergence::Redeclared {
                 field: "level".into()
-            },
+            }),
         }
     );
 
@@ -814,11 +814,11 @@ fn two_schemas_that_are_not_revisions_of_one_are_refused_with_the_field_they_par
         EventSchemaMismatchReason::NotOneSchema {
             sender_revision: 1,
             receiver_revision: 2,
-            divergence: Divergence::Missing {
+            divergence: Box::new(Divergence::Missing {
                 field: "level".into(),
                 since: 1,
                 from: Party::Second,
-            },
+            }),
         }
     );
 
@@ -831,11 +831,11 @@ fn two_schemas_that_are_not_revisions_of_one_are_refused_with_the_field_they_par
         EventSchemaMismatchReason::NotOneSchema {
             sender_revision: 2,
             receiver_revision: 2,
-            divergence: Divergence::Missing {
+            divergence: Box::new(Divergence::Missing {
                 field: "urgent".into(),
                 since: 2,
                 from: Party::Second,
-            },
+            }),
         }
     );
 }
@@ -918,14 +918,14 @@ fn two_enums_under_one_field_are_refused_with_the_variant_they_part_on() {
         EventSchemaMismatchReason::NotOneSchema {
             sender_revision: 1,
             receiver_revision: 1,
-            divergence: Divergence::Enum {
+            divergence: Box::new(Divergence::Enum {
                 field: "mode".into(),
                 first_revision: 1,
                 second_revision: 2,
                 divergence: EnumDivergence::Redeclared {
                     variant: "fast".into()
                 },
-            },
+            }),
         }
     );
 
@@ -940,7 +940,7 @@ fn two_enums_under_one_field_are_refused_with_the_variant_they_part_on() {
         EventSchemaMismatchReason::NotOneSchema {
             sender_revision: 1,
             receiver_revision: 1,
-            divergence: Divergence::Enum {
+            divergence: Box::new(Divergence::Enum {
                 field: "mode".into(),
                 first_revision: 1,
                 second_revision: 2,
@@ -949,7 +949,7 @@ fn two_enums_under_one_field_are_refused_with_the_variant_they_part_on() {
                     since: 1,
                     from: Party::Second,
                 },
-            },
+            }),
         }
     );
 }

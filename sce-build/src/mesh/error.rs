@@ -258,8 +258,9 @@ pub enum EventSchemaMismatchReason {
         /// The receiver's `sce:revision` (1 when it declares none).
         receiver_revision: u32,
         /// Where the two part, the sender as the first schema and the receiver
-        /// as the second.
-        divergence: crate::forge::schema_revision::Divergence,
+        /// as the second. Boxed: held inline it is the largest field of
+        /// any `DeployError`, which every deploy check returns in its `Result`.
+        divergence: Box<crate::forge::schema_revision::Divergence>,
     },
     /// Sender declares an EventSchema for the event; receiver does
     /// not. The receiver would observe a dynamically-shaped payload
@@ -278,72 +279,69 @@ impl std::fmt::Display for EventSchemaMismatchReason {
             Self::NotOneSchema {
                 sender_revision,
                 receiver_revision,
-                divergence: Divergence::Redeclared { field },
-            } => write!(
-                f,
-                "the two are not revisions of one schema: both declare field '{field}' (sender \
-                 revision {sender_revision}, receiver revision {receiver_revision}) and declare \
-                 it differently (its type, bound, sce:since or sce:default)"
-            ),
-            Self::NotOneSchema {
-                sender_revision,
-                receiver_revision,
-                divergence: Divergence::Missing { field, since, from },
-            } => {
-                let (declares, declares_revision, lacks, lacks_revision) = match from {
-                    Party::Second => ("sender", sender_revision, "receiver", receiver_revision),
-                    Party::First => ("receiver", receiver_revision, "sender", sender_revision),
-                };
-                write!(
+                divergence,
+            } => match divergence.as_ref() {
+                Divergence::Redeclared { field } => write!(
                     f,
-                    "the two are not revisions of one schema: the {declares} (revision \
-                     {declares_revision}) declares field '{field}' as of revision {since}, and \
-                     the {lacks} (revision {lacks_revision}, which includes revision {since}) \
-                     does not declare it; a later revision keeps every field of an earlier one"
-                )
-            }
-            Self::NotOneSchema {
-                divergence:
-                    Divergence::Enum {
-                        field,
-                        first_revision,
-                        second_revision,
-                        divergence,
-                    },
-                ..
-            } => {
-                use crate::forge::schema_revision::EnumDivergence;
-                let how = match divergence {
-                    EnumDivergence::Carrier => "they declare another sce:underlying-type or \
-                                                sce:strict-variants"
-                        .to_string(),
-                    EnumDivergence::Redeclared { variant } => format!(
-                        "both declare variant '{variant}' and declare it differently (its value \
-                         or sce:since)"
-                    ),
-                    EnumDivergence::Missing {
-                        variant,
-                        since,
-                        from,
-                    } => {
-                        let (declares, lacks) = match from {
-                            Party::Second => ("sender's", "receiver's"),
-                            Party::First => ("receiver's", "sender's"),
-                        };
-                        format!(
-                            "the {declares} enum declares variant '{variant}' as of revision \
-                             {since}, and the {lacks}, at a revision that includes it, does not \
-                             declare it; a later revision keeps every variant of an earlier one"
-                        )
-                    }
-                };
-                write!(
-                    f,
-                    "the two are not revisions of one schema: field '{field}' is of an enum the \
-                     two hold as two enums, not two revisions of one (sender enum revision \
-                     {first_revision}, receiver enum revision {second_revision}): {how}"
-                )
-            }
+                    "the two are not revisions of one schema: both declare field '{field}' \
+                     (sender revision {sender_revision}, receiver revision {receiver_revision}) \
+                     and declare it differently (its type, bound, sce:since or sce:default)"
+                ),
+                Divergence::Missing { field, since, from } => {
+                    let (declares, declares_revision, lacks, lacks_revision) = match from {
+                        Party::Second => ("sender", sender_revision, "receiver", receiver_revision),
+                        Party::First => ("receiver", receiver_revision, "sender", sender_revision),
+                    };
+                    write!(
+                        f,
+                        "the two are not revisions of one schema: the {declares} (revision \
+                         {declares_revision}) declares field '{field}' as of revision {since}, \
+                         and the {lacks} (revision {lacks_revision}, which includes revision \
+                         {since}) does not declare it; a later revision keeps every field of an \
+                         earlier one"
+                    )
+                }
+                Divergence::Enum {
+                    field,
+                    first_revision,
+                    second_revision,
+                    divergence,
+                } => {
+                    use crate::forge::schema_revision::EnumDivergence;
+                    let how = match divergence {
+                        EnumDivergence::Carrier => "they declare another sce:underlying-type or \
+                                                    sce:strict-variants"
+                            .to_string(),
+                        EnumDivergence::Redeclared { variant } => format!(
+                            "both declare variant '{variant}' and declare it differently (its \
+                             value or sce:since)"
+                        ),
+                        EnumDivergence::Missing {
+                            variant,
+                            since,
+                            from,
+                        } => {
+                            let (declares, lacks) = match from {
+                                Party::Second => ("sender's", "receiver's"),
+                                Party::First => ("receiver's", "sender's"),
+                            };
+                            format!(
+                                "the {declares} enum declares variant '{variant}' as of \
+                                 revision {since}, and the {lacks}, at a revision that includes \
+                                 it, does not declare it; a later revision keeps every variant \
+                                 of an earlier one"
+                            )
+                        }
+                    };
+                    write!(
+                        f,
+                        "the two are not revisions of one schema: field '{field}' is of an enum \
+                         the two hold as two enums, not two revisions of one (sender enum \
+                         revision {first_revision}, receiver enum revision {second_revision}): \
+                         {how}"
+                    )
+                }
+            },
             Self::SenderOnly => write!(
                 f,
                 "sender declares an EventSchema but receiver does not (partial coverage)"
@@ -4703,7 +4701,7 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
                 EventSchemaMismatchReason::NotOneSchema { divergence, .. } => {
                     use crate::forge::schema_revision::Divergence;
                     use crate::forge::schema_revision::EnumDivergence;
-                    let (tag, field, variant) = match divergence {
+                    let (tag, field, variant) = match divergence.as_ref() {
                         Divergence::Redeclared { field } => ("field-redeclared", field, None),
                         Divergence::Missing { field, .. } => ("field-missing", field, None),
                         Divergence::Enum {

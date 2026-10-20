@@ -7308,7 +7308,7 @@ pub fn validate_event_schemas_cross_machine(
                         crate::mesh::error::EventSchemaMismatchReason::NotOneSchema {
                             sender_revision: s.revision(),
                             receiver_revision: r.revision(),
-                            divergence,
+                            divergence: Box::new(divergence),
                         }
                     })
                 }
