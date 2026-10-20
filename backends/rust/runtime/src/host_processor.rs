@@ -224,7 +224,9 @@ pub enum MeshCall {
     /// Raise this event on the external queue, with the `_event` the
     /// endpoint built for it ([`mesh_event_metadata`] for a peer's event).
     Raise {
+        /// The event's name.
         name: String,
+        /// The `_event` the endpoint built for it.
         metadata: crate::EventMetadata,
     },
     /// End the start `token` of the Mesh request `invoke_id` — with
@@ -232,10 +234,17 @@ pub enum MeshCall {
     /// as `_event.data`. `source` is the machine that answered, `None` for a
     /// deadline the requester reached itself.
     EndInvoke {
+        /// The id of the Mesh request's `<invoke>`.
         invoke_id: String,
+        /// The start of that `<invoke>` this ends; an older start's answer is
+        /// not this one's.
         token: u64,
+        /// `error.invoke` rather than `done.invoke`.
         failed: bool,
+        /// What `_event.data` carries.
         data: String,
+        /// The machine that answered, `None` for a deadline the requester
+        /// reached itself.
         source: Option<String>,
     },
 }
