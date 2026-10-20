@@ -63,8 +63,14 @@ fn is_static_statechart(text: &str) -> bool {
     tag.contains(r#"datamodel="sce-static""#) && !tag.contains("sce:kind=")
 }
 
-/// The shape the generated Rust machine binds its saved state to, or `None`
-/// for a machine generated without the save API.
+/// The shape the generated Rust machine binds its saved state to — the `first`
+/// of its `SavedShape`, which a later revision of a record schema leaves where it
+/// was (docs/adr/0044) — or `None` for a machine generated without the save API.
+///
+/// Whether the machine saves is read from its `SHAPE` constant, and a constant
+/// that is there in a spelling this reader does not know fails rather than
+/// reads as a machine that does not save: a reader that missed it would pass on
+/// a library none of whose shapes it held.
 fn rust_shape(document: &str) -> Option<String> {
     let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!(
         "standard-shape-{}-{}",
@@ -99,8 +105,17 @@ fn rust_shape(document: &str) -> Option<String> {
         }
     }
     let _ = std::fs::remove_dir_all(&dir);
-    const MARKER: &str = "const SHAPE: &'static str = \"";
-    let start = text.find(MARKER)? + MARKER.len();
+    const SAVES: &str = "const SHAPE:";
+    const MARKER: &str = "const SHAPE: ::sce_rust_runtime::saved_state::SavedShape = ";
+    const FIRST: &str = "first: \"";
+    if !text.contains(SAVES) {
+        return None;
+    }
+    let shape = text
+        .find(MARKER)
+        .unwrap_or_else(|| panic!("{document}: a SHAPE this reader cannot read"))
+        + MARKER.len();
+    let start = shape + text[shape..].find(FIRST).expect("the shape's first") + FIRST.len();
     let len = text[start..].find('"').expect("the shape ends");
     Some(text[start..start + len].to_string())
 }
