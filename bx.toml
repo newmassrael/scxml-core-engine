@@ -160,7 +160,19 @@ needs = ["cargo", "cmake", "ninja", "g++", "node", "git", "go", "java", "python3
 # Declared only after the build machines were checked to satisfy both names: a name a host
 # cannot satisfy would refuse that host for every job, which is the failure `kotlinc`'s comment
 # above describes.
-packages = ["libssl-dev", "openjdk-17-jdk-headless"]
+#
+# The rest are what swift.org lists for the Swift toolchain on Ubuntu 22.04 and 24.04 (the
+# `[tools.swift]` table below), less three: `git` is in `needs`, `libgcc-N-dev` and
+# `libstdc++-N-dev` come with the `g++` in `needs` (13 on 24.04, 11 on 22.04, which is the N each
+# release's list names), and `gnupg2` is there to check the tarball's signature, which the pinned
+# SHA-256 does instead. Without them the tarball unpacks and `swift --version` answers, and a
+# compile or a link dies later (`libcurl4-openssl-dev` for FoundationNetworking, `libz3-dev`,
+# `libxml2-dev` for FoundationXML): the same shape as `libssl-dev` above.
+#
+# `curl` is what the `[tools.swift]` install downloads with. It is a package and not a `need`
+# because nothing a job runs calls it; provision installs packages before it builds a tool.
+# Measured 2026-10-20: one build machine had no curl, and the install exited 127 there.
+packages = ["libssl-dev", "openjdk-17-jdk-headless", "curl", "binutils", "libc6-dev", "libcurl4-openssl-dev", "libedit2", "libncurses-dev", "libpython3-dev", "libsqlite3-0", "libxml2-dev", "libz3-dev", "pkg-config", "tzdata", "unzip", "zlib1g-dev"]
 
 # The C++ tree is the constraint: a debug build of this repository has
 # measured 4.2 GB of debug info in its executables alone.
@@ -191,6 +203,32 @@ path = "~/.local/share/mnemosyne-rev/{version:8}/bin/mnemosyne-cli"
 check = "{version:8}"
 install = "CARGO_HOME={scratch}/cargo cargo install --git https://github.com/newmassrael/mnemosyne --rev {version} --locked --root {prefix} mnemosyne-cli mnemosyne-mcp"
 prefix_file = "bin/mnemosyne-cli"
+
+# THE SWIFT TOOLCHAIN, for the Swift backend of the shared-calendar extensions E1 and E5 (the owner
+# had it installed on 2026-10-20). swift.org's release tarball, pinned by version and by the SHA-256
+# of each Ubuntu release's tarball: the two digests were taken on 2026-10-20 from tarballs whose
+# detached signatures verified against swift.org's published keys ("Swift 6.x Release Signing Key",
+# EF80A866B47A981F), so the digest carries that check to every machine without gpg on any of them.
+# 6.4.0 (2026-09-14) is the newest release more than two weeks old that day; 6.4.1 was eight days old.
+#
+# A release this pin has no digest for (a machine on 26.04, or another distribution) fails the
+# install by name instead of downloading something unchecked. Adding one is a digest taken the same
+# way, in the same commit as the version it belongs to.
+#
+# `check` is what `swift --version` prints in parentheses, and it is written out rather than
+# derived from `version` because the two spell a release differently: the download tag of 6.4.0 is
+# `swift-6.4.0-RELEASE`, and the binary prints `Swift version 6.4 (swift-6.4-RELEASE)` (measured
+# 2026-10-20). A patch release prints its patch (`swift-6.4.1-RELEASE`), so a version bump changes
+# `check` in the same edit.
+#
+# Only `swift` gets a link. `swiftc` and the rest of the toolchain are beside the file the link
+# points to, so a lane reaches them through `dirname "$(readlink -f ~/.local/share/swift/<version>/bin/swift)"`.
+[tools.swift]
+version = "6.4.0"
+path = "~/.local/share/swift/{version}/bin/swift"
+check = "swift-6.4-RELEASE"
+install = '. /etc/os-release && case "$ID$VERSION_ID" in ubuntu24.04) sum=69f7b2b4dbce6090b6c92194b71149a057e16269093b5a9dded38afc4a05094e ;; ubuntu22.04) sum=bce85ea80f1471b85f39993f9285dbc798ec8e1eac5f677e24b2ac693856f9f8 ;; *) echo "no Swift {version} tarball is pinned for $ID $VERSION_ID" >&2; exit 1 ;; esac && d="ubuntu$VERSION_ID" && f="swift-{version}-RELEASE-$d.tar.gz" && curl -fsSL --retry 3 --retry-all-errors -o "$f" "https://download.swift.org/swift-{version}-release/${d//./}/swift-{version}-RELEASE/$f" && echo "$sum  $f" > "$f.sha256" && sha256sum -c --quiet "$f.sha256" && tar -xzf "$f" -C {prefix} --strip-components=1'
+prefix_file = "usr/bin/swift"
 
 [commands]
 # `--features cli` is not optional here: `cargo test --workspace` silently
