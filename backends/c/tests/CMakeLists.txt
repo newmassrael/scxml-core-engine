@@ -1397,8 +1397,11 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # does not fit. The `timed` outcome arms eight pulses at once, so this one
     # target raises it to eight: what is measured is that a chain finite because
     # the clock is is not refused, not that four of the pulses fit.
+    # The budgets and counters the test holds the engine to are the shared
+    # table's, read at run time from this path.
     target_compile_definitions(sce_c_integration_external_chain_is_bounded PRIVATE
         SCE_MAX_SCHEDULED=8
+        SCE_EXTERNAL_EVENT_BUDGET_TABLE="${CMAKE_SOURCE_DIR}/tests/external_event_budget/budget_outcomes.json"
     )
     target_link_libraries(sce_c_integration_external_chain_is_bounded PRIVATE
         sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
