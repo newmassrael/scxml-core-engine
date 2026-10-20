@@ -60,6 +60,17 @@ public:
         return scheduler_;
     }
 
+    /**
+     * @brief The factory this dispatcher creates its targets with
+     *
+     * Read when a child session is given a dispatcher of its own (SCE_MESH.md,
+     * Child Sessions in Mesh): the child reaches what its parent reaches, except
+     * a Mesh peer.
+     */
+    std::shared_ptr<IEventTargetFactory> getTargetFactory() const {
+        return targetFactory_;
+    }
+
 private:
     /**
      * @brief Execute an event immediately without scheduling

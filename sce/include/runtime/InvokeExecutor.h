@@ -176,11 +176,20 @@ public:
 private:
     IScriptEngine &scriptEngine_;
 
+    // SCE_MESH.md, Child Sessions in Mesh: the Mesh router a child session was
+    // given, told once that the session ended. Defined in InvokeExecutor.cpp.
+    struct ChildMeshAttachment;
+
     struct InvokeSession {
         std::string invokeid;
         std::string sessionId;
         std::string parentSessionId;
         std::shared_ptr<IEventDispatcher> eventDispatcher;
+        // Declared before `smContext`, so it is destroyed after it: a session let
+        // go stops its child first (which tells the routers of the child's own
+        // children), and then tells the child's router. Empty for a child given
+        // no router.
+        std::shared_ptr<ChildMeshAttachment> mesh;
         std::unique_ptr<StateMachineContext> smContext;  // RAII wrapper (shared_ptr ownership)
         bool isActive = true;
         bool autoForward = false;

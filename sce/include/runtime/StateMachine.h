@@ -16,6 +16,7 @@
 #include "runtime/HistoryManager.h"
 #include "runtime/HistoryStateAutoRegistrar.h"
 #include "runtime/IActionExecutor.h"
+#include "runtime/IChildMeshRouter.h"
 #include "runtime/IEventRaiser.h"
 #include "runtime/IExecutionContext.h"
 #include "runtime/InterpreterDocument.h"
@@ -649,6 +650,27 @@ public:
     bool acceptsSimulatedNativeActionHost() const;
 
     /**
+     * @brief Register the factory of the routers of this machine's children
+     *        (SCE_MESH.md, Child Sessions in Mesh; docs/adr/0043)
+     *
+     * A child session started by `<invoke type="scxml">` is given none of this
+     * machine's Mesh route: its peer sends would leave under this machine's name.
+     * Each time an invocation starts a child, `factory` is asked with the invoke's
+     * id and the stem of the child's document (empty for one written inline), and
+     * the child is built with a dispatcher of its own whose Mesh peers are reached
+     * only through the router it answered (`IChildMeshRouter`). A factory that
+     * answers none, or none registered, leaves the child with no route to a peer:
+     * its peer send raises `error.execution` in the child. Register it before
+     * `start()`, since the initial state may already start a child.
+     */
+    void registerChildMeshRouters(ChildMeshRouters factory);
+
+    /**
+     * @brief The factory registered with `registerChildMeshRouters`, empty when none was
+     */
+    const ChildMeshRouters &getChildMeshRouters() const;
+
+    /**
      * @brief §scxml-6.4.3: Set completion callback for top-level final state notification
      *
      * This callback is invoked when the StateMachine reaches a top-level final state,
@@ -929,6 +951,10 @@ private:
     // Whether the caller accepted a host that only simulates the duties
     // (`setSimulatedNativeActionHost`); false for one installed the plain way.
     bool simulatedNativeActionHostAccepted_ = false;
+
+    // The factory of the Mesh routers of this machine's children (SCE_MESH.md,
+    // Child Sessions in Mesh); empty when none was registered.
+    ChildMeshRouters childMeshRouters_;
 
     // EventRaiser: holds both of Appendix D's queues
     std::shared_ptr<IEventRaiser> eventRaiser_;

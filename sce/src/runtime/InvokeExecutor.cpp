@@ -30,7 +30,9 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <iomanip>
+#include <mutex>
 #include <random>
 #include <sstream>
 
@@ -59,6 +61,80 @@ static std::string extractParentStateIdFromInvokeId(const std::string &invokeId)
     }
     return invokeId.substr(0, dotPos);
 }
+
+/**
+ * @brief The dispatcher a child session sends through (SCE_MESH.md, Child
+ *        Sessions in Mesh; docs/adr/0043)
+ *
+ * A dispatcher of the child's own: it shares its parent's scheduler, so a
+ * delay and a `<cancel>` mean in the child what they mean in the parent, and
+ * reaches every target the parent's reaches except a Mesh peer, which it
+ * reaches only through `router`. With no router the child has no route to a
+ * peer, and its peer send is refused as one with no router is. Sharing the
+ * parent's dispatcher would send the child's event under the parent's name,
+ * through the router the parent's host registered for the parent.
+ *
+ * A parent dispatcher of a type this runtime does not build cannot be derived
+ * from, and is shared as it was; every dispatcher the runtime builds is one.
+ */
+static std::shared_ptr<IEventDispatcher> dispatcherForChild(const std::shared_ptr<IEventDispatcher> &parent,
+                                                            const std::shared_ptr<IEventRaiser> &childRaiser,
+                                                            const std::shared_ptr<IChildMeshRouter> &router) {
+    const auto parentDispatcher = std::dynamic_pointer_cast<EventDispatcherImpl>(parent);
+    const auto parentTargets =
+        parentDispatcher ? std::dynamic_pointer_cast<EventTargetFactoryImpl>(parentDispatcher->getTargetFactory())
+                         : nullptr;
+    if (!parentTargets) {
+        if (parent) {
+            SCE_LOG_WARN("SCXMLInvokeHandler: the parent's dispatcher is of a type a child's cannot be derived from; "
+                         "the child shares it, and has no Mesh route of its own");
+        }
+        return parent;
+    }
+    std::function<std::shared_ptr<IEventTarget>(const std::string &)> meshTargets;
+    if (router) {
+        meshTargets = [router](const std::string &targetUri) { return router->createTarget(targetUri); };
+    }
+    return std::make_shared<EventDispatcherImpl>(parentDispatcher->getScheduler(),
+                                                 parentTargets->forChildSession(childRaiser, std::move(meshTargets)));
+}
+
+/**
+ * @brief The Mesh router a child session was given, told once that the session
+ *        ended (SCE_MESH.md, Child Sessions in Mesh)
+ *
+ * Whichever comes first tells it: the child's own end (its completion callback),
+ * or the parent letting the session go, which a cancel does and which stops the
+ * child first (`InvokeSession` holds this past its `smContext`). The two may run
+ * on different threads, so the router is taken under a lock and told outside it.
+ */
+struct SCXMLInvokeHandler::ChildMeshAttachment {
+    explicit ChildMeshAttachment(std::shared_ptr<IChildMeshRouter> router) : router_(std::move(router)) {}
+
+    ~ChildMeshAttachment() {
+        detach();
+    }
+
+    ChildMeshAttachment(const ChildMeshAttachment &) = delete;
+    ChildMeshAttachment &operator=(const ChildMeshAttachment &) = delete;
+    ChildMeshAttachment(ChildMeshAttachment &&) = delete;
+    ChildMeshAttachment &operator=(ChildMeshAttachment &&) = delete;
+
+    void detach() {
+        std::shared_ptr<IChildMeshRouter> router;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            router.swap(router_);
+        }
+        if (router) {
+            router->detach();
+        }
+    }
+
+private:
+    std::mutex mutex_;
+    std::shared_ptr<IChildMeshRouter> router_;
+};
 
 // ============================================================================
 // SCXMLInvokeHandler Implementation
@@ -263,14 +339,6 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
     scriptEngine_.setVariable(childSessionId, "_invokeid", ScriptValue{invokeid});
     scriptEngine_.setVariable(childSessionId, "_parent", ScriptValue{parentSessionId});
 
-    // §scxml-6.2 compliance: Register EventDispatcher for delayed event cancellation
-    if (eventDispatcher) {
-        SessionRegistry::instance().registerEventDispatcher(childSessionId, eventDispatcher);
-        SCE_LOG_DEBUG("SCXMLInvokeHandler: Registered EventDispatcher for child session: {}", childSessionId);
-    } else {
-        SCE_LOG_WARN("SCXMLInvokeHandler: No EventDispatcher provided for session: {}", childSessionId);
-    }
-
     // W3C SCXML: Create EventRaiser for #_parent target support
     auto childEventRaiser = std::make_shared<EventRaiserImpl>();
 
@@ -288,12 +356,35 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
         }
     }
 
+    // SCE_MESH.md, Child Sessions in Mesh (docs/adr/0043): the child's router,
+    // asked of the parent's factory with the invoke's id and the stem of the
+    // child's document (empty for one written inline), every time the
+    // invocation starts (entry and restoration alike). The child is built with
+    // a dispatcher of its own that reaches a Mesh peer only through it.
+    std::shared_ptr<IChildMeshRouter> meshRouter;
+    if (auto parentSM = parentStateMachine_.lock()) {
+        const ChildMeshRouters &routers = parentSM->getChildMeshRouters();
+        if (routers) {
+            meshRouter = routers(invokeid, childDocument);
+        }
+    }
+    const std::shared_ptr<IEventDispatcher> childDispatcher =
+        dispatcherForChild(eventDispatcher, childEventRaiser, meshRouter);
+
+    // §scxml-6.2 compliance: Register EventDispatcher for delayed event cancellation
+    if (childDispatcher) {
+        SessionRegistry::instance().registerEventDispatcher(childSessionId, childDispatcher);
+        SCE_LOG_DEBUG("SCXMLInvokeHandler: Registered EventDispatcher for child session: {}", childSessionId);
+    } else {
+        SCE_LOG_WARN("SCXMLInvokeHandler: No EventDispatcher provided for session: {}", childSessionId);
+    }
+
     // Store session information for tracking
     InvokeSession session;
     session.invokeid = invokeid;
     session.sessionId = childSessionId;
     session.parentSessionId = parentSessionId;
-    session.eventDispatcher = eventDispatcher;
+    session.eventDispatcher = childDispatcher;
     session.smContext = nullptr;  // Will be created later
     session.isActive = true;
     session.autoForward = invoke->isAutoForward();
@@ -307,9 +398,22 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
     StateMachineBuilder builder;
     auto stateMachine = builder.withScriptEngine(scriptEngine_)
                             .withSessionId(childSessionId)
-                            .withEventDispatcher(eventDispatcher)
+                            .withEventDispatcher(childDispatcher)
                             .withEventRaiser(childEventRaiser)
                             .build();
+
+    // SCE_MESH.md, Child Sessions in Mesh: what arrives for the child is raised
+    // on its own raiser, given to the router before the child starts; the
+    // children it starts are asked of its router; and the router is told once
+    // that the session ended (`ChildMeshAttachment`).
+    if (meshRouter) {
+        meshRouter->attach(childEventRaiser);
+        stateMachine->registerChildMeshRouters([meshRouter](const std::string &id, const std::string &document) {
+            return meshRouter->childRouter(id, document);
+        });
+        session.mesh = std::make_shared<ChildMeshAttachment>(meshRouter);
+    }
+    const std::weak_ptr<ChildMeshAttachment> weakMesh = session.mesh;
 
     // §scxml-6.4.1: a child that declares `<sce:action>`s takes its host before
     // it runs — its first `<onentry>` may already perform one — so the host its
@@ -350,9 +454,16 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
     // Child state machines must send done.invoke when reaching final state after being restored
     std::weak_ptr<StateMachine> weakParentSM = parentStateMachine_;
     weakChildSM.lock()->setCompletionCallback([weakParentSM, weakChildSM, invokeid, childSessionId, parentSessionId,
-                                               eventDispatcher]() {
+                                               childDispatcher, weakMesh]() {
         SCE_LOG_INFO("SCXMLInvokeHandler: Child completion callback invoked - invokeid: {}, session: {}", invokeid,
                      childSessionId);
+
+        // SCE_MESH.md, Child Sessions in Mesh: the session ended in its final
+        // state, after its exit cancelled the children it started (whose
+        // routers were told then); its own router is told now.
+        if (const auto mesh = weakMesh.lock()) {
+            mesh->detach();
+        }
         SCE_LOG_INFO("SCXMLInvokeHandler: Parent check - weakPtr valid: {}, parentSessionId: {}",
                      !weakParentSM.expired(), parentSessionId);
 
@@ -430,8 +541,8 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
         // "If the SCXML session terminates before the delay interval has elapsed,
         // the SCXML Processor MUST discard the message without attempting to deliver it."
         // This applies only to <send> element messages, not done.invoke (W3C SCXML Test 187)
-        if (eventDispatcher) {
-            size_t cancelledCount = eventDispatcher->cancelEventsForSession(childSessionId);
+        if (childDispatcher) {
+            size_t cancelledCount = childDispatcher->cancelEventsForSession(childSessionId);
             SCE_LOG_INFO("SCXMLInvokeHandler: Cancelled {} pending delayed send(s) for terminated child session: {}",
                          cancelledCount, childSessionId);
         }

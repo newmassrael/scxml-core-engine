@@ -61,6 +61,24 @@ public:
      */
     void unregisterTargetCreator(const std::string &scheme);
 
+    /**
+     * @brief The factory of a child session this factory's session starts
+     *        (SCE_MESH.md, Child Sessions in Mesh; docs/adr/0043)
+     *
+     * Every scheme this factory reaches, with `childRaiser` as the session's own
+     * raiser, except a Mesh peer: the child reaches one only through
+     * `meshTargets`, the router its parent's host answered for it, and through
+     * nothing when that is empty, so its peer send is refused as one with no
+     * router is. Never through the creator registered here, which would send
+     * the child's event under its parent's name.
+     *
+     * @param childRaiser The child session's raiser
+     * @param meshTargets The creator of the child's Mesh targets, or empty
+     */
+    std::shared_ptr<EventTargetFactoryImpl>
+    forChildSession(std::shared_ptr<IEventRaiser> childRaiser,
+                    std::function<std::shared_ptr<IEventTarget>(const std::string &)> meshTargets) const;
+
 private:
     /**
      * @brief Extract scheme from target URI

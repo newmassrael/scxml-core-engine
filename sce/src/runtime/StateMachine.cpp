@@ -1996,6 +1996,16 @@ bool StateMachine::acceptsSimulatedNativeActionHost() const {
     return simulatedNativeActionHostAccepted_;
 }
 
+// SCE_MESH.md, Child Sessions in Mesh: the factory the invoke handler asks for
+// the router of each child this machine starts.
+void StateMachine::registerChildMeshRouters(ChildMeshRouters factory) {
+    childMeshRouters_ = std::move(factory);
+}
+
+const ChildMeshRouters &StateMachine::getChildMeshRouters() const {
+    return childMeshRouters_;
+}
+
 // EventDispatcher management
 void StateMachine::setEventDispatcher(std::shared_ptr<IEventDispatcher> eventDispatcher) {
     eventDispatcher_ = eventDispatcher;

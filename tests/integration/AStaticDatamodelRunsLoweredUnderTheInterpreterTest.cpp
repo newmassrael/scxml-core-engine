@@ -31,11 +31,13 @@
 #include "events/EventSchedulerImpl.h"
 #include "events/EventTargetFactoryImpl.h"
 #include "runtime/EventRaiserImpl.h"
+#include "runtime/IChildMeshRouter.h"
 #include "runtime/INativeActionHost.h"
 #include "runtime/StateMachine.h"
 #include "scripting/ScriptEngineProvider.h"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -43,6 +45,7 @@
 #include <fstream>
 #include <functional>
 #include <gtest/gtest.h>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <nlohmann/json.hpp>
@@ -201,7 +204,9 @@ bool holds(const nlohmann::json &got, const nlohmann::json &want) {
 /// under one lock.
 class SentToPeers {
 public:
-    void record(const EventDescriptor &event) {
+    /// `child` holds the `invoke` and `start` of the child session that sent it,
+    /// and is empty for the machine's own send.
+    void record(const EventDescriptor &event, const nlohmann::json &child = nlohmann::json::object()) {
         nlohmann::json send = {{"target", event.target}, {"event", event.eventName}};
         // The data the receiving session would read as `_event.data`, as the JSON
         // value of its text; a send that carried none states no data.
@@ -209,6 +214,7 @@ public:
         if (!data.empty()) {
             send["data"] = nlohmann::json::parse(data, nullptr, false);
         }
+        send.update(child);
         std::lock_guard<std::mutex> lock(mutex_);
         sent_.push_back(std::move(send));
     }
@@ -222,20 +228,29 @@ public:
         return taken;
     }
 
+    /// What `take` would answer now, left in place: for a step that waits for
+    /// what a child running in an event loop of its own has yet to send.
+    nlohmann::json peek() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return sent_;
+    }
+
 private:
-    std::mutex mutex_;
+    mutable std::mutex mutex_;
     nlohmann::json sent_ = nlohmann::json::array();
 };
 
 /// The target of a send to a Mesh peer: it writes the send down and delivers it
 /// to no one, because the peer is not there. What a scenario holds a step to is
-/// that the machine asked for the send.
+/// that the machine asked for the send. A child's target writes down, beside the
+/// send, the `invoke` and `start` of the child that made it.
 class PeerTarget : public IEventTarget {
 public:
-    PeerTarget(std::shared_ptr<SentToPeers> sent, std::string peer) : sent_(std::move(sent)), peer_(std::move(peer)) {}
+    PeerTarget(std::shared_ptr<SentToPeers> sent, std::string peer, nlohmann::json child = nlohmann::json::object())
+        : sent_(std::move(sent)), peer_(std::move(peer)), child_(std::move(child)) {}
 
     std::future<SendResult> send(const EventDescriptor &event) override {
-        sent_->record(event);
+        sent_->record(event, child_);
         std::promise<SendResult> accepted;
         accepted.set_value(SendResult::success(event.sendId));
         return accepted.get_future();
@@ -260,6 +275,114 @@ public:
 private:
     std::shared_ptr<SentToPeers> sent_;
     std::string peer_;
+    nlohmann::json child_;
+};
+
+/// The routers a replay gives the child sessions of the machine it drives
+/// (SCE_MESH.md, Child Sessions in Mesh; docs/adr/0043). A child that sends to a
+/// Mesh peer is given a router of its own by its parent, which asks the factory its
+/// host registered; a replay is the host, so it registers one (`factory`) whose
+/// routers write down what each child sent, told by the path of invoke ids that
+/// started it and how many children that path had started, and raise what a step's
+/// `invoke` delivers on the child's own raiser. A router answers for the child's
+/// own children in turn, so a grandchild is told by `<invoke>/<invoke>`. The
+/// Interpreter's half of the Rust replay's `child_mesh::Children`.
+class ChildRouters {
+public:
+    explicit ChildRouters(std::shared_ptr<SentToPeers> sent) : book_(std::make_shared<Book>()) {
+        book_->sent = std::move(sent);
+    }
+
+    /// The factory a replay registers on the machine: every child is given a
+    /// router, whichever invoke starts it and from whatever document.
+    ChildMeshRouters factory() const {
+        return [book = book_](const std::string &invokeId, const std::string &) { return start(book, invokeId); };
+    }
+
+    /// Raise `event`, with `data` as its `_event.data`, on the running child of
+    /// `path` as a peer's event, on its external queue. False when no child of
+    /// `path` is running, which a step that names one fails on.
+    bool deliver(const std::string &path, const std::string &event, const std::string &data) const {
+        std::shared_ptr<IEventRaiser> inbound;
+        {
+            std::lock_guard<std::mutex> lock(book_->mutex);
+            const auto running = book_->running.find(path);
+            if (running == book_->running.end()) {
+                return false;
+            }
+            inbound = running->second.inbound;
+        }
+        return inbound && inbound->raiseExternalEvent(event, data);
+    }
+
+private:
+    /// The session a path is running: the router it was given, and the raiser it
+    /// was attached to.
+    struct Running {
+        const IChildMeshRouter *router = nullptr;
+        std::shared_ptr<IEventRaiser> inbound;
+    };
+
+    /// The list every send is written into, the starts of each path, and the
+    /// session each path is running, under one lock: a child runs in an event loop
+    /// of its own.
+    struct Book {
+        std::mutex mutex;
+        std::shared_ptr<SentToPeers> sent;
+        std::map<std::string, int> starts;
+        std::map<std::string, Running> running;
+    };
+
+    /// The router of one start of one child.
+    class Recording : public IChildMeshRouter {
+    public:
+        Recording(std::shared_ptr<Book> book, std::string path, int number)
+            : book_(std::move(book)), path_(std::move(path)), number_(number) {}
+
+        std::shared_ptr<IEventTarget> createTarget(const std::string &targetUri) override {
+            return std::make_shared<PeerTarget>(book_->sent, targetUri,
+                                                nlohmann::json{{"invoke", path_}, {"start", number_}});
+        }
+
+        void attach(std::shared_ptr<IEventRaiser> inbound) override {
+            std::lock_guard<std::mutex> lock(book_->mutex);
+            const auto running = book_->running.find(path_);
+            if (running != book_->running.end() && running->second.router == this) {
+                running->second.inbound = std::move(inbound);
+            }
+        }
+
+        /// The path is no longer running this session: a step that names it fails
+        /// until the path starts a child again.
+        void detach() override {
+            std::lock_guard<std::mutex> lock(book_->mutex);
+            const auto running = book_->running.find(path_);
+            if (running != book_->running.end() && running->second.router == this) {
+                book_->running.erase(running);
+            }
+        }
+
+        std::shared_ptr<IChildMeshRouter> childRouter(const std::string &invokeId, const std::string &) override {
+            return start(book_, path_ + "/" + invokeId);
+        }
+
+    private:
+        std::shared_ptr<Book> book_;
+        std::string path_;
+        int number_;
+    };
+
+    /// A router for a new start of `path`, which is now the session the path is
+    /// running.
+    static std::shared_ptr<IChildMeshRouter> start(const std::shared_ptr<Book> &book, const std::string &path) {
+        std::lock_guard<std::mutex> lock(book->mutex);
+        const int number = ++book->starts[path];
+        auto router = std::make_shared<Recording>(book, path, number);
+        book->running[path] = Running{router.get(), nullptr};
+        return router;
+    }
+
+    std::shared_ptr<Book> book_;
 };
 
 /// A host that performs every operation and records each call as the JSON of
@@ -495,6 +618,13 @@ protected:
         // from. Wired before the machine starts, because its first entry can
         // already send.
         const auto sentToPeers = std::make_shared<SentToPeers>();
+        // A child session the machine starts is given a router of its own by the
+        // factory its host registers (SCE_MESH.md, Child Sessions in Mesh), never
+        // the machine's: what a child sends is written into the same list, told by
+        // the invoke that started it and the start, and a step's `invoke` hands its
+        // event to the child through it.
+        const ChildRouters children(sentToPeers);
+        machine->registerChildMeshRouters(children.factory());
         // The time a step's `advance_ms` moves is this scheduler's logical clock,
         // not the wall: the scenario says how far time goes, and the delayed sends
         // that fall due in that span are released, with nothing waited out.
@@ -519,7 +649,16 @@ protected:
             }
             if (step.contains("event")) {
                 const std::string data = step.contains("data") ? step.at("data").dump() : std::string{};
-                machine->processEvent(step.at("event").get<std::string>(), data);
+                const std::string event = step.at("event").get<std::string>();
+                if (step.contains("invoke")) {
+                    // A peer's event for the running child of that invoke, raised on
+                    // the child through the router it was given.
+                    const std::string path = step.at("invoke").get<std::string>();
+                    EXPECT_TRUE(children.deliver(path, event, data))
+                        << "no child of '" << path << "' is running to be sent '" << event << "'";
+                } else {
+                    machine->processEvent(event, data);
+                }
                 eventRaiser->processQueuedEvents();
             }
             const auto &expect = step.at("expect");
@@ -547,6 +686,14 @@ protected:
             // What the machine sent its Mesh peers in this step, taken on every
             // step for the same reason; compared as values, in the order sent,
             // with a 64-bit integer held to the text of its digits as a variable is.
+            // A child session runs in an event loop of its own, so a step that
+            // states what a child sent waits until the list shows it, and is judged
+            // on what it shows when that time is up.
+            if (expect.contains("sent") &&
+                std::any_of(expect.at("sent").begin(), expect.at("sent").end(),
+                            [](const nlohmann::json &want) { return want.contains("invoke"); })) {
+                settles(eventRaiser, [&] { return holds(sentToPeers->peek(), expect.at("sent")); });
+            }
             const auto sent = sentToPeers->take();
             if (expect.contains("sent")) {
                 EXPECT_TRUE(holds(sent, expect.at("sent")))
@@ -713,6 +860,12 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheInterpreterDoesWha
         EXPECT_NE(std::find(replayed.begin(), replayed.end(), parent), replayed.end())
             << parent << " was not replayed: a child given a host by its parent has no lowering for the Interpreter";
     }
+    // ... and children that talk to Mesh peers, each given a router of its own by the
+    // replay's factory (SCE_MESH.md, Child Sessions in Mesh): an inline one, and a
+    // hybrid candidate whose own child is given the router the candidate's answers.
+    EXPECT_NE(std::find(replayed.begin(), replayed.end(), "static_child_mesh"), replayed.end())
+        << "static_child_mesh was not replayed: a child given a Mesh router by its parent has no lowering for the "
+        << "Interpreter";
     for (const auto &name : notYetLowered) {
         RecordProperty("not_yet_lowered_" + name, "refused by sce-codegen lower");
     }
@@ -1100,6 +1253,96 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, ASendToAMeshPeerWithN
     machine->processEvent("todo.edit", R"({"id":7,"field":1,"value":"0","text":"buy milk","now":"0"})");
     EXPECT_TRUE(settles(raiser, [&] { return variable(*machine, "refusals") == 1; }))
         << "the send to #server was not refused as error.execution, once";
+}
+
+// SCE_MESH.md, Child Sessions in Mesh (docs/adr/0043): a child session is built with
+// a dispatcher of its own, and is given none of its parent's Mesh route. Here the
+// machine's host registered a router for the machine and no factory for its
+// children, so `list`'s greeting to `#server` is refused as error.execution in the
+// child, which ends on it, and the machine counts the end. A child built with its
+// parent's dispatcher would have sent the greeting through the parent's router,
+// under the parent's name, and the machine would have counted nothing.
+TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, AChildIsNotGivenItsParentsMeshRoute) {
+    const auto dir = std::filesystem::temp_directory_path() / ("sce-child-mesh-" + std::to_string(::getpid()));
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
+    const LoweredSet set = lowerSet(kFixtures / "static_child_mesh.scxml", dir);
+    ASSERT_TRUE(set.ok) << set.refusal.dump();
+
+    const auto machine = std::make_shared<StateMachine>(*engine_);
+    const auto sentToPeers = std::make_shared<SentToPeers>();
+    const auto raiser = wire(*machine, sentToPeers);
+    ASSERT_TRUE(machine->loadSCXML(set.documents.at(0).string())) << "the Interpreter does not load the document";
+    ASSERT_TRUE(machine->start());
+    EXPECT_TRUE(settles(raiser, [&] { return variable(*machine, "refusals") == 1; }))
+        << "the child's greeting to #server was not refused in the child";
+    EXPECT_EQ(nlohmann::json::array(), sentToPeers->take()) << "the child sent under its parent's name";
+    machine->stop();
+    std::filesystem::remove_all(dir, ec);
+}
+
+// A child that is given a router sends through it, under its own invoke, and the
+// router is told once that the session ended when the parent leaves the invoking
+// state (SCE_MESH.md, Child Sessions in Mesh).
+TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, AChildSendsThroughTheRouterItsParentAsksFor) {
+    const auto dir = std::filesystem::temp_directory_path() / ("sce-child-mesh-router-" + std::to_string(::getpid()));
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
+    const LoweredSet set = lowerSet(kFixtures / "static_child_mesh.scxml", dir);
+    ASSERT_TRUE(set.ok) << set.refusal.dump();
+
+    struct Router : IChildMeshRouter {
+        explicit Router(std::shared_ptr<SentToPeers> sent) : sent(std::move(sent)) {}
+
+        std::shared_ptr<IEventTarget> createTarget(const std::string &targetUri) override {
+            return std::make_shared<PeerTarget>(sent, targetUri, nlohmann::json{{"invoke", "list"}});
+        }
+
+        void attach(std::shared_ptr<IEventRaiser>) override {
+            ++attached;
+        }
+
+        void detach() override {
+            ++detached;
+        }
+
+        std::shared_ptr<SentToPeers> sent;
+        std::atomic<int> attached{0};
+        std::atomic<int> detached{0};
+    };
+
+    const auto machine = std::make_shared<StateMachine>(*engine_);
+    const auto sentToPeers = std::make_shared<SentToPeers>();
+    const auto childSent = std::make_shared<SentToPeers>();
+    std::vector<std::pair<std::string, std::string>> asked;
+    std::shared_ptr<Router> router;
+    machine->registerChildMeshRouters(
+        [&](const std::string &invokeId, const std::string &document) -> std::shared_ptr<IChildMeshRouter> {
+            asked.emplace_back(invokeId, document);
+            if (invokeId != "list" || router) {
+                return nullptr;
+            }
+            router = std::make_shared<Router>(childSent);
+            return router;
+        });
+    const auto raiser = wire(*machine, sentToPeers);
+    ASSERT_TRUE(machine->loadSCXML(set.documents.at(0).string())) << "the Interpreter does not load the document";
+    ASSERT_TRUE(machine->start());
+    ASSERT_TRUE(settles(raiser, [&] { return childSent->peek().size() == 1u; }))
+        << "the child's greeting did not reach the router it was given";
+    const std::vector<std::pair<std::string, std::string>> firstAsk = {{"list", ""}};
+    EXPECT_EQ(firstAsk, asked) << "the factory is asked with the invoke's id and no document for an inline child";
+    EXPECT_EQ((nlohmann::json::array({{{"target", "#server"}, {"event", "list.hello"}, {"invoke", "list"}}})),
+              childSent->take());
+    EXPECT_EQ(nlohmann::json::array(), sentToPeers->take()) << "the child's send reached its parent's router";
+    EXPECT_EQ(1, router->attached.load()) << "the router was attached once, before the child started";
+    EXPECT_EQ(0, variable(*machine, "refusals")) << "the child given a router had its send refused";
+
+    machine->processEvent("again", "");
+    EXPECT_TRUE(settles(raiser, [&] { return router->detached.load() == 1; }))
+        << "the router was not told the session ended when its parent left the invoking state";
+    machine->stop();
+    std::filesystem::remove_all(dir, ec);
 }
 
 }  // namespace Tests

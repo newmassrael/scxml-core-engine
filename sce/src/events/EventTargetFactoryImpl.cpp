@@ -212,6 +212,24 @@ void EventTargetFactoryImpl::unregisterTargetCreator(const std::string &scheme) 
     }
 }
 
+std::shared_ptr<EventTargetFactoryImpl> EventTargetFactoryImpl::forChildSession(
+    std::shared_ptr<IEventRaiser> childRaiser,
+    std::function<std::shared_ptr<IEventTarget>(const std::string &)> meshTargets) const {
+    auto child = std::make_shared<EventTargetFactoryImpl>(std::move(childRaiser));
+    // The internal creator is the child factory's own, bound to the child's
+    // raiser by its constructor; the Mesh one is never inherited.
+    for (const auto &[scheme, creator] : targetCreators_) {
+        if (scheme == "internal" || scheme == SendHelper::MESH_TARGET_SCHEME) {
+            continue;
+        }
+        child->targetCreators_[scheme] = creator;
+    }
+    if (meshTargets) {
+        child->targetCreators_[SendHelper::MESH_TARGET_SCHEME] = std::move(meshTargets);
+    }
+    return child;
+}
+
 std::string EventTargetFactoryImpl::extractScheme(const std::string &targetUri) const {
     if (targetUri.empty()) {
         return "internal";
