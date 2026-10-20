@@ -194,6 +194,21 @@ tasks.test {
         .withPropertyName("sharedEcmaScriptTables")
         .withPathSensitivity(PathSensitivity.RELATIVE)
 
+    // Same reason, same failure mode. `JsonTextTest`, `RealTextTest`, `EventDataKeyOrderTest`,
+    // `DurationTest` and `DocumentStemTest` each read one table every backend shares, by a
+    // path relative to `workingDir` at RUN time, so none is on the compile classpath either.
+    // A table edited to a case this runtime answers differently must turn the suite red;
+    // with the directories undeclared it reported UP-TO-DATE and ran nothing.
+    inputs.dir(File(rootDir, "tests/json_text"))
+        .withPropertyName("sharedJsonTextTables")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.dir(File(rootDir, "tests/durations"))
+        .withPropertyName("sharedDurationTables")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.dir(File(rootDir, "tests/document_stem"))
+        .withPropertyName("sharedDocumentStemTables")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+
     // Same reason, same failure mode, measured the same way.
     // `GateEnginePairsTest` reads the conformance gate and holds its
     // `KOTLIN_ENGINE_PAIRS` array to the routes this backend actually has.
