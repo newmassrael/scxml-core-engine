@@ -230,6 +230,29 @@ check = "swift-6.4-RELEASE"
 install = '. /etc/os-release && case "$ID$VERSION_ID" in ubuntu24.04) sum=69f7b2b4dbce6090b6c92194b71149a057e16269093b5a9dded38afc4a05094e ;; ubuntu22.04) sum=bce85ea80f1471b85f39993f9285dbc798ec8e1eac5f677e24b2ac693856f9f8 ;; *) echo "no Swift {version} tarball is pinned for $ID $VERSION_ID" >&2; exit 1 ;; esac && d="ubuntu$VERSION_ID" && f="swift-{version}-RELEASE-$d.tar.gz" && curl -fsSL --retry 3 --retry-all-errors -o "$f" "https://download.swift.org/swift-{version}-release/${d//./}/swift-{version}-RELEASE/$f" && echo "$sum  $f" > "$f.sha256" && sha256sum -c --quiet "$f.sha256" && tar -xzf "$f" -C {prefix} --strip-components=1'
 prefix_file = "usr/bin/swift"
 
+# GenMC, the C11 memory-model checker `scripts/gates/genmc-queue.sh` runs, at the
+# revision `scripts/install_genmc.sh` pins. That script stays the one place the
+# build is written: provision copies it to the machine as `install_inputs` and
+# runs it with GENMC_ROOT set to the store entry, so a change to the script
+# rebuilds even at the same revision. `prefix_link` makes the whole install
+# directory the store entry, because the gate reads `bin/genmc` and
+# `include/genmc/runtime` under the same root. `check` is left to its default,
+# the version itself: `genmc --version` prints `GenMC v0.19.0` (measured
+# 2026-10-20 on the developer account's build). `needed_by` keeps it a
+# requirement of the runs that name `genmc-queue` only, so a host without LLVM
+# 19 still takes every other job of this repository. Until 2026-10-20 bx ran as
+# an account that could not reach the only GenMC on a build machine, and a run
+# through bx exited 127.
+[tools.genmc]
+version_file = "scripts/install_genmc.sh"
+version_pattern = '^GENMC_REV="(v[0-9.]+)"'
+path = "~/.local/genmc/{version}/bin/genmc"
+prefix_link = "~/.local/genmc/{version}"
+install = "GENMC_ROOT={prefix} bash scripts/install_genmc.sh"
+install_inputs = ["scripts/install_genmc.sh"]
+packages = ["g++-14", "clang-19", "llvm-19-dev", "cmake", "ninja-build", "libffi-dev", "zlib1g-dev", "libedit-dev"]
+needed_by = ["genmc-queue"]
+
 [commands]
 # `--features cli` is not optional here: `cargo test --workspace` silently
 # skips every cli-gated target, so a workspace run without it reports green

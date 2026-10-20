@@ -21,19 +21,16 @@
 # What it needs and does not install (an installer that also reaches for root
 # is a second thing to get wrong): a C++20 compiler (g++ 14 or newer), clang
 # and llvm development files of a major GenMC supports (19 or newer), cmake,
-# and libffi, zlib and libedit development files. On Ubuntu 24.04:
+# ninja, and libffi, zlib and libedit development files. On Ubuntu 24.04:
 #
-#   sudo apt-get install -y g++-14 clang-19 llvm-19-dev cmake \
+#   sudo apt-get install -y g++-14 clang-19 llvm-19-dev cmake ninja-build \
 #       libffi-dev zlib1g-dev libedit-dev
 #
-# ⚠ THE BUILD MACHINES NEED IT TOO, and `bx` cannot tell a host that lacks it
-# from one that has it. Run it once on each host:
-#
-#   bx --host <alias> -- scripts/install_genmc.sh
-#
-# and a pin bump is that many installs again. The queue checker
-# (`scripts/gates/genmc-queue.sh`) looks for the binary at the path derived
-# here and says how to install it when it is not there.
+# The build machines get it from `[tools.genmc]` in bx.toml, which runs this
+# script with GENMC_ROOT set to bx's store entry and rebuilds when the pin or
+# this script changes. The queue checker (`scripts/gates/genmc-queue.sh`) looks
+# for the binary at the path derived here and says how to install it when it
+# is not there.
 set -euo pipefail
 
 # The pin. v0.19.0 (2026-09-24) supports LLVM 19 through 22.
