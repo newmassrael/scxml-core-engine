@@ -176,6 +176,15 @@ type ChildEngine interface {
 	// ticks its children, so it is a deadline of the parent's clock too, and
 	// the parent's TimeUntilNextScheduled counts it (§scxml-6.4).
 	TimeUntilNextScheduled() (time.Duration, bool)
+
+	// ApplyMeshCalls applies what arrived for the child on the Mesh router its
+	// parent gave it (SCE_MESH.md, Child Sessions in Mesh): the parent calls it
+	// each time it drives the child, before the child's macrostep.
+	ApplyMeshCalls()
+
+	// DetachMesh tells the child's Mesh router its session ended, once: after
+	// the child reached a top-level <final>, or after its parent stopped it.
+	DetachMesh()
 }
 
 // DeliverToChild delivers a `<send>` addressed to an invoked session and lets

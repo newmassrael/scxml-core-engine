@@ -44,6 +44,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_cancel_expr"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_child_host"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_child_host_hybrid"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_child_mesh"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_counter"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_donedata"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_donedata_content"
@@ -488,6 +489,90 @@ type machine struct {
 	// the target as the document writes it, the event's name, and the event's data
 	// where it has any. Nil for a machine whose driver records none.
 	sent func() []any
+	// deliver hands a peer's event to the running child session of `path` (a
+	// path of invoke ids joined by `/`) through the Mesh router the child was
+	// given, and runs the rounds that let the parent apply it; false when no
+	// child of that path is running. Nil for a machine whose driver gives its
+	// children no routers.
+	deliver func(path, name, data string) bool
+}
+
+// childRouters is the routers a driver gives the child sessions of the machine
+// it drives (SCE_MESH.md, Child Sessions in Mesh): its factory answers a router
+// for every child, which writes what the child sends into the machine's list
+// under the path of invoke ids that started it and the start of that path,
+// holds what a step's `invoke` hands the child until the parent applies it, and
+// answers for the child's own children under `<path>/<invoke>`.
+type childRouters struct {
+	sent    *[]any
+	starts  map[string]int
+	running map[string]*childRouter
+}
+
+// open is a router for a new start of `path`, which is now the session the
+// path is running.
+func (c *childRouters) open(path string) sce.ChildMeshRouter {
+	c.starts[path]++
+	router := &childRouter{book: c, path: path, start: c.starts[path]}
+	c.running[path] = router
+	return router
+}
+
+// deliver hands `event`, with `data` as its `_event.data`, to the running child
+// of `path`; false when no child of that path is running.
+func (c *childRouters) deliver(path, event, data string) bool {
+	router, ok := c.running[path]
+	if !ok {
+		return false
+	}
+	router.inbox = append(router.inbox, sce.MeshCall{
+		Kind:     sce.MeshCallRaise,
+		Name:     event,
+		Metadata: sce.EventMetadata{Data: data, EventType: sce.EventTypeExternal},
+	})
+	return true
+}
+
+// childRouter is the router of one start of one child.
+type childRouter struct {
+	book  *childRouters
+	path  string
+	start int
+	inbox []sce.MeshCall
+}
+
+// Send writes the child's send down as the machine's own are written, with the
+// child's path and start; the peer is not there, so nothing answers.
+func (r *childRouter) Send(request sce.HostSendRequest) []sce.HostSendResponse {
+	entry := sentToPeer(request).(map[string]any)
+	entry["invoke"] = r.path
+	entry["start"] = r.start
+	*r.book.sent = append(*r.book.sent, entry)
+	return nil
+}
+
+// Invoke starts a request the child makes and never answers it: no peer is
+// there to answer.
+func (r *childRouter) Invoke(sce.HostInvokeEvent) *sce.HostInvokeResponse { return nil }
+
+// TakeCalls answers what a step handed the child since it was last asked.
+func (r *childRouter) TakeCalls() []sce.MeshCall {
+	calls := r.inbox
+	r.inbox = nil
+	return calls
+}
+
+// Detach ends the session: a step that names the path fails until the path
+// starts a child again.
+func (r *childRouter) Detach() {
+	if r.book.running[r.path] == r {
+		delete(r.book.running, r.path)
+	}
+}
+
+// ChildRouter answers the router of a child this child starts.
+func (r *childRouter) ChildRouter(invokeID, _ string) sce.ChildMeshRouter {
+	return r.book.open(r.path + "/" + invokeID)
 }
 
 // sentToPeer is one Mesh send as a scenario's `sent` writes it. The data is the
@@ -530,6 +615,14 @@ func drive[S interface {
 		sent = append(sent, sentToPeer(request))
 		return nil
 	})
+	// A child session the machine starts is given a router of its own by the
+	// factory its host registers (SCE_MESH.md, Child Sessions in Mesh), never the
+	// machine's: what a child sends is written into the same list, told by the
+	// invoke that started it and the start.
+	children := &childRouters{sent: &sent, starts: map[string]int{}, running: map[string]*childRouter{}}
+	engine.RegisterChildMeshRouters(func(invokeID, _ string) sce.ChildMeshRouter {
+		return children.open(invokeID)
+	})
 	engine.Initialize()
 	// The generated policy says which call the machine needs: `Step` drains the
 	// queues and nothing else, and a machine with a delayed send or a child
@@ -555,6 +648,13 @@ func drive[S interface {
 		send: func(name, data string) {
 			engine.RaiseExternalByName(name, data)
 			settle()
+		},
+		deliver: func(path, name, data string) bool {
+			if !children.deliver(path, name, data) {
+				return false
+			}
+			settle()
+			return true
 		},
 		advance: engine.AdvanceTimeMs,
 		resolves: func(name string) bool {
@@ -640,6 +740,7 @@ func replay(t *testing.T, name string, m machine) {
 		Steps []struct {
 			Note      string          `json:"note"`
 			Event     *string         `json:"event"`
+			Invoke    *string         `json:"invoke"`
 			AdvanceMs *int64          `json:"advance_ms"`
 			Dropped   bool            `json:"dropped"`
 			Data      json.RawMessage `json:"data"`
@@ -667,14 +768,28 @@ func replay(t *testing.T, name string, m machine) {
 			m.advance(*step.AdvanceMs)
 		}
 		if step.Event != nil {
-			if m.resolves(*step.Event) == step.Dropped {
-				t.Errorf("%s: the machine's events %s `%s`", where(), map[bool]string{true: "match", false: "do not match"}[step.Dropped], *step.Event)
-			}
 			data := ""
 			if len(step.Data) > 0 {
 				data = string(step.Data)
 			}
-			m.send(*step.Event, data)
+			switch {
+			// A peer's event for the running child of that invoke, handed to the
+			// router the child was given; the machine applies it when it next
+			// drives the child. The child's events are not the machine's, so the
+			// machine is not asked whether it matches. A driver that gives
+			// children no routers fails the step.
+			case step.Invoke != nil && m.deliver == nil:
+				t.Errorf("%s: this driver gives children no routers, so it cannot send `%s` to `%s`", where(), *step.Event, *step.Invoke)
+			case step.Invoke != nil:
+				if !m.deliver(*step.Invoke, *step.Event, data) {
+					t.Errorf("%s: no child of `%s` is running to be sent `%s`", where(), *step.Invoke, *step.Event)
+				}
+			default:
+				if m.resolves(*step.Event) == step.Dropped {
+					t.Errorf("%s: the machine's events %s `%s`", where(), map[bool]string{true: "match", false: "do not match"}[step.Dropped], *step.Event)
+				}
+				m.send(*step.Event, data)
+			}
 		}
 		// What the machine asked of its host in this step. Read on every step so
 		// that a step which states nothing does not hand its calls to the next, and
@@ -1607,6 +1722,19 @@ func TestACandidateIsGivenTheHostAnsweredForIt(t *testing.T) {
 	})
 	m.childHosts = book.take
 	replay(t, "static_child_host_hybrid", m)
+}
+
+// A child session that talks to a Mesh peer is given a router of its own by the
+// factory the driver registers as the machine's host (SCE_MESH.md, Child
+// Sessions in Mesh): what it sends is recorded under its invoke and start, and a
+// step's `invoke` reaches it through that router, a grandchild's through the
+// router its parent's router answered for it.
+func TestAChildIsGivenAMeshRouterOfItsOwn(t *testing.T) {
+	policy := static_child_mesh.NewStaticChildMeshPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_child_mesh", drive[static_child_mesh.StaticChildMeshState, static_child_mesh.StaticChildMeshEvent](&policy, map[string]func() any{
+		"refusals": func() any { return policy.Refusals() },
+	}))
 }
 
 // A child session an <invoke> started is driven through its parent by

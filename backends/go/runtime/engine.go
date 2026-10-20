@@ -94,6 +94,15 @@ type Engine[S comparable, E comparable] struct {
 	// process with a lifecycle — see host_processor.go's invoker half.
 	hostInvokers map[string]HostInvokeHandler
 
+	// childMeshRouters is the factory of the routers of this machine's
+	// children (SCE_MESH.md, Child Sessions in Mesh): registered by the host
+	// on a machine it starts, and on a child by the router its parent gave it.
+	childMeshRouters ChildMeshRouters
+
+	// installedMesh is the router this machine was given as a child session;
+	// nil for a machine its host started, and for a child given none.
+	installedMesh ChildMeshRouter
+
 	// startedHostInvokes maps every host-run invocation started and neither
 	// completed nor cancelled to its start's token, so the exit chain can be an
 	// unconditional call and a completion can be judged against the run it

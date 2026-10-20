@@ -220,6 +220,11 @@
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
 			childEngine.SetCompletionCallback(func() {})
+			// Child sessions in Mesh (SCE_MESH.md): the router of the candidate
+			// this start chose, asked of this machine's factory and installed
+			// before the child initializes, since its first <onentry> may
+			// already send to a peer.
+			engine.StartChildMesh(childEngine, "{{ invoke_info.invoke_id }}", "{% if invoke_info.candidates %}{{ child_stem }}{% endif %}")
 			childEngine.Initialize()
 
 			wrapper := &{{ wrapper_type }}{engine: childEngine, policy: &childPolicy}
@@ -229,6 +234,8 @@
 
 			if wrapper.IsInFinalState() {
 				p.pendingDoneInvoke{{ invoke_info.invoke_id | to_pascal_case }} = true
+				// The session ended: its Mesh router is told so.
+				wrapper.DetachMesh()
 				// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 				// done.invoke.<id>._event.data.
 				sce.RaiseDoneInvoke("{{ invoke_info.invoke_id }}", wrapper.DonedataAtFinal(), engine)
@@ -329,6 +336,12 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
 			childEngine.SetCompletionCallback(func() {})
+			// Child sessions in Mesh (SCE_MESH.md): the child's router, asked of
+			// this machine's factory with the invoke's id and the stem of the
+			// child's document (empty for one written inline), and installed
+			// before the child initializes, since its first <onentry> may
+			// already send to a peer.
+			engine.StartChildMesh(childEngine, "{{ invoke_info.invoke_id }}", "{% if not invoke_info.src.startswith('#') %}{{ invoke_info.child_name }}{% endif %}")
 			childEngine.Initialize()
 
 			// W3C SCXML 6.4: Store child and create wrapper
@@ -341,6 +354,8 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 			// W3C SCXML 6.4: Check if child completed during initialize
 			if wrapper.IsInFinalState() {
 				p.pendingDoneInvoke{{ invoke_info.invoke_id | to_pascal_case }} = true
+				// The session ended: its Mesh router is told so.
+				wrapper.DetachMesh()
 				// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 				// done.invoke.<id>._event.data. Mirrors the C++ AOT contract
 				// and the Rust raise_done_invoke(donedata) 3-arg signature.
@@ -640,10 +655,15 @@ func (p *{{ machine_name }}Policy) TickChildren(engine *sce.Engine[{{ machine_na
 	if !p.pendingDoneInvoke{{ invoke_info.invoke_id | to_pascal_case }} && p.child{{ invoke_info.invoke_id | to_pascal_case }} != nil {
 		child := p.child{{ invoke_info.invoke_id | to_pascal_case }}
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "{{ invoke_info.invoke_id }}", engine)
+		// Child sessions in Mesh (SCE_MESH.md): what arrived for the child on
+		// the router it was given, before its macrostep.
+		child.ApplyMeshCalls()
 		child.Tick()
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "{{ invoke_info.invoke_id }}", engine)
 		if child.IsInFinalState() && !p.pendingDoneInvoke{{ invoke_info.invoke_id | to_pascal_case }} {
 			p.pendingDoneInvoke{{ invoke_info.invoke_id | to_pascal_case }} = true
+			// The session ended: its Mesh router is told so.
+			child.DetachMesh()
 			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 			// done.invoke.<id>._event.data.
 			sce.RaiseDoneInvoke("{{ invoke_info.invoke_id }}", child.DonedataAtFinal(), engine)
@@ -654,10 +674,15 @@ func (p *{{ machine_name }}Policy) TickChildren(engine *sce.Engine[{{ machine_na
 	if !p.pendingDoneInvoke{{ invoke_info.invoke_id | to_pascal_case }} && p.child{{ invoke_info.invoke_id | to_pascal_case }} != nil {
 		child := p.child{{ invoke_info.invoke_id | to_pascal_case }}
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "{{ invoke_info.invoke_id }}", engine)
+		// Child sessions in Mesh (SCE_MESH.md): what arrived for the child on
+		// the router it was given, before its macrostep.
+		child.ApplyMeshCalls()
 		child.Tick()
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "{{ invoke_info.invoke_id }}", engine)
 		if child.IsInFinalState() && !p.pendingDoneInvoke{{ invoke_info.invoke_id | to_pascal_case }} {
 			p.pendingDoneInvoke{{ invoke_info.invoke_id | to_pascal_case }} = true
+			// The session ended: its Mesh router is told so.
+			child.DetachMesh()
 			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 			// done.invoke.<id>._event.data.
 			sce.RaiseDoneInvoke("{{ invoke_info.invoke_id }}", child.DonedataAtFinal(), engine)
@@ -863,6 +888,8 @@ func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.invoke_id | to_pasc
 func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.invoke_id | to_pascal_case }}) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.invoke_id | to_pascal_case }}) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.invoke_id | to_pascal_case }}) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.invoke_id | to_pascal_case }}) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.invoke_id | to_pascal_case }}) DetachMesh() { w.engine.DetachMesh() }
 {% endfor %}
 {% for invoke_info in model.invokes | hybrid %}
 {#- §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: with candidates declared the
@@ -888,6 +915,8 @@ func (w *{{ wrapper }}) SetCompletionCallback(cb func()) { w.engine.SetCompletio
 func (w *{{ wrapper }}) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *{{ wrapper }}) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 func (w *{{ wrapper }}) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *{{ wrapper }}) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *{{ wrapper }}) DetachMesh() { w.engine.DetachMesh() }
 {% endfor %}
 {% endfor %}
 

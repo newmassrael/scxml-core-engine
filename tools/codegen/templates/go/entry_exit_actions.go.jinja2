@@ -441,6 +441,9 @@ func (p *{{ machine_name }}Policy) ExecuteExitActions(state {{ machine_name }}St
 			// states' <onexit> run -- before it is dropped; what that exit
 			// sends to #_parent is dropped with it (§scxml-6.4, test252).
 			p.child{{ invoke_info.invoke_id | to_pascal_case }}.Stop()
+			// Child sessions in Mesh (SCE_MESH.md): the session ended, after the
+			// child stopped, so what it sent while stopping was handed over first.
+			p.child{{ invoke_info.invoke_id | to_pascal_case }}.DetachMesh()
 			p.child{{ invoke_info.invoke_id | to_pascal_case }} = nil
 		}
 		delete(p.activeInvokes, "{{ invoke_info.invoke_id }}")
@@ -448,6 +451,11 @@ func (p *{{ machine_name }}Policy) ExecuteExitActions(state {{ machine_name }}St
 {% endfor %}
 {% for invoke_info in state.invokes | hybrid %}
 		if p.child{{ invoke_info.invoke_id | to_pascal_case }} != nil {
+			// A cancelled candidate is exited as a static child is, which
+			// cancels its own children first; then its Mesh router is told the
+			// session ended (SCE_MESH.md, Child Sessions in Mesh).
+			p.child{{ invoke_info.invoke_id | to_pascal_case }}.Stop()
+			p.child{{ invoke_info.invoke_id | to_pascal_case }}.DetachMesh()
 			p.child{{ invoke_info.invoke_id | to_pascal_case }} = nil
 		}
 		delete(p.activeInvokes, "{{ invoke_info.invoke_id }}")
