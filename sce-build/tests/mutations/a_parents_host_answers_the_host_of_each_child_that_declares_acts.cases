@@ -64,8 +64,8 @@ PY
 
 mutation_case "the comparison ignores another language's spelling" <<'PY'
 edit("sce-build/src/forge/native_action.rs",
-     "        .map(|(name, (_, at))| (filters::to_snake_case(name.clone()), (name, at)))",
-     "        .map(|(name, (_, at))| (name.clone(), (name, at)))")
+     "        .map(|(name, (_, at, _))| (filters::to_snake_case(name.clone()), (name, at)))",
+     "        .map(|(name, (_, at, _))| (name.clone(), (name, at)))")
 PY
 
 mutation_case "two invokes' operations may be one" <<'PY'

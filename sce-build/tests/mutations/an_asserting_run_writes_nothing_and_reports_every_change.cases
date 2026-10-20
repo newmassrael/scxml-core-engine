@@ -61,8 +61,8 @@ PY
 
 mutation_case "a file the run reads back is read from disk" <<'PY'
 edit("sce-build/src/bin/sce_codegen.rs",
-     "if let Some(existing) = read_generated(&mod_file) {",
-     "if let Ok(existing) = fs::read_to_string(&mod_file) {")
+     "if let Some(existing) = read_generated(&mod_file) {\n            if !existing.contains(&format!(\"mod {child_name}_sm;\")) {",
+     "if let Ok(existing) = fs::read_to_string(&mod_file) {\n            if !existing.contains(&format!(\"mod {child_name}_sm;\")) {")
 PY
 
 mutation_case "a file the run writes twice is judged on its first write" <<'PY'
