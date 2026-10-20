@@ -195,8 +195,9 @@ tasks.test {
         .withPathSensitivity(PathSensitivity.RELATIVE)
 
     // Same reason, same failure mode. `JsonTextTest`, `RealTextTest`, `EventDataKeyOrderTest`,
-    // `DurationTest` and `DocumentStemTest` each read one table every backend shares, by a
-    // path relative to `workingDir` at RUN time, so none is on the compile classpath either.
+    // `DurationTest`, `DocumentStemTest` and `ExternalChainIsBoundedTest` each read one table
+    // every backend shares, by a path relative to `workingDir` at RUN time, so none is on the
+    // compile classpath either.
     // A table edited to a case this runtime answers differently must turn the suite red;
     // with the directories undeclared it reported UP-TO-DATE and ran nothing.
     inputs.dir(File(rootDir, "tests/json_text"))
@@ -207,6 +208,9 @@ tasks.test {
         .withPathSensitivity(PathSensitivity.RELATIVE)
     inputs.dir(File(rootDir, "tests/document_stem"))
         .withPropertyName("sharedDocumentStemTables")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.dir(File(rootDir, "tests/external_event_budget"))
+        .withPropertyName("sharedExternalEventBudgetTables")
         .withPathSensitivity(PathSensitivity.RELATIVE)
 
     // Same reason, same failure mode, measured the same way.

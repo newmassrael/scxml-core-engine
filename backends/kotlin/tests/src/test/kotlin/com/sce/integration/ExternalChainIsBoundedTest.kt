@@ -29,8 +29,10 @@ package com.sce.integration
 
 import com.sce.integration.external_chain_is_bounded.ExternalChainIsBoundedEvent
 import com.sce.integration.external_chain_is_bounded.ExternalChainIsBoundedStateMachine
+import com.sce.runtime.Json
 import com.sce.runtime.ManualClock
 import com.sce.w3c.W3CTestBase
+import java.io.File
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
@@ -41,10 +43,31 @@ import org.junit.jupiter.api.Test
 @DisplayName("ExternalChainIsBounded — External-Event Budget")
 class ExternalChainIsBoundedTest {
 
-    // The default the contract states, spelled here rather than read back from
-    // the engine: a test that asked the engine for its own limit would agree
-    // with any limit, including one an edit moved by three orders of magnitude.
-    private val defaultBudget = 10_000
+    // The numbers the contract states, read from tests/external_event_budget/
+    // budget_outcomes.json rather than from the engine and rather than spelled
+    // here: a test that asked the engine for its own limit would agree with any
+    // limit, including one an edit moved by three orders of magnitude, and a
+    // literal here is one more copy for an edit to leave behind. A key the table
+    // lacks fails the test by name; nothing falls back to a default.
+    private val table = Json.parse(File("tests/external_event_budget/budget_outcomes.json").readText()) as Map<*, *>
+
+    private fun section(name: String): Map<*, *> =
+        requireNotNull(table[name] as? Map<*, *>) { "the budget table has no object \"$name\"" }
+
+    /// An integer of the table: `key` of the object `sectionName`.
+    private fun number(sectionName: String, key: String): Long {
+        val value = requireNotNull(section(sectionName)[key] as? Json.Number) {
+            "the budget table has no integer \"$key\" in \"$sectionName\""
+        }
+        return value.text.toLong()
+    }
+
+    /// A budget or a count, which the engine takes and answers as an Int.
+    private fun count(sectionName: String, key: String): Int = number(sectionName, key).toInt()
+
+    private val defaultBudget: Int =
+        requireNotNull(table["default_budget"] as? Json.Number) { "the budget table has no integer \"default_budget\"" }
+            .text.toInt()
 
     /// The machine on host-owned time. The clock is installed BEFORE
     /// `initialize()`: the engine refuses a clock afterwards, because deadlines
@@ -80,7 +103,7 @@ class ExternalChainIsBoundedTest {
         deliver(sm, ExternalChainIsBoundedEvent.Spin)
 
         assertEquals(
-            1,
+            count("spin", "truncated"),
             sm.truncatedEventChains(),
             "the call handed control back with an event still queued, and said so; without the count " +
                 "the host sees a machine that is running and has returned, with no sign that anything " +
@@ -107,11 +130,11 @@ class ExternalChainIsBoundedTest {
     @Test
     fun theBudgetIsExactForAChainThatEndsByItself() {
         val exactly = started()
-        exactly.setMaxExternalEventsPerCall(6)
+        exactly.setMaxExternalEventsPerCall(count("exact", "budget"))
         deliver(exactly, ExternalChainIsBoundedEvent.Bounded)
-        assertEquals(5L, exactly.laps())
+        assertEquals(number("exact", "laps"), exactly.laps())
         assertEquals(
-            0,
+            count("exact", "truncated"),
             exactly.truncatedEventChains(),
             "a call that takes exactly the budget and empties the queue refused nothing: a long " +
                 "chain is not a runaway",
@@ -119,10 +142,10 @@ class ExternalChainIsBoundedTest {
         assertNull(exactly.lastTruncatedEvent())
 
         val oneShort = started()
-        oneShort.setMaxExternalEventsPerCall(5)
+        oneShort.setMaxExternalEventsPerCall(count("one_short", "budget"))
         deliver(oneShort, ExternalChainIsBoundedEvent.Bounded)
-        assertEquals(4L, oneShort.laps(), "one lap was left queued")
-        assertEquals(1, oneShort.truncatedEventChains())
+        assertEquals(number("one_short", "laps"), oneShort.laps(), "one lap was left queued")
+        assertEquals(count("one_short", "truncated"), oneShort.truncatedEventChains())
         assertEquals(ExternalChainIsBoundedEvent.Lap, oneShort.lastTruncatedEvent())
     }
 
@@ -132,22 +155,26 @@ class ExternalChainIsBoundedTest {
     @Test
     fun aRefusedCallLeavesTheQueueSoTheNextCallFinishesTheChain() {
         val sm = started()
-        sm.setMaxExternalEventsPerCall(20)
+        sm.setMaxExternalEventsPerCall(count("resume", "budget"))
 
         deliver(sm, ExternalChainIsBoundedEvent.Resume)
-        assertEquals(1, sm.truncatedEventChains())
-        assertEquals(19L, sm.beats(), "the host's event and nineteen beats")
+        assertEquals(count("resume", "truncated"), sm.truncatedEventChains())
+        assertEquals(
+            number("resume", "beats_after_first_call"),
+            sm.beats(),
+            "the host's event and the beats the budget leaves room for",
+        )
 
         deliver(sm, ExternalChainIsBoundedEvent.Poke)
         assertEquals(
-            30L,
+            number("resume", "beats_after_second_call"),
             sm.beats(),
             "the second call took the beats the first left on the queue, each in a budget of its " +
                 "own, and finished",
         )
-        assertEquals(1L, sm.pokes(), "and the host's second event was heard")
+        assertEquals(number("resume", "pokes"), sm.pokes(), "and the host's second event was heard")
         assertEquals(
-            1,
+            count("resume", "truncated"),
             sm.truncatedEventChains(),
             "the second call ended the way the clause says: nothing more is counted",
         )
@@ -162,7 +189,7 @@ class ExternalChainIsBoundedTest {
     @Test
     fun aChainThroughAStaticDelayOfZeroDoesNotKeepTheTickFromReturning() {
         val sm = started()
-        sm.setMaxExternalEventsPerCall(50)
+        sm.setMaxExternalEventsPerCall(count("static_zero", "budget"))
 
         deliver(sm, ExternalChainIsBoundedEvent.Zero)
         assertEquals(
@@ -179,7 +206,11 @@ class ExternalChainIsBoundedTest {
             "the tick popped entries due at its own reading until the budget, left the due one " +
                 "waiting and said so",
         )
-        assertEquals(50L, sm.blinks(), "the budget of pops at one reading, no more and no fewer")
+        assertEquals(
+            number("static_zero", "budget"),
+            sm.blinks(),
+            "the budget of pops at one reading, no more and no fewer",
+        )
         assertEquals(ExternalChainIsBoundedEvent.Blink, sm.lastTruncatedEvent())
     }
 
@@ -188,13 +219,22 @@ class ExternalChainIsBoundedTest {
     @Test
     fun aChainThroughADelayExpressionThatIsZeroDoesNotKeepTheTickFromReturning() {
         val sm = started()
-        sm.setMaxExternalEventsPerCall(50)
+        sm.setMaxExternalEventsPerCall(count("zero_expr", "budget"))
 
         deliver(sm, ExternalChainIsBoundedEvent.ZeroExpr)
+        assertEquals(
+            count("zero_expr", "truncated_after_entry"),
+            sm.truncatedEventChains(),
+            "entering the state pops nothing: nothing has been cut yet",
+        )
         sm.tick()
 
-        assertEquals(1, sm.truncatedEventChains())
-        assertEquals(50L, sm.exprs(), "the budget of pops at one reading, no more and no fewer")
+        assertEquals(count("zero_expr", "truncated_after_tick"), sm.truncatedEventChains())
+        assertEquals(
+            number("zero_expr", "exprs"),
+            sm.exprs(),
+            "the budget of pops at one reading, no more and no fewer",
+        )
     }
 
     // Eight pulses, each due one millisecond after the last. They are due at
@@ -202,24 +242,25 @@ class ExternalChainIsBoundedTest {
     // however small the budget: three here, against eight events.
     @Test
     fun aChainThatIsFiniteBecauseTheClockIsIsNotRefused() {
+        val pulses = number("timed", "pulses")
         val walked = started()
-        walked.setMaxExternalEventsPerCall(3)
+        walked.setMaxExternalEventsPerCall(count("timed", "budget"))
         deliver(walked, ExternalChainIsBoundedEvent.Timed)
-        repeat(8) { walked.advanceTimeMs(1) }
-        assertEquals(8L, walked.pulses())
+        repeat(pulses.toInt()) { walked.advanceTimeMs(1) }
+        assertEquals(pulses, walked.pulses())
         assertEquals(
-            0,
+            count("timed", "truncated"),
             walked.truncatedEventChains(),
             "each pulse came in a tick of its own, at an instant of its own",
         )
 
         val jumped = started()
-        jumped.setMaxExternalEventsPerCall(3)
+        jumped.setMaxExternalEventsPerCall(count("timed", "budget"))
         deliver(jumped, ExternalChainIsBoundedEvent.Timed)
-        jumped.advanceTimeMs(8)
-        assertEquals(8L, jumped.pulses())
+        jumped.advanceTimeMs(pulses)
+        assertEquals(pulses, jumped.pulses())
         assertEquals(
-            0,
+            count("timed", "truncated"),
             jumped.truncatedEventChains(),
             "eight entries came due on the way to one reading, seven of them at earlier instants: " +
                 "a clock that moved a long way is bounded by how far it moved, and is not a chain " +
@@ -230,14 +271,19 @@ class ExternalChainIsBoundedTest {
     @Test
     fun aHostChoosesTheBudgetAndABudgetThatTakesNoEventIsRefused() {
         val sm = started()
-        sm.setMaxExternalEventsPerCall(7)
-        assertEquals(7, sm.maxExternalEventsPerCall())
-        for (refused in listOf(0, -1, -100)) {
+        val chosen = count("host", "budget")
+        sm.setMaxExternalEventsPerCall(chosen)
+        assertEquals(chosen, sm.maxExternalEventsPerCall())
+        val refusedBudgets = requireNotNull(section("host")["refused"] as? List<*>) {
+            "the budget table has no array \"refused\" in \"host\""
+        }.map { (it as Json.Number).text.toInt() }
+        assertTrue(refusedBudgets.isNotEmpty(), "the budget table lost the refused budgets of \"host\"")
+        for (refused in refusedBudgets) {
             val error = assertThrows(IllegalArgumentException::class.java) {
                 sm.setMaxExternalEventsPerCall(refused)
             }
             assertTrue(error.message!!.contains("at least one"), "the refusal says why: ${error.message}")
         }
-        assertEquals(7, sm.maxExternalEventsPerCall(), "a refused budget changes nothing")
+        assertEquals(chosen, sm.maxExternalEventsPerCall(), "a refused budget changes nothing")
     }
 }
