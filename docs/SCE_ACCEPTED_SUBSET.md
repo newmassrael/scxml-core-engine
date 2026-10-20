@@ -3860,14 +3860,17 @@ starts at one of the variants, written as the expression `<alias>.<variant>`
 </datamodel>
 ```
 
-An enum value is one of three things: `<alias>.<variant>`, a variable
-declared `enum:<alias>`, or a conditional whose two branches are values of one
-enum. What it may be used for is deliberately small: stored (`<assign>`) in a
-variable of its own enum, logged, and compared with `===` or `!==` to a value
-of that same enum. Anything else is `expression/unsupported-construct` on the
-expression: ordering, arithmetic, a call argument, a comparison with a number
-or with another enum, a value of one enum stored in a variable of another or
-in a number. An enum value is also carried as a `<param>`, as the name its
+An enum value is one of four things: `<alias>.<variant>`, a variable
+declared `enum:<alias>`, a conditional whose two branches are values of one
+enum, or the call of an imported algorithm that returns a value of one (State an
+algorithm takes and gives back, below). What it may be used for is deliberately
+small: stored (`<assign>`) in a variable of its own enum, logged, compared with
+`===` or `!==` to a value of that same enum, and handed to an imported algorithm
+whose parameter takes that same enum. Anything else is
+`expression/unsupported-construct` on the expression: ordering, arithmetic, an
+argument of any other call or of a parameter that is not of its enum, a
+comparison with a number or with another enum, a value of one enum stored in a
+variable of another or in a number. An enum value is also carried as a `<param>`, as the name its
 enum document declares for it (**Params** above); a value of a loop's record
 item is not, and is refused as `scxml/static-datamodel-rule` like a list or a
 record. The expression typer
@@ -3883,7 +3886,12 @@ does not import the enum document's generated type — so the variable is the
 machine's own `<Machine><Alias>Enum`, whose variants are spelled as the enum
 document's own generation spells them (`enum_naming::variant_ident`: Rust
 `AgendaList`, Kotlin `AGENDA_LIST`). It carries no integer: a host that needs
-the enum document's value reads it by name.
+the enum document's value reads it by name. C11, whose constants share one
+namespace, declares the type the enum document's own header declares, with the
+same text under a guard both headers share
+(`forge::generator::c11_enum_declaration`), and names it `<document>_enum_t`: a
+program that includes a machine and an algorithm that holds a value of the same
+enum declares the constants once.
 
 **A record's enum field.** An event-schema field declared `enum:<alias>` is held
 in a record as the machine's own enum type for it, so a record variable (or a
@@ -4355,10 +4363,12 @@ same element, a list of records a list of the same schema. An algorithm that ret
 a list declares `may-fail` and a `returns-max-size`, and the variable it is assigned
 to must be able to hold all of it (`sce:capacity` at least `returns-max-size`, naming
 both numbers), as for a list of numbers above. A record is handed over only when
-every field of its schema is a number, a truth value or a string the schema bounds
-with `sce:max-size`, the fields that copy field by field on every backend: one with a
-byte string or an enum field, or with a string that declares no bound, is refused
-where the algorithm is imported, naming the field. A string field is the text held
+every field of its schema is a number, a truth value, a string the schema bounds
+with `sce:max-size` or a value of an enum, the fields that copy field by field on
+every backend: one with a byte string field, or with a string that declares no
+bound, is refused where the algorithm is imported, naming the field. An enum field
+crosses as the variant of the same declared name (A value of an enum, below). A
+string field is the text held
 within its bound on both sides of the call (A record's string field, above): the
 algorithm's record holds it in a buffer of the same bound
 (SCE_FORGE.md §4.12, "How a record holds its text"), the algorithm writes a text to a
@@ -4382,6 +4392,39 @@ runs the form the rule asks for — the payload taken into `incoming`, then hand
 `Latest`, `Holds` and, through `slots`, `Retitled` — on every engine that runs the
 model, with a text of exactly the bound, one byte past it that is refused with the
 state as it was, and a multi-byte text counted in bytes.
+
+**A value of an enum.** A slot of the algorithm may be a value of an enum
+(`<sce:param name="status" type="enum:Status"/>`, `<sce:return type="enum:Status"/>`),
+and a record's field may hold one. The enum is identified as a record is, by its
+document (SCE_FORGE.md §4.12): a slot takes a value of the enum document the statechart
+imports, under whatever alias, and an enum field is held by the statechart in its own
+type for the enum it imports under the alias the schema writes, which must name the
+same document. A value of another enum, a number, or a field whose enum document is
+not the statechart's is refused where the call is written
+(`expression/unsupported-construct`, naming both enums or both documents); an enum
+that declares `sce:strict-variants="false"` does not cross either, since a value no
+variant names has no declared name to cross by. The statechart hands over a variant,
+a variable or a field of the enum, a value of the payload's enum field, or what
+another call returns, and takes back a value it holds in a variable of the enum or
+compares with a variant (`StatusOf(items, 1) === Status.done`) — a value of the enum
+like any other.
+
+The value crosses by the name its variant is declared with, never by its position:
+the statechart holds it in its own type for the enum and the algorithm in the type the
+enum document's own generation declares, and the call's adapter maps one to the other
+variant for variant — a `match` in Rust, a `when` in Kotlin, a conditional per variant
+in C++, a map literal in Go and a dict in Python, each listing every declared variant
+on both sides, so a variant one side lacked would not build. C11 holds both in the one
+type the enum document's header declares (A record's enum field, above), so the value
+crosses as it is, and the Interpreter holds a value of an enum as the variant's
+declared name on both sides of the call. Inside the algorithm the field is read,
+compared with the enum's declared names (`e.status === Status.done`, `e.status ===
+status`) and written from one, as any value of the enum.
+`scenarios/static_state_algorithm_enum.json` holds this on every engine that runs the
+model: a list of records whose field is a value of an enum, set (`SetStatus`, the
+status taken from the payload of the event), counted by a variant the statechart names
+(`CountStatus`), and read back as a value of the enum (`StatusOf`), with a variant
+spelled with an underscore and declared values that are not the variants' positions.
 
 A call is a statement like any other. It reads the variables as they stand, and
 nothing the algorithm does reaches the machine's state: the machine hands over a copy
