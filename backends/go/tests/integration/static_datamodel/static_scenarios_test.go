@@ -1878,14 +1878,13 @@ func recordListCopy() machine {
 	})
 }
 
-// The standard shared record list is replayed through the same afternoon, as each of
-// the three took part in it: the to-do list without its schedule, its events named as
-// the standard part names them. A list a host started tells no parent of the
-// registers its changes move, and nothing fails.
+// The standard shared record list, its scenarios' machine named by its library name:
+// a person's copy, which sends its changes to the hub by `#hub`, and the hub, which
+// passes every change on to the people by `#people`. A list a host started tells no
+// parent of the registers its changes move, and nothing fails.
 func TestACopyOfTheStandardRecordListIsReplayedAsEachPeerSawIt(t *testing.T) {
-	t.Run("alice", func(t *testing.T) { replay(t, "record_list_alice", recordListCopy()) })
-	t.Run("bob", func(t *testing.T) { replay(t, "record_list_bob", recordListCopy()) })
-	t.Run("the hub", func(t *testing.T) { replay(t, "record_list_server", recordListCopy()) })
+	t.Run("a person", func(t *testing.T) { replay(t, "record_list_person", recordListCopy()) })
+	t.Run("the hub", func(t *testing.T) { replay(t, "record_list_hub", recordListCopy()) })
 	t.Run("alone", func(t *testing.T) { replay(t, "record_list_alone", recordListCopy()) })
 }
 

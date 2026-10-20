@@ -3874,6 +3874,7 @@ dependencies = [
  "sce-rust-mls",
  "sce-rust-relay",
  "sce-rust-runtime",
+ "sce-rust-scenarios",
  "sce-rust-trust",
  "serde_json",
  "tokio",

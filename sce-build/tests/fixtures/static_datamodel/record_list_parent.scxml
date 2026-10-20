@@ -6,25 +6,29 @@
   it, the view an application keeps of the registers it is interested in.
 
   `holding` invokes the list by its library name and hands it `announce`, so the list
-  tells it, after each change it takes in that moves what a register holds, the
+  tells it, once for each change it takes in, every register that change moved: the
   register's count and its first live value in the order of the dots
   (`record_list.register`), then each further value with its place
-  (`record_list.value`). The host's writes and supersedes are the list's own events:
-  the parent passes each to its child (`#_list`) as it was given, the way an
-  application turns a command into the field writes it sends the list. The list is a
-  person's copy (it is told no `record_list.join`, so it is no hub) and passes nothing
-  on to a peer.
+  (`record_list.value`). The host's words are the list's own events, and the parent
+  passes each to its child (`#_list`) as it was given, the way an application turns a
+  command into what it sends the list: the host's `record_list.join`, a write and a
+  supersede of a peer, and a person's `record_list.edit`. The list is a person's copy
+  until the host names it the hub; a hub's own edit is relayed to the people and sent to
+  no hub, so the edit runs whole in a child no Mesh route is given.
 
   The parent keeps the last register it was told of (`shown`) and the further values
   told after it (`others`, cleared by each register), and counts every event it was
   told (`told`). So a register written once reads as one value; two writes made at
   once, neither having seen the other, read as a count of 2 with the earlier dot
   first, whatever order they arrived in, and the other value after it; a register
-  whose every value is written over reads as a count of 0; and a write that is
-  already held moves nothing and is told nothing.
+  whose every value is written over reads as a count of 0; a write that is already
+  held moves nothing and is told nothing; and an edit that writes over two values and
+  writes its own, three changes inside the list, is told once.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="holding" datamodel="sce-static" name="record_list_parent">
+  <sce:import kind="event-schema" src="sce:std/shared/record_join.scxml" as="Join"/>
+  <sce:import kind="event-schema" src="sce:std/shared/record_edit.scxml" as="Edit"/>
   <sce:import kind="event-schema" src="sce:std/shared/record_write.scxml" as="Write"/>
   <sce:import kind="event-schema" src="sce:std/shared/record_supersede.scxml" as="Supersede"/>
   <!-- The records are named for what the list told, and not `Register`: a generated
@@ -60,7 +64,22 @@
       <param name="announce" expr="true"/>
     </invoke>
 
-    <!-- What the host writes, passed to the list as the list's own write. -->
+    <!-- What the host says, passed to the list as the list's own words. -->
+    <transition event="record_list.join" type="internal">
+      <send target="#_list" event="record_list.join">
+        <param name="node" expr="_event.data.node"/>
+        <param name="hub" expr="_event.data.hub"/>
+      </send>
+    </transition>
+    <transition event="record_list.edit" type="internal">
+      <send target="#_list" event="record_list.edit">
+        <param name="id" expr="_event.data.id"/>
+        <param name="field" expr="_event.data.field"/>
+        <param name="value" expr="_event.data.value"/>
+        <param name="text" expr="_event.data.text"/>
+        <param name="now" expr="_event.data.now"/>
+      </send>
+    </transition>
     <transition event="record_list.write" type="internal">
       <send target="#_list" event="record_list.write">
         <param name="id" expr="_event.data.id"/>

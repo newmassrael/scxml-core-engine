@@ -70,8 +70,9 @@ Generates state machine code from SCXML and adds to target.
 
 Arguments:
   TARGET      - CMake target to add generated code to (required)
-  SCXML_FILE  - Path to SCXML file (required)
-  AS_CHILD    - Generate the machine as a child another machine invokes
+  SCXML_FILE  - Path to SCXML file, or the library name of a standard statechart
+                such as sce:std/shared/record_list.scxml (required)
+  AS_CHILD   - Generate the machine as a child another machine invokes
                 (`sce-codegen generate --as-child`): a class template over the
                 parent's type, which is the form a parent that starts it names.
                 A document a hybrid `<invoke>` declares in `sce:candidates` is
@@ -196,9 +197,17 @@ function(sce_add_state_machine)
         set(SCE_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
     endif()
 
-    # Get absolute path and extract name
-    get_filename_component(SCXML_ABS_PATH "${SCE_SCXML_FILE}" ABSOLUTE)
+    # Get absolute path and extract name. A library name (sce:std/shared/record_list.scxml)
+    # is resolved by the generator, not the file system, as sce_add_algorithm's is: it is
+    # handed on as written, and the build depends on the generator that embeds it.
     get_filename_component(SCXML_NAME "${SCE_SCXML_FILE}" NAME_WE)
+    if(SCE_SCXML_FILE MATCHES "^sce:")
+        set(SCXML_ABS_PATH "${SCE_SCXML_FILE}")
+        set(_SCE_SCXML_DEPENDS "")
+    else()
+        get_filename_component(SCXML_ABS_PATH "${SCE_SCXML_FILE}" ABSOLUTE)
+        set(_SCE_SCXML_DEPENDS "${SCXML_ABS_PATH}")
+    endif()
 
     # Language-specific output file naming
     if(SCE_LANGUAGE STREQUAL "kotlin")
@@ -208,7 +217,7 @@ function(sce_add_state_machine)
     endif()
 
     # Verify SCXML file exists
-    if(NOT EXISTS "${SCXML_ABS_PATH}")
+    if(_SCE_SCXML_DEPENDS AND NOT EXISTS "${SCXML_ABS_PATH}")
         message(FATAL_ERROR "sce_add_state_machine: SCXML file not found: ${SCXML_ABS_PATH}")
     endif()
 
@@ -274,7 +283,7 @@ function(sce_add_state_machine)
     add_custom_command(
         OUTPUT "${GENERATED_OUTPUT}"
         COMMAND ${_SCE_CODEGEN_CMD}
-        DEPENDS "${SCXML_ABS_PATH}" "${SCE_CODEGEN}"
+        DEPENDS ${_SCE_SCXML_DEPENDS} "${SCE_CODEGEN}"
         DEPFILE "${_SCE_DEPFILE}"
         COMMENT "SCE: Generating ${SCXML_NAME} (${SCE_LANGUAGE}) from SCXML"
         VERBATIM

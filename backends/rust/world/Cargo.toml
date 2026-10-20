@@ -53,6 +53,10 @@ sce-rust-relay = { path = "../relay" }
 # The group key agreement that gives the list its key of each epoch
 # (a_shared_list_keys_its_content_with_mls_through_a_relay).
 sce-rust-mls = { path = "../mls" }
+# The replay of a scenario and the committed machines it replays, which the to-do
+# afternoon is replayed on as the standard shared record list in this process, written
+# to no file (a_world_run_is_what_every_backend_replays).
+sce-rust-scenarios = { path = "../scenarios" }
 
 # The machines under `machines/` are generated at build time, in-process, into
 # OUT_DIR (see build.rs); no generated code is committed for this crate.

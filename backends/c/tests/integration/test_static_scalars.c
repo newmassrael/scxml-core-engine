@@ -92,9 +92,10 @@
 //     texts, rows and clock the scenario states — a 64-bit field as the text of its
 //     digits — and sent its Mesh peers the sends the scenario states, in their
 //     order, through the router a host installs before the machine starts.
-//   * `record_list`: the standard shared record list (sce:std/shared/record_list),
-//     replayed through the same run as `todo_peer` without its schedule, and started
-//     by a host, when it tells no parent anything; and `record_list_parent`, which
+//   * `record_list`: the standard shared record list (sce:std/shared/record_list), a
+//     scenario's machine named by its library name, as a person's copy and as the
+//     hub, and started by a host, when it tells no parent anything; and
+//     `record_list_parent`, which
 //     invokes it by its library name and publishes what it was told of each
 //     register.
 //
@@ -2406,8 +2407,8 @@ static const record_variable_t todo_peer_records[] = {RECORD_ROW(todo_peer, cloc
 STATIC_SCENARIO_PEERED(todo_peer, todo_peer_states, todo_peer_variables, todo_peer_text, no_lists, todo_peer_records)
 
 // record_list: the standard shared record list (sce:std/shared/record_list), the
-// generic part of todo_peer, replayed through the same run without its schedule and
-// read the same way, and started by a host, so that it tells no parent anything and
+// generic part of todo_peer, read the way todo_peer is, as a person's copy and as the
+// hub, and started by a host, so that it tells no parent anything and
 // `announced` stays 0.
 #define RECORD_LIST_VALUE_FIELDS(N, E)                                                                                 \
     E(id, wide_digits)                                                                                                 \
@@ -2754,11 +2755,10 @@ int main(void) {
     bad |= todo_peer_scenario("todo_peer_alice", 13);
     bad |= todo_peer_scenario("todo_peer_bob", 13);
     bad |= todo_peer_scenario("todo_peer_server", 13);
-    bad |= record_list_scenario("record_list_alice", 13);
-    bad |= record_list_scenario("record_list_bob", 13);
-    bad |= record_list_scenario("record_list_server", 13);
+    bad |= record_list_scenario("record_list_person", 29);
+    bad |= record_list_scenario("record_list_hub", 21);
     bad |= record_list_scenario("record_list_alone", 5);
-    bad |= record_list_parent_scenario("record_list_parent", 8);
+    bad |= record_list_parent_scenario("record_list_parent", 11);
     bad |= sheet_peer_scenario("sheet_peer_alice", 24);
     bad |= sheet_peer_scenario("sheet_peer_bob", 26);
     bad |= sheet_peer_scenario("sheet_peer_server", 26);

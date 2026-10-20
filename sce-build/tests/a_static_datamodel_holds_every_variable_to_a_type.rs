@@ -6024,13 +6024,19 @@ fn the_go_mutation_casefile_names_every_committed_go_machine() {
     assert!(machines > 0, "no committed Go machine to judge");
 }
 
+/// What each regen script reads the standard statecharts the scenarios name with:
+/// a scenario's machine may be a statechart of the standard library, named by its
+/// library name, which no fixture stands for.
+const STANDARD_MACHINES_OF_THE_SCENARIOS: &str = r#"grep -ho '"machine": "sce:std/[^"]*"'"#;
+
 /// A scenario (`fixtures/static_datamodel/scenarios/<name>.json`) is the
 /// behaviour of a sce-static machine, stated once and replayed by every
 /// backend that lowers the model. Which backends those are is ASKED of the
 /// generator — each scenario's machine is checked in every language — not
 /// written here, so a backend that starts lowering the model is held to
 /// every scenario at once. The regen scripts derive their machines from the
-/// fixture directory, so what is held is that they do, and that the machine
+/// fixture directory, and the standard statecharts a scenario names by library
+/// name from the scenarios, so what is held is that they do, and that the machine
 /// is committed where each driver builds it from — or the driver would replay
 /// a machine nobody regenerates.
 #[test]
@@ -6054,15 +6060,38 @@ fn every_scenario_is_replayed_on_every_backend_that_lowers_its_machine() {
     for scenario in &scenarios {
         let text = std::fs::read_to_string(scenario).expect("a scenario");
         let value: serde_json::Value = serde_json::from_str(&text).expect("a scenario is JSON");
-        let machine = value["machine"]
+        let machine_name = value["machine"]
             .as_str()
             .expect("a scenario names its machine");
-        let document = std::fs::read_to_string(fixtures.join(format!("{machine}.scxml")))
-            .unwrap_or_else(|_| panic!("{}: no fixture {machine}.scxml", scenario.display()));
+        // A fixture is named by its stem; a statechart of the standard library by its
+        // library name (`sce:std/shared/record_list`), read from the library this
+        // generator embeds and committed under the stem of that name.
+        let standard = machine_name.starts_with(sce_build::forge::stdlib::SCHEME);
+        let machine = machine_name.rsplit('/').next().expect("a name");
+        let document = if standard {
+            sce_build::forge::stdlib::lookup(Path::new(&format!("{machine_name}.scxml")))
+                .unwrap_or_else(|| {
+                    panic!(
+                        "{}: the standard library holds no {machine_name}.scxml",
+                        scenario.display()
+                    )
+                })
+                .to_string()
+        } else {
+            std::fs::read_to_string(fixtures.join(format!("{machine}.scxml")))
+                .unwrap_or_else(|_| panic!("{}: no fixture {machine}.scxml", scenario.display()))
+        };
         for script in &regen {
             assert!(
                 script.contains(r#"grep -l 'datamodel="sce-static"'"#),
                 "a regen script lists its machines by hand, so {machine} is one it may not commit"
+            );
+            // The standard statecharts a scenario names are read from the scenarios,
+            // as the fixtures are read from their directory.
+            assert!(
+                !standard || script.contains(STANDARD_MACHINES_OF_THE_SCENARIOS),
+                "a regen script does not take the standard statecharts the scenarios name, \
+                 so {machine_name} is one it may not commit"
             );
         }
         let stem = scenario

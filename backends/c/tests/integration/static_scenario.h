@@ -1303,8 +1303,18 @@ static int sce_scenario_replay(const char *path, const sce_scenario_driver_t *d,
             return sce_scenario_fail(d, 0, "the scenario has a member with no name");
         }
         if (strcmp(key, "machine") == 0) {
+            /* A fixture is named by its stem, and a statechart of the standard library by
+               its library name (`sce:std/shared/record_list`), whose last segment is the
+               stem it is generated under. */
             char machine[64];
-            if (!sce_scenario_string(&c, machine, sizeof(machine)) || strcmp(machine, d->machine) != 0) {
+            if (!sce_scenario_string(&c, machine, sizeof(machine))) {
+                return sce_scenario_fail(d, 0, "the scenario names no machine");
+            }
+            const char *stem = machine;
+            if (strncmp(machine, "sce:std/", strlen("sce:std/")) == 0 && strrchr(machine, '/') != NULL) {
+                stem = strrchr(machine, '/') + 1;
+            }
+            if (strcmp(stem, d->machine) != 0) {
                 return sce_scenario_fail(d, 0, "the scenario is of another machine");
             }
         } else if (strcmp(key, "steps") == 0) {

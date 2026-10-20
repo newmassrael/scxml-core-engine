@@ -1108,8 +1108,10 @@ a_copy_does_what_it_did_in_the_world! {
     sheet_peer_does_what_alice_did: sheet_peer_sm::{SheetPeerPolicy, SheetPeerPersist} => "static_datamodel/scenarios/sheet_peer_alice.json";
     sheet_peer_does_what_bob_did: sheet_peer_sm::{SheetPeerPolicy, SheetPeerPersist} => "static_datamodel/scenarios/sheet_peer_bob.json";
     sheet_peer_does_what_the_hub_did: sheet_peer_sm::{SheetPeerPolicy, SheetPeerPersist} => "static_datamodel/scenarios/sheet_peer_server.json";
-    record_list_does_what_alice_did: record_list_sm::{RecordListPolicy, RecordListPersist} => "static_datamodel/scenarios/record_list_alice.json";
-    record_list_does_what_bob_did: record_list_sm::{RecordListPolicy, RecordListPersist} => "static_datamodel/scenarios/record_list_bob.json";
-    record_list_does_what_the_hub_did: record_list_sm::{RecordListPolicy, RecordListPersist} => "static_datamodel/scenarios/record_list_server.json";
+    // The standard shared record list's own scenarios are not a world run but written
+    // with a model of the list; the world test holds the list to the to-do afternoon in
+    // its own process. They are replayed the same way.
+    record_list_is_a_persons_copy: record_list_sm::{RecordListPolicy, RecordListPersist} => "static_datamodel/scenarios/record_list_person.json";
+    record_list_is_the_hub_its_people_send_to: record_list_sm::{RecordListPolicy, RecordListPersist} => "static_datamodel/scenarios/record_list_hub.json";
     record_list_started_by_a_host_tells_no_parent: record_list_sm::{RecordListPolicy, RecordListPersist} => "static_datamodel/scenarios/record_list_alone.json";
 }

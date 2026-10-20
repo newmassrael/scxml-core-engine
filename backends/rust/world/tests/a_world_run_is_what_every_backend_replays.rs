@@ -34,6 +34,8 @@ use common::calendar::{
 };
 use common::resync::{MINUTE, OLD_LIMIT_MINUTES};
 use common::*;
+use sce_rust_runtime::Engine;
+use sce_rust_scenarios::integration::static_datamodel::record_list_sm::RecordListPolicy;
 use sce_rust_world::{Outcome, Taken, World};
 use serde_json::{json, Map, Value};
 
@@ -177,13 +179,27 @@ fn record_list_name(name: &str) -> String {
     }
 }
 
+/// A peer the to-do list sends to by the route the standard shared record list sends
+/// by: the hub (`#server`) is `#hub`, and each person's copy (`#alice`, `#bob`) is
+/// `#people`, which every person's copy is reached by at once.
+fn record_list_route(target: &str) -> &str {
+    match target {
+        "#server" => "#hub",
+        "#alice" | "#bob" => "#people",
+        other => other,
+    }
+}
+
 /// A copy's record of the to-do afternoon as a scenario of the standard shared record
 /// list (sce:std/shared/record_list.scxml, docs/adr/0042), which is the to-do list
 /// without its schedule: the steps of the schedule and of the host's time zones are
 /// left out, as they change nothing the list holds and publishes, and every event, the
 /// one a step is given and each one it sends, is named as the standard part names it.
-/// A list started by a host, as the world starts each copy, tells no parent anything,
-/// so a step holds exactly what the to-do list's did.
+/// The list sends by the routes a deployment binds and not to peers it names, so a send
+/// goes by its route, and where the to-do hub sent one change to each person in turn
+/// the list sends it once to them all: the same send twice over is once. A list started
+/// by a host, as the world starts each copy, tells no parent anything, so a step holds
+/// exactly what the to-do list's did.
 fn record_list_scenario(about: &str, record: &[Taken]) -> String {
     let steps: Vec<Value> = record
         .iter()
@@ -203,16 +219,21 @@ fn record_list_scenario(about: &str, record: &[Taken]) -> String {
                 step["event"] = json!(named);
             }
             if let Some(sent) = step["expect"]["sent"].as_array_mut() {
-                for entry in sent {
+                for entry in sent.iter_mut() {
                     let named =
                         record_list_name(entry["event"].as_str().expect("a send names its event"));
                     entry["event"] = json!(named);
+                    let route =
+                        record_list_route(entry["target"].as_str().expect("a send names its peer"))
+                            .to_string();
+                    entry["target"] = json!(route);
                 }
+                sent.dedup();
             }
             step
         })
         .collect();
-    scenario_text("record_list", about, &steps)
+    scenario_text("sce:std/shared/record_list", about, &steps)
 }
 
 /// Hold the committed scenario `name` to `text`, or write it when the run is asked to.
@@ -592,19 +613,23 @@ fn an_afternoon_of_the_shared_todo_list_is_three_scenarios() {
             ),
         );
         // The same afternoon is what a copy of the standard shared record list does,
-        // which is this list without its schedule (docs/adr/0042): every backend
-        // replays it on the standard part as it replays the to-do list, so the two
+        // which is this list without its schedule (docs/adr/0042): it is replayed on
+        // the standard part's committed Rust machine here, in this process, so the two
         // copies of the protocol are held to one run until the to-do list is built on
-        // the standard part.
-        hold(
-            &format!("record_list_{who}"),
-            &record_list_scenario(
-                &format!(
-                    "{} The steps of the schedule and of the host's time zones are left out, which change nothing the standard shared record list (sce:std/shared/record_list.scxml) holds, and every event is named as that list names it.",
-                    about("An afternoon of a shared to-do list", who)
-                ),
-                &record,
+        // the standard part. It is written to no file: the scenarios every backend
+        // replays of the standard part are its own, short and written by hand
+        // (`record_list_person`, `record_list_hub`).
+        let derived = record_list_scenario(
+            &format!(
+                "{} The steps of the schedule and of the host's time zones are left out, which change nothing the standard shared record list (sce:std/shared/record_list.scxml) holds, every event is named as that list names it, and every send goes by its route.",
+                about("An afternoon of a shared to-do list", who)
             ),
+            &record,
+        );
+        sce_rust_scenarios::replay(
+            Engine::new(RecordListPolicy::new()),
+            |engine| engine.save_at(0).expect("saves"),
+            &derived,
         );
     }
 }

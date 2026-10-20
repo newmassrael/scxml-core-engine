@@ -130,11 +130,10 @@ scenarios! {
     "presence_peer_alice" => presence_peer_sm::{PresencePeerPolicy, PresencePeerPersist} @ Manual;
     "presence_peer_bob" => presence_peer_sm::{PresencePeerPolicy, PresencePeerPersist} @ Manual;
     "presence_peer_server" => presence_peer_sm::{PresencePeerPolicy, PresencePeerPersist} @ Manual;
-    "record_list_alice" => record_list_sm::{RecordListPolicy, RecordListPersist};
     "record_list_alone" => record_list_sm::{RecordListPolicy, RecordListPersist};
-    "record_list_bob" => record_list_sm::{RecordListPolicy, RecordListPersist};
+    "record_list_hub" => record_list_sm::{RecordListPolicy, RecordListPersist};
     "record_list_parent" => record_list_parent_sm::{RecordListParentPolicy, RecordListParentPersist};
-    "record_list_server" => record_list_sm::{RecordListPolicy, RecordListPersist};
+    "record_list_person" => record_list_sm::{RecordListPolicy, RecordListPersist};
     "sheet_peer_alice" => sheet_peer_sm::{SheetPeerPolicy, SheetPeerPersist};
     "sheet_peer_bob" => sheet_peer_sm::{SheetPeerPolicy, SheetPeerPersist};
     "sheet_peer_server" => sheet_peer_sm::{SheetPeerPolicy, SheetPeerPersist};

@@ -2025,22 +2025,17 @@ Driver<ClockPeeking<G::record_list::record_list>> recordListDriver() {
     });
 }
 
-// The standard shared record list through the same afternoon, as each of the three
-// took part in it: the to-do list without its schedule, its events named as the
-// standard part names them...
-TEST(AStaticDatamodelRunsGeneratedCppTest, TheStandardRecordListHoldsAndSendsWhatAliceDid) {
+// The standard shared record list, its scenarios' machine named by its library name: a
+// person's copy, which sends its changes to the hub by `#hub`...
+TEST(AStaticDatamodelRunsGeneratedCppTest, TheStandardRecordListIsAPersonsCopy) {
     auto driver = recordListDriver();
-    replay("record_list_alice", driver);
+    replay("record_list_person", driver);
 }
 
-TEST(AStaticDatamodelRunsGeneratedCppTest, TheStandardRecordListHoldsAndSendsWhatBobDid) {
+// ...the hub, which passes every change on to the people by `#people`...
+TEST(AStaticDatamodelRunsGeneratedCppTest, TheHubOfTheStandardRecordListPassesEachChangeOn) {
     auto driver = recordListDriver();
-    replay("record_list_bob", driver);
-}
-
-TEST(AStaticDatamodelRunsGeneratedCppTest, TheHubOfTheStandardRecordListPassesEachWriteOn) {
-    auto driver = recordListDriver();
-    replay("record_list_server", driver);
+    replay("record_list_hub", driver);
 }
 
 // ...and a list a host started, which tells no parent of the registers its changes

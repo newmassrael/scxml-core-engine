@@ -56,7 +56,7 @@ pub fn check(scenario: &Value) -> Result<(), String> {
     scenario
         .get("machine")
         .and_then(Value::as_str)
-        .ok_or("`machine` names the fixture the scenario drives")?;
+        .ok_or("`machine` names the fixture, or the standard statechart, the scenario drives")?;
     let steps = scenario
         .get("steps")
         .and_then(Value::as_array)

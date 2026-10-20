@@ -256,6 +256,13 @@ def _same_json(got, want) -> bool:
     return type(got) is type(want) and got == want
 
 
+def _machine_stem(machine: str) -> str:
+    """The name a scenario's machine is generated under: a fixture by its stem, and a
+    statechart of the standard library (``sce:std/shared/record_list``) by the last
+    segment of its library name, which is the stem it is generated from."""
+    return machine.rsplit("/", 1)[-1] if machine.startswith("sce:std/") else machine
+
+
 def replay(name: str, machine: str | None = None) -> None:
     """Run scenario ``name`` against the machine it names. Every step names an
     event (or none, for the machine as started) and what it must hold
@@ -267,7 +274,7 @@ def replay(name: str, machine: str | None = None) -> None:
     steps = scenario["steps"]
     assert steps, f"scenario {name} has no steps, which judges nothing"
     module = importlib.import_module(
-        f"integration.static_datamodel.{machine or scenario['machine']}_sm"
+        f"integration.static_datamodel.{_machine_stem(machine or scenario['machine'])}_sm"
     )
     # A machine with `<sce:action>`s is built with the host that performs them, and
     # the generated engine says so by taking it: that host is the one that records.
@@ -654,19 +661,16 @@ def test_a_shared_list_as_the_hub_its_copies_send_to() -> None:
     replay("todo_peer_server")
 
 
-# The standard shared record list (sce:std/shared/record_list.scxml) through the same
-# afternoon, as each of the three took part in it: the to-do list without its
-# schedule, its events named as the standard part names them.
-def test_the_standard_record_list_as_alice_took_part_in_it() -> None:
-    replay("record_list_alice")
+# The standard shared record list (sce:std/shared/record_list.scxml), named by its
+# library name as its scenarios' machine: a person's copy, which sends its changes to
+# the hub by `#hub`, and the hub, which passes every change on to the people by
+# `#people`.
+def test_the_standard_record_list_as_a_persons_copy() -> None:
+    replay("record_list_person")
 
 
-def test_the_standard_record_list_as_bob_took_part_in_it() -> None:
-    replay("record_list_bob")
-
-
-def test_the_standard_record_list_as_the_hub_its_copies_send_to() -> None:
-    replay("record_list_server")
+def test_the_standard_record_list_as_the_hub_its_people_send_to() -> None:
+    replay("record_list_hub")
 
 
 # A standard record list a host started has no parent: it tells no one of the

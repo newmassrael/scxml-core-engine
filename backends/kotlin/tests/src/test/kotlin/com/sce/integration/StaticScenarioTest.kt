@@ -1451,22 +1451,17 @@ class StaticScenarioTest {
         }
     }
 
-    // The standard shared record list (sce:std/shared/record_list.scxml) through the
-    // same afternoon, as each of the three took part in it: the to-do list without its
-    // schedule, its events named as the standard part names them.
+    // The standard shared record list (sce:std/shared/record_list.scxml), its scenarios'
+    // machine named by its library name: a person's copy, which sends its changes to the
+    // hub by `#hub`, and the hub, which passes every change on to the people by `#people`.
     @Test
-    fun recordListIsAlicesCopyOfASharedList() {
-        replayRecordList(scenario("record_list_alice"))
+    fun recordListIsAPersonsCopyOfASharedList() {
+        replayRecordList(scenario("record_list_person"))
     }
 
     @Test
-    fun recordListIsBobsCopyOfASharedList() {
-        replayRecordList(scenario("record_list_bob"))
-    }
-
-    @Test
-    fun recordListIsTheHubTheCopiesOfASharedListSendTo() {
-        replayRecordList(scenario("record_list_server"))
+    fun recordListIsTheHubItsPeopleSendTo() {
+        replayRecordList(scenario("record_list_hub"))
     }
 
     // A standard record list a host started has no parent: it tells no one of the

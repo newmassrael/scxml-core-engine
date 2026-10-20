@@ -626,7 +626,12 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheInterpreterDoesWha
             std::filesystem::temp_directory_path() / ("sce-scenario-" + std::to_string(::getpid()) + "-" + name);
         std::error_code ec;
         std::filesystem::remove_all(dir, ec);
-        const LoweredSet set = lowerSet(kFixtures / (machine + ".scxml"), dir);
+        // A fixture is named by its stem, and a statechart of the standard library by its
+        // library name, which `sce-codegen lower` reads from the library it embeds.
+        const bool standard = machine.rfind("sce:std/", 0) == 0;
+        const std::filesystem::path document =
+            standard ? std::filesystem::path(machine + ".scxml") : kFixtures / (machine + ".scxml");
+        const LoweredSet set = lowerSet(document, dir);
         if (!set.ok) {
             // A refusal is an answer, and it must be the typed one: a crash
             // or a bare failure would read the same as "not yet lowered".
@@ -680,12 +685,13 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheInterpreterDoesWha
             << copy << " was not replayed: a copy that merges with the standard rules has no lowering for the "
             << "Interpreter";
     }
-    // ... and the standard shared record list (sce:std/shared/record_list.scxml), through
-    // the same afternoon and started by a host, when it tells no parent anything. The
-    // statechart that invokes it by its library name is not among them: the lowering
-    // rewrites a child where its text stands in its parent, and a standard child has
-    // none there, so it is refused as an invoke by `src`.
-    for (const char *copy : {"record_list_alice", "record_list_bob", "record_list_server", "record_list_alone"}) {
+    // ... and the standard shared record list (sce:std/shared/record_list.scxml), a
+    // scenario's machine named by its library name and lowered from the library: a
+    // person's copy, the hub, and a list a host started, when it tells no parent
+    // anything. The statechart that invokes it by its library name is not among them:
+    // the lowering rewrites a child where its text stands in its parent, and a standard
+    // child has none there, so it is refused as an invoke by `src`.
+    for (const char *copy : {"record_list_person", "record_list_hub", "record_list_alone"}) {
         EXPECT_NE(std::find(replayed.begin(), replayed.end(), copy), replayed.end())
             << copy << " was not replayed: the standard shared record list has no lowering for the Interpreter";
     }
