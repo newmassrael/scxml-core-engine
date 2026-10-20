@@ -15,7 +15,7 @@
 
 mutation_ctest --test-dir build -R '^c11_unit_document_stem$'
 mutation_targets backends/c/runtime/include/sce/invoke.h
-mutation_oracles backends/c/tests/unit/document_stem_test.c tests/document_stem/document_stem.json
+mutation_oracles backends/c/tests/unit/document_stem_test.c backends/c/tests/unit/shared_table.h tests/document_stem/document_stem.json
 
 mutation_case "a file: scheme stays in the stem" <<'PY'
 edit("backends/c/runtime/include/sce/invoke.h",

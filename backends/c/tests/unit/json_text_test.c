@@ -17,6 +17,8 @@
 #include <sce/event_payload.h>
 #include <sce/forge/wire.h>
 
+#include "shared_table.h"
+
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -31,97 +33,6 @@
 
 enum { FIELD_CAP = 256, MIN_CASES = 8, MIN_REAL_CASES = 40 };
 
-// One string field of the case object at `object`, unescaped into `out`, its
-// length in `len`: read through the walker rather than sce_payload_read_text
-// because a case holds NUL, and a terminated string would end there. `out` is
-// terminated for a reader that wants a C string.
-static const char *read_field(const char *object, const char *name, char *out, size_t *len) {
-    sce_payload_fields_t fields = {object, NULL};
-    const char *p = sce_payload_find(&fields, name);
-    if (p == NULL) {
-        return SCE_PAYLOAD_REFUSE_MISSING;
-    }
-    sce_payload_sink_t sink;
-    memset(&sink, 0, sizeof(sink));
-    sink.text = out;
-    sink.cap = FIELD_CAP;
-    const char *refusal = sce_payload_walk_text(p, &sink);
-    *len = sink.len;
-    out[sink.len < FIELD_CAP ? sink.len : FIELD_CAP - 1u] = '\0';
-    return refusal;
-}
-
-static char *read_table(const char *path) {
-    FILE *f = fopen(path, "rb");
-    if (f == NULL) {
-        return NULL;
-    }
-    if (fseek(f, 0, SEEK_END) != 0) {
-        fclose(f);
-        return NULL;
-    }
-    const long size = ftell(f);
-    rewind(f);
-    char *buf = size >= 0 ? malloc((size_t)size + 1u) : NULL;
-    if (buf == NULL || fread(buf, 1, (size_t)size, f) != (size_t)size) {
-        free(buf);
-        fclose(f);
-        return NULL;
-    }
-    buf[size] = '\0';
-    fclose(f);
-    return buf;
-}
-
-// The failures one case of a table holds, given the case object and its place.
-typedef int (*case_check_t)(const char *object, int index);
-
-// Hand every case of the table at `path` to `check`. The number of cases, or -1
-// when the table could not be read; the failures the cases hold are added to
-// `failures`.
-static int walk_table(const char *path, case_check_t check, int *failures) {
-    char *table = read_table(path);
-    if (table == NULL) {
-        fprintf(stderr, "FAIL: cannot read %s\n", path);
-        return -1;
-    }
-    const char *p = strstr(table, "\"cases\"");
-    p = p != NULL ? strchr(p, '[') : NULL;
-    if (p == NULL) {
-        fprintf(stderr, "FAIL: %s has no cases\n", path);
-        free(table);
-        return -1;
-    }
-    p++;
-
-    int cases = 0;
-    for (;;) {
-        p = sce_payload_skip_space(p);
-        if (*p == ']') {
-            break;
-        }
-        if (*p != '{') {
-            fprintf(stderr, "FAIL: a case is not an object\n");
-            (*failures)++;
-            break;
-        }
-        *failures += check(p, cases);
-        cases++;
-        p = sce_payload_skip_container(p);
-        if (p == NULL) {
-            fprintf(stderr, "FAIL: a case object never closes\n");
-            (*failures)++;
-            break;
-        }
-        p = sce_payload_skip_space(p);
-        if (*p == ',') {
-            p++;
-        }
-    }
-    free(table);
-    return cases;
-}
-
 static int check_string_case(const char *object, int index) {
     char name[FIELD_CAP];
     char text[FIELD_CAP];
@@ -129,12 +40,12 @@ static int check_string_case(const char *object, int index) {
     size_t name_len = 0u;
     size_t text_len = 0u;
     size_t escaped_len = 0u;
-    const char *refusal = read_field(object, "name", name, &name_len);
+    const char *refusal = read_field(object, "name", name, sizeof(name), &name_len);
     if (refusal == NULL) {
-        refusal = read_field(object, "text", text, &text_len);
+        refusal = read_field(object, "text", text, sizeof(text), &text_len);
     }
     if (refusal == NULL) {
-        refusal = read_field(object, "escaped", escaped, &escaped_len);
+        refusal = read_field(object, "escaped", escaped, sizeof(escaped), &escaped_len);
     }
     if (refusal != NULL) {
         fprintf(stderr, "FAIL: case %d: the walker refused it: %s\n", index, refusal);
@@ -193,12 +104,12 @@ static int check_real_case(const char *object, int index) {
     size_t name_len = 0u;
     size_t bits_len = 0u;
     size_t text_len = 0u;
-    const char *refusal = read_field(object, "name", name, &name_len);
+    const char *refusal = read_field(object, "name", name, sizeof(name), &name_len);
     if (refusal == NULL) {
-        refusal = read_field(object, "bits", bits, &bits_len);
+        refusal = read_field(object, "bits", bits, sizeof(bits), &bits_len);
     }
     if (refusal == NULL) {
-        refusal = read_field(object, "text", text, &text_len);
+        refusal = read_field(object, "text", text, sizeof(text), &text_len);
     }
     if (refusal != NULL) {
         fprintf(stderr, "FAIL: real case %d: the walker refused it: %s\n", index, refusal);
