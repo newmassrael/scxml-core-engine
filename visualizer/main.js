@@ -312,7 +312,7 @@ async function initVisualizer(scxmlContent) {
                         }
                     });
 
-                    // W3C SCXML 5.2.2: Extract static src="file:..." from data elements
+                    // W3C SCXML 5.3.1: Extract static src="file:..." from data elements
                     const dataElements = xmlDoc.querySelectorAll('data[src]');
                     dataElements.forEach(data => {
                         const src = data.getAttribute('src');
