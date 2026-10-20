@@ -172,6 +172,76 @@ using ScxmlInvokeParentEventCallback =
 using ScxmlInvokeCancelCallback = std::function<bool(const std::string &target, const std::string &invokeIdString)>;
 
 /**
+ * @brief The Mesh router a child session is given by its parent (SCE_MESH.md,
+ *        Child Sessions in Mesh; docs/adr/0043)
+ *
+ * The child's endpoint attached to that one session; the C++ twin of the Rust
+ * runtime's `ChildMeshRouter`. What a host installs on a machine it starts with
+ * `setMeshSendCallback()`, the parent installs on the child it starts, before
+ * the child initializes, since an `<onentry>` of the child's initial state may
+ * already send: the child's `<send target="#<peer>">` goes to send(). What
+ * arrives for the child waits here until the parent drives the child, which
+ * takes it with takeCalls() before the child's macrostep. When the session ends
+ * the parent says so with detach(), after the child has stopped.
+ *
+ * Raw fields and `ForwardedEvent`, never a mesh-layer type, so this header keeps
+ * its zero mesh includes, as `MeshSendCallback` does. A child's
+ * `<invoke type="sce:mesh-rpc">` is not served through it: the request has no
+ * invoker in a child session and raises `error.execution` there.
+ */
+class IChildMeshRouter {
+public:
+    virtual ~IChildMeshRouter() = default;
+
+    /**
+     * @brief A `<send target="#<peer>">` of the child, in `MeshSendCallback`'s
+     *        fields
+     *
+     * @return Whether the router took it. One it did not take raises
+     *         `error.execution` in the child, as a send no router is there to
+     *         take does; it never lands on the child's own queue.
+     */
+    virtual bool send(const std::string &target, const std::string &eventName, const std::string &data,
+                      const std::string &sendId, const std::string &invokeId) = 0;
+
+    /**
+     * @brief What arrived for the child since it was last asked, oldest first,
+     *        each with the `_event` the endpoint built for it (for a peer's
+     *        event, the one SCE_MESH.md gives a Mesh-delivered event)
+     */
+    virtual std::vector<::SCE::Common::ForwardedEvent> takeCalls() = 0;
+
+    /**
+     * @brief The session this router was attached to has ended
+     *
+     * It reached a top-level `<final>`, or its parent left the invoking state
+     * and cancelled it. Called once, after the child has stopped, so a send the
+     * child made while it was being stopped has been handed over.
+     */
+    virtual void detach() = 0;
+
+    /**
+     * @brief The router of a child this child starts, asked as the parent's
+     *        factory is asked (`ChildMeshRouters`)
+     *
+     * None by default: a child whose router answers none starts children with
+     * no router, whose peer sends raise `error.execution` in them.
+     */
+    virtual std::shared_ptr<IChildMeshRouter> childRouter(const std::string &invokeId, const std::string &document) {
+        (void)invokeId;
+        (void)document;
+        return nullptr;
+    }
+};
+
+/// The factory of the routers of a machine's children, registered with
+/// `registerChildMeshRouters()`: asked, each time an invocation starts a child,
+/// with the invoke's id and the stem of the child's document (empty for a child
+/// written inline). None leaves the child with no router.
+using ChildMeshRouters =
+    std::function<std::shared_ptr<IChildMeshRouter>(const std::string &invokeId, const std::string &document)>;
+
+/**
  * @brief Template-based SCXML execution engine for static code generation
  *
  * This engine implements the core SCXML execution semantics (event queue management,
@@ -798,6 +868,14 @@ private:
     ScxmlInvokeParentEventCallback
         onScxmlInvokeParentEvent_;                   // SCE Mesh §mesh-9.6.2 wire-17: autoforward outbound hook
     ScxmlInvokeCancelCallback onScxmlInvokeCancel_;  // SCE Mesh §mesh-9.6.2 wire-19: remote invoke cancel hook
+    // The factory of the routers of this machine's children (SCE_MESH.md,
+    // Child Sessions in Mesh): registered by the host on a machine it starts,
+    // and on a child by the router its parent gave it, which answers for the
+    // child's children.
+    ChildMeshRouters childMeshRouters_;
+    // The router this machine was given as a child session; empty for a
+    // machine its host started, for a child given none, and once detached.
+    std::shared_ptr<IChildMeshRouter> installedMesh_;
     // SCE Mesh §mesh-16.5 (rule 12) — `<parallel>` partition role hooks. Set
     // by the derived SM ctor when codegen materializes a Root or NonRoot
     // tracker / sender for a hosted `<parallel>`. The Policy invokes
@@ -1081,10 +1159,7 @@ public:
         // addresses all start `#_`), so no conformance depends on the old route.
         if (::SCE::SendHelper::isMeshTarget(eventWithMetadata.target)) {
             if (!onMeshSend_) {
-                if (auto error = policy_.getEventFromName("error.execution")) {
-                    raise(EventWithMetadata(*error, "<send target='" + eventWithMetadata.target +
-                                                        "'>: no Mesh router is registered for this peer"));
-                }
+                refuseMeshSend(eventWithMetadata.target, "no Mesh router is registered for this peer");
                 return;
             }
             // SCE_MESH.md §mesh-9.5: the metadata's invokeId is authoritative
@@ -3663,6 +3738,109 @@ public:
     }
 
     /**
+     * @brief Register the factory of the routers of this machine's children
+     *        (SCE_MESH.md, Child Sessions in Mesh; docs/adr/0043)
+     *
+     * A child session started by `<invoke type="scxml">` is given none of this
+     * machine's registrations: its peer sends would leave under this machine's
+     * name. The generated parent asks @p factory instead, each time an
+     * invocation starts a child (on entry, and for the candidate a hybrid
+     * `<invoke>` chose), with the invoke's id and the stem of the child's
+     * document, and installs the answer on the child before the child
+     * initializes (startChildMesh()). A factory that answers none, or none
+     * registered, leaves the child with no router: its peer send raises
+     * `error.execution` in the child, and nothing falls back to this machine's
+     * router.
+     */
+    void registerChildMeshRouters(ChildMeshRouters factory) {
+        childMeshRouters_ = std::move(factory);
+    }
+
+    /**
+     * @brief Ask this machine's factory for the router of @p child and install
+     *        the answer on it
+     *
+     * @p child is what the invoke @p invokeId is starting from the document
+     * whose stem is @p document (empty for a child written inline). Called by
+     * the generated parent before @p child initializes, since an `<onentry>` of
+     * its initial state may already send. Leaves @p child as it is when no
+     * factory is registered or the factory answers none.
+     */
+    template <typename ChildEngine>
+    void startChildMesh(ChildEngine &child, const std::string &invokeId, const std::string &document) {
+        if (!childMeshRouters_) {
+            return;
+        }
+        if (auto router = childMeshRouters_(invokeId, document)) {
+            child.installChildMeshRouter(std::move(router));
+        }
+    }
+
+    /**
+     * @brief Install @p router as this machine's Mesh router and the factory of
+     *        its children's routers
+     *
+     * The two a host installs on a machine it starts, served here by the one
+     * router the parent was given for this session. A send the router does not
+     * take is refused in this machine as a send no router is there for is.
+     */
+    void installChildMeshRouter(std::shared_ptr<IChildMeshRouter> router) {
+        setMeshSendCallback([this, router](const std::string &target, const std::string &eventName,
+                                           const std::string &data, const std::string &sendId,
+                                           const std::string &invokeId) {
+            if (!router->send(target, eventName, data, sendId, invokeId)) {
+                refuseMeshSend(target, "the Mesh router of this session did not take the send");
+            }
+            return true;
+        });
+        childMeshRouters_ = [router](const std::string &invokeId, const std::string &document) {
+            return router->childRouter(invokeId, document);
+        };
+        installedMesh_ = std::move(router);
+    }
+
+    /**
+     * @brief Apply what arrived for this machine on the router its parent gave
+     *        it, in the order the router released it
+     *
+     * Each is raised on the external queue with the `_event` the endpoint built
+     * (`raiseExternal(const ForwardedEvent &)`); a name the machine does not
+     * declare is dropped, as the engine drops any such event. The generated
+     * parent calls it each time it drives this child, before the child's
+     * macrostep. Does nothing for a machine given no router.
+     */
+    void applyMeshCalls() {
+        if (!installedMesh_) {
+            return;
+        }
+        for (const ::SCE::Common::ForwardedEvent &call : installedMesh_->takeCalls()) {
+            raiseExternal(call);
+        }
+    }
+
+    /**
+     * @brief The child session this machine is has ended: tell the routers of
+     *        the sessions it still runs, innermost first, then the router its
+     *        parent gave it, each once (SCE_MESH.md, Child Sessions in Mesh)
+     *
+     * The generated parent calls it after the child reached a top-level
+     * `<final>`, and when it cancels the child because the invoking state
+     * exited. A cancelled child is dropped without being exited: its `<onexit>`
+     * would send to the parent at once, and a parent takes nothing from a
+     * session it cancelled (W3C test 252). So the sessions the child
+     * started end with it here, and are told before it, a grandchild before
+     * its parent. Does nothing for a session given no router, or told already.
+     */
+    void detachMesh() {
+        if constexpr (SCE::Core::HasChildMeshDetach<StatePolicy>) {
+            policy_.detachChildMeshSessions();
+        }
+        if (std::shared_ptr<IChildMeshRouter> router = std::exchange(installedMesh_, nullptr)) {
+            router->detach();
+        }
+    }
+
+    /**
      * @brief Register a mesh-rpc invoke callback (SCE_MESH.md §mesh-9.5)
      *
      * Installed by the generated TransportRouter ctor when any target's
@@ -3876,6 +4054,20 @@ public:
     }
 
 private:
+    /**
+     * @brief Refuse a `<send target="#<peer>">` no router took: `error.execution`
+     *        in this machine, saying why (SCE_MESH.md, Errors)
+     *
+     * Never a send to this machine's own queue, which would be a peer's event
+     * answered by the sender. One body for a machine whose host wired no Mesh
+     * transport and for a child whose router did not take the send.
+     */
+    void refuseMeshSend(const std::string &target, const char *why) {
+        if (auto error = policy_.getEventFromName("error.execution")) {
+            raise(EventWithMetadata(*error, "<send target='" + target + "'>: " + why));
+        }
+    }
+
     /**
      * @brief Bind the dequeued event's typed `_event.data` view (NL→IR Item C1 Path A)
      *

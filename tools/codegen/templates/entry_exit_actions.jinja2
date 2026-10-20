@@ -888,8 +888,12 @@
                 {% for invoke_info in state.invokes | scxml %}
                 // §scxml-6.4: cancelling raises nothing in this session —
                 // the spec defines no `cancel.invoke` event, and a document
-                // that named one used to receive it here.
+                // that named one used to receive it here. Before the child is
+                // dropped, the Mesh routers of its session and of the sessions
+                // it started are told they ended, a grandchild first
+                // (SCE_MESH.md, Child Sessions in Mesh).
                 if (child_{{ invoke_info.field_suffix }}_) {
+                    child_{{ invoke_info.field_suffix }}_->detachMesh();
                     child_{{ invoke_info.field_suffix }}_.reset();
                 }
                 // SCE_MESH.md §16.7 row 5 sub-atomic C — erase is shared
@@ -903,14 +907,16 @@
 {% if invoke_info.candidates %}
 {# §scxml-6.4: at most one candidate slot is filled, so this cancels the
    one that started and steps over the rest — the same null guard the
-   single-slot shape used. #}
+   single-slot shape used. Told and dropped as a static child is above. #}
 {% for candidate in invoke_info.candidates %}
                 if (child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}_) {
+                    child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}_->detachMesh();
                     child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}_.reset();
                 }
 {% endfor %}
 {% else %}
                 if (child_{{ invoke_info.field_suffix }}_) {
+                    child_{{ invoke_info.field_suffix }}_->detachMesh();
                     child_{{ invoke_info.field_suffix }}_.reset();
                 }
 {% endif %}

@@ -65,6 +65,15 @@ template <typename P>
 struct HasNextChildDeadlineTrait<P, std::void_t<decltype(std::declval<const P &>().nextChildDeadline())>>
     : std::true_type {};
 
+// Child sessions in Mesh (SCE_MESH.md): a policy that tells the Mesh routers of
+// the children it runs that their sessions ended. Emitted beside `tickChildren`,
+// and asked only through this trait, for the reason the one above gives.
+template <typename P, typename = void> struct HasChildMeshDetachTrait : std::false_type {};
+
+template <typename P>
+struct HasChildMeshDetachTrait<P, std::void_t<decltype(std::declval<P &>().detachChildMeshSessions())>>
+    : std::true_type {};
+
 template <typename P, typename E, typename = void> struct HasAutoforwardTrait : std::false_type {};
 
 template <typename P, typename E>
@@ -302,6 +311,10 @@ concept HasChildTick = HasChildTickTrait<P, Engine>::value;
 template <typename P>
 concept HasNextChildDeadline = HasNextChildDeadlineTrait<P>::value;
 
+/// Policy tells its running children's Mesh routers their sessions ended
+template <typename P>
+concept HasChildMeshDetach = HasChildMeshDetachTrait<P>::value;
+
 /// Policy supports autoforward to children (§scxml-6.4)
 template <typename P, typename Engine>
 concept HasAutoforward = HasAutoforwardTrait<P, Engine>::value;
@@ -354,6 +367,8 @@ template <typename P, typename Engine> inline constexpr bool HasInvokeSupport = 
 template <typename P, typename Engine> inline constexpr bool HasChildTick = HasChildTickTrait<P, Engine>::value;
 
 template <typename P> inline constexpr bool HasNextChildDeadline = HasNextChildDeadlineTrait<P>::value;
+
+template <typename P> inline constexpr bool HasChildMeshDetach = HasChildMeshDetachTrait<P>::value;
 
 template <typename P, typename Engine> inline constexpr bool HasAutoforward = HasAutoforwardTrait<P, Engine>::value;
 

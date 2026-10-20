@@ -304,8 +304,20 @@
                         });
 {% endif %}
 
+                        // Child sessions in Mesh (SCE_MESH.md): the router of
+                        // the candidate this start chose, asked of this
+                        // machine's factory and installed before the child
+                        // initializes, since its first `<onentry>` may already
+                        // send to a peer.
+                        engine.startChildMesh(*{{ slot }}, "{{ invoke_info.invoke_id }}", "{% if invoke_info.candidates %}{{ child.stem | escape_cpp }}{% endif %}");
+
                         // W3C SCXML 6.4: Initialize child state machine
                         {{ slot }}->initialize();
+                        if ({{ slot }}->isInFinalState()) {
+                            // The session ended as it began: its Mesh router
+                            // is told so.
+                            {{ slot }}->detachMesh();
+                        }
 
                         AOT_DEBUG("Hybrid AOT child {{ invoke_info.invoke_id }} initialized and running");
                         return;
@@ -458,8 +470,21 @@
                             ));
                         });
 
+                        // Child sessions in Mesh (SCE_MESH.md): the child's
+                        // router, asked of this machine's factory with the
+                        // invoke's id and the stem of the child's document
+                        // (empty for one written inline), and installed before
+                        // the child initializes, since its first `<onentry>`
+                        // may already send to a peer.
+                        engine.startChildMesh(*child_{{ invoke_info.field_suffix }}_, "{{ invoke_info.invoke_id }}", "{% if not invoke_info.src.startswith('#') %}{{ invoke_info.child_name | escape_cpp }}{% endif %}");
+
                         // W3C SCXML 6.4: Initialize child state machine
                         child_{{ invoke_info.field_suffix }}_->initialize();
+                        if (child_{{ invoke_info.field_suffix }}_->isInFinalState()) {
+                            // The session ended as it began: its Mesh router
+                            // is told so.
+                            child_{{ invoke_info.field_suffix }}_->detachMesh();
+                        }
 
                         // activeInvokes_ already registered above BEFORE initialize()
                         // This ensures child events during initialize() can use autoforward
@@ -918,13 +943,21 @@
 
     // W3C SCXML 6.4: Tick all active child state machines to process their events
     // Child state machines need to run independently during parent's event loop
+    //
+    // Child sessions in Mesh (SCE_MESH.md): what arrived for a child on the
+    // router it was given is applied before its macrostep, and a child that
+    // reached its final state has its router told the session ended.
     template <typename Engine>
     void tickChildren([[maybe_unused]] Engine& engine) {
         {% for state_id, state in model.states | dictsort %}
         {% if state.invokes | scxml %}
         {% for invoke_info in state.invokes | scxml %}
         if (child_{{ invoke_info.field_suffix }}_) {
+            child_{{ invoke_info.field_suffix }}_->applyMeshCalls();
             child_{{ invoke_info.field_suffix }}_->tick();
+            if (child_{{ invoke_info.field_suffix }}_->isInFinalState()) {
+                child_{{ invoke_info.field_suffix }}_->detachMesh();
+            }
         }
         {% endfor %}
         {% endif %}
@@ -935,16 +968,52 @@
            already stood here is what makes the unchosen ones free. #}
         {% for candidate in invoke_info.candidates %}
         if (child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}_) {
+            child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}_->applyMeshCalls();
             child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}_->tick();
+            if (child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}_->isInFinalState()) {
+                child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}_->detachMesh();
+            }
         }
         {% endfor %}
         {% else %}
         if (child_{{ invoke_info.field_suffix }}_) {
+            child_{{ invoke_info.field_suffix }}_->applyMeshCalls();
             child_{{ invoke_info.field_suffix }}_->tick();
+            if (child_{{ invoke_info.field_suffix }}_->isInFinalState()) {
+                child_{{ invoke_info.field_suffix }}_->detachMesh();
+            }
         }
         {% endif %}
         {% endfor %}
         {% endif %}
+        {% endfor %}
+    }
+
+    // Child sessions in Mesh (SCE_MESH.md): the session this machine is has
+    // ended without being exited (its parent cancelled it), so each child it
+    // still runs has ended with it, and its router is told so, the child's own
+    // children first. Emitted beside `tickChildren`, so the trait that finds
+    // one finds both.
+    void detachChildMeshSessions() {
+        {% for state_id, state in model.states | dictsort %}
+        {% for invoke_info in state.invokes | scxml %}
+        if (child_{{ invoke_info.field_suffix }}_) {
+            child_{{ invoke_info.field_suffix }}_->detachMesh();
+        }
+        {% endfor %}
+        {% for invoke_info in state.invokes | hybrid %}
+        {% if invoke_info.candidates %}
+        {% for candidate in invoke_info.candidates %}
+        if (child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}_) {
+            child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}_->detachMesh();
+        }
+        {% endfor %}
+        {% else %}
+        if (child_{{ invoke_info.field_suffix }}_) {
+            child_{{ invoke_info.field_suffix }}_->detachMesh();
+        }
+        {% endif %}
+        {% endfor %}
         {% endfor %}
     }
 
