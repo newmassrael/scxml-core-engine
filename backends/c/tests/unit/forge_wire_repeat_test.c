@@ -23,7 +23,6 @@
 
 #include "shared_table.h"
 
-#include <errno.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -36,17 +35,7 @@
 // The case of the table this test writes through the wire writer.
 static const char TABLE_CASE_NAME[] = "a name that repeats is one array in declaration order";
 
-enum { MAX_PAIRS = 8, PAIR_NAME_CAP = 64, EXPECTED_CAP = 256 };
-
-// One element of the case's `params`: a name and a whole number.
-typedef struct {
-    // The name unescaped, which the pairs are ordered by.
-    char name[PAIR_NAME_CAP];
-    // The JSON text of the name, quotes included: what the writer is given. The
-    // writer keeps the pointer until the object ends, so the pair outlives it.
-    char key[PAIR_NAME_CAP];
-    uint64_t value;
-} table_pair_t;
+enum { MAX_PAIRS = 8, EXPECTED_CAP = 256 };
 
 static int expect_text(const char *what, const char *got, const char *want) {
     if (strcmp(got, want) != 0) {
@@ -56,93 +45,15 @@ static int expect_text(const char *what, const char *got, const char *want) {
     return 0;
 }
 
-// A param of the table case this test cannot write: said once, naming the case,
-// and -1 so that the reader returns it. A negative `index` is the array itself.
-static int refuse_param(int index, const char *why) {
-    if (index < 0) {
-        (void)fprintf(stderr, "table case \"%s\": params %s\n", TABLE_CASE_NAME, why);
-    } else {
-        (void)fprintf(stderr, "table case \"%s\": params[%d] %s\n", TABLE_CASE_NAME, index, why);
-    }
-    return -1;
-}
-
-// The case's `params` as pairs, in the order the table declares them: each
-// element is `["name", <unsigned integer>]`, and a value of another kind (the
-// table holds objects, arrays and strings in other cases) is refused rather than
-// guessed at. The number of pairs, or -1 after saying why not.
-static int read_params(const char *object, table_pair_t *pairs, int cap) {
-    sce_payload_fields_t fields = {object, NULL};
-    const char *p = sce_payload_find(&fields, "params");
-    if (p == NULL || *p != '[') {
-        return refuse_param(-1, "is missing or is not an array");
-    }
-    p = sce_payload_skip_space(p + 1);
-
-    int count = 0;
-    while (*p != ']') {
-        if (count == cap) {
-            return refuse_param(-1, "holds more pairs than this test has room for");
-        }
-        if (*p != '[') {
-            return refuse_param(count, "is not a [name, value] pair");
-        }
-        const char *after = sce_payload_skip_container(p);
-        if (after == NULL) {
-            return refuse_param(count, "never closes");
-        }
-
-        table_pair_t *pair = &pairs[count];
-        const char *q = sce_payload_skip_space(p + 1);
-        sce_payload_sink_t sink;
-        memset(&sink, 0, sizeof(sink));
-        sink.text = pair->name;
-        sink.cap = sizeof(pair->name);
-        if (sce_payload_walk_text(q, &sink) != NULL) {
-            return refuse_param(count, "has a name that is not a text this test can hold");
-        }
-        pair->name[sink.len] = '\0';
-        if (strlen(pair->name) != sink.len) {
-            return refuse_param(count, "has a name with a NUL in it, which no C string key holds");
-        }
-        if (!sce_payload_quote_span((const unsigned char *)pair->name, sink.len, false, pair->key, sizeof(pair->key))) {
-            return refuse_param(count, "has a name this test cannot quote");
-        }
-
-        q = sce_payload_skip_string(q);
-        q = q != NULL ? sce_payload_skip_space(q) : NULL;
-        if (q == NULL || *q != ',') {
-            return refuse_param(count, "has no value after its name");
-        }
-        q = sce_payload_skip_space(q + 1);
-        if (*q < '0' || *q > '9') {
-            return refuse_param(count, "has a value that is not an unsigned integer");
-        }
-        char *end = NULL;
-        errno = 0;
-        pair->value = (uint64_t)strtoull(q, &end, 10);
-        if (errno != 0 || *sce_payload_skip_space(end) != ']') {
-            return refuse_param(count, "has a value that is not an unsigned integer");
-        }
-
-        count++;
-        p = sce_payload_skip_space(after);
-        if (*p == ',') {
-            p = sce_payload_skip_space(p + 1);
-        }
-    }
-    return count;
-}
-
 // The pairs ordered by name, by the bytes of the name, and a name's values left in
 // the order they were declared in: the order the generator lists them in. An
 // insertion sort, which does not move a pair past one that is equal to it.
-static void order_by_name(table_pair_t *pairs, int count) {
-    for (int i = 1; i < count; ++i) {
+static void order_by_name(table_pair_t *pairs, size_t count) {
+    for (size_t i = 1u; i < count; ++i) {
         const table_pair_t held = pairs[i];
-        int j = i;
-        while (j > 0 && strcmp(pairs[j - 1].name, held.name) > 0) {
-            pairs[j] = pairs[j - 1];
+        size_t j = i;
+        while (j > 0u && strcmp(pairs[j - 1u].name, held.name) > 0) {
+            pairs[j] = pairs[j - 1u];
             --j;
         }
         pairs[j] = held;
@@ -175,9 +86,11 @@ static int the_table_case(void) {
         return 1;
     }
     table_pair_t pairs[MAX_PAIRS];
-    const int count = read_params(object, pairs, MAX_PAIRS);
+    size_t count = 0u;
+    refusal = table_read_params(object, pairs, MAX_PAIRS, &count);
     free(table);
-    if (count < 0) {
+    if (refusal != NULL) {
+        (void)fprintf(stderr, "table case \"%s\": params %s\n", TABLE_CASE_NAME, refusal);
         return 1;
     }
 
@@ -185,7 +98,7 @@ static int the_table_case(void) {
     char buf[EXPECTED_CAP];
     sce_forge_wire_t w;
     sce_forge_wire_begin(&w, buf, sizeof(buf));
-    for (int i = 0; i < count; ++i) {
+    for (size_t i = 0u; i < count; ++i) {
         sce_forge_wire_pair(&w, pairs[i].key, sce_forge_wire_uint(pairs[i].value));
     }
     int bad = sce_forge_wire_end(&w) ? 0 : 1;

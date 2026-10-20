@@ -4479,6 +4479,26 @@ set_tests_properties(c11_unit_forge_wire_repeat PROPERTIES
     LABELS "unit;c11"
 )
 
+# ─── Shared table refusals unit test ────────────────────────────────
+#
+# The reader every unit test of a shared table uses (unit/shared_table.h) refuses a
+# value that is not an unsigned integer, a name it cannot hold, a pair or a `params`
+# of the wrong shape, a missing case and an unreadable table. No real table holds
+# any of them, so the tables here are text in memory, each wrong in one way.
+# Header-only code.
+add_executable(sce_c_shared_table_refusals_unit_test unit/shared_table_refusals_test.c)
+target_link_libraries(sce_c_shared_table_refusals_unit_test PRIVATE sce_c_runtime)
+set_target_properties(sce_c_shared_table_refusals_unit_test PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+add_test(NAME c11_unit_shared_table_refusals COMMAND sce_c_shared_table_refusals_unit_test)
+set_tests_properties(c11_unit_shared_table_refusals PROPERTIES
+    TIMEOUT 10
+    LABELS "unit;c11"
+)
+
 # ─── Forge wire bytes unit test ─────────────────────────────────────
 #
 # A byte string crosses a `<param>` and a `<donedata>` as its byte-exact Latin-1 text

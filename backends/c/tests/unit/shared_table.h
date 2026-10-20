@@ -16,6 +16,10 @@
 
 #include <sce/event_payload.h>
 
+#include <errno.h>
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -150,6 +154,95 @@ SCE_C_UNUSED static inline const char *table_find_case(const char *table, const 
         }
         p = table_case_after(p);
     }
+    return NULL;
+}
+
+// Room for the name of one pair that table_read_params reads, unescaped and then
+// quoted.
+enum { TABLE_PAIR_NAME_CAP = 64 };
+
+// One element of a case's `params`: a name and a whole number.
+typedef struct {
+    // The name unescaped, which the pairs are ordered by.
+    char name[TABLE_PAIR_NAME_CAP];
+    // The JSON text of the name, quotes included: what a writer is given. A
+    // writer may keep the pointer until its object ends, so the pair outlives it.
+    char key[TABLE_PAIR_NAME_CAP];
+    uint64_t value;
+} table_pair_t;
+
+// The `params` of the case object at `case_object` as pairs, in the order the case
+// declares them: each element is `["name", <unsigned integer>]`, and a value of
+// another kind (a table holds objects, arrays and strings in other cases) is
+// refused rather than guessed at. At most `cap` pairs. NULL when every pair was
+// read, with their number in `*count`; otherwise a static message that finishes
+// the sentence "params ...", and `*count` is 0.
+SCE_C_UNUSED static inline const char *table_read_params(const char *case_object, table_pair_t *pairs, size_t cap,
+                                                         size_t *count) {
+    *count = 0u;
+    sce_payload_fields_t fields = {case_object, NULL};
+    const char *p = sce_payload_find(&fields, "params");
+    if (p == NULL || *p != '[') {
+        return "is missing or is not an array";
+    }
+    p = sce_payload_skip_space(p + 1);
+
+    size_t n = 0u;
+    while (*p != ']') {
+        if (*p == '\0') {
+            return "never closes";
+        }
+        if (n == cap) {
+            return "holds more pairs than the reader has room for";
+        }
+        if (*p != '[') {
+            return "holds an element that is not a [name, value] pair";
+        }
+        const char *after = sce_payload_skip_container(p);
+        if (after == NULL) {
+            return "holds a pair that never closes";
+        }
+
+        table_pair_t *pair = &pairs[n];
+        const char *q = sce_payload_skip_space(p + 1);
+        sce_payload_sink_t sink;
+        memset(&sink, 0, sizeof(sink));
+        sink.text = pair->name;
+        sink.cap = sizeof(pair->name);
+        if (sce_payload_walk_text(q, &sink) != NULL) {
+            return "holds a pair whose name is not a text the reader can hold";
+        }
+        pair->name[sink.len] = '\0';
+        if (strlen(pair->name) != sink.len) {
+            return "holds a pair whose name has a NUL in it, which no C string key holds";
+        }
+        if (!sce_payload_quote_span((const unsigned char *)pair->name, sink.len, false, pair->key, sizeof(pair->key))) {
+            return "holds a pair whose name the reader cannot quote";
+        }
+
+        q = sce_payload_skip_string(q);
+        q = q != NULL ? sce_payload_skip_space(q) : NULL;
+        if (q == NULL || *q != ',') {
+            return "holds a pair with no value after its name";
+        }
+        q = sce_payload_skip_space(q + 1);
+        if (*q < '0' || *q > '9') {
+            return "holds a pair whose value is not an unsigned integer";
+        }
+        char *end = NULL;
+        errno = 0;
+        pair->value = (uint64_t)strtoull(q, &end, 10);
+        if (errno != 0 || *sce_payload_skip_space(end) != ']') {
+            return "holds a pair whose value is not an unsigned integer";
+        }
+
+        n++;
+        p = sce_payload_skip_space(after);
+        if (*p == ',') {
+            p = sce_payload_skip_space(p + 1);
+        }
+    }
+    *count = n;
     return NULL;
 }
 
