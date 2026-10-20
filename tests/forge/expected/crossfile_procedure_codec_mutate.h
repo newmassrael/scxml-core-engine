@@ -33,7 +33,7 @@ namespace SCE::Generated::CrossfileProcedureCodecMutate {
 // ── State and Event enums ────────────────────────────────────────
 
 enum class State : uint8_t {
-    Init = 0,
+    Start = 0,
     Send = 1,
     Done = 2,
     Error = 3
@@ -77,7 +77,7 @@ public:
     // ── Static policy metadata ───────────────────────────────────
 
     [[nodiscard]] static constexpr State initialState() noexcept {
-        return State::Init;
+        return State::Start;
     }
 
     [[nodiscard]] static constexpr Event noneEvent() noexcept {
@@ -147,7 +147,7 @@ public:
     [[nodiscard]] std::optional<std::tuple<State, std::size_t, bool>>
     processTransition(State state, Event event) const {
         switch (state) {
-            case State::Init:
+            case State::Start:
                 // Eventless transition
                 if (event == Event::NONE) {
                     return std::make_tuple(State::Send, std::size_t{ 0 }, true);
@@ -177,7 +177,7 @@ public:
     // so a fixture's `<transition event="error.execution">` can pick it up.
 
     [[nodiscard]] std::optional<Event> executeTransitionActions([[maybe_unused]] State source, [[maybe_unused]] std::size_t trIndex) {
-        if (source == State::Init) {
+        if (source == State::Start) {
             if (trIndex == 0) {
                 frame_.msgId = msgId_;
             }

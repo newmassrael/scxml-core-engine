@@ -18,7 +18,7 @@
 /* ── State and Event enums ─────────────────────────────────────── */
 
 typedef enum {
-    CROSSFILE_PROCEDURE_CODEC_MUTATE_STATE_INIT = 0,
+    CROSSFILE_PROCEDURE_CODEC_MUTATE_STATE_START = 0,
     CROSSFILE_PROCEDURE_CODEC_MUTATE_STATE_SEND = 1,
     CROSSFILE_PROCEDURE_CODEC_MUTATE_STATE_DONE = 2,
     CROSSFILE_PROCEDURE_CODEC_MUTATE_STATE_ERROR = 3
@@ -113,7 +113,7 @@ static inline bool crossfile_procedure_codec_mutate_process_transition(
     crossfile_procedure_codec_mutate_state_t *out_next, size_t *out_tr_index, bool *out_has_assigns) {
     (void)_st;
     switch (_state) {
-        case CROSSFILE_PROCEDURE_CODEC_MUTATE_STATE_INIT:
+        case CROSSFILE_PROCEDURE_CODEC_MUTATE_STATE_START:
             if (_event == CROSSFILE_PROCEDURE_CODEC_MUTATE_EVENT_NONE) {
                 *out_next = CROSSFILE_PROCEDURE_CODEC_MUTATE_STATE_SEND;
                 *out_tr_index = 0;
@@ -143,7 +143,7 @@ static inline sce_forge_procedure_raise_t crossfile_procedure_codec_mutate_execu
     crossfile_procedure_codec_mutate_t *_st, crossfile_procedure_codec_mutate_state_t _source, size_t _tr_index) {
     (void)_st; (void)_source; (void)_tr_index;
     sce_forge_procedure_raise_t _r = { false, 0 };
-    if (_source == CROSSFILE_PROCEDURE_CODEC_MUTATE_STATE_INIT) {
+    if (_source == CROSSFILE_PROCEDURE_CODEC_MUTATE_STATE_START) {
         if (_tr_index == 0) {
             _st->frame_.msg_id = _st->msg_id;
         }
@@ -162,7 +162,7 @@ static inline sce_forge_procedure_run_result_t crossfile_procedure_codec_mutate_
     _st.service_handler_user_data = _handler_user_data;
     _st.msg_id = msg_id;
 
-    crossfile_procedure_codec_mutate_state_t _current = CROSSFILE_PROCEDURE_CODEC_MUTATE_STATE_INIT;
+    crossfile_procedure_codec_mutate_state_t _current = CROSSFILE_PROCEDURE_CODEC_MUTATE_STATE_START;
     crossfile_procedure_codec_mutate_event_t _event = crossfile_procedure_codec_mutate_execute_entry_actions(&_st, _current);
 
     for (int _iter = 0; _iter < 1000; ++_iter) {

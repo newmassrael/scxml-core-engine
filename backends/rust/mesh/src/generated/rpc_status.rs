@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: c99c3c0939ed7b1256239958164f8fd91e9fc2a690644b8df67efbcf58589a94
-#![doc = "SCE-MAP: rpc_status.scxml:7 :: _forge_body"]
-// SCE-MAP: rpc_status.scxml:7 :: _forge_body
+// source-hash: 3590e0da727b5c60e46e46571a637da3e7beb956941ee2491fcd012174a020af
+#![doc = "SCE-MAP: rpc_status.scxml:12 :: _forge_body"]
+// SCE-MAP: rpc_status.scxml:12 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="enum")
 // Runtime: none
@@ -17,7 +17,7 @@ pub enum RpcStatus {
     DeadlineExceeded = 4,
     NotFound = 5,
     Unimplemented = 12,
-    Internal = 13,
+    InternalError = 13,
     Unavailable = 14,
 }
 
@@ -38,7 +38,7 @@ impl RpcStatus {
             4 => Some(Self::DeadlineExceeded),
             5 => Some(Self::NotFound),
             12 => Some(Self::Unimplemented),
-            13 => Some(Self::Internal),
+            13 => Some(Self::InternalError),
             14 => Some(Self::Unavailable),
             _ => None,
         }
@@ -53,7 +53,7 @@ impl RpcStatus {
             Self::DeadlineExceeded => "deadlineExceeded",
             Self::NotFound => "notFound",
             Self::Unimplemented => "unimplemented",
-            Self::Internal => "internal",
+            Self::InternalError => "internalError",
             Self::Unavailable => "unavailable",
         }
     }

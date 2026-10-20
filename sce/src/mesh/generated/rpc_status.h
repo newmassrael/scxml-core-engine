@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: c99c3c0939ed7b1256239958164f8fd91e9fc2a690644b8df67efbcf58589a94
-// SCE-MAP: rpc_status.scxml:7 :: _forge_body
+// source-hash: 3590e0da727b5c60e46e46571a637da3e7beb956941ee2491fcd012174a020af
+// SCE-MAP: rpc_status.scxml:12 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="enum")
 // Runtime: none
@@ -22,7 +22,7 @@ enum class RpcStatus : uint8_t {
     DeadlineExceeded = 4,
     NotFound = 5,
     Unimplemented = 12,
-    Internal = 13,
+    InternalError = 13,
     Unavailable = 14,
 };
 
@@ -48,8 +48,8 @@ constexpr const char *declared_name(RpcStatus value) noexcept {
         return "notFound";
     case RpcStatus::Unimplemented:
         return "unimplemented";
-    case RpcStatus::Internal:
-        return "internal";
+    case RpcStatus::InternalError:
+        return "internalError";
     case RpcStatus::Unavailable:
         return "unavailable";
     }
@@ -73,7 +73,7 @@ constexpr std::optional<RpcStatus> from_underlying(uint8_t raw) noexcept {
     case 12:
         return RpcStatus::Unimplemented;
     case 13:
-        return RpcStatus::Internal;
+        return RpcStatus::InternalError;
     case 14:
         return RpcStatus::Unavailable;
     default:

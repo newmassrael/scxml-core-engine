@@ -30,7 +30,7 @@ use sce_forge_runtime::procedure::{
 // other items dead from the test binary's perspective.
 #[allow(dead_code)]
 pub enum State {
-    Init = 0,
+    Start = 0,
     Send = 1,
     Done = 2,
     Error = 3,
@@ -105,7 +105,7 @@ impl ProcedurePolicy for CrossfileProcedureCodecMutate {
     type Event = Event;
 
     fn none_event() -> Event { Event::None }
-    fn initial_state(&self) -> State { State::Init }
+    fn initial_state(&self) -> State { State::Start }
     fn is_final(state: State) -> bool {
         matches!(state, State::Done | State::Error)
     }
@@ -153,7 +153,7 @@ impl ProcedurePolicy for CrossfileProcedureCodecMutate {
 
     fn process_transition(&self, state: State, event: Event) -> Option<(State, usize, bool)> {
         match state {
-            State::Init => {
+            State::Start => {
                 if event == Event::None {
                     return Some((State::Send, 0, true));
                 }
@@ -176,7 +176,7 @@ impl ProcedurePolicy for CrossfileProcedureCodecMutate {
         // bytes-cap check raises an internal event that the shared
         // run_procedure() loop re-pumps through process_transition.
         let _ = (source, tr_index);  // pacify unused-warning for empty bodies
-        if source == State::Init {
+        if source == State::Start {
             if tr_index == 0 {
                 self.frame.msg_id = self.msg_id;
             }

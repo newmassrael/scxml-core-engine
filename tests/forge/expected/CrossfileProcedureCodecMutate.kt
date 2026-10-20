@@ -19,7 +19,7 @@ import com.sce.forge.runtime.procedure.*
 // ── State and Event enums ───────────────────────────────────────
 
 enum class State {
-    Init,
+    Start,
     Send,
     Done,
     Error
@@ -46,7 +46,7 @@ class CrossfileProcedureCodecMutate : ProcedureStateMachine<State, Event>() {
 
     override val noneEvent = Event.NONE
 
-    override fun initialState() = State.Init
+    override fun initialState() = State.Start
 
     override fun isFinal(state: State) = state in FINAL_STATES
 
@@ -81,7 +81,7 @@ class CrossfileProcedureCodecMutate : ProcedureStateMachine<State, Event>() {
 
     override fun processTransition(state: State, event: Event): Triple<State, Int, Boolean>? {
         when (state) {
-            State.Init -> {
+            State.Start -> {
                 if (event == Event.NONE) {
                     return Triple(State.Send, 0, true)
                 }
@@ -103,7 +103,7 @@ class CrossfileProcedureCodecMutate : ProcedureStateMachine<State, Event>() {
     // assign-time bytes-cap check raised an internal event that the
     // shared runToCompletion loop re-pumps through processTransition.
     override fun executeTransitionActions(source: State, trIndex: Int): Event? {
-        if (source == State.Init) {
+        if (source == State.Start) {
             if (trIndex == 0) {
                 frame.msgId = msgId
             }

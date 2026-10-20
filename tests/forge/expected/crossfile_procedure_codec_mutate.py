@@ -26,7 +26,7 @@ from sce_forge_runtime.procedure import (
 # ── State and Event enums ────────────────────────────────────────
 
 class State(IntEnum):
-    Init = 0
+    Start = 0
     Send = 1
     Done = 2
     Error = 3
@@ -59,7 +59,7 @@ class CrossfileProcedureCodecMutate(ProcedureStateMachine):
         return Event.NONE
 
     def _initial_state(self) -> int:
-        return State.Init
+        return State.Start
 
     def _is_final(self, state: int) -> bool:
         return state in _FINAL_STATES
@@ -92,7 +92,7 @@ class CrossfileProcedureCodecMutate(ProcedureStateMachine):
     def _process_transition(
         self, state: int, event: int
     ) -> Optional[Tuple[int, int, bool]]:
-        if state == State.Init:
+        if state == State.Start:
             if event == Event.NONE:
                 return (State.Send, 0, True)
         if state == State.Send:
@@ -109,7 +109,7 @@ class CrossfileProcedureCodecMutate(ProcedureStateMachine):
         # assign-time bytes-cap check raised an internal event that the
         # shared run_to_completion loop re-pumps through
         # _process_transition.
-        if source == State.Init:
+        if source == State.Start:
             if tr_index == 0:
                 self.frame.msg_id = self._msg_id
         return None

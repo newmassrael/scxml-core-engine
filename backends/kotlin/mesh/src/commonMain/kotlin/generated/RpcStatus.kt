@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: c99c3c0939ed7b1256239958164f8fd91e9fc2a690644b8df67efbcf58589a94
-// SCE-MAP: rpc_status.scxml:7 :: _forge_body
+// source-hash: 3590e0da727b5c60e46e46571a637da3e7beb956941ee2491fcd012174a020af
+// SCE-MAP: rpc_status.scxml:12 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="enum")
 // Runtime: none
@@ -16,7 +16,7 @@ enum class RpcStatus(val raw: UByte) {
     DEADLINE_EXCEEDED(4u.toUByte()),
     NOT_FOUND(5u.toUByte()),
     UNIMPLEMENTED(12u.toUByte()),
-    INTERNAL(13u.toUByte()),
+    INTERNAL_ERROR(13u.toUByte()),
     UNAVAILABLE(14u.toUByte()),
     ;
 
@@ -31,7 +31,7 @@ enum class RpcStatus(val raw: UByte) {
         DEADLINE_EXCEEDED -> "deadlineExceeded"
         NOT_FOUND -> "notFound"
         UNIMPLEMENTED -> "unimplemented"
-        INTERNAL -> "internal"
+        INTERNAL_ERROR -> "internalError"
         UNAVAILABLE -> "unavailable"
     }
 

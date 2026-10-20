@@ -21,7 +21,7 @@ import (
 // ── State and Event constants ───────────────────────────────────
 
 const (
-	stateInit = 0
+	stateStart = 0
 	stateSend = 1
 	stateDone = 2
 	stateError = 3
@@ -54,7 +54,7 @@ func newPolicy(handler forge.ServiceHandler, msgId uint8) *policy {
 }
 
 func (p *policy) NoneEvent() int             { return eventNone }
-func (p *policy) InitialState() int          { return stateInit }
+func (p *policy) InitialState() int          { return stateStart }
 func (p *policy) SetPendingEventData(d string) { p.pendingEventData = d }
 func (p *policy) DoneData() map[string]string  { return p.doneData }
 
@@ -102,7 +102,7 @@ func (p *policy) ExecuteEntryActions(s int) (int, string) {
 
 func (p *policy) ProcessTransition(s int, ev int) (int, int, bool, bool) {
 	switch s {
-	case stateInit:
+	case stateStart:
 		if ev == eventNone {
 			return stateSend, 0, true, true
 		}
@@ -123,7 +123,7 @@ func (p *policy) ProcessTransition(s int, ev int) (int, int, bool, bool) {
 func (p *policy) ExecuteTransitionActions(source int, trIndex int) (int, bool) {
 	_ = source
 	_ = trIndex
-	if source == stateInit {
+	if source == stateStart {
 		if trIndex == 0 {
 			p.Frame.MsgId = p.msgId
 		}
