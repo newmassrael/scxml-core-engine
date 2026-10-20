@@ -128,7 +128,7 @@
                     )
                     continue
 {% elif inv.srcexpr or inv.contentexpr %}
-                # W3C SCXML 6.4.3: evaluate the expression at invoke-fire
+                # W3C SCXML 6.4.2: evaluate the expression at invoke-fire
                 # time and raise `error.execution` when it cannot be
                 # evaluated. The value does not choose the child — that is
                 # fixed at build time, the same on every backend that spawns
@@ -346,7 +346,7 @@
 {% if inv.namelist %}
 {% if inv.candidates or inv.child_datamodel_vars is defined %}
 {% if not inv.candidates %}
-                # W3C SCXML 6.3.2: Only seed names that the child
+                # W3C SCXML 6.4.3: Only seed names that the child
                 # actually declares in its `<datamodel>`.
                 _child_vars = { {% for cv in inv.child_datamodel_vars %}{{ cv | py_string_literal }}{{ ", " if not loop.last }}{% endfor %} }
 {% endif %}

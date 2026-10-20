@@ -214,7 +214,7 @@
         )
 
     def _log(self, engine, label: str, lua_expr: str) -> None:
-        """W3C SCXML 6.4 `<log>` — evaluate `lua_expr` against the
+        """W3C SCXML 4.7 `<log>` — evaluate `lua_expr` against the
         datamodel and dispatch through the policy's log hook. The
         default hook writes a single line to stdout; callers wanting
         structured logging should override `log_hook` in a subclass."""
