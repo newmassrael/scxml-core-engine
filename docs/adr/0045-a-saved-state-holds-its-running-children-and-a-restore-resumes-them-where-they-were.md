@@ -11,9 +11,10 @@
   saved state for the Go, Python, C++ and C11 backends; the Mesh host cores (`sce-rust-mesh`,
   `sce-kotlin-mesh`) and SCE_MESH.md §19; the shared instances under
   `sce-build/tests/fixtures/static_datamodel/saved/` and the scenario drivers
-- Related: ADR 0042 (a shared record list is a standard part an application invokes), ADR 0043
-  (a child session that talks to Mesh peers has its own endpoint), ADR 0044 (the revisions of a
-  schema are one schema in a saved state), ADR 0034 (a shared list is held by its members),
+- Related: ADR 0042 (a shared record list is a standard part an application invokes; branch
+  `shared-record-list`), ADR 0043 (a child session that talks to Mesh peers has its own endpoint;
+  branch `child-mesh-adr`), ADR 0044 (the revisions of a schema are one schema in a saved state;
+  branch `schema-revision-reach`), ADR 0034 (a shared list is held by its members),
   ADR 0005 decision 6 (the parent gives a child its host)
 
 ## Context
@@ -55,13 +56,13 @@ external queue, but of a child session an `<invoke type="scxml">` started it hol
   `"invokes":["worker"]`.
 - **The child's host is asked again because the child starts again.** A parent obtains a child's
   host "each time the invocation starts — on entry of the invoking state, and on a restore, which
-  starts the child again from its beginning" (docs/SCE_ACCEPTED_SUBSET.md:3664-3667).
+  starts the child again from its beginning" (docs/SCE_ACCEPTED_SUBSET.md:3664-3665).
 - **Two sends cannot be saved because the session they wait for is not in the state.** A document
   with a delayed `<send>` to the parent, to an invocation or to a child session is generated without
   `save` / `restore` (docs/SCE_ACCEPTED_SUBSET.md:5181-5198; `saved_shape` returns `None`,
   sce-build/src/forge/static_lowering.rs:3360-3378).
 - **Only two of the six generated backends save.** Go, Python, C++ and C11 have no saved state
-  (docs/SCE_ACCEPTED_SUBSET.md:3926-3935, :4044-4045, :3672), and the Interpreter refuses a
+  (docs/SCE_ACCEPTED_SUBSET.md:3926-3935, :4044-4045, :3675), and the Interpreter refuses a
   `sce-static` document at its root (:5211-5227).
 
 What makes this a defect now is ADR 0042. The shared record list is a standard statechart an
@@ -101,7 +102,7 @@ the list of ids, each running child as an entry:
 |---|---|
 | `id` | the id the document gives the `<invoke>`, as `invokes` holds it today: the key a restore judges against the document (the invoke exists, its state is in the saved configuration, no id twice) |
 | `start` | which start of that `<invoke>` this is, counted from 1 within its parent session: the number `child_hosts` and ADR 0043's `sent` already tell a child by (docs/SCE_ACCEPTED_SUBSET.md, the scenario table) |
-| `invokeid` | the id the session was started under, as `_event.invokeid` names it in the parent and an `idlocation` variable may hold it; equal to `id` for an invoke with a literal id, and the generated one otherwise (Rust spells it with an address, tools/codegen/templates/rust/invoke_macros.rs.jinja2:50-51, so it cannot be computed again) |
+| `invokeid` | the id the session was started under, as the parent handed it to the child and as `_event.invokeid` and an `idlocation` variable hold it; carried rather than computed again, because a resumed child keeps the id its parent's variables and queued events already name |
 | `document` | which document the session runs: the child's name for a static invoke, the candidate's for a hybrid one |
 | `session` | the child's saved state, of the same grammar as the root's, its own children included |
 
@@ -115,8 +116,18 @@ A session also carries:
   refuses any other.
 - **`sessionid`**: the session's own id. Events held in the tree name sessions by it (the `origin`
   of a child's event queued in its parent, the `origin` a parent's event carries in its child's
-  queue), so every session of a restored tree keeps the id it had, the root included. A session id
-  is generated once per session and never by a restore.
+  queue), so every session of a restored tree keeps the id it had. A session id is generated once
+  per session and never by a restore; a root keeps what it has today (a `sce-static` root with no
+  script engine has none, and its events' `origin` is the empty text, as in every shared instance).
+
+**The ids inside a tree are the same on every backend.** A saved state is one text whatever backend
+wrote it (docs/SCE_ACCEPTED_SUBSET.md:4960-4964), and a tree holds ids that today are not: Rust
+generates an invoke id from the address of the parent's policy
+(tools/codegen/templates/rust/invoke_macros.rs.jinja2:49-50) and a session id from a timestamp and a
+process-wide counter (backends/rust/runtime/src/helpers/unique_id_generator.rs:115-127). Every
+backend therefore derives a child's session id and a generated invoke id from the tree alone: the
+parent's session id, the state, the `<invoke>`'s id and the start, in one spelling the format fixes.
+Ids are unique within a tree by construction, and a tree is one process's.
 
 **Running** keeps its meaning: started and not ended. A child that has ended is absent from its
 parent's list, its `done.invoke` in the parent's external queue or already taken, exactly as today
@@ -459,7 +470,9 @@ Each step lands with a test that fails without it.
    it and interrupt it). *Exit:* `saved_state_schema.rs` validates a hand-written tree and refuses
    one changed thing.
 2. **The generator.** Which documents save (the child rule), the two acts, `invokestarts` and the
-   session id in the model the templates read. *Exit:* `a_machine_waiting_on_another_session_has_no_save_api`
+   session id in the model the templates read, and the ids of a child session and of a generated
+   invoke derived from the tree on every backend (the spelling keeps the state's id and a dot in
+   front, the form W3C test 224 reads from the `idlocation`). *Exit:* `a_machine_waiting_on_another_session_has_no_save_api`
    extended: a delayed send to `#_parent` or a child now saves, one to a session outside the tree
    still does not, and a parent of a child that cannot save has no API.
 3. **Rust.** `SavedState` as a session tree, format 2 written, formats 1 and 2 read, the restore of
