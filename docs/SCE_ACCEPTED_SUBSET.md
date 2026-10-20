@@ -5028,7 +5028,9 @@ external queue in order — only the internal queue is empty at a macrostep
 boundary, so an event a host raised and has not yet driven the machine
 through is part of the state — as one JSON document (`SavedState::to_json` / `SavedState.toJson`, schema
 `schemas/sce-saved-state.v1.schema.json`, a `pre-release` surface in
-`SCE_WIRE_CONTRACTS.md`). The document is the same on every backend — keys are
+`SCE_WIRE_CONTRACTS.md`). That is format 1, which both backends write today; format 2
+(`schemas/sce-saved-state.v2.schema.json`, "Format 2: a tree of sessions" below) also
+holds the state of every running child, and replaces it backend by backend. The document is the same on every backend — keys are
 the document's ids, the configuration is in document order, a 64-bit integer
 is a text and a real that is not finite is `NaN` / `Infinity` / `-Infinity` —
 so what one backend saved another restores; both are held to the shared
@@ -5079,7 +5081,7 @@ hand the host the request the document made and not one evaluated again.
 
 **Running invocations.** A child session an `<invoke type="scxml">` started is
 part of what a machine is doing (§scxml-6.4: the invocation lives as long as its
-state is active), and the process that ran it is gone. A saved state lists the
+state is active), and the process that ran it is gone. A format-1 saved state lists the
 `<invoke>`s whose child is running as `invokes`, by the id the document gives
 each, in document order; a restore starts each again, from the beginning of its
 child, under the same id. So `done.invoke.<id>` still names the invocation the
@@ -5102,7 +5104,7 @@ a document with an `<invoke>` that restored from a state with no `invokes` would
 stand in "working" with nobody working. `sce-build/tests/fixtures/static_datamodel/static_invoke.scxml`
 and `saved/static_invoke_working.json` hold it on both backends.
 
-A hybrid `<invoke>` (§2.13) is listed the same way, by its id, and the candidate
+A hybrid `<invoke>` (§2.13) is listed the same way in format 1, by its id, and the candidate
 that was running is not recorded: a restore runs the start again, which reads
 `srcexpr` from the restored variables and hands every candidate the arguments'
 current values, as entering the state would. So a `srcexpr` that reads a
@@ -5114,6 +5116,66 @@ its two candidates run all three on both backends: the same candidate again with
 a changed argument, the other candidate once `srcexpr` names it, and the
 unchanged arguments again, and show a child that ended not started a second
 time.
+
+**Format 2: a tree of sessions.** The loss above is format 1's, and format 2
+removes it (docs/adr/0045). A child that holds state worth keeping, such as a
+shared record list (docs/adr/0042), would otherwise lose it on every restore, and
+for good where no peer holds a copy. Format 2 is specified by
+`schemas/sce-saved-state.v2.schema.json`; no backend writes it yet. The Rust and
+Kotlin backends write format 1 until their steps of the ADR land (steps 3 and 4),
+and a reader that reads format 2 keeps reading format 1, whose children it starts
+from the beginning because that is all a format-1 text holds. What follows is
+the format and the restore every backend moves to.
+
+- **What it holds.** A saved state is one root session; a session holds what a
+  format-1 state holds, its `sessionid`, and in place of the list of ids each
+  running child as an entry: `id` (the `<invoke>`'s id, judged as format 1 judges
+  it), `start` (which start of that `<invoke>` this is in its parent, counted from
+  1, the number `child_hosts` already tells a child by), `invokeid` (the id the
+  child was started under, carried rather than computed again), `document` (the
+  child's document, or for a hybrid `<invoke>` the candidate that was running,
+  resumed whatever `srcexpr` reads now) and `session` (the child's own state, of
+  the same grammar, its children included, to any depth). `invokestarts` counts the
+  starts of each `<invoke>` so a start after a restore is numbered on, as `sendseq`
+  is. A child's session id and a generated invoke id are derived from the tree
+  alone, the same on every backend, so a saved tree is one text whatever wrote it.
+- **The shape of a tree.** Each session carries the shape of its own document,
+  computed as today, and is judged against the document its parent's `<invoke>`
+  names there, with its own `revisions` (docs/adr/0044). A session of another shape
+  refuses the restore of the whole tree, naming the session's path; it is never
+  started again in place of being resumed.
+- **Restore.** The whole tree is judged before anything is built. The root is
+  restored as today; then each running child, in document order and depth first,
+  is built as starting it would build it (its link to its parent, the clock, the
+  host its parent's host answers for it) and restored in place of being
+  initialized: no `<onentry>`, no `<data>`, no `<param>`, no `idlocation` write,
+  nothing sent. The restore takes no step. An event a child sent its parent and the
+  parent had not taken is in the parent's `external`, and one the parent sent the
+  child is in the child's; nothing is in transit between two sessions when a tree
+  is saved. A child that had ended is absent, as in format 1, and a resumed child
+  raises its `done.invoke` once, when it ends.
+- **Sends between the sessions of a tree.** `pending` gains `parent` (a delayed
+  `<send>` to `#_parent`) and `child` (one to `#_<invokeid>` of a running child), so
+  a document that makes either keeps its save API once the generator lands (ADR
+  0045 step 2); until then both still remove it, as the paragraph on waiting on
+  another session below says.
+- **What is not in it.** A Mesh endpoint's state (sequence counters, duplicate
+  windows, ordering buffers, envelopes held for a peer) changes with the network,
+  not with a session's steps, and is saved by the host core beside the tree in one
+  checkpoint (SCE_MESH.md §19, "Checkpoint"); keys and trust state are the host's
+  and are never in either.
+- **Which documents save.** A document saves when its own state can be held and
+  every document it can start through an `<invoke type="scxml">` saves, every
+  candidate included.
+- **Backends.** Format 2 is written and read by every generated backend once its
+  step lands: Rust, Kotlin, then Go, Python, C++ and C11, which have no saved state
+  today. The Interpreter does not save: it does not run a `sce-static` document,
+  whose typed variables are what a shape is computed from.
+- **Shared instances and scenarios.** Today's instances stay and are restored by
+  every backend that reads format 2; the format-2 instances, a tree with a child
+  that has taken an event and a grandchild under a hybrid candidate among them,
+  are added by the first backend that writes them, together with a scenario
+  member that saves and restores the machine at a step.
 
 **Running host invocations.** An `<invoke>` a declared host invoker serves
 (§scxml-6.4.1) is part of the state for the same reason, and what is lost with
