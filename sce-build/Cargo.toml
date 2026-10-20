@@ -939,6 +939,12 @@ path = "tests/a_machine_waiting_on_another_session_has_no_save_api.rs"
 required-features = ["cli"]
 
 [[test]]
+# Spawns `sce-codegen` for every backend and reads what it wrote.
+name = "a_childs_ids_come_from_the_tree"
+path = "tests/a_childs_ids_come_from_the_tree.rs"
+required-features = ["cli"]
+
+[[test]]
 name = "diagnostic_fix_is_applicable"
 path = "tests/diagnostic_fix_is_applicable.rs"
 required-features = ["cli"]
