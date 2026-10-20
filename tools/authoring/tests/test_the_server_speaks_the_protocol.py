@@ -235,11 +235,16 @@ class TheServerSpeaksTheProtocol(unittest.TestCase):
         # `prepare-reading` and `finish-reading` are the same host's for a picture the owner asked to be read:
         # the host hands the picture to a client with no tools, and a client offered a tool that takes
         # pictures out of a document would be a reader that can do something (docs/adr/0036).
+        # `render-pictures` and `render-notes` are the host's as well: the first draws the images of a PDF once
+        # at import, to be kept beside it as its renditions (docs/adr/0032), and the second says what an
+        # extractor could not carry in the language a screen shows (docs/adr/0026). Neither is a step a run of a
+        # model takes: one writes files for the host to keep, the other is a display step the host asks.
         cli_only = {
             "revise-gate", "views", "extract", "convert", "check-conversion", "assemble",
             "prepare-conversion", "finish-conversion", "outline", "make-scope",
             "make-ledger", "check-ledger", "ledger-scopes", "carry-ledger",
             "prepare-division", "finish-division", "prepare-reading", "finish-reading",
+            "render-pictures", "render-notes",
         }
         self.assertLessEqual(cli_only, commands, "a command-line-only name that is not a command")
         self.assertEqual(commands - cli_only, {t["name"] for t in mcp.TOOLS} - mcp_only)

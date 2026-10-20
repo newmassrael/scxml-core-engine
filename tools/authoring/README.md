@@ -2088,7 +2088,7 @@ so a review read later says the same.
 Each entry of `not_carried` (an extraction's and a report's) is a **code and its facts**, with the English
 sentence kept beside them: `{"code": "pdf-pictures-unplaced", "facts": {"pictures": 9, "limit": 200, "pages":
 [3]}, "what": "...", "why": "..."}`. The sentences are written in `notes.py`, once per language, and a code
-that has one in a language and not in the other does not load. **`render-notes --notes FILE --lexicon ko`**
+that has one in a language and not in the other does not load. **render-notes** (`--notes FILE --lexicon ko`)
 reads a list of entries (an extraction's or a report's `not_carried`) and prints it with the sentences written
 in that language from each entry's code and facts; an entry with no code (an older tool's), or a code this
 version does not know, comes out as it was stored. A host that shows these to a reader asks for the language
@@ -2174,12 +2174,11 @@ and shapes and does not untangle columns. An image a page holds is a figure bloc
 `page-0003-image-02.png` after its page and its place among that page's images and carrying the hash of
 the bytes the document stores for it; `picture` and `prepare-reading` draw it as PNG from the samples the
 document holds, so a PDF's pictures are read the way a word document's are (`pdf_pictures.py`).
-`render-pictures --document F.pdf --out-dir D` draws them all once, as the PNG files and the
-`renditions.json` a bundle keeps as the PDF's renditions; a picture that is a file of a `renditions` folder
-beside the PDF is handed over as it is, without the pack. A page
-that carries no text is listed by number and is not read as an empty page: reading pixels is a reader's
-work (`docs/adr/0035`). A file or page count past the limits, and a page larger than any sheet, is
-refused with its numbers.
+**render-pictures** (`--document F.pdf --out-dir D`) draws them all once, as the PNG files and the
+`renditions.json` a bundle keeps as the PDF's renditions (docs/adr/0032); a picture that is a file of a
+`renditions` folder beside the PDF is handed over as it is, without the pack. A page that carries no text is
+listed by number and is not read as an empty page: reading pixels is a reader's work (`docs/adr/0035`). A file
+or page count past the limits, and a page larger than any sheet, is refused with its numbers.
 
 ### What "precision" means here, and where it can actually go wrong
 
