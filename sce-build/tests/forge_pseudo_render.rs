@@ -45,6 +45,9 @@ fn field(id: &str, t: SceType, dir: Direction) -> ForgeField {
         retain: None,
         initial: None,
         initial_spelling: None,
+        since: None,
+        default: None,
+        default_spelling: None,
     }
 }
 
@@ -732,6 +735,7 @@ fn each_declarative_kind_renders_every_field_it_can_carry() {
         fields: vec![field("seq", SceType::Uint8, Direction::In)],
         payload_none: false,
         datamodel_markers: Vec::new(),
+        revision: None,
         source_location: None,
     };
     assert_eq!(

@@ -2339,6 +2339,16 @@ impl SCXMLParser {
                     actual: actual.to_string(),
                 }));
             }
+            // A schema's defaults are what this machine's lift reads for a
+            // field an older delivery lacks, so an enum default that names no
+            // variant is refused here, at the sibling, and not left for the
+            // lift to refuse every delivery it was meant to keep readable.
+            // The schema's own imports are read beside the schema.
+            crate::forge::schema_revision::check(
+                &parsed,
+                source.path.parent().unwrap_or(base_dir),
+                source.label().diagnostic_label,
+            )?;
             match parsed.document {
                 ForgeDocument::EventSchema(schema) => {
                     schemas.entry(schema.name.clone()).or_insert(schema);

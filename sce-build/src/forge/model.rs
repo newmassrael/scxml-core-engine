@@ -1046,6 +1046,28 @@ pub struct ForgeField {
     /// [`crate::attribute_spelling`].
     #[serde(skip)]
     pub initial_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
+    /// `sce:since` — on a field of an event schema, the revision of the
+    /// schema that added the field, from 2 up to the schema's own
+    /// revision. `None` for a field of the first revision, which every
+    /// delivery carries, and for a field of any other kind.
+    ///
+    /// With [`Self::default`] it is what lets a schema grow without making
+    /// an older delivery unreadable: a delivery written before the field
+    /// existed lacks it, and takes the default instead of being refused.
+    /// See [`crate::forge::schema_revision`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub since: Option<u32>,
+    /// `sce:default` — on a field that declares `sce:since`, the value a
+    /// delivery that lacks the field takes. Verbatim as the author wrote
+    /// it; a literal of the field's own type, held to its bounds where the
+    /// schema is read ([`crate::forge::schema_revision`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default: Option<String>,
+    /// Where `sce:default` is written, so a refusal of it names the row
+    /// that holds it. Skipped from serialization, as every position on
+    /// this model is. See [`crate::attribute_spelling`].
+    #[serde(skip)]
+    pub default_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
 }
 
 impl ForgeField {
@@ -1415,6 +1437,16 @@ pub struct EventSchemaModel {
     /// every marker where it was written.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub datamodel_markers: Vec<crate::provenance::UnresolvedMarker>,
+    /// `sce:revision` on the root: which revision of the schema this
+    /// document is, a positive integer. `None` when the document declares
+    /// none, which makes it the first.
+    ///
+    /// A field added after the first revision says which revision added it
+    /// (`ForgeField::since`) and what a delivery that lacks it takes
+    /// (`ForgeField::default`), so a delivery written against an earlier
+    /// revision still reads as this one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revision: Option<u32>,
     /// SCE Protocol-Synthesis RFC §synth-5-O: post-preprocessor source
     /// position of the `<scxml sce:kind="event-schema">` root element
     /// (or the synthesized location of the lowered inline form).
@@ -1436,6 +1468,12 @@ impl EventSchemaModel {
     /// name that struct asks this first and refuses in its own words.
     pub fn carries_payload(&self) -> bool {
         !self.fields.is_empty()
+    }
+
+    /// The revision of the schema this document is: what `sce:revision`
+    /// declares, and the first when it declares none.
+    pub fn revision(&self) -> u32 {
+        self.revision.unwrap_or(1)
     }
 
     /// W3C SCXML built-in event-name prefixes that an EventSchema may

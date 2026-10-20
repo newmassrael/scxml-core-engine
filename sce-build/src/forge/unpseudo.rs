@@ -352,7 +352,8 @@ fn parse_transform(head: &Line<'_>, body: &[&Line<'_>]) -> Result<TransformModel
 ///
 /// The renderer writes the first two under the head, ahead of every field,
 /// so they are read from that leading run only: a `payload none` after a
-/// field is not a line the renderer wrote.
+/// field is not a line the renderer wrote. A `revision <n>` line, when the
+/// document declares one, is written first of all.
 fn parse_event_schema(head: &Line<'_>, body: &[&Line<'_>]) -> Result<EventSchemaModel, ParseError> {
     let w: Vec<&str> = head.text.split_whitespace().collect();
     if w.get(2) != Some(&"event") {
@@ -362,11 +363,27 @@ fn parse_event_schema(head: &Line<'_>, body: &[&Line<'_>]) -> Result<EventSchema
         });
     }
     let mut payload_none = false;
+    let mut revision: Option<u32> = None;
     let mut traced = Traced::default();
     let mut fields: Vec<ForgeField> = Vec::new();
     let mut leading = true;
     for (l, sub) in group(body) {
         if leading {
+            if let Some(rest) = l.text.strip_prefix("revision ") {
+                if revision.is_some() || payload_none || sub.first().is_some() {
+                    return Err(ParseError {
+                        line: l.number,
+                        why: "a `revision` line is written once, first, and holds nothing \
+                              under it"
+                            .to_string(),
+                    });
+                }
+                revision = Some(rest.trim().parse().map_err(|_| ParseError {
+                    line: l.number,
+                    why: format!("`{rest}` is not a revision this renderer could have written"),
+                })?);
+                continue;
+            }
             if l.text == "payload none" {
                 if let Some(extra) = sub.first() {
                     return Err(ParseError {
@@ -405,6 +422,7 @@ fn parse_event_schema(head: &Line<'_>, body: &[&Line<'_>]) -> Result<EventSchema
         fields,
         payload_none,
         datamodel_markers: traced.unresolved,
+        revision,
         source_location: None,
     })
 }
@@ -646,6 +664,9 @@ fn parse_field(line: &Line<'_>) -> Result<ForgeField, ParseError> {
         retain: None,
         initial: None,
         initial_spelling: None,
+        since: None,
+        default: None,
+        default_spelling: None,
     };
 
     // ⚠ The expression is taken from the LINE, not rebuilt from its
@@ -710,6 +731,27 @@ fn parse_field(line: &Line<'_>) -> Result<ForgeField, ParseError> {
                     rest.get(i + 1).copied().unwrap_or(""),
                     line.number,
                 )?);
+                i += 2;
+            }
+            // `since <revision>` and `default "<text>"` — a field a later
+            // revision of its event schema added. The default is a JSON
+            // string of the text the author wrote, as the renderer quotes it.
+            "since" => {
+                let written = rest.get(i + 1).copied().unwrap_or("");
+                f.since = Some(written.parse().map_err(|_| ParseError {
+                    line: line.number,
+                    why: format!("`{written}` is not a revision this renderer could have written"),
+                })?);
+                i += 2;
+            }
+            "default" => {
+                let quoted = undo_word(rest.get(i + 1).copied().unwrap_or(""), line.number)?;
+                f.default = Some(serde_json::from_str(&quoted).map_err(|_| ParseError {
+                    line: line.number,
+                    why: format!(
+                        "`{quoted}` is not a quoted default this renderer could have written"
+                    ),
+                })?);
                 i += 2;
             }
             // `default-covers <a> <b> ...` — variadic, so it runs to the

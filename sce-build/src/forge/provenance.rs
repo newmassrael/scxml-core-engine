@@ -520,6 +520,9 @@ mod tests {
             retain: None,
             initial: None,
             initial_spelling: None,
+            since: None,
+            default: None,
+            default_spelling: None,
         };
         let cases: Vec<ForgeDocument> = vec![
             ForgeDocument::Transform(TransformModel {

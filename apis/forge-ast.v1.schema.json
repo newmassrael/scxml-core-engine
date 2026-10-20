@@ -3929,6 +3929,15 @@
               "description": "`<datamodel sce:payload=\"none\"/>`: the specification says the event carries no data, so the schema declares no field on purpose.\n\n⚠ A statement, not an absence. A `<datamodel>` with no field and neither this nor an open marker is refused (`validation/empty-collection`): it reads the same as a field the author forgot. It only ever holds with `fields` empty.",
               "type": "boolean"
             },
+            "revision": {
+              "description": "`sce:revision` on the root: which revision of the schema this document is, a positive integer. `None` when the document declares none, which makes it the first.\n\nA field added after the first revision says which revision added it (`ForgeField::since`) and what a delivery that lacks it takes (`ForgeField::default`), so a delivery written against an earlier revision still reads as this one.",
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
             "source_location": {
               "anyOf": [
                 {
@@ -4016,6 +4025,13 @@
     "ForgeField": {
       "description": "A typed data field common to all kinds.",
       "properties": {
+        "default": {
+          "description": "`sce:default` — on a field that declares `sce:since`, the value a delivery that lacks the field takes. Verbatim as the author wrote it; a literal of the field's own type, held to its bounds where the schema is read ([`crate::forge::schema_revision`]).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "default_covers": {
           "description": "The variants of this field's value space that the author says reach the default branch ON PURPOSE — `sce:default-covers=\"A B C\"`.\n\nThis is the ANSWER half of [`crate::forge::coverage`]. That module reports which variants nothing in the document tests for; without a way to record \"yes, I meant those\", the report re-asks the same question on every run, and a list that never shrinks is a list nobody reads.\n\n⚠ It is a CLAIM, not a suppression, and the difference is the whole design. The claim names the variants, so it stays true only while they are exactly the ones falling through: add a variant to the enum document and the new one is unacknowledged, so the question comes back — which is right, because a value space growing is precisely when the author must decide again. A boolean `sce:default-is-deliberate` would have gone silent forever on the day the platform added a value.\n\n⚠⚠ A claim can be FALSE, and a false claim is refused rather than reported: naming a non-variant, or naming one the document's own conditions test for. See `coverage::check`.",
           "items": {
@@ -4072,6 +4088,15 @@
         },
         "sce_type": {
           "$ref": "#/definitions/SceType"
+        },
+        "since": {
+          "description": "`sce:since` — on a field of an event schema, the revision of the schema that added the field, from 2 up to the schema's own revision. `None` for a field of the first revision, which every delivery carries, and for a field of any other kind.\n\nWith [`Self::default`] it is what lets a schema grow without making an older delivery unreadable: a delivery written before the field existed lacks it, and takes the default instead of being refused. See [`crate::forge::schema_revision`].",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
         }
       },
       "required": [

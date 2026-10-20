@@ -35,7 +35,11 @@
      machine reads it through its event-schema. field() is that reading: the
      refusals are the generated backends' (no data, a bare value, a missing
      field, a value of another type or beyond its width), each thrown, so the
-     expression that read the field fails the way an overflow does.
+     expression that read the field fails the way an overflow does. A field a
+     later revision of the schema added is read with a fourth argument, the
+     value its default spells as JSON: a delivery that lacks the field, or
+     carries no data at all, reads that value in its place and holds it to the
+     field's type as a delivered one, which is what the generated lifts read.
 
      A failure names itself. The thrown Error carries sceFailure, one of the
      names a generated backend reports (SCE_FORGE.md 3.4.1): overflow,
@@ -172,17 +176,25 @@
     };
   }
 
-  function field(data, name, type) {
-    if (data === undefined || data === null) {
-      fail('the event carries no data');
+  function field(data, name, type, fallback) {
+    var revised = arguments.length > 3;
+    if (data === undefined || data === null || (revised && data === '')) {
+      if (!revised) {
+        fail('the event carries no data');
+      }
+      data = {};
     }
     if (typeof data !== 'object' || Array.isArray(data)) {
       fail('the event data is a bare value, and its schema declares named fields');
     }
-    if (!Object.prototype.hasOwnProperty.call(data, name)) {
+    var value;
+    if (Object.prototype.hasOwnProperty.call(data, name)) {
+      value = data[name];
+    } else if (revised) {
+      value = fallback;
+    } else {
       fail('the event data has no ' + name);
     }
-    var value = data[name];
     if (Array.isArray(type)) {
       if (typeof value !== 'string') {
         fail(name + ' is not text');

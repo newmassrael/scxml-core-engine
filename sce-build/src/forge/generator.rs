@@ -2668,9 +2668,20 @@ pub fn build_rust_event_payload(
         // reads the typed view back out of it — a host-run completion
         // included, whose data is the host's record.
         if !no_std {
+            // A field a later revision of the schema added is read out of the
+            // schema's defaults where the delivery lacks it
+            // (`crate::forge::schema_revision`); a schema with none reads the
+            // delivery alone, as it always has.
+            let decode = match crate::forge::schema_revision::defaults_wire(schema) {
+                Some(defaults) => format!(
+                    "decode_with_defaults(data, \"{}\")",
+                    filters::escape_rust(defaults)
+                ),
+                None => "decode(data)".to_string(),
+            };
             lift_arms.push_str(&format!(
                 "            {machine_name}Event::{variant} => {{\n                \
-let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;\n                \
+let fields = ::sce_rust_runtime::event_payload::PayloadFields::{decode}?;\n                \
 self.pending_payload = {enum_name}::{variant}({struct_name} {{\n{lift_fields}                \
 }});\n            }}\n"
             ));
@@ -3330,13 +3341,24 @@ return false;\n    }}\n"
             format: wire_parts,
             args: wire_args,
         } = c11_record_wire_of(&schema.fields, "payload", static_enums);
+        // A field a later revision of the schema added is read out of the
+        // schema's defaults where the delivery lacks it
+        // (`crate::forge::schema_revision`); a schema with none reads the
+        // delivery alone, as it always has.
+        let decode = match crate::forge::schema_revision::defaults_wire(schema) {
+            Some(defaults) => format!(
+                "sce_payload_decode_with_defaults(_data, \"{}\", &_fields)",
+                filters::escape_c(defaults)
+            ),
+            None => "sce_payload_decode(_data, &_fields)".to_string(),
+        };
         lift_readers.push_str(&format!(
             "/* Read `{event}`'s schema fields out of the data it carries. Answers false\n   \
 with the sentence the caller raises as `error.execution`. */\n\
 static bool {sm}_lift_{member}({sm}_t *sm, const char *_data, {struct_name} *out,\n                                \
 char *_message, size_t _message_cap) {{\n    \
 sce_payload_fields_t _fields;\n    \
-const char *_refusal = sce_payload_decode(_data, &_fields);\n    \
+const char *_refusal = {decode};\n    \
 if (_refusal != NULL) {{\n        \
 snprintf(_message, _message_cap, \"`{event}` payload: %s\", _refusal);\n        \
 return false;\n    }}\n    (void)sm;\n{field_reads}    return true;\n}}\n\n"
@@ -3687,9 +3709,20 @@ pub fn build_go_event_payload(
                 go_payload_data_value(f)
             ));
         }
+        // A field a later revision of the schema added is read out of the
+        // schema's defaults where the delivery lacks it
+        // (`crate::forge::schema_revision`); a schema with none reads the
+        // delivery alone, as it always has.
+        let lift_call = match crate::forge::schema_revision::defaults_wire(schema) {
+            Some(defaults) => format!(
+                "sce.LiftPayloadWithDefaults(meta.Data, \"{}\")",
+                filters::escape_go(defaults)
+            ),
+            None => "sce.LiftPayload(meta.Data)".to_string(),
+        };
         lift_cases.push_str(&format!(
             "\tcase {machine}Event{variant}:\n\t\t\
-fields, err := sce.LiftPayload(meta.Data)\n\t\t\
+fields, err := {lift_call}\n\t\t\
 if err != nil {{\n\t\t\treturn err\n\t\t}}\n\t\t\
 var payload {struct_name}\n{field_reads}\t\t\
 p.{field} = payload\n\t\tp.pendingPayloadTag = {tag_type}{variant}\n"
@@ -4006,10 +4039,18 @@ if (!refusal.empty()) {{\n                return refusal;\n            }}\n",
                 f.id
             ));
         }
+        // A field a later revision of the schema added is read out of the
+        // schema's defaults where the delivery lacks it
+        // (`crate::forge::schema_revision`); a schema with none reads the
+        // delivery alone, as it always has.
+        let decode_args = match crate::forge::schema_revision::defaults_wire(schema) {
+            Some(defaults) => format!("meta.data, \"{}\", fields", filters::escape_cpp(defaults)),
+            None => "meta.data, fields".to_string(),
+        };
         lift_cases.push_str(&format!(
             "        case Event::{event_enum}: {{\n            \
 ::SCE::Common::EventPayloadFields fields;\n            \
-::std::string refusal = ::SCE::Common::EventPayloadFields::decode(meta.data, fields);\n            \
+::std::string refusal = ::SCE::Common::EventPayloadFields::decode({decode_args});\n            \
 if (!refusal.empty()) {{\n                return refusal;\n            }}\n            \
 {struct_name} payload{{}};\n{field_reads}            \
 {field} = payload;\n            pendingPayloadTag_ = {tag_type}::{variant};\n            \
@@ -4285,9 +4326,17 @@ pub fn build_kotlin_event_payload(
         } else {
             "} else if"
         };
+        // A field a later revision of the schema added is read out of the
+        // schema's defaults where the delivery lacks it
+        // (`crate::forge::schema_revision`); a schema with none reads the
+        // delivery alone, as it always has.
+        let decode_args = match crate::forge::schema_revision::defaults_wire(schema) {
+            Some(defaults) => format!("metadata.data, \"{}\"", filters::escape_kotlin(defaults)),
+            None => "metadata.data".to_string(),
+        };
         lift_arms.push_str(&format!(
             "                {kw} (event == {event_ref}) {{\n                    \
-val fields = EventPayload.decode(metadata.data)\n                    \
+val fields = EventPayload.decode({decode_args})\n                    \
 {field} = {class_name}({lift_args})\n"
         ));
         data_classes.push_str(&format!(
@@ -4554,6 +4603,14 @@ name this class directly.\"\"\"\n\n{field_lines}\n\n"
         init.push_str(&format!("        self._pending_{snake}_payload = None\n"));
         let kw = if first { "if" } else { "elif" };
         first = false;
+        // A field a later revision of the schema added is read out of the
+        // schema's defaults where the delivery lacks it
+        // (`crate::forge::schema_revision`); a schema with none reads the
+        // delivery alone, as it always has.
+        let defaults_arg = crate::forge::schema_revision::defaults_wire(schema)
+            .map_or(String::new(), |defaults| {
+                format!(", {}", filters::py_string_literal(defaults))
+            });
         // The typed carrier first, then the lift. ⚠ The lift's refusal is
         // `error.execution` and a guard that does not fire, which is what the
         // SCRIPT ENGINE answers for the same guard on the same data (W3C SCXML
@@ -4565,7 +4622,7 @@ self._pending_{snake}_payload = _tp\n        \
 elif event == {machine}Event.{event_const}:\n            \
 try:\n                \
 self._pending_{snake}_payload = {class_name}(*_lift_typed_payload(\n                    \
-metadata.data, ({lift_fields})))\n            \
+metadata.data, ({lift_fields}){defaults_arg}))\n            \
 except _TypedPayloadError as _exc:\n                \
 _engine = getattr(self, \"_engine_ref\", None)\n                \
 if _engine is not None:\n                    \
@@ -30877,6 +30934,9 @@ mod tests {
             retain: None,
             initial: None,
             initial_spelling: None,
+            since: None,
+            default: None,
+            default_spelling: None,
         };
         // Bytes with no annotation → default-capacity buffer + length sibling.
         assert_eq!(

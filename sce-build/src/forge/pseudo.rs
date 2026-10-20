@@ -1413,6 +1413,18 @@ fn render_field(f: &ForgeField, out: &mut Out<'_>) {
     if let Some(initial) = &f.initial {
         let _ = write!(line, " initial {}", word(initial));
     }
+    // A field a later revision of its event schema added, and what a
+    // delivery that lacks it takes: each its own clause. The default is
+    // written quoted, as a JSON string of the text the author wrote: a
+    // string field's default may be empty, or `=`, and a bare word could
+    // spell neither.
+    if let Some(since) = f.since {
+        let _ = write!(line, " since {since}");
+    }
+    if let Some(default) = &f.default {
+        let quoted = serde_json::to_string(default).expect("a string is JSON");
+        let _ = write!(line, " default {}", word(&quoted));
+    }
     if !f.default_covers.is_empty() {
         let covers: Vec<String> = f.default_covers.iter().map(|c| word(c)).collect();
         let _ = write!(line, " default-covers {}", covers.join(" "));
@@ -1642,6 +1654,11 @@ fn render_event_schema(m: &EventSchemaModel) -> Result<Vec<Node>, Unsupported> {
         Part::Text(text(&m.event_name).into_owned()),
     ]);
     out.nested(|out| {
+        // Which revision of the schema this is, when the document says: the
+        // fields a later revision added carry `since` against it.
+        if let Some(revision) = m.revision {
+            out.line(&format!("revision {revision}"));
+        }
         if m.payload_none {
             out.line_of(vec![Part::Word(Word::Payload), Part::Word(Word::None)]);
         }

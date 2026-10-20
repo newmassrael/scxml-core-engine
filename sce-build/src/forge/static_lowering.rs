@@ -26,7 +26,7 @@ use crate::forge::error::GenerateError;
 use crate::forge::expr::{
     transpile_into_owned, transpile_into_receiving, ExprTarget, Receiving, Refusal,
 };
-use crate::forge::model::{EnumModel, EventSchemaModel, SceType};
+use crate::forge::model::{EnumModel, EventSchemaModel, ForgeField, SceType};
 use crate::forge::static_datamodel::indexed_element;
 use crate::forge::type_ctx::{
     StateArg, StateCallRefusal, StateContext, StateRewrite, StaticCallee, StaticEnum, StaticScope,
@@ -553,6 +553,22 @@ pub trait StaticTarget {
     /// one value an expression names — what a byte string held by the machine is
     /// read as. `None` for a target whose payload holds the byte string as a value.
     fn payload_bytes_read(&self, _accessor: &str, _field: &str) -> Option<String> {
+        None
+    }
+    /// How a target whose payload is untyped data reads a field a later
+    /// revision of its schema added: the field `field` of the payload
+    /// `accessor`, held to its type (to `variants` for an enum field) as any
+    /// field is, and read as `default` — the JSON its schema's default spells
+    /// ([`crate::forge::schema_revision::default_wire`]) — where the delivery
+    /// lacks it. `None` for a target whose generated lift filled the default
+    /// into the payload it holds before any expression reads it.
+    fn payload_revised_read(
+        &self,
+        _accessor: &str,
+        _field: &ForgeField,
+        _variants: &[&str],
+        _default: &str,
+    ) -> Option<String> {
         None
     }
     /// The expression lowerer's target.
@@ -7317,7 +7333,10 @@ fn payload_record_value(
 /// that holds the value to the variants the enum declares. A target that holds
 /// the payload in a struct of its own reads the field off it and asks for none.
 /// A byte-string field is read here too, by a target that holds it as a buffer and
-/// its length ([`StaticTarget::payload_bytes_read`]).
+/// its length ([`StaticTarget::payload_bytes_read`]), and so is a field of any type
+/// a later revision of the schema added, by a target whose untyped payload has to
+/// be told the default a delivery that lacks the field takes
+/// ([`StaticTarget::payload_revised_read`]).
 fn payload_enum_reads(
     target: &dyn StaticTarget,
     schema: Option<&EventSchemaModel>,
@@ -7331,18 +7350,29 @@ fn payload_enum_reads(
         .fields
         .iter()
         .filter_map(|field| {
-            let read = match &field.sce_type {
-                SceType::Enum(reference) => {
-                    let variants: Vec<&str> = enums
-                        .get(&reference.alias)?
-                        .variants
-                        .iter()
-                        .map(|v| v.name.as_str())
-                        .collect();
+            let variants: Vec<&str> = match &field.sce_type {
+                SceType::Enum(reference) => enums
+                    .get(&reference.alias)?
+                    .variants
+                    .iter()
+                    .map(|v| v.name.as_str())
+                    .collect(),
+                _ => Vec::new(),
+            };
+            let revised = if field.since.is_some() {
+                crate::forge::schema_revision::default_wire(field).and_then(|default| {
+                    target.payload_revised_read(accessor, field, &variants, &default)
+                })
+            } else {
+                None
+            };
+            let read = match (revised, &field.sce_type) {
+                (Some(read), _) => read,
+                (None, SceType::Enum(_)) => {
                     target.payload_enum_read(accessor, &field.id, &variants)?
                 }
-                SceType::Bytes => target.payload_bytes_read(accessor, &field.id)?,
-                _ => return None,
+                (None, SceType::Bytes) => target.payload_bytes_read(accessor, &field.id)?,
+                (None, _) => return None,
             };
             Some((
                 format!(

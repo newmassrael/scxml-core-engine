@@ -2250,6 +2250,9 @@ mod tests {
                     retain: None,
                     initial: None,
                     initial_spelling: None,
+                    since: None,
+                    default: None,
+                    default_spelling: None,
                 },
                 ForgeField {
                     id: "offset".to_string(),
@@ -2264,10 +2267,14 @@ mod tests {
                     retain: None,
                     initial: None,
                     initial_spelling: None,
+                    since: None,
+                    default: None,
+                    default_spelling: None,
                 },
             ],
             payload_none: false,
             datamodel_markers: Vec::new(),
+            revision: None,
             source_location: None,
         };
         let mut m = BTreeMap::new();

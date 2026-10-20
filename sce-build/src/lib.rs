@@ -3329,6 +3329,12 @@ pub fn compile_forge_from_parsed(
     // cannot be the thing that discovers a misspelled variant.
     forge::retention::check(parsed, base_dir, label.diagnostic_label)?;
 
+    // An event schema's default is what a delivery written before its field
+    // existed reads in its place, so it has to be a value of the field. The
+    // parser held it to everything the document alone can say; an enum
+    // default names a variant only the enum document can confirm.
+    forge::schema_revision::check(parsed, base_dir, label.diagnostic_label)?;
+
     // A content-line codec reads a text off a line and names the variant whose
     // text it is, so an `enum:<alias>` entry needs an enum whose variants each
     // have a text a line can carry and no other variant has (docs/adr/0015).

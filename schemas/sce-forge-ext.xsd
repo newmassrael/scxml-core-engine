@@ -326,6 +326,24 @@
        `validation/event-schema-on-builtin-event`). Free-form string
        at the XSD layer; semantic validation lives in sce-build. -->
   <xs:attribute name="event-name" type="xs:string"/>
+  <!-- An event schema that grows (SCE Accepted Subset, "An event schema
+       that grows"). `sce:revision` on a `sce:kind="event-schema"` root
+       says which revision of the schema the document is, a positive
+       integer, the first when absent. `sce:since` on one of its `<data>`
+       fields names the revision that added the field, from 2 up to the
+       root's revision, and the field then carries `sce:default` (declared
+       below, shared with the lookup miss policy), the value a delivery
+       written before the field existed takes in its place. A field of the
+       first revision declares neither and stays required.
+
+       Strings at the XSD layer, as `sce:event-name` is: the parser owns
+       every refusal (`parse_event_schema`), a revision that is not a
+       positive integer, a `since` outside its range, a default with no
+       `since` or a `since` with no default, and a default that is no value
+       of its field, so that each is answered in the words written for it
+       rather than in libxml2's. -->
+  <xs:attribute name="revision" type="xs:string"/>
+  <xs:attribute name="since" type="xs:string"/>
   <!-- `sce:default-covers` on an enum-typed INPUT `<data>` of a
        `sce:kind="transform"`: the variants of that input's value space
        which reach the expression's default branch on purpose. It is the

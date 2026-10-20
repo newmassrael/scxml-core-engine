@@ -10793,6 +10793,15 @@ fn read_capacity_source(
 ///   side typecheck would otherwise have to pick one declaration to
 ///   honor on `_event.data.<id>`, hiding the conflict from the author).
 ///
+/// **Revisions**
+///   `sce:revision` on the root is a positive integer, the first when
+///   absent. A field a later revision added declares `sce:since` (in
+///   `2..=revision`) and `sce:default` (a value of the field), and a
+///   field of the first revision declares neither: [`read_field_revision`]
+///   refuses each other combination. Whether an enum default names a
+///   variant needs the enum document, and is asked where the imports are
+///   read ([`crate::forge::schema_revision::check`]).
+///
 /// **Out of scope here (lives elsewhere)**
 ///   * Send-side payload validation against the schema (event_schema_check).
 ///   * Mesh cross-machine schema match (mesh/deploy validator).
@@ -10844,11 +10853,13 @@ fn parse_event_schema(
         )
     })?;
 
+    let revision = read_schema_revision(root, label.diagnostic_label)?;
+
     let mut fields: Vec<ForgeField> = Vec::new();
     let mut seen_ids: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
 
     for data in data_children(&datamodel) {
-        let field = parse_forge_field(&data, label.diagnostic_label)?;
+        let mut field = parse_forge_field(&data, label.diagnostic_label)?;
         if field.direction != Direction::In {
             // Reproduce the offending direction value verbatim so the
             // diagnostic mirrors the authored token. `Direction::In`
@@ -10885,6 +10896,7 @@ fn parse_event_schema(
                 },
             ));
         }
+        read_field_revision(&data, &mut field, revision, label.diagnostic_label)?;
         fields.push(field);
     }
 
@@ -10977,8 +10989,139 @@ fn parse_event_schema(
         fields,
         payload_none,
         datamodel_markers,
+        revision,
         source_location: forge_source_location_of(root, label.diagnostic_label),
     })
+}
+
+/// `sce:revision` on an event schema's root: a positive integer, `None` when
+/// the document declares none (its first revision).
+fn read_schema_revision(
+    root: &roxmltree::Node,
+    doc_name: &str,
+) -> Result<Option<u32>, Located<ForgeError>> {
+    let Some(text) = sce_attr(root, "revision") else {
+        return Ok(None);
+    };
+    match text.trim().parse::<u32>() {
+        Ok(n) if n >= 1 => Ok(Some(n)),
+        _ => Err(located(
+            root,
+            doc_name,
+            ValidationError::AttributeRuleViolated {
+                element: "EventSchema <scxml>".into(),
+                attr: "sce:revision".into(),
+                value: text.clone(),
+                rule: "a positive integer: the revision of the schema this document is (a \
+                       document that declares none is its first)"
+                    .into(),
+            },
+        )),
+    }
+}
+
+/// `sce:since` and `sce:default` on one field of an event schema whose
+/// root declares `revision`.
+///
+/// A field a later revision added says which revision added it, `2..=` the
+/// schema's own, and what a delivery that lacks it takes; a field of the
+/// first revision says neither, because every delivery carries it. Each other
+/// combination is refused here, and so is a default that is no value of its
+/// field ([`crate::forge::schema_revision::wire_of`]), except an enum default
+/// naming no variant, which needs the enum document
+/// ([`crate::forge::schema_revision::check`]).
+fn read_field_revision(
+    data: &roxmltree::Node,
+    field: &mut ForgeField,
+    revision: Option<u32>,
+    doc_name: &str,
+) -> Result<(), Located<ForgeError>> {
+    use crate::forge::schema_revision::{wire_of, Unfit};
+
+    let element = format!("EventSchema field '{}'", field.id);
+    let latest = revision.unwrap_or(1);
+    let since = match sce_attr(data, "since") {
+        None => None,
+        Some(text) => match text.trim().parse::<u32>() {
+            Ok(n) if (2..=latest).contains(&n) => Some(n),
+            _ => {
+                let rule = if latest < 2 {
+                    "the revision that added the field, from 2 up to the schema's sce:revision \
+                     — this schema declares no revision past the first, so none of its fields \
+                     was added later"
+                        .to_string()
+                } else {
+                    format!(
+                        "the revision that added the field, an integer from 2 up to the \
+                         schema's sce:revision ({latest}); a field of the first revision \
+                         declares none"
+                    )
+                };
+                return Err(located(
+                    data,
+                    doc_name,
+                    ValidationError::AttributeRuleViolated {
+                        element,
+                        attr: "sce:since".into(),
+                        value: text,
+                        rule,
+                    },
+                ));
+            }
+        },
+    };
+    let default = sce_attr(data, "default");
+    match (since, default.as_deref()) {
+        (None, None) => {}
+        (None, Some(value)) => {
+            return Err(located(
+                data,
+                doc_name,
+                ValidationError::AttributeRuleViolated {
+                    element,
+                    attr: "sce:default".into(),
+                    value: value.to_string(),
+                    rule: "a field a later revision added (sce:since) — a default is what a \
+                           delivery that lacks the field takes, and every delivery carries a \
+                           field of the first revision"
+                        .into(),
+                },
+            ));
+        }
+        (Some(added), None) => {
+            return Err(located(
+                data,
+                doc_name,
+                ValidationError::MissingAttribute {
+                    element: format!("{element} (sce:since=\"{added}\")"),
+                    attr: "sce:default".into(),
+                },
+            ));
+        }
+        (Some(_), Some(value)) => {
+            if let Err(unfit) = wire_of(&field.sce_type, field.max_size, value) {
+                let error = match unfit {
+                    Unfit::Rule(rule) => ValidationError::AttributeRuleViolated {
+                        element,
+                        attr: "sce:default".into(),
+                        value: value.to_string(),
+                        rule,
+                    },
+                    Unfit::OneOf(allowed) => ValidationError::InvalidAttribute {
+                        element,
+                        attr: "sce:default".into(),
+                        value: value.to_string(),
+                        allowed,
+                    },
+                };
+                return Err(located(data, doc_name, error));
+            }
+        }
+    }
+    field.since = since;
+    field.default_spelling = AttributeSpelling::of(data, Some(SCE_NAMESPACE), "default");
+    field.default = default;
+    Ok(())
 }
 
 fn require_attr(
@@ -11914,6 +12057,12 @@ fn parse_forge_field(
         retain,
         initial,
         initial_spelling,
+        // A revision is an event schema's alone: `parse_event_schema` reads
+        // `sce:since` and `sce:default` for its own fields, and on a field of
+        // any other kind they are left unread and refused as such.
+        since: None,
+        default: None,
+        default_spelling: None,
     })
 }
 

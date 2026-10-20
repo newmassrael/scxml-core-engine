@@ -57,6 +57,7 @@ pub mod queryables;
 pub mod requirement_nodes;
 pub mod retention;
 pub mod review_table;
+pub mod schema_revision;
 pub mod sourcemap;
 pub mod standard_host;
 pub mod static_datamodel;

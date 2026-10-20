@@ -108,7 +108,9 @@ use std::path::{Path, PathBuf};
 use crate::forge::error::{ForgeError, GenerateError, Located};
 use crate::forge::expr::ExprTarget;
 use crate::forge::import_source::ImportSource;
-use crate::forge::model::{ForgeDocument, ForgeImport, ForgeKind, ParsedForge, SceType};
+use crate::forge::model::{
+    ForgeDocument, ForgeField, ForgeImport, ForgeKind, ParsedForge, SceType,
+};
 use crate::forge::static_js_algorithm;
 use crate::forge::static_lowering::{lower, Callee, LoweredElement, LoweredSite, StaticTarget};
 use crate::forge::type_ctx::{StateArg, StaticCallee, StaticScope};
@@ -240,6 +242,13 @@ impl JsTarget {
     }
 }
 
+/// The type the library's `field` holds an enum field to: the array of the
+/// names its variants declare.
+fn variant_list(variants: &[&str]) -> String {
+    let names: Vec<String> = variants.iter().map(|name| format!("'{name}'")).collect();
+    format!("[{}]", names.join(", "))
+}
+
 impl StaticTarget for JsTarget {
     fn name(&self) -> &'static str {
         LOWERED_DATAMODEL
@@ -256,10 +265,29 @@ impl StaticTarget for JsTarget {
         true
     }
     fn payload_enum_read(&self, accessor: &str, field: &str, variants: &[&str]) -> Option<String> {
-        let names: Vec<String> = variants.iter().map(|name| format!("'{name}'")).collect();
         Some(format!(
-            "{RUNTIME_GLOBAL}.field({accessor}, '{field}', [{}])",
-            names.join(", ")
+            "{RUNTIME_GLOBAL}.field({accessor}, '{field}', {})",
+            variant_list(variants)
+        ))
+    }
+    // The script engine reads the payload a field at a time, so the default a
+    // delivery that lacks a field takes is handed to the read of that field:
+    // the library's `field` reads it where the data names no such field, and
+    // holds it to the type as a delivered value, as the generated lifts do.
+    fn payload_revised_read(
+        &self,
+        accessor: &str,
+        field: &ForgeField,
+        variants: &[&str],
+        default: &str,
+    ) -> Option<String> {
+        let kind = match &field.sce_type {
+            SceType::Enum(_) => variant_list(variants),
+            ty => format!("'{}'", InferredType::from_sce_type(ty).declared_spelling()?),
+        };
+        Some(format!(
+            "{RUNTIME_GLOBAL}.field({accessor}, '{}', {kind}, {default})",
+            field.id
         ))
     }
     fn callee(&self, document_name: &str) -> Option<Callee> {

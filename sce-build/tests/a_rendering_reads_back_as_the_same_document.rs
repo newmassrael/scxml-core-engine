@@ -272,6 +272,11 @@ fn every_field_clause_survives_the_round_trip() {
         retain: Some("battery backed store".to_string()),
         initial: Some("hello world".to_string()),
         initial_spelling: None,
+        since: Some(2),
+        // A spaced default, and one that holds ` = `, which a reader taking
+        // everything after the first ` = ` as the expression would split.
+        default: Some("left = right".to_string()),
+        default_spelling: None,
     };
 
     let document = ForgeDocument::Transform(TransformModel {
