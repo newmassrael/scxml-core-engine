@@ -292,12 +292,14 @@ TEST_F(ExternalChainIsBoundedTest, AChainThroughADelayExpressionThatIsZeroIsCutA
 /// The budget a host sets governs the next invocation, not the one that already
 /// ended: a host that was handed a cut call raises the budget and calls again.
 TEST_F(ExternalChainIsBoundedTest, ABudgetSetBetweenCallsGovernsTheNextOne) {
-    ASSERT_TRUE(sm_->setMaxExternalEventsPerCall(3));
+    ASSERT_TRUE(sm_->setMaxExternalEventsPerCall(externalEventBudgetCount({"budget_between_calls", "first_budget"})));
     sm_->processEvent("resume");
-    EXPECT_EQ(counter("beats"), "2") << "the host's event and two beats, then cut";
+    EXPECT_EQ(counter("beats"),
+              std::to_string(externalEventBudgetInt({"budget_between_calls", "beats_after_first_call"})))
+        << "the host's event and two beats, then cut";
     EXPECT_EQ(sm_->getStatistics().truncatedEventChains, externalEventBudgetCount({"resume", "truncated"}));
 
-    ASSERT_TRUE(sm_->setMaxExternalEventsPerCall(100));
+    ASSERT_TRUE(sm_->setMaxExternalEventsPerCall(externalEventBudgetCount({"budget_between_calls", "second_budget"})));
     sm_->processEvent("poke");
     EXPECT_EQ(counter("beats"), std::to_string(externalEventBudgetInt({"resume", "beats_after_second_call"})))
         << "the new budget took the whole remainder of the chain in one call";
@@ -311,13 +313,14 @@ TEST_F(ExternalChainIsBoundedTest, ABudgetSetBetweenCallsGovernsTheNextOne) {
 /// empty. The parent's loop takes every `pong` the child sends it, so it is the
 /// parent's budget that cuts the chain: the host's `go` and forty-nine rounds.
 TEST_F(ExternalChainAcrossSessionsTest, AChainThatBouncesBetweenAParentAndItsChildIsCutOnTheParentsBudget) {
-    ASSERT_TRUE(sm_->setMaxExternalEventsPerCall(50));
+    ASSERT_TRUE(sm_->setMaxExternalEventsPerCall(externalEventBudgetCount({"across_sessions", "budget"})));
 
     sm_->processEvent("go");
 
-    EXPECT_EQ(sm_->getStatistics().truncatedEventChains, 1u)
+    EXPECT_EQ(sm_->getStatistics().truncatedEventChains, externalEventBudgetCount({"across_sessions", "truncated"}))
         << "the call handed control back with a `pong` still queued, and said so";
-    EXPECT_EQ(counter("rounds"), "49") << "the host's event and forty-nine rounds, no more and no fewer";
+    EXPECT_EQ(counter("rounds"), std::to_string(externalEventBudgetInt({"across_sessions", "rounds"})))
+        << "the host's event and forty-nine rounds, no more and no fewer";
     EXPECT_EQ(sm_->getStatistics().lastTruncatedEvent, "pong");
     EXPECT_TRUE(sm_->isRunning());
 }

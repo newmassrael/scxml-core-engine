@@ -36,7 +36,19 @@
     "  timed       eight pulses, each due a millisecond after the last, are not",
     "              a runaway however small the budget: nothing is truncated",
     "  host        a host chooses the budget, and a budget that takes no event",
-    "              is refused without changing the one in force"
+    "              is refused without changing the one in force",
+    "  across_sessions",
+    "              a different document, the C++ Interpreter's own: a parent and the",
+    "              child it invoked ping each other, each with a loop and a budget of",
+    "              its own. The parent's budget cuts the chain: the host's `go` and",
+    "              `budget - 1` rounds, and one chain was truncated. `rounds` is a",
+    "              property of that document, stated here beside its budget",
+    "  budget_between_calls",
+    "              a budget a host sets between two calls governs the next one: a",
+    "              budget of 3 takes the host's event and two beats of the `resume`",
+    "              chain and cuts it; a budget of 100 then takes the whole remainder",
+    "              in one call, to the thirty beats and the one truncation `resume`",
+    "              states, and that call is not cut"
   ],
   "default_budget": 10000,
   "spin": { "truncated": 1 },
@@ -52,5 +64,7 @@
   "static_zero": { "budget": 50 },
   "zero_expr": { "budget": 50, "exprs": 50, "truncated_after_entry": 0, "truncated_after_tick": 1 },
   "timed": { "budget": 3, "pulses": 8, "truncated": 0 },
-  "host": { "budget": 7, "refused": [0, -1, -100] }
+  "host": { "budget": 7, "refused": [0, -1, -100] },
+  "across_sessions": { "budget": 50, "rounds": 49, "truncated": 1 },
+  "budget_between_calls": { "first_budget": 3, "beats_after_first_call": 2, "second_budget": 100 }
 }
