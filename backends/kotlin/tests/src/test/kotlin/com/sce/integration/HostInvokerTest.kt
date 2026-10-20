@@ -379,6 +379,53 @@ class HostInvokerTest {
     }
 
     /**
+     * §scxml-D-mainEventLoop: invoking may raise internal events, and they are
+     * handled before the loop takes another external event. The synchronous
+     * loop went back to its drain after the invokes; the coroutine mode ended
+     * the macrostep there, so the `error.execution` a refused start raised sat
+     * on the internal queue until some later external event came, and was
+     * handled after it — one document, two orders, by the engine's mode.
+     *
+     * `refuse` enters `refusing`, whose `gate` the host refuses at start. The
+     * macrostep that `refuse` begins must count the refusal itself: [stop]
+     * waits for that macrostep to end and leaves the datamodel readable, so
+     * what `unstarted` holds afterwards is what the macrostep left, with no
+     * later event to do the work for it.
+     */
+    @Test
+    fun aRefusedStartIsHandledInTheMacrostepThatStartedItInCoroutineMode() = runBlocking {
+        val asked = CompletableDeferred<Unit>()
+        val sm = machine()
+        sm.registerInvoker(declaredType) { ev ->
+            ev.start?.let { start ->
+                if (start.invokeId == "gate") {
+                    asked.complete(Unit)
+                    StateMachineEngine.HostInvokeResponse(refusal = """{"reason":"NOT_HERE"}""")
+                } else {
+                    null
+                }
+            }
+        }
+        sm.start(this)
+        try {
+            val entered = withTimeoutOrNull(3_000) { sm.sendAndAwait(StatechartHostInvokerEvent.Refuse) }
+            assertEquals(StatechartHostInvokerState.Refusing, entered, "`refuse` did not enter `refusing`")
+            assertNotNull(withTimeoutOrNull(3_000) { asked.await() }, "the host was never asked to start `gate`")
+        } finally {
+            sm.stop()
+        }
+        assertEquals(
+            1L,
+            counter(sm, "unstarted"),
+            "the error.execution `gate`'s refused start raised was not handled in the macrostep " +
+                "that started it. W3C Appendix D `mainEventLoop` goes back to the internal queue " +
+                "when invoking left events on it, before the next external event; the coroutine " +
+                "mode must do what the synchronous loop does.",
+        )
+        sm.cleanup()
+    }
+
+    /**
      * A host that finishes later reports it with the start's token, and the
      * completion is taken once: a second report of the same run finds nothing,
      * and the state's exit then cancels only the invocation still running.

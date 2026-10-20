@@ -2249,12 +2249,12 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 // initial state IS a final state)
                 flushPendingFinalState()
 
-                // W3C SCXML Appendix D: Process eventless transitions and internal
-                // events raised during initial entry (e.g., done.state from <final>)
-                drainEventlessAndInternal()
-
-                // §scxml-6.4: Execute deferred invokes after initial configuration
-                executePendingInvokes()
+                // §scxml-D-mainEventLoop: the first macrostep completes as every
+                // later one does — the eventless transitions and the internal
+                // events the initial entry raised (done.state from a <final>),
+                // the invokes it armed, and back to the drain for what those
+                // invokes raised ([completeMacrostep]).
+                completeMacrostep()
                 macrostepSettled()
 
                 // §scxml-3.7: Only enter event loop if not already in final state
@@ -3719,9 +3719,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
         // gets a budget of its own (ARCHITECTURE.md "External-Event Budget").
         var taken = 0
         while (true) {
-            // §scxml-D-mainEventLoop: complete the macrostep on eventless
-            // transitions and internal events alone.
-            drainEventlessAndInternal()
+            completeMacrostep()
             if (isInFinalState) {
                 // §scxml-D-mainEventLoop ends here, and
                 // whatever the host put on the external queue ends with it.
@@ -3734,21 +3732,6 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 // the configuration.
                 break
             }
-            // §scxml-6.4: invokes for states entered during this macrostep.
-            executePendingInvokes()
-            // §scxml-D-mainEventLoop: invoking may have raised internal error
-            // events (and a child that completed synchronously may already have
-            // raised done.invoke); handle them before touching the external
-            // queue.
-            //
-            // Not when this macrostep was already stopped at the ceiling: the
-            // queue is non-empty because the drain refused it, so looping back
-            // is a spin that takes no microstep, says nothing, and never ends.
-            // Falling through to the external dequeue instead is what keeps a
-            // machine inside an endless chain reachable at all — the event that
-            // rescues it is on that queue, and the clause's priority would
-            // otherwise hold it behind a chain that never ends.
-            if (internalEventQueue.isNotEmpty() && !macrostepTruncated) continue
             // §scxml-D-mainEventLoop: the macrostep is complete — the point just
             // before the external dequeue.
             macrostepSettled()
@@ -3763,6 +3746,40 @@ abstract class StateMachineEngine<S : State, E : Event>(
             }
             taken++
             processNextExternalEvent()
+        }
+    }
+
+    /**
+     * §scxml-D-mainEventLoop: complete a macrostep — everything the loop does
+     * before it may touch the external queue. Drain the eventless transitions
+     * and internal events, start the invokes the macrostep's entries armed,
+     * and go back to the drain while invoking left internal events: an
+     * invocation that cannot start raises `error.execution`, and a child that
+     * completed at once has raised `done.invoke`, and the clause handles both
+     * before the next external event. Stops at a top-level final state, which
+     * starts nothing, as the clause's `running` check does.
+     *
+     * One body for the three places a macrostep ends — the synchronous loop
+     * ([runMainEventLoop]), the coroutine mode's first macrostep ([start]) and
+     * every later one ([finishMacrostep]) — because the coroutine mode had its
+     * own copy of the first half and none of the second, and so ran one
+     * document in a different order from the synchronous loop.
+     *
+     * Not back to the drain when this macrostep was already stopped at the
+     * ceiling: the queue is non-empty because the drain refused it, so looping
+     * back is a spin that takes no microstep, says nothing, and never ends.
+     * Falling through to the external dequeue instead is what keeps a machine
+     * inside an endless chain reachable at all — the event that rescues it is
+     * on that queue, and the clause's priority would otherwise hold it behind
+     * a chain that never ends.
+     */
+    private fun completeMacrostep() {
+        while (true) {
+            drainEventlessAndInternal()
+            if (isInFinalState) return
+            // §scxml-6.4: invokes for states entered during this macrostep.
+            executePendingInvokes()
+            if (internalEventQueue.isEmpty() || macrostepTruncated) return
         }
     }
 
@@ -4656,9 +4673,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * macrostep an act starts is a macrostep like any other.
      */
     private fun finishMacrostep() {
-        drainEventlessAndInternal()
-        // §scxml-6.4: Execute deferred invokes at macrostep end
-        executePendingInvokes()
+        completeMacrostep()
         macrostepSettled()
         // §scxml-6.5: Clean up completed invokes (deferred from monitor coroutine)
         cleanupCompletedInvokes()

@@ -11013,11 +11013,6 @@
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "runMainEventLoop",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "scheduleParentSend",
           "kind": "implements"
         },
@@ -11427,11 +11422,6 @@
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "finishMacrostep",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "awaitNextExternalEvent",
           "kind": "implements"
         },
@@ -11623,6 +11613,11 @@
           "file": "backends/python/runtime/sce_runtime/engine.py",
           "symbol": "advance_time",
           "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "completeMacrostep",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -21845,6 +21840,18 @@
       "target_kind": "section",
       "target_id": "scxml-B-1",
       "reason": "the citation says the engine evaluates ECMAScript, which is B.2; B.1 is the null data model"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4",
+      "reason": "the invoke step moved into completeMacrostep, the one body the loop and both coroutine paths call"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4",
+      "reason": "the invoke step moved into completeMacrostep, the one body the loop and both coroutine paths call"
     }
   ],
   "frames": {},
