@@ -17,6 +17,11 @@ sections under it are sections of their own and are chosen as such, so that what
 was named and a part under a chosen one can be left out. `tree` names a section with everything under it,
 for a caller that wants the whole of a function without listing its parts.
 
+**A table, a figure and an attachment are chosen by themselves too.** They are objects a person sees as one
+thing and often wants without (a large appendix table, a picture that is not a requirement), so each section
+lists them as its items, and a block of a chosen section can be left out by its id. Paragraphs are not items:
+a section is the unit of prose, and placing paragraphs one by one is a division's work (ADR 0040).
+
 The scope's form is `pre-release`: `to_dict` and `from_dict` are its only producer and reader.
 """
 
@@ -42,6 +47,11 @@ OUTLINES = (BY_HEADINGS, BY_PAGES, BY_WHOLE)
 
 # A title is the words of a heading, kept to what a list can show.
 TITLE_CHARACTERS = 200
+
+# The kinds of block a section lists as items, each of which can be left out of a chosen section by itself.
+ITEM_KINDS = ("table", "figure", "attachment")
+# What an item is called in a list: a table's first row, or a mark's own words.
+LABEL_CHARACTERS = 120
 
 
 def _refuse(what: str) -> IngestError:
@@ -128,6 +138,35 @@ def whole(extraction: Extraction) -> Scope:
 
 
 @dataclass(frozen=True)
+class Item:
+    """A table, a figure or an attachment of a section, which the owner can leave out of it by itself."""
+
+    id: str  # the block's id: what `scope_of` is given to leave it out
+    kind: str  # one of ITEM_KINDS
+    label: str
+    characters: int  # its words, as the section counts them
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"id": self.id, "kind": self.kind, "label": self.label, "characters": self.characters}
+
+
+def _label(block: Block) -> str:
+    if block.kind == "table" and block.cells:
+        words = " | ".join(" ".join(cell.split()) for cell in block.cells[0])
+    else:
+        words = " ".join(block.text.split())
+    return words if len(words) <= LABEL_CHARACTERS else words[: LABEL_CHARACTERS - 1] + "…"
+
+
+def _items(extraction: Extraction, first: int, end: int) -> tuple[Item, ...]:
+    return tuple(
+        Item(b.id, b.kind, _label(b), len(plain_of_block(b)))
+        for b in extraction.blocks[first:end]
+        if b.kind in ITEM_KINDS
+    )
+
+
+@dataclass(frozen=True)
 class Section:
     """One part of a document the owner can choose, with what a person needs to see to choose it."""
 
@@ -145,6 +184,7 @@ class Section:
     first: int  # where it starts in the extraction's blocks, where its own blocks end, and where the
     end: int  # sections under it end (all exclusive)
     tree_end: int
+    items: tuple[Item, ...]  # its own tables, figures and attachments, in the document's order
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -159,6 +199,7 @@ class Section:
             "tree_characters": self.tree_characters,
             "page_first": self.page_first,
             "page_last": self.page_last,
+            "items": [item.to_dict() for item in self.items],
         }
 
 
@@ -220,6 +261,7 @@ def _by_headings(extraction: Extraction) -> list[Section]:
                 first=index,
                 end=end,
                 tree_end=tree_end,
+                items=_items(extraction, index, end),
             )
         )
         if kind == "heading":
@@ -243,6 +285,7 @@ def _by_pages(extraction: Extraction) -> list[Section]:
             Section(
                 f"s{len(sections) + 1}", "page", "", 1, None,
                 count, characters, count, characters, page_first, page_last, first, end, end,
+                _items(extraction, first, end),
             )
         )
     return sections
@@ -251,7 +294,12 @@ def _by_pages(extraction: Extraction) -> list[Section]:
 def _whole(extraction: Extraction) -> list[Section]:
     count, characters, page_first, page_last = _measure(extraction, 0, len(extraction.blocks))
     last = len(extraction.blocks)
-    return [Section("s1", "whole", "", 1, None, count, characters, count, characters, page_first, page_last, 0, last, last)]
+    return [
+        Section(
+            "s1", "whole", "", 1, None, count, characters, count, characters, page_first, page_last, 0, last, last,
+            _items(extraction, 0, last),
+        )
+    ]
 
 
 def chosen_outline(extraction: Extraction, by: str | None = None) -> str:
@@ -286,24 +334,42 @@ def outline(extraction: Extraction, by: str | None = None) -> tuple[str, list[Se
 
 
 def scope_of(
-    extraction: Extraction, section_ids: list[str], by: str | None = None, tree_ids: list[str] | None = None
+    extraction: Extraction,
+    section_ids: list[str],
+    by: str | None = None,
+    tree_ids: list[str] | None = None,
+    leave_out: list[str] | None = None,
+    everything: bool = False,
 ) -> Scope:
     """The scope of the sections with these ids, each as its own blocks, in the extraction's order.
 
-    `tree_ids` are sections taken with everything under them. A section named both ways is taken once.
+    `tree_ids` are sections taken with everything under them, and `everything` takes every section. A section
+    named twice is taken once. `leave_out` are blocks of what was chosen that are not taken after all; naming
+    a block that was not chosen is refused, since leaving out what is not in is a choice nobody made.
     """
     tree_ids = tree_ids or []
-    if not section_ids and not tree_ids:
+    leave_out = leave_out or []
+    if not section_ids and not tree_ids and not everything:
         raise IngestError("nothing is chosen: an import of nothing is not an import")
     _, sections = outline(extraction, by)
     known = {s.id: s for s in sections}
     unknown = [i for i in [*section_ids, *tree_ids] if i not in known]
     if unknown:
         raise IngestError(f"the extraction has no section {', '.join(unknown)}")
-    chosen: set[int] = set()
+    chosen: set[int] = set(range(len(extraction.blocks))) if everything else set()
     for identifier in section_ids:
         chosen.update(range(known[identifier].first, known[identifier].end))
     for identifier in tree_ids:
         chosen.update(range(known[identifier].first, known[identifier].tree_end))
+    place = {block.id: index for index, block in enumerate(extraction.blocks)}
+    absent = [i for i in leave_out if i not in place]
+    if absent:
+        raise IngestError(f"the extraction has no block {', '.join(absent)}, so it cannot be left out")
+    outside = [i for i in leave_out if place[i] not in chosen]
+    if outside:
+        raise IngestError(f"{', '.join(outside)} is not in the chosen parts, so it cannot be left out of them")
+    chosen.difference_update(place[i] for i in leave_out)
+    if not chosen:
+        raise IngestError("nothing is left of what was chosen: an import of nothing is not an import")
     ids = tuple(extraction.blocks[i].id for i in sorted(chosen))
     return Scope(extraction.revision(), ids)

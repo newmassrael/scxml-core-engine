@@ -2040,12 +2040,16 @@ holds (its own: from its heading to the next heading of any level, so the parts 
 nothing is counted twice; `tree_blocks` and `tree_characters` are the same with the parts under it), the pages
 it spans and, in `--json`, `block_ids`, the ids of the paragraphs that are its own, with and without words,
 which are exactly the ones `--section` takes, so that a host reads a saved ledger, which keeps paragraphs, back
-into parts without working out a range of its own: the headings of the document, nested by level, with a first part for what comes before the
+into parts without working out a range of its own, and `items`, its own tables, figures and attachments (each
+an `id`, a `kind`, a `label` (a table's first row, or a mark's words) and its `characters`), which the owner can
+leave out of a chosen part by themselves: the headings of the document, nested by level, with a first part for what comes before the
 first heading; for a document with no heading its pages; for one with neither, the whole of it (`--by
 headings|pages|whole` asks for one). `make-scope --extraction EXTRACTION.json --section s2 [--section s4]
-[--tree s5] --out SCOPE.json` writes the scope: the ids of the blocks, in the document's order. A `--section`
-is its own blocks and nothing else, so a part under a chosen one can be left out; a `--tree` is a part with
-every part under it. `--json` prints the counts and `whole`, which is true when the choice is every block,
+[--tree s5] [--all] [--leave-out b12] --out SCOPE.json` writes the scope: the ids of the blocks, in the
+document's order. A `--section` is its own blocks and nothing else, so a part under a chosen one can be left
+out; a `--tree` is a part with every part under it; `--all` is every part. A `--leave-out` is a block of what
+was chosen that is not taken after all (an item the outline listed); one that was not chosen, one the
+extraction does not have, and leaving out everything are refused. `--json` prints the counts and `whole`, which is true when the choice is every block,
 which is no scope (the specs folder refuses one, so a host leaves it out). A host shows the outline and sends
 ids, and never works out which blocks a part holds.
 `--scope SCOPE.json` is then given to `prepare-conversion` (only those blocks are ever in a prompt), to

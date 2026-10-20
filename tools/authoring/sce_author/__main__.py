@@ -187,14 +187,19 @@ def cmd_outline(args) -> int:
         title = section.title or f"({section.kind})"
         print(f"  {section.id}{'  ' * (section.level - 1)} {title}  [{section.blocks} block(s), "
               f"{section.characters} characters{pages}]")
+        for item in section.items:
+            print(f"    {'  ' * (section.level - 1)}- {item.kind} {item.id}: {item.label}")
     return 0
 
 
 def cmd_make_scope(args) -> int:
     """Write the scope of the sections the owner chose: each `--section` as its own paragraphs, each `--tree`
-    with everything under it."""
+    with everything under it, `--all` every section, less each `--leave-out` block of what was chosen."""
     extraction = _read_extraction(args.extraction)
-    made = scope_of(extraction, list(args.section or []), args.by, list(args.tree or []))
+    made = scope_of(
+        extraction, list(args.section or []), args.by, list(args.tree or []),
+        leave_out=list(args.leave_out or []), everything=args.all,
+    )
     try:
         pathlib.Path(args.out).write_text(made.to_json(), encoding="utf-8")
     except OSError as exc:
@@ -1049,6 +1054,10 @@ def main(argv=None) -> int:
                      help="the id of a section `outline` listed, taken as its own paragraphs (repeat for each)")
     mks.add_argument("--tree", action="append",
                      help="the id of a section taken with every section under it (repeat for each)")
+    mks.add_argument("--all", action="store_true", help="take every section, as a choice to leave blocks out of")
+    mks.add_argument("--leave-out", action="append", dest="leave_out",
+                     help="the id of a block of a chosen section not to take, such as a table, figure or "
+                          "attachment `outline` listed as an item (repeat for each)")
     mks.add_argument("--by", choices=OUTLINES, help="the division `outline` was asked for, when it was asked")
     mks.add_argument("--out", required=True, help="where to write the scope (JSON)")
     mks.add_argument("--json", action="store_true", help="print the counts and whether it is every block, as JSON")

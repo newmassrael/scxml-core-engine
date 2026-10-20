@@ -86,6 +86,17 @@ numbers. A reader that knows its headings from the file hands them over as struc
 a line to a level), and the text is then not read for `#`: a code comment in a page, a Word paragraph that
 begins with a hash, or a line in a Markdown fence is not a heading.
 
+**A table, a figure and an attachment are chosen by themselves (amended 2026-10-20).** The owner asked
+that a picture or a table in a part can be left out without leaving out the part. A section of prose stays the
+unit of choice, and the objects in it that a person sees as one thing are its **items**: `outline` lists each
+section's own tables, figures and attachments with their block id, kind and a label (a table's first row, a
+mark's words), and `make-scope --leave-out <block>` takes a block of what was chosen out of it again (`--all`
+names every section, for a choice that only leaves objects out). The scope's form does not change: it was
+always the ids of the blocks, and this is one more way to name them. Leaving out a block that was not chosen,
+one the extraction does not have, or everything is refused, since each is a choice nobody made. A host still
+works out no block of its own: it sends the ids the outline listed. Placing paragraphs one by one remains a
+division's work (ADR 0040), and is not offered here.
+
 **A scope is the owner's choice and is not the system's judgement of the document.** Whether a document
 holds one spec or several is not something SCE can check, and nothing here claims to. What is built is the
 way for the owner to say it, and for that to be held by the cut, the check and the record. Whether an AI is
@@ -123,7 +134,7 @@ Each step lands with its tests and is useful before the next.
 
 - Whether an AI is told to refuse a document that holds several independent behaviours, and how a refusal
   is said to the owner.
-- Choosing by something other than a section: a block, a range of pages typed by hand, a search. The scope
-  is of block ids, so any of them can make one.
+- Choosing by something other than a section and its items: a range of pages typed by hand, a search. The
+  scope is of block ids, so any of them can make one.
 - A signal that a document may hold several specs (many top-level sections, a long text), shown as a
   suggestion to choose and never as a refusal.

@@ -177,6 +177,70 @@ class AScopeFromTheOwnersChoice(unittest.TestCase):
         self.assertNotEqual(one.revision(), scope_of(extraction, ["s4"]).revision())
 
 
+def with_objects() -> Extraction:
+    """A function whose part holds a table and a picture, and an appendix that holds an attachment."""
+    return extraction_of(
+        block("b1", "heading", "Lamp", level=1),
+        block("b2", text="The lamp is on while the supply is present."),
+        block("b3", "table", "| state | lamp |\n| on | lit |", cells=(("state", "lamp"), ("on", "lit"))),
+        block("b4", "figure", "[picture: wiring.png]", picture="c" * 64),
+        block("b5", text="It turns off after 30 seconds."),
+        block("b6", "heading", "Appendix", level=1),
+        block("b7", "attachment", "[enclosed object: Book.xlsx]"),
+    )
+
+
+class AnItemIsChosenByItself(unittest.TestCase):
+    def test_a_section_lists_its_tables_figures_and_attachments_and_nothing_else(self):
+        _, sections = outline(with_objects())
+
+        listed = {s.title: [i.to_dict() for i in s.items] for s in sections}
+
+        self.assertEqual(
+            listed["Lamp"],
+            [
+                {"id": "b3", "kind": "table", "label": "state | lamp", "characters": len("state lamp on lit")},
+                {"id": "b4", "kind": "figure", "label": "[picture: wiring.png]", "characters": 21},
+            ],
+        )
+        self.assertEqual([i["kind"] for i in listed["Appendix"]], ["attachment"])
+        # The nearest that must list nothing: a section of prose alone.
+        self.assertEqual([s.items for s in outline(two_functions())[1]], [(), (), (), ()])
+
+    def test_an_item_left_out_of_a_chosen_section_is_not_taken_and_the_rest_of_it_is(self):
+        extraction = with_objects()
+
+        scope = scope_of(extraction, ["s1"], leave_out=["b3"])
+
+        self.assertEqual(scope.blocks, ("b1", "b2", "b4", "b5"))
+        made = convert_by_rules(extraction, scope)
+        report = check_conversion(extraction, made, scope)
+        self.assertTrue(report.complete)
+        # The table, and the appendix's heading and attachment, are counted and not asked about.
+        self.assertEqual(report.out_of_scope, 3)
+        self.assertNotIn("state", " ".join(m.markdown for m in made.blocks))
+
+    def test_every_section_less_an_item_is_a_choice_and_not_the_whole(self):
+        extraction = with_objects()
+
+        scope = scope_of(extraction, [], everything=True, leave_out=["b4"])
+
+        self.assertEqual(scope.blocks, ("b1", "b2", "b3", "b5", "b6", "b7"))
+        self.assertEqual(scope_of(extraction, [], everything=True).blocks, whole(extraction).blocks)
+
+    def test_leaving_out_what_was_not_chosen_or_is_not_there_or_is_all_of_it_is_refused(self):
+        extraction = with_objects()
+        for case in (
+            {"section_ids": ["s1"], "leave_out": ["b7"]},  # the attachment is in the appendix, not chosen
+            {"section_ids": ["s1"], "leave_out": ["b99"]},
+            {"section_ids": ["s2"], "leave_out": ["b6", "b7"]},
+        ):
+            with self.subTest(case=case), self.assertRaises(IngestError):
+                scope_of(extraction, **case)
+        # The nearest that must pass: the same appendix less its attachment keeps its heading.
+        self.assertEqual(scope_of(extraction, ["s2"], leave_out=["b7"]).blocks, ("b6",))
+
+
 class AScopeThatIsNotWellFormed(unittest.TestCase):
     revision = "a" * 64
 
@@ -389,6 +453,34 @@ class TheCommandLine(unittest.TestCase):
             )
             self.assertEqual(code, 1)
             self.assertEqual(json.loads(said)["missing"], ["b1", "b2", "b3", "b4", "b5"])
+
+    def test_outline_lists_the_items_and_make_scope_leaves_one_out_of_every_section(self):
+        with tempfile.TemporaryDirectory() as folder:
+            work = pathlib.Path(folder)
+            e, s = work / "e.json", work / "s.json"
+            e.write_text(with_objects().to_json(), encoding="utf-8")
+
+            code, said = self.run_main("outline", "--extraction", str(e), "--json")
+            self.assertEqual(code, 0)
+            self.assertEqual([i["id"] for i in json.loads(said)["sections"][0]["items"]], ["b3", "b4"])
+
+            code, said = self.run_main(
+                "make-scope", "--extraction", str(e), "--all", "--leave-out", "b4", "--out", str(s), "--json"
+            )
+            self.assertEqual(code, 0)
+            self.assertEqual(json.loads(s.read_text())["blocks"], ["b1", "b2", "b3", "b5", "b6", "b7"])
+            self.assertEqual((json.loads(said)["whole"], json.loads(said)["blocks"]), (False, 6))
+            # The nearest that must say otherwise: every section with nothing left out is every block.
+            code, said = self.run_main(
+                "make-scope", "--extraction", str(e), "--all", "--out", str(work / "all.json"), "--json"
+            )
+            self.assertEqual(json.loads(said)["whole"], True)
+            # A block of a section that was not chosen cannot be left out of it.
+            code, _ = self.run_main(
+                "make-scope", "--extraction", str(e), "--section", "s1", "--leave-out", "b7",
+                "--out", str(work / "no.json"),
+            )
+            self.assertEqual(code, 2)
 
 
 if __name__ == "__main__":
