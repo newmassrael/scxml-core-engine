@@ -314,11 +314,35 @@ SavedValues.{{ type }}({{ value }}, {{ what }})
    did: `readBackProbe` lost its reader in every backend (2026-09-27). #}
 
     /**
-     * The shape a saved state of this document is bound to: a state saved
-     * from a document that renamed, re-typed or moved a state or a variable is
-     * refused, one saved before a guard or an action changed is not.
+     * What a saved state of this document is bound to: a state saved from a
+     * document that renamed, re-typed or moved a state or a variable is
+     * refused, one saved before a guard or an action changed is not, and one
+     * saved at an earlier revision of a record schema is read with each field a
+     * later revision added at its default.
      */
-    val savedShape: String = "{{ static_saved_shape }}"
+    val savedShape: SavedShape = SavedShape(
+        first = "{{ static_saved_shape.first }}",
+        revised = "{{ static_saved_shape.revised }}",
+        records = listOf(
+{% for record in static_saved_shape.records %}
+            RecordLineage(
+                event = "{{ record.event | escape_kotlin }}",
+                revision = {{ record.revision }},
+                revisions = listOf({% for fields in record.revisions %}"{{ fields }}"{{ ", " if not loop.last }}{% endfor %}),
+                added = listOf(
+{% for field in record.added %}
+                    AddedField("{{ field.id | escape_kotlin }}", {{ field.since }}, "{{ field.default | escape_kotlin }}"),
+{% endfor %}
+                ),
+                holders = listOf(
+{% for holder in record.holders %}
+                    RecordHolder("{{ holder.variable | escape_kotlin }}", {{ "true" if holder.list else "false" }}),
+{% endfor %}
+                ),
+            ),
+{% endfor %}
+        ),
+    )
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -361,14 +385,16 @@ SavedValues.{{ type }}({{ value }}, {{ what }})
      *   one of this document, or a value its variable's type cannot hold.
      */
     fun restore(saved: SavedState, wallNowMs: Long) {
-        beginRestore(saved, savedShape)
+        // The state as one of this machine: each record saved at an earlier
+        // revision of its schema holds the defaults of the fields added since.
+        val savedGrown = beginRestore(saved, savedShape)
 {% for field in static_fields %}
-        val saved{{ loop.index }} = {{ saved_read(field.saved_kind, field.saved_type, 'saved.variable("' ~ field.id ~ '")', '"' ~ field.id ~ '"', field.bound) }}
+        val saved{{ loop.index }} = {{ saved_read(field.saved_kind, field.saved_type, 'savedGrown.variable("' ~ field.id ~ '")', '"' ~ field.id ~ '"', field.bound) }}
 {% endfor %}
 {% for field in static_fields %}
         {{ field.name }} = saved{{ loop.index }}
 {% endfor %}
-        enterSaved(saved, wallNowMs)
+        enterSaved(savedGrown, wallNowMs)
     }
 
     /** [restore] at the host's wall clock now. */

@@ -80,6 +80,11 @@ class StateRefusal(message: String) : Exception(message)
  *   machine that it has not yet been driven through. Only the internal queue
  *   is empty at a macrostep boundary, so a state that left these out would
  *   lose them.
+ * @property revisions the revision each record schema past its first was saved
+ *   at, by the event the schema declares, ordered by it (docs/adr/0044). Empty
+ *   when every record schema the machine holds is in its first revision, which
+ *   is every state saved before schemas had revisions; [upgrade] reads a state
+ *   saved at an earlier revision as the machine's own.
  */
 class SavedState(
     val shape: String,
@@ -93,6 +98,7 @@ class SavedState(
     val hostInvokeToken: Long = 0L,
     val autoSendSeq: Long = 0L,
     val external: List<SavedEvent> = emptyList(),
+    val revisions: Map<String, SavedRevision> = emptyMap(),
 ) {
     /** The variable [id], or a refusal naming it. */
     fun variable(id: String): Any? {
@@ -101,8 +107,8 @@ class SavedState(
     }
 
     /** The state as `sce-saved-state` JSON. */
-    fun toJson(): String = Json.write(
-        linkedMapOf(
+    fun toJson(): String {
+        val members = linkedMapOf<String, Any?>(
             "format" to Json.Number(FORMAT.toString()),
             "shape" to shape,
             "configuration" to configuration,
@@ -116,19 +122,25 @@ class SavedState(
             "sendseq" to autoSendSeq.toString(),
             "external" to external.map { it.toJsonValue() },
         )
-    )
+        // Absent, not empty, when no record schema is past its first revision:
+        // the text of such a state is the text it was before revisions existed.
+        if (revisions.isNotEmpty()) {
+            members["revisions"] = revisions.mapValuesTo(LinkedHashMap()) { (_, saved) -> saved.toJsonValue() }
+        }
+        return Json.write(members)
+    }
 
     override fun equals(other: Any?): Boolean =
         other is SavedState && other.shape == shape && other.configuration == configuration &&
             other.current == current && other.variables == variables && other.history == history &&
             other.pending == pending && other.invokes == invokes && other.hostInvokes == hostInvokes &&
             other.hostInvokeToken == hostInvokeToken && other.autoSendSeq == autoSendSeq &&
-            other.external == external
+            other.external == external && other.revisions == revisions
 
     override fun hashCode(): Int =
         listOf(
             shape, configuration, current, variables, history, pending, invokes, hostInvokes, hostInvokeToken,
-            autoSendSeq, external,
+            autoSendSeq, external, revisions,
         ).hashCode()
 
     companion object {
@@ -190,6 +202,21 @@ class SavedState(
             )
             val external = (field("external") as? List<*> ?: throw StateRefusal("'external' is not an array"))
                 .mapIndexed { i, item -> SavedEvent.fromJsonValue(item, "external[$i]") }
+            // Optional, unlike every member above: a state whose record schemas are
+            // all in their first revision leaves it out, as every state saved before
+            // schemas had revisions does.
+            val revisions = LinkedHashMap<String, SavedRevision>()
+            if (members.containsKey("revisions")) {
+                val named = members["revisions"] as? Map<*, *> ?: throw StateRefusal("'revisions' is not an object")
+                if (named.isEmpty()) {
+                    throw StateRefusal(
+                        "'revisions' names no schema; a state whose record schemas are all in their first " +
+                            "revision leaves it out")
+                }
+                for ((event, value) in named) {
+                    revisions[event as String] = SavedRevision.fromJsonValue(value, "revisions.$event")
+                }
+            }
             return SavedState(
                 shape = text(field("shape"), "shape"),
                 configuration = configuration,
@@ -202,6 +229,7 @@ class SavedState(
                 hostInvokeToken = hostInvokeToken,
                 autoSendSeq = autoSendSeq,
                 external = external,
+                revisions = revisions,
             )
         }
 
@@ -224,8 +252,208 @@ class SavedState(
                     "the saved state is of a document of shape ${saved.shape}, and this machine's is $shape")
             }
         }
+
+        /**
+         * [saved] as a state of the machine whose saved state is bound to [shape],
+         * or the refusal that says why it is not one (docs/adr/0044) — judged
+         * before any variable is read, as [checkShape] is.
+         *
+         * A state that names no revision is of the first shape; one that does is
+         * of the revised shape, and each revision it names is of a schema a record
+         * variable of this machine is of, no later than this machine's revision of
+         * it, and declares what this machine's revision of that number declares
+         * (the digests agree). Such a state is then read as one of this machine:
+         * each record of a schema saved at an earlier revision — a record
+         * variable, or each element of a list of records — takes the default of
+         * every field a later revision added. A record that already holds such a
+         * field is refused, since the revision it was saved at does not declare
+         * it. What is not a record where a record is held is left for the
+         * variable's own read to refuse.
+         *
+         * The events of the external queue and of the waiting sends hold their
+         * data as the wire carried it, and the lift reads it with the defaults
+         * when each is delivered, so nothing of them is grown here.
+         *
+         * Cross-language sibling: `sce_rust_runtime::saved_state::upgrade`.
+         */
+        fun upgrade(saved: SavedState, shape: SavedShape): SavedState {
+            when {
+                saved.revisions.isEmpty() -> checkShape(saved, shape.first)
+                saved.shape == shape.first -> throw StateRefusal(
+                    "the saved state names revisions of its record schemas and has the shape of a state " +
+                        "that names none")
+                else -> checkShape(saved, shape.revised)
+            }
+            for ((event, named) in saved.revisions) {
+                val record = shape.records.firstOrNull { it.event == event }
+                    ?: throw StateRefusal("'revisions' names '$event', which no record of this machine is of")
+                if (named.revision > record.revision) {
+                    throw StateRefusal(
+                        "the saved state was saved at revision ${named.revision} of '$event', later than this " +
+                            "machine's ${record.revision}: a machine does not restore fields it does not know")
+                }
+                // The digest of revision r is the (r - 2)th: the first has none.
+                if (record.revisions.getOrNull(named.revision - 2) != named.fields) {
+                    throw StateRefusal(
+                        "revision ${named.revision} of '$event' declared other fields where the state was " +
+                            "saved than it does in this machine")
+                }
+            }
+            val variables = LinkedHashMap(saved.variables)
+            for (record in shape.records) {
+                val at = saved.revisions[record.event]?.revision ?: 1
+                val added = record.added.filter { it.since > at }
+                if (added.isEmpty()) continue
+                for (holder in record.holders) {
+                    if (!variables.containsKey(holder.variable)) continue
+                    val value = variables[holder.variable]
+                    variables[holder.variable] = if (holder.list) {
+                        (value as? List<*>)?.mapIndexed { i, item ->
+                            grownRecord(item, "${holder.variable}[$i]", record, at, added)
+                        } ?: value
+                    } else {
+                        grownRecord(value, holder.variable, record, at, added)
+                    }
+                }
+            }
+            return SavedState(
+                shape = saved.shape,
+                configuration = saved.configuration,
+                current = saved.current,
+                variables = variables,
+                history = saved.history,
+                pending = saved.pending,
+                invokes = saved.invokes,
+                hostInvokes = saved.hostInvokes,
+                hostInvokeToken = saved.hostInvokeToken,
+                autoSendSeq = saved.autoSendSeq,
+                external = saved.external,
+                revisions = saved.revisions,
+            )
+        }
+
+        /**
+         * The saved record [value], of [record] saved at revision [at], with the
+         * default of each of [added], the fields later revisions added; [what]
+         * names it in a refusal. A value that is not an object is returned as it
+         * is, for the record's own read to refuse.
+         */
+        private fun grownRecord(
+            value: Any?,
+            what: String,
+            record: RecordLineage,
+            at: Int,
+            added: List<AddedField>,
+        ): Any? {
+            val members = value as? Map<*, *> ?: return value
+            val grown = LinkedHashMap<String, Any?>()
+            for ((name, member) in members) grown[name as String] = member
+            for (field in added) {
+                if (grown.containsKey(field.id)) {
+                    throw StateRefusal(
+                        "'$what' holds '${field.id}', which revision $at of '${record.event}' does not declare: " +
+                            "revision ${field.since} added it")
+                }
+                grown[field.id] = try {
+                    Json.parse(field.default)
+                } catch (e: Json.Error) {
+                    throw StateRefusal("the default of '${field.id}' of '${record.event}' is ${e.message}")
+                }
+            }
+            return grown
+        }
     }
 }
+
+/**
+ * The revision of one record schema a state was saved at.
+ *
+ * @property revision the schema's `sce:revision` where the state was saved, 2 or
+ *   later.
+ * @property fields the SHA-256, as lowercase hex, of what that revision declares:
+ *   each field it has, with its type and its enum's variant names. A restoring
+ *   machine holds the same digest of each of its own schema's revisions, so two
+ *   builds that disagree about what one revision declares are told apart.
+ */
+data class SavedRevision(val revision: Int, val fields: String) {
+    internal fun toJsonValue(): Map<String, Any?> = linkedMapOf(
+        "revision" to Json.Number(revision.toString()),
+        "fields" to fields,
+    )
+
+    internal companion object {
+        fun fromJsonValue(value: Any?, what: String): SavedRevision {
+            val members = value as? Map<*, *> ?: throw StateRefusal("'$what' is not an object")
+            if (!members.containsKey("revision")) throw StateRefusal("'$what' has no 'revision'")
+            if (!members.containsKey("fields")) throw StateRefusal("'$what' has no 'fields'")
+            val written = (members["revision"] as? Json.Number)?.text
+                ?: throw StateRefusal("'$what.revision' is not a number")
+            val revision = written.toIntOrNull()?.takeIf { it >= 2 && written.all(Char::isDigit) }
+                ?: throw StateRefusal(
+                    "'$what.revision' ($written) is not a revision past the first; a schema in its first " +
+                        "revision is left out")
+            val fields = (members["fields"] as? String)
+                ?.takeIf { digest -> digest.length == 64 && digest.all { it in '0'..'9' || it in 'a'..'f' } }
+                ?: throw StateRefusal("'$what.fields' is not a SHA-256 written as lowercase hex")
+            return SavedRevision(revision, fields)
+        }
+    }
+}
+
+/**
+ * What a machine's saved state is bound to: the document's shape, and the
+ * revisions of each schema a record variable of it is of (docs/adr/0044). The
+ * generator computes it, and every saved state is written and judged against it.
+ *
+ * @property first the shape a state names when every record schema it holds is
+ *   in its first revision: the states, histories, invocations and variables,
+ *   each record variable with the fields of its schema's first revision.
+ * @property revised the shape a state names when it names a later revision of
+ *   any record schema. A reader that predates revisions knows only the first
+ *   shape, so it refuses such a state rather than read it without the fields it
+ *   does not know.
+ * @property records each record schema a variable is of, by the event it
+ *   declares, ordered by it.
+ */
+class SavedShape(val first: String, val revised: String, val records: List<RecordLineage>)
+
+/**
+ * A record schema a machine's variables are of, as a saved state names it.
+ *
+ * @property event the event the schema declares, which names it in `revisions`.
+ * @property revision the schema's revision in this machine.
+ * @property revisions the digest of what each revision from the second to
+ *   [revision] declares, in order ([SavedRevision.fields]).
+ * @property added each field a revision past the first added, in the schema's
+ *   order.
+ * @property holders the variables that hold a record of it, or a list of them.
+ */
+class RecordLineage(
+    val event: String,
+    val revision: Int,
+    val revisions: List<String>,
+    val added: List<AddedField>,
+    val holders: List<RecordHolder>,
+)
+
+/**
+ * A field a revision past the first added to a record schema.
+ *
+ * @property id the field's id, the member a saved record holds it under.
+ * @property since the revision that added it.
+ * @property default its `sce:default` as saved-state JSON: the JSON a delivery
+ *   carries, which a saved state writes the same way for every type a field can
+ *   have.
+ */
+class AddedField(val id: String, val since: Int, val default: String)
+
+/**
+ * A variable that holds a record of a [RecordLineage].
+ *
+ * @property variable the variable's document id.
+ * @property list whether it holds a list of records rather than one.
+ */
+class RecordHolder(val variable: String, val list: Boolean)
 
 /**
  * One event of a saved external queue: its name and the `_event` fields a

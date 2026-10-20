@@ -33,6 +33,7 @@ import com.sce.runtime.HistoryId
 import com.sce.runtime.ManualClock
 import com.sce.runtime.SavedAct
 import com.sce.runtime.SavedSend
+import com.sce.runtime.SavedShape
 import com.sce.runtime.SavedState
 import com.sce.runtime.State
 import com.sce.runtime.StateMachineEngine
@@ -100,13 +101,16 @@ private class WaitingMachine : StateMachineEngine<WaitingState, WaitEvent>() {
     fun saveAt(wallNowMs: Long): SavedState = savedState(SHAPE, linkedMapOf(), wallNowMs)
 
     fun restoreAt(saved: SavedState, wallNowMs: Long) {
-        beginRestore(saved, SHAPE)
-        enterSaved(saved, wallNowMs)
+        enterSaved(beginRestore(saved, SHAPE), wallNowMs)
     }
 
     companion object {
-        /** Any text: the engine-level `save` records the shape it is told. */
-        const val SHAPE = "shape"
+        /**
+         * Any texts: the engine-level `save` records the shape it is told. A
+         * machine with no record variable names no revision, so it writes and
+         * judges the first.
+         */
+        val SHAPE = SavedShape(first = "shape", revised = "revised shape", records = emptyList())
     }
 }
 

@@ -39,6 +39,13 @@
 //! refuses it, since the same id need not mean the same thing there. An app
 //! update that touched only a guard does not lose its users' state.
 //!
+//! Nor does one that added a field to a record schema (docs/adr/0044): the
+//! shape names a record schema's first-revision fields, and a state names the
+//! revision each schema past its first was saved at (`revisions`), so a later
+//! build reads a state of an earlier revision with each added field at its
+//! default ([`crate::saved_state::upgrade`]). Such a state carries a second
+//! shape, which a reader that predates revisions does not know and refuses.
+//!
 //! The steps every machine takes alike live here
 //! ([`crate::saved_state::save`], [`crate::saved_state::check_shape`],
 //! [`crate::saved_state::enter`]); a generated machine adds only its own
@@ -131,6 +138,120 @@ pub struct SavedState {
     /// driven the machine through. Only the internal queue is empty at a
     /// macrostep boundary, so a state that left these out would lose them.
     pub external: Vec<SavedEvent>,
+    /// The revision each record schema past its first was saved at, by the
+    /// event the schema declares, ordered by it (docs/adr/0044). Empty when
+    /// every record schema the machine holds is in its first revision, which
+    /// is every state saved before schemas had revisions; [`upgrade`] reads a
+    /// state saved at an earlier revision as the machine's own.
+    pub revisions: Vec<(String, SavedRevision)>,
+}
+
+/// The revision of one record schema a state was saved at.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SavedRevision {
+    /// The schema's `sce:revision` where the state was saved, 2 or later.
+    pub revision: u32,
+    /// The SHA-256, as lowercase hex, of what that revision declares: each
+    /// field it has, with its type and its enum's variant names. A restoring
+    /// machine holds the same digest of each of its own schema's revisions, so
+    /// two builds that disagree about what one revision declares are told apart.
+    pub fields: String,
+}
+
+impl SavedRevision {
+    /// The revision `value` holds; `what` names it in a refusal.
+    fn from_value(value: &Value, what: &str) -> Result<Self, StateRefusal> {
+        let member = |name: &str| {
+            value
+                .member(name)
+                .ok_or_else(|| StateRefusal::new(format!("'{what}' has no '{name}'")))
+        };
+        let revision = match member("revision")? {
+            Value::Number(n) => n.parse::<u32>().ok().filter(|r| *r >= 2).ok_or_else(|| {
+                StateRefusal::new(format!(
+                    "'{what}.revision' ({n}) is not a revision past the first; a schema in its \
+                     first revision is left out"
+                ))
+            })?,
+            _ => {
+                return Err(StateRefusal::new(format!(
+                    "'{what}.revision' is not a number"
+                )))
+            }
+        };
+        let fields = match member("fields")? {
+            Value::Text(digest)
+                if digest.len() == 64
+                    && digest
+                        .bytes()
+                        .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) =>
+            {
+                digest.clone()
+            }
+            _ => {
+                return Err(StateRefusal::new(format!(
+                    "'{what}.fields' is not a SHA-256 written as lowercase hex"
+                )))
+            }
+        };
+        Ok(Self { revision, fields })
+    }
+}
+
+/// What a machine's saved state is bound to: the document's shape, and the
+/// revisions of each schema a record variable of it is of (docs/adr/0044). The
+/// generator computes it, and every saved state is written and judged against it.
+#[derive(Clone, Copy, Debug)]
+pub struct SavedShape {
+    /// The shape a state names when every record schema it holds is in its
+    /// first revision: the states, histories, invocations and variables, each
+    /// record variable with the fields of its schema's first revision.
+    pub first: &'static str,
+    /// The shape a state names when it names a later revision of any record
+    /// schema. A reader that predates revisions knows only the first shape, so it
+    /// refuses such a state rather than read it without the fields it does not
+    /// know.
+    pub revised: &'static str,
+    /// Each record schema a variable is of, by the event it declares, ordered by
+    /// it.
+    pub records: &'static [RecordLineage],
+}
+
+/// A record schema a machine's variables are of, as a saved state names it.
+#[derive(Clone, Copy, Debug)]
+pub struct RecordLineage {
+    /// The event the schema declares, which names it in `revisions`.
+    pub event: &'static str,
+    /// The schema's revision in this machine.
+    pub revision: u32,
+    /// The digest of what each revision from the second to [`Self::revision`]
+    /// declares, in order ([`SavedRevision::fields`]).
+    pub revisions: &'static [&'static str],
+    /// Each field a revision past the first added, in the schema's order.
+    pub added: &'static [AddedField],
+    /// The variables that hold a record of it, or a list of them.
+    pub holders: &'static [RecordHolder],
+}
+
+/// A field a revision past the first added to a record schema.
+#[derive(Clone, Copy, Debug)]
+pub struct AddedField {
+    /// The field's id, the member a saved record holds it under.
+    pub id: &'static str,
+    /// The revision that added it.
+    pub since: u32,
+    /// Its `sce:default`, as saved-state JSON (the JSON a delivery carries,
+    /// which a saved state writes the same way for every type a field can have).
+    pub default: &'static str,
+}
+
+/// A variable that holds a record of a [`RecordLineage`].
+#[derive(Clone, Copy, Debug)]
+pub struct RecordHolder {
+    /// The variable's document id.
+    pub variable: &'static str,
+    /// Whether it holds a list of records rather than one.
+    pub list: bool,
 }
 
 /// One delayed `<send>` that has not been delivered yet.
@@ -564,7 +685,7 @@ impl SavedState {
 
     /// The state as `sce-saved-state` JSON.
     pub fn to_json(&self) -> String {
-        json::write(&Value::Object(vec![
+        let mut members = vec![
             ("format".to_string(), Value::Number(FORMAT.to_string())),
             ("shape".to_string(), Value::Text(self.shape.clone())),
             (
@@ -625,7 +746,32 @@ impl SavedState {
                 "external".to_string(),
                 Value::Array(self.external.iter().map(SavedEvent::to_value).collect()),
             ),
-        ]))
+        ];
+        // Absent, not empty, when no record schema is past its first revision:
+        // the text of such a state is the text it was before revisions existed.
+        if !self.revisions.is_empty() {
+            members.push((
+                "revisions".to_string(),
+                Value::Object(
+                    self.revisions
+                        .iter()
+                        .map(|(event, saved)| {
+                            (
+                                event.clone(),
+                                Value::Object(vec![
+                                    (
+                                        "revision".to_string(),
+                                        Value::Number(saved.revision.to_string()),
+                                    ),
+                                    ("fields".to_string(), Value::Text(saved.fields.clone())),
+                                ]),
+                            )
+                        })
+                        .collect(),
+                ),
+            ));
+        }
+        json::write(&Value::Object(members))
     }
 
     /// Read `sce-saved-state` JSON. The shape is not judged here — the
@@ -715,8 +861,29 @@ impl SavedState {
                 .collect::<Result<Vec<_>, _>>()?,
             _ => return Err(StateRefusal::new("'external' is not an array")),
         };
+        // Optional, unlike every member above: a state whose record schemas are
+        // all in their first revision leaves it out, as every state saved before
+        // schemas had revisions does.
+        let revisions = match value.member("revisions") {
+            None => Vec::new(),
+            Some(Value::Object(members)) if members.is_empty() => {
+                return Err(StateRefusal::new(
+                    "'revisions' names no schema; a state whose record schemas are all in \
+                     their first revision leaves it out",
+                ))
+            }
+            Some(Value::Object(members)) => members
+                .iter()
+                .map(|(event, v)| {
+                    SavedRevision::from_value(v, &format!("revisions.{event}"))
+                        .map(|saved| (event.clone(), saved))
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+            Some(_) => return Err(StateRefusal::new("'revisions' is not an object")),
+        };
         Ok(Self {
             shape: text_of(field("shape")?, "shape")?,
+            revisions,
             configuration,
             current: text_of(field("current")?, "current")?,
             variables,
@@ -1015,11 +1182,16 @@ fn clamp_to_i64(ms: u64) -> u64 {
     ms.min(i64::MAX as u64)
 }
 
-/// Save `engine`, a machine of the document whose shape is `shape`, with the
-/// `variables` its generated code read from its fields. The configuration is
-/// written in document order, and every waiting delayed `<send>` is written as
-/// the moment it comes due on the wall clock whose reading now is
-/// `wall_now_ms` (module docs).
+/// Save `engine`, a machine of the document whose saved state is bound to
+/// `shape`, with the `variables` its generated code read from its fields. The
+/// configuration is written in document order, and every waiting delayed
+/// `<send>` is written as the moment it comes due on the wall clock whose
+/// reading now is `wall_now_ms` (module docs).
+///
+/// A machine any of whose record schemas is past its first revision names each
+/// such revision in `revisions` and writes the revised shape; any other writes
+/// the first shape and no `revisions`, the text it wrote before schemas had
+/// revisions.
 ///
 /// Refused for a machine that is not running — never started, or ended at a
 /// top-level `<final>`, where there is nothing left to resume — and for one
@@ -1027,7 +1199,7 @@ fn clamp_to_i64(ms: u64) -> u64 {
 /// is not a settled one, and a restore would resume it as if it were.
 pub fn save<P: StatePolicy>(
     engine: &Engine<P>,
-    shape: &str,
+    shape: &SavedShape,
     variables: Vec<(String, Value)>,
     history: Vec<(String, Vec<String>)>,
     wall_now_ms: u64,
@@ -1050,8 +1222,30 @@ pub fn save<P: StatePolicy>(
     // backend.
     let mut active = engine.get_active_states();
     active.sort_by_key(|s| P::get_document_order(*s));
+    // The revision of each record schema past its first, whose digest list is
+    // empty exactly when the schema is in its first revision.
+    let revisions: Vec<(String, SavedRevision)> = shape
+        .records
+        .iter()
+        .filter_map(|record| {
+            let fields = record.revisions.last()?;
+            Some((
+                record.event.to_string(),
+                SavedRevision {
+                    revision: record.revision,
+                    fields: (*fields).to_string(),
+                },
+            ))
+        })
+        .collect();
     Ok(SavedState {
-        shape: shape.to_string(),
+        shape: if revisions.is_empty() {
+            shape.first
+        } else {
+            shape.revised
+        }
+        .to_string(),
+        revisions,
         configuration: active
             .iter()
             .map(|s| P::get_state_name(*s).to_string())
@@ -1363,6 +1557,138 @@ pub fn check_shape(saved: &SavedState, shape: &str) -> Result<(), StateRefusal> 
             saved.shape
         )))
     }
+}
+
+/// `saved` as a state of the machine whose saved state is bound to `shape`, or
+/// the refusal that says why it is not one (docs/adr/0044) — judged before any
+/// variable is read, as [`check_shape`] is.
+///
+/// A state that names no revision is of the first shape; one that does is of
+/// the revised shape, and each revision it names is of a schema a record
+/// variable of this machine is of, no later than this machine's revision of it,
+/// and declares what this machine's revision of that number declares (the
+/// digests agree). Such a state is then read as one of this machine: each record
+/// of a schema saved at an earlier revision — a record variable, or each element
+/// of a list of records — takes the default of every field a later revision
+/// added. A record that already holds such a field is refused, since the
+/// revision it was saved at does not declare it. What is not a record where a
+/// record is held is left for the variable's own read to refuse.
+///
+/// The events of the external queue and of the waiting sends hold their data as
+/// the wire carried it, and the lift reads it with the defaults when each is
+/// delivered, so nothing of them is grown here.
+pub fn upgrade(saved: &SavedState, shape: &SavedShape) -> Result<SavedState, StateRefusal> {
+    if saved.revisions.is_empty() {
+        check_shape(saved, shape.first)?;
+    } else if saved.shape == shape.first {
+        return Err(StateRefusal::new(
+            "the saved state names revisions of its record schemas and has the shape of a \
+             state that names none",
+        ));
+    } else {
+        check_shape(saved, shape.revised)?;
+    }
+    for (event, named) in &saved.revisions {
+        let record = shape
+            .records
+            .iter()
+            .find(|record| record.event == event.as_str())
+            .ok_or_else(|| {
+                StateRefusal::new(format!(
+                    "'revisions' names '{event}', which no record of this machine is of"
+                ))
+            })?;
+        if named.revision > record.revision {
+            return Err(StateRefusal::new(format!(
+                "the saved state was saved at revision {} of '{event}', later than this \
+                 machine's {}: a machine does not restore fields it does not know",
+                named.revision, record.revision
+            )));
+        }
+        // The digest of revision r is the (r - 2)th: the first has none.
+        let digest = named
+            .revision
+            .checked_sub(2)
+            .and_then(|index| record.revisions.get(index as usize))
+            .copied();
+        if digest != Some(named.fields.as_str()) {
+            return Err(StateRefusal::new(format!(
+                "revision {} of '{event}' declared other fields where the state was saved than \
+                 it does in this machine",
+                named.revision
+            )));
+        }
+    }
+    let mut grown = saved.clone();
+    for record in shape.records {
+        let at = saved
+            .revisions
+            .iter()
+            .find(|(event, _)| event.as_str() == record.event)
+            .map_or(1, |(_, named)| named.revision);
+        let added: Vec<&AddedField> = record.added.iter().filter(|f| f.since > at).collect();
+        if added.is_empty() {
+            continue;
+        }
+        for holder in record.holders {
+            let Some((_, value)) = grown
+                .variables
+                .iter_mut()
+                .find(|(id, _)| id.as_str() == holder.variable)
+            else {
+                continue;
+            };
+            match value {
+                Value::Array(items) if holder.list => {
+                    for (i, item) in items.iter_mut().enumerate() {
+                        grow_record(
+                            item,
+                            &format!("{}[{i}]", holder.variable),
+                            record,
+                            at,
+                            &added,
+                        )?;
+                    }
+                }
+                _ if holder.list => {}
+                _ => grow_record(value, holder.variable, record, at, &added)?,
+            }
+        }
+    }
+    Ok(grown)
+}
+
+/// Give the saved record `value`, of `record` saved at revision `at`, the
+/// default of each of `added`, the fields later revisions added; `what` names it
+/// in a refusal. A value that is not an object is left for the record's own read
+/// to refuse.
+fn grow_record(
+    value: &mut Value,
+    what: &str,
+    record: &RecordLineage,
+    at: u32,
+    added: &[&AddedField],
+) -> Result<(), StateRefusal> {
+    let Value::Object(members) = value else {
+        return Ok(());
+    };
+    for field in added {
+        if members.iter().any(|(name, _)| name.as_str() == field.id) {
+            return Err(StateRefusal::new(format!(
+                "'{what}' holds '{}', which revision {at} of '{}' does not declare: revision {} \
+                 added it",
+                field.id, record.event, field.since
+            )));
+        }
+        let default = json::parse(field.default).map_err(|e| {
+            StateRefusal::new(format!(
+                "the default of '{}' of '{}' is {e}",
+                field.id, record.event
+            ))
+        })?;
+        members.push((field.id.to_string(), default));
+    }
+    Ok(())
 }
 
 /// A machine of `policy`, whose variables already hold what `saved` holds,
@@ -1814,13 +2140,193 @@ mod tests {
                     ..SavedEvent::default()
                 },
             ],
+            revisions: vec![(
+                "reading.taken".to_string(),
+                SavedRevision {
+                    revision: 3,
+                    fields: "0".repeat(64),
+                },
+            )],
         };
         let back = SavedState::from_json(&state.to_json()).expect("reads");
         assert_eq!(back, state);
+        // With no revision past the first, the member is left out, and the text
+        // is the one every state saved before schemas had revisions is.
+        let first = SavedState {
+            revisions: Vec::new(),
+            ..state.clone()
+        };
+        assert!(
+            !first.to_json().contains("revisions"),
+            "{}",
+            first.to_json()
+        );
+        assert_eq!(SavedState::from_json(&first.to_json()), Ok(first));
         assert_eq!(
             u64::from_saved(back.variable("big").unwrap(), "big"),
             Ok(u64::MAX)
         );
+    }
+
+    // ── a state saved at an earlier revision of a record schema (docs/adr/0044) ──
+
+    const FIRST_SHAPE: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const REVISED_SHAPE: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    const SECOND: &str = "2222222222222222222222222222222222222222222222222222222222222222";
+    const THIRD: &str = "3333333333333333333333333333333333333333333333333333333333333333";
+
+    /// A machine holding a record `last` and a list `seen` of the schema of
+    /// `reading.taken` at its third revision: `urgent` came with the second and
+    /// `note` with the third.
+    const READING_SHAPE: SavedShape = SavedShape {
+        first: FIRST_SHAPE,
+        revised: REVISED_SHAPE,
+        records: &[RecordLineage {
+            event: "reading.taken",
+            revision: 3,
+            revisions: &[SECOND, THIRD],
+            added: &[
+                AddedField {
+                    id: "urgent",
+                    since: 2,
+                    default: "true",
+                },
+                AddedField {
+                    id: "note",
+                    since: 3,
+                    default: "7",
+                },
+            ],
+            holders: &[
+                RecordHolder {
+                    variable: "last",
+                    list: false,
+                },
+                RecordHolder {
+                    variable: "seen",
+                    list: true,
+                },
+            ],
+        }],
+    };
+
+    /// A saved state of shape `shape` holding `last` and `seen`, with the
+    /// `revisions` member `revisions` written after the others (empty for none).
+    fn reading_state(shape: &str, last: &str, seen: &str, revisions: &str) -> SavedState {
+        let text = format!(
+            r#"{{"format":1,"shape":"{shape}","configuration":["s"],"current":"s","variables":{{"last":{last},"seen":{seen}}},"history":{{}},"pending":[],"invokes":[],"hostinvokes":[],"hostinvoketoken":"0","sendseq":"0","external":[]{revisions}}}"#
+        );
+        SavedState::from_json(&text).expect("reads")
+    }
+
+    /// The `revisions` member naming `revision` of `reading.taken` with `fields`.
+    fn named(revision: u32, fields: &str) -> String {
+        format!(r#","revisions":{{"reading.taken":{{"revision":{revision},"fields":"{fields}"}}}}"#)
+    }
+
+    fn json_of(text: &str) -> Value {
+        json::parse(text).expect("JSON")
+    }
+
+    #[test]
+    fn a_state_saved_at_the_first_revision_takes_every_later_default() {
+        let saved = reading_state(
+            FIRST_SHAPE,
+            r#"{"level":4}"#,
+            r#"[{"level":1},{"level":2}]"#,
+            "",
+        );
+        let grown = upgrade(&saved, &READING_SHAPE).expect("an earlier revision restores");
+        assert_eq!(
+            grown.variable("last"),
+            Ok(&json_of(r#"{"level":4,"urgent":true,"note":7}"#))
+        );
+        assert_eq!(
+            grown.variable("seen"),
+            Ok(&json_of(
+                r#"[{"level":1,"urgent":true,"note":7},{"level":2,"urgent":true,"note":7}]"#
+            ))
+        );
+    }
+
+    #[test]
+    fn a_state_saved_at_a_later_revision_keeps_what_it_holds_and_takes_the_rest() {
+        let saved = reading_state(
+            REVISED_SHAPE,
+            r#"{"level":4,"urgent":false}"#,
+            "[]",
+            &named(2, SECOND),
+        );
+        let grown = upgrade(&saved, &READING_SHAPE).expect("the second revision restores");
+        assert_eq!(
+            grown.variable("last"),
+            Ok(&json_of(r#"{"level":4,"urgent":false,"note":7}"#))
+        );
+
+        // At the machine's own revision nothing is added.
+        let saved = reading_state(
+            REVISED_SHAPE,
+            r#"{"level":4,"urgent":false,"note":2}"#,
+            "[]",
+            &named(3, THIRD),
+        );
+        assert_eq!(upgrade(&saved, &READING_SHAPE), Ok(saved));
+    }
+
+    #[test]
+    fn a_state_of_another_revision_or_another_shape_is_refused() {
+        let reason = |saved: SavedState| {
+            upgrade(&saved, &READING_SHAPE)
+                .expect_err("refused")
+                .reason()
+                .to_string()
+        };
+        // Saved by a later build than this one.
+        let later = reading_state(REVISED_SHAPE, r#"{"level":4}"#, "[]", &named(4, THIRD));
+        assert!(reason(later).contains("later than"));
+        // The two builds disagree about what the second revision declares.
+        let other = reading_state(REVISED_SHAPE, r#"{"level":4}"#, "[]", &named(2, THIRD));
+        assert!(reason(other).contains("declared other fields"));
+        // A record that holds a field its revision does not declare.
+        let early = reading_state(FIRST_SHAPE, r#"{"level":4,"urgent":true}"#, "[]", "");
+        let refusal = reason(early);
+        assert!(refusal.contains("'last' holds 'urgent'"), "{refusal}");
+        let early_element = reading_state(
+            FIRST_SHAPE,
+            r#"{"level":4}"#,
+            r#"[{"level":1,"note":3}]"#,
+            "",
+        );
+        assert!(reason(early_element).contains("'seen[0]' holds 'note'"));
+        // Revisions named under the first shape, and none under the revised one.
+        let mixed = reading_state(FIRST_SHAPE, r#"{"level":4}"#, "[]", &named(2, SECOND));
+        assert!(reason(mixed).contains("names revisions"));
+        let unnamed = reading_state(REVISED_SHAPE, r#"{"level":4}"#, "[]", "");
+        assert!(reason(unnamed).contains("of shape"));
+        // A schema no record of the machine is of.
+        let stranger = reading_state(
+            REVISED_SHAPE,
+            r#"{"level":4}"#,
+            "[]",
+            &format!(r#","revisions":{{"other.event":{{"revision":2,"fields":"{SECOND}"}}}}"#),
+        );
+        assert!(reason(stranger).contains("no record"));
+    }
+
+    #[test]
+    fn a_revisions_member_that_is_not_one_is_refused_where_it_is_read() {
+        for (revisions, wanted) in [
+            (r#","revisions":{}"#.to_string(), "names no schema"),
+            (named(1, SECOND), "past the first"),
+            (named(2, "abc"), "SHA-256"),
+            (r#","revisions":[]"#.to_string(), "not an object"),
+        ] {
+            let text = format!(
+                r#"{{"format":1,"shape":"{FIRST_SHAPE}","configuration":["s"],"current":"s","variables":{{}},"history":{{}},"pending":[],"invokes":[],"hostinvokes":[],"hostinvoketoken":"0","sendseq":"0","external":[]{revisions}}}"#
+            );
+            let refusal = SavedState::from_json(&text).expect_err("not a revisions member");
+            assert!(refusal.reason().contains(wanted), "{revisions}: {refusal}");
+        }
     }
 
     #[test]

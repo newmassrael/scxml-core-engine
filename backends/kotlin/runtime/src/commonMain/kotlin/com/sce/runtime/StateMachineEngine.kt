@@ -2422,7 +2422,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
     //
     // The steps every generated `save`/`restore` takes alike; the generated
     // machine adds only its own variables between them. The Kotlin twin of
-    // `sce_rust_runtime::saved_state::{save, check_shape, enter}`.
+    // `sce_rust_runtime::saved_state::{save, upgrade, enter}`.
 
     /**
      * This machine's [SavedState], with the [variables] its generated code
@@ -2431,13 +2431,18 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * waiting delayed `<send>` is written as the moment it comes due on the
      * wall clock whose reading now is [wallNowMs] ([SavedState]).
      *
+     * A machine any of whose record schemas is past its first revision names
+     * each such revision in `revisions` and writes the revised shape of
+     * [shape]; any other writes the first shape and no `revisions`, the text it
+     * wrote before schemas had revisions (docs/adr/0044).
+     *
      * Refused for a machine that is not running — never started, or ended at
      * a top-level `<final>`, where there is nothing left to resume — and for
      * one whose last macrostep stopped at the microstep ceiling: its
      * configuration is not a settled one, and a restore would resume it as if
      * it were.
      */
-    protected fun savedState(shape: String, variables: Map<String, Any?>, wallNowMs: Long): SavedState {
+    protected fun savedState(shape: SavedShape, variables: Map<String, Any?>, wallNowMs: Long): SavedState {
         if (configuration.isEmpty() || isInFinalState) {
             throw StateRefusal("the machine is not running: it was never started, or it has ended")
         }
@@ -2460,8 +2465,16 @@ abstract class StateMachineEngine<S : State, E : Event>(
         // Read before anything is built, so a delayed send this state cannot
         // carry refuses the save instead of being left out of it.
         val pending = pendingSends(wallNowMs)
+        // The revision of each record schema past its first, whose digest list is
+        // empty exactly when the schema is in its first revision.
+        val revisions = LinkedHashMap<String, SavedRevision>()
+        for (record in shape.records) {
+            val fields = record.revisions.lastOrNull() ?: continue
+            revisions[record.event] = SavedRevision(record.revision, fields)
+        }
         return SavedState(
-            shape = shape,
+            shape = if (revisions.isEmpty()) shape.first else shape.revised,
+            revisions = revisions,
             configuration = configuration.sortedBy(::documentOrderOf).map(::stateIdOf),
             current = stateIdOf(_currentState.value),
             variables = variables,
@@ -2610,27 +2623,30 @@ abstract class StateMachineEngine<S : State, E : Event>(
     }
 
     /**
-     * Refuse to restore [saved] into this machine unless it has not started —
-     * a restore stands in place of [initialize] — [saved] was saved from a
-     * document of this [shape], and the configuration it names is one of this
-     * document. Judged before any variable is written, so a refused restore
-     * leaves the machine as it was.
+     * [saved] as a state of this machine, or a refusal: unless it has not
+     * started — a restore stands in place of [initialize] — [saved] is a state
+     * of this [shape] ([SavedState.upgrade], which also gives each record saved
+     * at an earlier revision of its schema the defaults of the fields added
+     * since), and the configuration it names is one of this document. Judged
+     * before any variable is written, so a refused restore leaves the machine as
+     * it was. The generated restore reads its variables from what this returns.
      */
-    protected fun beginRestore(saved: SavedState, shape: String) {
+    protected fun beginRestore(saved: SavedState, shape: SavedShape): SavedState {
         if (configuration.isNotEmpty() || isInFinalState) {
             throw StateRefusal("a machine is restored in place of initialize, and this one has already started")
         }
-        SavedState.checkShape(saved, shape)
-        val (states, current) = savedConfiguration(saved)
+        val grown = SavedState.upgrade(saved, shape)
+        val (states, current) = savedConfiguration(grown)
         val verdict = judgeConfiguration(states, current)
         if (verdict != ConfigurationRejection.NONE) {
             throw StateRefusal("the saved configuration is refused: ${verdict.reason}")
         }
-        savedHistory(saved)
-        savedPending(saved)
-        savedInvokes(saved, states)
-        savedHostInvokes(saved, states)
-        savedExternal(saved)
+        savedHistory(grown)
+        savedPending(grown)
+        savedInvokes(grown, states)
+        savedHostInvokes(grown, states)
+        savedExternal(grown)
+        return grown
     }
 
     /**

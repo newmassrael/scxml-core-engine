@@ -113,9 +113,9 @@ pub struct StaticLowering {
     /// saved state writes an enum value as, for a backend that writes it
     /// outside the type ([`StaticEnumType`]).
     pub enums: Vec<StaticEnumType>,
-    /// The shape a saved state of this machine is bound to ([`saved_shape`]),
-    /// or `None` for a machine whose state a saved state cannot yet hold.
-    pub saved_shape: Option<String>,
+    /// What a saved state of this machine is bound to ([`saved_shape`]), or
+    /// `None` for a machine whose state a saved state cannot yet hold.
+    pub saved_shape: Option<SavedShape>,
     /// Every expression the walk lowered, with the attribute the document
     /// wrote it in. A backend that renders the rewritten model reads the
     /// slots instead; a lowering that rewrites the document itself
@@ -180,6 +180,63 @@ pub struct StaticRecord {
     /// The backend type ([`StaticTarget::record_type`]).
     pub ty: String,
     pub fields: Vec<StaticRecordField>,
+}
+
+/// What a saved state of a machine is bound to (SCE Accepted Subset §2.15,
+/// "Saving and restoring"; docs/adr/0044): the document's shape, and the
+/// revisions of each schema a record variable of it is of.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SavedShape {
+    /// The shape a state names when every record schema it holds is in its
+    /// first revision ([`saved_shape`]).
+    pub first: String,
+    /// The shape a state names when it names a later revision of any record
+    /// schema: the digest of the first shape's text and one line more, so a
+    /// reader that knows only the first shape refuses it.
+    pub revised: String,
+    /// Each record schema a variable is of, by the event it declares, ordered
+    /// by it.
+    pub records: Vec<SavedRecordLineage>,
+}
+
+/// A record schema a machine's variables are of, as a saved state names it.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SavedRecordLineage {
+    /// The event the schema declares, which names it.
+    pub event: String,
+    /// The schema's `sce:revision` (1 when it declares none).
+    pub revision: u32,
+    /// The digest of what each revision from the second to [`Self::revision`]
+    /// declares, in order ([`revision_digest`]); empty for a schema of one
+    /// revision.
+    pub revisions: Vec<String>,
+    /// Each field a revision past the first added, in the schema's order.
+    pub added: Vec<SavedAddedField>,
+    /// The variables that hold a record of it, or a list of them, in
+    /// declaration order.
+    pub holders: Vec<SavedRecordHolder>,
+}
+
+/// A field a revision past the first added to a record schema.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SavedAddedField {
+    /// The field's id.
+    pub id: String,
+    /// The revision that added it.
+    pub since: u32,
+    /// Its default as saved-state JSON: the JSON a delivery carries for it
+    /// ([`crate::forge::schema_revision::default_wire`]), which is how a saved
+    /// state writes a value of every type a field can have.
+    pub default: String,
+}
+
+/// A variable that holds a record of a [`SavedRecordLineage`].
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SavedRecordHolder {
+    /// The variable's document id.
+    pub variable: String,
+    /// Whether it holds a list of records rather than one.
+    pub list: bool,
 }
 
 /// One field of a [`StaticRecord`].
@@ -3582,6 +3639,15 @@ impl<'t> TypeDeclarations<'t> {
 /// its id, whether it is deep, and the state it is declared in — and a document
 /// without one hashes exactly what it did before histories were saved.
 ///
+/// A record's fields are those of its schema's FIRST revision (docs/adr/0044): a
+/// field a later revision added is named by the saved state's `revisions`
+/// instead, through the digest of each revision ([`revision_digest`]), so a
+/// state saved at an earlier revision of a schema still has the shape, and a
+/// restore reads each field it lacks as its default. A schema of one revision
+/// declares every field in its first, so a document whose schemas never grew
+/// hashes exactly what it did before schemas had revisions. The shape a state
+/// that names a revision past the first writes is [`SavedShape::revised`].
+///
 /// An `<invoke type="scxml">` is named by the saved state too — which child a
 /// restore starts again — so each is part of the shape with its id and the
 /// state that holds it, a hybrid one under a line of its own, and so is each
@@ -3597,8 +3663,9 @@ impl<'t> TypeDeclarations<'t> {
 /// part of its state. A delayed `<send>` to this session or to a host-served
 /// processor is not such a send: a saved state holds it as the moment it comes
 /// due.
-fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<String> {
+fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<SavedShape> {
     use sha2::{Digest, Sha256};
+    use std::collections::BTreeMap;
     use std::fmt::Write as _;
 
     if invokes_what_a_restore_cannot_start(model) || delays_a_send_to_another_session(model) {
@@ -3673,6 +3740,9 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<String> {
             }
         }
     }
+    // Each record schema a variable is of, by the event it declares: ordered, so
+    // the same document names them in the same order on every backend.
+    let mut records: BTreeMap<String, SavedRecordLineage> = BTreeMap::new();
     for var in &scope.variables {
         let ty = var
             .value_type
@@ -3684,12 +3754,24 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<String> {
         let _ = writeln!(text, "variable {} {ty} {bound}", var.id);
         // A record's fields, whether it is the variable or the element of the
         // list the variable is: what a saved state names of it.
-        let record_alias = var.value_type.as_ref().and_then(|t| {
-            t.record_alias()
-                .or_else(|| t.list_elem().and_then(|e| e.record_alias()))
-        });
+        let own_record = var.value_type.as_ref().and_then(|t| t.record_alias());
+        let listed_record = var
+            .value_type
+            .as_ref()
+            .and_then(|t| t.list_elem().and_then(|e| e.record_alias()));
+        let record_alias = own_record.or(listed_record);
         if let Some(schema) = record_alias.and_then(|alias| model.imported_records.get(alias)) {
-            for field in &schema.fields {
+            records
+                .entry(schema.event_name.clone())
+                .or_insert_with(|| record_lineage(model, schema))
+                .holders
+                .push(SavedRecordHolder {
+                    variable: var.id.clone(),
+                    list: own_record.is_none(),
+                });
+            // The first revision's fields: a later one's are the saved state's
+            // `revisions` to name.
+            for field in schema.fields.iter().filter(|f| f.since.is_none()) {
                 let _ = writeln!(
                     text,
                     "field {}.{} {}",
@@ -3711,7 +3793,71 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<String> {
             write_variants(&mut text, model, &reference.alias, &var.id);
         }
     }
-    Some(format!("{:x}", Sha256::digest(text.as_bytes())))
+    let first = format!("{:x}", Sha256::digest(text.as_bytes()));
+    // One line more, the same for every document: what makes a reader that
+    // knows only the first shape refuse a state that names revisions, instead of
+    // reading it without the fields it does not know.
+    text.push_str("revisions\n");
+    let revised = format!("{:x}", Sha256::digest(text.as_bytes()));
+    Some(SavedShape {
+        first,
+        revised,
+        records: records.into_values().collect(),
+    })
+}
+
+/// What a saved state names of `schema`, a record schema a variable of `model`
+/// is of: its revision, the digest of each revision past the first, and the
+/// fields those revisions added with their defaults. Its holders are the
+/// caller's to add.
+fn record_lineage(model: &SCXMLModel, schema: &EventSchemaModel) -> SavedRecordLineage {
+    let revision = schema.revision();
+    SavedRecordLineage {
+        event: schema.event_name.clone(),
+        revision,
+        revisions: (2..=revision)
+            .map(|at| revision_digest(model, schema, at))
+            .collect(),
+        added: schema
+            .fields
+            .iter()
+            .filter_map(|field| {
+                Some(SavedAddedField {
+                    id: field.id.clone(),
+                    since: field.since?,
+                    // The parser refuses a field with a `since` and no default
+                    // that is a value of it, so this is never `None` for one.
+                    default: crate::forge::schema_revision::default_wire(field)?,
+                })
+            })
+            .collect(),
+        holders: Vec::new(),
+    }
+}
+
+/// The SHA-256, as lowercase hex, of what revision `at` of `schema` declares, as
+/// a saved state names it (docs/adr/0044): each field the revision has (its
+/// `sce:since` at most `at`, or none), in the schema's order, with its type and
+/// the variant names of its enum. Not a field's default or `since`: a saved
+/// state holds a value for each field and names neither, so two builds that
+/// agree on what a revision holds agree on its digest.
+fn revision_digest(model: &SCXMLModel, schema: &EventSchemaModel, at: u32) -> String {
+    use sha2::{Digest, Sha256};
+    use std::fmt::Write as _;
+
+    let mut text = String::from("sce-saved-record 1\n");
+    let _ = writeln!(text, "event {}", schema.event_name);
+    for field in schema
+        .fields
+        .iter()
+        .filter(|f| crate::forge::schema_revision::added_at(f) <= at)
+    {
+        let _ = writeln!(text, "field {} {}", field.id, field.sce_type.as_attr());
+        if let SceType::Enum(reference) = &field.sce_type {
+            write_variants(&mut text, model, &reference.alias, &field.id);
+        }
+    }
+    format!("{:x}", Sha256::digest(text.as_bytes()))
 }
 
 /// The variants of the enum imported as `alias`, one line each under `holder` —
@@ -9066,7 +9212,156 @@ mod tests {
         // (`a_machine_waiting_on_another_session_has_no_save_api` runs the
         // generator itself).
         crate::analyzer::analyze(&mut model, "m.scxml");
-        lower_rust(&mut model, "M").expect("lowers").saved_shape
+        lower_rust(&mut model, "M")
+            .expect("lowers")
+            .saved_shape
+            .map(|shape| shape.first)
+    }
+
+    /// What a saved state is bound to for a machine holding a `record:Reading`
+    /// (`last`) and a list of them (`seen`), with `schema` beside it as the
+    /// schema `Reading` imports. `sets` builds `last` whole.
+    fn reading_shape(schema: &str, sets: &str) -> SavedShape {
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        std::fs::write(dir.path().join("schema_reading.scxml"), schema).expect("the schema");
+        let statechart = format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="reading" datamodel="sce-static" name="m">
+  <sce:import kind="event-schema" src="schema_reading.scxml" as="Reading"/>
+  <datamodel>
+    <data id="last" sce:type="record:Reading">{sets}</data>
+    <data id="seen" sce:type="list&lt;record:Reading&gt;" sce:capacity="4"/>
+  </datamodel>
+  <state id="reading"/>
+</scxml>"#
+        );
+        let path = dir.path().join("m.scxml");
+        std::fs::write(&path, statechart).expect("the statechart");
+        let mut model = SCXMLParser::new()
+            .parse_file(path.to_str().expect("a UTF-8 path"))
+            .expect("parses");
+        crate::analyzer::analyze(&mut model, "m.scxml");
+        lower_rust(&mut model, "M")
+            .expect("lowers")
+            .saved_shape
+            .expect("a machine of records has a shape")
+    }
+
+    /// The schema `Reading` imports, at `revision` (written past the first),
+    /// declaring the `<data>` rows `fields`.
+    fn reading_schema(revision: u32, fields: &[&str]) -> String {
+        let revision = if revision > 1 {
+            format!(r#" sce:revision="{revision}""#)
+        } else {
+            String::new()
+        };
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="schema_reading"
+       sce:event-name="reading.taken"{revision}>
+  <datamodel>
+    {}
+  </datamodel>
+</scxml>"#,
+            fields.join("\n    ")
+        )
+    }
+
+    const LEVEL: &str = r#"<data id="level" sce:type="uint8" sce:direction="in"/>"#;
+    const URGENT: &str = r#"<data id="urgent" sce:type="bool" sce:direction="in" sce:since="2" sce:default="true"/>"#;
+    // A list holds records of fixed-width fields only, so the added fields are.
+    const NOTE: &str =
+        r#"<data id="note" sce:type="uint16" sce:direction="in" sce:since="3" sce:default="7"/>"#;
+    const SET_LEVEL: &str = r#"<sce:set name="level" expr="0"/>"#;
+    const SET_URGENT: &str = r#"<sce:set name="urgent" expr="false"/>"#;
+    const SET_NOTE: &str = r#"<sce:set name="note" expr="0"/>"#;
+
+    #[test]
+    fn a_schema_that_grew_leaves_the_shape_its_first_revision_had() {
+        let first = reading_shape(&reading_schema(1, &[LEVEL]), SET_LEVEL);
+        let second = reading_shape(
+            &reading_schema(2, &[LEVEL, URGENT]),
+            &format!("{SET_LEVEL}{SET_URGENT}"),
+        );
+        let third = reading_shape(
+            &reading_schema(3, &[LEVEL, URGENT, NOTE]),
+            &format!("{SET_LEVEL}{SET_URGENT}{SET_NOTE}"),
+        );
+        // The first shape names the first revision's fields alone, so a state
+        // saved at any revision has it.
+        assert_eq!(first.first, second.first);
+        assert_eq!(first.first, third.first);
+        // A state that names revisions has another, which a reader that knows
+        // only the first refuses.
+        assert_ne!(third.first, third.revised);
+        assert_eq!(first.revised, third.revised);
+
+        // What each revision declares has one digest in every build that has it.
+        assert_eq!(first.records.len(), 1);
+        assert_eq!(first.records[0].event, "reading.taken");
+        assert_eq!(first.records[0].revision, 1);
+        assert!(first.records[0].revisions.is_empty());
+        assert_eq!(second.records[0].revisions.len(), 1);
+        assert_eq!(third.records[0].revision, 3);
+        assert_eq!(third.records[0].revisions.len(), 2);
+        assert_eq!(
+            third.records[0].revisions[0],
+            second.records[0].revisions[0]
+        );
+        assert_ne!(third.records[0].revisions[0], third.records[0].revisions[1]);
+
+        // The fields a later revision added, with their defaults as a saved state
+        // writes them, and the variables that hold the record.
+        let added: Vec<(&str, u32, &str)> = third.records[0]
+            .added
+            .iter()
+            .map(|f| (f.id.as_str(), f.since, f.default.as_str()))
+            .collect();
+        assert_eq!(added, [("urgent", 2, "true"), ("note", 3, "7")]);
+        let holders: Vec<(&str, bool)> = third.records[0]
+            .holders
+            .iter()
+            .map(|h| (h.variable.as_str(), h.list))
+            .collect();
+        assert_eq!(holders, [("last", false), ("seen", true)]);
+    }
+
+    #[test]
+    fn a_revisions_digest_follows_the_types_it_declares_and_not_its_defaults() {
+        let sets = format!("{SET_LEVEL}{SET_URGENT}");
+        let second = reading_shape(&reading_schema(2, &[LEVEL, URGENT]), &sets);
+        // Another default: a saved state holds a value for the field, never the
+        // default, so the digest is the same.
+        let other_default = reading_shape(
+            &reading_schema(
+                2,
+                &[
+                    LEVEL,
+                    r#"<data id="urgent" sce:type="bool" sce:direction="in" sce:since="2" sce:default="false"/>"#,
+                ],
+            ),
+            &sets,
+        );
+        assert_eq!(
+            second.records[0].revisions,
+            other_default.records[0].revisions
+        );
+        // Another type: a saved value of the one is not a value of the other.
+        let retyped = reading_shape(
+            &reading_schema(
+                2,
+                &[
+                    LEVEL,
+                    r#"<data id="urgent" sce:type="uint8" sce:direction="in" sce:since="2" sce:default="1"/>"#,
+                ],
+            ),
+            &format!("{SET_LEVEL}<sce:set name=\"urgent\" expr=\"0\"/>"),
+        );
+        assert_ne!(second.records[0].revisions, retyped.records[0].revisions);
+        // Neither moves the first shape, which names the first revision only.
+        assert_eq!(second.first, retyped.first);
     }
 
     #[test]
@@ -9233,7 +9528,10 @@ mod tests {
         crate::host_processor_analyzer::declare_host_surfaces(&mut model, &[], &types)
             .expect("declares");
         crate::analyzer::analyze(&mut model, "m.scxml");
-        lower_rust(&mut model, "M").expect("lowers").saved_shape
+        lower_rust(&mut model, "M")
+            .expect("lowers")
+            .saved_shape
+            .map(|shape| shape.first)
     }
 
     #[test]

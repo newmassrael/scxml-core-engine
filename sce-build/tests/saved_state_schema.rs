@@ -133,7 +133,10 @@ fn the_schema_refuses_what_no_backend_writes() {
                 "sendid": "", "origin": "", "origintype": "", "invokeid": "h",
                 "hostinvoketoken": "6"
             }
-        ]
+        ],
+        "revisions": {
+            "reading.taken": {"revision": 3, "fields": "0".repeat(64)}
+        }
     });
     assert!(
         errors(&validator, &good).is_empty(),
@@ -301,6 +304,26 @@ fn the_schema_refuses_what_no_backend_writes() {
             "sendseq",
             serde_json::json!(3),
         ),
+        (
+            "a revisions member that names no schema",
+            "revisions",
+            serde_json::json!({}),
+        ),
+        (
+            "a schema named at its first revision, which is left out",
+            "revisions",
+            serde_json::json!({"reading.taken": {"revision": 1, "fields": "0".repeat(64)}}),
+        ),
+        (
+            "a revision whose fields are not a digest",
+            "revisions",
+            serde_json::json!({"reading.taken": {"revision": 2, "fields": "abc"}}),
+        ),
+        (
+            "a revision written as a text",
+            "revisions",
+            serde_json::json!({"reading.taken": {"revision": "2", "fields": "0".repeat(64)}}),
+        ),
     ];
     for (what, key, value) in broken {
         let mut instance = good.clone();
@@ -332,4 +355,18 @@ fn the_schema_refuses_what_no_backend_writes() {
             "the schema admitted a saved state with no {field} field"
         );
     }
+
+    // `revisions` is the one member a state may leave out: one whose record
+    // schemas are all in their first revision does, which is every state saved
+    // before schemas had revisions (docs/adr/0044).
+    let mut first_revision = good.clone();
+    first_revision
+        .as_object_mut()
+        .expect("an object")
+        .remove("revisions");
+    assert!(
+        errors(&validator, &first_revision).is_empty(),
+        "{:?}",
+        errors(&validator, &first_revision)
+    );
 }
