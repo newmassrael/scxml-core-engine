@@ -7845,7 +7845,7 @@ topology:
     /// topology.
     fn with_child(extra: &str, rest: &str) -> String {
         format!(
-            r#"
+            r##"
 version: "1.0"
 topology:
   phone:
@@ -7856,7 +7856,7 @@ topology:
         bindings:
           "#server": {{ transport: zenoh_inbox }}
 {extra}
-{rest}"#
+{rest}"##
         )
     }
 

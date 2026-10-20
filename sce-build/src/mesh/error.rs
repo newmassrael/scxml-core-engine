@@ -708,7 +708,7 @@ impl ChildEntryFault {
         match self {
             Self::NoOrigin => "no-origin",
             Self::BothOrigins => "both-origins",
-            Self::ProcessSection(section) => *section,
+            Self::ProcessSection(section) => section,
         }
     }
 }
