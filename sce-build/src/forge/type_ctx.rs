@@ -147,11 +147,12 @@ pub struct StaticCallee {
     /// Why a statechart does not take the list it returns whole, when it returns
     /// one and `list_return` is `None`: what a refusal of the assignment says.
     pub list_refusal: Option<String>,
-    /// The signature when the algorithm takes or returns a record or a list in a
-    /// way a statechart can call: each such slot is a variable of the
-    /// statechart's, named at the call (docs/SCE_ACCEPTED_SUBSET.md §2.15). Set
-    /// instead of `host_only`; the list of numbers a statechart already takes whole
-    /// (`list_return`) is not this.
+    /// The signature when the algorithm takes or returns a record, a list or a
+    /// value of an enum in a way a statechart can call: each record or list slot is
+    /// a variable of the statechart's, named at the call, and an enum slot is a
+    /// value of an enum the statechart imports (docs/SCE_ACCEPTED_SUBSET.md §2.15).
+    /// Set instead of `host_only`; the list of numbers a statechart already takes
+    /// whole (`list_return`) is not this.
     pub value: Option<StaticValueSignature>,
 }
 
@@ -165,7 +166,9 @@ pub struct StaticCallee {
 /// they come from the same document (SCE_FORGE.md §4.12).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StaticSlot {
-    /// A fixed-width number, a bool, a string or bytes.
+    /// A fixed-width number, a bool, a string or bytes — or `enum:<alias>`, a value
+    /// of an enum named, as a record is, by the alias the STATECHART imports the
+    /// enum document under ([`Self::enum_alias`]).
     Scalar(SceType),
     /// `record:<alias>`.
     Record(String),
@@ -181,17 +184,43 @@ impl StaticSlot {
     pub fn is_state(&self) -> bool {
         !matches!(self, Self::Scalar(_))
     }
+
+    /// The alias the statechart imports the enum under, for a slot that holds a
+    /// value of one: a scalar argument or return that crosses by its declared
+    /// name, which the machine's type and the algorithm's spell apart.
+    pub fn enum_alias(&self) -> Option<&str> {
+        match self {
+            Self::Scalar(SceType::Enum(reference)) => Some(reference.alias.as_str()),
+            _ => None,
+        }
+    }
 }
 
-/// The signature of an imported algorithm that takes or returns a record or a
-/// list, as a `sce-static` statechart calls it: the slots in order, and for a
-/// list returned the most it may hold.
+/// The signature of an imported algorithm that takes or returns a record, a list or
+/// a value of an enum, as a `sce-static` statechart calls it: the slots in order,
+/// and for a list returned the most it may hold.
 #[derive(Debug, Clone)]
 pub struct StaticValueSignature {
     pub params: Vec<StaticSlot>,
     pub ret: Option<StaticSlot>,
     /// `sce:returns-max-size`, when the algorithm returns a list.
     pub max_size: Option<u32>,
+}
+
+impl StaticValueSignature {
+    /// Whether a call is made through the adapter a target declares for it: a
+    /// parameter is a record or a list the statechart holds, or a value of an
+    /// enum, which the machine's type and the algorithm's spell apart and the
+    /// adapter maps by declared name, as it does what an enum is returned as.
+    pub fn adapted(&self) -> bool {
+        self.params
+            .iter()
+            .any(|slot| slot.is_state() || slot.enum_alias().is_some())
+            || self
+                .ret
+                .as_ref()
+                .is_some_and(|slot| slot.enum_alias().is_some())
+    }
 }
 
 /// A list an imported algorithm returns, as a `sce-static` statechart takes it
@@ -881,7 +910,7 @@ impl StaticScope {
         let state_calls = callees
             .iter()
             .filter_map(|callee| Some((callee, callee.value.as_ref()?)))
-            .filter(|(_, value)| value.params.iter().any(StaticSlot::is_state))
+            .filter(|(_, value)| value.adapted())
             .flat_map(|(callee, value)| {
                 state_code_combinations(value)
                     .into_iter()
@@ -941,6 +970,23 @@ impl StaticScope {
     /// stands for.
     pub fn state_call(&self, name: &str) -> Option<&StateCallName> {
         self.state_calls.iter().find(|c| c.name == name)
+    }
+
+    /// The enum each slot of the call `name` holds — `name` the callee's alias, or the
+    /// name a rewrite gave its call ([`state_call_name`]) — what
+    /// [`crate::forge::static_enum`] holds an argument and the value of the call to.
+    /// `None` for a name that is no call of an imported algorithm this scope reads.
+    pub(crate) fn call_enums(&self, name: &str) -> Option<crate::forge::static_enum::CallEnums> {
+        let alias = self
+            .state_call(name)
+            .map_or(name, |call| call.alias.as_str());
+        let value = self.value_callee(alias)?.value.as_ref()?;
+        let held = |slot: &StaticSlot| slot.enum_alias().map(str::to_string);
+        Some(crate::forge::static_enum::CallEnums {
+            callee: alias.to_string(),
+            params: value.params.iter().map(held).collect(),
+            ret: value.ret.as_ref().and_then(held),
+        })
     }
 
     /// How the argument `shape` of a call is held, when it is one the slot `slot` takes.
@@ -1047,7 +1093,7 @@ impl StaticScope {
         let wanted = |name: &str| {
             self.value_callee(name)
                 .and_then(|c| c.value.as_ref())
-                .is_some_and(|v| v.params.iter().any(StaticSlot::is_state))
+                .is_some_and(StaticValueSignature::adapted)
         };
         // A parse error is the judge's to report, in its own words.
         let Ok(sites) = crate::forge::expr::call_sites(expr, &wanted) else {
@@ -1236,12 +1282,9 @@ impl StaticScope {
         for callee in &self.callees {
             // An algorithm that takes no record or list but returns one is called by
             // its own alias, and the whole of the call is the right side of an
-            // assignment.
-            if callee
-                .value
-                .as_ref()
-                .is_some_and(|v| !v.params.iter().any(StaticSlot::is_state))
-            {
+            // assignment. One with a value of an enum in a slot is called through its
+            // adapter, by the name its rewrite gives it, as one with state is.
+            if callee.value.as_ref().is_some_and(|v| !v.adapted()) {
                 if let Some(sig) = value_func_sig(callee) {
                     ctx.insert_func(callee.alias.as_str(), sig);
                 }

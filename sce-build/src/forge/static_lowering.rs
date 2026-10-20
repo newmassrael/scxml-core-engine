@@ -294,10 +294,11 @@ fn generated_callee(lang: Language, document_name: &str, go_module_prefix: Optio
 }
 
 /// The schema the record `alias` of `spec` is of, when every field of it is a number, a
-/// truth value or a string the schema bounds: the records a call hands an algorithm and
-/// takes back are of those, whose copy is a field-by-field one on every backend. One with
-/// a byte string or an enum field, or a string with no bound, is refused where the
-/// algorithm is imported ([`crate::forge::static_imports`]).
+/// truth value, a string the schema bounds or a value of an enum: the records a call
+/// hands an algorithm and takes back are of those, whose copy is a field-by-field one on
+/// every backend. One with a byte string field, or a string with no bound, is refused
+/// where the algorithm is imported ([`crate::forge::static_imports`]), as is one whose
+/// enum is not the document the statechart holds the field in.
 fn plain_schema<'a>(spec: &AdapterSpec<'a>, alias: &str) -> Option<&'a EventSchemaModel> {
     spec.schemas.get(alias).filter(|schema| {
         schema
@@ -313,10 +314,14 @@ pub(crate) fn plain_scalar(ty: &SceType) -> bool {
 }
 
 /// Whether a field of a record handed to an algorithm, and back, is one an adapter
-/// copies: a number or a truth value as it is, and a string the schema bounds as the
-/// text the algorithm's record holds within the same bound (SCE_FORGE.md §4.12).
+/// copies: a number or a truth value as it is, a string the schema bounds as the
+/// text the algorithm's record holds within the same bound (SCE_FORGE.md §4.12), and
+/// a value of an enum as the variant of the same declared name in the other side's
+/// type ([`StaticTarget::enum_crossing`]).
 pub(crate) fn record_field_copies(ty: &SceType, max_size: Option<u32>) -> bool {
-    plain_scalar(ty) || (matches!(ty, SceType::String) && max_size.is_some())
+    plain_scalar(ty)
+        || (matches!(ty, SceType::String) && max_size.is_some())
+        || matches!(ty, SceType::Enum(_))
 }
 
 /// One parameter of an adapter: a number the call hands the algorithm as it is, or the
@@ -348,6 +353,106 @@ pub struct AdapterSpec<'a> {
     /// The largest bound any list of records of the schema `alias` has in the
     /// machine, for a target that copies such a list into a buffer of a bound.
     pub record_list_bounds: &'a std::collections::BTreeMap<String, u32>,
+    /// Every enum the document imports, by the alias it imports it under: the
+    /// variants a value of one crosses by ([`StaticTarget::enum_crossing`]).
+    pub enums: &'a std::collections::BTreeMap<String, EnumModel>,
+}
+
+impl AdapterSpec<'_> {
+    /// `value`, a value of the enum the document imports as `alias`, as the variant of
+    /// the same declared name the other side holds ([`StaticTarget::enum_crossing`]);
+    /// `None` where the target has no such spelling or the document no such enum.
+    fn enum_crossing(
+        &self,
+        target: &dyn StaticTarget,
+        alias: &str,
+        value: &str,
+        crossing: Crossing,
+    ) -> Option<String> {
+        let model = self.enums.get(alias)?;
+        let machine_type = target.enum_type(self.machine, alias)?;
+        target.enum_crossing(&machine_type, model, value, crossing)
+    }
+
+    /// `value`, a field of a record of the schema `alias` read from the side
+    /// `crossing` leaves, as the other side's record holds it: a value of an enum by
+    /// [`Self::enum_crossing`], any other field as it is (`None` for an enum field this
+    /// target cannot spell). `text` spells the copy of a field that is no enum.
+    fn record_field_crossing(
+        &self,
+        target: &dyn StaticTarget,
+        field: &crate::forge::model::ForgeField,
+        value: &str,
+        crossing: Crossing,
+        text: impl FnOnce(&str) -> String,
+    ) -> Option<String> {
+        match &field.sce_type {
+            SceType::Enum(reference) => {
+                self.enum_crossing(target, &reference.alias, value, crossing)
+            }
+            _ => Some(text(value)),
+        }
+    }
+}
+
+/// Which way a value of an enum crosses an adapter (docs/SCE_ACCEPTED_SUBSET.md
+/// §2.15): from the machine's own type for the enum into the type the enum document's
+/// generation declares, which the algorithm's records and parameters hold, or back.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Crossing {
+    ToAlgorithm,
+    FromAlgorithm,
+}
+
+/// The alias of each enum a call of `value` hands a value of over or takes one back
+/// in: a slot that is a value of one, and an enum field of a record, or of the
+/// records of a list, a slot holds — each a value an adapter maps by declared name.
+fn crossing_enums(
+    value: &crate::forge::type_ctx::StaticValueSignature,
+    records: &std::collections::BTreeMap<String, EventSchemaModel>,
+) -> BTreeSet<String> {
+    let mut aliases = BTreeSet::new();
+    for slot in value.params.iter().chain(value.ret.iter()) {
+        if let Some(alias) = slot.enum_alias() {
+            aliases.insert(alias.to_string());
+        }
+        if let StaticSlot::Record(record) | StaticSlot::RecordList(record) = slot {
+            for field in records.get(record).iter().flat_map(|s| s.fields.iter()) {
+                if let SceType::Enum(reference) = &field.sce_type {
+                    aliases.insert(reference.alias.clone());
+                }
+            }
+        }
+    }
+    aliases
+}
+
+/// Each declared variant of `model` as the two sides of a crossing spell it in `lang`,
+/// `(from, to)`: the machine's own type `machine_type`, and the type the enum
+/// document's generation declares. A value crosses as the variant of the same declared
+/// name, which the statechart and the algorithm read from one document
+/// ([`crate::forge::static_imports`]), so every variant has the one on the other side.
+fn enum_variant_pairs(
+    lang: Language,
+    machine_type: &str,
+    model: &EnumModel,
+    crossing: Crossing,
+) -> Vec<(String, String)> {
+    let algorithm_type = crate::forge::generator::enum_qualified_type(&model.name, lang);
+    model
+        .variants
+        .iter()
+        .map(|v| {
+            let machine =
+                crate::forge::enum_naming::variant_ref(lang, machine_type, &model.name, &v.name);
+            let algorithm =
+                crate::forge::enum_naming::variant_ref(lang, &algorithm_type, &model.name, &v.name);
+            match crossing {
+                Crossing::ToAlgorithm => (machine, algorithm),
+                Crossing::FromAlgorithm => (algorithm, machine),
+            }
+        })
+        .collect()
 }
 
 /// How one backend spells what a `sce-static` document says. The walk
@@ -417,6 +522,26 @@ pub trait StaticTarget {
     /// `schema_name` into scope, which an adapter names the algorithm's record type
     /// through; empty for a target that needs none.
     fn schema_import(&self, _schema_name: &str) -> Option<String> {
+        None
+    }
+    /// `value`, a value of the enum `model` on the side `crossing` leaves, as the
+    /// variant of the same declared name on the other: the machine holds it in its
+    /// own type, `machine_type` ([`Self::enum_type`]), and the algorithm in the type
+    /// the enum document's own generation declares. `None` for a target with no such
+    /// spelling, which refuses the call by name.
+    fn enum_crossing(
+        &self,
+        _machine_type: &str,
+        _model: &EnumModel,
+        _value: &str,
+        _crossing: Crossing,
+    ) -> Option<String> {
+        None
+    }
+    /// The line that brings the generated unit of the enum document `enum_name` into
+    /// scope, which an adapter names the algorithm's enum type through; `None` for a
+    /// target that needs none.
+    fn enum_import(&self, _enum_name: &str) -> Option<String> {
         None
     }
     /// Whether an adapter names the type the algorithm's unit gives a record it
@@ -1158,6 +1283,24 @@ impl StaticTarget for KotlinTarget {
             .include_stmt,
         )
     }
+    // Both types are enum classes of the same declared variants, so a `when` over
+    // every one of them is total.
+    fn enum_crossing(
+        &self,
+        machine_type: &str,
+        model: &EnumModel,
+        value: &str,
+        crossing: Crossing,
+    ) -> Option<String> {
+        let arms: Vec<String> = enum_variant_pairs(Language::Kotlin, machine_type, model, crossing)
+            .into_iter()
+            .map(|(from, to)| format!("{from} -> {to}"))
+            .collect();
+        Some(format!("when ({value}) {{ {} }}", arms.join("; ")))
+    }
+    fn enum_import(&self, enum_name: &str) -> Option<String> {
+        self.schema_import(enum_name)
+    }
     // A function of the machine's file that takes the machine's values, builds the
     // algorithm's from them, calls it, and builds the machine's own from what it
     // returns, answering as the algorithm does: an `AlgorithmResult` where it may
@@ -1172,40 +1315,53 @@ impl StaticTarget for KotlinTarget {
             plain_schema(spec, alias)
                 .map(|schema| event_schema_payload_type(&schema.name, Language::Kotlin))
         };
+        // A record of `ty` built from `from`, a machine record, a payload or the
+        // algorithm's record, field by field: an enum field crosses as the variant of
+        // the same declared name the other side's type holds.
+        let record_of =
+            |alias: &str, ty: String, from: &str, crossing: Crossing| -> Option<String> {
+                let schema = plain_schema(spec, alias)?;
+                let fields = schema
+                    .fields
+                    .iter()
+                    .map(|f| {
+                        let field = event_schema_field_ident(&f.id, Language::Kotlin);
+                        spec.record_field_crossing(
+                            self,
+                            f,
+                            &format!("{from}.{field}"),
+                            crossing,
+                            str::to_string,
+                        )
+                        .map(|value| format!("{field} = {value}"))
+                    })
+                    .collect::<Option<Vec<String>>>()?;
+                Some(format!("{ty}({})", fields.join(", ")))
+            };
         // The algorithm's record built from `from`, a machine record or a payload.
         let to_algorithm = |alias: &str, from: &str| -> Option<String> {
-            let schema = plain_schema(spec, alias)?;
-            let fields: Vec<String> = schema
-                .fields
-                .iter()
-                .map(|f| {
-                    let field = event_schema_field_ident(&f.id, Language::Kotlin);
-                    format!("{field} = {from}.{field}")
-                })
-                .collect();
-            Some(format!(
-                "{}({})",
-                algorithm_record(alias)?,
-                fields.join(", ")
-            ))
+            record_of(alias, algorithm_record(alias)?, from, Crossing::ToAlgorithm)
         };
         let from_algorithm = |alias: &str, from: &str| -> Option<String> {
-            let schema = plain_schema(spec, alias)?;
-            let fields: Vec<String> = schema
-                .fields
-                .iter()
-                .map(|f| {
-                    let field = event_schema_field_ident(&f.id, Language::Kotlin);
-                    format!("{field} = {from}.{field}")
-                })
-                .collect();
-            Some(format!("{}({})", machine_record(alias), fields.join(", ")))
+            record_of(alias, machine_record(alias), from, Crossing::FromAlgorithm)
         };
         let mut declarations = Vec::new();
         let mut arguments = Vec::new();
         for (index, param) in spec.params.iter().enumerate() {
             let name = format!("p{index}");
             match param {
+                AdapterParam::Scalar(SceType::Enum(reference)) => {
+                    declarations.push(format!(
+                        "{name}: {}",
+                        self.enum_type(spec.machine, &reference.alias)?
+                    ));
+                    arguments.push(spec.enum_crossing(
+                        self,
+                        &reference.alias,
+                        &name,
+                        Crossing::ToAlgorithm,
+                    )?);
+                }
                 AdapterParam::Scalar(ty) => {
                     if !plain_scalar(ty) {
                         return None;
@@ -1252,6 +1408,10 @@ impl StaticTarget for KotlinTarget {
         }
         let converted = |from: &str| -> Option<(String, String)> {
             Some(match value.ret.as_ref()? {
+                StaticSlot::Scalar(SceType::Enum(reference)) => (
+                    self.enum_type(spec.machine, &reference.alias)?,
+                    spec.enum_crossing(self, &reference.alias, from, Crossing::FromAlgorithm)?,
+                ),
                 StaticSlot::Scalar(ty) if plain_scalar(ty) => {
                     (self.scalar_type(ty), from.to_string())
                 }
@@ -1724,6 +1884,25 @@ impl StaticTarget for RustTarget {
         );
         Some(identity.include_stmt)
     }
+    // Both types are enums of the same declared variants, so a `match` over every
+    // one of them is exhaustive, and a variant either side gains is a build error.
+    fn enum_crossing(
+        &self,
+        machine_type: &str,
+        model: &EnumModel,
+        value: &str,
+        crossing: Crossing,
+    ) -> Option<String> {
+        let arms: Vec<String> = enum_variant_pairs(Language::Rust, machine_type, model, crossing)
+            .into_iter()
+            .map(|(from, to)| format!("{from} => {to}"))
+            .collect();
+        Some(format!("match {value} {{ {} }}", arms.join(", ")))
+    }
+    // The line that brings the enum document's module into scope, as for a schema.
+    fn enum_import(&self, enum_name: &str) -> Option<String> {
+        self.schema_import(enum_name)
+    }
     // A function of the machine's file that takes the values the machine holds —
     // a variable by reference, the event's payload by reference — and the call's
     // numbers, builds the algorithm's records from them field by field, calls it,
@@ -1743,7 +1922,7 @@ impl StaticTarget for RustTarget {
         // as the machine does.
         let to_algorithm = |alias: &str, from: &str, payload: bool| -> Option<String> {
             let schema = plain(alias)?;
-            let fields: Vec<String> = schema
+            let fields = schema
                 .fields
                 .iter()
                 .map(|f| {
@@ -1753,17 +1932,21 @@ impl StaticTarget for RustTarget {
                     } else {
                         self.record_field(&f.id)
                     };
-                    match (&f.sce_type, f.max_size) {
-                        // The machine holds the text within the schema's bound,
-                        // which is the bound the algorithm's record holds it in:
-                        // the copy is the one a text already held to it takes.
-                        (SceType::String, Some(bound)) => format!(
-                            "{field}: ::sce_portable_bytes::SceString::<{bound}>::held(&{from}.{held})"
-                        ),
-                        _ => format!("{field}: {from}.{held}"),
-                    }
+                    let read = format!("{from}.{held}");
+                    spec.record_field_crossing(self, f, &read, Crossing::ToAlgorithm, |read| {
+                        match (&f.sce_type, f.max_size) {
+                            // The machine holds the text within the schema's bound,
+                            // which is the bound the algorithm's record holds it in:
+                            // the copy is the one a text already held to it takes.
+                            (SceType::String, Some(bound)) => {
+                                format!("::sce_portable_bytes::SceString::<{bound}>::held(&{read})")
+                            }
+                            _ => read.to_string(),
+                        }
+                    })
+                    .map(|value| format!("{field}: {value}"))
                 })
-                .collect();
+                .collect::<Option<Vec<String>>>()?;
             Some(format!(
                 "{} {{ {} }}",
                 event_schema_payload_type(&schema.name, Language::Rust),
@@ -1773,7 +1956,7 @@ impl StaticTarget for RustTarget {
         // The machine's record built from what the algorithm returned, `from`.
         let from_algorithm = |alias: &str, from: &str| -> Option<String> {
             let schema = plain(alias)?;
-            let fields: Vec<String> = schema
+            let fields = schema
                 .fields
                 .iter()
                 .map(|f| {
@@ -1781,13 +1964,15 @@ impl StaticTarget for RustTarget {
                         format!("{from}.{}", event_schema_field_ident(&f.id, Language::Rust));
                     // The algorithm's text is held within the field's bound by
                     // construction, so the machine's `String` takes it whole.
-                    let value = match f.sce_type {
-                        SceType::String => format!("{read}.as_str().to_string()"),
-                        _ => read,
-                    };
-                    format!("{}: {value}", self.record_field(&f.id))
+                    spec.record_field_crossing(self, f, &read, Crossing::FromAlgorithm, |read| {
+                        match f.sce_type {
+                            SceType::String => format!("{read}.as_str().to_string()"),
+                            _ => read.to_string(),
+                        }
+                    })
+                    .map(|value| format!("{}: {value}", self.record_field(&f.id)))
                 })
-                .collect();
+                .collect::<Option<Vec<String>>>()?;
             Some(format!(
                 "{} {{ {} }}",
                 machine_record(alias),
@@ -1803,6 +1988,18 @@ impl StaticTarget for RustTarget {
         for (index, param) in spec.params.iter().enumerate() {
             let name = format!("p{index}");
             match param {
+                AdapterParam::Scalar(SceType::Enum(reference)) => {
+                    declarations.push(format!(
+                        "{name}: {}",
+                        self.enum_type(spec.machine, &reference.alias)?
+                    ));
+                    arguments.push(spec.enum_crossing(
+                        self,
+                        &reference.alias,
+                        &name,
+                        Crossing::ToAlgorithm,
+                    )?);
+                }
                 AdapterParam::Scalar(ty) => {
                     if !scalar_ok(ty) {
                         return None;
@@ -1856,6 +2053,10 @@ impl StaticTarget for RustTarget {
             }
         }
         let (returned_type, converted) = match value.ret.as_ref()? {
+            StaticSlot::Scalar(SceType::Enum(reference)) => (
+                self.enum_type(spec.machine, &reference.alias)?,
+                spec.enum_crossing(self, &reference.alias, "r", Crossing::FromAlgorithm)?,
+            ),
             StaticSlot::Scalar(ty) if scalar_ok(ty) => (self.scalar_type(ty), "r".to_string()),
             StaticSlot::Scalar(_) => return None,
             StaticSlot::Record(alias) => (machine_record(alias), from_algorithm(alias, "r")?),
@@ -3110,6 +3311,7 @@ pub fn lower(
             schemas: &records,
             payload_events: &payload_events_by_alias,
             record_list_bounds: &record_list_bounds,
+            enums: &imported_enums,
         };
         // A target that passes an algorithm's list by value on the stack is refused a list
         // a stack cannot hold, here where the bound is built in and not at the call.
@@ -3182,6 +3384,17 @@ pub fn lower(
                 {
                     imports.insert(line);
                 }
+            }
+        }
+        // The unit of each enum a value crosses the adapter in — a slot of its own
+        // or a field of a record the call hands over or takes back — which the
+        // adapter names the algorithm's variants through.
+        for alias in crossing_enums(value, &records) {
+            if let Some(line) = imported_enums
+                .get(&alias)
+                .and_then(|model| target.enum_import(&model.name))
+            {
+                imports.insert(line);
             }
         }
     }
@@ -3984,6 +4197,28 @@ impl StaticTarget for CppTarget {
             .include_stmt,
         )
     }
+    // A conditional per declared variant, the last taken when every one before it is
+    // not: an expression, which a designated initializer and a return both take, and
+    // one with no path that ends without a value, which a `switch` over a scoped
+    // enumeration has where its type could hold a value no variant names.
+    fn enum_crossing(
+        &self,
+        machine_type: &str,
+        model: &EnumModel,
+        value: &str,
+        crossing: Crossing,
+    ) -> Option<String> {
+        let mut pairs = enum_variant_pairs(Language::Cpp, machine_type, model, crossing);
+        let (_, last) = pairs.pop()?;
+        let chosen: String = pairs
+            .into_iter()
+            .map(|(from, to)| format!("{value} == {from} ? {to} : "))
+            .collect();
+        Some(format!("({chosen}{last})"))
+    }
+    fn enum_import(&self, enum_name: &str) -> Option<String> {
+        self.schema_import(enum_name)
+    }
     // A function of the machine's file that builds the algorithm's records from the
     // machine's, calls it, and builds the machine's own from what it returns,
     // answering as the algorithm does: an `AlgorithmResult` where it may fail, which
@@ -3998,25 +4233,46 @@ impl StaticTarget for CppTarget {
             plain_schema(spec, alias)
                 .map(|schema| event_schema_payload_type(&schema.name, Language::Cpp))
         };
-        // A record of `ty` made field by field from `from`.
-        let record_of = |alias: &str, ty: String, from: &str| -> Option<String> {
-            let schema = plain_schema(spec, alias)?;
-            let fields: Vec<String> = schema
-                .fields
-                .iter()
-                .map(|f| {
-                    let field = event_schema_field_ident(&f.id, Language::Cpp);
-                    format!(".{field} = {from}.{field}")
-                })
-                .collect();
-            Some(format!("{ty}{{{}}}", fields.join(", ")))
-        };
+        // A record of `ty` made field by field from `from`, an enum field as the
+        // variant of the same declared name the other side's type holds.
+        let record_of =
+            |alias: &str, ty: String, from: &str, crossing: Crossing| -> Option<String> {
+                let schema = plain_schema(spec, alias)?;
+                let fields = schema
+                    .fields
+                    .iter()
+                    .map(|f| {
+                        let field = event_schema_field_ident(&f.id, Language::Cpp);
+                        spec.record_field_crossing(
+                            self,
+                            f,
+                            &format!("{from}.{field}"),
+                            crossing,
+                            str::to_string,
+                        )
+                        .map(|value| format!(".{field} = {value}"))
+                    })
+                    .collect::<Option<Vec<String>>>()?;
+                Some(format!("{ty}{{{}}}", fields.join(", ")))
+            };
         let mut declarations = Vec::new();
         let mut prelude = String::new();
         let mut arguments = Vec::new();
         for (index, param) in spec.params.iter().enumerate() {
             let name = format!("p{index}");
             match param {
+                AdapterParam::Scalar(SceType::Enum(reference)) => {
+                    declarations.push(format!(
+                        "{} {name}",
+                        self.enum_type(spec.machine, &reference.alias)?
+                    ));
+                    arguments.push(spec.enum_crossing(
+                        self,
+                        &reference.alias,
+                        &name,
+                        Crossing::ToAlgorithm,
+                    )?);
+                }
                 AdapterParam::Scalar(ty) => {
                     if !plain_scalar(ty) {
                         return None;
@@ -4039,7 +4295,12 @@ impl StaticTarget for CppTarget {
                         machine_record(alias)
                     };
                     declarations.push(format!("const {held} &{name}"));
-                    arguments.push(record_of(alias, algorithm_record(alias)?, &name)?);
+                    arguments.push(record_of(
+                        alias,
+                        algorithm_record(alias)?,
+                        &name,
+                        Crossing::ToAlgorithm,
+                    )?);
                 }
                 AdapterParam::State {
                     slot: StaticSlot::ScalarList(ty),
@@ -4059,7 +4320,7 @@ impl StaticTarget for CppTarget {
                     let algorithm = algorithm_record(alias)?;
                     prelude.push_str(&format!(
                         "    std::vector<{algorithm}> a{index};\n    a{index}.reserve({name}.size());\n    for (const auto &e : {name}) {{\n        a{index}.push_back({});\n    }}\n",
-                        record_of(alias, algorithm.clone(), "e")?
+                        record_of(alias, algorithm.clone(), "e", Crossing::ToAlgorithm)?
                     ));
                     arguments.push(format!("a{index}"));
                 }
@@ -4067,6 +4328,9 @@ impl StaticTarget for CppTarget {
             }
         }
         let returned_type = match value.ret.as_ref()? {
+            StaticSlot::Scalar(SceType::Enum(reference)) => {
+                self.enum_type(spec.machine, &reference.alias)?
+            }
             StaticSlot::Scalar(ty) if plain_scalar(ty) => self.scalar_type(ty),
             StaticSlot::Record(alias) => machine_record(alias),
             StaticSlot::ScalarList(ty) if plain_scalar(ty) => self.list_type(ty),
@@ -4076,11 +4340,17 @@ impl StaticTarget for CppTarget {
         // The machine's own value from the algorithm's, `from`.
         let converted = |from: &str| -> Option<String> {
             Some(match value.ret.as_ref()? {
+                StaticSlot::Scalar(SceType::Enum(reference)) => {
+                    spec.enum_crossing(self, &reference.alias, from, Crossing::FromAlgorithm)?
+                }
                 StaticSlot::Scalar(_) | StaticSlot::ScalarList(_) => from.to_string(),
-                StaticSlot::Record(alias) => record_of(alias, machine_record(alias), from)?,
+                StaticSlot::Record(alias) => {
+                    record_of(alias, machine_record(alias), from, Crossing::FromAlgorithm)?
+                }
                 StaticSlot::RecordList(alias) => {
                     let list = self.record_list_type(&machine_record(alias));
-                    let element = record_of(alias, machine_record(alias), "e")?;
+                    let element =
+                        record_of(alias, machine_record(alias), "e", Crossing::FromAlgorithm)?;
                     format!(
                         "[&] {{ {list} out; out.reserve({from}.size()); for (const auto &e : {from}) {{ out.push_back({element}); }} return out; }}()"
                     )
@@ -4690,6 +4960,35 @@ impl StaticTarget for GoTarget<'_> {
             .include_stmt,
         )
     }
+    // Go has no conditional expression, so the variants are a map literal read at the
+    // value: an expression, which a composite literal's field and an argument take,
+    // and one that holds a key for every value either type has a name for.
+    fn enum_crossing(
+        &self,
+        machine_type: &str,
+        model: &EnumModel,
+        value: &str,
+        crossing: Crossing,
+    ) -> Option<String> {
+        let algorithm_type =
+            crate::forge::generator::enum_qualified_type(&model.name, Language::Go);
+        let (from_type, to_type) = match crossing {
+            Crossing::ToAlgorithm => (machine_type.to_string(), algorithm_type),
+            Crossing::FromAlgorithm => (algorithm_type, machine_type.to_string()),
+        };
+        let entries: Vec<String> = enum_variant_pairs(Language::Go, machine_type, model, crossing)
+            .into_iter()
+            .map(|(from, to)| format!("{from}: {to}"))
+            .collect();
+        Some(format!(
+            "map[{from_type}]{to_type}{{{}}}[{value}]",
+            entries.join(", ")
+        ))
+    }
+    // The enum document's package, imported as a schema's is.
+    fn enum_import(&self, enum_name: &str) -> Option<String> {
+        self.schema_import(enum_name)
+    }
     // The adapter reads what the algorithm returns by its fields (`e.Row`) and writes
     // the machine's own type, so the package of a record only a return names would be
     // an import nothing uses.
@@ -4712,17 +5011,22 @@ impl StaticTarget for GoTarget<'_> {
         };
         let to_algorithm = |alias: &str, from: &str| -> Option<String> {
             let schema = plain_schema(spec, alias)?;
-            let fields: Vec<String> = schema
+            let fields = schema
                 .fields
                 .iter()
                 .map(|f| {
-                    format!(
-                        "{}: {from}.{}",
-                        event_schema_field_ident(&f.id, Language::Go),
-                        self.record_field(&f.id)
+                    spec.record_field_crossing(
+                        self,
+                        f,
+                        &format!("{from}.{}", self.record_field(&f.id)),
+                        Crossing::ToAlgorithm,
+                        str::to_string,
                     )
+                    .map(|value| {
+                        format!("{}: {value}", event_schema_field_ident(&f.id, Language::Go))
+                    })
                 })
-                .collect();
+                .collect::<Option<Vec<String>>>()?;
             Some(format!(
                 "{}{{{}}}",
                 algorithm_record(alias)?,
@@ -4735,6 +5039,18 @@ impl StaticTarget for GoTarget<'_> {
         for (index, param) in spec.params.iter().enumerate() {
             let name = format!("p{index}");
             match param {
+                AdapterParam::Scalar(SceType::Enum(reference)) => {
+                    declarations.push(format!(
+                        "{name} {}",
+                        self.enum_type(spec.machine, &reference.alias)?
+                    ));
+                    arguments.push(spec.enum_crossing(
+                        self,
+                        &reference.alias,
+                        &name,
+                        Crossing::ToAlgorithm,
+                    )?);
+                }
                 AdapterParam::Scalar(ty) => {
                     if !plain_scalar(ty) {
                         return None;
@@ -4787,17 +5103,20 @@ impl StaticTarget for GoTarget<'_> {
         // The machine's own value from what the algorithm returned, `r`.
         let from_algorithm = |alias: &str, from: &str| -> Option<String> {
             let schema = plain_schema(spec, alias)?;
-            let fields: Vec<String> = schema
+            let fields = schema
                 .fields
                 .iter()
                 .map(|f| {
-                    format!(
-                        "{}: {from}.{}",
-                        self.record_field(&f.id),
-                        event_schema_field_ident(&f.id, Language::Go)
+                    spec.record_field_crossing(
+                        self,
+                        f,
+                        &format!("{from}.{}", event_schema_field_ident(&f.id, Language::Go)),
+                        Crossing::FromAlgorithm,
+                        str::to_string,
                     )
+                    .map(|value| format!("{}: {value}", self.record_field(&f.id)))
                 })
-                .collect();
+                .collect::<Option<Vec<String>>>()?;
             Some(format!(
                 "{}{{{}}}",
                 machine_record(alias),
@@ -4805,6 +5124,14 @@ impl StaticTarget for GoTarget<'_> {
             ))
         };
         let (returned_type, converted) = match value.ret.as_ref()? {
+            // The value the machine holds is a statement's, as a record's is.
+            StaticSlot::Scalar(SceType::Enum(reference)) => (
+                self.enum_type(spec.machine, &reference.alias)?,
+                format!(
+                    "\tout := {}\n",
+                    spec.enum_crossing(self, &reference.alias, "r", Crossing::FromAlgorithm)?
+                ),
+            ),
             StaticSlot::Scalar(ty) if plain_scalar(ty) => (self.scalar_type(ty), String::new()),
             StaticSlot::Record(alias) => (
                 machine_record(alias),
@@ -5409,6 +5736,25 @@ impl StaticTarget for PythonTarget {
             .include_stmt,
         )
     }
+    // A dict of the variants read at the value: both types are `IntEnum`s, and the
+    // member of the same declared name is the one the value is mapped to.
+    fn enum_crossing(
+        &self,
+        machine_type: &str,
+        model: &EnumModel,
+        value: &str,
+        crossing: Crossing,
+    ) -> Option<String> {
+        let entries: Vec<String> =
+            enum_variant_pairs(Language::Python, machine_type, model, crossing)
+                .into_iter()
+                .map(|(from, to)| format!("{from}: {to}"))
+                .collect();
+        Some(format!("{{{}}}[{value}]", entries.join(", ")))
+    }
+    fn enum_import(&self, enum_name: &str) -> Option<String> {
+        self.schema_import(enum_name)
+    }
     // A function of the machine's file that builds the algorithm's records from the
     // machine's, calls it, and builds the machine's from what it returns. The
     // algorithm raises where it fails, as the machine's own checked operations do,
@@ -5418,36 +5764,40 @@ impl StaticTarget for PythonTarget {
     fn state_adapter(&self, spec: &AdapterSpec<'_>) -> Option<String> {
         use crate::forge::generator::{event_schema_field_ident, event_schema_payload_type};
         let value = spec.callee.value.as_ref()?;
-        let to_algorithm = |alias: &str, from: &str| -> Option<String> {
+        // The keyword arguments of a record built from `from`, field by field, an
+        // enum field as the variant of the same declared name the other side holds.
+        let fields_of = |alias: &str, from: &str, crossing: Crossing| -> Option<String> {
             let schema = plain_schema(spec, alias)?;
-            let fields: Vec<String> = schema
+            let fields = schema
                 .fields
                 .iter()
                 .map(|f| {
                     let field = event_schema_field_ident(&f.id, Language::Python);
-                    format!("{field}={from}.{field}")
+                    spec.record_field_crossing(
+                        self,
+                        f,
+                        &format!("{from}.{field}"),
+                        crossing,
+                        str::to_string,
+                    )
+                    .map(|value| format!("{field}={value}"))
                 })
-                .collect();
+                .collect::<Option<Vec<String>>>()?;
+            Some(fields.join(", "))
+        };
+        let to_algorithm = |alias: &str, from: &str| -> Option<String> {
+            let schema = plain_schema(spec, alias)?;
             Some(format!(
                 "{}({})",
                 event_schema_payload_type(&schema.name, Language::Python),
-                fields.join(", ")
+                fields_of(alias, from, Crossing::ToAlgorithm)?
             ))
         };
         let from_algorithm = |alias: &str, from: &str| -> Option<String> {
-            let schema = plain_schema(spec, alias)?;
-            let fields: Vec<String> = schema
-                .fields
-                .iter()
-                .map(|f| {
-                    let field = event_schema_field_ident(&f.id, Language::Python);
-                    format!("{field}={from}.{field}")
-                })
-                .collect();
             Some(format!(
                 "{}({})",
                 self.record_type(spec.machine, alias),
-                fields.join(", ")
+                fields_of(alias, from, Crossing::FromAlgorithm)?
             ))
         };
         let mut declarations = Vec::new();
@@ -5455,6 +5805,9 @@ impl StaticTarget for PythonTarget {
         for (index, param) in spec.params.iter().enumerate() {
             let name = format!("p{index}");
             match param {
+                AdapterParam::Scalar(SceType::Enum(reference)) => arguments.push(
+                    spec.enum_crossing(self, &reference.alias, &name, Crossing::ToAlgorithm)?,
+                ),
                 AdapterParam::Scalar(ty) => {
                     if !plain_scalar(ty) {
                         return None;
@@ -5479,6 +5832,9 @@ impl StaticTarget for PythonTarget {
         }
         let call = format!("{}({})", spec.call, arguments.join(", "));
         let converted = match value.ret.as_ref()? {
+            StaticSlot::Scalar(SceType::Enum(reference)) => {
+                spec.enum_crossing(self, &reference.alias, "r", Crossing::FromAlgorithm)?
+            }
             StaticSlot::Scalar(ty) if plain_scalar(ty) => "r".to_string(),
             StaticSlot::Record(alias) => from_algorithm(alias, "r")?,
             StaticSlot::ScalarList(ty) if plain_scalar(ty) => "list(r)".to_string(),
@@ -6167,25 +6523,46 @@ impl StaticTarget for CTarget {
             plain_schema(spec, alias)
                 .map(|schema| event_schema_payload_type(&schema.name, Language::C11))
         };
-        // A record of the type `ty` made field by field from `from`.
-        let record_of = |alias: &str, ty: String, from: &str| -> Option<String> {
-            let schema = plain_schema(spec, alias)?;
-            let fields: Vec<String> = schema
-                .fields
-                .iter()
-                .map(|f| {
-                    let field = event_schema_field_ident(&f.id, Language::C11);
-                    format!(".{field} = {from}.{field}")
-                })
-                .collect();
-            Some(format!("({ty}){{ {} }}", fields.join(", ")))
-        };
+        // A record of the type `ty` made field by field from `from`, an enum field as
+        // the variant of the same declared name the other side holds.
+        let record_of =
+            |alias: &str, ty: String, from: &str, crossing: Crossing| -> Option<String> {
+                let schema = plain_schema(spec, alias)?;
+                let fields = schema
+                    .fields
+                    .iter()
+                    .map(|f| {
+                        let field = event_schema_field_ident(&f.id, Language::C11);
+                        spec.record_field_crossing(
+                            self,
+                            f,
+                            &format!("{from}.{field}"),
+                            crossing,
+                            str::to_string,
+                        )
+                        .map(|value| format!(".{field} = {value}"))
+                    })
+                    .collect::<Option<Vec<String>>>()?;
+                Some(format!("({ty}){{ {} }}", fields.join(", ")))
+            };
         let mut declarations = Vec::new();
         let mut prelude = String::new();
         let mut arguments = Vec::new();
         for (index, param) in spec.params.iter().enumerate() {
             let p = format!("p{index}");
             match param {
+                AdapterParam::Scalar(SceType::Enum(reference)) => {
+                    declarations.push(format!(
+                        "{} {p}",
+                        self.enum_type(spec.machine, &reference.alias)?
+                    ));
+                    arguments.push(spec.enum_crossing(
+                        self,
+                        &reference.alias,
+                        &p,
+                        Crossing::ToAlgorithm,
+                    )?);
+                }
                 AdapterParam::Scalar(ty) => {
                     if !plain_scalar(ty) {
                         return None;
@@ -6208,7 +6585,12 @@ impl StaticTarget for CTarget {
                         machine_record(alias)
                     };
                     declarations.push(format!("{held} {p}"));
-                    arguments.push(record_of(alias, algorithm_record(alias)?, &p)?);
+                    arguments.push(record_of(
+                        alias,
+                        algorithm_record(alias)?,
+                        &p,
+                        Crossing::ToAlgorithm,
+                    )?);
                 }
                 AdapterParam::State {
                     slot: StaticSlot::ScalarList(ty),
@@ -6236,7 +6618,12 @@ impl StaticTarget for CTarget {
                     ));
                     prelude.push_str(&format!(
                         "    {algorithm} a{index}[{bound}u];\n    for (size_t i = 0; i < {p}.len && i < {bound}u; ++i) {{\n        a{index}[i] = {};\n    }}\n",
-                        record_of(alias, algorithm.clone(), &format!("{p}.data[i]"))?
+                        record_of(
+                            alias,
+                            algorithm.clone(),
+                            &format!("{p}.data[i]"),
+                            Crossing::ToAlgorithm
+                        )?
                     ));
                     arguments.push(format!(
                         "({}_view_t){{ .data = a{index}, .len = {p}.len }}",
@@ -6254,6 +6641,9 @@ impl StaticTarget for CTarget {
             List(String, u32),
         }
         let shape = match value.ret.as_ref()? {
+            StaticSlot::Scalar(SceType::Enum(reference)) => {
+                Shape::Value(self.enum_type(spec.machine, &reference.alias)?)
+            }
             StaticSlot::Scalar(ty) if plain_scalar(ty) => Shape::Value(self.scalar_type(ty)),
             StaticSlot::Record(alias) => Shape::Value(machine_record(alias)),
             StaticSlot::ScalarList(ty) if plain_scalar(ty) => {
@@ -6266,8 +6656,13 @@ impl StaticTarget for CTarget {
         // that fill `out` with the machine's list.
         let converted = |from: &str| -> Option<String> {
             Some(match value.ret.as_ref()? {
+                StaticSlot::Scalar(SceType::Enum(reference)) => {
+                    spec.enum_crossing(self, &reference.alias, from, Crossing::FromAlgorithm)?
+                }
                 StaticSlot::Scalar(_) => from.to_string(),
-                StaticSlot::Record(alias) => record_of(alias, machine_record(alias), from)?,
+                StaticSlot::Record(alias) => {
+                    record_of(alias, machine_record(alias), from, Crossing::FromAlgorithm)?
+                }
                 _ => String::new(),
             })
         };
@@ -6275,7 +6670,12 @@ impl StaticTarget for CTarget {
             StaticSlot::ScalarList(_) => "        out.items[i] = r.items[i];\n".to_string(),
             StaticSlot::RecordList(alias) => format!(
                 "        out.items[i] = {};\n",
-                record_of(alias, machine_record(alias), "r.items[i]")?
+                record_of(
+                    alias,
+                    machine_record(alias),
+                    "r.items[i]",
+                    Crossing::FromAlgorithm
+                )?
             ),
             _ => String::new(),
         };
@@ -6510,44 +6910,36 @@ impl StaticTarget for CTarget {
     fn enum_variant(&self, enum_name: &str, variant: &str) -> String {
         crate::forge::enum_naming::variant_ident(Language::C11, enum_name, variant)
     }
-    // The declaration is guarded by a macro of the document's name, so that a
-    // program including two machines which import the same enum declares it
-    // once. The function answers the name the document declares for a value —
-    // what a saved or observed value is — and NULL for one no variant names.
+    // The type the enum document's own header declares, written as the same text
+    // under the guard both headers share ([`crate::forge::generator::c11_enum_declaration`]):
+    // a program that includes this machine and an algorithm that holds a value of
+    // the enum declares the constants once, and the value crosses between them as
+    // the value it is. The machine's name for the type is an alias of it, under a
+    // guard of the document's name, so that a program including two machines which
+    // import the same enum declares it once. `<prefix>_declared_name` answers the
+    // name the document declares for a value — what a saved or observed value is —
+    // and NULL for one no variant names.
     fn enum_def(&self, ty: &str, alias: &str, model: &EnumModel) -> String {
         let prefix = crate::forge::enum_naming::c11_function_prefix(&model.name);
         let guard = format!("SCE_STATIC_ENUM_{}", prefix.to_uppercase());
-        let variants: String = model
-            .variants
-            .iter()
-            .map(|v| {
-                format!(
-                    "    {} = {},\n",
-                    self.enum_variant(&model.name, &v.name),
-                    v.value
-                )
-            })
-            .collect();
-        let names: String = model
-            .variants
-            .iter()
-            .map(|v| {
-                format!(
-                    "    case {}:\n        return \"{}\";\n",
-                    self.enum_variant(&model.name, &v.name),
-                    filters::escape_c(v.name.clone())
-                )
-            })
-            .collect();
         format!(
-            "#ifndef {guard}\n#define {guard}\n\
+            "{}\n\n#ifndef {guard}\n#define {guard}\n\
              /* SCE Accepted Subset §2.15: an `enum:{alias}` datamodel value. */\n\
-             typedef enum {{\n{variants}}} {ty};\n\n\
-             /* The name the enum document declares for `value`, or NULL for a value no\n   \
-             variant names. */\n\
-             static inline const char *{prefix}_declared_name({ty} value) {{\n    \
-             switch (value) {{\n{names}    }}\n    return NULL;\n}}\n#endif"
+             typedef {} {ty};\n#endif",
+            crate::forge::generator::c11_enum_declaration(model),
+            crate::forge::generator::enum_qualified_type(&model.name, Language::C11)
         )
+    }
+    // The machine holds the value in the type the algorithm holds it in
+    // ([`Self::enum_def`]), so it crosses as it is.
+    fn enum_crossing(
+        &self,
+        _machine_type: &str,
+        _model: &EnumModel,
+        value: &str,
+        _crossing: Crossing,
+    ) -> Option<String> {
+        Some(value.to_string())
     }
     // The machine's own, named by its symbol (prefix included): a record is the
     // machine's, declared in its header like the payload types, so two machines
@@ -8282,7 +8674,11 @@ fn lower_wire_value(
     // holds. The judge accepted only a variable or a field of a record variable
     // as one, which is what `enum_vars` holds.
     let held_by_a_variable = |name: &str| rewrites.enum_of_wire_value(name);
-    if let Some(alias) = crate::forge::static_enum::value_enum(written, ctx, &held_by_a_variable)
+    let reading = crate::forge::static_enum::EnumReading {
+        var_alias: &held_by_a_variable,
+        calls: &|name| rewrites.scope.call_enums(name),
+    };
+    if let Some(alias) = crate::forge::static_enum::value_enum(written, ctx, &reading)
         .map_err(|r| refused(r.error.to_string()))?
     {
         let value = rewrites

@@ -13,35 +13,22 @@
 #define {{ guard }}
 
 #include <stdint.h>
-
-{# A C enumerated type holds every value of its carrier, so one shape serves
-   an open and a closed set; what differs is whether a value outside the
-   declared list is a value of the type, which `from_underlying` answers. #}
-typedef enum {
-{% for v in variants %}
-    {{ v.name }} = {{ v.value }},
-{% endfor %}
-} {{ enum_name }}_t;
-
 #include <stdbool.h>
 #include <stddef.h>
+
+{# The type `{{ enum_name }}_t`, a constant per variant and
+   `{{ snake_name }}_declared_name`, written by the generator as one text under
+   a guard of their own: a `sce-static` machine that holds a value of this enum
+   declares the same text in its header (SCE Accepted Subset section 2.15), so a
+   program that includes both declares them once, whichever comes first. A C
+   enumerated type holds every value of its carrier, so one shape serves an
+   open and a closed set; what differs is whether a value outside the declared
+   list is a value of the type, which `from_underlying` answers. #}
+{{ c11_declaration }}
 
 /* The carrier value this holds. */
 static inline {{ underlying_type }} {{ snake_name }}_to_underlying({{ enum_name }}_t value) {
     return ({{ underlying_type }})value;
-}
-
-/* The name the document declares for this value, or NULL for a value no
- * variant names — one a C enumerated type can hold whether or not its set is
- * open, since it holds every carrier value. */
-static inline const char *{{ snake_name }}_declared_name({{ enum_name }}_t value) {
-    switch (value) {
-{% for v in variants %}
-    case {{ v.name }}:
-        return "{{ v.declared | escape_cpp }}";
-{% endfor %}
-    }
-    return NULL;
 }
 
 {% if is_open %}

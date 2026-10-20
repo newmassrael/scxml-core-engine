@@ -712,7 +712,14 @@ impl<'a> Judge<'a> {
         ctx: &TypeCtx<'_>,
         expr: &str,
     ) -> Result<Option<String>, crate::forge::expr::Refusal> {
-        crate::forge::static_enum::value_enum(expr, ctx, &|name| self.enum_of(name))
+        crate::forge::static_enum::value_enum(
+            expr,
+            ctx,
+            &crate::forge::static_enum::EnumReading {
+                var_alias: &|name| self.enum_of(name),
+                calls: &|name| self.scope.call_enums(name),
+            },
+        )
     }
 
     /// The alias of the enum the variable, record field, loop's record item's
@@ -1758,7 +1765,11 @@ impl<'a> Judge<'a> {
         // read that way: a value of a loop's record item has no lowering here
         // yet.
         let held_by_a_variable = |name: &str| self.enum_of_wire_value(name);
-        match crate::forge::static_enum::value_enum(written, ctx, &held_by_a_variable) {
+        let reading = crate::forge::static_enum::EnumReading {
+            var_alias: &held_by_a_variable,
+            calls: &|name| self.scope.call_enums(name),
+        };
+        match crate::forge::static_enum::value_enum(written, ctx, &reading) {
             Ok(Some(_)) => return Ok(()),
             Ok(None) => {}
             Err(refusal) => {

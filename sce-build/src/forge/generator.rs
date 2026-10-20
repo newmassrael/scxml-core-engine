@@ -2070,6 +2070,56 @@ fn render_lookup(
 // cannot hold an undeclared value cannot stand for an open set.
 // `strict_variants_defaults_to_strict_and_reaches_every_backend` pins
 // that every backend reads it.
+/// The C declaration of the enum `m`: the type the enum document names
+/// (`<Pascal>_t`, [`enum_qualified_type`]) with a constant per variant, and the
+/// function that answers the name the document declares for a value, under one
+/// guard named by the document. Every C header that holds a value of the enum
+/// writes this one text — the enum kind's own and a `sce-static` machine's, which
+/// holds the value in the same type — so a program that includes both declares
+/// them once, whichever it includes first, and a value crosses between a machine
+/// and an algorithm as the value it is (SCE Accepted Subset §2.15), as a bounded
+/// text does through `static_lowering::c_string_storage_def`.
+///
+/// A C enumerated type holds every value of its carrier, so one shape serves an
+/// open and a closed set; what differs is whether a value outside the declared
+/// list is a value of the type, which the enum kind's `from_underlying` answers.
+pub(crate) fn c11_enum_declaration(m: &EnumModel) -> String {
+    use crate::generator::Language;
+    let prefix = crate::forge::enum_naming::c11_function_prefix(&m.name);
+    let guard = format!("SCE_ENUM_{}_DECLARED", prefix.to_uppercase());
+    let ty = enum_qualified_type(&m.name, Language::C11);
+    let variants: String = m
+        .variants
+        .iter()
+        .map(|v| {
+            format!(
+                "    {} = {},\n",
+                crate::forge::enum_naming::variant_ident(Language::C11, &m.name, &v.name),
+                v.value
+            )
+        })
+        .collect();
+    let names: String = m
+        .variants
+        .iter()
+        .map(|v| {
+            format!(
+                "    case {}:\n        return \"{}\";\n",
+                crate::forge::enum_naming::variant_ident(Language::C11, &m.name, &v.name),
+                filters::escape_c(v.name.clone())
+            )
+        })
+        .collect();
+    format!(
+        "#ifndef {guard}\n#define {guard}\n\
+         typedef enum {{\n{variants}}} {ty};\n\n\
+         /* The name the document declares for this value, or NULL for a value no\n \
+         * variant names. */\n\
+         static inline const char *{prefix}_declared_name({ty} value) {{\n    \
+         switch (value) {{\n{names}    }}\n    return NULL;\n}}\n#endif  /* {guard} */"
+    )
+}
+
 fn render_enum(
     env: &minijinja::Environment,
     m: &EnumModel,
@@ -2172,6 +2222,11 @@ fn render_enum(
         "snake_name".into(),
         crate::forge::enum_naming::c11_function_prefix(&m.name).into(),
     );
+    // The type, its constants and its declared names, which a `sce-static`
+    // machine's header declares too under the guard both share.
+    if matches!(lang, Language::C11) {
+        ctx.insert("c11_declaration".into(), c11_enum_declaration(m).into());
+    }
     l.insert_imports(&mut ctx, imports);
 
     if matches!(l.lang, crate::generator::Language::Rust) {
@@ -2249,6 +2304,29 @@ pub(crate) fn event_schema_payload_type(
         Language::Go => format!("{}.{pascal}Payload", go_package_alias(&snake)),
         Language::Python => format!("{}.{pascal}Payload", python_module_alias(&snake)),
         Language::C11 => format!("{pascal}Payload_t"),
+    }
+}
+
+/// The type the enum document `enum_name` declares, as a document that imports it
+/// names it in `lang`: what an imported enum's references join a variant to
+/// ([`crate::forge::enum_naming::variant_ref`], through
+/// `ImportContext::enum_qualified_type`), and what a `sce-static` machine's adapter
+/// names the algorithm's enum by.
+pub(crate) fn enum_qualified_type(enum_name: &str, lang: crate::generator::Language) -> String {
+    use crate::generator::Language;
+    let pascal = filters::to_pascal_case(enum_name.to_string());
+    let snake = filters::to_snake_case(enum_name.to_string());
+    match lang {
+        Language::Cpp => format!("SCE::Generated::{pascal}::{pascal}"),
+        Language::Rust => format!("{snake}::{pascal}"),
+        // The `import com.sce.generated.<snake>.*` wildcard an import writes
+        // brings the enum class into unqualified scope.
+        Language::Kotlin => pascal,
+        Language::Go => format!("{}.{pascal}", go_package_alias(&snake)),
+        Language::Python => format!("{}.{pascal}", python_module_alias(&snake)),
+        // C has no namespace: the typedef's `_t` is what tells it apart, so a
+        // cross-document reference resolves through the typedef alone.
+        Language::C11 => format!("{pascal}_t"),
     }
 }
 

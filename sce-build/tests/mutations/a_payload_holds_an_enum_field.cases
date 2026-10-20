@@ -22,8 +22,8 @@ mutation_runtime_targets sce-build/src/forge/static_datamodel.rs sce-build/src/f
 # a number, and the field in arithmetic, pass the judge.
 mutation_case "a payload's field is not an enum value" <<'PY'
 edit("sce-build/src/forge/static_enum.rs",
-     "            if let Some(held) = dotted_path(node).and_then(|path| var_alias(&path)) {\n",
-     "            if let Some(held) = dotted_path(node).and_then(|path| var_alias(&path)).filter(|_| false) {\n")
+     "            if let Some(held) = dotted_path(node).and_then(|path| (reading.var_alias)(&path)) {\n",
+     "            if let Some(held) = dotted_path(node).and_then(|path| (reading.var_alias)(&path)).filter(|_| false) {\n")
 PY
 
 # The judge does not ask the payload's paths which enum they hold.

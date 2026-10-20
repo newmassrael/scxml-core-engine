@@ -38,8 +38,8 @@ PY
 # to, ordered against and negated.
 mutation_case "an enum value is an operand" <<'PY'
 edit("sce-build/src/forge/static_enum.rs",
-     "        if class_of(child, ctx, var_alias)?.is_some() {\n",
-     "        if class_of(child, ctx, var_alias)?.is_some() && child.children().len() > 99 {\n")
+     "        if class_of(child, ctx, reading)?.is_some() {\n",
+     "        if class_of(child, ctx, reading)?.is_some() && child.children().len() > 99 {\n")
 PY
 
 # A conditional of an enum value and something else is read as an enum

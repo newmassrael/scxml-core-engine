@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Where an item of a list stands: the enum `static_state_algorithm_enum.scxml`
+  and the algorithms it calls hold the `status` field of an item in (SCE
+  Accepted Subset §2.15). The values are not the variants' positions, and
+  `in_progress` is spelled with an underscore, so a value that crossed by its
+  position or by a backend's own spelling of the constant (`InProgress`,
+  `IN_PROGRESS`) would not be the one the document names: a value crosses
+  between a statechart and an algorithm by the name written here.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="enum"
+       name="enum_item_status"
+       sce:underlying-type="uint8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="open" value="2"/>
+      <sce:variant name="in_progress" value="5"/>
+      <sce:variant name="done" value="7"/>
+    </data>
+  </datamodel>
+</scxml>

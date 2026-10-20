@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A list of items with the status of the item that has `id` set to `status`: a list
+  of records with an enum field in, a value of the enum in, the list out. Every other
+  item comes back as it went in, and a list with no item of that id comes back
+  unchanged. A statechart hands it the items it keeps and the status an event named,
+  and holds the list it gets back (SCE Accepted Subset §2.15).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       name="item_status_set"
+       version="1.0">
+  <sce:import kind="event-schema" src="schema_item.scxml" as="Item"/>
+  <sce:import kind="enum" src="enum_item_status.scxml" as="Status"/>
+  <sce:signature>
+    <sce:param name="items" type="list&lt;record:Item&gt;"/>
+    <sce:param name="id" type="uint32"/>
+    <sce:param name="status" type="enum:Status"/>
+    <sce:return type="list&lt;record:Item&gt;" returns-max-size="4" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="moved" type="record:Item">
+      <sce:set name="id" expr="id"/>
+      <sce:set name="status" expr="status"/>
+    </sce:var>
+    <sce:var name="out" type="list&lt;record:Item&gt;" capacity="4"/>
+    <sce:foreach item="e" in="items">
+      <sce:if cond="e.id === id">
+        <sce:append target="out" expr="moved"/>
+        <sce:else>
+          <sce:append target="out" expr="e"/>
+        </sce:else>
+      </sce:if>
+    </sce:foreach>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  One item of a list: an id and where it stands. The record
+  `static_state_algorithm_enum.scxml` keeps its items in, hands to an algorithm and
+  takes back (SCE Accepted Subset §2.15, SCE_FORGE.md §4.12), and the payload of the
+  event that adds one. `status` is an enum field, so the statechart and each
+  algorithm import the same enum document under the alias this schema writes.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="schema_item"
+       sce:event-name="item.added">
+  <sce:import src="enum_item_status.scxml" kind="enum" as="Status"/>
+  <datamodel>
+    <data id="id" sce:type="uint32" sce:direction="in"/>
+    <data id="status" sce:type="enum:Status" sce:direction="in"/>
+  </datamodel>
+</scxml>

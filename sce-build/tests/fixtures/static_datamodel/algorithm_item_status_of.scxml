@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The status of the item that has `id`, or `open` when the list holds none: a list of
+  records with an enum field in, a value of the enum out. The value starts at a
+  variant the body names and takes the enum field of the item it finds. A statechart
+  holds what it returns in a variable of the enum and compares it with a variant in a
+  guard (SCE Accepted Subset §2.15).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       name="item_status_of"
+       version="1.0">
+  <sce:import kind="event-schema" src="schema_item.scxml" as="Item"/>
+  <sce:import kind="enum" src="enum_item_status.scxml" as="Status"/>
+  <sce:signature>
+    <sce:param name="items" type="list&lt;record:Item&gt;"/>
+    <sce:param name="id" type="uint32"/>
+    <sce:return type="enum:Status"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="found" type="enum:Status" init="Status.open"/>
+    <sce:foreach item="e" in="items">
+      <sce:if cond="e.id === id">
+        <sce:assign target="found" expr="e.status"/>
+      </sce:if>
+    </sce:foreach>
+    <sce:return expr="found"/>
+  </sce:body>
+</scxml>

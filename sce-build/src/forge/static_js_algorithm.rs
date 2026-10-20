@@ -174,12 +174,16 @@ fn refuse(algorithm: &str, what: impl std::fmt::Display) -> GenerateError {
 }
 
 /// Whether a scalar type is a value this lowering can hold in a local, an
-/// element of a list or a field: a number, a truth value or a string. A `bytes`
-/// value is a scalar to the model but a list of numbers here, held by a
-/// parameter, a buffer and a return and by nothing else, and an enum is the enum
-/// document's type, which the lowered document does not import.
+/// element of a list or a field: a number, a truth value, a string or a value of
+/// an enum. A `bytes` value is a scalar to the model but a list of numbers here,
+/// held by a parameter, a buffer and a return and by nothing else. A value of an
+/// enum is the name its document declares for the variant, a string: what the
+/// Interpreter holds a statechart's enum value as, and what `<alias>.<variant>`
+/// is lowered to ([`crate::forge::expr`]), so a statechart hands an algorithm the
+/// value it holds and takes back the one the algorithm returns as it is
+/// (docs/SCE_ACCEPTED_SUBSET.md §2.15).
 fn has_a_value_form(ty: &SceType) -> bool {
-    !matches!(ty, SceType::Bytes | SceType::Enum(_))
+    !matches!(ty, SceType::Bytes)
 }
 
 /// A build-time value as ECMAScript writes it: an integer a Number holds

@@ -5136,29 +5136,8 @@ fn validate_and_enrich_imports(
             // Mirrors the `ctx.bc_element_snake` enrichment pattern
             // for BoundedCollection imports above.
             if let forge::model::ForgeDocument::Enum(em) = &doc {
-                let pascal = filters::to_pascal_case(em.name.clone());
-                let snake = filters::to_snake_case(em.name.clone());
-                ctx.enum_qualified_type = match language {
-                    generator::Language::Cpp => {
-                        format!("SCE::Generated::{pascal}::{pascal}")
-                    }
-                    generator::Language::Rust => format!("{snake}::{pascal}"),
-                    // Kotlin: the `import com.sce.generated.<snake>.*`
-                    // wildcard from `resolve_single_import` brings the
-                    // enum class name into unqualified scope.
-                    generator::Language::Kotlin => pascal.clone(),
-                    generator::Language::Go => {
-                        format!("{}.{pascal}", forge::generator::go_package_alias(&snake))
-                    }
-                    generator::Language::Python => {
-                        format!("{}.{pascal}", forge::generator::python_module_alias(&snake))
-                    }
-                    // C11 has no namespace mechanism — the enum's
-                    // typedef name carries a `_t` discriminator so
-                    // cross-doc references resolve via the typedef
-                    // alone (matches the codec / buffer-pool pattern).
-                    generator::Language::C11 => format!("{pascal}_t"),
-                };
+                ctx.enum_qualified_type =
+                    forge::generator::enum_qualified_type(&em.name, *language);
                 // The variants and the document's own name ride along so
                 // an expression referring to `<alias>.<variant>` can be
                 // lowered without re-opening the imported file. Stored

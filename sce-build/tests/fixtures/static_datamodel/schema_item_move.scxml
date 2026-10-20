@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  An item moved to another status: the payload of the event
+  `static_state_algorithm_enum.scxml` hands an algorithm the enum field of, to set the
+  status of the item with that id (SCE Accepted Subset §2.15).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="schema_item_move"
+       sce:event-name="item.moved">
+  <sce:import src="enum_item_status.scxml" kind="enum" as="Status"/>
+  <datamodel>
+    <data id="id" sce:type="uint32" sce:direction="in"/>
+    <data id="status" sce:type="enum:Status" sce:direction="in"/>
+  </datamodel>
+</scxml>

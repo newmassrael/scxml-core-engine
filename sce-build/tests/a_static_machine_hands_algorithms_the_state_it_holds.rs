@@ -61,8 +61,18 @@ fn machine(replace: Option<(&str, &str)>) -> String {
 /// documents it imports, `extra` replacing a sibling of the same name or adding one.
 /// Returns `(exit_ok, stdout + stderr)`.
 fn run(args: &[&str], machine_text: &str, extra: &[(&str, &str)]) -> (bool, String) {
+    run_beside(&SIBLINGS, args, machine_text, extra)
+}
+
+/// [`run`], with `siblings` the fixtures copied beside the machine.
+fn run_beside(
+    siblings: &[&str],
+    args: &[&str],
+    machine_text: &str,
+    extra: &[(&str, &str)],
+) -> (bool, String) {
     let dir = tempdir().expect("tempdir");
-    for name in SIBLINGS {
+    for name in siblings {
         std::fs::copy(fixtures().join(name), dir.path().join(name)).expect("copy a sibling");
     }
     for (name, text) in extra {
@@ -339,8 +349,9 @@ fn a_payload_that_holds_text_is_not_handed_to_an_algorithm() {
 fn a_record_that_holds_bytes_is_not_handed_to_an_algorithm() {
     // The schema the amount algorithm takes a record of now has a byte string: a
     // record is copied into the algorithm's own type and back field by field, and
-    // only numbers, truth values and bounded strings copy the same way on every
-    // backend. The machine builds its `last` whole, so it gives the new field a value.
+    // only numbers, truth values, bounded strings and values of an enum copy the same
+    // way on every backend. The machine builds its `last` whole, so it gives the new
+    // field a value.
     let with_blob = machine(Some((
         "      <sce:set name=\"amount\" expr=\"0\"/>\n    </data>\n    <data id=\"ids\"",
         "      <sce:set name=\"amount\" expr=\"0\"/>\n      <sce:set name=\"blob\" expr=\"'ab'\"/>\n    </data>\n    <data id=\"ids\"",
@@ -369,8 +380,236 @@ fn a_record_that_holds_bytes_is_not_handed_to_an_algorithm() {
     assert!(!ok, "a record with a byte string must be refused:\n{out}");
     assert!(
         out.contains(
-            "only records of numbers, truth values and bounded strings are handed to an algorithm"
+            "only records of numbers, truth values, bounded strings and enums are handed to an \
+             algorithm"
         ),
         "the refusal names the reason:\n{out}"
+    );
+}
+
+/// The documents the enum fixture machine imports, beside it: the record whose
+/// `status` is a value of the enum, the payload that moves an item, the enum, and
+/// the three algorithms over them.
+const ENUM_SIBLINGS: [&str; 6] = [
+    "schema_item.scxml",
+    "schema_item_move.scxml",
+    "enum_item_status.scxml",
+    "algorithm_item_status_set.scxml",
+    "algorithm_item_status_count.scxml",
+    "algorithm_item_status_of.scxml",
+];
+
+/// The enum fixture machine's text, with each `(from, to)` of `replace` replaced in
+/// turn.
+fn enum_machine(replace: &[(&str, &str)]) -> String {
+    let mut text = std::fs::read_to_string(fixtures().join("static_state_algorithm_enum.scxml"))
+        .expect("the enum fixture machine");
+    for (from, to) in replace {
+        assert!(
+            text.contains(from),
+            "the enum fixture no longer holds `{from}`"
+        );
+        text = text.replacen(from, to, 1);
+    }
+    text
+}
+
+/// Assert the enum machine `machine_text`, beside its siblings and `extra`, is
+/// refused for Rust by the judge where a call is written, naming `reason`.
+fn assert_enum_refused(machine_text: &str, extra: &[(&str, &str)], reason: &str) {
+    let (ok, out) = run_beside(
+        &ENUM_SIBLINGS,
+        &["check", "-l", "rust"],
+        machine_text,
+        extra,
+    );
+    assert!(!ok, "expected a refusal naming `{reason}`:\n{out}");
+    assert!(
+        out.contains("\"code\":\"expression/unsupported-construct\""),
+        "expected expression/unsupported-construct:\n{out}"
+    );
+    assert!(out.contains(reason), "expected `{reason}` in:\n{out}");
+}
+
+/// An enum document of `name` with the variants of `enum_item_status.scxml`, closed
+/// or, with `open`, declaring `sce:strict-variants="false"`.
+fn item_status_like(name: &str, open: bool) -> String {
+    let strict = if open {
+        "\n       sce:strict-variants=\"false\""
+    } else {
+        ""
+    };
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="enum"
+       name="{name}"
+       sce:underlying-type="uint8"{strict}>
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="open" value="2"/>
+      <sce:variant name="in_progress" value="5"/>
+      <sce:variant name="done" value="7"/>
+    </data>
+  </datamodel>
+</scxml>
+"#
+    )
+}
+
+#[test]
+fn every_backend_lowers_the_machine_that_hands_algorithms_an_enum() {
+    let text = enum_machine(&[]);
+    for args in [
+        vec!["check", "-l", "rust"],
+        vec!["check", "-l", "kotlin"],
+        vec!["check", "-l", "python"],
+        vec!["check", "-l", "c"],
+        vec!["check", "-l", "cpp"],
+        vec![
+            "check",
+            "-l",
+            "go",
+            "--go-module-prefix",
+            "example.test/generated",
+        ],
+    ] {
+        let (ok, out) = run_beside(&ENUM_SIBLINGS, &args, &text, &[]);
+        assert!(ok, "{args:?} must lower the machine:\n{out}");
+    }
+}
+
+#[test]
+fn the_interpreter_hands_an_algorithm_an_enum_as_its_declared_name() {
+    let dir = tempdir().expect("tempdir");
+    for name in ENUM_SIBLINGS {
+        std::fs::copy(fixtures().join(name), dir.path().join(name)).expect("copy a sibling");
+    }
+    std::fs::write(dir.path().join("probe.scxml"), enum_machine(&[])).expect("write the machine");
+    let out_dir = tempdir().expect("tempdir");
+    let out = Command::new(sce_codegen_bin())
+        .arg("--workspace-root")
+        .arg(repo_root())
+        .arg("lower")
+        .arg(dir.path().join("probe.scxml"))
+        .arg("-o")
+        .arg(out_dir.path())
+        .output()
+        .expect("invoke sce-codegen");
+    assert!(
+        out.status.success(),
+        "lower must accept the machine:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let lowered = std::fs::read_dir(out_dir.path())
+        .expect("the output directory")
+        .map(|e| std::fs::read_to_string(e.expect("an entry").path()).unwrap_or_default())
+        .collect::<String>()
+        .replace("&apos;", "'")
+        .replace("&quot;", "\"");
+    // The Interpreter holds a value of an enum as the name its variant is declared
+    // with, on both sides of the call: the statechart hands the algorithm the name,
+    // and the algorithm starts its own value at one.
+    assert!(
+        lowered.contains("SceStatic.algorithms.item_status_count(items, 'in_progress')"),
+        "the variant the statechart names crosses as its declared name:\n{lowered}"
+    );
+    assert!(
+        lowered.contains("var found = 'open';"),
+        "a variant the algorithm names is its declared name:\n{lowered}"
+    );
+}
+
+#[test]
+fn a_value_of_another_enum_is_refused_where_it_is_handed_over() {
+    let text = enum_machine(&[
+        (
+            r#"<sce:import kind="enum" src="enum_item_status.scxml" as="Status"/>"#,
+            r#"<sce:import kind="enum" src="enum_item_status.scxml" as="Status"/>
+  <sce:import kind="enum" src="enum_other.scxml" as="Other"/>"#,
+        ),
+        (
+            "CountStatus(items, Status.open)",
+            "CountStatus(items, Other.open)",
+        ),
+    ]);
+    assert_enum_refused(
+        &text,
+        &[("enum_other.scxml", &item_status_like("enum_other", false))],
+        "a value of the enum `Other` handed to `CountStatus`, whose parameter takes a value of \
+         the enum `Status`",
+    );
+}
+
+#[test]
+fn a_number_is_no_value_of_the_enum_an_algorithm_takes() {
+    assert_enum_refused(
+        &enum_machine(&[("CountStatus(items, Status.open)", "CountStatus(items, 2)")]),
+        &[],
+        "a value that is not of the enum `Status` handed to `CountStatus`",
+    );
+}
+
+#[test]
+fn an_enum_field_of_another_document_is_refused_where_the_algorithm_is_called() {
+    // The statechart's `Status` is a document with the same variants as the one the
+    // schema's field holds, and so another enum: a value crosses by the declared name
+    // one document gives both sides.
+    let text = enum_machine(&[(
+        r#"<sce:import kind="enum" src="enum_item_status.scxml" as="Status"/>"#,
+        r#"<sce:import kind="enum" src="enum_item_status_copy.scxml" as="Status"/>"#,
+    )]);
+    assert_enum_refused(
+        &text,
+        &[(
+            "enum_item_status_copy.scxml",
+            &item_status_like("enum_item_status_copy", false),
+        )],
+        "an enum crosses to an algorithm only as the one enum document both import",
+    );
+}
+
+#[test]
+fn a_value_of_the_enum_an_algorithm_returns_is_no_number() {
+    assert_enum_refused(
+        &enum_machine(&[(
+            r#"<assign location="checks" expr="checks + 1"/>"#,
+            r#"<assign location="checks" expr="StatusOf(items, 1)"/>"#,
+        )]),
+        &[],
+        "a value of the enum `Status` where a number or a bool is expected",
+    );
+}
+
+#[test]
+fn an_open_enum_does_not_cross_to_an_algorithm() {
+    // A value of an open enum that no variant names has no declared name to cross by.
+    // The machine holds no variable of the enum, so the call is what is judged.
+    let text = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="board" datamodel="sce-static" name="open_enum_probe">
+  <sce:import kind="event-schema" src="schema_item.scxml" as="Item"/>
+  <sce:import kind="enum" src="enum_item_status.scxml" as="Status"/>
+  <sce:import kind="algorithm" src="algorithm_item_status_count.scxml" as="CountStatus"/>
+  <datamodel>
+    <data id="items" sce:type="list&lt;record:Item&gt;" sce:capacity="4"/>
+    <data id="n" sce:type="uint32" expr="0"/>
+  </datamodel>
+  <state id="board">
+    <transition event="count" type="internal">
+      <assign location="n" expr="CountStatus(items, Status.open)"/>
+    </transition>
+  </state>
+</scxml>
+"#;
+    assert_enum_refused(
+        text,
+        &[(
+            "enum_item_status.scxml",
+            &item_status_like("enum_item_status", true),
+        )],
+        "declares sce:strict-variants=\\\"false\\\": a statechart holds a closed enum",
     );
 }

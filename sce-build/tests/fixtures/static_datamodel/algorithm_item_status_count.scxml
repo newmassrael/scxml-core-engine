@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  How many items of a list stand at `status`: a list of records with an enum field in,
+  a value of the enum in, a number out. The enum field of each item is compared with
+  the value handed in. A statechart asks it once for each status, naming the status
+  by its variant (SCE Accepted Subset §2.15).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       name="item_status_count"
+       version="1.0">
+  <sce:import kind="event-schema" src="schema_item.scxml" as="Item"/>
+  <sce:import kind="enum" src="enum_item_status.scxml" as="Status"/>
+  <sce:signature>
+    <sce:param name="items" type="list&lt;record:Item&gt;"/>
+    <sce:param name="status" type="enum:Status"/>
+    <sce:return type="uint32" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="count" type="uint32" init="0"/>
+    <sce:foreach item="e" in="items">
+      <sce:if cond="e.status === status">
+        <sce:assign target="count" expr="count + 1"/>
+      </sce:if>
+    </sce:foreach>
+    <sce:return expr="count"/>
+  </sce:body>
+</scxml>

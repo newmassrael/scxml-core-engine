@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "State an algorithm
+  takes and gives back"): a statechart hands an imported algorithm records whose
+  field is a value of an enum, and a value of the enum itself, and holds what the
+  algorithm gives back — a list of those records, or a value of the enum.
+
+  A board keeps its items in `items`, a list of records whose `status` is an
+  `enum:Status`. An item comes in whole (`item.added`); moving one asks `SetStatus` for
+  the list with that item's status set to the one the event names (a list of records
+  and a value of the enum in, the list out), and `StatusOf` for where it now stands (a
+  value of the enum out). `count` asks `CountStatus` how many items stand at each
+  status, naming the status by its variant, and `check` is guarded by what `StatusOf`
+  answers for the item with id 1. The statechart and every algorithm import one enum
+  document under the alias the schema writes: the values cross by the name each
+  variant is declared with, whatever each backend spells the constant.
+
+  A fifth item does not fit the four the list holds: the append fails, nothing is
+  written, and error.execution says so (W3C SCXML 4.9). `refusals` counts the
+  error.execution events the document answers.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="board" datamodel="sce-static" name="static_state_algorithm_enum">
+  <sce:import kind="event-schema" src="schema_item.scxml" as="Item"/>
+  <sce:import kind="event-schema" src="schema_item_move.scxml" as="Move"/>
+  <sce:import kind="enum" src="enum_item_status.scxml" as="Status"/>
+  <sce:import kind="algorithm" src="algorithm_item_status_set.scxml" as="SetStatus"/>
+  <sce:import kind="algorithm" src="algorithm_item_status_count.scxml" as="CountStatus"/>
+  <sce:import kind="algorithm" src="algorithm_item_status_of.scxml" as="StatusOf"/>
+  <datamodel>
+    <data id="items" sce:type="list&lt;record:Item&gt;" sce:capacity="4" sce:direction="out"/>
+    <data id="draft" sce:type="record:Item">
+      <sce:set name="id" expr="0"/>
+      <sce:set name="status" expr="Status.open"/>
+    </data>
+    <data id="last" sce:type="enum:Status" expr="Status.open" sce:direction="out"/>
+    <data id="openCount" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="startedCount" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="doneCount" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="checks" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="board">
+    <transition event="item.added" type="internal">
+      <assign location="draft" expr="_event.data"/>
+      <sce:append target="items" expr="draft"/>
+    </transition>
+    <transition event="item.moved" type="internal">
+      <assign location="items" expr="SetStatus(items, _event.data.id, _event.data.status)"/>
+      <assign location="last" expr="StatusOf(items, _event.data.id)"/>
+    </transition>
+    <transition event="count" type="internal">
+      <assign location="openCount" expr="CountStatus(items, Status.open)"/>
+      <assign location="startedCount" expr="CountStatus(items, Status.in_progress)"/>
+      <assign location="doneCount" expr="CountStatus(items, Status.done)"/>
+    </transition>
+    <transition event="check" cond="StatusOf(items, 1) === Status.done" type="internal">
+      <assign location="checks" expr="checks + 1"/>
+    </transition>
+    <transition event="error.execution" type="internal">
+      <assign location="refusals" expr="refusals + 1"/>
+    </transition>
+  </state>
+</scxml>
