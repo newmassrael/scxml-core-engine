@@ -422,7 +422,7 @@ impl StatePolicy for Test423Policy {
                         let _ = send_id; // suppress unused warning when no send operation
                     }
 
-                    // W3C SCXML 3.8.1: <raise event="internalEvent">
+                    // W3C SCXML 4.2: <raise event="internalEvent">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         Test423Event::InternalEvent,
                     ));

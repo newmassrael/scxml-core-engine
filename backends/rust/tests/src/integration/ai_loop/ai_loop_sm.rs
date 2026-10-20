@@ -1596,7 +1596,7 @@ impl StatePolicy for AiLoopPolicy {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-                    // W3C SCXML 3.8.1: <raise event="run.blocked">
+                    // W3C SCXML 4.2: <raise event="run.blocked">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         AiLoopEvent::RunBlocked,
                     ));
@@ -2042,7 +2042,7 @@ impl StatePolicy for AiLoopPolicy {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-                    // W3C SCXML 3.8.1: <raise event="run.converged">
+                    // W3C SCXML 4.2: <raise event="run.converged">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         AiLoopEvent::RunConverged,
                     ));
@@ -2203,7 +2203,7 @@ impl StatePolicy for AiLoopPolicy {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-                    // W3C SCXML 3.8.1: <raise event="run.exhausted">
+                    // W3C SCXML 4.2: <raise event="run.exhausted">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         AiLoopEvent::RunExhausted,
                     ));
@@ -2214,7 +2214,7 @@ impl StatePolicy for AiLoopPolicy {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-                    // W3C SCXML 3.8.1: <raise event="run.exhausted">
+                    // W3C SCXML 4.2: <raise event="run.exhausted">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         AiLoopEvent::RunExhausted,
                     ));

@@ -856,7 +856,7 @@ impl StatePolicy for WildcardInDocumentOrderPolicy {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-                    // W3C SCXML 3.8.1: <raise event="probe">
+                    // W3C SCXML 4.2: <raise event="probe">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         WildcardInDocumentOrderEvent::Probe,
                     ));
@@ -893,7 +893,7 @@ impl StatePolicy for WildcardInDocumentOrderPolicy {
                         }
                     }
 
-                    // W3C SCXML 3.8.1: <raise event="hop">
+                    // W3C SCXML 4.2: <raise event="hop">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         WildcardInDocumentOrderEvent::Hop,
                     ));
@@ -927,7 +927,7 @@ impl StatePolicy for WildcardInDocumentOrderPolicy {
                         }
                     }
 
-                    // W3C SCXML 3.8.1: <raise event="probe">
+                    // W3C SCXML 4.2: <raise event="probe">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         WildcardInDocumentOrderEvent::Probe,
                     ));
@@ -964,7 +964,7 @@ impl StatePolicy for WildcardInDocumentOrderPolicy {
                         }
                     }
 
-                    // W3C SCXML 3.8.1: <raise event="hop">
+                    // W3C SCXML 4.2: <raise event="hop">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         WildcardInDocumentOrderEvent::Hop,
                     ));

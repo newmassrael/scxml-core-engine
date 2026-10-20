@@ -1347,7 +1347,7 @@ impl StatePolicy for InternalChainIsBoundedPolicy {
                                 }
                             }
 
-                            // W3C SCXML 3.8.1: <raise event="tick">
+                            // W3C SCXML 4.2: <raise event="tick">
                             engine.raise(sce_rust_runtime::EventWithMetadata::new(
                                 InternalChainIsBoundedEvent::Tick,
                             ));
@@ -1425,7 +1425,7 @@ impl StatePolicy for InternalChainIsBoundedPolicy {
                                 }
                             }
 
-                            // W3C SCXML 3.8.1: <raise event="link">
+                            // W3C SCXML 4.2: <raise event="link">
                             engine.raise(sce_rust_runtime::EventWithMetadata::new(
                                 InternalChainIsBoundedEvent::Link,
                             ));
@@ -1543,7 +1543,7 @@ impl StatePolicy for InternalChainIsBoundedPolicy {
                         // W3C SCXML 3.13: Transition 1 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
-                            // W3C SCXML 3.8.1: <raise event="link">
+                            // W3C SCXML 4.2: <raise event="link">
                             engine.raise(sce_rust_runtime::EventWithMetadata::new(
                                 InternalChainIsBoundedEvent::Link,
                             ));
@@ -1554,7 +1554,7 @@ impl StatePolicy for InternalChainIsBoundedPolicy {
                         // W3C SCXML 3.13: Transition 2 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
-                            // W3C SCXML 3.8.1: <raise event="link">
+                            // W3C SCXML 4.2: <raise event="link">
                             engine.raise(sce_rust_runtime::EventWithMetadata::new(
                                 InternalChainIsBoundedEvent::Link,
                             ));
@@ -1565,7 +1565,7 @@ impl StatePolicy for InternalChainIsBoundedPolicy {
                         // W3C SCXML 3.13: Transition 3 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
-                            // W3C SCXML 3.8.1: <raise event="beat">
+                            // W3C SCXML 4.2: <raise event="beat">
                             engine.raise(sce_rust_runtime::EventWithMetadata::new(
                                 InternalChainIsBoundedEvent::Beat,
                             ));
@@ -1576,7 +1576,7 @@ impl StatePolicy for InternalChainIsBoundedPolicy {
                         // W3C SCXML 3.13: Transition 4 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
-                            // W3C SCXML 3.8.1: <raise event="tick">
+                            // W3C SCXML 4.2: <raise event="tick">
                             engine.raise(sce_rust_runtime::EventWithMetadata::new(
                                 InternalChainIsBoundedEvent::Tick,
                             ));
@@ -1587,7 +1587,7 @@ impl StatePolicy for InternalChainIsBoundedPolicy {
                         // W3C SCXML 3.13: Transition 5 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
-                            // W3C SCXML 3.8.1: <raise event="beatless">
+                            // W3C SCXML 4.2: <raise event="beatless">
                             engine.raise(sce_rust_runtime::EventWithMetadata::new(
                                 InternalChainIsBoundedEvent::Beatless,
                             ));
@@ -1631,12 +1631,12 @@ impl StatePolicy for InternalChainIsBoundedPolicy {
                                 }
                             }
 
-                            // W3C SCXML 3.8.1: <raise event="unheard">
+                            // W3C SCXML 4.2: <raise event="unheard">
                             engine.raise(sce_rust_runtime::EventWithMetadata::new(
                                 InternalChainIsBoundedEvent::Unheard,
                             ));
 
-                            // W3C SCXML 3.8.1: <raise event="beatless">
+                            // W3C SCXML 4.2: <raise event="beatless">
                             engine.raise(sce_rust_runtime::EventWithMetadata::new(
                                 InternalChainIsBoundedEvent::Beatless,
                             ));
@@ -1748,7 +1748,7 @@ impl StatePolicy for InternalChainIsBoundedPolicy {
                                 }
                             }
 
-                            // W3C SCXML 3.8.1: <raise event="beat">
+                            // W3C SCXML 4.2: <raise event="beat">
                             engine.raise(sce_rust_runtime::EventWithMetadata::new(
                                 InternalChainIsBoundedEvent::Beat,
                             ));
@@ -1860,7 +1860,7 @@ impl StatePolicy for InternalChainIsBoundedPolicy {
                                 }
                             }
 
-                            // W3C SCXML 3.8.1: <raise event="link">
+                            // W3C SCXML 4.2: <raise event="link">
                             engine.raise(sce_rust_runtime::EventWithMetadata::new(
                                 InternalChainIsBoundedEvent::Link,
                             ));

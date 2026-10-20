@@ -455,7 +455,7 @@ impl StatePolicy for Test411Policy {
 
                     // W3C SCXML 5.9.2: In() predicate condition
                     if self.is_state_active("s01") {
-                        // W3C SCXML 3.8.1: <raise event="event1">
+                        // W3C SCXML 4.2: <raise event="event1">
                         engine.raise(sce_rust_runtime::EventWithMetadata::new(
                             Test411Event::Event1,
                         ));
@@ -469,7 +469,7 @@ impl StatePolicy for Test411Policy {
                 'action_block: {
                     // W3C SCXML 5.9.2: In() predicate condition
                     if self.is_state_active("s01") {
-                        // W3C SCXML 3.8.1: <raise event="event2">
+                        // W3C SCXML 4.2: <raise event="event2">
                         engine.raise(sce_rust_runtime::EventWithMetadata::new(
                             Test411Event::Event2,
                         ));

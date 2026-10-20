@@ -681,7 +681,7 @@ impl StatePolicy for Test326Policy {
                         break 'action_block;
                     }
 
-                    // W3C SCXML 3.8.1: <raise event="foo">
+                    // W3C SCXML 4.2: <raise event="foo">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(Test326Event::Foo));
                 }
             }

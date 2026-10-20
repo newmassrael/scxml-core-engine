@@ -679,7 +679,7 @@ impl StatePolicy for Test525Policy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        // W3C SCXML 5.6: <foreach array="Var1" item="Var3">
+                        // W3C SCXML 4.6: <foreach array="Var1" item="Var3">
                         self.ensure_script_engine();
                         let sid = self.session_id.as_ref().unwrap().clone();
                         let se = self.script_engine.clone();
@@ -756,7 +756,7 @@ impl StatePolicy for Test525Policy {
                                     }
                                 }
                                 Ok(_) => {
-                                    // Not an array — raise error.execution (W3C SCXML 5.6)
+                                    // Not an array — raise error.execution (W3C SCXML 4.6)
                                     ::sce_rust_runtime::sce_log_error!(
                                         "Foreach: 'Var1' is not an array"
                                     );

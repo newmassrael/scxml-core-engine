@@ -548,7 +548,7 @@ impl StatePolicy for Test387Policy {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-                    // W3C SCXML 3.8.1: <raise event="enteringS011">
+                    // W3C SCXML 4.2: <raise event="enteringS011">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         Test387Event::EnteringS011,
                     ));
@@ -559,7 +559,7 @@ impl StatePolicy for Test387Policy {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-                    // W3C SCXML 3.8.1: <raise event="enteringS012">
+                    // W3C SCXML 4.2: <raise event="enteringS012">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         Test387Event::EnteringS012,
                     ));
@@ -570,7 +570,7 @@ impl StatePolicy for Test387Policy {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-                    // W3C SCXML 3.8.1: <raise event="enteringS021">
+                    // W3C SCXML 4.2: <raise event="enteringS021">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         Test387Event::EnteringS021,
                     ));
@@ -581,7 +581,7 @@ impl StatePolicy for Test387Policy {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-                    // W3C SCXML 3.8.1: <raise event="enteringS022">
+                    // W3C SCXML 4.2: <raise event="enteringS022">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         Test387Event::EnteringS022,
                     ));
@@ -592,7 +592,7 @@ impl StatePolicy for Test387Policy {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-                    // W3C SCXML 3.8.1: <raise event="enteringS111">
+                    // W3C SCXML 4.2: <raise event="enteringS111">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         Test387Event::EnteringS111,
                     ));
@@ -603,7 +603,7 @@ impl StatePolicy for Test387Policy {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-                    // W3C SCXML 3.8.1: <raise event="enteringS112">
+                    // W3C SCXML 4.2: <raise event="enteringS112">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         Test387Event::EnteringS112,
                     ));
@@ -614,7 +614,7 @@ impl StatePolicy for Test387Policy {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-                    // W3C SCXML 3.8.1: <raise event="enteringS121">
+                    // W3C SCXML 4.2: <raise event="enteringS121">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         Test387Event::EnteringS121,
                     ));
@@ -625,7 +625,7 @@ impl StatePolicy for Test387Policy {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-                    // W3C SCXML 3.8.1: <raise event="enteringS122">
+                    // W3C SCXML 4.2: <raise event="enteringS122">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         Test387Event::EnteringS122,
                     ));

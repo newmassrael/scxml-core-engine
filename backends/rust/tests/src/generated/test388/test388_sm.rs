@@ -788,7 +788,7 @@ impl StatePolicy for Test388Policy {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-                    // W3C SCXML 3.8.1: <raise event="entering.s011">
+                    // W3C SCXML 4.2: <raise event="entering.s011">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         Test388Event::EnteringS011,
                     ));
@@ -799,7 +799,7 @@ impl StatePolicy for Test388Policy {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-                    // W3C SCXML 3.8.1: <raise event="entering.s012">
+                    // W3C SCXML 4.2: <raise event="entering.s012">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         Test388Event::EnteringS012,
                     ));
@@ -810,7 +810,7 @@ impl StatePolicy for Test388Policy {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-                    // W3C SCXML 3.8.1: <raise event="entering.s021">
+                    // W3C SCXML 4.2: <raise event="entering.s021">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         Test388Event::EnteringS021,
                     ));
@@ -821,7 +821,7 @@ impl StatePolicy for Test388Policy {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-                    // W3C SCXML 3.8.1: <raise event="entering.s022">
+                    // W3C SCXML 4.2: <raise event="entering.s022">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         Test388Event::EnteringS022,
                     ));

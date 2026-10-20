@@ -714,7 +714,7 @@ impl StatePolicy for Test152Policy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        // W3C SCXML 5.6: <foreach array="" item="Var2">
+                        // W3C SCXML 4.6: <foreach array="" item="Var2">
                         self.ensure_script_engine();
                         let sid = self.session_id.as_ref().unwrap().clone();
                         let se = self.script_engine.clone();
@@ -804,7 +804,7 @@ impl StatePolicy for Test152Policy {
                                     }
                                 }
                                 Ok(_) => {
-                                    // Not an array — raise error.execution (W3C SCXML 5.6)
+                                    // Not an array — raise error.execution (W3C SCXML 4.6)
                                     ::sce_rust_runtime::sce_log_error!(
                                         "Foreach: '' is not an array"
                                     );
@@ -833,7 +833,7 @@ impl StatePolicy for Test152Policy {
                         }
                     }
 
-                    // W3C SCXML 3.8.1: <raise event="foo">
+                    // W3C SCXML 4.2: <raise event="foo">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(Test152Event::Foo));
                 }
             }
@@ -843,7 +843,7 @@ impl StatePolicy for Test152Policy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        // W3C SCXML 5.6: <foreach array="Var5" item="">
+                        // W3C SCXML 4.6: <foreach array="Var5" item="">
                         self.ensure_script_engine();
                         let sid = self.session_id.as_ref().unwrap().clone();
                         let se = self.script_engine.clone();
@@ -864,7 +864,7 @@ impl StatePolicy for Test152Policy {
                         break 'action_block;
                     }
 
-                    // W3C SCXML 3.8.1: <raise event="bar">
+                    // W3C SCXML 4.2: <raise event="bar">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(Test152Event::Bar));
                 }
             }

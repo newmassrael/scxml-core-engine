@@ -671,7 +671,7 @@ impl StatePolicy for Test147Policy {
                         let mut if_cond_failed = false;
                         // W3C SCXML 5.9: Script engine guard (false)
                         if self.evaluate_if_cond("false", engine, &mut if_cond_failed) {
-                            // W3C SCXML 3.8.1: <raise event="foo">
+                            // W3C SCXML 4.2: <raise event="foo">
                             engine
                                 .raise(sce_rust_runtime::EventWithMetadata::new(Test147Event::Foo));
                             {
@@ -702,7 +702,7 @@ impl StatePolicy for Test147Policy {
                                 }
                             }
                         } else if self.evaluate_if_cond("true", engine, &mut if_cond_failed) {
-                            // W3C SCXML 3.8.1: <raise event="bar">
+                            // W3C SCXML 4.2: <raise event="bar">
                             engine
                                 .raise(sce_rust_runtime::EventWithMetadata::new(Test147Event::Bar));
                             {
@@ -733,7 +733,7 @@ impl StatePolicy for Test147Policy {
                                 }
                             }
                         } else {
-                            // W3C SCXML 3.8.1: <raise event="baz">
+                            // W3C SCXML 4.2: <raise event="baz">
                             engine
                                 .raise(sce_rust_runtime::EventWithMetadata::new(Test147Event::Baz));
                             {
@@ -769,7 +769,7 @@ impl StatePolicy for Test147Policy {
                         }
                     }
 
-                    // W3C SCXML 3.8.1: <raise event="bat">
+                    // W3C SCXML 4.2: <raise event="bat">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(Test147Event::Bat));
                 }
             }

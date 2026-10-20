@@ -512,7 +512,7 @@ impl StatePolicy for Test406Policy {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-                    // W3C SCXML 3.8.1: <raise event="event3">
+                    // W3C SCXML 4.2: <raise event="event3">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         Test406Event::Event3,
                     ));
@@ -523,7 +523,7 @@ impl StatePolicy for Test406Policy {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-                    // W3C SCXML 3.8.1: <raise event="event4">
+                    // W3C SCXML 4.2: <raise event="event4">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         Test406Event::Event4,
                     ));
@@ -534,7 +534,7 @@ impl StatePolicy for Test406Policy {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-                    // W3C SCXML 3.8.1: <raise event="event2">
+                    // W3C SCXML 4.2: <raise event="event2">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         Test406Event::Event2,
                     ));
@@ -734,7 +734,7 @@ impl StatePolicy for Test406Policy {
                         // W3C SCXML 3.13: Transition 0 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
-                            // W3C SCXML 3.8.1: <raise event="event1">
+                            // W3C SCXML 4.2: <raise event="event1">
                             engine.raise(sce_rust_runtime::EventWithMetadata::new(
                                 Test406Event::Event1,
                             ));

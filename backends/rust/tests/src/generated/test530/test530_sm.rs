@@ -485,7 +485,7 @@ impl Test530Policy {
         for pending in &invokes_to_execute {
             if pending.document_id == "_invoke_0" {
                 // W3C SCXML 6.4: Hybrid invoke — evaluate expression at runtime, create pre-generated child
-                // W3C SCXML 6.4.4: Evaluate contentexpr at runtime
+                // W3C SCXML 6.4.2: Evaluate contentexpr at runtime
                 self.ensure_script_engine();
                 let sid = self.session_id.as_ref().unwrap().clone();
                 let se = self.script_engine.clone();

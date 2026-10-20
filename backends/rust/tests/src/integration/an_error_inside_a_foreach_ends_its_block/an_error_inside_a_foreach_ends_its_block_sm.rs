@@ -1040,7 +1040,7 @@ impl StatePolicy for AnErrorInsideAForeachEndsItsBlockPolicy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        // W3C SCXML 5.6: <foreach array="items" item="item">
+                        // W3C SCXML 4.6: <foreach array="items" item="item">
                         self.ensure_script_engine();
                         let sid = self.session_id.as_ref().unwrap().clone();
                         let se = self.script_engine.clone();
@@ -1177,7 +1177,7 @@ impl StatePolicy for AnErrorInsideAForeachEndsItsBlockPolicy {
                                     }
                                 }
                                 Ok(_) => {
-                                    // Not an array — raise error.execution (W3C SCXML 5.6)
+                                    // Not an array — raise error.execution (W3C SCXML 4.6)
                                     ::sce_rust_runtime::sce_log_error!(
                                         "Foreach: 'items' is not an array"
                                     );
@@ -1236,7 +1236,7 @@ impl StatePolicy for AnErrorInsideAForeachEndsItsBlockPolicy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        // W3C SCXML 5.6: <foreach array="items" item="item">
+                        // W3C SCXML 4.6: <foreach array="items" item="item">
                         self.ensure_script_engine();
                         let sid = self.session_id.as_ref().unwrap().clone();
                         let se = self.script_engine.clone();
@@ -1333,7 +1333,7 @@ impl StatePolicy for AnErrorInsideAForeachEndsItsBlockPolicy {
                                     }
                                 }
                                 Ok(_) => {
-                                    // Not an array — raise error.execution (W3C SCXML 5.6)
+                                    // Not an array — raise error.execution (W3C SCXML 4.6)
                                     ::sce_rust_runtime::sce_log_error!(
                                         "Foreach: 'items' is not an array"
                                     );
@@ -1631,7 +1631,7 @@ impl StatePolicy for AnErrorInsideAForeachEndsItsBlockPolicy {
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             {
-                                // W3C SCXML 5.6: <foreach array="items" item="item">
+                                // W3C SCXML 4.6: <foreach array="items" item="item">
                                 self.ensure_script_engine();
                                 let sid = self.session_id.as_ref().unwrap().clone();
                                 let se = self.script_engine.clone();
@@ -1779,7 +1779,7 @@ impl StatePolicy for AnErrorInsideAForeachEndsItsBlockPolicy {
                                             }
                                         }
                                         Ok(_) => {
-                                            // Not an array — raise error.execution (W3C SCXML 5.6)
+                                            // Not an array — raise error.execution (W3C SCXML 4.6)
                                             ::sce_rust_runtime::sce_log_error!(
                                                 "Foreach: 'items' is not an array"
                                             );

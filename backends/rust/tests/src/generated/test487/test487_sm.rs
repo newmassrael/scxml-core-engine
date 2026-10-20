@@ -654,7 +654,7 @@ impl StatePolicy for Test487Policy {
                         }
                     }
 
-                    // W3C SCXML 3.8.1: <raise event="event">
+                    // W3C SCXML 4.2: <raise event="event">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         Test487Event::Event,
                     ));

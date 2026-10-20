@@ -466,7 +466,7 @@ class Test530StateMachine(
                         val eng = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                         val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                         try {
-                            // W3C SCXML 6.4.4: Evaluate contentexpr → SCXML string → create child.
+                            // W3C SCXML 6.4.2: Evaluate contentexpr → SCXML string → create child.
                             // Split for the reason the srcexpr arm above states.
                             val scxmlContent = try {
                                 eng.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("Var1", "Var1"))?.toString()

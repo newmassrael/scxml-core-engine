@@ -2278,7 +2278,7 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        // W3C SCXML 5.6: <foreach array="outer" item="o">
+                        // W3C SCXML 4.6: <foreach array="outer" item="o">
                         self.ensure_script_engine();
                         let sid = self.session_id.as_ref().unwrap().clone();
                         let se = self.script_engine.clone();
@@ -2321,7 +2321,7 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
                                         // own error and leaves the enclosing block from here.
 
                                         {
-                                            // W3C SCXML 5.6: <foreach array="inner" item="i">
+                                            // W3C SCXML 4.6: <foreach array="inner" item="i">
                                             self.ensure_script_engine();
                                             let sid = self.session_id.as_ref().unwrap().clone();
                                             let se = self.script_engine.clone();
@@ -2399,7 +2399,7 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
                 }
             }
             Ok(_) => {
-                // Not an array — raise error.execution (W3C SCXML 5.6)
+                // Not an array — raise error.execution (W3C SCXML 4.6)
                 ::sce_rust_runtime::sce_log_error!("Foreach: 'inner' is not an array");
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution, "<foreach array='inner'> is not an array"));
                 break 'action_block;
@@ -2419,7 +2419,7 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
                                     }
                                 }
                                 Ok(_) => {
-                                    // Not an array — raise error.execution (W3C SCXML 5.6)
+                                    // Not an array — raise error.execution (W3C SCXML 4.6)
                                     ::sce_rust_runtime::sce_log_error!(
                                         "Foreach: 'outer' is not an array"
                                     );

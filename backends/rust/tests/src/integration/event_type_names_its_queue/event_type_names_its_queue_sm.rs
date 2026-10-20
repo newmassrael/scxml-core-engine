@@ -754,7 +754,7 @@ impl StatePolicy for EventTypeNamesItsQueuePolicy {
                         let _ = send_id; // suppress unused warning when no send operation
                     }
 
-                    // W3C SCXML 3.8.1: <raise event="int">
+                    // W3C SCXML 4.2: <raise event="int">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         EventTypeNamesItsQueueEvent::Int,
                     ));

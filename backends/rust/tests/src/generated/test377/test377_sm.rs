@@ -393,7 +393,7 @@ impl StatePolicy for Test377Policy {
                 // W3C SCXML 3.9: onexit block 1/2
                 // Labeled block allows actions to break out on error (W3C 3.9: error stops block)
                 'action_block: {
-                    // W3C SCXML 3.8.1: <raise event="event1">
+                    // W3C SCXML 4.2: <raise event="event1">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         Test377Event::Event1,
                     ));
@@ -401,7 +401,7 @@ impl StatePolicy for Test377Policy {
                 // W3C SCXML 3.9: onexit block 2/2
                 // Labeled block allows actions to break out on error (W3C 3.9: error stops block)
                 'action_block: {
-                    // W3C SCXML 3.8.1: <raise event="event2">
+                    // W3C SCXML 4.2: <raise event="event2">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         Test377Event::Event2,
                     ));

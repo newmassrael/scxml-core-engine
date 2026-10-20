@@ -438,7 +438,7 @@ impl StatePolicy for Test412Policy {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-                    // W3C SCXML 3.8.1: <raise event="event1">
+                    // W3C SCXML 4.2: <raise event="event1">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         Test412Event::Event1,
                     ));
@@ -450,7 +450,7 @@ impl StatePolicy for Test412Policy {
                 // deeper target, nor when a <history> restores its children.
                 if is_default_entry {
                     'action_block: {
-                        // W3C SCXML 3.8.1: <raise event="event2">
+                        // W3C SCXML 4.2: <raise event="event2">
                         engine.raise(sce_rust_runtime::EventWithMetadata::new(
                             Test412Event::Event2,
                         ));
@@ -462,7 +462,7 @@ impl StatePolicy for Test412Policy {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-                    // W3C SCXML 3.8.1: <raise event="event3">
+                    // W3C SCXML 4.2: <raise event="event3">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         Test412Event::Event3,
                     ));

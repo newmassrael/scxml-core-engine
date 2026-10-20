@@ -913,10 +913,10 @@ impl StatePolicy for Test533Policy {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-                    // W3C SCXML 3.8.1: <raise event="foo">
+                    // W3C SCXML 4.2: <raise event="foo">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(Test533Event::Foo));
 
-                    // W3C SCXML 3.8.1: <raise event="bar">
+                    // W3C SCXML 4.2: <raise event="bar">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(Test533Event::Bar));
                 }
             }

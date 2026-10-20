@@ -781,7 +781,7 @@ impl StatePolicy for Test496Policy {
                         let _ = send_id; // suppress unused warning when no send operation
                     }
 
-                    // W3C SCXML 3.8.1: <raise event="foo">
+                    // W3C SCXML 4.2: <raise event="foo">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(Test496Event::Foo));
                 }
             }

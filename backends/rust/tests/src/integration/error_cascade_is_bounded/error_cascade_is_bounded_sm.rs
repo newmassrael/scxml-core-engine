@@ -1164,7 +1164,7 @@ impl StatePolicy for ErrorCascadeIsBoundedPolicy {
                                 }
                             }
 
-                            // W3C SCXML 3.8.1: <raise event="tick">
+                            // W3C SCXML 4.2: <raise event="tick">
                             engine.raise(sce_rust_runtime::EventWithMetadata::new(
                                 ErrorCascadeIsBoundedEvent::Tick,
                             ));

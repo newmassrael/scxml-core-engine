@@ -339,7 +339,7 @@ class Test412StateMachine(
 
             raiseInternal(Test412Event.Event1)
                 }
-                // W3C SCXML 3.3: the <initial> transition's content runs when,
+                // W3C SCXML 3.3.2: the <initial> transition's content runs when,
                 // and only when, this state's initial state is entered by
                 // default — not when the state is entered only as the ancestor
                 // of a deeper target.

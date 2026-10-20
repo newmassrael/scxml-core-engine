@@ -412,22 +412,22 @@ impl StatePolicy for Test421Policy {
                         let _ = send_id; // suppress unused warning when no send operation
                     }
 
-                    // W3C SCXML 3.8.1: <raise event="internalEvent1">
+                    // W3C SCXML 4.2: <raise event="internalEvent1">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         Test421Event::InternalEvent1,
                     ));
 
-                    // W3C SCXML 3.8.1: <raise event="internalEvent2">
+                    // W3C SCXML 4.2: <raise event="internalEvent2">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         Test421Event::InternalEvent2,
                     ));
 
-                    // W3C SCXML 3.8.1: <raise event="internalEvent3">
+                    // W3C SCXML 4.2: <raise event="internalEvent3">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         Test421Event::InternalEvent3,
                     ));
 
-                    // W3C SCXML 3.8.1: <raise event="internalEvent4">
+                    // W3C SCXML 4.2: <raise event="internalEvent4">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         Test421Event::InternalEvent4,
                     ));

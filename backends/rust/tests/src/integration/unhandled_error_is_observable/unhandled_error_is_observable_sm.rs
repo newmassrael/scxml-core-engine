@@ -1161,17 +1161,17 @@ impl StatePolicy for UnhandledErrorIsObservablePolicy {
                         // W3C SCXML 3.13: Transition 1 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
-                            // W3C SCXML 3.8.1: <raise event="unheard">
+                            // W3C SCXML 4.2: <raise event="unheard">
                             engine.raise(sce_rust_runtime::EventWithMetadata::new(
                                 UnhandledErrorIsObservableEvent::Unheard,
                             ));
 
-                            // W3C SCXML 3.8.1: <raise event="retry.error.execution">
+                            // W3C SCXML 4.2: <raise event="retry.error.execution">
                             engine.raise(sce_rust_runtime::EventWithMetadata::new(
                                 UnhandledErrorIsObservableEvent::RetryErrorExecution,
                             ));
 
-                            // W3C SCXML 3.8.1: <raise event="heard">
+                            // W3C SCXML 4.2: <raise event="heard">
                             engine.raise(sce_rust_runtime::EventWithMetadata::new(
                                 UnhandledErrorIsObservableEvent::Heard,
                             ));

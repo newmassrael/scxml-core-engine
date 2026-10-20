@@ -672,7 +672,7 @@ impl StatePolicy for Test307Policy {
                         }
                     }
 
-                    // W3C SCXML 3.8.1: <raise event="foo">
+                    // W3C SCXML 4.2: <raise event="foo">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(Test307Event::Foo));
                 }
             }
@@ -731,7 +731,7 @@ impl StatePolicy for Test307Policy {
                         }
                     }
 
-                    // W3C SCXML 3.8.1: <raise event="bar">
+                    // W3C SCXML 4.2: <raise event="bar">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(Test307Event::Bar));
                 }
             }

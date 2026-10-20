@@ -445,7 +445,7 @@ impl StatePolicy for Test399Policy {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-                    // W3C SCXML 3.8.1: <raise event="foo">
+                    // W3C SCXML 4.2: <raise event="foo">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(Test399Event::Foo));
                 }
             }
@@ -454,7 +454,7 @@ impl StatePolicy for Test399Policy {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-                    // W3C SCXML 3.8.1: <raise event="bar">
+                    // W3C SCXML 4.2: <raise event="bar">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(Test399Event::Bar));
                 }
             }
@@ -463,7 +463,7 @@ impl StatePolicy for Test399Policy {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-                    // W3C SCXML 3.8.1: <raise event="foo.zoo">
+                    // W3C SCXML 4.2: <raise event="foo.zoo">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         Test399Event::FooZoo,
                     ));
@@ -474,7 +474,7 @@ impl StatePolicy for Test399Policy {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-                    // W3C SCXML 3.8.1: <raise event="foos">
+                    // W3C SCXML 4.2: <raise event="foos">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(Test399Event::Foos));
                 }
             }
@@ -483,7 +483,7 @@ impl StatePolicy for Test399Policy {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-                    // W3C SCXML 3.8.1: <raise event="foo.zoo">
+                    // W3C SCXML 4.2: <raise event="foo.zoo">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         Test399Event::FooZoo,
                     ));
@@ -494,7 +494,7 @@ impl StatePolicy for Test399Policy {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-                    // W3C SCXML 3.8.1: <raise event="foo">
+                    // W3C SCXML 4.2: <raise event="foo">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(Test399Event::Foo));
                 }
             }

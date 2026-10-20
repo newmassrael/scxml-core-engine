@@ -666,7 +666,7 @@ impl StatePolicy for Test346Policy {
                         break 'action_block;
                     }
 
-                    // W3C SCXML 3.8.1: <raise event="event1">
+                    // W3C SCXML 4.2: <raise event="event1">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         Test346Event::Event1,
                     ));
@@ -695,7 +695,7 @@ impl StatePolicy for Test346Policy {
                         break 'action_block;
                     }
 
-                    // W3C SCXML 3.8.1: <raise event="event2">
+                    // W3C SCXML 4.2: <raise event="event2">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         Test346Event::Event2,
                     ));
@@ -724,7 +724,7 @@ impl StatePolicy for Test346Policy {
                         break 'action_block;
                     }
 
-                    // W3C SCXML 3.8.1: <raise event="event3">
+                    // W3C SCXML 4.2: <raise event="event3">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         Test346Event::Event3,
                     ));
@@ -753,7 +753,7 @@ impl StatePolicy for Test346Policy {
                         break 'action_block;
                     }
 
-                    // W3C SCXML 3.8.1: <raise event="event4">
+                    // W3C SCXML 4.2: <raise event="event4">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         Test346Event::Event4,
                     ));

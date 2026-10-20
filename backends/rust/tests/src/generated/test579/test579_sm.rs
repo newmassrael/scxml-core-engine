@@ -746,7 +746,7 @@ impl StatePolicy for Test579Policy {
                         let _ = send_id; // suppress unused warning when no send operation
                     }
 
-                    // W3C SCXML 3.8.1: <raise event="event1">
+                    // W3C SCXML 4.2: <raise event="event1">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         Test579Event::Event1,
                     ));
@@ -758,7 +758,7 @@ impl StatePolicy for Test579Policy {
                 // deeper target, nor when a <history> restores its children.
                 if is_default_entry {
                     'action_block: {
-                        // W3C SCXML 3.8.1: <raise event="event2">
+                        // W3C SCXML 4.2: <raise event="event2">
                         engine.raise(sce_rust_runtime::EventWithMetadata::new(
                             Test579Event::Event2,
                         ));
@@ -785,7 +785,7 @@ impl StatePolicy for Test579Policy {
             Test579History::Sh1 => {
                 // W3C SCXML 4.9: the default content is one block; an error ends it.
                 'action_block: {
-                    // W3C SCXML 3.8.1: <raise event="event3">
+                    // W3C SCXML 4.2: <raise event="event3">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         Test579Event::Event3,
                     ));

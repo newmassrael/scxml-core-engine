@@ -673,7 +673,7 @@ impl EmptyFinalizeUpdatesTheLocationPolicy {
                 }
 
                 // W3C SCXML 6.4.1: Pass validated namelist values to child datamodel
-                // W3C SCXML 6.3.2: Only set if variable is declared in child's datamodel
+                // W3C SCXML 6.4.3: Only set if variable is declared in child's datamodel
                 {
                     let sid = self.session_id.as_ref().unwrap().clone();
                     let se = self.script_engine.clone();
@@ -807,7 +807,7 @@ impl EmptyFinalizeUpdatesTheLocationPolicy {
                 }
 
                 // W3C SCXML 6.4.1: Pass validated namelist values to child datamodel
-                // W3C SCXML 6.3.2: Only set if variable is declared in child's datamodel
+                // W3C SCXML 6.4.3: Only set if variable is declared in child's datamodel
                 {
                     let sid = self.session_id.as_ref().unwrap().clone();
                     let se = self.script_engine.clone();
@@ -940,7 +940,7 @@ impl EmptyFinalizeUpdatesTheLocationPolicy {
                 }
 
                 // W3C SCXML 6.4.1: Pass validated namelist values to child datamodel
-                // W3C SCXML 6.3.2: Only set if variable is declared in child's datamodel
+                // W3C SCXML 6.4.3: Only set if variable is declared in child's datamodel
                 {
                     let sid = self.session_id.as_ref().unwrap().clone();
                     let se = self.script_engine.clone();

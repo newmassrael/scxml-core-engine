@@ -784,7 +784,7 @@ impl StatePolicy for APayloadRidesOnItsOwnEventPolicy {
                 // W3C SCXML 3.8: onentry block 1/4
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-                    // W3C SCXML 3.8.1: <raise event="plain1">
+                    // W3C SCXML 4.2: <raise event="plain1">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         APayloadRidesOnItsOwnEventEvent::Plain1,
                     ));
@@ -938,7 +938,7 @@ impl StatePolicy for APayloadRidesOnItsOwnEventPolicy {
                         let _ = send_id; // suppress unused warning when no send operation
                     }
 
-                    // W3C SCXML 3.8.1: <raise event="plain2">
+                    // W3C SCXML 4.2: <raise event="plain2">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         APayloadRidesOnItsOwnEventEvent::Plain2,
                     ));
@@ -1033,7 +1033,7 @@ impl StatePolicy for APayloadRidesOnItsOwnEventPolicy {
                         let _ = send_id; // suppress unused warning when no send operation
                     }
 
-                    // W3C SCXML 3.8.1: <raise event="plain3">
+                    // W3C SCXML 4.2: <raise event="plain3">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         APayloadRidesOnItsOwnEventEvent::Plain3,
                     ));
@@ -1091,7 +1091,7 @@ impl StatePolicy for APayloadRidesOnItsOwnEventPolicy {
                         let _ = send_id; // suppress unused warning when no send operation
                     }
 
-                    // W3C SCXML 3.8.1: <raise event="plain4">
+                    // W3C SCXML 4.2: <raise event="plain4">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         APayloadRidesOnItsOwnEventEvent::Plain4,
                     ));

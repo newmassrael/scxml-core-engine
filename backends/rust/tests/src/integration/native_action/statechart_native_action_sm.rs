@@ -705,7 +705,7 @@ impl<A: StatechartNativeActionActions + 'static> StatePolicy for StatechartNativ
                         // W3C SCXML 3.13: Transition 1 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
-                            // W3C SCXML 3.8.1: <raise event="fragment.received">
+                            // W3C SCXML 4.2: <raise event="fragment.received">
                             engine.raise(sce_rust_runtime::EventWithMetadata::new(
                                 StatechartNativeActionEvent::FragmentReceived,
                             ));

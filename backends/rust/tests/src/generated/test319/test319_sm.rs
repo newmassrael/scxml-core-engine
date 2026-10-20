@@ -635,12 +635,12 @@ impl StatePolicy for Test319Policy {
                             engine,
                             &mut if_cond_failed,
                         ) {
-                            // W3C SCXML 3.8.1: <raise event="bound">
+                            // W3C SCXML 4.2: <raise event="bound">
                             engine.raise(sce_rust_runtime::EventWithMetadata::new(
                                 Test319Event::Bound,
                             ));
                         } else {
-                            // W3C SCXML 3.8.1: <raise event="unbound">
+                            // W3C SCXML 4.2: <raise event="unbound">
                             engine.raise(sce_rust_runtime::EventWithMetadata::new(
                                 Test319Event::Unbound,
                             ));

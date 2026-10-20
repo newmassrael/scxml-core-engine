@@ -400,7 +400,7 @@ impl StatePolicy for EventDescriptorSpellingsAgreePolicy {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-                    // W3C SCXML 3.8.1: <raise event="wilder">
+                    // W3C SCXML 4.2: <raise event="wilder">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         EventDescriptorSpellingsAgreeEvent::Wilder,
                     ));
@@ -411,7 +411,7 @@ impl StatePolicy for EventDescriptorSpellingsAgreePolicy {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-                    // W3C SCXML 3.8.1: <raise event="dot">
+                    // W3C SCXML 4.2: <raise event="dot">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         EventDescriptorSpellingsAgreeEvent::Dot,
                     ));
@@ -422,7 +422,7 @@ impl StatePolicy for EventDescriptorSpellingsAgreePolicy {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-                    // W3C SCXML 3.8.1: <raise event="wild">
+                    // W3C SCXML 4.2: <raise event="wild">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         EventDescriptorSpellingsAgreeEvent::Wild,
                     ));
@@ -433,7 +433,7 @@ impl StatePolicy for EventDescriptorSpellingsAgreePolicy {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-                    // W3C SCXML 3.8.1: <raise event="any.token.sequence">
+                    // W3C SCXML 4.2: <raise event="any.token.sequence">
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                         EventDescriptorSpellingsAgreeEvent::AnyTokenSequence,
                     ));

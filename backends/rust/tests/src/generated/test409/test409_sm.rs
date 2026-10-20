@@ -494,7 +494,7 @@ impl StatePolicy for Test409Policy {
                 'action_block: {
                     // W3C SCXML 5.9.2: In() predicate condition
                     if self.is_state_active("s011") {
-                        // W3C SCXML 3.8.1: <raise event="event1">
+                        // W3C SCXML 4.2: <raise event="event1">
                         engine.raise(sce_rust_runtime::EventWithMetadata::new(
                             Test409Event::Event1,
                         ));
