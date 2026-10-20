@@ -17,6 +17,8 @@
 
 use std::path::{Path, PathBuf};
 
+use sce_build::generator::Language;
+
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -54,6 +56,32 @@ fn every_copied_lua_asset_is_byte_identical_to_its_source() {
     }
 }
 
+/// The file that must reference the semantics asset for `language`, and the
+/// token that shows it is loaded rather than merely mentioned.
+///
+/// One arm per backend, no catch-all: a backend added to `Language::ALL` does
+/// not compile here until its loader is named, so it cannot be the one engine
+/// this test never looked at.
+fn loader_of(language: Language) -> (&'static str, &'static str) {
+    match language {
+        Language::Rust => ("backends/rust/lua/src/lib.rs", "ecma_semantics.lua"),
+        Language::Cpp => ("sce/src/scripting/LuaEngine.cpp", "ECMA_SEMANTICS_LUA"),
+        Language::Kotlin => (
+            "backends/kotlin/lua/src/main/kotlin/com/sce/scripting/lua/LuaScriptEngine.kt",
+            "loadEcmaSemantics()",
+        ),
+        Language::Go => ("backends/go/lua/lua_engine.go", "ecmaSemanticsLua"),
+        Language::Python => (
+            "backends/python/runtime/sce_runtime/scripting/lua_engine.py",
+            "ecma_semantics.lua",
+        ),
+        Language::C11 => (
+            "tools/codegen/templates/c/scriptengine.jinja2",
+            "ecma_semantics_lua_c",
+        ),
+    }
+}
+
 /// Every engine that runs generated Lua loads the semantics file.
 ///
 /// The emitted code calls `_scxml_add`, `_scxml_eq` and the bit helpers by
@@ -63,27 +91,8 @@ fn every_copied_lua_asset_is_byte_identical_to_its_source() {
 /// six separate reviews.
 #[test]
 fn every_lua_engine_loads_the_shared_semantics() {
-    // Each entry: the file that must reference the asset, and the token that
-    // shows it is loaded rather than merely mentioned.
-    const LOADERS: &[(&str, &str)] = &[
-        ("backends/rust/lua/src/lib.rs", "ecma_semantics.lua"),
-        ("backends/go/lua/lua_engine.go", "ecmaSemanticsLua"),
-        (
-            "backends/kotlin/lua/src/main/kotlin/com/sce/scripting/lua/LuaScriptEngine.kt",
-            "loadEcmaSemantics()",
-        ),
-        (
-            "backends/python/runtime/sce_runtime/scripting/lua_engine.py",
-            "ecma_semantics.lua",
-        ),
-        ("sce/src/scripting/LuaEngine.cpp", "ECMA_SEMANTICS_LUA"),
-        (
-            "tools/codegen/templates/c/scriptengine.jinja2",
-            "ecma_semantics_lua_c",
-        ),
-    ];
     let mut missing = Vec::new();
-    for (file, token) in LOADERS {
+    for (file, token) in Language::ALL.iter().map(|language| loader_of(*language)) {
         let path = repo_root().join(file);
         let text = std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));

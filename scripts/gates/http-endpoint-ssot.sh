@@ -83,6 +83,40 @@ for entry in "${MIRRORS[@]}"; do
     sce_gate_step "mirror pinned: $file ($symbol = $value)"
 done
 
+# ── The path the Kotlin harness answers on, pinned to the owner ────
+# The Kotlin harness binds an ephemeral port (parallel test classes would
+# collide on a fixed one), so the port is not its to spell and is not pinned
+# above. The PATH is still spelled in three places there, and nothing compared
+# them to the owner's: a path edited in the owner left a Kotlin listener
+# answering on the old one while the document asked for the new.
+ENDPOINT_PATH="$(sce_http_endpoint_path "$SCE_REPO_ROOT")" \
+    || sce_gate_fail "$OWNER no longer declares a readable test path"
+PATH_MIRRORS=(
+    "backends/kotlin/tests/src/main/kotlin/com/sce/http/W3CHttpTestServer.kt|private val path: String = \""
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CHttpTestBase.kt|W3CHttpTestServer(port = 0, path = \""
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CHttpTestBase.kt|http://localhost:\$actualPort"
+)
+
+for entry in "${PATH_MIRRORS[@]}"; do
+    file="${entry%%|*}"
+    before="${entry#*|}"
+    [[ -f "$file" ]] \
+        || sce_gate_fail "pinned endpoint path mirror is missing: $file"
+    # The text between the end of the anchor and the next quote: the path as the
+    # file spells it.
+    value="$(awk -v anchor="$before" '
+        i = index($0, anchor) {
+            rest = substr($0, i + length(anchor))
+            print substr(rest, 1, index(rest, "\"") - 1)
+            exit
+        }' "$file")"
+    [[ -n "$value" ]] \
+        || sce_gate_fail "$file no longer spells the endpoint path after \`$before\`. It cannot read $OWNER, so it must carry a pinned copy of the path."
+    [[ "$value" == "$ENDPOINT_PATH" ]] \
+        || sce_gate_fail "$file spells the endpoint path as \`$value\` but $OWNER says \`$ENDPOINT_PATH\`. A harness answering on another path answers a request nobody sends."
+    sce_gate_step "path mirror pinned: $file ($value)"
+done
+
 # ── Everything that is allowed to say the number ───────────────────
 # Paths are matched as prefixes against the repo-relative path.
 ALLOWED=(
