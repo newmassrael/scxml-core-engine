@@ -41,14 +41,14 @@ PY
 
 mutation_case "a candidate is handed none of the values" <<'PY'
 edit("tools/codegen/templates/c/invoke_methods.jinja2",
-     "candidate.seeds, candidate.unkept, model, csym_prefix) }}\n                {{ csym_prefix }}{{ candidate.stem }}_invoked_enter(",
-     "[], candidate.unkept, model, csym_prefix) }}\n                {{ csym_prefix }}{{ candidate.stem }}_invoked_enter(")
+     "candidate.seeds, candidate.unkept, model, csym_prefix) }}\n{% if model.host_processor_types %}",
+     "[], candidate.unkept, model, csym_prefix) }}\n{% if model.host_processor_types %}")
 PY
 
 # ── An argument is evaluated whatever the candidate keeps ───────────
 
 mutation_case "an argument the candidate keeps no variable for is not evaluated" <<'PY'
 edit("tools/codegen/templates/c/invoke_methods.jinja2",
-     "candidate.seeds, candidate.unkept, model, csym_prefix) }}\n                {{ csym_prefix }}{{ candidate.stem }}_invoked_enter(",
-     "candidate.seeds, [], model, csym_prefix) }}\n                {{ csym_prefix }}{{ candidate.stem }}_invoked_enter(")
+     "candidate.seeds, candidate.unkept, model, csym_prefix) }}\n{% if model.host_processor_types %}",
+     "candidate.seeds, [], model, csym_prefix) }}\n{% if model.host_processor_types %}")
 PY

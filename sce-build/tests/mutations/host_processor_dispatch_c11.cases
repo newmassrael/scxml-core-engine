@@ -36,22 +36,19 @@ mutation_oracles backends/c/tests/integration/test_host_processor.c
 # The feature's off switch. Without the arm the send falls through to a
 # sibling arm that knows nothing about the host, and the act reaches nobody.
 
-# ⚠ TWO edits, and the second one changes no behaviour at all. Closing the
-# arm leaves `_perform_host_send` defined and called from nowhere, and this
-# tree builds with `-Wall -Wextra -pedantic -Werror`, so
-# `-Werror=unused-function` refuses the mutant before any test can run — the
-# round reported INCONCLUSIVE and proved nothing. Dropping `static` gives the
-# now-uncalled definition external linkage, which silences that diagnostic
-# without removing the definition. Removing it is NOT an option: the delayed
-# path calls the same helper under `model.has_delayed_host_send`, and a
-# fixture on that branch would fail to link rather than fail its assertions.
+# Closing the arm leaves `_perform_host_send` defined and called from nowhere.
+# This tree builds with `-Wall -Wextra -pedantic -Werror`, and a second edit
+# once dropped `static` so that `-Werror=unused-function` did not refuse the
+# mutant before any test ran. The definition is `SCE_C_UNUSED` now (a parent
+# whose only Mesh need is its children's routers has the processor and no send
+# site, SCE_MESH.md, Child Sessions in Mesh), so the mutant builds as it is.
+# Removing the definition is NOT an option: the delayed path calls the same
+# helper under `model.has_delayed_host_send`, and a fixture on that branch
+# would fail to link rather than fail its assertions.
 mutation_case "the template emits no host dispatch" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
      "{% elif action.send_type_host_served %}\n            /* §scxml-6.2.5:",
      "{% elif false and action.send_type_host_served %}\n            /* §scxml-6.2.5:")
-edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     "SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send(",
-     "SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_perform_host_send(")
 PY
 
 # ── …or happens and reports nothing when nobody is wired ────────────

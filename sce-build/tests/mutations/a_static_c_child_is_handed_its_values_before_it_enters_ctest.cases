@@ -33,8 +33,11 @@ mutation_oracles backends/c/tests/integration/test_static_invoke.c tests/integra
 
 mutation_case "a child is entered before it is handed its values" <<'PY'
 edit("tools/codegen/templates/c/invoke_methods.jinja2",
-     "{{ seed_static_child('sm->child_' ~ invoke_info.field_suffix, invoke_info.params, [], model, csym_prefix) }}\n            {{ csym_prefix }}{{ invoke_info.child_name }}_invoked_enter(&sm->child_{{ invoke_info.field_suffix }});",
-     "            {{ csym_prefix }}{{ invoke_info.child_name }}_invoked_enter(&sm->child_{{ invoke_info.field_suffix }});\n{{ seed_static_child('sm->child_' ~ invoke_info.field_suffix, invoke_info.params, [], model, csym_prefix) }}")
+     "{% endif %}\n            {{ csym_prefix }}{{ invoke_info.child_name }}_invoked_enter(&sm->child_{{ invoke_info.field_suffix }});\n",
+     "{% endif %}\n")
+edit("tools/codegen/templates/c/invoke_methods.jinja2",
+     "{{ seed_static_child('sm->child_' ~ invoke_info.field_suffix, invoke_info.params, [], model, csym_prefix) }}\n",
+     "            {{ csym_prefix }}{{ invoke_info.child_name }}_invoked_enter(&sm->child_{{ invoke_info.field_suffix }});\n{{ seed_static_child('sm->child_' ~ invoke_info.field_suffix, invoke_info.params, [], model, csym_prefix) }}\n")
 PY
 
 # ── A value that cannot be computed is left out and reported ───────

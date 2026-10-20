@@ -60,20 +60,16 @@ PY
 # is the host-only arm. The arms for a machine that also POSTs are not emitted
 # for it.
 #
-# ⚠ TWO edits, and the second one changes no behaviour at all. This document
-# sends to the host only after a delay, so the drain is the one caller of
-# `_perform_host_send`; without it the function is defined and called from
-# nowhere, and this tree builds with `-Werror`, so `-Werror=unused-function`
-# refused the mutant before any test ran — the first round reported
-# INCONCLUSIVE and proved nothing (measured 2026-09-30). Dropping `static`
-# gives the now-uncalled definition external linkage, as
-# `host_processor_dispatch_c11.cases` does for the same reason.
+# This document sends to the host only after a delay, so the drain is the one
+# caller of `_perform_host_send`; without it the function is defined and
+# called from nowhere. This tree builds with `-Werror`, and the first round
+# was refused by `-Werror=unused-function` before any test ran (measured
+# 2026-09-30), so a second edit dropped `static`. The definition is
+# `SCE_C_UNUSED` now, as `host_processor_dispatch_c11.cases` says, so the
+# mutant builds as it is.
 
 mutation_case "C11 drops a deferred host-served send at its deadline" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
      "{% else %}\n            {{ csym_prefix }}{{ model.name }}_perform_host_send(sm, &_ready_req);\n{% endif %}",
      "{% else %}\n            (void)_ready_req;\n{% endif %}")
-edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     "SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send(",
-     "SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_perform_host_send(")
 PY
