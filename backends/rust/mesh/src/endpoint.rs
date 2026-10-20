@@ -24,10 +24,9 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use std::sync::{Arc, Mutex};
 
-use sce_rust_runtime::helpers::scxml_constants::SCXML_EVENT_PROCESSOR_TYPE;
 use sce_rust_runtime::{
-    Engine, EventMetadata, EventType, HostInvokeEvent, HostInvokeRequest, HostInvokeResponse,
-    HostSendRequest, StatePolicy,
+    Engine, EventMetadata, HostInvokeEvent, HostInvokeRequest, HostInvokeResponse, HostSendRequest,
+    MeshCall, StatePolicy,
 };
 
 use crate::outbound::{AfterFailure, Attempts};
@@ -43,8 +42,10 @@ pub use sce_rust_runtime::MESH_PROCESSOR_TYPE;
 pub use sce_rust_runtime::MESH_RPC_INVOKE_TYPE;
 
 /// `_event.origin` of a Mesh-delivered event is this scheme and the sending
-/// machine's name (§mesh-10.7) — the C++ core's `kMeshOriginScheme`.
-pub const MESH_ORIGIN_SCHEME: &str = "mesh://";
+/// machine's name (§mesh-10.7) — the C++ core's `kMeshOriginScheme`. The
+/// runtime's constant, so the origin this crate writes is the one the engine
+/// writes when it ends a Mesh request.
+pub use sce_rust_runtime::MESH_ORIGIN_SCHEME;
 
 /// Why a transport declined a transmission.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -101,6 +102,30 @@ pub enum EngineCall {
         data: String,
         source: Option<String>,
     },
+}
+
+/// What the runtime applies: the one body that tells an engine what its
+/// endpoint has for it ([`Engine::apply_mesh_call`]), for a top-level
+/// machine ([`apply_to`]) and for a child session alike.
+impl From<EngineCall> for MeshCall {
+    fn from(call: EngineCall) -> Self {
+        match call {
+            EngineCall::Raise(EngineEvent { name, metadata }) => MeshCall::Raise { name, metadata },
+            EngineCall::EndInvoke {
+                invoke_id,
+                token,
+                failed,
+                data,
+                source,
+            } => MeshCall::EndInvoke {
+                invoke_id,
+                token,
+                failed,
+                data,
+                source,
+            },
+        }
+    }
 }
 
 /// A transmission waiting out its backoff.
@@ -500,16 +525,10 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
 /// §mesh-10.7 tabulates it and the C++ core fills it: external, origin
 /// `mesh://<source>`, the SCXML processor as origin type (every envelope is
 /// SCE's own, so the traffic is inter-SCXML by construction), and the send
-/// id the envelope carried.
+/// id the envelope carried. Built by the runtime's one function for it, which
+/// is also what a child session's event is built by.
 fn mesh_metadata(data: String, source: &str, send_id: String) -> EventMetadata {
-    EventMetadata {
-        data,
-        event_type: EventType::External,
-        send_id,
-        origin: alloc::format!("{MESH_ORIGIN_SCHEME}{source}"),
-        origin_type: SCXML_EVENT_PROCESSOR_TYPE.to_string(),
-        ..EventMetadata::default()
-    }
+    sce_rust_runtime::mesh_event_metadata(data, source, send_id)
 }
 
 /// Tell `engine` what `calls` say, in order. An event name the machine does
@@ -519,35 +538,11 @@ fn mesh_metadata(data: String, source: &str, send_id: String) -> EventMetadata {
 ///
 /// An answer carries `_event.origin` `mesh://<source>` and origin type
 /// `sce:mesh-rpc` (§mesh-9.5); a deadline the requester reached itself has
-/// no peer to name, and carries neither.
+/// no peer to name, and carries neither. Applied by the engine's own
+/// [`Engine::apply_mesh_call`], the body a child session's calls go through.
 pub fn apply_to<P: StatePolicy>(engine: &mut Engine<P>, calls: Vec<EngineCall>) {
     for call in calls {
-        match call {
-            EngineCall::Raise(event) => {
-                engine.raise_external_by_name_with_meta(&event.name, &event.metadata);
-            }
-            EngineCall::EndInvoke {
-                invoke_id,
-                token,
-                failed,
-                data,
-                source,
-            } => {
-                let (origin, origin_type) = match &source {
-                    Some(source) => (
-                        alloc::format!("{MESH_ORIGIN_SCHEME}{source}"),
-                        MESH_RPC_INVOKE_TYPE,
-                    ),
-                    None => (String::new(), ""),
-                };
-                let (id, kind) = (invoke_id.as_str(), MESH_RPC_INVOKE_TYPE);
-                if failed {
-                    engine.fail_host_invoke(kind, id, token, &data, &origin, origin_type);
-                } else {
-                    engine.complete_host_invoke_from(kind, id, token, &data, &origin, origin_type);
-                }
-            }
-        }
+        engine.apply_mesh_call(call.into());
     }
 }
 
@@ -596,6 +591,8 @@ mod tests {
     use crate::router::PeerConfig;
     use alloc::collections::VecDeque;
     use alloc::vec;
+    use sce_rust_runtime::helpers::scxml_constants::SCXML_EVENT_PROCESSOR_TYPE;
+    use sce_rust_runtime::EventType;
 
     /// A transport that records what it sent and fails as told.
     #[derive(Default)]

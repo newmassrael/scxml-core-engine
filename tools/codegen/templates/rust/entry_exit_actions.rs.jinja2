@@ -487,6 +487,10 @@
                     // cancel-drop, test252).
                     if let Some(mut child) = self.child_{{ invoke_info.field_suffix }}.take() {
                         child.stop();
+                        // Child sessions in Mesh (SCE_MESH.md): the session
+                        // ended, after the child stopped, so what it sent while
+                        // stopping was handed to its router first.
+                        child.detach_mesh();
                     }
                 }
                 self.active_invokes.remove("{{ invoke_info.invoke_id }}");
@@ -496,15 +500,20 @@
                 // W3C SCXML 6.4: Cleanup running hybrid child '{{ invoke_info.invoke_id }}'
 {% if invoke_info.candidates %}
 {# At most one candidate slot holds a child; clearing all of them is the
-   same guard the single-slot shape used, once per slot. #}
+   same guard the single-slot shape used, once per slot. A cancelled candidate
+   is exited before it is dropped, as a static child is (§scxml-D-exitInterpreter),
+   which cancels its own children first; then the session's Mesh router is told
+   it ended (SCE_MESH.md, Child Sessions in Mesh). #}
 {% for candidate in invoke_info.candidates %}
-                if self.child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}.is_some() {
-                    self.child_{{ invoke_info.field_suffix }}_{{ candidate.stem }} = None;
+                if let Some(mut child) = self.child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}.take() {
+                    child.stop();
+                    child.detach_mesh();
                 }
 {% endfor %}
 {% else %}
-                if self.child_{{ invoke_info.field_suffix }}.is_some() {
-                    self.child_{{ invoke_info.field_suffix }} = None;
+                if let Some(mut child) = self.child_{{ invoke_info.field_suffix }}.take() {
+                    child.stop();
+                    child.detach_mesh();
                 }
 {% endif %}
                 self.active_invokes.remove("{{ invoke_info.invoke_id }}");

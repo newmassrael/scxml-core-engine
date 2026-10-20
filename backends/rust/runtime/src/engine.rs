@@ -88,6 +88,13 @@ use crate::policy::StatePolicy;
 use crate::MAX_SCHEDULED_EVENTS;
 use crate::{sce_log_debug, sce_log_error, SceString};
 
+/// Why a child's Mesh router lock is never poisoned: nothing a router does
+/// while the engine holds it panics, and a router that did would have left
+/// the session's state half-written, which no later call can repair.
+#[cfg(not(feature = "no_std"))]
+const CHILD_MESH_ROUTER_HELD: &str =
+    "a child's Mesh router is never left mid-call: nothing in it panics while locked";
+
 // ─────────────────────────────────────────────────────────────────────
 // Scheduler time point alias (SCE Protocol-Synthesis RFC §synth-5-J-2 line 1984 HAL)
 // ─────────────────────────────────────────────────────────────────────
@@ -1003,6 +1010,17 @@ pub struct Engine<P: StatePolicy> {
     /// the events the saved machine had queued.
     #[cfg(not(feature = "no_std"))]
     pub(crate) restored_host_invokes: Vec<RestoredHostInvoke>,
+    /// The factory of the routers of this machine's children (SCE_MESH.md,
+    /// Child Sessions in Mesh): registered by the host on a machine it starts
+    /// ([`Engine::register_child_mesh_routers`]), and on a child by the
+    /// router its parent gave it, which answers for the child's children.
+    #[cfg(not(feature = "no_std"))]
+    pub(crate) child_mesh_routers: Option<crate::host_processor::ChildMeshRouters>,
+    /// The router this machine was given as a child session, shared with the
+    /// send and request handlers it serves; `None` for a machine its host
+    /// started, and for a child given none.
+    #[cfg(not(feature = "no_std"))]
+    pub(crate) installed_mesh: Option<crate::host_processor::SharedChildMeshRouter>,
     #[cfg(not(feature = "no_std"))]
     pub(crate) on_http_send:
         Option<Box<dyn FnMut(HttpSendRequest) -> Option<HttpSendResponse> + Send>>,
@@ -1173,6 +1191,10 @@ impl<P: StatePolicy> Engine<P> {
             refused_host_invoke_completions: 0,
             #[cfg(not(feature = "no_std"))]
             restored_host_invokes: Vec::new(),
+            #[cfg(not(feature = "no_std"))]
+            child_mesh_routers: None,
+            #[cfg(not(feature = "no_std"))]
+            installed_mesh: None,
             #[cfg(not(feature = "no_std"))]
             on_http_send: None,
             scheduler: PullScheduler::new(),
@@ -3534,6 +3556,160 @@ impl<P: StatePolicy> Engine<P> {
             crate::host_processor::MESH_RPC_INVOKE_TYPE,
             Box::new(router),
         );
+    }
+
+    /// Register the factory of the routers of this machine's children
+    /// (SCE_MESH.md, Child Sessions in Mesh; docs/adr/0043).
+    ///
+    /// A child session started by `<invoke type="scxml">` is given none of
+    /// this machine's registrations: its peer sends would leave under this
+    /// machine's name. The generated parent asks `factory` instead, each time
+    /// an invocation starts a child (on entry, on a restore, and for the
+    /// candidate a hybrid `<invoke>` chose), with the invoke's id and the stem
+    /// of the child's document, and installs the answer on the child before
+    /// the child initializes ([`Engine::start_child_mesh`]). A factory that
+    /// answers `None`, or none registered, leaves the child with no router:
+    /// its peer send raises `error.execution` in the child, and nothing falls
+    /// back to this machine's router.
+    #[cfg(not(feature = "no_std"))]
+    pub fn register_child_mesh_routers<F>(&mut self, factory: F)
+    where
+        F: FnMut(&str, &str) -> Option<Box<dyn crate::host_processor::ChildMeshRouter>>
+            + Send
+            + 'static,
+    {
+        self.child_mesh_routers = Some(Box::new(factory));
+    }
+
+    /// Ask this machine's factory of children's routers for the router of
+    /// `child`, which the invoke `invoke_id` is starting from the document
+    /// whose stem is `document` (empty for a child written inline), and
+    /// install the answer on `child`: its `sce:mesh` sends and `sce:mesh-rpc`
+    /// requests go to it, and its own children are asked of it.
+    ///
+    /// Called by the generated parent before `child` initializes, since an
+    /// `<onentry>` of its initial state may already send. Leaves `child` as it
+    /// is when no factory is registered or the factory answers `None`.
+    #[cfg(not(feature = "no_std"))]
+    pub fn start_child_mesh<Q: StatePolicy>(
+        &mut self,
+        child: &mut Engine<Q>,
+        invoke_id: &str,
+        document: &str,
+    ) {
+        let Some(factory) = self.child_mesh_routers.as_mut() else {
+            return;
+        };
+        if let Some(router) = factory(invoke_id, document) {
+            child.install_child_mesh_router(router);
+        }
+    }
+
+    /// Install `router` as this machine's Mesh router, its request invoker
+    /// and the factory of its children's routers — the three a host installs
+    /// on a machine it starts, served here by the one router the parent was
+    /// given for this session.
+    #[cfg(not(feature = "no_std"))]
+    fn install_child_mesh_router(
+        &mut self,
+        router: Box<dyn crate::host_processor::ChildMeshRouter>,
+    ) {
+        let shared: crate::host_processor::SharedChildMeshRouter =
+            std::sync::Arc::new(std::sync::Mutex::new(router));
+        let sender = std::sync::Arc::clone(&shared);
+        self.register_mesh_router(move |request| {
+            sender.lock().expect(CHILD_MESH_ROUTER_HELD).send(request)
+        });
+        let invoker = std::sync::Arc::clone(&shared);
+        self.register_mesh_rpc_invoker(move |event| {
+            invoker.lock().expect(CHILD_MESH_ROUTER_HELD).invoke(event)
+        });
+        let parent = std::sync::Arc::clone(&shared);
+        self.child_mesh_routers = Some(Box::new(move |invoke_id: &str, document: &str| {
+            parent
+                .lock()
+                .expect(CHILD_MESH_ROUTER_HELD)
+                .child_router(invoke_id, document)
+        }));
+        self.installed_mesh = Some(shared);
+    }
+
+    /// Apply what arrived for this machine on the router its parent gave it,
+    /// in the order the router released it ([`Engine::apply_mesh_call`]).
+    ///
+    /// The generated parent calls it each time it drives this child, before
+    /// the child's macrostep, where it already drains the child's events to
+    /// itself. Does nothing for a machine given no router.
+    #[cfg(not(feature = "no_std"))]
+    pub fn apply_mesh_calls(&mut self) {
+        let calls = match &self.installed_mesh {
+            Some(router) => router.lock().expect(CHILD_MESH_ROUTER_HELD).take_calls(),
+            None => return,
+        };
+        for call in calls {
+            self.apply_mesh_call(call);
+        }
+    }
+
+    /// Tell this engine one thing its Mesh endpoint has for it: raise an
+    /// event with the `_event` the endpoint built, or end a Mesh request. An
+    /// event name the machine does not declare is dropped, as the engine
+    /// drops any such event; an end the engine no longer waits for (its state
+    /// exited, or it was started again) is refused by the token check.
+    ///
+    /// An answer carries `_event.origin` `mesh://<source>` and origin type
+    /// `sce:mesh-rpc` (SCE_MESH.md §mesh-9.5); a deadline the requester
+    /// reached itself has no peer to name, and carries neither. The one body
+    /// a host core's top-level machine and a child session are told through.
+    #[cfg(not(feature = "no_std"))]
+    pub fn apply_mesh_call(&mut self, call: crate::host_processor::MeshCall) {
+        use crate::host_processor::{MeshCall, MESH_ORIGIN_SCHEME, MESH_RPC_INVOKE_TYPE};
+        match call {
+            MeshCall::Raise { name, metadata } => {
+                self.raise_external_by_name_with_meta(&name, &metadata);
+            }
+            MeshCall::EndInvoke {
+                invoke_id,
+                token,
+                failed,
+                data,
+                source,
+            } => {
+                let (origin, origin_type) = match &source {
+                    Some(source) => (
+                        format!("{MESH_ORIGIN_SCHEME}{source}"),
+                        MESH_RPC_INVOKE_TYPE,
+                    ),
+                    None => (String::new(), ""),
+                };
+                let kind = MESH_RPC_INVOKE_TYPE;
+                if failed {
+                    self.fail_host_invoke(kind, &invoke_id, token, &data, &origin, origin_type);
+                } else {
+                    self.complete_host_invoke_from(
+                        kind,
+                        &invoke_id,
+                        token,
+                        &data,
+                        &origin,
+                        origin_type,
+                    );
+                }
+            }
+        }
+    }
+
+    /// The child session this machine is has ended: tell the router its
+    /// parent gave it, once (SCE_MESH.md, Child Sessions in Mesh). The
+    /// generated parent calls it after the child reached a top-level
+    /// `<final>`, or after it stopped the child because the invoking state
+    /// exited, so a send the child made while stopping was handed over
+    /// first. Does nothing for a machine given no router, or detached already.
+    #[cfg(not(feature = "no_std"))]
+    pub fn detach_mesh(&mut self) {
+        if let Some(router) = self.installed_mesh.take() {
+            router.lock().expect(CHILD_MESH_ROUTER_HELD).detach();
+        }
     }
 
     /// §scxml-6.4.1: register `handler` as the invoker for

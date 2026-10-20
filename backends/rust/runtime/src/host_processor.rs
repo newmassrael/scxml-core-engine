@@ -189,6 +189,120 @@ pub const MESH_PROCESSOR_TYPE: &str = "sce:mesh";
 /// see `Engine::register_mesh_rpc_invoker`.
 pub const MESH_RPC_INVOKE_TYPE: &str = "sce:mesh-rpc";
 
+/// `_event.origin` of a Mesh-delivered event is this scheme and the sending
+/// machine's name (SCE_MESH.md §mesh-10.7) — the C++ core's
+/// `kMeshOriginScheme`.
+pub const MESH_ORIGIN_SCHEME: &str = "mesh://";
+
+/// The `_event` of an event that arrived over Mesh from `source`, as
+/// SCE_MESH.md §mesh-10.7 tabulates it: external, origin `mesh://<source>`,
+/// the SCXML processor as origin type (every envelope is SCE's own, so the
+/// traffic is inter-SCXML by construction), and the send id the envelope
+/// carried.
+///
+/// The one place it is built: a host core's endpoint builds what it hands a
+/// top-level machine with it, and what it hands a child session (SCE_MESH.md,
+/// Child Sessions in Mesh), so a child cannot tell a peer's event from the one
+/// its parent would have been given.
+pub fn mesh_event_metadata(data: String, source: &str, send_id: String) -> crate::EventMetadata {
+    crate::EventMetadata {
+        data,
+        event_type: crate::EventType::External,
+        send_id,
+        origin: format!("{MESH_ORIGIN_SCHEME}{source}"),
+        origin_type: crate::helpers::scxml_constants::SCXML_EVENT_PROCESSOR_TYPE.to_string(),
+        ..crate::EventMetadata::default()
+    }
+}
+
+/// One thing a Mesh endpoint has for the engine it serves, in the order the
+/// endpoint came to know it: what [`Engine::apply_mesh_calls`] applies.
+///
+/// [`Engine::apply_mesh_calls`]: crate::Engine::apply_mesh_calls
+#[derive(Debug, Clone)]
+pub enum MeshCall {
+    /// Raise this event on the external queue, with the `_event` the
+    /// endpoint built for it ([`mesh_event_metadata`] for a peer's event).
+    Raise {
+        name: String,
+        metadata: crate::EventMetadata,
+    },
+    /// End the start `token` of the Mesh request `invoke_id` — with
+    /// `done.invoke`, or with `error.invoke` when `failed` — carrying `data`
+    /// as `_event.data`. `source` is the machine that answered, `None` for a
+    /// deadline the requester reached itself.
+    EndInvoke {
+        invoke_id: String,
+        token: u64,
+        failed: bool,
+        data: String,
+        source: Option<String>,
+    },
+}
+
+/// The Mesh router a child session is given by its parent (SCE_MESH.md, Child
+/// Sessions in Mesh; docs/adr/0043): the child's endpoint attached to that one
+/// session.
+///
+/// What a host installs on a machine it starts, the parent installs on the
+/// child it starts, before the child initializes, since an `<onentry>` of the
+/// child's initial state may already send: the child's `<send type="sce:mesh">`
+/// goes to [`Self::send`] and its `<invoke type="sce:mesh-rpc">` to
+/// [`Self::invoke`], as [`Engine::register_mesh_router`] and
+/// [`Engine::register_mesh_rpc_invoker`] route a machine's. What arrives for
+/// the child waits here until the parent drives the child, which takes it with
+/// [`Self::take_calls`] before the child's macrostep. When the session ends the
+/// parent says so with [`Self::detach`], after the child has stopped.
+///
+/// [`Engine::register_mesh_router`]: crate::Engine::register_mesh_router
+/// [`Engine::register_mesh_rpc_invoker`]: crate::Engine::register_mesh_rpc_invoker
+pub trait ChildMeshRouter: Send {
+    /// A `<send type="sce:mesh">` of the child. Answered as a registered
+    /// router answers: the events to raise at once, usually none.
+    fn send(&mut self, request: HostSendRequest) -> Vec<HostSendResponse>;
+
+    /// An `<invoke type="sce:mesh-rpc">` of the child starting or being
+    /// cancelled, answered as a registered invoker answers.
+    fn invoke(&mut self, event: HostInvokeEvent) -> Option<HostInvokeResponse>;
+
+    /// What arrived for the child since it was last asked, oldest first.
+    fn take_calls(&mut self) -> Vec<MeshCall>;
+
+    /// The session this router was attached to has ended: it reached a
+    /// top-level `<final>`, or its parent left the invoking state and
+    /// cancelled it. Called once, after the child has stopped, so a send the
+    /// child made while it was being stopped has been handed over.
+    fn detach(&mut self);
+
+    /// The router of a child this child starts, asked as the parent's
+    /// factory is asked ([`ChildMeshRouters`]). None by default: a child
+    /// whose router answers none starts children with no router, whose peer
+    /// sends raise `error.execution` in them.
+    fn child_router(
+        &mut self,
+        invoke_id: &str,
+        document: &str,
+    ) -> Option<Box<dyn ChildMeshRouter>> {
+        let _ = (invoke_id, document);
+        None
+    }
+}
+
+/// The factory of the routers of a machine's children, registered with
+/// [`Engine::register_child_mesh_routers`]: asked, each time an invocation
+/// starts a child, with the invoke's id and the stem of the child's document
+/// (empty for a child written inline), as a parent's host is asked for the
+/// child's host. `None` leaves the child with no router.
+///
+/// [`Engine::register_child_mesh_routers`]: crate::Engine::register_child_mesh_routers
+pub type ChildMeshRouters =
+    Box<dyn FnMut(&str, &str) -> Option<Box<dyn ChildMeshRouter>> + Send + 'static>;
+
+/// A child's router as the engine holds it: shared by the send handler, the
+/// request handler and the factory of the child's own children it is
+/// installed as, and by the engine, which takes what arrived and detaches it.
+pub(crate) type SharedChildMeshRouter = std::sync::Arc<std::sync::Mutex<Box<dyn ChildMeshRouter>>>;
+
 /// Whether a host may not register `processor_type`: it starts with
 /// [`RESERVED_TYPE_PREFIX`], spelled exactly.
 ///
