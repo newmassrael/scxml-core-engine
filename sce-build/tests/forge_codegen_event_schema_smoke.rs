@@ -420,10 +420,8 @@ fn go_leading_identifier(text: &str) -> Option<String> {
 /// names it declares ([`go_package_level_names`]).
 type GoPackageMachines = Vec<(String, Vec<String>)>;
 
-/// Generate `document` for Go into `out_dir`, as a parent and every child it
-/// invokes are generated: into one package. Answers each machine file written,
-/// by name and in name order, with the names it declares at package level.
-fn generate_go_package(document: &Path, out_dir: &Path) -> GoPackageMachines {
+/// Generate `document` for Go into `out_dir`, with `extra` arguments.
+fn generate_go_into(document: &Path, out_dir: &Path, extra: &[&str]) {
     std::fs::create_dir_all(out_dir).expect("create out dir");
     let output = Command::new(sce_codegen_bin())
         .args(["generate", "-l", "go", "-o"])
@@ -432,17 +430,31 @@ fn generate_go_package(document: &Path, out_dir: &Path) -> GoPackageMachines {
             "--go-module-prefix",
             "example.com/sce-forge/event-schema-smoke",
         ])
+        .args(extra)
         .arg(document)
         .current_dir(repo_root())
         .output()
         .expect("spawn sce-codegen");
     assert!(
         output.status.success(),
-        "sce-codegen generate -l go {} failed (exit {:?})\nstderr: {}",
+        "sce-codegen generate -l go {extra:?} {} failed (exit {:?})\nstderr: {}",
         document.display(),
         output.status.code(),
         String::from_utf8_lossy(&output.stderr),
     );
+}
+
+/// Generate `document` for Go into `out_dir`, as a parent and every child it
+/// invokes are generated: into one package. Answers each machine file written,
+/// by name and in name order, with the names it declares at package level.
+fn generate_go_package(document: &Path, out_dir: &Path) -> GoPackageMachines {
+    generate_go_into(document, out_dir, &[]);
+    go_package_machines(out_dir)
+}
+
+/// Each machine file in `out_dir`, by name and in name order, with the names it
+/// declares at package level.
+fn go_package_machines(out_dir: &Path) -> GoPackageMachines {
     find_by_ext(out_dir, "go")
         .into_iter()
         .filter(|path| path.to_string_lossy().ends_with("_sm.go"))
@@ -513,46 +525,14 @@ fn a_go_package_declares_each_name_once_where_a_parent_and_its_child_share_a_sch
     );
 }
 
-/// The child `shared_state` invokes in-line: it holds what its parent holds — a
-/// record of the standard clock and a value of the standard `rpc_status` enum —
-/// and calls the algorithm its parent calls, the same way.
-const SHARED_STATE_CHILD: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-               version="1.0" initial="running" datamodel="sce-static">
-          <sce:import kind="event-schema" src="sce:std/merge/hlc_timestamp.scxml" as="Hlc"/>
-          <sce:import kind="algorithm" src="sce:std/merge/hlc_send.scxml" as="HlcSend"/>
-          <sce:import kind="enum" src="sce:std/mesh/rpc_status.scxml" as="Status"/>
-          <datamodel>
-            <data id="status" sce:type="enum:Status" expr="Status.ok"/>
-            <data id="now" sce:type="int64" expr="0"/>
-            <data id="node" sce:type="uint64" expr="0"/>
-            <data id="clock" sce:type="record:Hlc">
-              <sce:set name="wallTime" expr="0"/>
-              <sce:set name="counter" expr="0"/>
-              <sce:set name="nodeId" expr="0"/>
-            </data>
-          </datamodel>
-          <state id="running">
-            <transition event="tick" type="internal">
-              <assign location="clock" expr="HlcSend(clock, now, node)"/>
-            </transition>
-          </state>
-        </scxml>"#;
-
-/// `shared_state`, written into `dir`: a parent that holds a record of the
-/// standard clock and a value of the standard `rpc_status` enum, calls the
-/// standard `hlc_send` with the record, and invokes in-line
-/// [`SHARED_STATE_CHILD`], which does the same.
-fn shared_state_parent(dir: &Path) -> PathBuf {
-    let path = dir.join("shared_state.scxml");
-    std::fs::write(
-        &path,
-        format!(
-            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       version="1.0" initial="running" datamodel="sce-static" name="shared_state">
+/// What `shared_state` and the child it invokes both hold — a record of the
+/// standard clock and a value of the standard `rpc_status` enum — and the call
+/// of the standard `hlc_send` both make with the record, the same way.
+const SHARED_STATE_IMPORTS: &str = r#"
   <sce:import kind="event-schema" src="sce:std/merge/hlc_timestamp.scxml" as="Hlc"/>
   <sce:import kind="algorithm" src="sce:std/merge/hlc_send.scxml" as="HlcSend"/>
-  <sce:import kind="enum" src="sce:std/mesh/rpc_status.scxml" as="Status"/>
-  <datamodel>
+  <sce:import kind="enum" src="sce:std/mesh/rpc_status.scxml" as="Status"/>"#;
+const SHARED_STATE_DATA: &str = r#"
     <data id="status" sce:type="enum:Status" expr="Status.ok"/>
     <data id="now" sce:type="int64" expr="0"/>
     <data id="node" sce:type="uint64" expr="0"/>
@@ -560,23 +540,50 @@ fn shared_state_parent(dir: &Path) -> PathBuf {
       <sce:set name="wallTime" expr="0"/>
       <sce:set name="counter" expr="0"/>
       <sce:set name="nodeId" expr="0"/>
-    </data>
-  </datamodel>
-  <state id="running">
-    <invoke type="scxml" id="kid">
-      <content>
-        {SHARED_STATE_CHILD}
-      </content>
-    </invoke>
+    </data>"#;
+const SHARED_STATE_TICK: &str = r#"
     <transition event="tick" type="internal">
       <assign location="clock" expr="HlcSend(clock, now, node)"/>
-    </transition>
+    </transition>"#;
+
+/// `shared_state` and `shared_state_kid`, written into `dir`. The parent holds
+/// [`SHARED_STATE_DATA`] and invokes the child as a candidate of a hybrid
+/// `<invoke>` (`sce:candidates`), which is generated into the parent's package;
+/// the child holds the same and makes the same call. The child is a document of
+/// its own and not an in-line `<content>` one, because an in-line child is read
+/// with no directory and its `<sce:import>`s are not resolved.
+fn shared_state_documents(dir: &Path) -> (PathBuf, PathBuf) {
+    let parent = dir.join("shared_state.scxml");
+    std::fs::write(
+        &parent,
+        format!(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="running" datamodel="sce-static" name="shared_state">{SHARED_STATE_IMPORTS}
+  <datamodel>
+    <data id="pick" sce:type="string" sce:capacity="48" expr="'file:shared_state_kid.scxml'"/>{SHARED_STATE_DATA}
+  </datamodel>
+  <state id="running">
+    <invoke type="scxml" id="kid" srcexpr="pick" sce:candidates="shared_state_kid.scxml"/>{SHARED_STATE_TICK}
   </state>
 </scxml>"#
         ),
     )
     .expect("write shared_state");
-    path
+    let child = dir.join("shared_state_kid.scxml");
+    std::fs::write(
+        &child,
+        format!(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="running" datamodel="sce-static" name="shared_state_kid">{SHARED_STATE_IMPORTS}
+  <datamodel>{SHARED_STATE_DATA}
+  </datamodel>
+  <state id="running">{SHARED_STATE_TICK}
+  </state>
+</scxml>"#
+        ),
+    )
+    .expect("write shared_state_kid");
+    (parent, child)
 }
 
 /// A parent and the child it invokes, in one Go package, that hold the same
@@ -586,19 +593,26 @@ fn shared_state_parent(dir: &Path) -> PathBuf {
 /// each holds the enum in a type of its own, and a constant named by the enum
 /// alone (`RpcStatusOk`) was declared once by each machine. Every package-level
 /// name the package's machines declare is declared once.
+///
+/// The child is generated into the parent's package as the committed Go trees
+/// generate a candidate (`--as-child --parent-stem`).
 #[test]
 fn a_go_package_declares_each_name_once_where_a_parent_and_its_child_hold_the_same_state() {
     let scratch = reset_scratch("go_shared_state");
-    let parent = shared_state_parent(&scratch);
-    let machines = generate_go_package(&parent, &scratch.join("out"));
+    let (parent, child) = shared_state_documents(&scratch);
+    let out_dir = scratch.join("out");
+    generate_go_into(&parent, &out_dir, &[]);
+    generate_go_into(
+        &child,
+        &out_dir,
+        &["--as-child", "--parent-stem", "shared_state"],
+    );
+    let machines = go_package_machines(&out_dir);
     let file_names: Vec<&str> = machines.iter().map(|(name, _)| name.as_str()).collect();
     assert_eq!(
         file_names,
-        [
-            "shared_state__sce_synth_invoke__kid_sm.go",
-            "shared_state_sm.go"
-        ],
-        "the parent and its in-line child are generated into one package"
+        ["shared_state_kid_sm.go", "shared_state_sm.go"],
+        "the parent and its candidate are generated into one package"
     );
     for (file_name, names) in &machines {
         // Each machine has its adapter of the call, so the check below reads the
