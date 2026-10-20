@@ -154,12 +154,12 @@ TEST(ExternalChainIsBoundedAotTest, AChainThroughAStaticDelayOfZeroDoesNotKeepTh
     ASSERT_TRUE(sm->setMaxExternalEventsPerCall(budget));
 
     sm->processEvent(SM::Event::Zero);
-    EXPECT_EQ(sm->truncatedEventChains(), 0u)
+    EXPECT_EQ(sm->truncatedEventChains(), externalEventBudgetCount({"static_zero", "truncated_after_entry"}))
         << "entering the state arms one entry and pops none: nothing has been cut yet";
 
     sm->tick();
 
-    EXPECT_EQ(sm->truncatedEventChains(), 1u)
+    EXPECT_EQ(sm->truncatedEventChains(), externalEventBudgetCount({"static_zero", "truncated"}))
         << "the tick popped entries due at its own reading until the budget, left the due one waiting and said so";
     EXPECT_EQ(COUNTER(sm, blinks), static_cast<int64_t>(budget))
         << "the budget of pops at one reading, no more and no fewer";
@@ -189,13 +189,14 @@ TEST(ExternalChainIsBoundedAotTest, AChainThroughADelayExpressionThatIsZeroDoesN
 TEST(ExternalChainIsBoundedAotTest, AChainThatIsFiniteBecauseTheClockIsIsNotRefused) {
     const uint32_t budget = externalEventBudgetCount({"timed", "budget"});
     const int64_t pulseCount = externalEventBudgetInt({"timed", "pulses"});
+    const int64_t intervalMs = externalEventBudgetInt({"timed", "interval_ms"});
     const uint32_t truncated = externalEventBudgetCount({"timed", "truncated"});
 
     auto walked = started();
     ASSERT_TRUE(walked->setMaxExternalEventsPerCall(budget));
     walked->processEvent(SM::Event::Timed);
     for (int64_t i = 0; i < pulseCount; ++i) {
-        walked->advanceTimeMs(1);
+        walked->advanceTimeMs(static_cast<uint64_t>(intervalMs));
     }
     EXPECT_EQ(COUNTER(walked, pulses), pulseCount);
     EXPECT_EQ(walked->truncatedEventChains(), truncated)
@@ -204,7 +205,7 @@ TEST(ExternalChainIsBoundedAotTest, AChainThatIsFiniteBecauseTheClockIsIsNotRefu
     auto jumped = started();
     ASSERT_TRUE(jumped->setMaxExternalEventsPerCall(budget));
     jumped->processEvent(SM::Event::Timed);
-    jumped->advanceTimeMs(static_cast<uint64_t>(pulseCount));
+    jumped->advanceTimeMs(static_cast<uint64_t>(pulseCount * intervalMs));
     EXPECT_EQ(COUNTER(jumped, pulses), pulseCount);
     EXPECT_EQ(jumped->truncatedEventChains(), truncated)
         << "eight entries came due on the way to one reading, seven of them at earlier instants: a clock that moved a "

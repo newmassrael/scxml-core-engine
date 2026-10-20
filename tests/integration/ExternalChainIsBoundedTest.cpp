@@ -267,7 +267,7 @@ TEST_F(ExternalChainIsBoundedTest, AChainThroughAStaticDelayOfZeroIsCutAtTheBudg
 
     sm_->processEvent("zero");
 
-    EXPECT_EQ(sm_->getStatistics().truncatedEventChains, 1u);
+    EXPECT_EQ(sm_->getStatistics().truncatedEventChains, externalEventBudgetCount({"static_zero", "truncated"}));
     EXPECT_EQ(counter("blinks"), std::to_string(budget - 1))
         << "the host's event and `budget - 1` blinks, no more and no fewer";
     EXPECT_EQ(sm_->getStatistics().lastTruncatedEvent, "blink");
