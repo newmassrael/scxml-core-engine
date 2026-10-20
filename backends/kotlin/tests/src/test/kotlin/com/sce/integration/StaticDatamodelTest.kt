@@ -46,10 +46,13 @@ import com.sce.integration.static_record.StaticRecordStateMachine
 import com.sce.integration.static_record_bytes.StaticRecordBytesEvent
 import com.sce.integration.static_record_bytes.StaticRecordBytesStateMachine
 import com.sce.integration.static_record_string.StaticRecordStringStateMachine
+import com.sce.integration.static_schema_revision.StaticSchemaRevisionStateMachine
 import com.sce.integration.static_string_capacity.StaticStringCapacityStateMachine
 import com.sce.integration.static_timers.StaticTimersEvent
 import com.sce.integration.static_timers.StaticTimersStateMachine
 import com.sce.runtime.ActionRealization
+import com.sce.runtime.EventMetadata
+import com.sce.runtime.Json
 import com.sce.runtime.ManualClock
 import com.sce.runtime.SavedState
 import com.sce.runtime.StateRefusal
@@ -761,6 +764,106 @@ class StaticDatamodelTest {
             record.cleanup()
             list.cleanup()
         }
+    }
+
+    // ── static_schema_revision: a state saved at an earlier revision of a schema ──
+    //
+    // `last` is a record of `schema_revised.scxml`, the third revision of a schema
+    // whose second added `layout` (default `week`) and third `urgent` (default
+    // `true`). A state saved by a build of an earlier revision restores, each field
+    // added since at its default (docs/adr/0044). The Rust suite holds the same
+    // fixtures.
+
+    private fun <T> withRevised(text: String, body: (StaticSchemaRevisionStateMachine) -> T): T {
+        val sm = StaticSchemaRevisionStateMachine()
+        try {
+            sm.restore(SavedState.fromJson(text))
+            return body(sm)
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    /** What [sm]'s `last` holds, as a saved state writes it. */
+    private fun lastOf(sm: StaticSchemaRevisionStateMachine): String = Json.write(sm.save().variable("last"))
+
+    @Test
+    fun aRecordOfASchemaThatGrewSavesTheTextEveryBackendSaves() {
+        // A delivery of the first revision, as the scenario's first step: the
+        // machine is at the third, so it names that revision and the revised shape.
+        val sm = StaticSchemaRevisionStateMachine()
+        sm.initialize()
+        try {
+            sm.sendEventByName("reading.revised", EventMetadata(data = """{"level":4}"""))
+            sm.tick()
+            assertEquals(sharedFixture("static_schema_revision"), sm.save().toJson())
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun aStateSavedAtTheFirstRevisionRestoresWithEveryLaterDefault() {
+        // The same moment saved by a build whose schema had the level alone: it
+        // restores, and the machine is the one the later build would have saved.
+        withRevised(sharedFixture("static_schema_revision_first")) { sm ->
+            assertEquals(sharedFixture("static_schema_revision"), sm.save().toJson())
+            assertEquals(1u, sm.taken)
+        }
+    }
+
+    @Test
+    fun aStateSavedAtTheSecondRevisionKeepsItsLayoutAndTakesTheUrgency() {
+        withRevised(sharedFixture("static_schema_revision_second")) { sm ->
+            assertEquals("""{"level":5,"layout":"day","urgent":true}""", lastOf(sm))
+            assertEquals(2u, sm.taken)
+        }
+    }
+
+    @Test
+    fun aQueuedDeliveryOfTheFirstRevisionTakesTheDefaultsWhenItIsDelivered() {
+        // The external queue holds the data as the wire carried it; the lift reads
+        // it with the defaults when the event is dequeued.
+        withRevised(sharedFixture("static_schema_revision_first_queued")) { sm ->
+            assertEquals("""{"level":4,"layout":"week","urgent":true}""", lastOf(sm))
+            sm.tick()
+            assertEquals("""{"level":5,"layout":"week","urgent":true}""", lastOf(sm))
+            assertEquals(2u, sm.taken)
+            assertEquals(0u, sm.refusals)
+        }
+    }
+
+    @Test
+    fun aStateOfALaterOrAnotherRevisionIsRefused() {
+        fun refusalOf(text: String): String {
+            val sm = StaticSchemaRevisionStateMachine()
+            try {
+                return assertThrows(StateRefusal::class.java) { sm.restore(SavedState.fromJson(text)) }.message!!
+            } finally {
+                sm.cleanup()
+            }
+        }
+        // Saved by a build of a fourth revision this one does not know.
+        val later = sharedFixture("static_schema_revision").replace("\"revision\":3", "\"revision\":4")
+        assertTrue(refusalOf(later).contains("later than"))
+        // A second revision that declared other fields than this build's second.
+        val other = sharedFixture("static_schema_revision_second").replace(
+            "d9ba6a71207a3f219929c8fda298d7a35c76cb7950cc287ae2fa8a8b8ff45ad7",
+            "e511eddacf1d4e220c85f78c95988fe26a2a1319cf119cb085f1a84f4f197f8d",
+        )
+        assertTrue(refusalOf(other).contains("declared other fields"))
+        // A record saved at the first revision that holds a field the second added.
+        val early = sharedFixture("static_schema_revision_first")
+            .replace("""{"level":4}""", """{"level":4,"layout":"day"}""")
+        val refusal = refusalOf(early)
+        assertTrue(refusal.contains("'last' holds 'layout'"), refusal)
+        // A state that names its revision under the first shape, which a reader that
+        // predates revisions would have taken.
+        val unmarked = sharedFixture("static_schema_revision").replace(
+            "cb771df5efc33bf380bfd5a267ca027b408f8cd064bbc7eec5ca0266e23d06f5",
+            "11dbc3cc8b1f883cc9da011d2d5c3968ac0eeb404a0f494deede91552cd6623d",
+        )
+        assertTrue(refusalOf(unmarked).contains("names revisions"))
     }
 
     // ── static_enum: a variable that holds a variant of an imported enum ──

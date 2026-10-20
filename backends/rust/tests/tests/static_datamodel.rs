@@ -49,6 +49,9 @@ use sce_rust_tests::integration::static_datamodel::static_record_sm::{
 use sce_rust_tests::integration::static_datamodel::static_record_string_sm::{
     StaticRecordStringPersist, StaticRecordStringPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_schema_revision_sm::{
+    StaticSchemaRevisionPersist, StaticSchemaRevisionPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_string_capacity_sm::{
     StaticStringCapacityPersist, StaticStringCapacityPolicy,
 };
@@ -630,6 +633,146 @@ fn a_state_another_backend_saved_is_restored() {
         3,
         "the restored machine runs on from the saved values"
     );
+}
+
+// ── static_schema_revision: a state saved at an earlier revision of a schema ──
+//
+// `last` is a record of `schema_revised.scxml`, the third revision of a schema
+// whose second added `layout` (default `week`) and third `urgent` (default
+// `true`). A state saved by a build of an earlier revision restores, each field
+// added since at its default (docs/adr/0044). The shared fixtures are what each
+// build saves; the Kotlin suite holds the same.
+
+const SHARED_REVISED: &str = include_str!(
+    "../../../../sce-build/tests/fixtures/static_datamodel/saved/static_schema_revision.json"
+);
+const SHARED_REVISED_FIRST: &str = include_str!(
+    "../../../../sce-build/tests/fixtures/static_datamodel/saved/static_schema_revision_first.json"
+);
+const SHARED_REVISED_SECOND: &str = include_str!(
+    "../../../../sce-build/tests/fixtures/static_datamodel/saved/static_schema_revision_second.json"
+);
+const SHARED_REVISED_FIRST_QUEUED: &str = include_str!(
+    "../../../../sce-build/tests/fixtures/static_datamodel/saved/static_schema_revision_first_queued.json"
+);
+
+fn revised_restored(text: &str) -> Engine<StaticSchemaRevisionPolicy> {
+    Engine::<StaticSchemaRevisionPolicy>::restore(
+        StaticSchemaRevisionPolicy::new(),
+        &SavedState::from_json(text).expect("reads"),
+    )
+    .expect("restores")
+}
+
+/// What the restored machine's `last` holds, as a saved state writes it.
+fn last_of(engine: &Engine<StaticSchemaRevisionPolicy>) -> sce_rust_runtime::json::Value {
+    engine
+        .save()
+        .expect("saves")
+        .variable("last")
+        .expect("a saved state holds `last`")
+        .clone()
+}
+
+fn json_value(text: &str) -> sce_rust_runtime::json::Value {
+    sce_rust_runtime::json::parse(text).expect("JSON")
+}
+
+#[test]
+fn a_record_of_a_schema_that_grew_saves_the_text_every_backend_saves() {
+    // A delivery of the first revision, as the scenario's first step: the
+    // machine is at the third, so it names that revision and the revised shape.
+    let mut engine = Engine::new(StaticSchemaRevisionPolicy::new());
+    engine.initialize();
+    engine.raise_external_by_name("reading.revised", r#"{"level":4}"#);
+    engine.step();
+    assert_eq!(
+        engine.save().expect("saves").to_json(),
+        SHARED_REVISED.trim()
+    );
+}
+
+#[test]
+fn a_state_saved_at_the_first_revision_restores_with_every_later_default() {
+    // The same moment saved by a build whose schema had the level alone: it
+    // restores, and the machine is the one the later build would have saved.
+    let restored = revised_restored(SHARED_REVISED_FIRST);
+    assert_eq!(
+        restored.save().expect("saves").to_json(),
+        SHARED_REVISED.trim()
+    );
+    assert_eq!(restored.policy().taken(), 1);
+}
+
+#[test]
+fn a_state_saved_at_the_second_revision_keeps_its_layout_and_takes_the_urgency() {
+    let restored = revised_restored(SHARED_REVISED_SECOND);
+    assert_eq!(
+        last_of(&restored),
+        json_value(r#"{"level":5,"layout":"day","urgent":true}"#)
+    );
+    assert_eq!(restored.policy().taken(), 2);
+}
+
+#[test]
+fn a_queued_delivery_of_the_first_revision_takes_the_defaults_when_it_is_delivered() {
+    // The external queue holds the data as the wire carried it; the lift reads
+    // it with the defaults when the event is dequeued.
+    let mut restored = revised_restored(SHARED_REVISED_FIRST_QUEUED);
+    assert_eq!(
+        last_of(&restored),
+        json_value(r#"{"level":4,"layout":"week","urgent":true}"#)
+    );
+    restored.step();
+    assert_eq!(
+        last_of(&restored),
+        json_value(r#"{"level":5,"layout":"week","urgent":true}"#)
+    );
+    assert_eq!(restored.policy().taken(), 2);
+    assert_eq!(restored.policy().refusals(), 0);
+}
+
+#[test]
+fn a_state_of_a_later_or_another_revision_is_refused() {
+    let refusal_of = |text: &str| {
+        refused(Engine::<StaticSchemaRevisionPolicy>::restore(
+            StaticSchemaRevisionPolicy::new(),
+            &SavedState::from_json(text).expect("reads"),
+        ))
+    };
+    // Saved by a build of a fourth revision this one does not know.
+    let later = SHARED_REVISED
+        .trim()
+        .replace(r#""revision":3"#, r#""revision":4"#);
+    let refusal = refusal_of(&later);
+    assert!(refusal.reason().contains("later than"), "{refusal}");
+    // A second revision that declared other fields than this build's second.
+    let other = SHARED_REVISED_SECOND.trim().replace(
+        "d9ba6a71207a3f219929c8fda298d7a35c76cb7950cc287ae2fa8a8b8ff45ad7",
+        "e511eddacf1d4e220c85f78c95988fe26a2a1319cf119cb085f1a84f4f197f8d",
+    );
+    let refusal = refusal_of(&other);
+    assert!(
+        refusal.reason().contains("declared other fields"),
+        "{refusal}"
+    );
+    // A record saved at the first revision that holds a field the second added.
+    let early = SHARED_REVISED_FIRST
+        .trim()
+        .replace(r#"{"level":4}"#, r#"{"level":4,"layout":"day"}"#);
+    let refusal = refusal_of(&early);
+    assert!(
+        refusal.reason().contains("'last' holds 'layout'"),
+        "{refusal}"
+    );
+    // A state that names its revision under the first shape, which a reader that
+    // predates revisions would have taken.
+    let unmarked = SHARED_REVISED.trim().replace(
+        "cb771df5efc33bf380bfd5a267ca027b408f8cd064bbc7eec5ca0266e23d06f5",
+        "11dbc3cc8b1f883cc9da011d2d5c3968ac0eeb404a0f494deede91552cd6623d",
+    );
+    let refusal = refusal_of(&unmarked);
+    assert!(refusal.reason().contains("names revisions"), "{refusal}");
 }
 
 // ── static_enum: a variable that holds a variant of an imported enum ──────
