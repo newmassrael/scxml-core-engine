@@ -108,6 +108,8 @@ on:
       # sce-build's unit tests: an edit to a table alone starts the suite.
       - 'tests/json_text/**'
       - 'tests/durations/**'
+      - 'tests/document_stem/**'
+      - 'tests/external_event_budget/**'
       - 'tests/scripting/**'
       # The shared table every copy of the Mesh-target predicate reads; the
       # build's copy `include_str!`s it.
@@ -178,6 +180,8 @@ on:
       # sce-build's unit tests: an edit to a table alone starts the suite.
       - 'tests/json_text/**'
       - 'tests/durations/**'
+      - 'tests/document_stem/**'
+      - 'tests/external_event_budget/**'
       - 'tests/scripting/**'
       # The shared table every copy of the Mesh-target predicate reads; the
       # build's copy `include_str!`s it.
