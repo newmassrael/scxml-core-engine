@@ -1103,7 +1103,15 @@ fn args_for(lang: Language, accessor: &str, field: &str, ty: &SceType) -> Vec<St
         // `[u8]` / `str`, so a borrow is what the `&[u8]` / `&str` parameter
         // takes.
         (Language::Rust, SceType::String | SceType::Bytes) => vec![format!("&{accessor}.{field}")],
-        _ => vec![format!("{accessor}.{field}")],
+        (
+            Language::Rust
+            | Language::Cpp
+            | Language::Kotlin
+            | Language::Go
+            | Language::Python
+            | Language::C11,
+            _,
+        ) => vec![format!("{accessor}.{field}")],
     }
 }
 
@@ -1112,7 +1120,9 @@ fn args_for(lang: Language, accessor: &str, field: &str, ty: &SceType) -> Vec<St
 pub fn interface_name(lang: Language, machine_name: &str) -> String {
     match lang {
         Language::C11 => format!("{machine_name}_actions_t"),
-        _ => format!("{machine_name}Actions"),
+        Language::Rust | Language::Cpp | Language::Kotlin | Language::Go | Language::Python => {
+            format!("{machine_name}Actions")
+        }
     }
 }
 
@@ -1301,7 +1311,9 @@ impl ChildHost {
 fn machine_token(lang: Language, child_name: &str) -> String {
     match lang {
         Language::C11 => child_name.to_string(),
-        _ => filters::to_pascal_case(child_name.to_string()),
+        Language::Rust | Language::Cpp | Language::Kotlin | Language::Go | Language::Python => {
+            filters::to_pascal_case(child_name.to_string())
+        }
     }
 }
 
@@ -1316,7 +1328,7 @@ fn child_interface_type(lang: Language, child_name: &str, namespace_prefix: &str
         // A sibling module of the parent's, as the machine names the child it
         // starts (`super::<child>_sm::<Child>Policy`).
         Language::Rust => format!("super::{child_name}_sm::{bare}"),
-        _ => bare,
+        Language::Kotlin | Language::Go | Language::Python | Language::C11 => bare,
     }
 }
 
@@ -1342,7 +1354,9 @@ fn lower_child_hosts(
         };
         let host_type = match lang {
             Language::Rust => format!("<A as {parent_interface}>::{}", host.associated_type()),
-            _ => String::new(),
+            Language::Cpp | Language::Kotlin | Language::Go | Language::Python | Language::C11 => {
+                String::new()
+            }
         };
         hosts.entry(operation).or_insert(host);
         (call, host_type)

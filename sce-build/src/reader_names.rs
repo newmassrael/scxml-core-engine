@@ -608,7 +608,9 @@ fn backend_templates(language: Language) -> Vec<&'static str> {
             // Both load the whole tree; C++ owns the root files and C11 `c/`.
             Language::Cpp => !name.contains('/'),
             Language::C11 => name.starts_with("c/"),
-            _ => !name.starts_with("_macros/"),
+            Language::Rust | Language::Kotlin | Language::Go | Language::Python => {
+                !name.starts_with("_macros/")
+            }
         })
         .map(|(_, content)| content)
         .collect()
@@ -725,7 +727,9 @@ fn scan_template(language: Language, template: &str, into: &mut Reserved) {
                 into.machine_suffixes.insert(caps[1].to_string());
             }
         }
-        _ => scan_code(language, &code, into),
+        Language::Rust | Language::Kotlin | Language::Go | Language::Python => {
+            scan_code(language, &code, into)
+        }
     }
 }
 
@@ -903,7 +907,12 @@ fn spell(id: &str, language: Language) -> Spelling {
         Language::Cpp if CPP_RESERVED.contains(&base.as_str()) => {
             Spelling::Refused(UnreadableReason::Keyword, base)
         }
-        _ => Spelling::Name(base),
+        Language::Rust
+        | Language::Cpp
+        | Language::Kotlin
+        | Language::Go
+        | Language::Python
+        | Language::C11 => Spelling::Name(base),
     }
 }
 

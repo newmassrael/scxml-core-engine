@@ -11109,7 +11109,7 @@ fn cmd_generate_integration(
         Language::Kotlin => "_kotlin",
         Language::Go => "_go",
         Language::Python => "_python",
-        _ => error_format.emit_and_exit(
+        Language::Cpp | Language::C11 => error_format.emit_and_exit(
             &CliError::UnsupportedLanguage {
                 lang: lang.canonical_name().to_string(),
                 route: LanguageRoute::GenerateIntegration,

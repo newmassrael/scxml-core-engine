@@ -333,6 +333,8 @@ pub fn render_machine_queryables_artifacts(
             let snake = filters::to_snake_case(machine_name.to_string());
             Ok(vec![(format!("{snake}_queryables.rs"), module)])
         }
-        _ => Ok(Vec::new()),
+        Language::Cpp | Language::Kotlin | Language::Go | Language::Python | Language::C11 => {
+            Ok(Vec::new())
+        }
     }
 }

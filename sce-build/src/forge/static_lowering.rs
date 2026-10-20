@@ -9003,7 +9003,9 @@ mod tests {
         let lowering = match lang {
             Language::Rust => lower_rust(&mut model, "M"),
             Language::Kotlin => lower_kotlin(&mut model, "M"),
-            other => panic!("{other:?} does not lower sce-static"),
+            other @ (Language::Cpp | Language::Go | Language::Python | Language::C11) => {
+                panic!("{other:?} does not lower sce-static")
+            }
         }
         .expect("lowers");
         let statements = model.states["s"].transitions[0]
@@ -9074,7 +9076,9 @@ mod tests {
             Language::Rust => lower_rust(&mut model, "M"),
             Language::Kotlin => lower_kotlin(&mut model, "M"),
             Language::C11 => lower_c11(&mut model, ""),
-            other => panic!("{other:?} does not lower sce-static"),
+            other @ (Language::Cpp | Language::Go | Language::Python) => {
+                panic!("{other:?} does not lower sce-static")
+            }
         }
         .expect("lowers");
         model.states["s"].transitions[0].actions[0]
@@ -9195,7 +9199,9 @@ mod tests {
             Language::Kotlin => lower_kotlin(&mut model, "M"),
             Language::Python => lower_python(&mut model, "M"),
             Language::C11 => lower_c11(&mut model, ""),
-            other => panic!("{other:?} is not lowered by this test"),
+            other @ (Language::Rust | Language::Cpp | Language::Go) => {
+                panic!("{other:?} is not lowered by this test")
+            }
         }
         .expect("lowers");
         let statements = model.states["s"].transitions[0]

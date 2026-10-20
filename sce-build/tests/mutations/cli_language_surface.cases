@@ -46,8 +46,8 @@ PY
 
 mutation_case "the dispatcher stops serving a backend its help still names" <<'PY'
 edit("sce-build/src/bin/sce_codegen.rs",
-     '        Language::Python => "_python",\n',
-     '')
+     '        Language::Python => "_python",\n        Language::Cpp | Language::C11 => error_format.emit_and_exit(',
+     '        Language::Cpp | Language::C11 | Language::Python => error_format.emit_and_exit(')
 PY
 
 mutation_case "the refusal offers every backend instead of the route's own" <<'PY'

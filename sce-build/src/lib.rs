@@ -2729,7 +2729,10 @@ pub fn compile_forge_with_deploy(
                         let backend = match language {
                             generator::Language::Rust => "rust",
                             generator::Language::C11 => "c11",
-                            _ => unreachable!(),
+                            generator::Language::Cpp
+                            | generator::Language::Kotlin
+                            | generator::Language::Go
+                            | generator::Language::Python => unreachable!(),
                         };
                         let primary = output.files.first().map_or("", |(_, src)| src.as_str());
                         if !primary.contains("sce_dcache_invalidate_by_addr") {
@@ -3264,7 +3267,15 @@ pub fn compile_forge_from_parsed(
     if let forge::model::ForgeDocument::Transform(m) = &parsed.document {
         for cell in forge::previous_value::cells(m) {
             let why = match (&cell.param.sce_type, language) {
-                (forge::model::SceType::Bytes, _) => {
+                (
+                    forge::model::SceType::Bytes,
+                    generator::Language::Rust
+                    | generator::Language::Cpp
+                    | generator::Language::Kotlin
+                    | generator::Language::Go
+                    | generator::Language::Python
+                    | generator::Language::C11,
+                ) => {
                     "a `bytes` field is not lowered for `previous()`: a buffer kept between \
                      activations needs a capacity, and no cell declares one"
                 }
@@ -3273,7 +3284,15 @@ pub fn compile_forge_from_parsed(
                      the next activation may overwrite; C++, Rust, Go, Kotlin and Python hold \
                      an owned string and lower it"
                 }
-                _ => continue,
+                (
+                    _,
+                    generator::Language::Rust
+                    | generator::Language::Cpp
+                    | generator::Language::Kotlin
+                    | generator::Language::Go
+                    | generator::Language::Python
+                    | generator::Language::C11,
+                ) => continue,
             };
             // A cell exists only because an output reads it, so the read is
             // there to point at.
@@ -11486,7 +11505,11 @@ topology:
             for st in fsm::STATES.iter().filter(|s| s.is_holdable()) {
                 let needle = match lang {
                     generator::Language::Rust => st.pascal_name().to_string(),
-                    _ => format!("SCE_SLOT_{}", st.c_enum_suffix()),
+                    generator::Language::Cpp
+                    | generator::Language::Kotlin
+                    | generator::Language::Go
+                    | generator::Language::Python
+                    | generator::Language::C11 => format!("SCE_SLOT_{}", st.c_enum_suffix()),
                 };
                 assert!(
                     body.contains(&needle),

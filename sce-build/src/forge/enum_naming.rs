@@ -148,7 +148,9 @@ mod tests {
                     Language::Cpp => format!("SCE::Generated::{enum_name}::{enum_name}"),
                     Language::C11 => format!("{enum_name}_t"),
                     Language::Kotlin => enum_name.to_string(),
-                    _ => format!("m.{enum_name}"),
+                    Language::Rust | Language::Go | Language::Python => {
+                        format!("m.{enum_name}")
+                    }
                 };
                 let reference = variant_ref(lang, &qualified, enum_name, variant);
                 assert!(

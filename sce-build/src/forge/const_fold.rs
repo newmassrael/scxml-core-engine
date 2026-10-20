@@ -328,7 +328,15 @@ pub(crate) fn serialize_scalar_literal(
     match (value, lang) {
         (ConstValue::U8(v), crate::generator::Language::Kotlin) => format!("{v}u"),
         (ConstValue::U16(v), crate::generator::Language::Kotlin) => format!("{v}u"),
-        _ => serialize_array_literal_body(std::slice::from_ref(value), lang),
+        (
+            _,
+            crate::generator::Language::Rust
+            | crate::generator::Language::Cpp
+            | crate::generator::Language::Kotlin
+            | crate::generator::Language::Go
+            | crate::generator::Language::Python
+            | crate::generator::Language::C11,
+        ) => serialize_array_literal_body(std::slice::from_ref(value), lang),
     }
 }
 
@@ -387,15 +395,27 @@ impl std::fmt::Display for FormatValue {
             // unconditionally for stability across input ranges.
             ConstValue::U8(v) => match self.lang {
                 Language::Kotlin => write!(f, "({v}).toUByte()"),
-                _ => write!(f, "{v}"),
+                Language::Rust
+                | Language::Cpp
+                | Language::Go
+                | Language::Python
+                | Language::C11 => write!(f, "{v}"),
             },
             ConstValue::U16(v) => match self.lang {
                 Language::Kotlin => write!(f, "({v}).toUShort()"),
-                _ => write!(f, "{v}"),
+                Language::Rust
+                | Language::Cpp
+                | Language::Go
+                | Language::Python
+                | Language::C11 => write!(f, "{v}"),
             },
             ConstValue::U32(v) => match self.lang {
                 Language::Kotlin => write!(f, "{v}u"),
-                _ => write!(f, "{v}"),
+                Language::Rust
+                | Language::Cpp
+                | Language::Go
+                | Language::Python
+                | Language::C11 => write!(f, "{v}"),
             },
             // A value past `i64::MAX`, or `i64::MIN` below, is spelled the
             // way an expression's literal is (`expr::wide_literal_spelling`):
@@ -407,16 +427,28 @@ impl std::fmt::Display for FormatValue {
                 Some(spelled) => f.write_str(&spelled),
                 None => match self.lang {
                     Language::Kotlin => write!(f, "{v}uL"),
-                    _ => write!(f, "{v}"),
+                    Language::Rust
+                    | Language::Cpp
+                    | Language::Go
+                    | Language::Python
+                    | Language::C11 => write!(f, "{v}"),
                 },
             },
             ConstValue::I8(v) => match self.lang {
                 Language::Kotlin => write!(f, "({v}).toByte()"),
-                _ => write!(f, "{v}"),
+                Language::Rust
+                | Language::Cpp
+                | Language::Go
+                | Language::Python
+                | Language::C11 => write!(f, "{v}"),
             },
             ConstValue::I16(v) => match self.lang {
                 Language::Kotlin => write!(f, "({v}).toShort()"),
-                _ => write!(f, "{v}"),
+                Language::Rust
+                | Language::Cpp
+                | Language::Go
+                | Language::Python
+                | Language::C11 => write!(f, "{v}"),
             },
             ConstValue::I32(v) => write!(f, "{v}"),
             ConstValue::I64(v) => match expr::WideLiteral::of_signed(v).and_then(|wide| {
@@ -425,14 +457,22 @@ impl std::fmt::Display for FormatValue {
                 Some(spelled) => f.write_str(&spelled),
                 None => match self.lang {
                     Language::Kotlin => write!(f, "{v}L"),
-                    _ => write!(f, "{v}"),
+                    Language::Rust
+                    | Language::Cpp
+                    | Language::Go
+                    | Language::Python
+                    | Language::C11 => write!(f, "{v}"),
                 },
             },
             ConstValue::F32(v) => format_float_lit(f, v as f64, true, self.lang),
             ConstValue::F64(v) => format_float_lit(f, v, false, self.lang),
             ConstValue::Bool(v) => match self.lang {
                 Language::Python => write!(f, "{}", if v { "True" } else { "False" }),
-                _ => write!(f, "{v}"),
+                Language::Rust
+                | Language::Cpp
+                | Language::Kotlin
+                | Language::Go
+                | Language::C11 => write!(f, "{v}"),
             },
         }
     }
@@ -453,7 +493,8 @@ fn format_float_lit(
         (true, Language::Rust) => write!(f, "{body}f32"),
         (false, Language::Rust) => write!(f, "{body}f64"),
         (true, Language::Cpp | Language::C11) => write!(f, "{body}f"),
-        _ => write!(f, "{body}"),
+        (false, Language::Cpp | Language::C11)
+        | (_, Language::Kotlin | Language::Go | Language::Python) => write!(f, "{body}"),
     }
 }
 
