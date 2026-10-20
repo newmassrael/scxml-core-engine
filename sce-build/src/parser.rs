@@ -2927,6 +2927,10 @@ impl SCXMLParser {
             // the typed-path validators are: every entry point that parses
             // a document from a file reaches this seam.
             crate::scxml_interface::validate(&model, dir, diag_label)?;
+            // A record's enum field is held in the type of the enum the document
+            // imports under the alias the schema writes, which must be the schema's
+            // own enum document: judged once, where the schema is imported.
+            crate::forge::static_imports::check_record_enum_documents(&model, dir, diag_label)?;
             model.imported_algorithms =
                 crate::forge::static_imports::resolve(&model, dir, diag_label)?;
             let imported_enums =

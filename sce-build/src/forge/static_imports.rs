@@ -144,6 +144,77 @@ fn own_enum_documents(model: &SCXMLModel, base_dir: &Path) -> BTreeMap<String, E
         .collect()
 }
 
+/// Each event-schema a `sce-static` `model` imports, held to the enums it imports
+/// (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A record's enum field"). A record's enum
+/// field is held in the machine's own type for the enum the document imports under
+/// the alias the schema writes, so where the document imports an enum under that
+/// alias it is the enum document the schema's field holds a value of — the same
+/// identity a record and an algorithm's enum are named by (SCE_FORGE.md §4.12). One
+/// rule for every place a record or its payload is read — a variable, a list, a
+/// payload taken whole, a saved state, a value handed to an algorithm — and so held
+/// once, where the schema is imported. An alias the document does not import is
+/// refused where a record of the schema is declared or its payload read.
+pub(crate) fn check_record_enum_documents(
+    model: &SCXMLModel,
+    base_dir: &Path,
+    diag_label: &str,
+) -> Result<(), Located<ForgeError>> {
+    if model.datamodel != Datamodel::SceStatic {
+        return Ok(());
+    }
+    let own_enums = own_enum_documents(model, base_dir);
+    for import in model
+        .forge_imports
+        .iter()
+        .filter(|i| i.kind == ForgeKind::EventSchema)
+    {
+        let Some((_, fields)) = record_schema(&model.forge_imports, base_dir, &import.alias) else {
+            continue;
+        };
+        for field in &fields {
+            let SceType::Enum(reference) = &field.ty else {
+                continue;
+            };
+            let (Some(held), Some(own)) = (
+                field.enum_document.as_ref(),
+                own_enums.get(&reference.alias),
+            ) else {
+                continue;
+            };
+            if held.identity != own.identity {
+                return Err(Located::new(
+                    ScxmlSemanticError::StaticDatamodelRule {
+                        construct: format!(
+                            "<sce:import kind=\"event-schema\" as=\"{}\">",
+                            import.alias
+                        ),
+                        datamodel: model.datamodel.as_str().to_string(),
+                        rule: format!(
+                            "the field `{}` of record:{} holds the enum `{}` of {}, and the \
+                             document imports `{}` from {}: a record's enum field is held in the \
+                             type of the enum the document imports under the alias the schema \
+                             writes, which is the schema's own enum document",
+                            field.id,
+                            import.alias,
+                            reference.alias,
+                            held.identity,
+                            reference.alias,
+                            own.identity
+                        ),
+                        state: String::new(),
+                        observed: Some(reference.alias.clone()),
+                    }
+                    .into(),
+                    diag_label,
+                    import.line,
+                    None,
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// What the statechart is told an algorithm's enum is, when it is not one it can
 /// hand over or take back by its declared name. `what` says where the algorithm
 /// holds it; `held` is the document, `None` when it cannot be read.
@@ -217,24 +288,16 @@ fn value_signature(
                         crossable_enum(&what, &reference.alias, field.enum_document.as_ref())?;
                     // The machine holds the field in its own type for the enum it
                     // imports under the alias the schema writes, so that is the
-                    // document the value crosses from and back to.
-                    match own_enums.get(&reference.alias) {
-                        Some(own) if own.identity == held.identity => {}
-                        Some(own) => {
-                            return Err(format!(
-                                "{what} holds the enum `{}` of {}, and the statechart imports \
-                                 `{}` from {}: an enum crosses to an algorithm only as the one \
-                                 enum document both import",
-                                reference.alias, held.identity, reference.alias, own.identity
-                            ))
-                        }
-                        None => {
-                            return Err(format!(
-                                "{what} holds the enum `{}` of {}, and the statechart imports no \
-                                 enum under that alias, which its record holds the field in",
-                                reference.alias, held.identity
-                            ))
-                        }
+                    // document the value crosses from and back to. That the alias
+                    // names the schema's own enum document is held where the schema
+                    // is imported ([`check_record_enum_documents`]), once for every
+                    // place a record is read, and not again here.
+                    if !own_enums.contains_key(&reference.alias) {
+                        return Err(format!(
+                            "{what} holds the enum `{}` of {}, and the statechart imports no \
+                             enum under that alias, which its record holds the field in",
+                            reference.alias, held.identity
+                        ));
                     }
                 }
                 continue;

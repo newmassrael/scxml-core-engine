@@ -5,7 +5,8 @@
 // (docs/SCE_ACCEPTED_SUBSET.md §2.15).
 //
 // The field is held in the machine's own type for the enum, so the machine
-// imports the enum under the alias the schema writes, and the field is judged
+// imports the enum under the alias the schema writes, from the one document the
+// schema imports it from, and the field is judged
 // as a variable of the enum is: it starts at a variant, is compared to and
 // assigned values of its own enum, and takes no number. The same holds through
 // a loop's record item. Each refusal here is one an enum value would
@@ -99,8 +100,11 @@ fn machine(import_mode: bool, set_speed: &str, body: &str) -> String {
 
 fn run(args: &[&str], doc: &str) -> (bool, String) {
     let dir = tempdir().expect("tempdir");
+    // The same variants as `mode.scxml`, in a document of its own: another enum.
+    let mode_copy = MODE.replace("name=\"mode\"", "name=\"mode_copy\"");
     for (name, text) in [
         ("mode.scxml", MODE),
+        ("mode_copy.scxml", mode_copy.as_str()),
         ("unit.scxml", UNIT),
         ("schema_gear.scxml", GEAR),
     ] {
@@ -160,6 +164,39 @@ fn the_enum_a_field_holds_is_imported_under_the_alias_the_schema_writes() {
         &machine(false, "Mode.fast", ""),
         "the document imports it under that alias",
     );
+}
+
+#[test]
+fn the_enum_a_field_holds_is_the_document_the_schema_imports() {
+    // `Mode` is imported under the alias the schema writes, but from another
+    // document with the same variants: the machine would hold the field in the type
+    // of another enum. Refused where the schema is imported, whether or not an
+    // algorithm is ever handed the record, and by every backend alike.
+    let doc = machine(true, "Mode.fast", "").replacen(
+        r#"src="mode.scxml" as="Mode""#,
+        r#"src="mode_copy.scxml" as="Mode""#,
+        1,
+    );
+    assert!(
+        doc.contains("mode_copy.scxml"),
+        "the probe imports Mode from the copy"
+    );
+    for args in [
+        vec!["check"],
+        vec!["check", "-l", "rust"],
+        vec!["check", "-l", "c11"],
+    ] {
+        let (ok, out) = run(&args, &doc);
+        assert!(!ok, "{args:?}: expected a refusal, got:\n{out}");
+        assert!(
+            out.contains("\"code\":\"scxml/static-datamodel-rule\""),
+            "{args:?}: expected scxml/static-datamodel-rule:\n{out}"
+        );
+        assert!(
+            out.contains("which is the schema's own enum document"),
+            "{args:?}: the refusal names the rule:\n{out}"
+        );
+    }
 }
 
 #[test]
