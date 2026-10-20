@@ -52,7 +52,7 @@ namespace SCE::W3C::AotTests {
  * W3C SCXML Features:
  * - W3C SCXML 6.4: Invoke with <content expr> for runtime child SCXML
  * - W3C SCXML 6.4.1: Invoke execution timing (macrostep end)
- * - W3C SCXML 6.4.4: done.invoke event on child completion
+ * - W3C SCXML 6.4.3: done.invoke event on child completion
  * - W3C SCXML B.2: ECMAScript datamodel for expression evaluation
  */
 struct Test530 : public SimpleAotTest<Test530, 530> {

@@ -1803,7 +1803,7 @@ emscripten::val InteractiveTestRunner::buildStructureFromModel(std::shared_ptr<S
                     invokeObj.set("invokeSrcExpr", srcExpr);
                 }
 
-                // W3C SCXML 6.4.4: Content (inline SCXML or dynamic expression)
+                // W3C SCXML 6.4.2: Content (inline SCXML or dynamic expression)
                 const std::string &content = invoke->getContent();
                 const std::string &contentExpr = invoke->getContentExpr();
                 if (!content.empty()) {

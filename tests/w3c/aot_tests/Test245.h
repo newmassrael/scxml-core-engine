@@ -46,7 +46,7 @@ namespace SCE::W3C::AotTests {
  * - 6.3.2: Namelist attribute - only binds to variables declared in child's datamodel
  * - 6.4.1: Inline <content> invoke with embedded SCXML
  * - 6.2.6: #_parent target for child→parent event communication
- * - 5.2.2: ECMAScript datamodel with typeof operator for undefined variable detection
+ * - 5.3: ECMAScript datamodel with typeof operator for undefined variable detection
  *
  * Helper Functions (Zero Duplication with Interpreter):
  * - NamelistHelper: Validates child datamodel declarations before binding parent values

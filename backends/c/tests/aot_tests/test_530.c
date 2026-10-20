@@ -3,7 +3,7 @@
 //
 // W3C SCXML test530 — C11 AOT runner.
 //
-// W3C SCXML 6.4.4: `<invoke type="...scxml"><content expr="Var1"/></invoke>`
+// W3C SCXML 6.4.2: `<invoke type="...scxml"><content expr="Var1"/></invoke>`
 // evaluates `<content>`'s `expr` at invoke-fire time (macrostep end),
 // not at parse time. `Var1` is initialised to integer `1` and reassigned
 // to a literal SCXML scriptlet in the entering onentry; correct invokes

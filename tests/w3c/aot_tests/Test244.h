@@ -42,7 +42,7 @@ namespace SCE::W3C::AotTests {
  * - 6.3.2: Namelist attribute for data passing to invoked child
  * - 6.4.1: Inline <content> invoke with embedded SCXML
  * - 6.2.6: #_parent target for child→parent event communication
- * - 5.2.2: ECMAScript datamodel with variable binding
+ * - 5.3: ECMAScript datamodel with variable binding
  *
  * Helper Functions (Zero Duplication with Interpreter):
  * - NamelistHelper: Reads parent datamodel values and binds to child session
