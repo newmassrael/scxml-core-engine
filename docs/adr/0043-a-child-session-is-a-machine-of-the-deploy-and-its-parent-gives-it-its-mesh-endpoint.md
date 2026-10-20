@@ -379,6 +379,72 @@ Each step lands with a test that fails without it.
 The committed generated trees move with steps 2, 3 and 6 (the invoke templates and the peer table
 templates are in the template hash of every language), and are regenerated in those steps.
 
+## Revisions made in building it
+
+Steps 1 and 2, as built.
+
+- **The deploy key** is `invoked_by: {machine, invoke}`, as section 1 proposed, written in place of
+  `source:`; a machine entry has exactly one of the two. `source:` became optional in the deploy
+  model, and every reader of it reads it through one accessor that skips a child entry.
+- **The refusals** are eight codes of stage `mesh-deploy`: `mesh/deploy-child-entry-shape`,
+  `-unknown-parent`, `-duplicate-site`, `-pooled-parent`, `-partitioned`, `-unknown-invoke`,
+  `-generated-id` and `-undeclared`. The first five are read off the deployment; the last three
+  need the parent's document and run as a deploy mutation stage of their own when a machine is
+  generated against the deployment. Section 1 did not list an entry with neither or both of
+  `source:` and `invoked_by:`, a parent chain that comes back on itself, or a child a partition
+  places (section 7 refused the last in words); each is refused by one of the eight.
+- **The manifest** field is `child_mesh_routers`: one entry per `<invoke type="scxml">` site whose
+  child talks to its peers, or starts one that does, with the invoke's id, the stem of each document
+  the site may start, and the child's own sites, nested.
+- **The factory's names** are `register_child_mesh_routers` (Rust, Python),
+  `registerChildMeshRouters` (Kotlin, the generated C++ engine), `RegisterChildMeshRouters` (Go),
+  `sce_host_registry_register_child_mesh_routers` or the machine's `_register_child_mesh_routers`
+  (C11) and `StateMachine::registerChildMeshRouters` (Interpreter, registered on the machine beside
+  its native action host rather than beside the Mesh creator, since the invoke handler asks a
+  parent machine for what a child is given). What it answers is a `ChildMeshRouter` (Rust, Kotlin,
+  Go, Python), `sce_child_mesh_router_t` (C11) or `IChildMeshRouter` (C++, in `SCE::Static` for the
+  generated engine and in `SCE` for the Interpreter). It is asked with the invoke's id and the
+  document stem, empty for an inline child.
+- **What arrives for a child** is applied by the generated parent with `apply_mesh_calls` (Rust,
+  Python), `applyMeshCalls` (Kotlin, C++), `ApplyMeshCalls` (Go) and the machine's
+  `_apply_mesh_calls` (C11), and the session's end is `detach_mesh` / `detachMesh` / `DetachMesh` /
+  `_detach_mesh`. Rust's `sce-rust-mesh` endpoint now hands its own machine's calls through the same
+  `Engine::apply_mesh_call`, and builds a peer's `_event` with the runtime's `mesh_event_metadata`,
+  so the top-level machine and a child are told through one body. Kotlin, Go and Python carry the
+  same function (`meshEventMetadata`, `MeshEventMetadata`, `mesh_event_metadata`). The generated
+  C++ engine's call is the `SCE::Common::ForwardedEvent` the engine already raises by name.
+- **A cancelled child on the generated C++ engine is not exited before its router is told.**
+  Section 5 has the parent detach the router after the child has stopped, so what the child sends
+  while it is stopped is sent. Rust, Go, Python and Kotlin do that (the Rust and Go hybrid
+  candidates are now stopped on cancel too, which they were not). The generated C++ parent has never
+  exited a cancelled child: the child's `#_parent` send reaches the parent at once, where
+  §scxml-6.4 has the parent take nothing from it (W3C test 252), so exiting it would break that. It
+  drops the child as before and tells the routers of the child's sessions, a grandchild first,
+  through `detachMesh`, which asks the policy's `detachChildMeshSessions` before the child's own.
+  The Interpreter stops a cancelled child when the parent's invoke handler lets the session go,
+  which follows the cancel at once, and its router is told after that, so its own children are
+  told first.
+- **The Interpreter's child takes what arrives in its own event loop.** Section 7's "the child's
+  own dispatcher": the child is built with an `EventDispatcherImpl` of its own over the parent's
+  scheduler, whose target factory is the parent's with every scheme but the Mesh one
+  (`EventTargetFactoryImpl::forChildSession`), and whose Mesh creator is the router's
+  `createTarget`. What arrives is raised by the router on the child's own raiser, which it is given
+  by `attach` before the child starts. A parent dispatcher of a type the runtime does not build is
+  shared as before, with a warning; no host in the repository has one.
+- **What each backend does not carry yet.** C11 gives a router to a child of
+  `datamodel="sce-static"` only, the only child its generated parent starts through
+  `_invoked_begin`, and the build gives the parent the `sce:mesh` processor when a child needs a
+  router. A Kotlin child run on a coroutine of its own is given its router and sends through it,
+  but its parent does not drive it, so nothing is applied to it. The generated C++ child has no
+  `sce:mesh-rpc` invoker: a request it makes raises `error.execution` as before.
+- **The scenario** delivers a step's `invoke` event with plain external metadata (the `_event` of a
+  step's own event, data only), not the SCE_MESH.md §10.7 metadata of a peer, which needs a source
+  no scenario names. A driver that cannot record a child, or finds no child of the path running,
+  fails the step.
+- **Event coverage of a child's receivers is not judged.** The deploy's coverage and schema
+  cross-checks read a machine's `source:`; a child entry has none and is skipped by them until the
+  peer table of step 3 reads the child's document from its parent.
+
 ## Open questions for the owner
 
 1. **A restored parent loses what its list held.** docs/SCE_ACCEPTED_SUBSET.md §2.15 decided that a

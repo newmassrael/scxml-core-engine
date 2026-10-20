@@ -5539,6 +5539,7 @@ the Interpreter. These are the first three of the six steps of
 | `steps` | scenario | the steps, in order; a scenario with none judges nothing |
 | `note` | step | prose, shown when the step fails |
 | `event` | step | an external event, by the name the document gives it; a name no event of the machine matches (W3C SCXML 3.12.1) fails the step unless `dropped` is true |
+| `invoke` | step | with `event`, the running child session the event is for, as a peer's event: the path of invoke ids that started it from the machine, joined by `/` (`peer/inner` is the child `inner` of the child `peer`). The event is handed to the router the child was given and reaches the child when the child is next driven; the child's events are not the machine's, so `dropped` is not read. A step that names no running child fails |
 | `data` | step | the event's payload as JSON, from which the machine lifts the typed fields its schema names |
 | `dropped` | step | `true` when the step expects the machine to drop the event because none of its events matches the name |
 | `advance_ms` | step | moves the machine's manual clock on by that many milliseconds and runs what came due |
@@ -5550,7 +5551,7 @@ the Interpreter. These are the first three of the six steps of
 | `donedata` | expect | with `ended`, the data the final's `<donedata>` left for an invoking parent, as JSON, compared as a value |
 | `host_calls` | expect | the calls the machine made of its host in this step, oldest first: `{"action": <the name the document gives the <sce:action>>, "args": [<each <sce:arg>, in the document's order>]}`; the start's calls belong to the first step, a step that states none is not judged on them, and they are not carried into the next |
 | `child_hosts` | expect | the hosts the machine's own host answered for its invoked children, and what each child asked of its host, in this step: one entry for each child whose host was asked for in this step or that called its host in it, oldest asked first, `{"invoke": <the id of the <invoke>>, "start": <how many children that invoke had started, this one included, from 1>, "candidate": <the stem of the document a hybrid <invoke> started, left out for an inline child>, "host_calls": [<the child's calls in this step, as `host_calls` writes them>]}`; a child asked for earlier that called nothing in this step has no entry, a step that states none is not judged on them, and they are not carried into the next. A child is told by its invoke and its start, so two entries of one step may not name the same child |
-| `sent` | expect | what the machine sent its Mesh peers in this step, oldest first: `{"target": <the peer as the document writes it, "#server">, "event": <the event's name>, "data": <the event's data, as JSON>}`, `data` left out when the send carried none; the start's sends belong to the first step, a step that states none is not judged on them, and they are not carried into the next |
+| `sent` | expect | what the machine sent its Mesh peers in this step, oldest first: `{"target": <the peer as the document writes it, "#server">, "event": <the event's name>, "data": <the event's data, as JSON>}`, `data` left out when the send carried none; the start's sends belong to the first step, a step that states none is not judged on them, and they are not carried into the next. A send a child session made through its own router carries `"invoke"` (the path of invoke ids that started it, as a step's `invoke` writes it) and `"start"` (how many children that path had started, this one included, from 1); an entry without them is the machine's own |
 
 A step sends an event or moves time and does not do both: the drivers do not agree
 on which comes first, and no scenario needs it. A machine that publishes no
@@ -5585,6 +5586,29 @@ driver registers a router; each engine's tests hold it to that apart from the
 scenarios (the `a_peer_named_at_run_time_reaches_the_router` tests of Rust, Kotlin,
 Python, Go and C11, and `ASendToAMeshPeerWithNoRouterRegisteredIsErrorExecution`
 in each of the two C++ ones).
+
+A child session is given none of its machine's router (SCE_MESH.md, Child Sessions
+in Mesh): its parent asks the factory the host registered beside the router, each
+time the invocation starts, and installs what it answers on the child before the
+child initializes. Each driver is the host, so each registers a factory whose routers
+write a child's sends into the same list, with the `invoke` and `start` that tell the
+child, and take a step's `invoke` event for the running child of that path. The rule
+is that of `child_hosts`: a driver that cannot record a child (an engine with no
+factory, or a driver that did not wire one) fails a step that states either member,
+and never passes it unjudged. A child run in an event loop of its own, as the
+Interpreter's is, is read when the step has been given time to be told.
+`static_child_mesh` has the scenario: an inline child that greets `#server` as it is
+entered and answers a peer's `list.ping`, and a hybrid candidate,
+`static_mesh_relay`, that talks to no peer and starts a grandchild that does, whose
+router is the one the candidate's router answers. A child given no router has its
+peer send refused as `error.execution` in the child, with nothing falling back to its
+parent's router; each engine's tests hold that apart from the scenarios
+(`a_child_session_is_given_its_mesh_router_by_its_parent` on Rust, Go and Python and
+its Kotlin twin, `test_static_child_mesh.c` on C11,
+`AChildGivenNoMeshRouterHasItsSendRefused` on the generated C++, and
+`AChildIsNotGivenItsParentsMeshRoute` on the Interpreter, whose child was built with
+its parent's dispatcher and sent under its parent's name before it was given one of
+its own).
 
 **A run of several machines, one machine at a time.** The scenarios of `todo_peer`
 and `sheet_peer` (`todo_peer_alice.json`, `todo_peer_bob.json`,
