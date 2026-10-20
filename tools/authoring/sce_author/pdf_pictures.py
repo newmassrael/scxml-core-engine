@@ -62,7 +62,9 @@ def images_of(page, pdfium) -> list:
 
 def box_of(image, page_height: float) -> tuple[float, float, float, float]:
     """Where an image sits, as `(left, top, right, bottom)` measured down from the top of the page."""
-    left, bottom, right, top = image.get_pos()
+    # The library renamed `get_pos` to `get_bounds` in its 5th major version; the pack is not pinned.
+    bounds = getattr(image, "get_bounds", None) or image.get_pos
+    left, bottom, right, top = bounds()
     return (round(left, 2), round(page_height - top, 2), round(right, 2), round(page_height - bottom, 2))
 
 
@@ -80,7 +82,7 @@ def identity_of(image) -> str | None:
         stored = bytes(image.get_data())
     except (pdfium.PdfiumError, *READ_ERRORS):
         return None
-    head = f"{meta.width}x{meta.height}/{meta.bits_per_pixel}/{meta.colorspace}/{filters}\0"
+    head = f"{meta.width}x{meta.height}:{meta.bits_per_pixel}:{meta.colorspace}:{filters}\0"
     return hashlib.sha256(head.encode("ascii") + stored).hexdigest()
 
 
