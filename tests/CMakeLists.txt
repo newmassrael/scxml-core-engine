@@ -1673,6 +1673,10 @@ target_include_directories(integration_tests
 target_compile_definitions(integration_tests
     PRIVATE
         SCE_PROJECT_ROOT="${CMAKE_SOURCE_DIR}"
+        # The numbers ExternalChainIsBoundedTest and ExternalChainIsBoundedAotTest
+        # are held to (ARCHITECTURE.md, "External-Event Budget"), the table every
+        # engine's test of that document reads.
+        SCE_EXTERNAL_EVENT_BUDGET_TABLE="${CMAKE_SOURCE_DIR}/tests/external_event_budget/budget_outcomes.json"
 )
 
 

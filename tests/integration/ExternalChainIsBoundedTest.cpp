@@ -39,6 +39,7 @@
 #include "events/EventDispatcherImpl.h"
 #include "events/EventSchedulerImpl.h"
 #include "events/EventTargetFactoryImpl.h"
+#include "integration/ExternalEventBudgetTable.h"
 #include "runtime/EventRaiserImpl.h"
 #include "runtime/StateMachine.h"
 #include "scripting/ScriptEngineProvider.h"
@@ -88,10 +89,12 @@ constexpr const char *PING_PONG = R"(<?xml version="1.0" encoding="UTF-8"?>
 /// derived fixture's.
 class InterpreterBudgetTest : public ::testing::Test {
 protected:
-    /// The default the contract states, spelled here rather than read back from
+    /// The default the contract states, read from the table rather than from
     /// the engine: a test that asked the engine for its own limit would agree
     /// with any limit, including one an edit moved by three orders of magnitude.
-    static constexpr uint32_t DEFAULT_BUDGET = 10000;
+    static uint32_t defaultBudget() {
+        return externalEventBudgetCount({"default_budget"});
+    }
 
     /// Load @p document and start it.
     void startMachine(const std::string &document) {
@@ -168,7 +171,7 @@ protected:
 };
 
 TEST_F(ExternalChainIsBoundedTest, TheDefaultBudgetIsTheDocumentedOne) {
-    EXPECT_EQ(sm_->getMaxExternalEventsPerCall(), DEFAULT_BUDGET);
+    EXPECT_EQ(sm_->getMaxExternalEventsPerCall(), defaultBudget());
     EXPECT_EQ(sm_->getStatistics().truncatedEventChains, 0u);
     EXPECT_EQ(sm_->getStatistics().lastTruncatedEvent, "")
         << "nothing has been refused before the machine has done anything";
@@ -179,12 +182,12 @@ TEST_F(ExternalChainIsBoundedTest, TheDefaultBudgetIsTheDocumentedOne) {
 TEST_F(ExternalChainIsBoundedTest, AChainThatCannotEndIsCutAtTheBudgetAndTheCallReturns) {
     sm_->processEvent("spin");
 
-    EXPECT_EQ(sm_->getStatistics().truncatedEventChains, 1u)
+    EXPECT_EQ(sm_->getStatistics().truncatedEventChains, externalEventBudgetCount({"spin", "truncated"}))
         << "the call handed control back with an event still queued, and said so; without the count the host sees a "
            "machine that is running and has returned, with no sign that anything went wrong";
     // The host's own event is the first of the invocation, so the budget buys the
     // host's event and then `budget - 1` links.
-    EXPECT_EQ(counter("links"), std::to_string(DEFAULT_BUDGET - 1))
+    EXPECT_EQ(counter("links"), std::to_string(defaultBudget() - 1))
         << "the chain must run exactly as far as the budget allows: fewer means the call was cut early, more means "
            "the budget moved";
     EXPECT_EQ(sm_->getStatistics().lastTruncatedEvent, "link")
@@ -199,21 +202,22 @@ TEST_F(ExternalChainIsBoundedTest, AChainThatCannotEndIsCutAtTheBudgetAndTheCall
 /// not refused, however close to the budget it comes. `bounded` is the host's
 /// event and five laps, six in all.
 TEST_F(ExternalChainIsBoundedTest, TheBudgetIsExactForAChainThatEndsByItself) {
-    ASSERT_TRUE(sm_->setMaxExternalEventsPerCall(6));
+    ASSERT_TRUE(sm_->setMaxExternalEventsPerCall(externalEventBudgetCount({"exact", "budget"})));
     sm_->processEvent("bounded");
 
-    EXPECT_EQ(counter("laps"), "5");
-    EXPECT_EQ(sm_->getStatistics().truncatedEventChains, 0u)
+    EXPECT_EQ(counter("laps"), std::to_string(externalEventBudgetInt({"exact", "laps"})));
+    EXPECT_EQ(sm_->getStatistics().truncatedEventChains, externalEventBudgetCount({"exact", "truncated"}))
         << "a call that takes exactly the budget and empties the queue refused nothing: a long chain is not a runaway";
     EXPECT_EQ(sm_->getStatistics().lastTruncatedEvent, "");
 }
 
 TEST_F(ExternalChainIsBoundedTest, OneEventShortOfTheChainLeavesTheLastLapQueued) {
-    ASSERT_TRUE(sm_->setMaxExternalEventsPerCall(5));
+    ASSERT_TRUE(sm_->setMaxExternalEventsPerCall(externalEventBudgetCount({"one_short", "budget"})));
     sm_->processEvent("bounded");
 
-    EXPECT_EQ(counter("laps"), "4") << "one `lap` was left queued";
-    EXPECT_EQ(sm_->getStatistics().truncatedEventChains, 1u);
+    EXPECT_EQ(counter("laps"), std::to_string(externalEventBudgetInt({"one_short", "laps"})))
+        << "one `lap` was left queued";
+    EXPECT_EQ(sm_->getStatistics().truncatedEventChains, externalEventBudgetCount({"one_short", "truncated"}));
     EXPECT_EQ(sm_->getStatistics().lastTruncatedEvent, "lap");
 }
 
@@ -221,37 +225,51 @@ TEST_F(ExternalChainIsBoundedTest, OneEventShortOfTheChainLeavesTheLastLapQueued
 /// An engine that dropped the queue stops short and never finishes; one that ran
 /// the chain anyway finishes it in the first call.
 TEST_F(ExternalChainIsBoundedTest, ARefusedCallLeavesTheQueueSoTheNextCallFinishesTheChain) {
-    ASSERT_TRUE(sm_->setMaxExternalEventsPerCall(20));
+    ASSERT_TRUE(sm_->setMaxExternalEventsPerCall(externalEventBudgetCount({"resume", "budget"})));
 
     sm_->processEvent("resume");
-    EXPECT_EQ(sm_->getStatistics().truncatedEventChains, 1u);
-    EXPECT_EQ(counter("beats"), "19") << "the host's event and nineteen beats";
+    EXPECT_EQ(sm_->getStatistics().truncatedEventChains, externalEventBudgetCount({"resume", "truncated"}));
+    EXPECT_EQ(counter("beats"), std::to_string(externalEventBudgetInt({"resume", "beats_after_first_call"})))
+        << "the host's event and the beats the budget bought";
 
     sm_->processEvent("poke");
-    EXPECT_EQ(counter("beats"), "30")
+    EXPECT_EQ(counter("beats"), std::to_string(externalEventBudgetInt({"resume", "beats_after_second_call"})))
         << "the second call took the beats the first left on the queue, each in a budget of its own, and finished";
-    EXPECT_EQ(counter("pokes"), "1") << "and the host's second event was heard";
-    EXPECT_EQ(sm_->getStatistics().truncatedEventChains, 1u)
+    EXPECT_EQ(counter("pokes"), std::to_string(externalEventBudgetInt({"resume", "pokes"})))
+        << "and the host's second event was heard";
+    EXPECT_EQ(sm_->getStatistics().truncatedEventChains, externalEventBudgetCount({"resume", "truncated"}))
         << "the second call ended the way the clause says: nothing more is counted";
 }
 
 TEST_F(ExternalChainIsBoundedTest, AHostChoosesTheBudgetAndABudgetThatTakesNoEventIsRefused) {
-    ASSERT_TRUE(sm_->setMaxExternalEventsPerCall(7));
-    EXPECT_EQ(sm_->getMaxExternalEventsPerCall(), 7u);
-    EXPECT_FALSE(sm_->setMaxExternalEventsPerCall(0)) << "a budget of zero takes no event and was accepted";
-    EXPECT_EQ(sm_->getMaxExternalEventsPerCall(), 7u) << "a refused budget changes nothing";
+    const uint32_t chosen = externalEventBudgetCount({"host", "budget"});
+    ASSERT_TRUE(sm_->setMaxExternalEventsPerCall(chosen));
+    EXPECT_EQ(sm_->getMaxExternalEventsPerCall(), chosen);
+    for (const auto &refused : externalEventBudgetValue({"host", "refused"})) {
+        // The engine takes an unsigned budget, so a negative one the table lists
+        // cannot be written to it: the type refuses it before any call does.
+        const int64_t budget = refused.get<int64_t>();
+        if (budget < 0) {
+            continue;
+        }
+        EXPECT_FALSE(sm_->setMaxExternalEventsPerCall(static_cast<uint32_t>(budget)))
+            << "a budget of " << budget << " takes no event and was accepted";
+        EXPECT_EQ(sm_->getMaxExternalEventsPerCall(), chosen) << "a refused budget changes nothing";
+    }
 }
 
 /// `delay="0ms"` is due at the instant being processed. This engine delivers it
 /// straight to the external queue, where the drain's budget bounds it, so the
 /// call returns cut: the host's event and `budget - 1` blinks.
 TEST_F(ExternalChainIsBoundedTest, AChainThroughAStaticDelayOfZeroIsCutAtTheBudgetAndTheCallReturns) {
-    ASSERT_TRUE(sm_->setMaxExternalEventsPerCall(50));
+    const uint32_t budget = externalEventBudgetCount({"static_zero", "budget"});
+    ASSERT_TRUE(sm_->setMaxExternalEventsPerCall(budget));
 
     sm_->processEvent("zero");
 
     EXPECT_EQ(sm_->getStatistics().truncatedEventChains, 1u);
-    EXPECT_EQ(counter("blinks"), "49") << "the host's event and forty-nine blinks, no more and no fewer";
+    EXPECT_EQ(counter("blinks"), std::to_string(budget - 1))
+        << "the host's event and `budget - 1` blinks, no more and no fewer";
     EXPECT_EQ(sm_->getStatistics().lastTruncatedEvent, "blink");
 }
 
@@ -259,12 +277,15 @@ TEST_F(ExternalChainIsBoundedTest, AChainThroughAStaticDelayOfZeroIsCutAtTheBudg
 /// engine could read as undelayed. The expression evaluates to zero and this
 /// engine delivers it the same way.
 TEST_F(ExternalChainIsBoundedTest, AChainThroughADelayExpressionThatIsZeroIsCutAtTheBudgetAndTheCallReturns) {
-    ASSERT_TRUE(sm_->setMaxExternalEventsPerCall(50));
+    const uint32_t budget = externalEventBudgetCount({"zero_expr", "budget"});
+    ASSERT_TRUE(sm_->setMaxExternalEventsPerCall(budget));
 
     sm_->processEvent("zero_expr");
 
-    EXPECT_EQ(sm_->getStatistics().truncatedEventChains, 1u);
-    EXPECT_EQ(counter("exprs"), "49") << "the host's event and forty-nine blinks, no more and no fewer";
+    EXPECT_EQ(sm_->getStatistics().truncatedEventChains,
+              externalEventBudgetCount({"zero_expr", "truncated_after_tick"}));
+    EXPECT_EQ(counter("exprs"), std::to_string(budget - 1))
+        << "the host's event and `budget - 1` blinks, no more and no fewer";
     EXPECT_EQ(sm_->getStatistics().lastTruncatedEvent, "blink");
 }
 
@@ -274,12 +295,14 @@ TEST_F(ExternalChainIsBoundedTest, ABudgetSetBetweenCallsGovernsTheNextOne) {
     ASSERT_TRUE(sm_->setMaxExternalEventsPerCall(3));
     sm_->processEvent("resume");
     EXPECT_EQ(counter("beats"), "2") << "the host's event and two beats, then cut";
-    EXPECT_EQ(sm_->getStatistics().truncatedEventChains, 1u);
+    EXPECT_EQ(sm_->getStatistics().truncatedEventChains, externalEventBudgetCount({"resume", "truncated"}));
 
     ASSERT_TRUE(sm_->setMaxExternalEventsPerCall(100));
     sm_->processEvent("poke");
-    EXPECT_EQ(counter("beats"), "30") << "the new budget took the whole remainder of the chain in one call";
-    EXPECT_EQ(sm_->getStatistics().truncatedEventChains, 1u) << "and that call was not cut";
+    EXPECT_EQ(counter("beats"), std::to_string(externalEventBudgetInt({"resume", "beats_after_second_call"})))
+        << "the new budget took the whole remainder of the chain in one call";
+    EXPECT_EQ(sm_->getStatistics().truncatedEventChains, externalEventBudgetCount({"resume", "truncated"}))
+        << "and that call was not cut";
 }
 
 /// A parent and the child it invoked each run a loop of their own, and neither
