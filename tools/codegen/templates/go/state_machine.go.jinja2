@@ -402,6 +402,12 @@ type {{ machine_name }}Policy struct {
 	child{{ invoke_info.invoke_id | to_pascal_case }} sce.ChildEngine
 	pendingDoneInvoke{{ invoke_info.invoke_id | to_pascal_case }} bool
 {% endfor %}
+{% for invoke_info in model.invokes | scxml_family %}
+	// docs/adr/0045: how many times '{{ invoke_info.invoke_id }}' has started in
+	// this session; the next start, and the id it is started under, is numbered
+	// by it, so a child's ids come from the tree alone.
+	invokeStarts{{ invoke_info.invoke_id | to_pascal_case }} uint64
+{% endfor %}
 {% endif %}
 	// W3C SCXML 6.4: Parent communication (unbounded — see sce.ParentEventQueue)
 	ParentExternalQueue *sce.ParentEventQueue

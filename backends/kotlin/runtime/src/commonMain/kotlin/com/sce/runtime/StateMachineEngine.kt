@@ -358,14 +358,53 @@ abstract class StateMachineEngine<S : State, E : Event>(
     var basicHttpAccessUri: String = ""
 
     /**
+     * The id a parent gave this session when it started it (docs/adr/0045): the
+     * parent's own id and the id of the start, `<parent>.<invokeid>`, so a
+     * child's id comes from the tree alone and is the text every backend
+     * writes. `null` for a session a host started.
+     */
+    private var assignedSessionId: String? = null
+
+    /**
+     * This session's id as the events it sends carry it (`_event.origin`) and
+     * as a parent tells its children apart by it: the script engine's session
+     * when there is one, which a child's own id names, else the id its parent
+     * gave it, else the empty text (a machine a host started that runs no
+     * script engine, as a `sce-static` one).
+     */
+    private val sessionIdentity: String
+        get() = scriptSessionId ?: assignedSessionId ?: ""
+
+    /**
      * Allocate a script engine session ID.
-     * Called by generated ensureScriptEngine() during lazy initialization.
+     * Called by generated ensureScriptEngine() during lazy initialization. A
+     * child takes the id its parent gave it, so its script session and its
+     * identity are one name.
      */
     @OptIn(ExperimentalAtomicApi::class)
     protected fun allocateScriptSession(): String {
-        val sid = "session_${scriptSessionIdCounter.incrementAndFetch()}"
+        val sid = assignedSessionId ?: "session_${scriptSessionIdCounter.incrementAndFetch()}"
         scriptSessionId = sid
         return sid
+    }
+
+    /**
+     * docs/adr/0045: how many times each `<invoke>` of this session has
+     * started, by the id the document gives it. Each start's generated id is
+     * numbered by it.
+     */
+    private val invokeStarts = HashMap<String, Long>()
+
+    /**
+     * Count one more start of the `<invoke>` [invokeId] and answer its number,
+     * counted from 1: the platform part of the id the start is made under,
+     * `<state>.<start>.<invoke>` (W3C test 224 reads the state's id and a dot
+     * in front of it).
+     */
+    protected fun nextInvokeStart(invokeId: String): Long {
+        val next = (invokeStarts[invokeId] ?: 0L) + 1
+        invokeStarts[invokeId] = next
+        return next
     }
 
     // --- Active State Configuration (§scxml-5.9.2) ---
@@ -3657,7 +3696,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
         sendId: String,
         communicationError: E,
     ): TargetSendOutcome {
-        val origin = scriptSessionId ?: ""
+        val origin = sessionIdentity
         val delayed = delayMs > 0
         val route: ScheduledRoute = when (val resolved = SendHelper.classifyTarget(target, origin)) {
             SendHelper.SendTarget.Unsupported, SendHelper.SendTarget.Mesh -> return TargetSendOutcome.UNSUPPORTED
@@ -3723,7 +3762,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
      */
     private fun isChildSessionRunning(childSessionId: String): Boolean =
         childSessionId.isNotEmpty() &&
-            activeInvokes.values.any { it.child.scriptSessionId == childSessionId && !it.child.isInFinalState }
+            activeInvokes.values.any { it.child.sessionIdentity == childSessionId && !it.child.isInFinalState }
 
     /**
      * Queue a waiting send in [scheduledSends], replacing any send of the same
@@ -4360,6 +4399,12 @@ abstract class StateMachineEngine<S : State, E : Event>(
         generatedInvokeId: String = invokeId,
         childDocument: String = "",
     ) {
+        // docs/adr/0045: the child's id is this session's and the id of the
+        // start, so it comes from the tree alone. Given before the child
+        // initializes, so the script session it may open is named by it.
+        // A child whose script session was already opened (to take an
+        // argument) keeps that one, which is what it publishes.
+        child.assignedSessionId = "$sessionIdentity.$generatedInvokeId"
         // SCE_MESH.md, Child Sessions in Mesh: the child's router, asked of this
         // machine's factory and installed before the child initializes, since
         // its first `onEntry` may already send to a peer.
@@ -4370,7 +4415,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 send(it, EventMetadata(
                     type = "external",
                     invokeId = generatedInvokeId,
-                    origin = child.scriptSessionId ?: "",
+                    origin = child.sessionIdentity,
                     originType = "http://www.w3.org/TR/scxml/#SCXMLEventProcessor",
                     data = eventData,
                     // §scxml-3.12.1 + §scxml-5.10: the child names the event, and
@@ -4507,7 +4552,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
     ): Boolean {
         if (!isChildSessionRunning(childSessionId)) return false
         for ((_, entry) in activeInvokes) {
-            if (entry.child.scriptSessionId == childSessionId) {
+            if (entry.child.sessionIdentity == childSessionId) {
                 entry.child.sendByNameWithData(eventName, eventData)
                 settleDeliveredChild(entry)
                 return true
@@ -4739,7 +4784,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
 
         for ((_, entry) in activeInvokes) {
             if (entry.finalizeScript.isNotEmpty() &&
-                entry.child.scriptSessionId == metadata.origin) {
+                entry.child.sessionIdentity == metadata.origin) {
                 // §scxml-6.5: Set _event before finalize execution
                 // §scxml-5.10: under the name the child sent it.
                 val eventName = metadata.name.ifEmpty { eventNameOf(event) ?: "" }

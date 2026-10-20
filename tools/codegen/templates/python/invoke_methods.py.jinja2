@@ -44,10 +44,12 @@
             # `<state_id>.<instance>.<element_id>` shape (test224 checks
             # the `stateid.` prefix; test338 compares an `idlocation`
             # binding against `_event.invokeid` on a child-raised event,
-            # so both must share the same runtime id). Mirrors Rust's
-            # `format!("{}.{}.{invoke_id}", state_id, self as *const _ as usize)`
-            # in `tools/codegen/templates/rust/entry_exit_actions.rs.jinja2`.
-            _runtime_invoke_id = f"{{ state_id }}.{id(self)}.{{ inv.invoke_id }}"
+            # so both must share the same runtime id). The instance part is
+            # the number of this start (docs/adr/0045), so the id comes from
+            # the tree alone and is the text every backend writes.
+            self._invoke_starts_{{ inv.field_suffix }} += 1
+            _start = self._invoke_starts_{{ inv.field_suffix }}
+            _runtime_invoke_id = f"{{ state_id }}.{_start}.{{ inv.invoke_id }}"
 {% if inv.idlocation %}
             # W3C SCXML 6.4.1: Store the generated id in the datamodel
             # so author expressions (`<assign>` from `_event.invokeid`,
@@ -264,7 +266,13 @@
                 # Engine DI Parity RFC (Path B+): forward the parent's
                 # script engine so the child shares the same Lua VM /
                 # session manager, mirroring Rust + Kotlin invoke parity.
-                _child_engine = Engine(_child_policy, script_engine=engine._script_engine)
+                # docs/adr/0045: the child's id is this session's and the id of
+                # this start, so it comes from the tree alone.
+                _child_engine = Engine(
+                    _child_policy,
+                    script_engine=engine._script_engine,
+                    session_id=f"{self._session_id}.{entry.invoke_id}",
+                )
 {# `datamodel="sce-static"`: each argument is native code
    (`Param::native_seed`), read from the machine's own fields when the invoke
    executes, and handed to the child's variable of the same name through its

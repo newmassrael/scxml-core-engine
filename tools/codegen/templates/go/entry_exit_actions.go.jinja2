@@ -311,13 +311,17 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 {% for invoke_info in state.invokes | scxml %}
 		{  {{- annot.annotation_comment(invoke_info, "go", "			") }}
-			generatedInvokeID := fmt.Sprintf("%s.%d.{{ invoke_info.invoke_id }}", "{{ state_id }}", sce.NextInvokeCounter())
+			// docs/adr/0045: the platform part of the id is the number of this
+			// start, so the id comes from the tree alone.
+			p.invokeStarts{{ invoke_info.invoke_id | to_pascal_case }}++
+			generatedInvokeID := fmt.Sprintf("%s.%d.{{ invoke_info.invoke_id }}", "{{ state_id }}", p.invokeStarts{{ invoke_info.invoke_id | to_pascal_case }})
 {{ defer_with_idlocation(invoke_info, model, machine_name, state_id) }}
 		}
 {% endfor %}
 {% for invoke_info in state.invokes | hybrid %}
 		{  {{- annot.annotation_comment(invoke_info, "go", "			") }}
-			generatedInvokeID := fmt.Sprintf("%s.%d.{{ invoke_info.invoke_id }}", "{{ state_id }}", sce.NextInvokeCounter())
+			p.invokeStarts{{ invoke_info.invoke_id | to_pascal_case }}++
+			generatedInvokeID := fmt.Sprintf("%s.%d.{{ invoke_info.invoke_id }}", "{{ state_id }}", p.invokeStarts{{ invoke_info.invoke_id | to_pascal_case }})
 {{ defer_with_idlocation(invoke_info, model, machine_name, state_id) }}
 		}
 {% endfor %}

@@ -46,8 +46,13 @@
     // W3C SCXML 6.4: Defer the start of invoke '{{ invoke_info.invoke_id }}' of state '{{ state_id }}' to macrostep end
     fn defer_invoke_{{ invoke_info.field_suffix }}(&mut self, {{ 'engine' if (invoke_info.idlocation and 'error.execution' in model.events) else '_engine' }}: &mut sce_rust_runtime::Engine<Self>) {
         {
+            // docs/adr/0045: the id is the state's, the number of this start and
+            // the `<invoke>`'s, so it comes from the tree alone and is the same
+            // text on every backend (W3C test 224 reads the state's id and a dot
+            // in front of it).
+            self.invoke_starts_{{ invoke_info.field_suffix }} += 1;
             let generated_invoke_id = format!("{}.{}.{{ invoke_info.invoke_id }}",
-                "{{ state_id }}", self as *const _ as usize);
+                "{{ state_id }}", self.invoke_starts_{{ invoke_info.field_suffix }});
 {{ store_invoke_idlocation(invoke_info, model, machine_name) -}}
             if id_stored {
                 sce_rust_runtime::invoke::defer_invoke(

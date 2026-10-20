@@ -163,9 +163,10 @@
                 // Defer invoke execution until macrostep end (ARCHITECTURE.md Zero Duplication)
                 // ============================================================
 {% for invoke_info in state.invokes | scxml %}
-                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
-                // Include invoke index to ensure uniqueness for multiple invokes in same state
-                std::string generatedInvokeId_{{ invoke_info.invoke_id }} = "{{ state_id }}." + std::to_string(reinterpret_cast<uintptr_t>(this)) + ".{{ invoke_info.invoke_id }}";
+                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format.
+                // docs/adr/0045: the platform part is the number of this start, so the id
+                // comes from the tree alone and is the same text on every backend.
+                std::string generatedInvokeId_{{ invoke_info.invoke_id }} = "{{ state_id }}." + std::to_string(++invokeStarts_{{ invoke_info.field_suffix }}_) + ".{{ invoke_info.invoke_id }}";
 {{ store_invoke_idlocation(invoke_info, "generatedInvokeId_" ~ invoke_info.invoke_id, "scxmlIdStored_" ~ loop.index0, "                ") }}
 
                 // Defer invoke: {{ invoke_info.invoke_id }} ({{ invoke_info.src }})
@@ -455,9 +456,10 @@
                 // Defer invoke execution until macrostep end (ARCHITECTURE.md Zero Duplication)
                 // ============================================================
                 {% for invoke_info in state.invokes | hybrid %}
-                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
-                // Include invoke index to ensure uniqueness for multiple invokes in same state
-                std::string generatedInvokeId_{{ invoke_info.invoke_id }} = "{{ state_id }}." + std::to_string(reinterpret_cast<uintptr_t>(this)) + ".{{ invoke_info.invoke_id }}";
+                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format.
+                // docs/adr/0045: the platform part is the number of this start, so the id
+                // comes from the tree alone and is the same text on every backend.
+                std::string generatedInvokeId_{{ invoke_info.invoke_id }} = "{{ state_id }}." + std::to_string(++invokeStarts_{{ invoke_info.field_suffix }}_) + ".{{ invoke_info.invoke_id }}";
 {{ store_invoke_idlocation(invoke_info, "generatedInvokeId_" ~ invoke_info.invoke_id, "hybridIdStored_" ~ loop.index0, "                ") }}
 
                 // Defer hybrid invoke: {{ invoke_info.invoke_id }} {% if invoke_info.srcexpr %}(srcexpr: {{ invoke_info.srcexpr }}){% elif invoke_info.contentexpr %}(contentexpr: {{ invoke_info.contentexpr }}){% endif %}

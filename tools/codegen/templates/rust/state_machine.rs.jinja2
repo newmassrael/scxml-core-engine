@@ -761,6 +761,12 @@ pub struct {{ machine_name }}Policy{{ policy_generics_decl }} {
     pending_done_invoke_{{ invoke_info.field_suffix }}: bool,
 {% endif %}
 {% endfor %}
+{% for invoke_info in model.invokes | scxml_family %}
+    // docs/adr/0045: how many times '{{ invoke_info.invoke_id }}' has started in
+    // this session. The next start is numbered by it, and so is the id it is
+    // started under, so a child's ids come from the tree alone.
+    invoke_starts_{{ invoke_info.field_suffix }}: u64,
+{% endfor %}
 {% if not no_std %}
     // W3C SCXML 6.4: Parent engine external queue for #_parent send routing
     // Always generated under std — any SM can be invoked as a child. Under
@@ -905,6 +911,9 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
             child_{{ invoke_info.field_suffix }}: None,
             pending_done_invoke_{{ invoke_info.field_suffix }}: false,
 {% endif %}
+{% endfor %}
+{% for invoke_info in model.invokes | scxml_family %}
+            invoke_starts_{{ invoke_info.field_suffix }}: 0,
 {% endfor %}
 {% if not no_std %}
             parent_external_queue: None,

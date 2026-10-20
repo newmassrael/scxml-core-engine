@@ -420,6 +420,12 @@ class {{ machine_name }}Policy(StatePolicy[{{ machine_name }}State, {{ machine_n
         # fact the engine can read (W3C SCXML C.1: a send to `#_parent`
         # from a session nothing invoked is error.communication).
         self._parent_queue: Optional[List[Tuple[str, Any]]] = None
+{% for invoke_info in model.invokes | scxml_family %}
+        # docs/adr/0045: how many times '{{ invoke_info.invoke_id }}' has started
+        # in this session; the next start, and the id it is started under, is
+        # numbered by it, so a child's ids come from the tree alone.
+        self._invoke_starts_{{ invoke_info.field_suffix }}: int = 0
+{% endfor %}
 {% if event_payload_active %}
         # NL→IR Item C1 Path A: the current event's typed `_event.data`
         # payload(s), lifted from the dequeued event by `set_current_event`

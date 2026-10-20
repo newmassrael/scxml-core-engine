@@ -210,7 +210,12 @@ class Engine(Generic[S, E]):
     Single-threaded; callers needing concurrency must guard with a lock.
     """
 
-    def __init__(self, policy: StatePolicy[S, E], script_engine: "IScriptEngine") -> None:
+    def __init__(
+        self,
+        policy: StatePolicy[S, E],
+        script_engine: "IScriptEngine",
+        session_id: Optional[str] = None,
+    ) -> None:
         self._policy = policy
         # §scxml-5.10 — each engine owns one script-engine session.
         # The id is allocated up front so the policy can reference it
@@ -221,7 +226,11 @@ class Engine(Generic[S, E]):
         # later `create_session` step. Mirrors the Rust / Go / Kotlin /
         # C++ pattern where Engine construction implicitly owns one
         # script-engine session.
-        self._session_id: str = uuid.uuid4().hex
+        # A child is given its id by the parent that starts it,
+        # `<parent>.<invokeid>`, so it comes from the tree alone and is the
+        # text every backend writes (docs/adr/0045); a machine a host starts
+        # draws one of its own.
+        self._session_id: str = session_id if session_id is not None else uuid.uuid4().hex
         # Path B+ RFC Q1=(d) Python=duck-typed ref; Q5=(a) instance member;
         # Q2=(a) mandatory-when-needed: every Engine now ships with its own
         # engine instance, mirroring Kotlin's constructor-injected pattern.
