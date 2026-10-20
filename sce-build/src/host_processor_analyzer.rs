@@ -1151,13 +1151,13 @@ mod tests {
         let model = parse(&doc(r#"<datamodel><data id="t" expr="'#hmi'"/></datamodel>
                <state id="s"><onentry><send event="e" targetexpr="t"/></onentry></state>"#));
         assert!(!needs_mesh_router(&model, Language::Python));
-        for language in [
-            Language::Rust,
-            Language::Go,
-            Language::Kotlin,
-            Language::Python,
-            Language::C11,
-        ] {
+        for language in Language::ALL
+            .iter()
+            .copied()
+            // C++ is left out: its `TransportRouter` keeps its own route, which
+            // the assertion after this loop pins.
+            .filter(|language| *language != Language::Cpp)
+        {
             let lowered = lower_mesh_sends(&model, language);
             assert_eq!(
                 lowered.host_processor_types,
@@ -1170,8 +1170,8 @@ mod tests {
             matches!(lower_mesh_sends(&model, Language::Cpp), Cow::Borrowed(_)),
             "C++ keeps its own route"
         );
-        // Every backend is named above, so a backend added to `Language`
-        // has to be placed on one side of this rule deliberately.
+        // Every backend is on one side of this rule above, and a backend added
+        // to `Language` stops here so its side is decided deliberately.
         assert_eq!(Language::ALL.len(), 6);
     }
 

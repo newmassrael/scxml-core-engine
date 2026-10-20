@@ -34,8 +34,8 @@ mutation_targets sce-build/src/cli_language.rs \
 
 mutation_case "the batch suite documents the backend it has no emitter for" <<'PY'
 edit("sce-build/src/cli_language.rs",
-     "            LanguageRoute::GenerateW3c => &[\n                Language::Rust,\n                Language::Cpp,\n                Language::Kotlin,\n                Language::Go,\n                Language::Python,\n            ],",
-     "            LanguageRoute::GenerateW3c => Language::ALL,")
+     "                        .filter(|language| *language != Language::C11)\n",
+     "")
 PY
 
 mutation_case "a route hides a backend it serves" <<'PY'

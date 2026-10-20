@@ -36,6 +36,8 @@
 // real binary once per (route, language) pair and comparing what it
 // accepts against what its own `--help` says.
 
+use std::sync::LazyLock;
+
 use crate::generator::Language;
 
 /// A `sce-codegen` subcommand that takes `--language`, together with the
@@ -106,18 +108,25 @@ impl LanguageRoute {
             | LanguageRoute::Orchestrate
             | LanguageRoute::GenerateConformance
             | LanguageRoute::ListFixtures => Language::ALL,
-            // No C11 statechart emitter exists for the batch suite, so
-            // it has nothing to render for that backend. Single-document
-            // `generate -l c11` is a different emitter and does work —
-            // which is why the refusal below has to say so rather than
-            // leave the caller reading a five-name menu.
-            LanguageRoute::GenerateW3c => &[
-                Language::Rust,
-                Language::Cpp,
-                Language::Kotlin,
-                Language::Go,
-                Language::Python,
-            ],
+            // Every backend but the ones the batch suite has no emitter
+            // for, so a backend added to `Language` is served here until
+            // a reason to leave it out is written beside the filter.
+            LanguageRoute::GenerateW3c => {
+                static SERVED: LazyLock<Vec<Language>> = LazyLock::new(|| {
+                    Language::ALL
+                        .iter()
+                        .copied()
+                        // No C11 statechart emitter exists for the batch
+                        // suite, so it has nothing to render for that
+                        // backend. Single-document `generate -l c11` is a
+                        // different emitter and does work — which is why
+                        // the refusal below has to say so rather than
+                        // leave the caller reading a five-name menu.
+                        .filter(|language| *language != Language::C11)
+                        .collect()
+                });
+                SERVED.as_slice()
+            }
             // C++ and C11 integration fixtures emit at CMake build time
             // through `sce_generate_static_integration_test`, so there is
             // no committed tree for this subcommand to regenerate.

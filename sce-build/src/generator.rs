@@ -4752,14 +4752,6 @@ mod tests {
     #[test]
     fn accepted_subset_2_12_documents_every_lowering_backend() {
         const DOC: &str = include_str!("../../docs/SCE_ACCEPTED_SUBSET.md");
-        const ALL: [Language; 6] = [
-            Language::Cpp,
-            Language::Rust,
-            Language::Kotlin,
-            Language::Go,
-            Language::Python,
-            Language::C11,
-        ];
 
         // The label §2.12's AOT row uses for a backend. Exhaustive on
         // purpose: a seventh backend does not compile here until someone
@@ -4794,7 +4786,7 @@ mod tests {
              backends across rows — they all lower the same raise. Rows: {aot_rows:?}"
         );
 
-        for language in ALL {
+        for &language in Language::ALL {
             assert!(
                 aot_rows[0].contains(label(language)),
                 "§2.12's AOT row does not name {}, yet the generator lowers the \

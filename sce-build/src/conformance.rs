@@ -3495,17 +3495,8 @@ mod tests {
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../tools/codegen/templates");
         let resource_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/resources");
 
-        let languages = [
-            Language::Cpp,
-            Language::Rust,
-            Language::Python,
-            Language::Go,
-            Language::Kotlin,
-            Language::C11,
-        ];
-
-        for lang in &languages {
-            let result = render_harness(&manifest, *lang, &template_base, &resource_dir);
+        for &lang in Language::ALL {
+            let result = render_harness(&manifest, lang, &template_base, &resource_dir);
             match result {
                 Ok(rendered) => {
                     assert!(

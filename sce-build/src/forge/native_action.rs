@@ -2534,14 +2534,7 @@ mod tests {
 
     #[test]
     fn the_realization_is_declared_only_where_the_machine_has_a_duty() {
-        for lang in [
-            Language::Rust,
-            Language::Go,
-            Language::Kotlin,
-            Language::Python,
-            Language::Cpp,
-            Language::C11,
-        ] {
+        for &lang in Language::ALL {
             let with = build_interface(lang, "MActions", &BTreeMap::new(), &[], true);
             let without = build_interface(lang, "MActions", &BTreeMap::new(), &[], false);
             let member = realization_member(lang);

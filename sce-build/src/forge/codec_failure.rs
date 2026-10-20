@@ -283,14 +283,7 @@ mod tests {
     /// never produces.
     #[test]
     fn an_observable_symbol_is_the_one_the_emit_raises() {
-        for lang in [
-            Language::Rust,
-            Language::C11,
-            Language::Cpp,
-            Language::Kotlin,
-            Language::Go,
-            Language::Python,
-        ] {
+        for &lang in Language::ALL {
             for f in CodecFailure::ALL {
                 if let (Some(symbol), Some(raise)) = (f.observable_symbol(lang), f.raise_stmt(lang))
                 {
@@ -307,14 +300,7 @@ mod tests {
     /// backend, and a CBOR or content-line one by none — the reader returns it.
     #[test]
     fn only_a_positional_failure_has_a_raise_statement() {
-        for lang in [
-            Language::Rust,
-            Language::C11,
-            Language::Cpp,
-            Language::Kotlin,
-            Language::Go,
-            Language::Python,
-        ] {
+        for &lang in Language::ALL {
             for f in CodecFailure::ALL {
                 assert_eq!(
                     f.raise_stmt(lang).is_some(),
@@ -330,14 +316,7 @@ mod tests {
     /// pass on the wrong refusal.
     #[test]
     fn observable_failures_are_distinguishable() {
-        for lang in [
-            Language::Rust,
-            Language::C11,
-            Language::Cpp,
-            Language::Kotlin,
-            Language::Go,
-            Language::Python,
-        ] {
+        for &lang in Language::ALL {
             let named: Vec<&str> = CodecFailure::ALL
                 .into_iter()
                 .filter_map(|f| f.observable_symbol(lang))
