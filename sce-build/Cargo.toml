@@ -122,7 +122,9 @@ schemars = "0.8"
 # optional field, ref resolution failure). Dev-only — production
 # emit paths never validate, only produce.
 jsonschema = { version = "0.18", default-features = false }
-syn = { version = "2", features = ["parsing", "full"] }
+# `visit` walks the generator's own sources for the `Language` sites a new
+# backend must be decided at (a_backend_is_decided_at_every_site_and_listed_once).
+syn = { version = "2", features = ["parsing", "full", "visit"] }
 # Lua 5.4 — the very interpreter the Rust and Go backends emit for. Those
 # backends embed a Lua table constructor inside a host string literal, so
 # an author value crosses two literal boundaries and a host-only escape
