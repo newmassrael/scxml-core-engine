@@ -34,12 +34,15 @@
 //
 // Outside the generator it reads the integration channel table
 // (`common::integration_channels`, the one `integration_stem_registration`
-// holds the drivers to). What it does not read yet: the gates per backend and
-// the shared fixtures each runtime reads. Those join in their own commit.
+// holds the drivers to) and the gate registry (`gate_registry.py --mapping`).
+// What it does not read yet: the shared fixtures each runtime reads, which is
+// a question of what a runtime's tests load and is judged by changing a
+// fixture and watching the runtime's test go red, not by reading a table.
 
 mod common;
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::process::Command;
 
 use common::integration_channels::Channel;
 
@@ -201,9 +204,46 @@ fn derived_facts() -> Vec<Fact> {
         holds_if(Channel::ALL.iter().any(|c| c.language() == Some(l)))
     }));
 
+    // The lanes: a gate per backend in each family, named
+    // `<family>-<canonical name>`, which is the one rule the registry's slugs
+    // follow (the C11 forge gate was `forge-c` until 2026-10-20). The hook and
+    // the CI job run the same gate, so a backend without one in a family has
+    // that family judged nowhere it can be run before a push.
+    let slugs = gate_slugs();
+    for (family, label) in [
+        ("w3c", "W3C gate"),
+        ("forge", "Forge conformance gate"),
+        ("ecma262-lowered", "ECMA-262 lowered-artifact gate"),
+    ] {
+        facts.push(fact(label, |l| {
+            holds_if(slugs.contains(&format!("{family}-{}", l.canonical_name())))
+        }));
+    }
+
     // A capability no backend holds is not one any backend is behind on.
     facts.retain(|f| f.holdings.iter().any(|(_, h)| *h == Holding::Holds));
     facts
+}
+
+/// Every gate slug, asked of the registry rather than scraped from it: its
+/// source also carries the self-test's synthetic tables, which a scraper
+/// would read as gates.
+fn gate_slugs() -> BTreeSet<String> {
+    let root = common::repository::root();
+    let out = Command::new("python3")
+        .arg(root.join("tools/git-hooks/gate_registry.py"))
+        .arg("--mapping")
+        .arg("--repo-root")
+        .arg(&root)
+        .output()
+        .expect("run gate_registry.py --mapping");
+    assert!(
+        out.status.success(),
+        "gate_registry.py --mapping failed: {out:?}"
+    );
+    let table: serde_json::Map<String, serde_json::Value> =
+        serde_json::from_slice(&out.stdout).expect("--mapping prints a JSON object");
+    table.keys().cloned().collect()
 }
 
 /// Why a backend lacks a capability.
@@ -254,6 +294,29 @@ const ACCEPTED: &[(Language, &str, Why)] = &[
         Language::C11,
         "artifact for the ecmascript engine",
         Why::Design("it lowers ECMAScript to Lua at build time, and the Lua is the only artifact"),
+    ),
+    // The lowered-artifact lane exists for the two backends that can be asked
+    // for either engine; the others always lower, and their engines' own tests
+    // read the ECMA-262 semantics corpus (tests/ecmascript/).
+    (
+        Language::Rust,
+        "ECMA-262 lowered-artifact gate",
+        Why::Design("it always lowers at build time; its Lua engine's tests read the ECMA-262 semantics corpus"),
+    ),
+    (
+        Language::Go,
+        "ECMA-262 lowered-artifact gate",
+        Why::Design("it always lowers at build time; its Lua engine's tests read the ECMA-262 semantics corpus"),
+    ),
+    (
+        Language::Python,
+        "ECMA-262 lowered-artifact gate",
+        Why::Design("it always lowers at build time; its Lua engine's tests read the ECMA-262 semantics corpus"),
+    ),
+    (
+        Language::C11,
+        "ECMA-262 lowered-artifact gate",
+        Why::NotYet("no test of the C11 runtime reads the ECMA-262 semantics corpus, so nothing holds its Lua to it"),
     ),
     // Mesh (SCE_MESH.md §mesh-19, §mesh-20).
     (
