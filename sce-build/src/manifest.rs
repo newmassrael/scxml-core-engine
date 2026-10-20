@@ -679,7 +679,7 @@ mod tests {
             documents: vec![format!("{id}_doc")],
             child: ChildMesh { talks, sites },
         };
-        let sites = vec![
+        let sites = [
             site("quiet", false, vec![site("still", false, Vec::new())]),
             site("list", false, vec![site("inner", true, Vec::new())]),
             site("peer", true, Vec::new()),

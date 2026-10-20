@@ -6036,7 +6036,7 @@ topology:
         let deploy = deploy_naming(
             "      alice:\n        invoked_by: { machine: planner, invoke: _invoke_0 }\n",
         );
-        let sites = vec![crate::model::ChildMeshSite {
+        let sites = [crate::model::ChildMeshSite {
             invoke_id: "_invoke_0".into(),
             literal_id: false,
             documents: vec![String::new()],
