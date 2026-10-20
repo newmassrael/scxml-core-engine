@@ -29472,12 +29472,28 @@ fn render_algorithm(
     };
     let may_fail = m.signature.may_fail;
     let return_type = match (return_scalar, lang) {
-        _ if return_list.is_some() => return_list
+        (
+            _,
+            Language::Rust
+            | Language::Cpp
+            | Language::Kotlin
+            | Language::Go
+            | Language::Python
+            | Language::C11,
+        ) if return_list.is_some() => return_list
             .as_ref()
             .zip(list_return_cap)
             .map(|(list, cap)| list.return_type(cap, &primary_symbol, may_fail))
             .expect("guarded by the arm"),
-        _ if return_record.is_some() => return_record
+        (
+            _,
+            Language::Rust
+            | Language::Cpp
+            | Language::Kotlin
+            | Language::Go
+            | Language::Python
+            | Language::C11,
+        ) if return_record.is_some() => return_record
             .map(|record| record.qualified_type.clone())
             .expect("guarded by the arm"),
         (
@@ -29598,7 +29614,15 @@ fn render_algorithm(
         // same two runtimes: Rust's leaf crate holds the generic owned list
         // the byte type is an instance of, and Kotlin's runtime the one
         // 64-bit-slot buffer every list element fits.
-        _ if return_list.is_some() => {
+        (
+            _,
+            Language::Rust
+            | Language::Cpp
+            | Language::Kotlin
+            | Language::Go
+            | Language::Python
+            | Language::C11,
+        ) if return_list.is_some() => {
             let list = return_list.as_ref().expect("guarded by the arm");
             match lang {
                 // A `may-fail` algorithm names its error by path.
@@ -29654,7 +29678,15 @@ fn render_algorithm(
             c11_result_struct(&format!("    {value_type} value;\n"), &primary_symbol, true),
             c11_take(&value_type, &primary_symbol)
         ),
-        _ => String::new(),
+        (
+            _,
+            Language::Rust
+            | Language::Cpp
+            | Language::Kotlin
+            | Language::Go
+            | Language::Python
+            | Language::C11,
+        ) => String::new(),
     };
     // C11 views of the read-only lists of records the algorithm takes, one
     // per record type ([`c11_record_view_typedef`]).

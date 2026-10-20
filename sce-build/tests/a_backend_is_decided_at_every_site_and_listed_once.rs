@@ -164,9 +164,20 @@ fn falls_through(m: &ExprMatch, inside_impl_language: bool) -> bool {
     let rows: Vec<Vec<&Pat>> = m.arms.iter().flat_map(|arm| columns(&arm.pat)).collect();
     let width = rows.iter().map(Vec::len).max().unwrap_or(0);
     (0..width).any(|col| {
-        let cells = || rows.iter().filter_map(move |row| row.get(col).copied());
+        let cells = || rows.iter().filter_map(move |row| cell(row, col, width));
         cells().any(|p| names_language(p, inside_impl_language)) && cells().any(catches_all)
     })
+}
+
+/// The pattern an arm puts in column `col` of a `width`-wide match. A bare
+/// `_` or binding arm in a tuple match takes every column at once, so it
+/// stands in each column, not only the first: `match (value, lang)` with a
+/// final `_` lets a backend through the second.
+fn cell<'p>(row: &[&'p Pat], col: usize, width: usize) -> Option<&'p Pat> {
+    match row {
+        [only] if width > 1 => catches_all(only).then_some(*only),
+        cells => cells.get(col).copied(),
+    }
 }
 
 /// The function a site sits in, which is how a site is named: a `syn` span
@@ -373,6 +384,7 @@ fn the_scanners_tell_a_decision_from_a_fall_through() {
         fn wildcard(l: Language) -> u8 { match l { Language::Go => 1, _ => 0 } }
         fn binding(l: Language) -> u8 { match l { Language::Go => 1, other => other as u8 } }
         fn tuple(l: Language, k: u8) -> u8 { match (l, k) { (Language::Go, 0) => 1, (_, 0) => 2, _ => 3 } }
+        fn later_column(v: u8, l: Language) -> u8 { match (v, l) { (0, Language::Go) => 1, _ => 2 } }
         fn kind_wildcard_only(l: Language, k: u8) -> u8 { match (l, k) { (Language::Go, _) => 1, (Language::Rust | Language::Cpp | Language::Kotlin | Language::Python | Language::C11, _) => 2 } }
         fn exhaustive(l: Language) -> u8 { match l { Language::Rust | Language::Cpp => 0, Language::Kotlin | Language::Go | Language::Python | Language::C11 => 1 } }
         fn unrelated(x: Option<u8>) -> u8 { match x { Some(v) => v, _ => 0 } }
@@ -397,10 +409,12 @@ fn the_scanners_tell_a_decision_from_a_fall_through() {
             "sample.rs :: wildcard",
             "sample.rs :: binding",
             "sample.rs :: tuple",
+            "sample.rs :: later_column",
             "sample.rs :: inner",
         ],
         "the fall-through scanner must flag the catch-all in the backend column, by `_`, by a \
-         binding, in a tuple and through `Self::` inside `impl Language`, and nothing else"
+         binding, in a tuple, by a bare `_` when the backend is a later column, and through \
+         `Self::` inside `impl Language`, and nothing else"
     );
     assert_eq!(
         hand_lists,
@@ -417,17 +431,21 @@ fn the_scanners_tell_a_decision_from_a_fall_through() {
     );
 }
 
-/// Every `match` in the generator that decides by backend decides for every
-/// backend: no `_` or binding catches one it does not name.
+/// Every `match` in the generator and its tests that decides by backend
+/// decides for every backend: no `_` or binding catches one it does not name.
 #[test]
-fn no_backend_falls_through_a_catch_all_in_the_generator() {
-    let files = rust_files(&crate_root().join("src"));
+fn no_backend_falls_through_a_catch_all() {
+    let sources = rust_files(&crate_root().join("src"));
     assert!(
-        files.len() >= MIN_SOURCE_FILES,
+        sources.len() >= MIN_SOURCE_FILES,
         "found only {} source files under sce-build/src, so this check is not reading the generator",
-        files.len()
+        sources.len()
     );
-    let (fall_throughs, _) = scan(&files, true);
+    // The tests too: a test that matches on the backend to say what it
+    // expects would hand a new backend the catch-all's expectation.
+    let tests = rust_files(&crate_root().join("tests"));
+    let (mut fall_throughs, _) = scan(&sources, true);
+    fall_throughs.extend(scan(&tests, false).0);
     assert!(
         fall_throughs.is_empty(),
         "{} `match` block(s) decide by `Language` in some arms and catch the remaining backends \

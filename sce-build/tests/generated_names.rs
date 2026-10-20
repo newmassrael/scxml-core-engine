@@ -326,7 +326,17 @@ fn rendered(language: Language, label: &str, files: &[(String, String)]) -> BTre
         (Language::C11, "Event") => enumerators(block("enum names_event_e {", "}"), "NAMES_EVENT_"),
         (Language::C11, "on_entry") => capture(&all, r"names_on_entry_(\w+)_block_\d+\("),
         (Language::C11, "on_exit") => capture(&all, r"names_on_exit_(\w+)_block_\d+\("),
-        other => panic!("no reader for {other:?}: add one beside the family"),
+        // A family no reader above covers, for any backend. The backends are
+        // named so that one added to `Language` is a compile error here.
+        other @ (
+            Language::Rust
+            | Language::Cpp
+            | Language::Kotlin
+            | Language::Go
+            | Language::Python
+            | Language::C11,
+            _,
+        ) => panic!("no reader for {other:?}: add one beside the family"),
     }
 }
 

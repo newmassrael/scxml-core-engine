@@ -293,7 +293,7 @@ fn get_by_slot_emits_on_all_six_backends() {
             Language::Go => "GetBySlot",
             Language::Kotlin => "getBySlot",
             // Rust / Cpp / Python / C11 share the snake_case form.
-            _ => "get_by_slot",
+            Language::Rust | Language::Cpp | Language::Python | Language::C11 => "get_by_slot",
         };
         assert!(
             code.contains(needle),

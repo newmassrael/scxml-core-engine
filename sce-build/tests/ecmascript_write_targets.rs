@@ -296,7 +296,9 @@ fn render(model: &SCXMLModel, lang: Language, stem: &str) -> String {
                     .collect::<Vec<_>>()
                     .join("\n")
             }),
-        other => panic!("{other:?} does not lower authored ECMAScript here"),
+        other @ (Language::Cpp | Language::Kotlin) => {
+            panic!("{other:?} does not lower authored ECMAScript here")
+        }
     };
     rendered.unwrap_or_else(|| panic!("{lang:?} renders the document"))
 }

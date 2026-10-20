@@ -304,7 +304,7 @@ fn keyexpr_match_first_emits_on_all_six_backends() {
         // Axis 1: BC iteration surfaces.
         let slot_marker = match lang {
             Language::Kotlin | Language::Go => "sceSlotIdx",
-            _ => "sce_slot_idx",
+            Language::Rust | Language::Cpp | Language::Python | Language::C11 => "sce_slot_idx",
         };
         assert!(
             code.contains(slot_marker),
@@ -313,7 +313,7 @@ fn keyexpr_match_first_emits_on_all_six_backends() {
         let dispatch_marker = match lang {
             Language::Kotlin => "getBySlot",
             Language::Go => "GetBySlot",
-            _ => "get_by_slot",
+            Language::Rust | Language::Cpp | Language::Python | Language::C11 => "get_by_slot",
         };
         assert!(
             code.contains(dispatch_marker),
