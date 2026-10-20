@@ -442,8 +442,9 @@ mod tests {
 
     /// An event schema whose root carries `root` and whose datamodel holds a
     /// `level` of the first revision and then `added`, read as the parser
-    /// reads it: the schema, or the refusal's validation error.
-    fn parse_schema(root: &str, added: &str) -> Result<EventSchemaModel, ValidationError> {
+    /// reads it: the schema, or the refusal's validation error, boxed as the
+    /// parser hands it over (the error is past `clippy::result_large_err`).
+    fn parse_schema(root: &str, added: &str) -> Result<EventSchemaModel, Box<ValidationError>> {
         let xml = format!(
             r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
@@ -466,7 +467,7 @@ mod tests {
             },
             Ok(None) => panic!("not read as a forge document"),
             Err(located) => match located.error {
-                ForgeError::Validation(validation) => Err(*validation),
+                ForgeError::Validation(validation) => Err(validation),
                 other => panic!("refused, but not by validation: {other:?}"),
             },
         }
@@ -474,11 +475,11 @@ mod tests {
 
     /// The attribute a validation error refuses, and which of the three
     /// shapes refuses it.
-    fn refused(error: ValidationError) -> (&'static str, String) {
+    fn refused(error: &ValidationError) -> (&'static str, String) {
         match error {
-            ValidationError::AttributeRuleViolated { attr, .. } => ("rule", attr),
-            ValidationError::InvalidAttribute { attr, .. } => ("one-of", attr),
-            ValidationError::MissingAttribute { attr, .. } => ("missing", attr),
+            ValidationError::AttributeRuleViolated { attr, .. } => ("rule", attr.clone()),
+            ValidationError::InvalidAttribute { attr, .. } => ("one-of", attr.clone()),
+            ValidationError::MissingAttribute { attr, .. } => ("missing", attr.clone()),
             other => panic!("refused as {other:?}"),
         }
     }
@@ -509,7 +510,7 @@ mod tests {
             let error = parse_schema(&format!(r#" sce:revision="{written}""#), "")
                 .expect_err("no such revision");
             assert_eq!(
-                refused(error),
+                refused(&error),
                 ("rule", "sce:revision".to_string()),
                 "{written}"
             );
@@ -531,7 +532,7 @@ mod tests {
         ] {
             let error = parse_schema(root, &added(since)).expect_err("no such revision added it");
             assert_eq!(
-                refused(error),
+                refused(&error),
                 ("rule", "sce:since".to_string()),
                 "{root} {since}"
             );
@@ -545,14 +546,14 @@ mod tests {
             r#"<data id="urgent" sce:type="bool" sce:direction="in" sce:default="true"/>"#,
         )
         .expect_err("a field of the first revision takes no default");
-        assert_eq!(refused(error), ("rule", "sce:default".to_string()));
+        assert_eq!(refused(&error), ("rule", "sce:default".to_string()));
 
         let error = parse_schema(
             r#" sce:revision="2""#,
             r#"<data id="urgent" sce:type="bool" sce:direction="in" sce:since="2"/>"#,
         )
         .expect_err("a field a later revision added takes a default");
-        assert_eq!(refused(error), ("missing", "sce:default".to_string()));
+        assert_eq!(refused(&error), ("missing", "sce:default".to_string()));
     }
 
     #[test]
@@ -562,14 +563,14 @@ mod tests {
             r#"<data id="urgent" sce:type="bool" sce:direction="in" sce:since="2" sce:default="yes"/>"#,
         )
         .expect_err("a bool is true or false");
-        assert_eq!(refused(error), ("one-of", "sce:default".to_string()));
+        assert_eq!(refused(&error), ("one-of", "sce:default".to_string()));
 
         let error = parse_schema(
             r#" sce:revision="2""#,
             r#"<data id="count" sce:type="uint8" sce:direction="in" sce:since="2" sce:default="300"/>"#,
         )
         .expect_err("300 is past a uint8");
-        assert_eq!(refused(error), ("rule", "sce:default".to_string()));
+        assert_eq!(refused(&error), ("rule", "sce:default".to_string()));
     }
 
     #[test]
@@ -751,12 +752,18 @@ mod tests {
                 Language::Kotlin => "EventPayload.decode(metadata.data, ",
                 Language::Python => "_lift_typed_payload(",
             };
+            // Go has no bare import form: it asks where the generated packages live.
+            let options = crate::ForgeCompileOptions {
+                go_module_prefix: matches!(language, Language::Go)
+                    .then(|| "example.com/consumer/generated".to_string()),
+                ..crate::ForgeCompileOptions::default()
+            };
             let outputs = crate::compile_scxml_with_imports(
                 &[statechart.as_path()],
                 &[schema.as_path(), view_mode.as_path()],
                 &crate::find_template_dir_for(language),
                 language,
-                &crate::ForgeCompileOptions::default(),
+                &options,
                 None,
             )
             .unwrap_or_else(|e| panic!("{language:?}: the machine generates: {e:?}"));

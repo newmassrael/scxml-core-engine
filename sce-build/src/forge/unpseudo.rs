@@ -370,7 +370,7 @@ fn parse_event_schema(head: &Line<'_>, body: &[&Line<'_>]) -> Result<EventSchema
     for (l, sub) in group(body) {
         if leading {
             if let Some(rest) = l.text.strip_prefix("revision ") {
-                if revision.is_some() || payload_none || sub.first().is_some() {
+                if revision.is_some() || payload_none || !sub.is_empty() {
                     return Err(ParseError {
                         line: l.number,
                         why: "a `revision` line is written once, first, and holds nothing \
