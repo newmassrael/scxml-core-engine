@@ -1,0 +1,44 @@
+# Mutation cases for the external-event budget numbers the Kotlin driver reads from
+# `tests/external_event_budget/budget_outcomes.json` (ARCHITECTURE.md, "External-Event
+# Budget"): the table states the default and the counters every engine's test holds its
+# engine to, and a test that does not read it carries its own copy.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/kotlin_reads_the_external_event_budget_table.cases`.
+#
+# Each mutant moves one number of the table by one and leaves it well formed, so only a
+# test that loads the table can tell it from the right one. A SURVIVED here means the
+# driver kept a literal of that number, or that Gradle did not run the suite because the
+# table is not one of the test task's declared inputs
+# (`backends/kotlin/tests/build.gradle.kts`). The same four cases run against every other
+# backend in the sibling casefiles `<backend>_reads_the_external_event_budget_table*.cases`.
+#
+# Anchors are literal slices of the table; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_gradle . :sce-kotlin-tests:test --tests 'com.sce.integration.ExternalChainIsBoundedTest'
+mutation_runtime_targets tests/external_event_budget/budget_outcomes.json
+mutation_oracles backends/kotlin/tests/src/test/kotlin/com/sce/integration/ExternalChainIsBoundedTest.kt
+
+mutation_case "the default budget is written down one too high" <<'PY'
+edit("tests/external_event_budget/budget_outcomes.json",
+     '"default_budget": 10000,',
+     '"default_budget": 10001,')
+PY
+
+mutation_case "an exact chain's laps are written down one too many" <<'PY'
+edit("tests/external_event_budget/budget_outcomes.json",
+     '"exact": { "budget": 6, "laps": 5, "truncated": 0 }',
+     '"exact": { "budget": 6, "laps": 6, "truncated": 0 }')
+PY
+
+mutation_case "a chain one short leaves one more lap than it does" <<'PY'
+edit("tests/external_event_budget/budget_outcomes.json",
+     '"one_short": { "budget": 5, "laps": 4, "truncated": 1 }',
+     '"one_short": { "budget": 5, "laps": 5, "truncated": 1 }')
+PY
+
+mutation_case "the second call's beats are written down one too many" <<'PY'
+edit("tests/external_event_budget/budget_outcomes.json",
+     '"beats_after_second_call": 30,',
+     '"beats_after_second_call": 31,')
+PY
