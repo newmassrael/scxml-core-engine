@@ -1221,12 +1221,18 @@ fn mesh_backend(language: Language) -> Option<MeshBackend> {
     }
 }
 
+/// Whether [`mesh_backend`] has an emitter for `language`: what a deploy
+/// build for it can produce, asked of the one roster rather than restated.
+pub fn has_mesh_emitter(language: Language) -> bool {
+    mesh_backend(language).is_some()
+}
+
 /// The backends [`mesh_backend`] has an emitter for, in `Language::ALL`
 /// order — what a `--lang` refusal offers instead.
 pub(crate) fn mesh_backend_languages() -> Vec<&'static str> {
     Language::ALL
         .iter()
-        .filter(|language| mesh_backend(**language).is_some())
+        .filter(|language| has_mesh_emitter(**language))
         .map(|language| language.canonical_name())
         .collect()
 }

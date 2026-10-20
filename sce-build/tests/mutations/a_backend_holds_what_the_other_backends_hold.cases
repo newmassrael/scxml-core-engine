@@ -1,0 +1,40 @@
+# Mutation cases for "a backend holds what the other backends hold".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_backend_holds_what_the_other_backends_hold.cases`.
+#
+# The parity check reads each capability from the registry that decides it and
+# holds every backend's row to the union, with ACCEPTED recording each gap. Its
+# own comparison is held by a unit test over made-up rows; what that test
+# cannot show is that the rows are really READ from the registries. A
+# derivation that stopped reading one would leave every row unchanged by the
+# registry and the check passing on whatever it last saw. So each case moves a
+# registry and expects the check to notice:
+#
+#   - a backend leaving a roster opens a gap nobody recorded;
+#   - a reading that finds no backend at all drops the capability from the
+#     union, and the gaps ACCEPTED records for it become stale.
+#
+# Each is refused by a test in `a_backend_holds_what_the_other_backends_hold.rs`.
+
+mutation_tests -p sce-build --features cli --test a_backend_holds_what_the_other_backends_hold
+mutation_targets sce-build/src/generator.rs sce-build/src/mesh/codegen.rs
+mutation_oracles sce-build/tests/a_backend_holds_what_the_other_backends_hold.rs
+
+mutation_case "a backend leaves the static data model roster" <<'PY'
+edit("sce-build/src/generator.rs",
+     "    Language::Go,\n    Language::Python,\n    Language::C11,\n];\n\n/// Whether `language` lowers `datamodel=\"sce-static\"`",
+     "    Language::Python,\n    Language::C11,\n];\n\n/// Whether `language` lowers `datamodel=\"sce-static\"`")
+PY
+
+mutation_case "the saved-state reading finds no backend" <<'PY'
+edit("sce-build/src/generator.rs",
+     "        const SAVED_SHAPE: &str = \"static_saved_shape\";",
+     "        const SAVED_SHAPE: &str = \"static_saved_shape_written_nowhere\";")
+PY
+
+mutation_case "the Mesh emitter roster answers no for every backend" <<'PY'
+edit("sce-build/src/mesh/codegen.rs",
+     "    mesh_backend(language).is_some()\n}",
+     "    mesh_backend(language).is_some() && false\n}")
+PY

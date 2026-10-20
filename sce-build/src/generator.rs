@@ -438,6 +438,26 @@ impl Language {
             .any(|(_, body)| strip_jinja_comments(body).contains(GUARD_LOWERING_FILTER))
     }
 
+    /// Whether this backend's templates write the save-and-restore surface of
+    /// a static data model machine (SCE Accepted Subset §2.15, "Saving and
+    /// restoring").
+    ///
+    /// Read off the embedded tree the way
+    /// [`Self::lowers_expressions_at_build_time`] is, and for the same
+    /// reason: the surface exists exactly where a backend's own templates
+    /// read the saved shape the static lowering computes, and a second list
+    /// of the backends that save would be free to disagree with them.
+    /// Comments are stripped first, so a template that only mentions the
+    /// shape does not count.
+    pub fn writes_saved_state(self) -> bool {
+        const SAVED_SHAPE: &str = "static_saved_shape";
+
+        crate::template_registry::EMBEDDED_TEMPLATES
+            .iter()
+            .filter(|(name, _)| self.owns_template(name))
+            .any(|(_, body)| strip_jinja_comments(body).contains(SAVED_SHAPE))
+    }
+
     /// Whether this backend can emit an artifact for @p target.
     ///
     /// **Derived, like every other answer on this seam.** A backend always
@@ -1563,6 +1583,13 @@ const STATIC_DATAMODEL_BACKENDS: &[Language] = &[
     Language::Python,
     Language::C11,
 ];
+
+/// Whether `language` lowers `datamodel="sce-static"`: the answer
+/// [`STATIC_DATAMODEL_BACKENDS`] gives, for a reader outside this module (the
+/// backend parity check) that must ask the registry rather than restate it.
+pub fn lowers_static_datamodel(language: Language) -> bool {
+    STATIC_DATAMODEL_BACKENDS.contains(&language)
+}
 
 fn reject_static_datamodel_in_unsupported_lang(
     model: &SCXMLModel,
