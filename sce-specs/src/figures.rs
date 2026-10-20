@@ -96,7 +96,9 @@ pub struct FigureRequest<'a> {
     /// The other documents of a model of several, staged beside the entry under
     /// their own names, which is where its imports find them.
     pub siblings: &'a [Document],
-    /// A page the product lists (`a4-portrait`, ...). Its default when absent.
+    /// A page the product lists (`a4-portrait`, ...), or `fit` for the smallest of
+    /// them that holds the drawing at its type size (a screen, which has no paper).
+    /// Its default when absent.
     pub page: Option<&'a str>,
     /// A vocabulary the product lists (`en`, `ko`). Its default when absent.
     pub lexicon: Option<&'a str>,

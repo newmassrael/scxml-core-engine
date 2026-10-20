@@ -181,6 +181,70 @@ fn a_parallel_of_many_regions_is_drawn_in_rows_on_the_page_that_refused_it() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// `--page fit` draws the set on the smallest page of its ladder that holds
+/// it, byte for byte as that page named would; at the type size the default
+/// page holds it is the default page; and where no page holds it, the refusal
+/// is the largest page's. Measured on this fixture: at 16 pt only A3 holds
+/// it, at 20 pt only A3 landscape, at 24 pt nothing.
+#[test]
+fn fit_draws_on_the_smallest_page_that_holds_the_set_and_never_shrinks_the_type() {
+    let dir = scratch("diagram-fit");
+    let doc = dir.join("lock.scxml");
+    std::fs::write(&doc, LOCK).expect("write fixture");
+    let files = |out: &Path| -> Vec<(String, String)> {
+        let mut found: Vec<(String, String)> = std::fs::read_dir(out)
+            .expect("read out dir")
+            .map(|e| {
+                let path = e.expect("entry").path();
+                let name = path
+                    .file_name()
+                    .expect("name")
+                    .to_string_lossy()
+                    .into_owned();
+                (name, std::fs::read_to_string(&path).expect("svg"))
+            })
+            .collect();
+        found.sort();
+        found
+    };
+    for (pt, page) in [
+        ("7", "a4-portrait"),
+        ("16", "a3-portrait"),
+        ("20", "a3-landscape"),
+    ] {
+        let fitted = dir.join(format!("fit-{pt}"));
+        let named = dir.join(format!("{page}-{pt}"));
+        let run = diagram_with(&doc, &fitted, &["--page", "fit", "--min-pt", pt]);
+        assert_eq!(run.status.code(), Some(0), "fit at {pt} pt: {run:?}");
+        let run = diagram_with(&doc, &named, &["--page", page, "--min-pt", pt]);
+        assert_eq!(run.status.code(), Some(0), "{page} at {pt} pt: {run:?}");
+        assert_eq!(files(&fitted), files(&named), "fit at {pt} pt is {page}");
+    }
+    // The nearest page below the one chosen refuses it: the ladder was climbed, not skipped.
+    let run = diagram_with(
+        &doc,
+        &dir.join("a3-portrait-20"),
+        &["--page", "a3-portrait", "--min-pt", "20"],
+    );
+    assert_eq!(run.status.code(), Some(20), "{run:?}");
+
+    let out = dir.join("fit-24");
+    let run = diagram_with(&doc, &out, &["--page", "fit", "--min-pt", "24"]);
+    assert_eq!(run.status.code(), Some(20), "{run:?}");
+    let stderr = String::from_utf8(run.stderr).expect("utf-8");
+    let record: serde_json::Value =
+        serde_json::from_str(stderr.lines().next().expect("one record")).expect("json");
+    assert_eq!(record["code"], "cli/diagram-does-not-fit", "{record}");
+    assert!(
+        record["message"]
+            .as_str()
+            .is_some_and(|m| m.contains("the page gives 1106 x 757 pt")),
+        "the refusal is the largest page's: {record}"
+    );
+    assert!(!out.exists(), "a refusal writes nothing");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// Given the specification's manifest, the command also writes the
 /// requirement checklist after the figures, and every requirement of the
 /// manifest has its row there — the missing ones saying no figure shows

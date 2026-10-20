@@ -54,6 +54,21 @@ pub const PAGES: &[(&str, f64, f64)] = &[
     ("letter-landscape", 279.4, 215.9),
 ];
 
+/// The page a caller names when any page will do: the smallest of
+/// [`FIT_LADDER`] that holds every figure and sheet at the minimum type.
+///
+/// A screen has no paper, and a figure that is refused for the default page
+/// while a larger one holds it is a figure the screen never shows (measured
+/// 2026-10-20: a door-lock statechart of nine requirements needed 815 x 741
+/// pt, A4 portrait gives 510 x 757, A3 landscape 1105 x 757). The type is not
+/// shrunk to make it fit: only the paper grows.
+pub const FIT: &str = "fit";
+
+/// The pages [`FIT`] tries, smallest printable area first. One paper family,
+/// so a set drawn to fit is printed on paper of one kind, and the default page
+/// first, so a document that fits it is drawn exactly as it always was.
+pub const FIT_LADDER: &[&str] = &["a4-portrait", "a4-landscape", "a3-portrait", "a3-landscape"];
+
 /// The margin every named page keeps on each side.
 const MARGIN_MM: f64 = 15.0;
 
@@ -180,6 +195,19 @@ pub enum Refusal {
     /// A document whose own graph the statechart figure could not read:
     /// the model and the figure disagreeing about what the document is.
     Unreadable(String),
+}
+
+impl Refusal {
+    /// Whether a larger page could change the answer: the refusal is of a
+    /// size, and not of what the document is.
+    pub fn is_too_large(&self) -> bool {
+        matches!(
+            self,
+            Refusal::DoesNotFit { .. }
+                | Refusal::ChecklistDoesNotFit { .. }
+                | Refusal::SheetDoesNotFit { .. }
+        )
+    }
 }
 
 impl std::fmt::Display for Refusal {
@@ -481,5 +509,53 @@ mod tests {
             }
             other => panic!("expected a refusal, got {other:?}"),
         }
+    }
+
+    /// The pages `fit` tries are pages the list carries, of one family,
+    /// each holding more than the one before, starting at the default.
+    #[test]
+    fn the_fit_ladder_grows_from_the_default_page_within_the_list() {
+        let areas: Vec<f64> = FIT_LADDER
+            .iter()
+            .map(|name| {
+                let (w, h) = Page::named(name, 7.0)
+                    .unwrap_or_else(|| panic!("{name} is not in PAGES"))
+                    .area_pt();
+                w * h
+            })
+            .collect();
+        assert_eq!(FIT_LADDER[0], "a4-portrait");
+        assert!(areas.windows(2).all(|pair| pair[0] <= pair[1]), "{areas:?}");
+        assert!(FIT_LADDER.iter().all(|name| name.starts_with('a')));
+        assert!(
+            Page::named(FIT, 7.0).is_none(),
+            "fit is a choice, not a page"
+        );
+    }
+
+    /// A refusal of a size is one a larger page can answer; one of what the
+    /// document is, is not.
+    #[test]
+    fn only_a_refusal_of_a_size_is_one_a_larger_page_can_answer() {
+        let size = (1.0, 1.0);
+        assert!(Refusal::DoesNotFit {
+            figure: FigureName::Document,
+            need_pt: size,
+            area_pt: size
+        }
+        .is_too_large());
+        assert!(Refusal::ChecklistDoesNotFit {
+            need_pt: size,
+            area_pt: size
+        }
+        .is_too_large());
+        assert!(Refusal::SheetDoesNotFit {
+            what: "t".into(),
+            need_pt: size,
+            area_pt: size
+        }
+        .is_too_large());
+        assert!(!Refusal::Unreadable("x".into()).is_too_large());
+        assert!(!Refusal::NotATree("x".into()).is_too_large());
     }
 }

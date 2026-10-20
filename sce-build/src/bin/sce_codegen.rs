@@ -2442,7 +2442,10 @@ enum Commands {
         /// Directory the SVG files are written into
         #[arg(short, long, value_name = "DIR")]
         out: String,
-        /// The page each figure has to fit, margins included.
+        /// The page each figure has to fit, margins included. `fit` draws
+        /// the set on the smallest of A4 portrait, A4 landscape, A3 portrait
+        /// and A3 landscape that holds it at `--min-pt`, for a reader with no
+        /// paper (a screen); the type is never shrunk, only the paper grows.
         #[arg(
             long,
             value_name = "NAME",
@@ -9642,12 +9645,14 @@ fn registered_lexicons() -> clap::builder::PossibleValuesParser {
     clap::builder::PossibleValuesParser::new(sce_build::forge::page::lexicon_names())
 }
 
-/// The page names `diagram --page` accepts: the diagram's own list.
+/// The page names `diagram --page` accepts: the diagram's own list, and
+/// `fit` for the smallest of its ladder that holds the set.
 fn registered_pages() -> clap::builder::PossibleValuesParser {
     clap::builder::PossibleValuesParser::new(
         sce_build::diagram::fit::PAGES
             .iter()
-            .map(|(name, _, _)| *name),
+            .map(|(name, _, _)| *name)
+            .chain(std::iter::once(sce_build::diagram::fit::FIT)),
     )
 }
 
@@ -9733,23 +9738,35 @@ fn cmd_diagram(
             feature: format!("the '{lexicon}' lexicon is not in this build's registry"),
         })
     });
-    let page_name = page;
-    let page = Page::named(page, min_pt)
-        .unwrap_or_else(|| {
-            cli_exit(CliError::DiagramUnavailable {
-                feature: format!("the '{page}' page is not in the diagram's page list"),
-            })
+    // The pages to try, in order: the one named, or for `fit` the ladder from
+    // the default page up, so that only the paper grows and never the type
+    // shrinks (see `fit::FIT`).
+    let names: &[&str] = if page == fit::FIT {
+        fit::FIT_LADDER
+    } else {
+        std::slice::from_ref(&page)
+    };
+    let pages: Vec<Page> = names
+        .iter()
+        .map(|name| {
+            let page = Page::named(name, min_pt)
+                .unwrap_or_else(|| {
+                    cli_exit(CliError::DiagramUnavailable {
+                        feature: format!("the '{name}' page is not in the diagram's page list"),
+                    })
+                })
+                .with_figure_margin(margin_pt);
+            let (area_w, area_h) = page.area_pt();
+            if area_w <= 0.0 || area_h <= 0.0 {
+                cli_exit(CliError::Usage {
+                    detail: format!(
+                        "--margin {margin_pt} leaves the '{name}' page no printable area"
+                    ),
+                });
+            }
+            page
         })
-        .with_figure_margin(margin_pt);
-    let (area_w, area_h) = page.area_pt();
-    if area_w <= 0.0 || area_h <= 0.0 {
-        cli_exit(CliError::Usage {
-            detail: format!(
-                "--margin {margin_pt} leaves the '{}' page no printable area",
-                page_name
-            ),
-        });
-    }
+        .collect();
 
     let refuse = |refusal: Refusal| -> ! {
         use sce_build::diagram::words::{self, Phrase};
@@ -9819,100 +9836,123 @@ fn cmd_diagram(
     // formula or a byte layout, and what is drawn of it is the table of
     // every value it states (Requirement-closure RFC §7: the review
     // artefact follows the kind's shape).
-    let model = match design {
-        Design::Statechart(model) => *model,
-        Design::Forge(parsed) => {
-            let kind = parsed.document.kind().as_attr();
-            if manifest.is_some() {
-                cli_exit(CliError::DiagramUnavailable {
-                    feature: format!(
-                        "the requirement checklist names a statechart's boxes and table rows, \
-                         and this is a {kind} document; its requirements are in \
-                         sce-codegen acceptance-report"
-                    ),
-                });
+    if let (Design::Forge(parsed), Some(_)) = (&design, manifest) {
+        let kind = parsed.document.kind().as_attr();
+        cli_exit(CliError::DiagramUnavailable {
+            feature: format!(
+                "the requirement checklist names a statechart's boxes and table rows, \
+                 and this is a {kind} document; its requirements are in \
+                 sce-codegen acceptance-report"
+            ),
+        });
+    }
+
+    // Every file of the set, on one page. A refusal is returned rather than
+    // exited on, so that `fit` can try the next page when it is of a size.
+    let draw = |page: Page| -> Result<Vec<(String, String)>, Refusal> {
+        let model = match &design {
+            Design::Statechart(model) => model.as_ref(),
+            Design::Forge(parsed) => {
+                let pictures = sce_build::diagram::kinds::pictures(parsed, lexicon, page)?;
+                // A kind whose picture is a statechart figure (a procedure's
+                // states) is drawn by the print pipeline and named as its
+                // figures are.
+                let figures = sce_build::diagram::kinds::figures(parsed, lexicon, page)?;
+                let sheets = sce_build::diagram::fields::pages(parsed, lexicon, page)?;
+                let mut files: Vec<(String, String)> = figures
+                    .iter()
+                    .map(|p| {
+                        let stem = p.laid.name.file_stem().unwrap_or_else(|| {
+                            cli_exit(CliError::DiagramUnavailable {
+                                feature: format!(
+                                    "the figure {:?} has no file name: its state id carries a \
+                                     path separator or a control character",
+                                    p.laid.name
+                                ),
+                            })
+                        });
+                        (format!("{stem}.svg"), sce_build::diagram::svg::render(p))
+                    })
+                    .collect();
+                files.extend(pictures.iter().map(|p| {
+                    (
+                        format!("{}.svg", p.stem),
+                        sce_build::diagram::svg::render_sheet(&p.sheet),
+                    )
+                }));
+                files.extend(sheets.iter().enumerate().map(|(n, sheet)| {
+                    (
+                        format!("fields-{}.svg", n + 1),
+                        sce_build::diagram::svg::render_sheet(sheet),
+                    )
+                }));
+                return Ok(files);
             }
-            let pictures = sce_build::diagram::kinds::pictures(&parsed, lexicon, page)
-                .unwrap_or_else(|r| refuse(r));
-            // A kind whose picture is a statechart figure (a procedure's
-            // states) is drawn by the print pipeline and named as its
-            // figures are.
-            let figures = sce_build::diagram::kinds::figures(&parsed, lexicon, page)
-                .unwrap_or_else(|r| refuse(r));
-            let sheets = sce_build::diagram::fields::pages(&parsed, lexicon, page)
-                .unwrap_or_else(|r| refuse(r));
-            let mut files: Vec<(String, String)> = figures
-                .iter()
-                .map(|p| {
-                    let stem = p.laid.name.file_stem().unwrap_or_else(|| {
-                        cli_exit(CliError::DiagramUnavailable {
-                            feature: format!(
-                                "the figure {:?} has no file name: its state id carries a path \
-                                 separator or a control character",
-                                p.laid.name
-                            ),
-                        })
-                    });
-                    (format!("{stem}.svg"), sce_build::diagram::svg::render(p))
-                })
-                .collect();
-            files.extend(pictures.iter().map(|p| {
-                (
-                    format!("{}.svg", p.stem),
-                    sce_build::diagram::svg::render_sheet(&p.sheet),
-                )
-            }));
-            files.extend(sheets.iter().enumerate().map(|(n, sheet)| {
-                (
-                    format!("fields-{}.svg", n + 1),
-                    sce_build::diagram::svg::render_sheet(sheet),
-                )
-            }));
-            write_diagram_files(out, &framed(files));
-            return;
-        }
-    };
-    let printed = fit::print(&model, lexicon, page).unwrap_or_else(|r| refuse(r));
+        };
+        let printed = fit::print(model, lexicon, page)?;
 
-    // The checklist, when the specification's list was given: every
-    // requirement, its outcome, and where these figures show it.
-    let checklist = manifest.map(|path| {
-        let loaded = load_requirement_manifest(path);
-        let classification = sce_build::requirement_manifest::classify(&model, &loaded);
-        let diagram = sce_build::diagram::split(&model, 1);
-        let items =
-            sce_build::diagram::checklist::items(&model, &classification, &diagram, &printed);
-        sce_build::diagram::checklist::pages(&items, lexicon, page).unwrap_or_else(|r| refuse(r))
-    });
+        // The checklist, when the specification's list was given: every
+        // requirement, its outcome, and where these figures show it.
+        let checklist = manifest
+            .map(|path| {
+                let loaded = load_requirement_manifest(path);
+                let classification = sce_build::requirement_manifest::classify(model, &loaded);
+                let diagram = sce_build::diagram::split(model, 1);
+                let items = sce_build::diagram::checklist::items(
+                    model,
+                    &classification,
+                    &diagram,
+                    &printed,
+                );
+                sce_build::diagram::checklist::pages(&items, lexicon, page)
+            })
+            .transpose()?;
 
-    // Every name is decided before anything is written, so a refusal
-    // leaves no partial set behind.
-    let stems: Vec<String> = printed
-        .iter()
-        .map(|p| {
-            p.laid.name.file_stem().unwrap_or_else(|| {
-                cli_exit(CliError::DiagramUnavailable {
-                    feature: format!(
-                        "the figure {:?} has no file name: its state id carries a path \
-                         separator or a control character",
-                        p.laid.name
-                    ),
+        // Every name is decided before anything is written, so a refusal
+        // leaves no partial set behind.
+        let stems: Vec<String> = printed
+            .iter()
+            .map(|p| {
+                p.laid.name.file_stem().unwrap_or_else(|| {
+                    cli_exit(CliError::DiagramUnavailable {
+                        feature: format!(
+                            "the figure {:?} has no file name: its state id carries a path \
+                             separator or a control character",
+                            p.laid.name
+                        ),
+                    })
                 })
             })
-        })
-        .collect();
-    let mut files: Vec<(String, String)> = printed
-        .iter()
-        .zip(&stems)
-        .map(|(p, stem)| (format!("{stem}.svg"), sce_build::diagram::svg::render(p)))
-        .collect();
-    files.extend(checklist.iter().flatten().enumerate().map(|(n, sheet)| {
-        (
-            format!("checklist-{}.svg", n + 1),
-            sce_build::diagram::svg::render_checklist(sheet),
-        )
-    }));
-    write_diagram_files(out, &framed(files));
+            .collect();
+        let mut files: Vec<(String, String)> = printed
+            .iter()
+            .zip(&stems)
+            .map(|(p, stem)| (format!("{stem}.svg"), sce_build::diagram::svg::render(p)))
+            .collect();
+        files.extend(checklist.iter().flatten().enumerate().map(|(n, sheet)| {
+            (
+                format!("checklist-{}.svg", n + 1),
+                sce_build::diagram::svg::render_checklist(sheet),
+            )
+        }));
+        Ok(files)
+    };
+
+    // The first page that holds the whole set is the one it is drawn on. A
+    // refusal of what the document is ends the run at once; one of a size is
+    // kept, and the largest page's is the one said when no page holds it.
+    let mut too_large = None;
+    for page in pages {
+        match draw(page) {
+            Ok(files) => {
+                write_diagram_files(out, &framed(files));
+                return;
+            }
+            Err(refusal) if refusal.is_too_large() => too_large = Some(refusal),
+            Err(refusal) => refuse(refusal),
+        }
+    }
+    refuse(too_large.expect("at least one page is tried"))
 }
 
 fn cmd_pseudo(
