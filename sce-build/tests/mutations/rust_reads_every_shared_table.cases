@@ -1,0 +1,49 @@
+# Mutation cases for the five tables every backend's tests read at run time
+# (ARCHITECTURE.md, "JSON Text", "JSON Number Text", "JSON Object Key Order", "Durations",
+# "Document Stem"): the Rust runtime's unit tests read each table, and a table a test does
+# not read is a table that cannot be wrong.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/rust_reads_every_shared_table.cases`.
+#
+# Each mutant changes one expected value of one table to an answer no engine gives, and
+# leaves the table well formed, so only a test that loads the table can tell it from the
+# right one. A SURVIVED here means the Rust runtime carries its own copy of that table's
+# expectations, or does not read the table at all. The same five cases run against every
+# other backend in the sibling casefiles `<backend>_reads_every_shared_table*.cases`.
+#
+# Anchors are literal slices of the table; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-runtime --lib
+mutation_runtime_targets tests/json_text/string_escape.json tests/json_text/real_text.json tests/json_text/object_key_order.json tests/durations/css2_time.json tests/document_stem/document_stem.json
+mutation_oracles backends/rust/runtime/src/json.rs backends/rust/runtime/src/helpers/event_data.rs backends/rust/runtime/src/helpers/send.rs backends/rust/runtime/src/helpers/invoke_processing.rs
+
+mutation_case "a string's escaped form is written down wrongly" <<'PY'
+edit("tests/json_text/string_escape.json",
+     '{ "name": "plain text", "text": "hello", "escaped": "hello" }',
+     '{ "name": "plain text", "text": "hello", "escaped": "hellp" }')
+PY
+
+mutation_case "a real's text is written down wrongly" <<'PY'
+edit("tests/json_text/real_text.json",
+     '{ "name": "ten", "bits": "4024000000000000", "text": "10" }',
+     '{ "name": "ten", "bits": "4024000000000000", "text": "11" }')
+PY
+
+mutation_case "an object's key order is written down wrongly" <<'PY'
+edit("tests/json_text/object_key_order.json",
+     r'''{ "name": "declaration order is not the written order", "params": [["b", 1], ["a", 2]], "data": "{\"a\":2,\"b\":1}" }''',
+     r'''{ "name": "declaration order is not the written order", "params": [["b", 1], ["a", 2]], "data": "{\"b\":1,\"a\":2}" }''')
+PY
+
+mutation_case "a duration's milliseconds are written down wrongly" <<'PY'
+edit("tests/durations/css2_time.json",
+     '{ "name": "whole seconds", "text": "1s", "ms": 1000 }',
+     '{ "name": "whole seconds", "text": "1s", "ms": 1001 }')
+PY
+
+mutation_case "a document's stem is written down wrongly" <<'PY'
+edit("tests/document_stem/document_stem.json",
+     '{ "name": "a bare file name", "value": "x.scxml", "stem": "x" }',
+     '{ "name": "a bare file name", "value": "x.scxml", "stem": "y" }')
+PY
