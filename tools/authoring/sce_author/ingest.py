@@ -44,6 +44,11 @@ class Ingested:
     # say, whose text is then read as Markdown is (a line that begins `# ` is a heading); `{}` is a reader that
     # looked and found none, so no line of its text is one, whatever it begins with.
     headings: dict[int, int] | None = None
+    # What a note is about, when it is about pictures that are every one marked in `text`: the note's place in
+    # `notes` mapped to the NAMEs of their `[picture: NAME]` marks. An import of part of a document that leaves
+    # every one of them out has nothing the note says (ADR 0039); a note with no entry here is of the whole
+    # document, a picture a header holds among them, and stays with any part.
+    concerns: dict[int, tuple[str, ...]] = field(default_factory=dict)
 
     @property
     def clean(self) -> bool:
@@ -1113,6 +1118,7 @@ def _read_docx(path: pathlib.Path, headings: bool = False) -> Ingested:
     divided into the parts an owner chooses between (ADR 0039).
     """
     notes: list[str] = []
+    concerns: dict[int, tuple[str, ...]] = {}
     levels: dict[str, int] | None = None
     try:
         with zipfile.ZipFile(path) as zf:
@@ -1225,6 +1231,8 @@ def _read_docx(path: pathlib.Path, headings: bool = False) -> Ingested:
         if drawn and attributed < drawn:
             where += (f" {drawn - attributed} of {drawn} sit outside the"
                       " numbering and were not placed.")
+        if marked and len(marked) == len(pictures):
+            concerns[len(notes)] = tuple(marked)
         notes.append(
             f"{len(pictures)} picture(s) were not read"
             " -- this reader makes no model calls, so it cannot say what a picture"
@@ -1248,7 +1256,7 @@ def _read_docx(path: pathlib.Path, headings: bool = False) -> Ingested:
             if index in heading_at:
                 said[at] = heading_at[index]
             at += len(line.splitlines()) or 1
-    return Ingested(text + "\n", "docx", notes, said)
+    return Ingested(text + "\n", "docx", notes, said, concerns)
 
 
 # ------------------------------------------------------------------ dispatch

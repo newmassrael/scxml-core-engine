@@ -27,7 +27,7 @@ from sce_author.conversion import (
 )
 from sce_author.conversion_by_model import split_units
 from sce_author.errors import IngestError
-from sce_author.extraction import Block, Extraction, Place
+from sce_author.extraction import Block, Extraction, NotCarried, Place
 from sce_author.scope import Scope, outline, scope_of, whole
 
 
@@ -481,6 +481,36 @@ class TheCommandLine(unittest.TestCase):
                 "--out", str(work / "no.json"),
             )
             self.assertEqual(code, 2)
+
+    def test_the_report_says_what_could_not_be_carried_of_the_part_and_not_of_the_rest(self):
+        """A note about the picture is the part's while it holds the picture; a note of the whole document
+        always is. The report is kept with the proposal, so a review read later says the same."""
+        objects = with_objects()
+        extraction = Extraction(
+            objects.extractor, objects.extractor_version, objects.member, objects.blocks,
+            (
+                NotCarried("1 picture(s) were not read", blocks=("b4",)),
+                NotCarried("a header was not read"),
+            ),
+        )
+
+        def said(scope: Scope | None) -> list[str]:
+            report = check_conversion(extraction, convert_by_rules(extraction, scope), scope)
+            return [entry["what"] for entry in report.to_dict()["not_carried"]]
+
+        self.assertEqual(said(scope_of(extraction, ["s1"])), ["1 picture(s) were not read", "a header was not read"])
+        self.assertEqual(said(scope_of(extraction, ["s1"], leave_out=["b4"])), ["a header was not read"])
+        self.assertEqual(said(scope_of(extraction, ["s2"])), ["a header was not read"])
+        self.assertEqual(len(said(None)), 2)
+
+    def test_what_was_not_carried_names_only_blocks_the_extraction_has(self):
+        objects = with_objects()
+        with self.assertRaises(IngestError):
+            Extraction(objects.extractor, objects.extractor_version, objects.member, objects.blocks,
+                       (NotCarried("a picture", blocks=("b99",)),))
+        round_trip = Extraction(objects.extractor, objects.extractor_version, objects.member, objects.blocks,
+                                (NotCarried("a picture", blocks=("b4",)),))
+        self.assertEqual(round_trip, Extraction.from_json(round_trip.to_json()))
 
 
 if __name__ == "__main__":

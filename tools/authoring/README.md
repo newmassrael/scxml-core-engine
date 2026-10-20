@@ -2058,7 +2058,11 @@ ids, and never works out which blocks a part holds.
 check*, since what was not given to its maker cannot have been read. The scope is the owner's and is never a
 field of the conversion, whose maker would then decide what counts as missing; the report names the scope it
 was made under (`scope`, a revision, empty for the whole document), and a scope of every block is the same
-input as none. A scope of another extraction is refused.
+input as none. A scope of another extraction is refused. The report also says what the extractor could not
+carry of the part (`not_carried`): an entry an extractor tied to blocks (a note about pictures names the blocks
+that mark them, in its `blocks`) is the part's while one of them is in it, and an entry of the whole document
+always is, so a part chosen without a picture is not told to look at it; the report is kept with the proposal,
+so a review read later says the same.
 
 **make-ledger**, **check-ledger** and **ledger-scopes** divide a document that holds several specs (`ledger.py`,
 ADR 0040). A ledger is a list of allotments: for each destination (a spec that exists, a spec to be made by its

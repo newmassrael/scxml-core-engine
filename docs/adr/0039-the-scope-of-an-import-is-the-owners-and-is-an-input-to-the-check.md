@@ -95,7 +95,10 @@ names every section, for a choice that only leaves objects out). The scope's for
 always the ids of the blocks, and this is one more way to name them. Leaving out a block that was not chosen,
 one the extraction does not have, or everything is refused, since each is a choice nobody made. A host still
 works out no block of its own: it sends the ids the outline listed. Placing paragraphs one by one remains a
-division's work (ADR 0040), and is not offered here.
+division's work (ADR 0040), and is not offered here. What the extractor could not carry is said of the choice
+too: an entry about blocks (a reader's note about pictures names the blocks that mark them) is the choice's
+while one of them is in it, and the check's report says which entries are (`not_carried`), so a picture left
+out is not a picture the owner is told to look at, now or when the proposal is read again.
 
 **A scope is the owner's choice and is not the system's judgement of the document.** Whether a document
 holds one spec or several is not something SCE can check, and nothing here claims to. What is built is the

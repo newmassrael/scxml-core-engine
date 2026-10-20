@@ -264,6 +264,17 @@ def blocks_of_text(
     return blocks, notes
 
 
+def _marking(blocks: list[Block], names: tuple[str, ...]) -> tuple[str, ...]:
+    """The blocks that mark the pictures `names` names, in their order: what a note about those pictures is
+    about. A name no block marks leaves the note of the whole document, since it is then about something no
+    block holds."""
+    if not names:
+        return ()
+    found = [block.id for block in blocks if any(f"[picture: {name}]" in block.text for name in names)]
+    marked = {name for name in names if any(f"[picture: {name}]" in block.text for block in blocks)}
+    return tuple(found) if marked == set(names) else ()
+
+
 @dataclass(frozen=True)
 class ReaderExtractor:
     """An extractor made of a reader of `ingest`, so that what it says is what that reader says."""
@@ -278,7 +289,10 @@ class ReaderExtractor:
         blocks, notes = blocks_of_text(
             ingested.text, path.name, self.line_is_block, self.delimiter_row, ingested.headings
         )
-        carried = [NotCarried(note) for note in ingested.notes] + notes
+        carried = [
+            NotCarried(note, blocks=_marking(blocks, ingested.concerns.get(index, ())))
+            for index, note in enumerate(ingested.notes)
+        ] + notes
         return Extraction(
             extractor=self.declaration.name,
             extractor_version=self.declaration.version,

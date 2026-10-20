@@ -39,7 +39,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from .errors import IngestError
-from .extraction import Block, Extraction
+from .extraction import Block, Extraction, NotCarried
 
 if TYPE_CHECKING:
     from .scope import Scope
@@ -285,6 +285,9 @@ class Report:
     # words lay outside it: they are not asked about, and a count that hid them would read as a whole one.
     scope: str = ""
     out_of_scope: int = 0
+    # What the extractor could not carry of the part counted: a note about blocks outside it is not the
+    # part's (ADR 0039). The report is kept with the proposal, so a review read later says the same.
+    not_carried: tuple[NotCarried, ...] = field(default_factory=tuple)
 
     def ids(self, status: str) -> list[str]:
         return [verdict.id for verdict in self.verdicts if verdict.status == status]
@@ -321,6 +324,7 @@ class Report:
             "missing": list(self.missing),
             "recognised": list(self.recognised),
             "queue": [{"why": why, "id": id_} for why, id_ in self.queue()],
+            "not_carried": [entry.to_dict() for entry in self.not_carried],
         }
 
 
@@ -396,6 +400,7 @@ def check_conversion(extraction: Extraction, conversion: Conversion, scope: "Sco
         conversion=conversion.revision(),
         scope="" if scope is None else scope.revision(),
         out_of_scope=sum(1 for b in extraction.blocks if b.id not in chosen and plain_of_block(b)),
+        not_carried=extraction.not_carried_of(None if scope is None else scope.blocks),
     )
 
 

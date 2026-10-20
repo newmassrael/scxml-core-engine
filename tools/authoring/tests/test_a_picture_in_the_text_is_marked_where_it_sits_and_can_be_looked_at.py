@@ -40,6 +40,7 @@ import unittest
 import zipfile
 
 from sce_author import mcp
+from sce_author.extractors import builtin
 from sce_author.ingest import MAX_PICTURE_BYTES, IngestError, ingest, picture_names_held, read_pictures
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"the drawing" * 40
@@ -187,6 +188,31 @@ class APictureIsMarkedWhereItSits(unittest.TestCase):
         self.assertIn("1 picture(s) were not read", said)
         self.assertNotIn("not in the body", said)
         self.assertEqual({path: ["image3.png"]}, picture_names_held([path]))
+
+    # ------------------------------------------------- the note, in part
+
+    def test_the_note_names_the_blocks_that_mark_its_pictures_and_a_part_without_them_has_none(self):
+        """A part of the document chosen without the picture was still told to look at it (ADR 0039)."""
+        path = self.docx(para("5.1 The event") + para("", drawn("rId5")) + para("5.2 The fault"),
+                         rels(rId5="image3.png"), {"image3.png": PNG})
+        extraction = builtin().extract(path)
+        note = next(n for n in extraction.not_carried if "picture(s) were not read" in n.what)
+        figure = next(b for b in extraction.blocks if b.text == "[picture: image3.png]")
+        self.assertEqual((figure.id,), note.blocks)
+        others = tuple(b.id for b in extraction.blocks if b.id != figure.id)
+        self.assertEqual((), extraction.not_carried_of(others))
+        # The nearest that must keep it: a part that holds the picture.
+        self.assertEqual((note,), extraction.not_carried_of((figure.id,)))
+
+    def test_a_note_that_counts_a_picture_no_block_holds_is_of_the_whole_document(self):
+        path = self.docx(para("5.1 The event") + para("", drawn("rId5")) + para("5.2 The fault"),
+                         rels(rId5="image3.png"), {"image3.png": PNG, "logo.png": PNG})
+        extraction = builtin().extract(path)
+        note = next(n for n in extraction.not_carried if "picture(s) were not read" in n.what)
+        self.assertEqual((), note.blocks)
+        figure = next(b for b in extraction.blocks if b.text == "[picture: image3.png]")
+        others = tuple(b.id for b in extraction.blocks if b.id != figure.id)
+        self.assertIn(note, extraction.not_carried_of(others))
 
     # ---------------------------------------------------------- the note
 

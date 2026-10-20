@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Collection
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -205,12 +206,17 @@ class NotCarried:
     what: str
     why: str = ""
     count: int | None = None
+    # The blocks it is about, when it is about some and not the whole document (pictures the blocks mark):
+    # a part of the document that holds none of them has nothing this says (ADR 0039). Empty is the whole.
+    blocks: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.what:
             raise _refuse("lists something not carried without saying what")
         if self.count is not None and self.count < 0:
             raise _refuse("counts a negative number of things not carried")
+        if any(not block for block in self.blocks) or len(set(self.blocks)) != len(self.blocks):
+            raise _refuse("says what was not carried is about a block with no id, or one twice")
 
     def to_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {"what": self.what}
@@ -218,15 +224,21 @@ class NotCarried:
             out["why"] = self.why
         if self.count is not None:
             out["count"] = self.count
+        if self.blocks:
+            out["blocks"] = list(self.blocks)
         return out
 
     @classmethod
     def from_dict(cls, raw: Any) -> "NotCarried":
-        data = _object(raw, "an entry of what was not carried", {"what", "why", "count"})
+        data = _object(raw, "an entry of what was not carried", {"what", "why", "count", "blocks"})
+        blocks = data.get("blocks", [])
+        if not isinstance(blocks, list) or not all(isinstance(b, str) for b in blocks):
+            raise _refuse("says the blocks something not carried is about other than as a list of ids")
         return cls(
             what=_text(data.get("what"), "what was not carried"),
             why=_text(data.get("why", ""), "why it was not carried", allow_empty=True),
             count=_optional_int(data.get("count"), "a count of what was not carried"),
+            blocks=tuple(blocks),
         )
 
 
@@ -250,11 +262,24 @@ class Extraction:
             if block.id in seen:
                 raise _refuse(f"has two blocks with the id {block.id!r}")
             seen.add(block.id)
+        for entry in self.not_carried:
+            unknown = [block for block in entry.blocks if block not in seen]
+            if unknown:
+                raise _refuse(f"says something not carried is about {', '.join(unknown)}, which it does not have")
 
     @property
     def clean(self) -> bool:
         """Nothing was left behind: the one answer a caller may not assume."""
         return not self.not_carried
+
+    def not_carried_of(self, blocks: Collection[str] | None = None) -> tuple[NotCarried, ...]:
+        """What could not be carried of the part made of `blocks`, or of all of it when none are named: an entry
+        about blocks is the part's when one of them is in it, and an entry of the whole document always is
+        (ADR 0039), so a part chosen without a picture is not told to look at it."""
+        if blocks is None:
+            return self.not_carried
+        chosen = set(blocks)
+        return tuple(entry for entry in self.not_carried if not entry.blocks or chosen.intersection(entry.blocks))
 
     def text(self) -> str:
         """The blocks as the text a reader of the original would read, one block to a paragraph."""
