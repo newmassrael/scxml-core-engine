@@ -663,4 +663,145 @@ mod tests {
         assert!(parse_importing("sce-static", &grown).is_ok());
         assert!(parse_importing("ecmascript", &grown_schema("", "")).is_ok());
     }
+
+    // ── The committed fixtures, through the entry points the generator uses ──
+    //
+    // The cases above build their documents here; these read the ones the
+    // regeneration scripts and the scenario drivers read, through the same
+    // calls `sce-codegen check` and `generate` make: the statechart parse
+    // (which parses the imported schema as a sibling), the forge parse and
+    // compile of the schema alone, and the orchestrator for every backend that
+    // lowers the data model. Each walks every check a document meets on its
+    // way to generated code, the forge roster of known `sce:` names included,
+    // so a check none of the cases above reaches cannot refuse the fixtures
+    // while those cases pass.
+
+    fn fixtures() -> std::path::PathBuf {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/static_datamodel")
+    }
+
+    /// The defaults of `schema_revised.scxml` as every backend's string
+    /// literal spells them.
+    const FIXTURE_DEFAULTS: &str = r#""{\"layout\":\"week\",\"urgent\":true}""#;
+
+    #[test]
+    fn the_committed_schema_that_grew_is_read_where_check_reads_it() {
+        let statechart = fixtures().join("static_schema_revision.scxml");
+        let model = crate::parser::SCXMLParser::new()
+            .parse_file(statechart.to_str().expect("a UTF-8 path"))
+            .unwrap_or_else(|e| panic!("the statechart parses: {e:?}"));
+        let schema = model
+            .imported_event_schemas
+            .get("reading.revised")
+            .expect("the statechart resolves the schema it imports");
+        assert_eq!(schema.revision, Some(3));
+        let added: Vec<(&str, Option<u32>, Option<&str>)> = schema
+            .fields
+            .iter()
+            .map(|f| (f.id.as_str(), f.since, f.default.as_deref()))
+            .collect();
+        assert_eq!(
+            added,
+            vec![
+                ("level", None, None),
+                ("layout", Some(2), Some("week")),
+                ("urgent", Some(3), Some("true")),
+            ]
+        );
+        assert_eq!(
+            defaults_wire(schema).map(|d| serde_json::to_string(&d).expect("JSON")),
+            Some(FIXTURE_DEFAULTS.to_string())
+        );
+
+        let path = fixtures().join("schema_revised.scxml");
+        let content = std::fs::read_to_string(&path).expect("the schema");
+        let label = crate::DocumentLabel {
+            identifier: "schema_revised",
+            diagnostic_label: "schema_revised.scxml",
+        };
+        let parsed = crate::forge::parser::parse_forge_with_imports(&content, label)
+            .unwrap_or_else(|e| panic!("the schema parses as a forge document: {e:?}"))
+            .expect("the schema is a forge document");
+        crate::compile_forge_from_parsed(
+            &parsed,
+            label,
+            crate::generator::Language::Rust,
+            &fixtures(),
+            &crate::ForgeCompileOptions::default(),
+        )
+        .unwrap_or_else(|e| panic!("the schema compiles as a document of its own: {e:?}"));
+    }
+
+    #[test]
+    fn the_committed_machine_is_generated_with_its_defaults_on_every_backend_that_lowers_it() {
+        use crate::generator::Language;
+        let statechart = fixtures().join("static_schema_revision.scxml");
+        let schema = fixtures().join("schema_revised.scxml");
+        let view_mode = fixtures().join("enum_view_mode.scxml");
+        let mut generated = 0;
+        for &language in Language::ALL {
+            if !crate::generator::lowers_static_datamodel(language) {
+                continue;
+            }
+            let lift = match language {
+                Language::Rust => "PayloadFields::decode_with_defaults(data, ",
+                Language::C11 => "sce_payload_decode_with_defaults(_data, ",
+                Language::Go => "sce.LiftPayloadWithDefaults(meta.Data, ",
+                Language::Cpp => "EventPayloadFields::decode(meta.data, ",
+                Language::Kotlin => "EventPayload.decode(metadata.data, ",
+                Language::Python => "_lift_typed_payload(",
+            };
+            let outputs = crate::compile_scxml_with_imports(
+                &[statechart.as_path()],
+                &[schema.as_path(), view_mode.as_path()],
+                &crate::find_template_dir_for(language),
+                language,
+                &crate::ForgeCompileOptions::default(),
+                None,
+            )
+            .unwrap_or_else(|e| panic!("{language:?}: the machine generates: {e:?}"));
+            let text: String = outputs
+                .iter()
+                .flat_map(|(_, output)| output.files.iter().map(|(_, content)| content.as_str()))
+                .collect();
+            assert!(text.contains(lift), "{language:?}: no lift `{lift}`");
+            assert!(
+                text.contains(FIXTURE_DEFAULTS),
+                "{language:?}: the lift is not handed {FIXTURE_DEFAULTS}"
+            );
+            generated += 1;
+        }
+        assert!(
+            generated >= 6,
+            "only {generated} backends generated the machine"
+        );
+    }
+
+    #[test]
+    fn the_committed_machine_is_lowered_for_the_interpreter_with_its_defaults() {
+        let statechart = fixtures().join("static_schema_revision.scxml");
+        let lowered = crate::forge::static_js::lower_file_set(
+            statechart.to_str().expect("a UTF-8 path"),
+            Vec::new(),
+        )
+        .unwrap_or_else(|e| panic!("the machine lowers for the Interpreter: {e:?}"));
+        // The attributes as the Interpreter reads them, entities decoded.
+        let mut expressions = String::new();
+        for document in &lowered {
+            let parsed = roxmltree::Document::parse(&document.text).expect("lowered XML");
+            for node in parsed.descendants().filter(|n| n.is_element()) {
+                for attribute in node.attributes() {
+                    expressions.push_str(attribute.value());
+                    expressions.push('\n');
+                }
+            }
+        }
+        for read in [
+            "SceStatic.field(_event.data, 'layout', ['month', 'week', 'day', 'agenda_list'], \"week\")",
+            "SceStatic.field(_event.data, 'urgent', 'bool', true)",
+            "SceStatic.field(_event.data, 'level', 'uint8')",
+        ] {
+            assert!(expressions.contains(read), "no `{read}` in:\n{expressions}");
+        }
+    }
 }

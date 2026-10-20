@@ -11745,12 +11745,18 @@ const KNOWN_SCE_ATTRS: &[&str] = &[
     // tool. See the Retention section of `forge::model`.
     "retain",
     "returns-max-size",
+    // Which revision of an event schema a document is (its root), and which
+    // revision added a field (its `<data>`); with `default`, what lets a
+    // schema grow without refusing an older delivery (`parse_event_schema`,
+    // `forge::schema_revision`).
+    "revision",
     "sample-interval",
     "scale",
     // The character that cuts the value of one line of a content-line codec entry
     // into a list (docs/adr/0014).
     "separator",
     "service",
+    "since",
     "strict-variants",
     "subfunc",
     // The text a content-line codec writes and reads for an enum variant
