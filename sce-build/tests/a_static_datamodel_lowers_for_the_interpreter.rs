@@ -133,10 +133,13 @@ fn every_fixture_is_lowered_or_refused_by_name() {
     // an `idlocation`, which the Interpreter reads itself, or the route a
     // `targetexpr` computes among the `sce:targets` the document declares, which
     // the lowering holds the value to, or the processor a `typeexpr` computes
-    // among its `sce:types`, held to the same way; and a child that declares `<sce:action>`s,
+    // among its `sce:types`, held to the same way; a child that declares `<sce:action>`s,
     // inline or as a candidate of a hybrid `<invoke>`, which the engine gives the
-    // host its parent's host answers.
+    // host its parent's host answers; and children that send to Mesh peers, inline
+    // and as a candidate with a child of its own, which the engine gives the router
+    // its parent's factory answers (SCE_MESH.md, Child Sessions in Mesh).
     for name in [
+        "static_child_mesh",
         "static_send_params",
         "static_send_namelist",
         "static_send_content",
