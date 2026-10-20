@@ -5,7 +5,9 @@
 name = "sce-rust-mesh"
 version.workspace = true
 edition.workspace = true
-rust-version.workspace = true
+# With its default features. The `wss` feature's dependencies need 1.88
+# (measured 2026-10-20 with every feature on).
+rust-version = "1.87"
 license.workspace = true
 repository.workspace = true
 authors.workspace = true

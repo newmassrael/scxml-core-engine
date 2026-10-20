@@ -5,7 +5,7 @@
 name = "sce-rust-relay"
 version.workspace = true
 edition.workspace = true
-rust-version = "1.85"
+rust-version = "1.87"
 license.workspace = true
 repository.workspace = true
 authors.workspace = true

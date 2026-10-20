@@ -5,11 +5,10 @@
 name = "sce-rust-world"
 version.workspace = true
 edition.workspace = true
-# Not the workspace's 1.75: `sce_build::compile_scxml`, which build.rs calls,
-# writes its rerun lines in the `cargo::` form that Cargo 1.77 introduced. This
-# crate is a test host that nothing ships or links, so it does not hold the
-# floor the runtimes do.
-rust-version = "1.77"
+# Not the workspace's 1.75: it builds with `sce-build` (1.87), whose
+# `compile_scxml` its build.rs calls. This crate is a test host that nothing
+# ships or links, so it does not hold the floor the runtimes do.
+rust-version = "1.87"
 license.workspace = true
 repository.workspace = true
 authors.workspace = true

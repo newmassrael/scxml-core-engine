@@ -339,6 +339,9 @@ COST_MEASURED: dict[str, str] = {
     # 72s, `scripts/gate genmc-queue` on pc2 with two harnesses and ten mutants
     # each, the first run that read GenMC's reports rather than its exit codes.
     "genmc-queue": "2026-10-10",
+    # 451s, the gate's script through bx on hkl002, cold (its entry says why
+    # that and not a warm reading).
+    "rust-version": "2026-10-20",
     # 1363s against a declared 151 — the widest gap this table has recorded,
     # and the first entry for a `ci_only` gate, which is why it went unseen:
     # the drift report prices what a push selects, and nothing selects this.
@@ -622,6 +625,20 @@ GATES: dict[str, dict] = {
                    "was priced at what a loaded machine charges.",
         "cost_s": 82,
         "summary": "cargo clippy --workspace --all-targets",
+    },
+    # Shares clippy's workflow because it shares clippy's inputs: the
+    # declarations clippy measures its lints against are the ones this keeps
+    # true. Not the warm figure this table asks for: 451s is the first run on
+    # a build machine that had none of the six toolchains, so it installed
+    # every one and built every package cold, the state a CI runner is always
+    # in. The six builds alone read 21, 16, 4.5, 60, 8 and 14 seconds.
+    "rust-version": {
+        "workflows": ["clippy-check.yml"],
+        "runner_workflow": True,
+        "ci_only": "451s cold, six toolchains installed. clippy-check.yml "
+                   "runs it beside clippy.",
+        "cost_s": 451,
+        "summary": "every package builds with the Rust it declares",
     },
     "nostd-mcu": {
         "workflows": ["sce-rust-runtime-no-std.yml"],

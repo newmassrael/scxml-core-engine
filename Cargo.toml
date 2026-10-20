@@ -36,6 +36,9 @@ members = [
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
+# The floor the runtimes hold. A package that needs a newer Rust declares its
+# own number; `scripts/gates/rust-version.sh` builds every package with the one
+# it declares.
 rust-version = "1.75"
 license = "AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial"
 repository = "https://github.com/newmassrael/scxml-core-engine"

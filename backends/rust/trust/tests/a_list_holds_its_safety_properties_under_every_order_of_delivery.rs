@@ -162,7 +162,7 @@ impl World {
             delivered: vec![BTreeSet::new(); hosts_len],
             next_id: 1,
             removed: false,
-            equivocating: seed % 3 == 0,
+            equivocating: seed.is_multiple_of(3),
             forging: seed % 4 == 1,
             sealing: seed % 5 == 2,
             sealed: false,

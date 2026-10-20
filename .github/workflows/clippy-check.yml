@@ -28,6 +28,7 @@ on:
       - 'Cargo.lock'
       - 'clippy.toml'
       - '.clippy.toml'
+      - 'scripts/gates/rust-version.sh'
       - '.github/workflows/clippy-check.yml'
   pull_request:
     branches: [ main ]
@@ -37,6 +38,7 @@ on:
       - 'Cargo.lock'
       - 'clippy.toml'
       - '.clippy.toml'
+      - 'scripts/gates/rust-version.sh'
       - '.github/workflows/clippy-check.yml'
   workflow_dispatch:
 
@@ -66,3 +68,25 @@ jobs:
     # so the lint set has one spelling for both callers.
     - name: cargo clippy --workspace --all-targets --features cli
       run: scripts/gate clippy
+
+  # The lint set above is measured against each package's declared
+  # rust-version; this job is what keeps those declarations true. It
+  # installs every toolchain a package declares and builds the package
+  # with it (scripts/gates/rust-version.sh says what that covers).
+  rust-version:
+    name: Every package builds with the Rust it declares
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v6
+
+    - name: Install Rust Toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache cargo registry + target
+      uses: Swatinem/rust-cache@v2
+
+    - name: Build each package with its declared rust-version
+      run: scripts/gate rust-version
