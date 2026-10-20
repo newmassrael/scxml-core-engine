@@ -352,37 +352,18 @@ jobs:
         sce_codegen_drop_stale_release
         cargo build --bin sce-codegen --features cli -p sce-build
 
-    - name: Generate Rust W3C Tests
-      run: ./target/debug/sce-codegen generate-w3c -l rust
-
-    # The endpoint is read from tests/w3c/basic_http_test_endpoint.h — the
-    # header the compiled runners include — rather than spelled here, so this
-    # job cannot bind one address while the machines it then runs publish
-    # another. `sce_http_endpoint_port` is the same reader the gates use.
-    - name: Start W3C HTTP Test Server
-      run: |
-        source scripts/lib/sce_http_endpoint.sh
-        port="$(sce_http_endpoint_port "$PWD")"
-        path="$(sce_http_endpoint_path "$PWD")"
-        echo "SCE_W3C_HTTP_PORT=$port" >> "$GITHUB_ENV"
-        node tests/w3c/standalone_http_server.js "$port" "$path" &
-        echo $! > /tmp/http_server.pid
-        sleep 1
-        echo "W3C HTTP test server started on localhost:${port}${path} (PID: $(cat /tmp/http_server.pid))"
-
+    # Generation, the fixture server and the suite are one gate, the shape
+    # `test-go` has, so a developer runs this job's check by name with the
+    # same command. The gate is `ci_only` in the registry: no push selects
+    # it, and this job is where its verdict is reached. The server used to be
+    # started here with a one-second sleep and stopped by a step of its own;
+    # the gate waits for the server's own ready line, exports the port the
+    # harness reads, and stops it on exit. The gate also holds the run to a
+    # floor: every W3C test file the generator wrote has to report a pass.
     - name: Run W3C Tests
       run: |
         set -o pipefail
-        echo "=== Rust W3C SCXML Conformance Tests ==="
-        cargo test --release --no-fail-fast -p sce-rust-tests 2>&1 | tee rust_test_output.log
-
-    - name: Stop W3C HTTP Test Server
-      if: always()
-      run: |
-        if [ -f /tmp/http_server.pid ]; then
-          kill $(cat /tmp/http_server.pid) 2>/dev/null || true
-          rm -f /tmp/http_server.pid
-        fi
+        scripts/gate w3c-rust 2>&1 | tee rust_test_output.log
 
     - name: Upload Test Log
       uses: actions/upload-artifact@v7

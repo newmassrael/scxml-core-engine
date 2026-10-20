@@ -357,7 +357,12 @@ COST_MEASURED: dict[str, str] = {
 # Exactly how many slugs are absent from COST_MEASURED. Not an upper bound
 # with slack — an equality, so measuring one gate forces this down in the
 # same commit and the count cannot drift away from the map.
-UNMEASURED_COST_CEILING = 25
+#
+# 25 -> 26 on 2026-10-20, the one direction this is not meant to move, and
+# named here so it is not mistaken for slack: `w3c-rust` arrived as the gate
+# form of a lane that had been running inline, with no timing of the script.
+# Timing it on a warm tree and dating it in COST_MEASURED brings this back.
+UNMEASURED_COST_CEILING = 26
 
 # ── Costs that are deliberately NOT the raw stopwatch reading ─────
 #
@@ -1185,9 +1190,11 @@ GATES: dict[str, dict] = {
     # real inputs here: the engine, the generator, the templates that emit the
     # AOT runners, and the fixtures the runners are registered from.
     #
-    # The Rust arm of the same workflow is deliberately absent: `sce-rust-tests`
-    # is a workspace member, so `workspace-tests` already runs its 202 cases and
-    # a second gate would be a second spelling of the same run.
+    # The Rust arm of the same workflow was left out here once, on the grounds
+    # that `sce-rust-tests` is a workspace member and `workspace-tests` already
+    # runs its cases. That run is not the lane's: it takes the committed tree
+    # in the test profile, while the lane regenerates and runs in release. So
+    # the lane kept its own inline spelling, and it is `w3c-rust` now.
     "w3c-cpp": {
         "workflows": ["w3c-tests.yml"],
         "runner_workflow": True,
@@ -1459,6 +1466,36 @@ GATES: dict[str, dict] = {
         # last pair. Two pushes that day read 15s and 8s, straddling it.
         "cost_s": 10,
         "summary": "W3C conformance, Go AOT",
+    },
+    # The Rust arm, and the last W3C lane to get a gate: `test-rust` in
+    # w3c-tests.yml carried its generation, fixture server and `cargo test`
+    # inline while every sibling job ran `scripts/gate w3c-<backend>`. A
+    # backend's lanes are derived from this table as
+    # `<family>-<Language::canonical_name()>`, so the missing slug was a lane
+    # the Rust row could not be read from.
+    #
+    # ⚠ No `cost_s`: nobody has timed this script yet, and a figure borrowed
+    # from the lane's timeout would be a guess wearing a measurement's unit.
+    # `run_order` sorts an unmeasured gate last, and UNMEASURED_COST_CEILING
+    # counts it, which is the honest place for it until a run is read.
+    "w3c-rust": {
+        "workflows": ["w3c-tests.yml"],
+        "runner_workflow": True,
+        "narrows": "same catch-all as `w3c-cpp`, same reason. This arm reads "
+                   "the Rust runtime and Lua crates, the Rust templates, the "
+                   "generator, the W3C fixtures it generates from and the "
+                   "build fixtures its hand-written tests compile in.",
+        "extra": ["backends/rust/**", "tools/codegen/templates/**",
+                  "sce-build/src/**", "resources/**", "tests/w3c/**",
+                  "sce-build/tests/fixtures/**"],
+        "deps": ["codegen-build"],
+        "ci_only": "unmeasured, and the lane it mirrors says why it cannot "
+                   "be a push gate: `test-rust` carries a 65-minute timeout, "
+                   "the longest of the W3C jobs, because it links some 200 "
+                   "release test binaries under thin LTO with one codegen "
+                   "unit. w3c-tests.yml declares no `paths:` filter, so CI "
+                   "runs this arm on every push.",
+        "summary": "W3C conformance, Rust AOT",
     },
     "w3c-kotlin": {
         "workflows": ["w3c-tests.yml"],
