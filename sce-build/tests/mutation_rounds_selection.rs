@@ -2167,22 +2167,21 @@ process.on('exit', () => { try { fs.unlinkSync(marker); } catch (err) { /* alrea
 // Loudly, so the gate's log says what happened instead of the next round
 // inheriting a mystery.
 process.on('uncaughtException', (err) => { console.error(`standin: ${err.message}`); process.exit(1); });
-// The marker BEFORE the listener, so a caller that waits for the port to
-// accept has thereby waited for the marker too. The gate waits on the socket
-// because that is the readiness the real server has; this file is what makes
-// the two the same question.
+// The marker BEFORE the ready line, so a caller that waits for the line has
+// thereby waited for the marker too.
 fs.writeFileSync(marker, `${process.pid}\n`);
-// A listener at all, because the gate now waits for one. Standing in for an
-// HTTP server without opening a port made "ready" mean two different things
-// on the two sides of this test, and the gate's fixed one-second settle was
-// what papered over the difference.
-// `'localhost'`, spelled exactly as the real server spells it: Node resolves
-// that verbatim, so binding `'127.0.0.1'` here while the gate's probe asks for
-// `localhost` would put the two on different address families on any host
-// whose `localhost` answers `::1` first — the failure this whole wait was
-// added to remove, reintroduced in the stand-in.
-http.createServer((req, res) => { res.writeHead(200); res.end('standin'); })
-    .listen(Number(process.argv[2] || 0), 'localhost');
+// The gate waits for `[READY] port=<n>` on this process's own output and
+// exports <n> as the port, because that line is the readiness the real
+// server signals. A stand-in that only listened answered a question the gate
+// no longer asks, and every round then failed on the gate's 30s deadline.
+// `'localhost'`, spelled exactly as the real server spells it, so the port the
+// line names is one a round dialing `localhost` reaches. Port 0 is what the
+// gate passes when its caller named none; the line names the port the kernel
+// chose, not the one asked for.
+const server = http.createServer((req, res) => { res.writeHead(200); res.end('standin'); });
+server.listen(Number(process.argv[2] || 0), 'localhost', () => {
+    console.log(`[READY] port=${server.address().port}`);
+});
 setTimeout(stop, 60000);
 "#;
 
