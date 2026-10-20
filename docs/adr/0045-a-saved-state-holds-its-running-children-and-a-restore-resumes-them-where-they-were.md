@@ -180,6 +180,29 @@ the defaults of the fields added after r; a child saved at a later revision than
 refused. A schema that two sessions of the tree import is judged in each session by that session's
 own document, since each session's variables are its own.
 
+**In format 2 the shape names an enum by its document, not by its alias.** ADR 0044 keys an enum's
+`revisions` entry and the Mesh check by the enum's document (`schema_revision::document_key`:
+`enum:` and the path of the enum's file relative to the directory of the machine's own document,
+`.` and `..` folded and components joined by `/`, or the folded `sce:std/...` name of a standard
+one). The format-1 shape still spells every enum-typed variable and record field `enum:<alias>`,
+the name the importing document gave the import, because changing that spelling inside format 1
+would refuse every state already saved with an enum. Format 2 is the step at which it is put right:
+its shape spells an enum-typed variable and record field by the same `document_key` text that
+`revisions` uses, so renaming an import alias no longer refuses a restore of an enum that did not
+change, and a session's shape and its `revisions` name one enum one way. Moving the enum's file
+moves its key and still refuses, since it is another document to every reader (ADR 0044).
+
+- **Two shapes per document, as long as format 1 is read.** The generator emits the format-1 shape
+  (alias spelling, and ADR 0044's revised format-1 shape) for judging a format-1 text, and the
+  format-2 shape (document-key spelling, and its revised form) for judging and writing a format-2
+  one. A format-1 text is read exactly as today; nothing in it is re-spelled.
+- **One text on every backend.** The key is computed once, by the generator, from paths the
+  restoring build reads, and emitted into every backend's shape constant; no backend computes or
+  re-spells it. So every backend hashes the identical key text, writes the identical `revisions`
+  keys and saves the identical bytes, and the shared format-2 instances hold this the same way they
+  hold every other part of the format. The key holds no absolute path, so it is also one text in
+  every checkout.
+
 **A child whose document changed shape refuses the restore of the whole tree**, with a reason that
 names the session by its path (`invokes[0].session.invokes[1]`, `list` start 3, shape `...`), and
 leaves everything as it was, as a root of another shape is refused today
@@ -653,9 +676,15 @@ Each step lands with a test that fails without it.
 2. **The generator.** Which documents save (the child rule), the two acts, `invokestarts` and the
    session id in the model the templates read, and the ids of a child session and of a generated
    invoke derived from the tree on every backend (the spelling keeps the state's id and a dot in
-   front, the form W3C test 224 reads from the `idlocation`). *Exit:* `a_machine_waiting_on_another_session_has_no_save_api`
+   front, the form W3C test 224 reads from the `idlocation`), and the format-2 shape: an enum-typed
+   variable or record field spelled by ADR 0044's `document_key` instead of `enum:<alias>`, emitted
+   beside the format-1 shape and its revised forms, the key text computed once by the generator and
+   identical in every backend's constant. *Exit:* `a_machine_waiting_on_another_session_has_no_save_api`
    extended: a delayed send to `#_parent` or a child now saves, one to a session outside the tree
-   still does not, and a parent of a child that cannot save has no API.
+   still does not, and a parent of a child that cannot save has no API; a lowering test shows that
+   renaming an enum import's alias leaves the format-2 shape as it was and moves the format-1 shape,
+   and that moving the enum's file moves both; and a cross-backend test shows the six backends'
+   generated format-2 shape constants and enum keys equal as text.
 3. **Rust.** `SavedState` as a session tree, format 2 written, formats 1 and 2 read, the restore of
    section 3, the transit check, the tree fixture. *Exit:* the Rust tests of section 8.
 4. **Kotlin.** The same over `SavedState.kt` and `StateMachineEngine`. *Exit:* Kotlin saves the tree
