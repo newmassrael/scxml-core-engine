@@ -35,7 +35,9 @@ use common::calendar::{
 use common::resync::{MINUTE, OLD_LIMIT_MINUTES};
 use common::*;
 use sce_rust_runtime::Engine;
-use sce_rust_scenarios::integration::static_datamodel::record_list_sm::RecordListPolicy;
+use sce_rust_scenarios::integration::static_datamodel::record_list_sm::{
+    RecordListPersist, RecordListPolicy,
+};
 use sce_rust_world::{Outcome, Taken, World};
 use serde_json::{json, Map, Value};
 

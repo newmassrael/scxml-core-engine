@@ -27,7 +27,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use sce_rust_runtime::saved_state::{self, SavedAct, SavedHostSend, SavedState};
+use sce_rust_runtime::saved_state::{self, SavedAct, SavedHostSend, SavedShape, SavedState};
 use sce_rust_runtime::{
     Engine, HostSendRequest, HostSendResponse, SceClock, ScheduledRoute, StatePolicy,
 };
@@ -37,9 +37,15 @@ use sce_rust_tests::integration::host_processor::{
 
 const DECLARED_TYPE: &str = "x-sce-host";
 
-/// Any text: the engine-level `save` records the shape it is told, and
-/// `check_shape` (which a generated `restore` calls) is not under test here.
-const SHAPE: &str = "shape";
+/// Any text, and no record or enum lineage: the engine-level `save` records the
+/// shape it is told, and `check_shape` (which a generated `restore` calls) is not
+/// under test here.
+const SHAPE: SavedShape = SavedShape {
+    first: "shape",
+    revised: "shape",
+    records: &[],
+    enums: &[],
+};
 
 /// The wall-clock moment the machine is saved at.
 const SAVED_AT_MS: u64 = 1_700_000_000_000;
@@ -123,7 +129,7 @@ fn advance_to(engine: &mut Engine<Policy>, now: &Arc<Mutex<u64>>, to_ms: u64) {
 }
 
 fn saved_through_json(engine: &Engine<Policy>) -> SavedState {
-    let saved = saved_state::save(engine, SHAPE, Vec::new(), Vec::new(), SAVED_AT_MS)
+    let saved = saved_state::save(engine, &SHAPE, Vec::new(), Vec::new(), SAVED_AT_MS)
         .expect("a running machine saves");
     SavedState::from_json(&saved.to_json()).expect("a saved state reads back")
 }
@@ -259,7 +265,7 @@ fn a_host_send_already_due_when_the_machine_comes_back_is_performed_in_its_order
 fn a_machine_restored_from_a_text_saves_that_text_again() {
     let saved = saved_through_json(&armed());
     let (engine, _log, _now) = restored(&saved, 0);
-    let again = saved_state::save(&engine, SHAPE, Vec::new(), Vec::new(), SAVED_AT_MS)
+    let again = saved_state::save(&engine, &SHAPE, Vec::new(), Vec::new(), SAVED_AT_MS)
         .expect("saves again");
     assert_eq!(again.to_json(), saved.to_json());
 }
@@ -281,7 +287,7 @@ fn a_delayed_send_to_the_parent_refuses_the_save() {
             event_name: "report".to_string(),
         },
     );
-    let refusal = match saved_state::save(&engine, SHAPE, Vec::new(), Vec::new(), SAVED_AT_MS) {
+    let refusal = match saved_state::save(&engine, &SHAPE, Vec::new(), Vec::new(), SAVED_AT_MS) {
         Ok(saved) => panic!("the save was expected to be refused: {saved:?}"),
         Err(refusal) => refusal,
     };
