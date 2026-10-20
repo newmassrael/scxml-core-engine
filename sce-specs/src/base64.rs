@@ -49,8 +49,7 @@ fn value_of(byte: u8) -> Option<u32> {
 /// The bytes `text` says, or what is wrong with it.
 pub(crate) fn decode(text: &str) -> Result<Vec<u8>, String> {
     let bytes = text.as_bytes();
-    // `& 3` and not `is_multiple_of`: the crate's floor (1.89) is below the release that has it.
-    if bytes.len() & 3 != 0 {
+    if !bytes.len().is_multiple_of(4) {
         return Err("its length is not a multiple of four".to_string());
     }
     let mut out = Vec::with_capacity(bytes.len() / 4 * 3);
