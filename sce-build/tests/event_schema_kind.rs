@@ -540,7 +540,7 @@ fn stage_deploy(dst: &Path, name: &str) -> sce_build::mesh::deploy::DeployConfig
 }
 
 /// Positive — two machines on a mesh both import the same schema
-/// document; mesh validator computes matching canonical hashes and
+/// document; mesh validator finds the two declared alike and
 /// accepts.
 #[test]
 fn positive_mesh_matched_compiles() {
@@ -608,6 +608,208 @@ fn negative_mesh_sender_only_rejects() {
         },
         other => panic!("expected Mesh error, got {other:?}"),
     }
+}
+
+// ─── docs/adr/0044: two builds of one deployment on one network ──
+//
+// The devices of one deployment do not all run one build while it is
+// upgraded, so a sender and a receiver may hold two revisions of one
+// schema: the older one's delivery takes the newer one's defaults, and
+// the newer one's added fields are walked past by the older. The build
+// passes such a pair and refuses two schemas that are not revisions of
+// one (`forge::schema_revision::divergence`).
+
+/// The first revision's field, which every delivery carries.
+const LEVEL: &str = r#"<data id="level" sce:type="uint8" sce:direction="in"/>"#;
+/// The field the second revision added.
+const URGENT: &str =
+    r#"<data id="urgent" sce:type="bool" sce:direction="in" sce:since="2" sce:default="true"/>"#;
+
+/// An event schema of `reading.taken` named `name`, at `revision` (written
+/// only past the first), declaring the `<data>` rows `fields`.
+fn reading_schema(name: &str, revision: u32, fields: &[&str]) -> String {
+    let revision = if revision > 1 {
+        format!(r#" sce:revision="{revision}""#)
+    } else {
+        String::new()
+    };
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="{name}"
+       sce:event-name="reading.taken"{revision}>
+  <datamodel>
+    {}
+  </datamodel>
+</scxml>
+"#,
+        fields.join("\n    ")
+    )
+}
+
+/// The outputs of a build, or its refusal.
+type Built = Result<Vec<(String, sce_build::generator::GeneratedOutput)>, Located<ForgeError>>;
+
+/// `alpha`, which sends `reading.taken` to `beta` with the schema
+/// `sender_schema`, and `beta`, which takes it with `receiver_schema`: two
+/// `sce-static` machines on one device, built with the deploy that names
+/// them, as the build of a deployment is. `beta` reads no field of the
+/// event, so a field one schema lacks is judged by the cross-machine check
+/// and not first by the receive-side one.
+fn build_two_machines(sender_schema: &str, receiver_schema: &str) -> Built {
+    let dir = tempdir().expect("tempdir");
+    let write = |name: &str, text: &str| {
+        let path = dir.path().join(name);
+        fs::write(&path, text).unwrap_or_else(|e| panic!("write {name}: {e}"));
+        path
+    };
+    let sender_schema = write("schema_sender.scxml", sender_schema);
+    let receiver_schema = write("schema_receiver.scxml", receiver_schema);
+    let alpha = write(
+        "alpha.scxml",
+        r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="working" datamodel="sce-static" name="alpha">
+  <sce:import src="schema_sender.scxml" kind="event-schema" as="Reading"/>
+  <state id="working">
+    <transition event="report" type="internal">
+      <send target="#beta" event="reading.taken">
+        <param name="level" expr="4"/>
+      </send>
+    </transition>
+  </state>
+</scxml>
+"##,
+    );
+    let beta = write(
+        "beta.scxml",
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="waiting" datamodel="sce-static" name="beta">
+  <sce:import src="schema_receiver.scxml" kind="event-schema" as="Reading"/>
+  <datamodel>
+    <data id="heard" sce:type="uint32" expr="0"/>
+  </datamodel>
+  <state id="waiting">
+    <transition event="reading.taken" type="internal">
+      <assign location="heard" expr="heard + 1"/>
+    </transition>
+  </state>
+</scxml>
+"#,
+    );
+    let deploy = write(
+        "two_builds_deploy.yaml",
+        "version: \"1.0\"\ntopology:\n  ecu1:\n    machines:\n      alpha:\n        \
+         source: alpha.scxml\n      beta:\n        source: beta.scxml\n",
+    );
+    let deploy = sce_build::mesh::deploy::parse_deploy(&deploy).expect("parse deploy yaml");
+    run_with_deploy(
+        &[alpha.as_path(), beta.as_path()],
+        &[sender_schema.as_path(), receiver_schema.as_path()],
+        &deploy,
+    )
+}
+
+/// The reason a build of two machines was refused as
+/// `mesh/event-schema-mismatch` on `reading.taken` from `alpha` to `beta`.
+fn mismatch_reason(built: Built) -> sce_build::mesh::error::EventSchemaMismatchReason {
+    use sce_build::mesh::error::{DeployError, MeshError};
+    let err = built
+        .err()
+        .expect("the two schemas are not revisions of one");
+    match err.error {
+        ForgeError::Mesh(boxed_mesh) => match *boxed_mesh {
+            MeshError::Deploy(boxed_deploy) => match *boxed_deploy {
+                DeployError::EventSchemaMismatch {
+                    event_name,
+                    sender_machine,
+                    receiver_machine,
+                    reason,
+                } => {
+                    assert_eq!(event_name, "reading.taken");
+                    assert_eq!(sender_machine, "alpha");
+                    assert_eq!(receiver_machine, "beta");
+                    reason
+                }
+                other => panic!("expected EventSchemaMismatch, got {other:?}"),
+            },
+            other => panic!("expected MeshError::Deploy, got {other:?}"),
+        },
+        other => panic!("expected Mesh error, got {other:?}"),
+    }
+}
+
+#[test]
+fn two_revisions_of_one_schema_build_as_one_deployment_in_either_direction() {
+    let first = reading_schema("schema_sender", 1, &[LEVEL]);
+    let second = reading_schema("schema_receiver", 2, &[LEVEL, URGENT]);
+    // An older sender: its delivery lacks `urgent`, which the receiver defaults.
+    build_two_machines(&first, &second).expect("an older sender is read by a newer receiver");
+    // A newer sender: its delivery carries `urgent`, which the receiver walks past.
+    build_two_machines(&second, &first).expect("a newer sender is read by an older receiver");
+    // One revision on both sides, as before revisions existed.
+    build_two_machines(&second, &second).expect("one revision on both sides");
+}
+
+#[test]
+fn two_schemas_that_are_not_revisions_of_one_are_refused_with_the_field_they_part_on() {
+    use sce_build::forge::schema_revision::{Divergence, Party};
+    use sce_build::mesh::error::EventSchemaMismatchReason;
+
+    let first = reading_schema("schema_sender", 1, &[LEVEL]);
+
+    // A field of the first revision re-typed by the second.
+    let retyped = reading_schema(
+        "schema_receiver",
+        2,
+        &[
+            r#"<data id="level" sce:type="uint16" sce:direction="in"/>"#,
+            URGENT,
+        ],
+    );
+    assert_eq!(
+        mismatch_reason(build_two_machines(&first, &retyped)),
+        EventSchemaMismatchReason::NotOneSchema {
+            sender_revision: 1,
+            receiver_revision: 2,
+            divergence: Divergence::Redeclared {
+                field: "level".into()
+            },
+        }
+    );
+
+    // A field of the first revision removed (or renamed) by the second.
+    let without_level = reading_schema("schema_receiver", 2, &[URGENT]);
+    assert_eq!(
+        mismatch_reason(build_two_machines(&first, &without_level)),
+        EventSchemaMismatchReason::NotOneSchema {
+            sender_revision: 1,
+            receiver_revision: 2,
+            divergence: Divergence::Missing {
+                field: "level".into(),
+                since: 1,
+                from: Party::Second,
+            },
+        }
+    );
+
+    // Two schemas that both say they are the second revision, one of which
+    // lacks the field the other says the second revision added.
+    let second = reading_schema("schema_sender", 2, &[LEVEL, URGENT]);
+    let second_without_urgent = reading_schema("schema_receiver", 2, &[LEVEL]);
+    assert_eq!(
+        mismatch_reason(build_two_machines(&second, &second_without_urgent)),
+        EventSchemaMismatchReason::NotOneSchema {
+            sender_revision: 2,
+            receiver_revision: 2,
+            divergence: Divergence::Missing {
+                field: "urgent".into(),
+                since: 2,
+                from: Party::Second,
+            },
+        }
+    );
 }
 
 // ─── DL-5' cross-doc Enum literal width narrowing ────────────────

@@ -203,6 +203,100 @@ pub fn check(
     )
 }
 
+/// One of the two schemas [`divergence`] is handed, by its place in the call.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Party {
+    /// The first argument.
+    First,
+    /// The second argument.
+    Second,
+}
+
+/// Where two schemas of one event part, so that they are not revisions of one
+/// schema ([`divergence`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Divergence {
+    /// Both declare `field`, and declare it differently: another type, bound,
+    /// quantity, `sce:since` or `sce:default`.
+    Redeclared {
+        /// The field's id.
+        field: String,
+    },
+    /// One schema declares `field` as of revision `since` (1 for a field of the
+    /// first revision), and `from`, whose revision is `since` or later, does not
+    /// declare it: the field was removed or renamed, or the two disagree about
+    /// which revision added it.
+    Missing {
+        /// The field's id.
+        field: String,
+        /// The revision the schema that declares it says added it.
+        since: u32,
+        /// The schema that does not declare it.
+        from: Party,
+    },
+}
+
+/// The revision a field belongs to: the one its `sce:since` names, and the first
+/// for a field that declares none.
+pub fn added_at(field: &ForgeField) -> u32 {
+    field.since.unwrap_or(1)
+}
+
+/// Whether `first` and `second`, two schemas of one event, are revisions of one
+/// schema, and where they part when they are not (docs/adr/0044).
+///
+/// They are when every field both declare is declared alike (the field as the
+/// forge model serialises it: type, bound, quantity, `since`, default), and every
+/// field only one declares was added after the other's revision. So a later
+/// revision keeps every field of an earlier one, alike, and adds fields only past
+/// the earlier revision; a field removed, renamed or re-typed, two schemas of one
+/// revision that declare different fields, and two that disagree about which
+/// revision added a field all part. The rule is symmetric: which of the two is the
+/// older does not matter, and neither does the order the fields are declared in.
+///
+/// `None` when they are revisions of one schema; otherwise the first divergence,
+/// the first schema's fields judged before the second's, each in declaration order,
+/// so the same pair always answers the same.
+pub fn divergence(first: &EventSchemaModel, second: &EventSchemaModel) -> Option<Divergence> {
+    for (one, other, from) in [
+        (first, second, Party::Second),
+        (second, first, Party::First),
+    ] {
+        for field in &one.fields {
+            match other.fields.iter().find(|theirs| theirs.id == field.id) {
+                Some(theirs) if !declared_alike(field, theirs) => {
+                    return Some(Divergence::Redeclared {
+                        field: field.id.clone(),
+                    });
+                }
+                Some(_) => {}
+                None if added_at(field) <= other.revision() => {
+                    return Some(Divergence::Missing {
+                        field: field.id.clone(),
+                        since: added_at(field),
+                        from,
+                    });
+                }
+                // Added after the other's revision: the other is an earlier
+                // revision, which a delivery or a reader of the later one reads
+                // through the default.
+                None => {}
+            }
+        }
+    }
+    None
+}
+
+/// Whether two fields of one id are declared alike: the whole field, as the forge
+/// model serialises it (positions are not serialised, so where it is written does
+/// not count).
+fn declared_alike(one: &ForgeField, other: &ForgeField) -> bool {
+    match (serde_json::to_value(one), serde_json::to_value(other)) {
+        (Ok(one), Ok(other)) => one == other,
+        _ => false,
+    }
+}
+
 /// A text as a JSON string.
 fn json_text(text: &str) -> String {
     serde_json::to_string(text).expect("a string is JSON")
@@ -399,6 +493,153 @@ mod tests {
         assert!(!rust.contains("decode_with_defaults"), "{rust}");
         let python = build_python_event_payload(&first, &events, &[]).populate;
         assert!(python.contains("), )))"), "{python}");
+    }
+
+    /// `schema_revised` at `revision`, declaring `fields`.
+    fn at_revision(revision: u32, fields: Vec<ForgeField>) -> EventSchemaModel {
+        EventSchemaModel {
+            revision: Some(revision),
+            ..schema(fields)
+        }
+    }
+
+    fn level() -> ForgeField {
+        field("level", SceType::Uint8, None, None)
+    }
+
+    fn layout() -> ForgeField {
+        field("layout", view_mode(), Some(2), Some("week"))
+    }
+
+    fn urgent() -> ForgeField {
+        field("urgent", SceType::Bool, Some(3), Some("true"))
+    }
+
+    #[test]
+    fn every_revision_of_a_schema_is_one_schema_with_every_other() {
+        let first = at_revision(1, vec![level()]);
+        let second = at_revision(2, vec![level(), layout()]);
+        let third = at_revision(3, vec![level(), layout(), urgent()]);
+        for (one, other) in [
+            (&first, &second),
+            (&first, &third),
+            (&second, &third),
+            (&third, &third),
+        ] {
+            assert_eq!(divergence(one, other), None, "{one:?} / {other:?}");
+            assert_eq!(divergence(other, one), None, "{other:?} / {one:?}");
+        }
+        // The order fields are declared in is not part of the schema.
+        let reordered = at_revision(3, vec![urgent(), level(), layout()]);
+        assert_eq!(divergence(&third, &reordered), None);
+    }
+
+    #[test]
+    fn a_field_declared_otherwise_parts_two_schemas() {
+        let third = at_revision(3, vec![level(), layout(), urgent()]);
+        // Re-typed, at the first revision.
+        let wider = at_revision(
+            3,
+            vec![
+                field("level", SceType::Uint16, None, None),
+                layout(),
+                urgent(),
+            ],
+        );
+        assert_eq!(
+            divergence(&third, &wider),
+            Some(Divergence::Redeclared {
+                field: "level".into()
+            })
+        );
+        // Another default: a receiver reads it for every older delivery.
+        let other_default = at_revision(
+            3,
+            vec![
+                level(),
+                layout(),
+                field("urgent", SceType::Bool, Some(3), Some("false")),
+            ],
+        );
+        assert_eq!(
+            divergence(&third, &other_default),
+            Some(Divergence::Redeclared {
+                field: "urgent".into()
+            })
+        );
+        // Added by another revision.
+        let earlier_since = at_revision(
+            3,
+            vec![
+                level(),
+                layout(),
+                field("urgent", SceType::Bool, Some(2), Some("true")),
+            ],
+        );
+        assert_eq!(
+            divergence(&third, &earlier_since),
+            Some(Divergence::Redeclared {
+                field: "urgent".into()
+            })
+        );
+    }
+
+    #[test]
+    fn a_field_one_schema_lacks_at_a_revision_that_has_it_parts_two_schemas() {
+        let first = at_revision(1, vec![level()]);
+        let third = at_revision(3, vec![level(), layout(), urgent()]);
+
+        // A field of the first revision removed (or renamed) later.
+        let without_level = at_revision(3, vec![layout(), urgent()]);
+        assert_eq!(
+            divergence(&first, &without_level),
+            Some(Divergence::Missing {
+                field: "level".into(),
+                since: 1,
+                from: Party::Second,
+            })
+        );
+        // A field a later revision added, removed again by a later one.
+        let second = at_revision(2, vec![level(), layout()]);
+        let without_layout = at_revision(3, vec![level(), urgent()]);
+        assert_eq!(
+            divergence(&second, &without_layout),
+            Some(Divergence::Missing {
+                field: "layout".into(),
+                since: 2,
+                from: Party::Second,
+            })
+        );
+        // Two schemas that say they are revision 3 and declare different fields.
+        let third_without_layout = at_revision(3, vec![level(), urgent()]);
+        assert_eq!(
+            divergence(&third_without_layout, &third),
+            Some(Divergence::Missing {
+                field: "layout".into(),
+                since: 2,
+                from: Party::First,
+            })
+        );
+        // A revision number moved on without the field the other says it added.
+        let bumped = at_revision(3, vec![level(), layout()]);
+        assert_eq!(
+            divergence(&bumped, &third),
+            Some(Divergence::Missing {
+                field: "urgent".into(),
+                since: 3,
+                from: Party::First,
+            })
+        );
+        // A field the first revision has, which an older schema lacks.
+        let empty_first = at_revision(1, vec![field("other", SceType::Bool, None, None)]);
+        assert_eq!(
+            divergence(&first, &empty_first),
+            Some(Divergence::Missing {
+                field: "level".into(),
+                since: 1,
+                from: Party::Second,
+            })
+        );
     }
 
     #[test]

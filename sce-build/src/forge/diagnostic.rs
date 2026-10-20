@@ -16336,13 +16336,16 @@ mod tests {
                     event_name: "job.completed".into(),
                     sender_machine: "alpha".into(),
                     receiver_machine: "beta".into(),
-                    reason: crate::mesh::error::EventSchemaMismatchReason::StructuralHashMismatch {
-                        sender_hash: "a1b2".into(),
-                        receiver_hash: "c3d4".into(),
+                    reason: crate::mesh::error::EventSchemaMismatchReason::NotOneSchema {
+                        sender_revision: 1,
+                        receiver_revision: 2,
+                        divergence: crate::forge::schema_revision::Divergence::Redeclared {
+                            field: "elapsed_ms".into(),
+                        },
                     },
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:7cc311d0bc85d710","code":"mesh/event-schema-mismatch","stage":"mesh-deploy","message":"cross-machine schema mismatch on event 'job.completed' between sender machine 'alpha' and receiver machine 'beta': structural-hash mismatch (sender=a1b2, receiver=c3d4)","expected":["c3d4"],"actual":"a1b2"}"#,
+                r#"{"v":1,"id":"fnv1a:beb22930fc8f4567","code":"mesh/event-schema-mismatch","stage":"mesh-deploy","message":"cross-machine schema mismatch on event 'job.completed' between sender machine 'alpha' and receiver machine 'beta': the two are not revisions of one schema: both declare field 'elapsed_ms' (sender revision 1, receiver revision 2) and declare it differently (its type, bound, sce:since or sce:default)"}"#,
             ),
         ]
     }

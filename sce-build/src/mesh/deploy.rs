@@ -7087,8 +7087,13 @@ impl DeployConfig {
 // rejects three divergence shapes (per
 // [`crate::mesh::error::EventSchemaMismatchReason`]):
 //
-//   * StructuralHashMismatch — both sides declare a schema but the
-//     canonical field shapes differ.
+//   * NotOneSchema — both sides declare a schema and the two are not
+//     revisions of one schema
+//     ([`crate::forge::schema_revision::divergence`], docs/adr/0044).
+//     Two revisions of one schema pass: the devices of one deployment
+//     run different builds while it is upgraded, and every lane reads
+//     an older delivery through its defaults and walks past a newer
+//     delivery's added fields.
 //   * SenderOnly — sender declares a schema, receiver does not.
 //   * ReceiverOnly — receiver declares a schema, sender does not.
 //
@@ -7143,57 +7148,6 @@ fn collect_cross_machine_send_sites<'a>(
             collect_cross_machine_send_sites(block.actions, out);
         }
     }
-}
-
-/// Canonical structural hash of an [`EventSchemaModel`]. Used by the
-/// cross-machine validator to compare two schemas without imposing a
-/// `PartialEq` derive cascade on `ForgeField` / `SceType` /
-/// `Quantity` / `EnumRef` etc. (every transitive struct would need
-/// `Eq` even though the comparison runs once per cross-machine send
-/// during validation).
-///
-/// Canonicalisation:
-///
-///   1. Fields sorted by `id` so declaration-order shuffles do not
-///      mask structural equivalence.
-///   2. Source-location metadata stripped (a schema's wire shape is
-///      the typed contract, not the file position the author wrote
-///      it at).
-///   3. serde_json's default ordering on the resulting fields is
-///      stable for the typed payload (struct fields are emitted in
-///      declaration order; serde does not reshuffle).
-///
-/// The 64-bit FNV-1a digest gives a short hex string suitable for
-/// human-readable diagnostic messages without dragging in a
-/// cryptographic hash dependency.
-///
-/// Changed from the prior `LookupRef` shape: an `Enum(EnumRef)`
-/// field's hash incorporates the alias string verbatim (the same
-/// text the author wrote in `sce:type="enum:<alias>"`), so the
-/// structural hash is invariant under the Lookup→Enum reshape of
-/// the underlying ref type. Two machines pointing at the same enum
-/// document via the same alias hash identically; the hash is
-/// deterministic on the alias text + variant surface, not on the
-/// Rust struct variant carrying the alias.
-fn canonical_event_schema_hash(schema: &crate::forge::model::EventSchemaModel) -> String {
-    let mut sorted_fields = schema.fields.clone();
-    sorted_fields.sort_by(|a, b| a.id.cmp(&b.id));
-    // Stripped projection: event_name + sorted fields. `name` and
-    // `source_location` are author/file metadata that vary
-    // legitimately across machines for the same wire contract.
-    let canonical = serde_json::json!({
-        "event_name": &schema.event_name,
-        "fields": &sorted_fields,
-    });
-    let canonical_str = serde_json::to_string(&canonical).unwrap_or_default();
-    // FNV-1a 64-bit. Constants per
-    // http://www.isthe.com/chongo/tech/comp/fnv/index.html#FNV-param.
-    let mut hash: u64 = 0xcbf29ce484222325;
-    for byte in canonical_str.as_bytes() {
-        hash ^= *byte as u64;
-        hash = hash.wrapping_mul(0x100000001b3);
-    }
-    format!("{:016x}", hash)
 }
 
 /// Cross-machine
@@ -7329,19 +7283,16 @@ pub fn validate_event_schemas_cross_machine(
                 (None, Some(_)) => {
                     Some(crate::mesh::error::EventSchemaMismatchReason::ReceiverOnly)
                 }
+                // Two revisions of one schema pass; anything else is
+                // refused with the field the two part on.
                 (Some(s), Some(r)) => {
-                    let s_hash = canonical_event_schema_hash(s);
-                    let r_hash = canonical_event_schema_hash(r);
-                    if s_hash == r_hash {
-                        None
-                    } else {
-                        Some(
-                            crate::mesh::error::EventSchemaMismatchReason::StructuralHashMismatch {
-                                sender_hash: s_hash,
-                                receiver_hash: r_hash,
-                            },
-                        )
-                    }
+                    crate::forge::schema_revision::divergence(s, r).map(|divergence| {
+                        crate::mesh::error::EventSchemaMismatchReason::NotOneSchema {
+                            sender_revision: s.revision(),
+                            receiver_revision: r.revision(),
+                            divergence,
+                        }
+                    })
                 }
             };
             if let Some(reason) = mismatch {

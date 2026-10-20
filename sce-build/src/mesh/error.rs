@@ -245,15 +245,21 @@ pub struct LinkDriverClassMismatchPayload {
 /// `DeployError::EventSchemaMismatch` `{reason}` placeholder.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EventSchemaMismatchReason {
-    /// Both machines declare an EventSchema for the event, but their
-    /// canonical structural hashes differ (fields, types, or order
-    /// after sort+normalize). Carries both hashes for diagnostic
-    /// context.
-    StructuralHashMismatch {
-        /// Sender-side canonical schema hash (hex).
-        sender_hash: String,
-        /// Receiver-side canonical schema hash (hex).
-        receiver_hash: String,
+    /// Both machines declare an EventSchema for the event, and the two are not
+    /// revisions of one schema ([`crate::forge::schema_revision::divergence`],
+    /// docs/adr/0044): a field both declare is declared differently, or a field
+    /// one declares is missing from the other at a revision that has it. Two
+    /// revisions of one schema are not refused: a receiver reads an older
+    /// sender's delivery through its defaults and walks past the fields a newer
+    /// sender adds.
+    NotOneSchema {
+        /// The sender's `sce:revision` (1 when it declares none).
+        sender_revision: u32,
+        /// The receiver's `sce:revision` (1 when it declares none).
+        receiver_revision: u32,
+        /// Where the two part, the sender as the first schema and the receiver
+        /// as the second.
+        divergence: crate::forge::schema_revision::Divergence,
     },
     /// Sender declares an EventSchema for the event; receiver does
     /// not. The receiver would observe a dynamically-shaped payload
@@ -267,14 +273,35 @@ pub enum EventSchemaMismatchReason {
 
 impl std::fmt::Display for EventSchemaMismatchReason {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use crate::forge::schema_revision::{Divergence, Party};
         match self {
-            Self::StructuralHashMismatch {
-                sender_hash,
-                receiver_hash,
+            Self::NotOneSchema {
+                sender_revision,
+                receiver_revision,
+                divergence: Divergence::Redeclared { field },
             } => write!(
                 f,
-                "structural-hash mismatch (sender={sender_hash}, receiver={receiver_hash})"
+                "the two are not revisions of one schema: both declare field '{field}' (sender \
+                 revision {sender_revision}, receiver revision {receiver_revision}) and declare \
+                 it differently (its type, bound, sce:since or sce:default)"
             ),
+            Self::NotOneSchema {
+                sender_revision,
+                receiver_revision,
+                divergence: Divergence::Missing { field, since, from },
+            } => {
+                let (declares, declares_revision, lacks, lacks_revision) = match from {
+                    Party::Second => ("sender", sender_revision, "receiver", receiver_revision),
+                    Party::First => ("receiver", receiver_revision, "sender", sender_revision),
+                };
+                write!(
+                    f,
+                    "the two are not revisions of one schema: the {declares} (revision \
+                     {declares_revision}) declares field '{field}' as of revision {since}, and \
+                     the {lacks} (revision {lacks_revision}, which includes revision {since}) \
+                     does not declare it; a later revision keeps every field of an earlier one"
+                )
+            }
             Self::SenderOnly => write!(
                 f,
                 "sender declares an EventSchema but receiver does not (partial coverage)"
@@ -2480,12 +2507,13 @@ pub enum DeployError {
     /// validation): a `<send target="#{receiver_machine}">` in a
     /// statechart deployed on `{sender_machine}` carries event name
     /// `{event_name}`, but the sender's and receiver's imported
-    /// EventSchema for that event do not agree on field shape
-    /// (structural-hash mismatch) or one side declares a schema while
-    /// the other does not (partial coverage). Wire code:
+    /// EventSchema for that event are not revisions of one schema
+    /// (docs/adr/0044) or one side declares a schema while the other
+    /// does not (partial coverage). Wire code:
     /// `mesh/event-schema-mismatch`. Repair is author-domain: realign
-    /// the two schemas (rename / re-type fields on either side) or
-    /// declare a schema on the side that is missing it.
+    /// the two schemas (a later revision keeps every field of an
+    /// earlier one and adds fields with `sce:since` and `sce:default`)
+    /// or declare a schema on the side that is missing it.
     #[error(
         "cross-machine schema mismatch on event '{event_name}' between sender machine '{sender_machine}' and receiver machine '{receiver_machine}': {reason}"
     )]
@@ -2499,8 +2527,8 @@ pub enum DeployError {
         /// Machine id targeted by the send (the value after `#` in
         /// `target`).
         receiver_machine: String,
-        /// Why the schemas were rejected — distinguishes the
-        /// structural-hash divergence case from the partial-coverage
+        /// Why the schemas were rejected — distinguishes two schemas
+        /// that are not revisions of one from the partial-coverage
         /// cases without forcing consumers to substring-grep the
         /// `Display` text.
         reason: EventSchemaMismatchReason,
@@ -4609,37 +4637,51 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             ],
         },
         // ── EventSchema cross-
-        //    machine EventSchema mismatch. `actual` carries the
-        //    sender's view (hash or "absent" tag), `expected`
-        //    enumerates the receiver's view; `key_fragments` joins
-        //    event + both machine names + reason tag so two distinct
-        //    mismatches in the same build collapse to different
-        //    `fnv1a:...` IDs.
+        //    machine EventSchema mismatch. For a partial coverage
+        //    `actual` carries the sender's view ("absent" tag) and
+        //    `expected` the receiver's. Two schemas that are not
+        //    revisions of one carry neither: the field they part on
+        //    is written in the schema documents, not in the deploy
+        //    file this record is located in, so the message names it.
+        //    `key_fragments` joins event + both machine names + reason
+        //    tag (+ the field) so two distinct mismatches in the same
+        //    build collapse to different `fnv1a:...` IDs.
         DeployError::EventSchemaMismatch {
             event_name,
             sender_machine,
             receiver_machine,
             reason,
         } => {
-            let (actual, expected, reason_tag) = match reason {
-                EventSchemaMismatchReason::StructuralHashMismatch {
-                    sender_hash,
-                    receiver_hash,
-                } => (
-                    Some(sender_hash.clone()),
-                    Some(vec![receiver_hash.clone()]),
-                    "structural-hash-mismatch",
-                ),
-                EventSchemaMismatchReason::SenderOnly => (
-                    Some("schema-declared".to_string()),
-                    Some(vec!["schema-absent".to_string()]),
-                    "sender-only",
-                ),
-                EventSchemaMismatchReason::ReceiverOnly => (
-                    Some("schema-absent".to_string()),
-                    Some(vec!["schema-declared".to_string()]),
-                    "receiver-only",
-                ),
+            let mut key_fragments = vec![
+                event_name.clone(),
+                sender_machine.clone(),
+                receiver_machine.clone(),
+            ];
+            let (actual, expected) = match reason {
+                EventSchemaMismatchReason::NotOneSchema { divergence, .. } => {
+                    use crate::forge::schema_revision::Divergence;
+                    let (tag, field) = match divergence {
+                        Divergence::Redeclared { field } => ("field-redeclared", field),
+                        Divergence::Missing { field, .. } => ("field-missing", field),
+                    };
+                    key_fragments.push(tag.to_string());
+                    key_fragments.push(field.clone());
+                    (None, None)
+                }
+                EventSchemaMismatchReason::SenderOnly => {
+                    key_fragments.push("sender-only".to_string());
+                    (
+                        Some("schema-declared".to_string()),
+                        Some(vec!["schema-absent".to_string()]),
+                    )
+                }
+                EventSchemaMismatchReason::ReceiverOnly => {
+                    key_fragments.push("receiver-only".to_string());
+                    (
+                        Some("schema-absent".to_string()),
+                        Some(vec!["schema-declared".to_string()]),
+                    )
+                }
             };
             DiagnosticPayload {
                 code: DiagnosticCode::MeshEventSchemaMismatch,
@@ -4647,12 +4689,7 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
                 actual,
                 expected,
                 fix: None,
-                key_fragments: vec![
-                    event_name.clone(),
-                    sender_machine.clone(),
-                    receiver_machine.clone(),
-                    reason_tag.to_string(),
-                ],
+                key_fragments,
             }
         }
     }
