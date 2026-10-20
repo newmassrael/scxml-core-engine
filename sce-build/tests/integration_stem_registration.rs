@@ -17,233 +17,38 @@
 //! added to prove `_event.origin` is an address, and five of the seven
 //! engines were never asked the question. All five were violating the clause.
 //!
-//! So this is not a registration checklist for its own sake. Every entry
-//! below is a channel that runs the fixture, and its absence is a claim of
-//! coverage the repository does not have. Violations are collected rather
-//! than reported one at a time: a stem that is missing four drivers should
-//! say so once, not across four pushes.
+//! So this is not a registration checklist for its own sake. Every entry in
+//! the site table is a channel that runs the fixture, and its absence is a
+//! claim of coverage the repository does not have. Violations are collected
+//! rather than reported one at a time: a stem that is missing four drivers
+//! should say so once, not across four pushes.
+//!
+//! The channels, the sites each one needs and the exemptions are that table,
+//! in `common::integration_channels` rather than here: a check that asks
+//! which stems a backend drives reads the same table, and a copy of it in
+//! this file would be a second answer.
 
-use std::path::{Path, PathBuf};
+mod common;
+
+use std::path::Path;
 
 use regex::Regex;
 
-fn repo_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("sce-build has a parent")
-        .to_path_buf()
-}
-
-/// `send_param_payload` -> `SendParamPayload`, the spelling the C++ and
-/// Kotlin drivers are named with.
-fn upper_camel(stem: &str) -> String {
-    stem.split('_')
-        .filter(|w| !w.is_empty())
-        .map(|w| {
-            let mut cs = w.chars();
-            match cs.next() {
-                Some(c) => c.to_uppercase().chain(cs).collect::<String>(),
-                None => String::new(),
-            }
-        })
-        .collect()
-}
-
-fn stems(root: &Path) -> Vec<String> {
-    let mut found: Vec<String> = std::fs::read_dir(root.join("integration_resources"))
-        .expect("read integration_resources/")
-        .filter_map(|e| e.ok())
-        .filter(|e| e.path().is_dir())
-        .filter_map(|e| e.file_name().into_string().ok())
-        .collect();
-    found.sort();
-    found
-}
+use common::integration_channels::{integration_stems, required_sites, Role};
+use common::repository::root as repo_root;
 
 fn read(root: &Path, rel: &str) -> String {
     std::fs::read_to_string(root.join(rel)).unwrap_or_else(|e| panic!("read {rel}: {e}"))
 }
 
-/// One required site, as the author would have to satisfy it.
-struct Site {
-    /// What the site is for, in the failure message.
-    channel: &'static str,
-    /// Path that must exist, or the file a marker must appear in.
-    path: String,
-    /// When set, the file must additionally contain this text.
-    marker: Option<String>,
-}
-
-fn required_sites(stem: &str) -> Vec<Site> {
-    let camel = upper_camel(stem);
-    let file = |channel, path: String| Site {
-        channel,
-        path,
-        marker: None,
-    };
-    let marker = |channel, path: &str, marker: String| Site {
-        channel,
-        path: path.to_string(),
-        marker: Some(marker),
-    };
-
-    vec![
-        // The fixture itself: the canonical document every channel compiles.
-        file(
-            "canonical fixture",
-            format!("integration_resources/{stem}/{stem}.scxml"),
-        ),
-        // Generation. Loud when missing, but listed so one report covers the
-        // whole contract instead of the author meeting it in instalments.
-        file("regen (rust)", format!("scripts/regen_{stem}.sh")),
-        file("regen (go)", format!("scripts/regen_{stem}_go.sh")),
-        file("regen (kotlin)", format!("scripts/regen_{stem}_kotlin.sh")),
-        file("regen (python)", format!("scripts/regen_{stem}_python.sh")),
-        marker(
-            "rust module tree",
-            "backends/rust/tests/src/integration/mod.rs",
-            format!("pub mod {stem};"),
-        ),
-        marker(
-            "C++ AOT codegen registration",
-            "tests/CMakeLists.txt",
-            format!("sce_generate_static_integration_test({stem}"),
-        ),
-        marker(
-            "C11 codegen registration",
-            "backends/c/tests/CMakeLists.txt",
-            format!("sce_generate_static_integration_c_test({stem}"),
-        ),
-        // Assertion. These are the silent ones.
-        file(
-            "Rust AOT driver",
-            format!("backends/rust/tests/tests/{stem}.rs"),
-        ),
-        file(
-            "Go AOT driver",
-            format!("backends/go/tests/integration/{stem}/{stem}_test.go"),
-        ),
-        file(
-            "Python AOT driver",
-            format!("backends/python/tests/integration/{stem}/test_{stem}_aot.py"),
-        ),
-        file(
-            "Kotlin AOT driver",
-            format!("backends/kotlin/tests/src/test/kotlin/com/sce/integration/{camel}Test.kt"),
-        ),
-        file(
-            "C11 AOT driver",
-            format!("backends/c/tests/integration/test_{stem}.c"),
-        ),
-        file(
-            "C++ Interpreter driver",
-            format!("tests/integration/{camel}Test.cpp"),
-        ),
-        file(
-            "C++ AOT driver",
-            format!("tests/integration/{camel}AotTest.cpp"),
-        ),
-        // A driver CMake does not compile is a file, not a test.
-        marker(
-            "C++ driver compiled",
-            "tests/CMakeLists.txt",
-            format!("integration/{camel}Test.cpp"),
-        ),
-        marker(
-            "C++ AOT driver compiled",
-            "tests/CMakeLists.txt",
-            format!("integration/{camel}AotTest.cpp"),
-        ),
-        marker(
-            "C11 driver compiled",
-            "backends/c/tests/CMakeLists.txt",
-            format!("integration/test_{stem}.c"),
-        ),
-        // The layout doc records what axis each fixture owns, and "fixtures
-        // stay on one axis" is the rule it states. A stem with no entry there
-        // is an axis nobody chose — and the enumeration this replaced was
-        // wrong within one round of a stem being added, which is why the
-        // requirement is a per-stem mention rather than a list to maintain.
-        marker(
-            "layout doc entry",
-            "docs/SCE_INTEGRATION_FIXTURE_LAYOUT.md",
-            stem.to_string(),
-        ),
-    ]
-    .into_iter()
-    .filter(|site| !channel_cannot_host(stem, site.channel))
-    .collect()
-}
-
-/// The channels a given stem cannot be asserted in, and why.
-///
-/// The failure message above asks for exactly this: a channel that cannot
-/// host a fixture is a decision with a reason, not an absence. The reason
-/// belongs next to the requirement it suspends, so a reader who meets the
-/// gap meets the measurement that explains it — and so the entry has to be
-/// deleted, deliberately, when the missing piece is built.
-///
-/// Every entry here names a MISSING PIECE OF HARNESS, never a defect in the
-/// engine: a channel whose engine gets the clause wrong must be red, not
-/// exempt.
-fn channel_cannot_host(stem: &str, channel: &str) -> bool {
-    match stem {
-        // W3C SCXML C.2: the fixture posts over BasicHTTP and reads the form
-        // back out of the echoed event, which needs a listener that echoes.
-        //
-        // C++: the integration lane's own server,
-        // `tests/integration/SimpleMockHttpServer.cpp`, answers a fixed body —
-        // `"data": ""` with `"form": {}` — so a document cannot read back what
-        // it posted there. The echoing listener
-        // (`tests/w3c/standalone_http_server.js`) is wired into the W3C lane
-        // only, through `HttpAotTest`; pointing the integration lane at it is
-        // its own piece of work and is open debt, not a property of C++.
-        //
-        // Kotlin: the Kotlin test tree has no BasicHTTP harness at all —
-        // neither an HTTP send callback nor an access-URI setter is bound
-        // anywhere under `backends/kotlin/tests/src` (measured 2026-08-21).
-        // The generated tree is still produced and compiled, which is what the
-        // drift gate checks; it is the assertion that is missing.
-        //
-        // Rust, Go, Python and C11 all host it: each already drives the
-        // echoing listener from its own lane.
-        "send_namelist_over_http" => channel.starts_with("C++") || channel == "Kotlin AOT driver",
-        // SCE_MESH.md §mesh-19: the fixture asks whether a `targetexpr` naming
-        // a Mesh peer reaches the host's Mesh router, the `sce:mesh`
-        // host-served processor. That route is how every backend but C++
-        // reaches a Mesh core; C++ reaches one through the generated
-        // `TransportRouter`'s mesh-send hook, which the build emits only from
-        // a `deploy.yaml` — and the integration lane generates without one,
-        // so there is no router for a C++ driver to register or observe.
-        //
-        // ⚠ Not an engine exemption. What C++ does meanwhile is recorded as
-        // debt rather than asserted here: with no hook installed,
-        // `StaticExecutionEngine::raiseExternal` delivers a `#peer` send to
-        // this session's own queue (measured 2026-09-28), where §mesh-19
-        // would make an unserved Mesh send error.execution. A C++ mesh lane
-        // that drives the `TransportRouter` is where that belongs.
-        "a_peer_named_at_run_time_reaches_the_router" => channel.starts_with("C++"),
-        // SCE_MESH.md §9.5, §mesh-19: the fixture asks whether an `<invoke
-        // type="sce:mesh-rpc">` reaches the host's Mesh router through the
-        // runtime's mesh-rpc door. C++ is the one backend that has no such
-        // door to observe: its generated `TransportRouter` takes the request
-        // itself (§9.5's `generated` route), and the build emits that router
-        // only from a `deploy.yaml`, which the integration lane does not
-        // pass. The C++ route is exercised where its router is built — the
-        // `mesh_*` lanes over `tests/mesh/brake_invoke.scxml`.
-        "a_mesh_request_reaches_the_router" => channel.starts_with("C++"),
-        _ => false,
-    }
-}
-
 /// The driver files a stem is asserted in, for the channels that have one.
 ///
 /// A subset of `required_sites` — only the per-channel drivers, and only
-/// the ones present, since the test above is what reports an absent one.
+/// the ones present, since the test below is what reports an absent one.
 fn existing_driver_paths(root: &Path, stem: &str) -> Vec<String> {
     required_sites(stem)
         .into_iter()
-        .filter(|s| s.marker.is_none() && s.channel.contains("driver"))
+        .filter(|s| matches!(s.role, Role::Driver(_)))
         .map(|s| s.path)
         .filter(|p| root.join(p).is_file())
         .collect()
@@ -272,7 +77,7 @@ fn existing_driver_paths(root: &Path, stem: &str) -> Vec<String> {
 #[test]
 fn every_fixture_a_driver_cites_is_a_document_that_exists() {
     let root = repo_root();
-    let stems = stems(&root);
+    let stems = integration_stems(&root);
     let scxml = Regex::new(r"[A-Za-z0-9_./-]+\.scxml").expect("static regex");
 
     let mut cited = 0usize;
@@ -333,7 +138,7 @@ fn every_fixture_a_driver_cites_is_a_document_that_exists() {
 #[test]
 fn every_integration_stem_is_asserted_in_every_channel_it_is_generated_into() {
     let root = repo_root();
-    let stems = stems(&root);
+    let stems = integration_stems(&root);
 
     // A scan that silently found nothing would report a clean tree. The
     // count is a floor, not the current total: it may only grow.
@@ -351,17 +156,14 @@ fn every_integration_stem_is_asserted_in_every_channel_it_is_generated_into() {
             match &site.marker {
                 None => {
                     if !root.join(&site.path).exists() {
-                        missing.push(format!(
-                            "{stem}: {} — {} is absent",
-                            site.channel, site.path
-                        ));
+                        missing.push(format!("{stem}: {} — {} is absent", site.label, site.path));
                     }
                 }
                 Some(needle) => {
                     if !read(&root, &site.path).contains(needle.as_str()) {
                         missing.push(format!(
                             "{stem}: {} — {} does not contain `{needle}`",
-                            site.channel, site.path
+                            site.label, site.path
                         ));
                     }
                 }
@@ -379,7 +181,8 @@ fn every_integration_stem_is_asserted_in_every_channel_it_is_generated_into() {
          generated code nobody runs still compiles, so only a driver turns \
          the fixture into coverage. Add the missing driver — or, if the \
          channel genuinely cannot host this fixture, that is a decision to \
-         state here with its reason, not to leave as an absence.",
+         state in `channel_cannot_host` in `common::integration_channels` \
+         with its reason, not to leave as an absence.",
         missing.len(),
         missing.join("\n  "),
     );
