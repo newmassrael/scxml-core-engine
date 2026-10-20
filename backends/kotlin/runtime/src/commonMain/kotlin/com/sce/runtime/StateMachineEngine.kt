@@ -849,6 +849,108 @@ abstract class StateMachineEngine<S : State, E : Event>(
     }
 
     /**
+     * The factory of the routers of this machine's children (SCE_MESH.md, Child
+     * Sessions in Mesh): registered by the host on a machine it starts, and on a
+     * child by the router its parent gave it, which answers for the child's
+     * children.
+     */
+    private var childMeshRouters: ChildMeshRouters? = null
+
+    /** The router this machine was given as a child session; `null` for one its host started. */
+    private var installedMesh: ChildMeshRouter? = null
+
+    /**
+     * Register the factory of the routers of this machine's children
+     * (SCE_MESH.md, Child Sessions in Mesh; docs/adr/0043).
+     *
+     * A child session started by `<invoke type="scxml">` is given none of this
+     * machine's registrations: its peer sends would leave under this machine's
+     * name. [startInvoke] asks [factory] instead, each time an invocation starts
+     * a child (on entry, on a restore, and for the candidate a hybrid `<invoke>`
+     * chose), with the invoke's id and the stem of the child's document, and
+     * installs the answer on the child before the child initializes. A factory
+     * that answers `null`, or none registered, leaves the child with no router:
+     * its peer send raises `error.execution` in the child, and nothing falls back
+     * to this machine's router.
+     */
+    fun registerChildMeshRouters(factory: ChildMeshRouters) {
+        childMeshRouters = factory
+    }
+
+    /**
+     * Ask this machine's factory for the router of [child], which the invoke
+     * [invokeId] is starting from the document whose stem is [document], and
+     * install the answer on [child]. Leaves [child] as it is when no factory is
+     * registered or it answers `null`.
+     */
+    private fun startChildMesh(child: StateMachineEngine<*, *>, invokeId: String, document: String) {
+        val router = childMeshRouters?.invoke(invokeId, document) ?: return
+        child.installChildMeshRouter(router)
+    }
+
+    /**
+     * Install [router] as this machine's Mesh router, its request invoker and the
+     * factory of its children's routers — the three a host installs on a machine
+     * it starts, served by the one router the parent was given for this session.
+     */
+    private fun installChildMeshRouter(router: ChildMeshRouter) {
+        registerMeshRouter { request -> router.send(request) }
+        registerMeshRpcInvoker { event -> router.invoke(event) }
+        childMeshRouters = { invokeId, document -> router.childRouter(invokeId, document) }
+        installedMesh = router
+    }
+
+    /**
+     * Apply what arrived for this machine on the router its parent gave it, in
+     * the order the router released it ([applyMeshCall]). The parent calls it
+     * each time it drives this child, before the child's macrostep. Does nothing
+     * for a machine given no router.
+     */
+    fun applyMeshCalls() {
+        val router = installedMesh ?: return
+        for (call in router.takeCalls()) {
+            applyMeshCall(call)
+        }
+    }
+
+    /**
+     * Tell this engine one thing its Mesh endpoint has for it: raise an event
+     * with the `_event` the endpoint built, or end a Mesh request. An event name
+     * the machine does not declare is dropped, as the engine drops any such
+     * event; an end the engine no longer waits for is refused by the token
+     * check. An answer carries `_event.origin` `mesh://<source>` and origin type
+     * `sce:mesh-rpc` (SCE_MESH.md §mesh-9.5); a deadline the requester reached
+     * itself has no peer to name, and carries neither. The one body a host
+     * core's top-level machine and a child session are told through.
+     */
+    fun applyMeshCall(call: MeshCall) {
+        when (call) {
+            is MeshCall.Raise -> sendEventByName(call.name, call.metadata)
+            is MeshCall.EndInvoke -> {
+                val origin = call.source?.let { MESH_ORIGIN_SCHEME + it } ?: ""
+                val originType = if (call.source != null) MESH_RPC_INVOKE_TYPE else ""
+                if (call.failed) {
+                    failHostInvoke(MESH_RPC_INVOKE_TYPE, call.invokeId, call.token, call.data, origin, originType)
+                } else {
+                    completeHostInvoke(MESH_RPC_INVOKE_TYPE, call.invokeId, call.token, call.data, origin, originType)
+                }
+            }
+        }
+    }
+
+    /**
+     * The child session this machine is has ended: tell the router its parent
+     * gave it, once. Called after the child reached a top-level `<final>`, or
+     * after it was stopped because the invoking state exited, so a send the child
+     * made while stopping was handed over first.
+     */
+    fun detachMesh() {
+        val router = installedMesh ?: return
+        installedMesh = null
+        router.detach()
+    }
+
+    /**
      * Whether a handler is registered for [processorType].
      *
      * Two things can go wrong with a host-served send — no handler, or a
@@ -3673,6 +3775,9 @@ abstract class StateMachineEngine<S : State, E : Event>(
     private fun settleDeliveredChild(entry: InvokeEntry) {
         val child = entry.child
         if (!child.syncMode || child.isInFinalState) return
+        // SCE_MESH.md, Child Sessions in Mesh: what arrived for the child on the
+        // router it was given, before its macrostep.
+        child.applyMeshCalls()
         child.runDelivered(engineElapsedMs())
         if (child.isInFinalState) {
             entry.onComplete?.invoke()
@@ -3695,6 +3800,9 @@ abstract class StateMachineEngine<S : State, E : Event>(
     private fun tickChildren() {
         for ((_, entry) in activeInvokes.toList()) {
             if (entry.child.isInFinalState) continue
+            // SCE_MESH.md, Child Sessions in Mesh: what arrived for the child on
+            // the router it was given, before its macrostep.
+            entry.child.applyMeshCalls()
             entry.child.tick()
             if (entry.child.isInFinalState) {
                 entry.onComplete?.invoke()
@@ -3888,6 +3996,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 entry.child.onSendToParent = null
                 entry.child.stop()
                 entry.monitorJob.cancel()
+                entry.child.detachMesh()
             }
             activeInvokes.clear()
             pendingInvokes.clear()
@@ -4238,6 +4347,9 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * @param doneEvent Event to send when child completes (done.invoke)
      * @param finalizeScript §scxml-6.5: Script to execute before child events are processed
      * @param generatedInvokeId Runtime-generated ID (stateid.platformid.index) — used for child-to-parent event metadata
+     * @param childDocument The stem of the document the child was loaded from, empty for a child
+     *   written inline: what this machine's factory of children's routers is asked with
+     *   ([registerChildMeshRouters])
      */
     protected fun startInvoke(
         invokeId: String,
@@ -4245,8 +4357,13 @@ abstract class StateMachineEngine<S : State, E : Event>(
         autoforward: Boolean,
         doneEvent: E?,
         finalizeScript: String = "",
-        generatedInvokeId: String = invokeId
+        generatedInvokeId: String = invokeId,
+        childDocument: String = "",
     ) {
+        // SCE_MESH.md, Child Sessions in Mesh: the child's router, asked of this
+        // machine's factory and installed before the child initializes, since
+        // its first `onEntry` may already send to a peer.
+        startChildMesh(child, invokeId, childDocument)
         // §scxml-6.4: Set up child->parent event routing with metadata
         child.onSendToParent = { eventName, eventData ->
             resolveArrivingEvent(eventName)?.let {
@@ -4335,6 +4452,9 @@ abstract class StateMachineEngine<S : State, E : Event>(
             it.child.onSendToParent = null
             it.child.stop()
             it.monitorJob.cancel()
+            // SCE_MESH.md, Child Sessions in Mesh: the session ended, after the
+            // child stopped, so what it sent while stopping was handed over first.
+            it.child.detachMesh()
         }
     }
 
@@ -4774,7 +4894,13 @@ abstract class StateMachineEngine<S : State, E : Event>(
      */
     private fun cleanupCompletedInvokes() {
         if (activeInvokes.isEmpty()) return
-        activeInvokes.entries.removeAll { it.value.child.isInFinalState }
+        val ended = activeInvokes.filterValues { it.child.isInFinalState }
+        for ((invokeId, entry) in ended) {
+            activeInvokes.remove(invokeId)
+            // SCE_MESH.md, Child Sessions in Mesh: the session ended in its
+            // final state; its router is told so.
+            entry.child.detachMesh()
+        }
     }
 
     /**

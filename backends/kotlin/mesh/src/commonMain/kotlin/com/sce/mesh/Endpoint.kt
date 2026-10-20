@@ -27,7 +27,7 @@ package com.sce.mesh
 
 import com.sce.forge.runtime.AlgorithmResult
 import com.sce.runtime.EventMetadata
-import com.sce.runtime.IoProcessors
+import com.sce.runtime.MeshCall
 import com.sce.runtime.StateMachineEngine
 
 /**
@@ -39,8 +39,12 @@ const val MESH_PROCESSOR_TYPE = com.sce.runtime.MESH_PROCESSOR_TYPE
 /** The `<invoke type>` a Mesh request is lowered to, and the `_event.origintype` of the event that ends it (§mesh-9.5). */
 const val MESH_RPC_INVOKE_TYPE = com.sce.runtime.MESH_RPC_INVOKE_TYPE
 
-/** `_event.origin` of a Mesh-delivered event is this scheme and the sending machine's name (§mesh-10.7). */
-const val MESH_ORIGIN_SCHEME = "mesh://"
+/**
+ * `_event.origin` of a Mesh-delivered event is this scheme and the sending machine's name (§mesh-10.7)
+ * — the runtime's constant, so the origin this core writes is the one the engine writes when it ends a
+ * Mesh request.
+ */
+const val MESH_ORIGIN_SCHEME = com.sce.runtime.MESH_ORIGIN_SCHEME
 
 /** Why a transport declined a transmission. */
 data class TransportFailure(
@@ -355,15 +359,18 @@ class Endpoint(
  * The `_event` of an event that arrived over Mesh from [source], as §mesh-10.7
  * tabulates it and the C++ core fills it: external, origin `mesh://<source>`,
  * the SCXML processor as origin type, and the send id the envelope carried.
+ * Built by the runtime's one function for it, which is also what a child
+ * session's event is built by.
  */
 private fun meshMetadata(data: String, source: String, sendId: String): EventMetadata =
-    EventMetadata(
-        data = data,
-        type = "external",
-        sendId = sendId,
-        origin = MESH_ORIGIN_SCHEME + source,
-        originType = IoProcessors.SCXML_PROCESSOR,
-    )
+    com.sce.runtime.meshEventMetadata(data, source, sendId)
+
+/** What the runtime applies: the call the engine's own [StateMachineEngine.applyMeshCall] takes. */
+fun EngineCall.toMeshCall(): MeshCall =
+    when (this) {
+        is EngineCall.Raise -> MeshCall.Raise(event.name, event.metadata)
+        is EngineCall.EndInvoke -> MeshCall.EndInvoke(invokeId, token, failed, data, source)
+    }
 
 /**
  * Tell [engine] what [calls] say, in order. An event name the machine does not
@@ -373,22 +380,12 @@ private fun meshMetadata(data: String, source: String, sendId: String): EventMet
  *
  * An answer carries `_event.origin` `mesh://<source>` and origin type
  * `sce:mesh-rpc` (§mesh-9.5); a deadline the requester reached itself has no
- * peer to name, and carries neither.
+ * peer to name, and carries neither. Applied by the engine's own
+ * [StateMachineEngine.applyMeshCall], the body a child session's calls go through.
  */
 fun applyTo(engine: StateMachineEngine<*, *>, calls: List<EngineCall>) {
     for (call in calls) {
-        when (call) {
-            is EngineCall.Raise -> engine.sendEventByName(call.event.name, call.event.metadata)
-            is EngineCall.EndInvoke -> {
-                val origin = call.source?.let { MESH_ORIGIN_SCHEME + it } ?: ""
-                val originType = if (call.source != null) MESH_RPC_INVOKE_TYPE else ""
-                if (call.failed) {
-                    engine.failHostInvoke(MESH_RPC_INVOKE_TYPE, call.invokeId, call.token, call.data, origin, originType)
-                } else {
-                    engine.completeHostInvoke(MESH_RPC_INVOKE_TYPE, call.invokeId, call.token, call.data, origin, originType)
-                }
-            }
-        }
+        engine.applyMeshCall(call.toMeshCall())
     }
 }
 

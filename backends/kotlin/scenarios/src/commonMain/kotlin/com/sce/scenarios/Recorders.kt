@@ -17,6 +17,10 @@
 
 package com.sce.scenarios
 
+import com.sce.runtime.ChildMeshRouter
+import com.sce.runtime.ChildMeshRouters
+import com.sce.runtime.EventMetadata
+import com.sce.runtime.MeshCall
 import com.sce.runtime.StateMachineEngine
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -101,32 +105,99 @@ class ChildHosts {
  * `sent`.
  */
 class RecordedSends {
-    private val requests = mutableListOf<StateMachineEngine.HostSendRequest>()
+    private val sends = mutableListOf<JsonElement>()
 
     /** The router to register: it writes the send down and answers nothing. */
     val router: (StateMachineEngine.HostSendRequest) -> List<StateMachineEngine.HostSendResponse> = { request ->
-        requests += request
+        record(request, null, 0)
         emptyList()
     }
 
     /**
-     * The sends made since this was last called, oldest first, each as a
-     * scenario's `sent` writes it: the target as the document writes it, the
-     * event's name, and the event's data as the JSON value its text spells,
-     * left out when the send carried none.
+     * Write [request] down as a scenario's `sent` writes it: the target as the
+     * document writes it, the event's name, and the event's data as the JSON
+     * value its text spells, left out when the send carried none. A child's send
+     * ([ChildRouters]) carries the path of invoke ids that started it ([invoke])
+     * and the [start] of that path; the machine's own carries neither.
      */
-    fun take(): List<JsonElement> {
-        val fresh =
-            requests.map { request ->
-                buildJsonObject {
-                    put("target", request.target)
-                    put("event", request.eventName)
-                    if (request.eventData.isNotEmpty()) {
-                        put("data", Json.parseToJsonElement(request.eventData))
-                    }
+    fun record(request: StateMachineEngine.HostSendRequest, invoke: String?, start: Int) {
+        sends +=
+            buildJsonObject {
+                put("target", request.target)
+                put("event", request.eventName)
+                if (request.eventData.isNotEmpty()) {
+                    put("data", Json.parseToJsonElement(request.eventData))
+                }
+                if (invoke != null) {
+                    put("invoke", invoke)
+                    put("start", start)
                 }
             }
-        requests.clear()
+    }
+
+    /** The sends made since this was last called, oldest first, the machine's and its children's. */
+    fun take(): List<JsonElement> {
+        val fresh = sends.toList()
+        sends.clear()
         return fresh
+    }
+}
+
+/**
+ * The routers a driver gives the child sessions of the machine it drives
+ * (SCE_MESH.md, Child Sessions in Mesh; docs/adr/0043). Register [factory] with
+ * the machine's `registerChildMeshRouters` before it starts: it answers a router
+ * for every child, which writes what the child sends into [sends] under the path
+ * of invoke ids that started it and the start of that path, holds what a step's
+ * `invoke` hands the child ([deliver]) until the parent applies it, and answers
+ * for the child's own children under `<path>/<invoke>`. Handed to [replay] as
+ * `children`.
+ */
+class ChildRouters(private val sends: RecordedSends) {
+    private val starts = mutableMapOf<String, Int>()
+    private val running = mutableMapOf<String, Router>()
+
+    /** The factory to register. */
+    val factory: ChildMeshRouters = { invokeId, _ -> open(invokeId) }
+
+    /** A router for a new start of [path], which is now the session the path is running. */
+    private fun open(path: String): ChildMeshRouter {
+        val number = (starts[path] ?: 0) + 1
+        starts[path] = number
+        return Router(path, number).also { running[path] = it }
+    }
+
+    /**
+     * Hand [event], with [data] as its `_event.data`, to the running child of
+     * [path], as a step hands one to the machine; `false` when no child of that
+     * path is running.
+     */
+    fun deliver(path: String, event: String, data: String): Boolean {
+        val router = running[path] ?: return false
+        router.inbox += MeshCall.Raise(event, EventMetadata(data = data))
+        return true
+    }
+
+    private inner class Router(val path: String, val start: Int) : ChildMeshRouter {
+        val inbox = mutableListOf<MeshCall>()
+
+        override fun send(request: StateMachineEngine.HostSendRequest): List<StateMachineEngine.HostSendResponse> {
+            sends.record(request, path, start)
+            return emptyList()
+        }
+
+        /** A request the child makes is started and never answered: no peer is there. */
+        override fun invoke(event: StateMachineEngine.HostInvokeEvent): StateMachineEngine.HostInvokeResponse? = null
+
+        override fun takeCalls(): List<MeshCall> = inbox.toList().also { inbox.clear() }
+
+        /** The path is no longer running this session: a step that names it fails until it starts again. */
+        override fun detach() {
+            if (running[path] === this) {
+                running.remove(path)
+            }
+        }
+
+        override fun childRouter(invokeId: String, document: String): ChildMeshRouter = open("$path/$invokeId")
     }
 }

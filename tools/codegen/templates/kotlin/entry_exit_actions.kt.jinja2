@@ -209,7 +209,10 @@
 {% if (inv.params or inv.namelist) and model.needs_script_engine %}
                             setInvokeParams(childSM, invokeParams)
 {% endif %}
-                            startInvoke("{{ inv.invoke_id }}", childSM, {{ 'true' if inv.autoforward else 'false' }}, {% if inv.has_done_event %}{{ machine_name }}Event.{{ inv.done_event | to_event_ref }}{% else %}null{% endif %}, "", generatedInvokeId)
+{# SCE_MESH.md, Child Sessions in Mesh: the candidate's stem is what the
+   factory of children's routers is asked with; empty for a child that is not
+   a declared candidate. #}
+                            startInvoke("{{ inv.invoke_id }}", childSM, {{ 'true' if inv.autoforward else 'false' }}, {% if inv.has_done_event %}{{ machine_name }}Event.{{ inv.done_event | to_event_ref }}{% else %}null{% endif %}, "", generatedInvokeId, {% if inv.candidates and (inv.native_src or inv.srcexpr) %}__sceSelected{% else %}""{% endif %})
                         } catch (_: Exception) {
                             // W3C SCXML 6.4: the child could not be started. Evaluation
                             // failure no longer reaches here — it has its own raise above,
@@ -677,7 +680,7 @@
    language. The Lua-backed channels (Rust, Go, cpp-AOT, C11, Python) apply
    `to_lua_script` at their own emission sites for the same reason: authored
    content reaches the engine through the frontend that speaks to it. #}
-                    startInvoke("{{ inv.invoke_id }}", childSM, {{ 'true' if inv.autoforward else 'false' }}, {% if inv.has_done_event %}{{ machine_name }}Event.{{ inv.done_event | to_event_ref }}{% else %}null{% endif %}, {% if inv.finalize_content %}"{{ inv.finalize_content | escape_kotlin }}"{% else %}""{% endif %}, generatedInvokeId)
+                    startInvoke("{{ inv.invoke_id }}", childSM, {{ 'true' if inv.autoforward else 'false' }}, {% if inv.has_done_event %}{{ machine_name }}Event.{{ inv.done_event | to_event_ref }}{% else %}null{% endif %}, {% if inv.finalize_content %}"{{ inv.finalize_content | escape_kotlin }}"{% else %}""{% endif %}, generatedInvokeId, "{{ inv.child_document | escape_kotlin }}")
                 }
             }
 {% elif inv.is_hybrid is defined and inv.is_hybrid %}

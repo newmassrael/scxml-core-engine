@@ -241,6 +241,11 @@ pub fn compute_invoke_entries(model: &SCXMLModel) -> BTreeMap<String, Vec<serde_
                 } else {
                     String::new()
                 };
+                let child_document = if si.inline_child.is_some() {
+                    String::new()
+                } else {
+                    si.child_name.clone()
+                };
 
                 entries.push(serde_json::json!({
                     "invoke_id": invoke_id,
@@ -261,6 +266,10 @@ pub fn compute_invoke_entries(model: &SCXMLModel) -> BTreeMap<String, Vec<serde_
                     // Whether that child states a duty, so it is also handed
                     // the caller's statement that a simulated host is meant.
                     "child_declares_host_duties": si.child_declares_host_duties,
+                    // The stem of the child's document, which the factory of
+                    // children's Mesh routers is asked with (SCE_MESH.md, Child
+                    // Sessions in Mesh): empty for a child written inline.
+                    "child_document": child_document,
                 }));
             }
 

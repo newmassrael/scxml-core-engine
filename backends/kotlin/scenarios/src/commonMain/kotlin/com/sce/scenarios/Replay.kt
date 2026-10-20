@@ -63,10 +63,15 @@ fun parseScenario(text: String): JsonObject = Json.parseToJsonElement(text).json
  *   since each was last read, as a scenario writes them ([hostCall],
  *   [ChildHosts.take], [RecordedSends.take]). Each is read on every step, so a
  *   step that states nothing does not hand what it read to the next.
+ * - [children] are the routers the driver registered for the machine's child
+ *   sessions (SCE_MESH.md, Child Sessions in Mesh): a step's `invoke` hands its
+ *   event to the running child of that path through them, as a peer's event,
+ *   and the machine applies it when it next drives the child.
  *
  * A step that states what the driver does not record (`host_calls` with no
- * [hostCalls], an `advance_ms` with no [advance]) fails: a step that judged
- * nothing would pass.
+ * [hostCalls], an `advance_ms` with no [advance], an `invoke` with no
+ * [children]) fails: a step that judged nothing would pass. So does an `invoke`
+ * that names no running child.
  *
  * An event name no event of the machine matches is refused by the Rust and Go
  * twins, which ask the machine's own lookup unless the step says
@@ -88,6 +93,7 @@ fun replay(
     hostCalls: (() -> List<JsonElement>)? = null,
     childHosts: (() -> List<JsonElement>)? = null,
     sent: (() -> List<JsonElement>)? = null,
+    children: ChildRouters? = null,
 ) {
     val steps = scenario.getValue("steps").jsonArray
     if (steps.isEmpty()) {
@@ -111,7 +117,19 @@ fun replay(
             advance(ms.toLong())
         }
         step["event"]?.jsonPrimitive?.content?.let { event ->
-            send(event, step["data"]?.toString() ?: "")
+            val data = step["data"]?.toString() ?: ""
+            val path = step["invoke"]?.jsonPrimitive?.content
+            if (path == null) {
+                send(event, data)
+            } else if (children == null) {
+                throw ScenarioMismatch(
+                    n,
+                    note,
+                    "this driver gives children no routers, so it cannot send `$event` to `$path`",
+                )
+            } else if (!children.deliver(path, event, data)) {
+                throw ScenarioMismatch(n, note, "no child of `$path` is running to be sent `$event`")
+            }
             tick()
         }
         val expect = step.getValue("expect").jsonObject

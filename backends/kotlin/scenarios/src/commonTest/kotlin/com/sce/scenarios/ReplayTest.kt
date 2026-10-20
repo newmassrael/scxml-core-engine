@@ -8,6 +8,7 @@
 
 package com.sce.scenarios
 
+import com.sce.runtime.MeshCall
 import com.sce.runtime.SavedState
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -16,6 +17,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import com.sce.runtime.Json as SavedJson
@@ -125,6 +127,56 @@ class ReplayTest {
         assertEquals(JsonPrimitive("done"), mismatch.expected)
         assertEquals(JsonPrimitive("busy"), mismatch.actual)
         assertEquals("step 1 (second): the current state is \"busy\", not \"done\"", mismatch.message)
+    }
+
+    /**
+     * A step's `invoke` is a child's event: a driver that gives children no routers
+     * fails the step rather than hand the event to the machine. Red if the replay
+     * sends it to the machine instead.
+     */
+    @Test
+    fun aChildsEventWithNoRoutersFailsTheStep() {
+        val machine = Machine()
+        val mismatch = assertFailsWith<ScenarioMismatch> {
+            replayOn(machine, """{"steps": [{"invoke": "list", "event": "ping", "expect": {"state": "idle"}}]}""")
+        }
+        assertEquals(0, mismatch.step)
+        assertTrue(machine.events.isEmpty(), "the child's event reached the machine")
+    }
+
+    /**
+     * A step's `invoke` reaches the running child of the path through the router the
+     * child was given, and one that names no running child fails. Red if
+     * [ChildRouters] loses what it was handed, or the replay passes a step whose child
+     * is not there.
+     */
+    @Test
+    fun aChildsEventReachesItsRouterAndNoOtherPath() {
+        val children = ChildRouters(RecordedSends())
+        val router = assertNotNull(children.factory("list", ""))
+        val machine = Machine()
+        replay(
+            parseScenario("""{"steps": [{"invoke": "list", "event": "ping", "expect": {"state": "idle"}}]}"""),
+            send = machine::send,
+            tick = { machine.ticks++ },
+            save = machine::save,
+            ended = { machine.ended },
+            children = children,
+        )
+        val calls = router.takeCalls()
+        assertEquals(listOf("ping"), calls.map { (it as MeshCall.Raise).name })
+        assertTrue(machine.events.isEmpty(), "the child's event reached the machine")
+        val mismatch = assertFailsWith<ScenarioMismatch> {
+            replay(
+                parseScenario("""{"steps": [{"invoke": "peer", "event": "ping", "expect": {"state": "idle"}}]}"""),
+                send = machine::send,
+                tick = { machine.ticks++ },
+                save = machine::save,
+                ended = { machine.ended },
+                children = children,
+            )
+        }
+        assertEquals("no child of `peer` is running to be sent `ping`", mismatch.what)
     }
 
     /** An active state the machine lacks fails the step. Red if the configuration is not compared. */

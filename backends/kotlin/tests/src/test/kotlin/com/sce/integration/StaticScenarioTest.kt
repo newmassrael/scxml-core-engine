@@ -35,6 +35,7 @@ import com.sce.integration.static_child_host_hybrid.RecordingStaticChildHostHybr
 import com.sce.integration.static_child_host_hybrid.RecordingStaticHostedFirstActions
 import com.sce.integration.static_child_host_hybrid.RecordingStaticHostedSecondActions
 import com.sce.integration.static_child_host_hybrid.StaticChildHostHybridStateMachine
+import com.sce.integration.static_child_mesh.StaticChildMeshStateMachine
 import com.sce.integration.static_counter.StaticCounterStateMachine
 import com.sce.integration.static_donedata.StaticDonedataStateMachine
 import com.sce.integration.static_donedata_content.StaticDonedataContentStateMachine
@@ -96,6 +97,7 @@ import com.sce.integration.todo_peer.TodoPeerStateMachine
 import com.sce.runtime.EventMetadata
 import com.sce.runtime.ManualClock
 import com.sce.scenarios.ChildHosts
+import com.sce.scenarios.ChildRouters
 import com.sce.scenarios.RecordedSends
 import com.sce.scenarios.SETTLE_TICKS
 import com.sce.scenarios.hostCall
@@ -1429,6 +1431,34 @@ class StaticScenarioTest {
     @Test
     fun todoPeerIsTheHubTheCopiesOfASharedListSendTo() {
         replayTodoPeer(scenario("todo_peer_server"))
+    }
+
+    // A child session that talks to a Mesh peer is given a router of its own by the
+    // factory the driver registers as the machine's host (SCE_MESH.md, Child
+    // Sessions in Mesh): what it sends is recorded under its invoke and start, and a
+    // step's `invoke` reaches it through that router, a grandchild's through the
+    // router its parent's router answered for it.
+    @Test
+    fun staticChildMeshGivesEachChildARouterOfItsOwn() {
+        val sends = RecordedSends()
+        val children = ChildRouters(sends)
+        val sm = StaticChildMeshStateMachine()
+        sm.registerMeshRouter(sends.router)
+        sm.registerChildMeshRouters(children.factory)
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_child_mesh"),
+                send = { event, data -> sm.sendEventByName(event, EventMetadata(data = data)) },
+                tick = { repeat(SETTLE_TICKS) { sm.tick() } },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+                sent = { sends.take() },
+                children = children,
+            )
+        } finally {
+            sm.cleanup()
+        }
     }
 
     /** One run of `todo_peer`, on a machine of its own whose sends to its peers are recorded. */
