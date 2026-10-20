@@ -2349,6 +2349,36 @@ impl SCXMLParser {
                 source.path.parent().unwrap_or(base_dir),
                 source.label().diagnostic_label,
             )?;
+            // A schema that grew is read only by a `sce-static` machine. There
+            // every read of a field is the lift's, which takes a default where
+            // a delivery lacks the field; under any other data model the script
+            // engine binds `_event.data` to the delivery as it came, so the same
+            // document would read one event two ways depending on the engine
+            // that runs it. Refused at the import, where the author chose the
+            // schema.
+            let grew_outside_static = model.datamodel != crate::model::Datamodel::SceStatic
+                && matches!(&parsed.document, ForgeDocument::EventSchema(schema) if schema.grew());
+            if grew_outside_static {
+                return Err(Located::new(
+                    crate::forge::error::ValidationError::AttributeRuleViolated {
+                        element: "<sce:import kind=\"event-schema\">".into(),
+                        attr: "src".into(),
+                        value: import.src.clone(),
+                        rule: format!(
+                            "a schema of one revision under datamodel=\"{}\" — this one grew \
+                             (sce:revision past 1, or a field with sce:since or sce:default), \
+                             and only a datamodel=\"sce-static\" machine reads a field's \
+                             default, since only there is every read of the event's data the \
+                             typed lift's",
+                            model.datamodel.as_str()
+                        ),
+                    }
+                    .into(),
+                    diag_label,
+                    import.line,
+                    None,
+                ));
+            }
             match parsed.document {
                 ForgeDocument::EventSchema(schema) => {
                     schemas.entry(schema.name.clone()).or_insert(schema);

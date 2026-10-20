@@ -428,17 +428,6 @@ pub fn schema_is_native_payload_eligible(schema: &EventSchemaModel) -> bool {
 ///     barrier ahead of it, so a malformed `bytes` guard must be classed
 ///     non-native here, independent of the receive-side validator that
 ///     separately rejects the same forms in the forge codegen path.
-///
-/// (f) the cond reads no field a later revision of the schema added
-///     ([`ForgeField::since`]). The typed lift reads such a field's default
-///     where a delivery lacks it; the script engine this guard would
-///     otherwise run on binds `_event.data` to the delivery as it came and
-///     reads nothing there. A native guard that read the default would
-///     answer differently from the script engine on the same delivery,
-///     which makes the optimisation observable, so the guard stays with the
-///     script engine. A `sce-static` machine has no script engine: its own
-///     lowering reads every field through the lift, the default included,
-///     whatever is selected here.
 pub fn guard_is_native_lowerable(cond: &str, schema: &EventSchemaModel) -> bool {
     if !schema_is_native_payload_eligible(schema) {
         return false;
@@ -450,9 +439,6 @@ pub fn guard_is_native_lowerable(cond: &str, schema: &EventSchemaModel) -> bool 
         return false;
     }
     if !bytes_comparisons_are_native_representable(&ast, schema) {
-        return false;
-    }
-    if reads_a_field_a_later_revision_added(&ast, schema) {
         return false;
     }
     ExprTarget::ALL
@@ -1032,33 +1018,6 @@ fn extract_event_data_field<'s>(
         return None;
     }
     schema.fields.iter().find(|f| f.id == *property)
-}
-
-/// `true` iff `expr` reads a `_event.data.<field>` whose field a later
-/// revision of `schema` added ([`ForgeField::since`]) — the condition (f) of
-/// [`guard_is_native_lowerable`]. Walks the shapes a pure typed-payload
-/// guard is built from; every other shape reads no field.
-fn reads_a_field_a_later_revision_added(expr: &TypedExpr, schema: &EventSchemaModel) -> bool {
-    if let Some(field) = extract_event_data_field(expr, schema) {
-        return field.since.is_some();
-    }
-    match &expr.kind {
-        ExprKind::Binary { left, right, .. } => {
-            reads_a_field_a_later_revision_added(left, schema)
-                || reads_a_field_a_later_revision_added(right, schema)
-        }
-        ExprKind::Unary { operand, .. } => reads_a_field_a_later_revision_added(operand, schema),
-        ExprKind::Conditional {
-            condition,
-            consequent,
-            alternate,
-        } => {
-            reads_a_field_a_later_revision_added(condition, schema)
-                || reads_a_field_a_later_revision_added(consequent, schema)
-                || reads_a_field_a_later_revision_added(alternate, schema)
-        }
-        _ => false,
-    }
 }
 
 /// Field-not-found check. Emits `validation/cross-kind-field-not-found`
@@ -2239,31 +2198,6 @@ mod tests {
         assert!(schema_is_native_payload_eligible(&s));
         assert!(guard_is_native_lowerable(
             "_event.data.elapsed_ms === 0",
-            &s
-        ));
-    }
-
-    // A field a later revision added reads its default through the typed lift
-    // and nothing through the script engine, so a guard that reads one stays
-    // with the script engine; a guard over the first revision's fields of the
-    // same schema is still native.
-    #[test]
-    fn a_guard_reading_a_field_a_later_revision_added_is_not_native() {
-        let mut added = field("retries", SceType::Uint8);
-        added.since = Some(2);
-        added.default = Some("0".to_string());
-        let mut s = schema(
-            "job.completed",
-            vec![field("elapsed_ms", SceType::Uint32), added],
-        );
-        s.revision = Some(2);
-        assert!(guard_is_native_lowerable(
-            "_event.data.elapsed_ms === 0",
-            &s
-        ));
-        assert!(!guard_is_native_lowerable("_event.data.retries === 0", &s));
-        assert!(!guard_is_native_lowerable(
-            "_event.data.elapsed_ms === 0 && !(_event.data.retries > 2)",
             &s
         ));
     }

@@ -7139,6 +7139,8 @@ lacks it takes, and the lift reads that default in its place.
   On any other kind's `<data>` or root nothing reads them, and they are refused
   as `validation/sce-attribute-unread`. (`sce:default` on a lookup's mapping
   `<data>` is that kind's miss policy, as before.)
+- A schema that grew is imported only by a `datamodel="sce-static"` statechart;
+  under any other data model its `<sce:import>` is refused (below).
 
 **The lift.** A field the delivery lacks and a later revision added takes its
 default; a field the delivery carries is read as it came and held to its type
@@ -7192,12 +7194,16 @@ to one answer.
 - `mesh/event-schema-mismatch` compares the sender's and receiver's schemas of
   one deployment, which are built together: a field's `since` and default are
   part of the fields it compares, and the root's revision number is not.
-- Under a data model other than `sce-static` the default is the typed lift's
-  alone: the script engine binds `_event.data` to the delivery as it came, so an
-  `<assign expr="_event.data.urgent">` there reads nothing for a field the
-  delivery lacks. A guard that reads such a field is therefore not lowered
-  natively and stays with the script engine, where it reads what the delivery
-  carried, so the native lowering of the other guards remains unobservable.
+- A schema that grew is read by a `datamodel="sce-static"` machine only. Under
+  any other data model the script engine binds `_event.data` to the delivery as
+  it came, so an `<assign expr="_event.data.urgent">` would read nothing for a
+  field the delivery lacks while a natively lowered guard on the same event read
+  its default: one document would read one event two ways, depending on the
+  engine that runs it. So a statechart whose data model is not `sce-static` and
+  that imports an event schema declaring `sce:revision` past 1, or any field with
+  `sce:since` or `sce:default`, is refused at that `<sce:import>`, as
+  `validation/attribute-rule-violated` on its `src`. A schema of one revision is
+  imported under every data model, as before.
 
 **What a revision does not make safe.** Removing a field needs nothing: a
 delivery of an earlier revision that still carries it carries a field the schema

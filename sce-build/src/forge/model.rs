@@ -1476,6 +1476,18 @@ impl EventSchemaModel {
         self.revision.unwrap_or(1)
     }
 
+    /// Whether the schema grew: it declares a revision past the first, or a
+    /// field that says which later revision added it or what a delivery that
+    /// lacks it takes. Only a `sce-static` machine reads such a schema, since
+    /// only there is every read of a field the lift's.
+    pub fn grew(&self) -> bool {
+        self.revision() > 1
+            || self
+                .fields
+                .iter()
+                .any(|f| f.since.is_some() || f.default.is_some())
+    }
+
     /// W3C SCXML built-in event-name prefixes that an EventSchema may
     /// not declare against. Centralised here so the parse-time guard
     /// and any cross-kind binding pass agree on the closed set without

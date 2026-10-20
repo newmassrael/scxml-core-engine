@@ -600,4 +600,67 @@ mod tests {
             refusal.error
         );
     }
+
+    /// A statechart of data model `datamodel` that imports `schema` from beside
+    /// it, parsed as a file is; the import is on row 4.
+    fn parse_importing(
+        datamodel: &str,
+        schema: &str,
+    ) -> Result<crate::model::SCXMLModel, Located<ForgeError>> {
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        std::fs::write(dir.path().join("schema_grown.scxml"), schema).expect("the schema");
+        let statechart = format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="reading" datamodel="{datamodel}" name="importer">
+  <sce:import kind="event-schema" src="schema_grown.scxml" as="Grown"/>
+  <state id="reading"/>
+</scxml>"#
+        );
+        let path = dir.path().join("importer.scxml");
+        std::fs::write(&path, statechart).expect("the statechart");
+        crate::parser::SCXMLParser::new().parse_file(path.to_str().expect("a UTF-8 path"))
+    }
+
+    fn grown_schema(root: &str, added: &str) -> String {
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="schema_grown"
+       sce:event-name="reading.grown"{root}>
+  <datamodel>
+    <data id="level" sce:type="uint8" sce:direction="in"/>
+    {added}
+  </datamodel>
+</scxml>"#
+        )
+    }
+
+    #[test]
+    fn a_schema_that_grew_is_refused_at_its_import_outside_sce_static() {
+        let added = r#"<data id="urgent" sce:type="bool" sce:direction="in" sce:since="2" sce:default="true"/>"#;
+        let grown = grown_schema(r#" sce:revision="2""#, added);
+        // A revision past the first alone grows a schema, as an added field does.
+        let only_revised = grown_schema(r#" sce:revision="2""#, "");
+        for schema in [&grown, &only_revised] {
+            let refusal = parse_importing("ecmascript", schema)
+                .expect_err("one event would be read two ways by two engines");
+            assert_eq!(refusal.location.line, Some(4));
+            match refusal.error {
+                ForgeError::Validation(validation) => match *validation {
+                    ValidationError::AttributeRuleViolated { attr, value, .. } => {
+                        assert_eq!(attr, "src");
+                        assert_eq!(value, "schema_grown.scxml");
+                    }
+                    other => panic!("refused as {other:?}"),
+                },
+                other => panic!("refused as {other:?}"),
+            }
+        }
+
+        // A sce-static machine reads every field through the lift, the default
+        // included, and a schema of one revision is read under any data model.
+        assert!(parse_importing("sce-static", &grown).is_ok());
+        assert!(parse_importing("ecmascript", &grown_schema("", "")).is_ok());
+    }
 }
