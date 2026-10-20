@@ -90,13 +90,12 @@ writes = ["scripts/regen_", "scripts/mutate", "scripts/emit_embed_manifest.sh", 
 # `<transition event="*"/>` fail branch — 25 failures that say nothing about
 # the backend. The gates start it for the same reason.
 #
-# `mnemosyne-cli` is listed for a reason worth stating: without it the
-# citation gate cannot run, and its "cannot run" is spelled as a plain
-# failure — so `gate_registry_contract` reports "the staged gate rejected a
-# real citation" on a machine that simply lacks the binary. Measured: two
-# tests red for that reason and no other. Listing it here keeps such a
-# machine out of the candidate set instead of turning it into a red that
-# looks like a code defect.
+# `mnemosyne-cli` is NOT here although the citation gate cannot run without
+# it: the gate runs the rev-pinned build, never the one on PATH, so a name in
+# `needs` passed every host whose `~/.cargo/bin` held some other revision.
+# Measured 2026-10-20: all five build hosts passed it, none had the pinned
+# build, and `gate_registry_contract`'s two citation cases exited 3 on each.
+# It is declared below as a pinned tool, which bx checks at its revision.
 #
 # `git` is listed because `bx` runs it on the far side to PROVE the two trees
 # are equal (`git rev-parse HEAD` + `git status --porcelain`) before it starts
@@ -110,8 +109,8 @@ writes = ["scripts/regen_", "scripts/mutate", "scripts/emit_embed_manifest.sh", 
 # gates stopped being a local-only set. `scripts/gate w3c-go`,
 # `w3c-python`, `w3c-kotlin`, `forge-go`, `forge-python` and
 # `visualizer-wasm` each name their toolchain and fail loudly without it, so
-# a host that lacks one produces a red that reads like a code defect — the
-# same misattribution `mnemosyne-cli` is listed for above. Listing them keeps
+# a host that lacks one produces a red that reads like a code defect: a tool
+# that cannot run, blamed on the tree it was pointed at. Listing them keeps
 # such a host out of the candidate set instead.
 #
 # `kotlinc` joined on 2026-09-11, and it is the one that did NOT fail loudly:
@@ -138,7 +137,7 @@ writes = ["scripts/regen_", "scripts/mutate", "scripts/emit_embed_manifest.sh", 
 # lines — so a wrapped list parses as EMPTY and every host becomes eligible
 # for everything. Measured 2026-08-24, thirty seconds after wrapping it:
 # `--explain-declaration` printed `decl needs` with nothing after it.
-needs = ["cargo", "cmake", "ninja", "g++", "node", "git", "mnemosyne-cli", "go", "java", "python3", "wasm-pack", "kotlinc", "clang-format-19"]
+needs = ["cargo", "cmake", "ninja", "g++", "node", "git", "go", "java", "python3", "wasm-pack", "kotlinc", "clang-format-19"]
 
 # System packages a host must carry that no executable in `needs` can name: a development header
 # is not a command. bx asks `dpkg-query` for each and reports every missing one in a single
@@ -176,6 +175,22 @@ min_free_gb = 60
 # line-by-line reader found it anyway, which is the only reason it ever had
 # effect. bx.toml is read by TOML's tables, so it belongs up here.
 peak_gb_per_task = 4
+
+# The citation gate's binary, at the revision CI installs. The revision is read
+# from the workflow, the one place that declares it, with the shape
+# `scripts/lib/mnemosyne_pin.sh` reads, and `path` and `check` are that file's
+# root and `--version` test. bx builds the install once per platform into a
+# store it manages and links `path` to it. The install fills the store entry
+# with both binaries in one `cargo install`, as the pin's own install line does,
+# but only the CLI is a requirement here: it is the one a run executes, while
+# `mnemosyne-mcp` serves the MCP servers of a workstation.
+[tools.mnemosyne-cli]
+version_file = ".github/workflows/spec-citations.yml"
+version_pattern = 'MNEMOSYNE_REV: *([0-9a-f]{40})'
+path = "~/.local/share/mnemosyne-rev/{version:8}/bin/mnemosyne-cli"
+check = "{version:8}"
+install = "CARGO_HOME={scratch}/cargo cargo install --git https://github.com/newmassrael/mnemosyne --rev {version} --locked --root {prefix} mnemosyne-cli mnemosyne-mcp"
+prefix_file = "bin/mnemosyne-cli"
 
 [commands]
 # `--features cli` is not optional here: `cargo test --workspace` silently
