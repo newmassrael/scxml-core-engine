@@ -199,6 +199,14 @@ sce_gate_codegen() {
 SCE_GATE_HTTP_FIXTURE_PID=""
 SCE_GATE_HTTP_FIXTURE_CLEANUP_ARMED=""
 
+# The port the gate's CALLER named, read once when this file is sourced and
+# before any fixture start exports one of its own. Named, it is the port the
+# fixture holds or the gate refuses. Not named, the fixture takes a port the
+# kernel says is free and the runners are pointed at it: a build machine is
+# shared, and on 2026-10-20 another program held 127.0.0.1:8080 on one, so a
+# gate that always bound the header's default could not run there at all.
+SCE_GATE_HTTP_PORT_NAMED="${SCE_W3C_HTTP_PORT:-}"
+
 # Stop whatever is up when the gate exits — registered once, and DEFERRED.
 #
 # The command is `eval`ed at exit, so it reads the variable then rather than
@@ -232,11 +240,14 @@ _sce_gate_http_fixture_start() {
     # before it starts. `sce_gate_codegen_require` sources its own library the
     # same way, and that sibling is the contract.
     source "$SCE_REPO_ROOT/scripts/lib/sce_http_endpoint.sh"
-    port="$(sce_http_endpoint_port "$SCE_REPO_ROOT")" \
-        || sce_gate_fail "could not resolve the W3C BasicHTTP fixture endpoint port"
+    if [[ -n "$SCE_GATE_HTTP_PORT_NAMED" ]]; then
+        port="$(SCE_W3C_HTTP_PORT="$SCE_GATE_HTTP_PORT_NAMED" sce_http_endpoint_port "$SCE_REPO_ROOT")" \
+            || sce_gate_fail "could not resolve the W3C BasicHTTP fixture endpoint port"
+    else
+        port=0
+    fi
     path="$(sce_http_endpoint_path "$SCE_REPO_ROOT")" \
         || sce_gate_fail "could not resolve the W3C BasicHTTP fixture endpoint path"
-    export SCE_W3C_HTTP_PORT="$port"
 
     log="$(mktemp)"
     sce_gate_on_exit "rm -f '$log'"
@@ -244,48 +255,50 @@ _sce_gate_http_fixture_start() {
     SCE_GATE_HTTP_FIXTURE_PID=$!
     _sce_gate_http_fixture_arm_cleanup
 
-    # Wait for the listener to ACCEPT, not for a timer to expire.
+    # Wait for the server's own `[READY] port=<n>`, not for a timer and not for
+    # a connection.
     #
-    # This was `sleep 1` followed by `kill -0`, which asks whether the process
-    # exists — a question node answers yes to long before it has bound the
-    # port. On an idle machine the second is plenty and the gate looked
-    # correct; under load it is not, and the gate then announces "server up"
-    # and hands the round a socket nobody is listening on. Measured through
-    # `the_gate_starts_the_declared_service_for_that_round_and_no_other`:
-    # green locally and on a doc-only push, RED on the two pushes that ran a
-    # full workflow set beside it. A fixed settle window is a guess about
-    # someone else's machine.
-    #
-    # Probed through NODE, not through bash's `/dev/tcp`, and the difference is
-    # a measured one. The server binds `listen(port, 'localhost')`; Node 17+
-    # resolves that verbatim, so on a host whose `localhost` answers `::1`
-    # first it binds IPv6 ONLY. A `/dev/tcp/127.0.0.1` probe then never
-    # connects — green on this machine, where IPv4 comes first, and a 30s
-    # timeout on every CI runner, which is exactly what it did. Asking node to
-    # connect to the same NAME puts the probe on the same resolver and the same
-    # stack as the listener, so the two can no longer disagree about where
-    # "localhost" is. node is already required above, so this adds nothing.
+    # A timer was first: `sleep 1` and `kill -0`, which node answers yes to long
+    # before it has bound the port (measured through
+    # `the_gate_starts_the_declared_service_for_that_round_and_no_other`, red on
+    # the two pushes that ran a full workflow set beside it). A connect probe to
+    # `localhost` came next, and it cannot tell WHOSE listener answered: on
+    # 2026-10-20 another program held 127.0.0.1:8080 on a build machine, this
+    # server died of EADDRINUSE, the probe connected to the other program, the
+    # gate said the fixture was up, and thirteen Go HTTP tests failed against a
+    # server that was not this one. The line is written by this server and no
+    # other, and only after it holds every address `localhost` resolves to
+    # (standalone_http_server.js says why each one), so it is the answer to the
+    # question the probe could only approximate.
     #
     # The liveness check stays inside the loop so a server that dies during
-    # startup still fails with its log rather than at the deadline.
-    local deadline=$(( SECONDS + 30 ))
-    until node -e '
-        const net = require("net");
-        const s = net.connect(Number(process.argv[1]), "localhost");
-        s.on("connect", () => { s.end(); process.exit(0); });
-        s.on("error", () => process.exit(1));
-    ' "$port" 2>/dev/null; do
+    # startup fails with its own log, which names the address it could not take.
+    local deadline=$(( SECONDS + 30 )) ready
+    until ready="$(sed -n 's/^\[READY\] port=\([0-9]\{1,5\}\)$/\1/p' "$log")" && [[ -n "$ready" ]]; do
         if ! kill -0 "$SCE_GATE_HTTP_FIXTURE_PID" 2>/dev/null; then
             cat "$log" >&2
-            sce_gate_fail "W3C HTTP fixture server failed to start (port $port already in use?)"
+            sce_gate_fail "W3C HTTP fixture server failed to start (its log above names the address it could not hold)"
         fi
         if (( SECONDS >= deadline )); then
             cat "$log" >&2
-            sce_gate_fail "W3C HTTP fixture server never accepted on localhost:${port} within 30s"
+            sce_gate_fail "W3C HTTP fixture server did not report [READY] within 30s"
         fi
         sleep 0.2
     done
-    sce_gate_step "W3C HTTP fixture server up on localhost:${port}${path}"
+    export SCE_W3C_HTTP_PORT="$ready"
+    sce_gate_step "W3C HTTP fixture server up on localhost:${ready}${path}"
+}
+
+# Give the environment back the port the caller named, or none: a port the
+# fixture took for itself means nothing once that fixture is stopped, and a
+# later round that starts its own listener (a ctest round's CMake fixture)
+# must not read it as one it was told to use.
+_sce_gate_http_fixture_release_port() {
+    if [[ -n "$SCE_GATE_HTTP_PORT_NAMED" ]]; then
+        export SCE_W3C_HTTP_PORT="$SCE_GATE_HTTP_PORT_NAMED"
+    else
+        unset SCE_W3C_HTTP_PORT
+    fi
 }
 
 # The whole gate needs it: start once, stop at exit.
@@ -322,6 +335,7 @@ sce_gate_with_http_fixture_server() {
     kill "$pid" 2>/dev/null || true
     wait "$pid" 2>/dev/null || true
     SCE_GATE_HTTP_FIXTURE_PID=""
+    _sce_gate_http_fixture_release_port
     return "$rc"
 }
 
