@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The second revision of the schema of `reading.taken`, as the newer build of a
+  deployment has it (docs/adr/0044): the level of the first revision, and the
+  urgency the second added, which a delivery written by the older build lacks and
+  reads as `true`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="revision_reading_2"
+       sce:event-name="reading.taken"
+       sce:revision="2">
+  <datamodel>
+    <data id="level" sce:type="uint8" sce:direction="in"/>
+    <data id="urgent" sce:type="bool" sce:direction="in" sce:since="2" sce:default="true"/>
+  </datamodel>
+</scxml>

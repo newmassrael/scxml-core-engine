@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The first revision of the schema of `reading.taken`, as the older build of a
+  deployment has it (docs/adr/0044): the level alone. `revision_reading_2` is the
+  second revision of the same schema, which the newer build has.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="revision_reading_1"
+       sce:event-name="reading.taken">
+  <datamodel>
+    <data id="level" sce:type="uint8" sce:direction="in"/>
+  </datamodel>
+</scxml>

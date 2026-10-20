@@ -61,6 +61,10 @@ const STATECHARTS: &[&str] = &[
     "../../../sce-build/tests/fixtures/static_datamodel/todo_peer.scxml",
     "../../../sce-build/tests/fixtures/static_datamodel/presence_peer.scxml",
     "machines/todo_wide_sender.scxml",
+    // Two builds of one deployment, each with its own revision of one schema
+    // (docs/adr/0044).
+    "machines/revision_older.scxml",
+    "machines/revision_newer.scxml",
 ];
 
 /// The algorithms and record schemas the statecharts import, the standard ones from
@@ -142,6 +146,8 @@ const FORGE: &[&str] = &[
     "../../../sce-build/tests/fixtures/static_datamodel/presence_left.scxml",
     "../../../sce-build/tests/fixtures/static_datamodel/presence_expire.scxml",
     "machines/todo_shout.scxml",
+    "machines/revision_reading_1.scxml",
+    "machines/revision_reading_2.scxml",
 ];
 
 fn main() {

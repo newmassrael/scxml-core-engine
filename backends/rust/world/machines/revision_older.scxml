@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static": the older build of a deployment that is being upgraded
+  (docs/adr/0044), built with the first revision of the schema of
+  `reading.taken`. `report` sends the peer `newer` a reading; a reading the peer
+  sends is taken whole into `last`, and a field the older schema does not name is
+  walked past. `refusals` counts a delivery the lift refused, which a run between
+  two revisions of one schema never has.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="open" datamodel="sce-static" name="revision_older">
+  <sce:import kind="event-schema" src="revision_reading_1.scxml" as="Reading"/>
+  <datamodel>
+    <data id="last" sce:type="record:Reading" sce:direction="out">
+      <sce:set name="level" expr="0"/>
+    </data>
+    <data id="heard" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="open">
+    <transition event="report" type="internal">
+      <send target="#newer" event="reading.taken">
+        <param name="level" expr="4"/>
+      </send>
+    </transition>
+    <transition event="reading.taken" type="internal">
+      <assign location="last" expr="_event.data"/>
+      <assign location="heard" expr="heard + 1"/>
+    </transition>
+    <transition event="error.execution" type="internal">
+      <assign location="refusals" expr="refusals + 1"/>
+    </transition>
+  </state>
+</scxml>
