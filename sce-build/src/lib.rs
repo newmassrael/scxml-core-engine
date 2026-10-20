@@ -4122,8 +4122,9 @@ fn compile_document_set(
 
                     // Per-instance source: machine.source SCXML's
                     // event_queue_capacity wins. Match scxml model by
-                    // basename = machine.source.
-                    let machine_source = machine.source.as_str();
+                    // basename = machine.source. A child session names no
+                    // document of its own, so it matches none of the set.
+                    let machine_source = machine.source_path().unwrap_or_default();
                     let model = scxml_models.iter().find_map(|(path, model)| {
                         let matches = path
                             .file_name()
@@ -5931,8 +5932,12 @@ pub fn resolve_listener_links(
             // Resolve `machine.source` against the parsed scxml_models
             // by basename match — deploy.yaml's `source` is a path
             // string that the orchestrator passes verbatim to
-            // `scxml_files`, so the two reach for the same filename.
-            let machine_source = machine.source.as_str();
+            // `scxml_files`, so the two reach for the same filename. A
+            // child session names no document of its own, so none of the
+            // set is its.
+            let Some(machine_source) = machine.source_path() else {
+                continue;
+            };
             let model = scxml_models.iter().find(|(path, _)| {
                 path.file_name()
                     .and_then(|s| s.to_str())
@@ -6044,8 +6049,12 @@ pub fn validate_cross_doc_listener_roles(
             // model to be in this compile call. Silent-skip when the
             // model is absent (mirrors `resolve_listener_links`
             // discipline; the existing cross-doc reassembly + burst
-            // validators silent-skip on the same join absence).
-            let machine_source = machine.source.as_str();
+            // validators silent-skip on the same join absence). A child
+            // session names no document of its own, so none of the set is
+            // its.
+            let Some(machine_source) = machine.source_path() else {
+                continue;
+            };
             let model = scxml_models.iter().find(|(path, _)| {
                 path.file_name()
                     .and_then(|s| s.to_str())
@@ -7147,6 +7156,9 @@ pub enum DeployMutationStage {
     PartitionContext,
     /// `default_event_queue_capacity` fallback.
     EventQueueCapacity,
+    /// The child sessions the deploy names, against the `<invoke>` sites of
+    /// the machine's document (SCE_MESH.md, Child Sessions in Mesh).
+    ChildSessions,
 }
 
 impl DeployMutationStage {
@@ -7158,6 +7170,7 @@ impl DeployMutationStage {
             Self::ServerModel => "Server model injection error: ",
             Self::PartitionContext => "Partition context injection error: ",
             Self::EventQueueCapacity => "Event-queue capacity injection error: ",
+            Self::ChildSessions => "Child session check error: ",
         }
     }
 }
@@ -7225,6 +7238,13 @@ pub fn apply_deploy_model_mutations(
             source,
         }
     })?;
+    // Changes nothing in the model: it refuses a machine whose child
+    // sessions the deploy names wrongly, or does not name, before any code
+    // for it is emitted.
+    validate_child_sessions(model, deploy_path).map_err(|source| DeployMutationError {
+        stage: DeployMutationStage::ChildSessions,
+        source,
+    })?;
     // Read after the injectors, not before: they are what reject a
     // malformed deploy, and reporting facts off a file that is about to
     // be refused would surface a declaration from a build that never
@@ -7242,6 +7262,32 @@ pub fn apply_deploy_model_mutations(
     Ok(DeployFacts {
         static_analyzer: cfg.build.as_ref().and_then(|b| b.static_analyzer),
     })
+}
+
+/// The child sessions `deploy_path` names for the machine `model` is, checked
+/// against the `<invoke>` sites of its document and, under each child's own
+/// name, of the child's (SCE_MESH.md, Child Sessions in Mesh; docs/adr/0043):
+/// [`mesh::topology::validate_child_session_sites`].
+///
+/// A document that is no machine of the deploy is not judged: it is a
+/// document compiled beside the deploy, such as a child generated on its own,
+/// whose sites its deployed parent's build judges.
+pub fn validate_child_sessions(
+    model: &SCXMLModel,
+    deploy_path: &Path,
+) -> Result<(), mesh::error::MeshError> {
+    let deploy_cfg = mesh::deploy::parse_deploy(deploy_path)?;
+    let resolved_name = if deploy_cfg.device_for_machine(&model.name).is_some() {
+        Some(model.name.clone())
+    } else {
+        deploy_cfg.find_machine_name_by_source(&model.name)
+    };
+    let Some(machine) = resolved_name else {
+        return Ok(());
+    };
+    let sites = host_processor_analyzer::child_mesh_sites(model);
+    mesh::topology::validate_child_session_sites(&deploy_cfg, &machine, &sites)?;
+    Ok(())
 }
 
 /// Partition-aware form of [`inject_partition_context_flag`]. Pass
@@ -7647,7 +7693,8 @@ fn validate_scxml_invoke_target_exclusivity(
         .values()
         .flat_map(|dev| dev.machines.iter())
         .find(|(name, _)| name.as_str() == resolved_name)
-        .map(|(_, cfg)| cfg.source.clone())
+        .and_then(|(_, cfg)| cfg.source_path())
+        .map(str::to_string)
     else {
         return Ok(());
     };
@@ -7669,7 +7716,11 @@ fn validate_scxml_invoke_target_exclusivity(
             if peer_name.as_str() == resolved_name {
                 continue;
             }
-            let peer_scxml_path = deploy_dir.join(&peer_cfg.source);
+            // A child session names no document of its own to read.
+            let Some(peer_source) = peer_cfg.source_path() else {
+                continue;
+            };
+            let peer_scxml_path = deploy_dir.join(peer_source);
             let content = match std::fs::read_to_string(&peer_scxml_path) {
                 Ok(c) => c,
                 Err(_) => continue,
@@ -7822,7 +7873,11 @@ fn collect_scxml_remote_peers(
             if peer_name.as_str() == resolved_name {
                 continue; // skip self — outbound list already covers it
             }
-            let peer_scxml_path = deploy_dir.join(&peer_cfg.source);
+            // A child session names no document of its own to read.
+            let Some(peer_source) = peer_cfg.source_path() else {
+                continue;
+            };
+            let peer_scxml_path = deploy_dir.join(peer_source);
             let content = match std::fs::read_to_string(&peer_scxml_path) {
                 Ok(c) => c,
                 Err(_) => continue, // unreadable — fail-silent (see header)

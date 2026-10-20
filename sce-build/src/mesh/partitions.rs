@@ -511,8 +511,11 @@ pub fn load_partition_machine_models(
     let mut machine_to_source: BTreeMap<String, String> = BTreeMap::new();
     for device in cfg.topology.values() {
         for (name, mc) in &device.machines {
-            if listed.contains(name) {
-                machine_to_source.insert(name.clone(), mc.source.clone());
+            // A child session is never listed: the deploy parse refuses a
+            // partition that places one, so every listed machine names a
+            // document of its own.
+            if let (true, Some(source)) = (listed.contains(name), mc.source_path()) {
+                machine_to_source.insert(name.clone(), source.to_string());
             }
         }
     }

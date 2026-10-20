@@ -338,6 +338,38 @@ impl LanguageVerdict {
     }
 }
 
+/// One `<invoke type="scxml">` site whose child needs a Mesh router of its
+/// own (SCE_MESH.md, Child Sessions in Mesh; docs/adr/0043): what
+/// [`Manifest::child_mesh_routers`] lists.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ChildMeshRouterSite {
+    /// The `id` of the `<invoke>`: what the factory is asked with.
+    pub invoke: String,
+    /// The stem of each document the site may start, as the factory is
+    /// asked with it: the `src`'s, empty for a child written inline, each
+    /// candidate's for a hybrid `<invoke>`.
+    pub documents: Vec<String>,
+    /// The child's own sites whose child needs a router, which the router
+    /// answered for this child must answer in turn. Omitted when none.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub children: Vec<ChildMeshRouterSite>,
+}
+
+impl ChildMeshRouterSite {
+    /// The sites of `sites` whose child needs a router, each with its own.
+    pub fn of(sites: &[crate::model::ChildMeshSite]) -> Vec<Self> {
+        sites
+            .iter()
+            .filter(|site| site.child.needs_router())
+            .map(|site| Self {
+                invoke: site.invoke_id.clone(),
+                documents: site.documents.clone(),
+                children: Self::of(&site.child.sites),
+            })
+            .collect()
+    }
+}
+
 /// The manifest itself.
 ///
 /// Field order is the wire order. Optional fields are omitted rather
@@ -437,6 +469,17 @@ pub struct Manifest<'a> {
     /// spans backends has no single answer and reports none.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub needs_mesh_router: Option<bool>,
+    /// The `<invoke type="scxml">` sites whose child needs a Mesh router of
+    /// its own (SCE_MESH.md, Child Sessions in Mesh): it sends to a peer or
+    /// requests one, or starts a child that does. The machine asks its host's
+    /// factory of children's routers for one each time such a site starts a
+    /// child, so a host learns from the build which children it must answer
+    /// for, and what each child's router must answer for the child's own
+    /// sites ([`ChildMeshRouterSite::children`]). Present on a run with one
+    /// target language whose one statechart has such a site; omitted (not
+    /// `[]`) otherwise.
+    #[serde(skip_serializing_if = "<[_]>::is_empty")]
+    pub child_mesh_routers: &'a [ChildMeshRouterSite],
     /// Whether this machine sends to its parent session
     /// (`<send target="#_parent">`), and so can only run as a child.
     ///
@@ -623,6 +666,41 @@ mod tests {
     use crate::mesh::deploy::StaticAnalyzer;
 
     const SCHEMA_BYTES: &str = include_str!("../../schemas/sce-manifest.v1.schema.json");
+
+    /// A site is listed when its child talks or starts one that does, and the
+    /// child's own such sites ride under it; a site whose child asks nothing
+    /// of Mesh is left out.
+    #[test]
+    fn the_sites_whose_child_needs_a_router_are_listed_with_their_own() {
+        use crate::model::{ChildMesh, ChildMeshSite};
+        let site = |id: &str, talks: bool, sites: Vec<ChildMeshSite>| ChildMeshSite {
+            invoke_id: id.to_string(),
+            literal_id: true,
+            documents: vec![format!("{id}_doc")],
+            child: ChildMesh { talks, sites },
+        };
+        let sites = vec![
+            site("quiet", false, vec![site("still", false, Vec::new())]),
+            site("list", false, vec![site("inner", true, Vec::new())]),
+            site("peer", true, Vec::new()),
+        ];
+        let listed = ChildMeshRouterSite::of(&sites);
+        let ids: Vec<&str> = listed.iter().map(|s| s.invoke.as_str()).collect();
+        assert_eq!(ids, vec!["list", "peer"]);
+        assert_eq!(listed[0].documents, vec!["list_doc".to_string()]);
+        assert_eq!(listed[0].children.len(), 1);
+        assert_eq!(listed[0].children[0].invoke, "inner");
+        assert!(listed[1].children.is_empty());
+        let json = serde_json::to_value(&listed).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!([
+                {"invoke": "list", "documents": ["list_doc"],
+                 "children": [{"invoke": "inner", "documents": ["inner_doc"]}]},
+                {"invoke": "peer", "documents": ["peer_doc"]}
+            ])
+        );
+    }
 
     fn schema() -> serde_json::Value {
         serde_json::from_str(SCHEMA_BYTES).expect("manifest schema is valid JSON")
@@ -856,6 +934,7 @@ mod tests {
                 needs_event_scheduler: false,
                 needs_host_processor: false,
                 needs_mesh_router: None,
+                child_mesh_routers: &[],
                 needs_parent: None,
                 parent_sends: &[],
                 computed_routes: &[],
@@ -920,6 +999,7 @@ mod tests {
             needs_event_scheduler: false,
             needs_host_processor: false,
             needs_mesh_router: None,
+            child_mesh_routers: &[],
             needs_parent: None,
             parent_sends: &[],
             computed_routes: &[],
@@ -957,6 +1037,7 @@ mod tests {
             needs_event_scheduler: false,
             needs_host_processor: false,
             needs_mesh_router: None,
+            child_mesh_routers: &[],
             needs_parent: None,
             parent_sends: &[],
             computed_routes: &[],
@@ -1000,6 +1081,7 @@ mod tests {
             needs_event_scheduler: false,
             needs_host_processor: false,
             needs_mesh_router: None,
+            child_mesh_routers: &[],
             needs_parent: None,
             parent_sends: &[],
             computed_routes: &[],
@@ -1064,6 +1146,7 @@ mod tests {
             needs_event_scheduler: false,
             needs_host_processor: true,
             needs_mesh_router: None,
+            child_mesh_routers: &[],
             needs_parent: None,
             parent_sends: &[],
             computed_routes: &[],
@@ -1113,6 +1196,7 @@ mod tests {
             needs_event_scheduler: false,
             needs_host_processor: false,
             needs_mesh_router: None,
+            child_mesh_routers: &[],
             needs_parent: None,
             parent_sends: &[],
             computed_routes: &[],
@@ -1170,6 +1254,7 @@ mod tests {
             needs_event_scheduler: false,
             needs_host_processor: false,
             needs_mesh_router: None,
+            child_mesh_routers: &[],
             needs_parent: None,
             parent_sends: &[],
             computed_routes: &[],
@@ -1211,6 +1296,7 @@ mod tests {
             needs_event_scheduler: false,
             needs_host_processor: false,
             needs_mesh_router: None,
+            child_mesh_routers: &[],
             needs_parent: None,
             parent_sends: &[],
             computed_routes: &[],
@@ -1259,6 +1345,7 @@ mod tests {
             // build just arranged not to emit.
             needs_host_processor: false,
             needs_mesh_router: None,
+            child_mesh_routers: &[],
             needs_parent: None,
             parent_sends: &[],
             computed_routes: &[],
@@ -1309,6 +1396,7 @@ mod tests {
             needs_event_scheduler: false,
             needs_host_processor: false,
             needs_mesh_router: None,
+            child_mesh_routers: &[],
             needs_parent: None,
             parent_sends: &[],
             computed_routes: &[],

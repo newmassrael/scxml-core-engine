@@ -3509,8 +3509,11 @@ pub fn load_receiver_models(
                 receiver: receiver.clone(),
             })?;
 
-        let rx_model = parse_machine_source(&receiver, machine_cfg, deploy_dir)?;
-        out.push((receiver, rx_model));
+        // A receiver that is a child session has no document of its own to
+        // read; its coverage is not judged (see `parse_machine_source`).
+        if let Some(rx_model) = parse_machine_source(&receiver, machine_cfg, deploy_dir)? {
+            out.push((receiver, rx_model));
+        }
     }
 
     Ok(out)
@@ -3528,17 +3531,27 @@ fn parse_machine_source(
     machine: &str,
     machine_cfg: &crate::mesh::deploy::MachineConfig,
     deploy_dir: &Path,
-) -> Result<SCXMLModel, TopologyError> {
+) -> Result<Option<SCXMLModel>, TopologyError> {
+    // A child session (`invoked_by:`) names no document of its own: it runs
+    // the one its parent's `<invoke>` names, which is read where the parent
+    // is built (SCE_MESH.md, "Child Sessions in Mesh"). No `<invoke>` names a
+    // child as a remote peer, so the cycle walk has nothing to read; the
+    // event coverage of a send to a child is not judged here, because the
+    // child's document is reached through its parent's, which this loader
+    // does not read.
+    let Some(source) = machine_cfg.source_path() else {
+        return Ok(None);
+    };
     // Portability: absolute source paths break deploy descriptors across
     // checkouts and build roots. Reject early with a distinct diagnostic.
-    if Path::new(&machine_cfg.source).is_absolute() {
+    if Path::new(source).is_absolute() {
         return Err(TopologyError::AbsoluteSourcePath {
             machine: machine.to_string(),
-            path: machine_cfg.source.clone(),
+            path: source.to_string(),
         });
     }
 
-    let source_path = deploy_dir.join(&machine_cfg.source);
+    let source_path = deploy_dir.join(source);
     let content =
         std::fs::read_to_string(&source_path).map_err(|e| TopologyError::ReceiverSourceRead {
             machine: machine.to_string(),
@@ -3547,27 +3560,31 @@ fn parse_machine_source(
         })?;
 
     let mut parser = crate::parser::SCXMLParser::new();
-    parser.parse_string(&content, machine).map_err(|e| {
-        // Flatten the typed parser error into the mesh-topology
-        // diagnostic channel; adding a typed `source: ForgeError`
-        // field here would require a mesh::error shape change and
-        // is out of scope for the parser-typing refactor. The
-        // machine + path context already tells operators which
-        // source file to inspect.
-        TopologyError::ReceiverSourceParse {
-            machine: machine.to_string(),
-            path: source_path.display().to_string(),
-            reason: e.to_string(),
-        }
-    })
+    parser
+        .parse_string(&content, machine)
+        .map(Some)
+        .map_err(|e| {
+            // Flatten the typed parser error into the mesh-topology
+            // diagnostic channel; adding a typed `source: ForgeError`
+            // field here would require a mesh::error shape change and
+            // is out of scope for the parser-typing refactor. The
+            // machine + path context already tells operators which
+            // source file to inspect.
+            TopologyError::ReceiverSourceParse {
+                machine: machine.to_string(),
+                path: source_path.display().to_string(),
+                reason: e.to_string(),
+            }
+        })
 }
 
-/// Load a machine's model by deploy.yaml name.
+/// Load a machine's model by deploy.yaml name; `None` for a child session,
+/// which has no document of its own to load.
 fn load_machine_model(
     machine: &str,
     deploy: &DeployConfig,
     deploy_dir: &Path,
-) -> Result<SCXMLModel, TopologyError> {
+) -> Result<Option<SCXMLModel>, TopologyError> {
     let machine_cfg = deploy
         .topology
         .values()
@@ -3675,6 +3692,74 @@ pub fn check_sender_event_coverage(
     });
 
     findings
+}
+
+// ── Child sessions (SCE_MESH.md, Child Sessions in Mesh) ────────
+
+/// The `<invoke>` sites of `machine`'s document checked against the child
+/// sessions the deploy names (docs/adr/0043, section 1), and then the sites of
+/// each named child's document under the child's own name, down to the last
+/// session that talks.
+///
+/// `sites` are the document's own ([`crate::host_processor_analyzer::child_mesh_sites`]);
+/// a child's are what the parse read from the child's document. Refused, in
+/// this order for each machine:
+///
+/// - an entry that names `machine` and an `<invoke>` its document does not
+///   have ([`DeployError::ChildUnknownInvoke`], offering the document's ids);
+/// - an entry that names a site whose id is not written
+///   ([`DeployError::ChildGeneratedId`]);
+/// - a site whose child talks to a peer, or starts one that does, that no
+///   entry names ([`DeployError::ChildUndeclared`]).
+///
+/// A site that no entry names and whose child does not talk is a local child
+/// as before, and one that only receives may be named: being sent to is
+/// taking part.
+///
+/// [`DeployError::ChildUnknownInvoke`]: crate::mesh::error::DeployError::ChildUnknownInvoke
+/// [`DeployError::ChildGeneratedId`]: crate::mesh::error::DeployError::ChildGeneratedId
+/// [`DeployError::ChildUndeclared`]: crate::mesh::error::DeployError::ChildUndeclared
+pub fn validate_child_session_sites(
+    deploy: &DeployConfig,
+    machine: &str,
+    sites: &[crate::model::ChildMeshSite],
+) -> Result<(), crate::mesh::error::DeployError> {
+    use crate::mesh::error::DeployError;
+    let named = deploy.children_of(machine);
+    for (child, invoke) in &named {
+        let Some(site) = sites.iter().find(|site| site.invoke_id == *invoke) else {
+            return Err(DeployError::ChildUnknownInvoke {
+                machine: (*child).to_string(),
+                parent: machine.to_string(),
+                invoke: (*invoke).to_string(),
+                candidates: sites
+                    .iter()
+                    .filter(|site| site.literal_id)
+                    .map(|site| site.invoke_id.clone())
+                    .collect(),
+            });
+        };
+        if !site.literal_id {
+            return Err(DeployError::ChildGeneratedId {
+                machine: (*child).to_string(),
+                parent: machine.to_string(),
+                invoke: (*invoke).to_string(),
+            });
+        }
+    }
+    for site in sites {
+        match named.iter().find(|(_, invoke)| *invoke == site.invoke_id) {
+            Some((child, _)) => validate_child_session_sites(deploy, child, &site.child.sites)?,
+            None if site.child.needs_router() => {
+                return Err(DeployError::ChildUndeclared {
+                    parent: machine.to_string(),
+                    invoke: site.invoke_id.clone(),
+                });
+            }
+            None => {}
+        }
+    }
+    Ok(())
 }
 
 // ── Circular dependency detection (SCE_MESH.md §mesh-7.7) ────────
@@ -3794,8 +3879,12 @@ pub fn detect_invoke_wait_cycles(
         if adjacency.contains_key(&machine) {
             continue;
         }
-        let model = load_machine_model(&machine, deploy, deploy_dir)?;
-        let edges = static_invoke_targets(&model, &machine, deploy);
+        // A child session is started by its parent, not invoked as a peer:
+        // it has no document of its own here and no edge out.
+        let edges = match load_machine_model(&machine, deploy, deploy_dir)? {
+            Some(model) => static_invoke_targets(&model, &machine, deploy),
+            None => BTreeSet::new(),
+        };
         for next in &edges {
             if !adjacency.contains_key(next) {
                 frontier.push(next.clone());
@@ -5834,5 +5923,166 @@ topology:
             }
             other => panic!("expected MachineLifetimeSubscriptionUnsupported, got {other:?}"),
         }
+    }
+
+    // ── Child sessions (SCE_MESH.md, Child Sessions in Mesh) ──
+
+    /// A planner whose `list` invoke starts an inline child that sends to
+    /// `#server`, and whose `idle` invoke starts one that sends to no peer.
+    /// With `nested`, the list child talks to nobody itself and starts a
+    /// grandchild, `inner`, that does.
+    fn planner(nested: bool) -> SCXMLModel {
+        let list_child = if nested {
+            r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="run">
+                 <state id="run">
+                   <invoke type="scxml" id="inner">
+                     <content>
+                       <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="go">
+                         <state id="go">
+                           <onentry><send target="#server" event="hello"/></onentry>
+                         </state>
+                       </scxml>
+                     </content>
+                   </invoke>
+                 </state>
+               </scxml>"##
+        } else {
+            r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="run">
+                 <state id="run">
+                   <onentry><send target="#server" event="hello"/></onentry>
+                 </state>
+               </scxml>"##
+        };
+        let document = format!(
+            r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="work" name="planner">
+                 <state id="work">
+                   <invoke type="scxml" id="list"><content>{list_child}</content></invoke>
+                   <invoke type="scxml" id="idle">
+                     <content>
+                       <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">
+                         <state id="s"/>
+                       </scxml>
+                     </content>
+                   </invoke>
+                 </state>
+               </scxml>"##
+        );
+        crate::parser::SCXMLParser::new()
+            .parse_string(&document, "planner")
+            .expect("the planner parses")
+    }
+
+    fn deploy_naming(children: &str) -> DeployConfig {
+        parse_deploy_str(&format!(
+            "version: \"1.0\"\ntopology:\n  phone:\n    machines:\n      planner: {{ source: planner.scxml }}\n{children}"
+        ))
+        .expect("the deploy parses")
+    }
+
+    #[test]
+    fn a_site_whose_child_talks_is_read_from_the_child() {
+        let sites = crate::host_processor_analyzer::child_mesh_sites(&planner(false));
+        let ids: Vec<&str> = sites.iter().map(|s| s.invoke_id.as_str()).collect();
+        assert_eq!(ids, vec!["list", "idle"]);
+        assert!(sites[0].literal_id);
+        assert_eq!(sites[0].documents, vec![String::new()]);
+        assert!(sites[0].child.talks);
+        assert!(sites[0].child.needs_router());
+        assert!(!sites[1].child.needs_router());
+    }
+
+    #[test]
+    fn a_talking_child_the_deploy_names_is_accepted() {
+        let deploy =
+            deploy_naming("      alice:\n        invoked_by: { machine: planner, invoke: list }\n");
+        let sites = crate::host_processor_analyzer::child_mesh_sites(&planner(false));
+        validate_child_session_sites(&deploy, "planner", &sites).expect("named");
+    }
+
+    #[test]
+    fn a_talking_child_the_deploy_does_not_name_is_refused() {
+        let deploy = deploy_naming("");
+        let sites = crate::host_processor_analyzer::child_mesh_sites(&planner(false));
+        match validate_child_session_sites(&deploy, "planner", &sites) {
+            Err(crate::mesh::error::DeployError::ChildUndeclared { parent, invoke }) => {
+                assert_eq!((parent.as_str(), invoke.as_str()), ("planner", "list"));
+            }
+            other => panic!("expected ChildUndeclared, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn an_entry_naming_an_invoke_the_parent_does_not_have_is_refused() {
+        let deploy =
+            deploy_naming("      alice:\n        invoked_by: { machine: planner, invoke: lst }\n");
+        let sites = crate::host_processor_analyzer::child_mesh_sites(&planner(false));
+        match validate_child_session_sites(&deploy, "planner", &sites) {
+            Err(crate::mesh::error::DeployError::ChildUnknownInvoke {
+                machine,
+                invoke,
+                candidates,
+                ..
+            }) => {
+                assert_eq!(machine, "alice");
+                assert_eq!(invoke, "lst");
+                assert_eq!(candidates, vec!["list".to_string(), "idle".to_string()]);
+            }
+            other => panic!("expected ChildUnknownInvoke, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn an_entry_naming_an_invoke_with_a_generated_id_is_refused() {
+        let deploy = deploy_naming(
+            "      alice:\n        invoked_by: { machine: planner, invoke: _invoke_0 }\n",
+        );
+        let sites = vec![crate::model::ChildMeshSite {
+            invoke_id: "_invoke_0".into(),
+            literal_id: false,
+            documents: vec![String::new()],
+            child: crate::model::ChildMesh {
+                talks: true,
+                sites: Vec::new(),
+            },
+        }];
+        match validate_child_session_sites(&deploy, "planner", &sites) {
+            Err(crate::mesh::error::DeployError::ChildGeneratedId {
+                machine, invoke, ..
+            }) => {
+                assert_eq!(machine, "alice");
+                assert_eq!(invoke, "_invoke_0");
+            }
+            other => panic!("expected ChildGeneratedId, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_child_that_starts_a_talking_grandchild_needs_a_name_and_so_does_the_grandchild() {
+        let sites = crate::host_processor_analyzer::child_mesh_sites(&planner(true));
+        assert!(!sites[0].child.talks);
+        assert!(sites[0].child.needs_router());
+
+        // The child is unnamed: refused at the planner's site.
+        match validate_child_session_sites(&deploy_naming(""), "planner", &sites) {
+            Err(crate::mesh::error::DeployError::ChildUndeclared { parent, invoke }) => {
+                assert_eq!((parent.as_str(), invoke.as_str()), ("planner", "list"));
+            }
+            other => panic!("expected ChildUndeclared at the planner, got {other:?}"),
+        }
+        // The child is named, the grandchild is not: refused at the child's.
+        let child_only =
+            deploy_naming("      alice:\n        invoked_by: { machine: planner, invoke: list }\n");
+        match validate_child_session_sites(&child_only, "planner", &sites) {
+            Err(crate::mesh::error::DeployError::ChildUndeclared { parent, invoke }) => {
+                assert_eq!((parent.as_str(), invoke.as_str()), ("alice", "inner"));
+            }
+            other => panic!("expected ChildUndeclared at the child, got {other:?}"),
+        }
+        // Both are named.
+        let both = deploy_naming(
+            "      alice:\n        invoked_by: { machine: planner, invoke: list }\n      \
+             inner:\n        invoked_by: { machine: alice, invoke: inner }\n",
+        );
+        validate_child_session_sites(&both, "planner", &sites).expect("both named");
     }
 }

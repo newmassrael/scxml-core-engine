@@ -2786,7 +2786,21 @@ pub struct MachineConfig {
     /// is trusted. Absolute paths are rejected as a portability signal,
     /// not a security gate. `..` is permitted for legitimate cross-directory
     /// layouts (e.g., `../shared/motor.scxml`).
-    pub source: String,
+    ///
+    /// Exactly one of `source` and [`Self::invoked_by`] is written
+    /// ([`validate_child_entries`]): a machine the host starts names its
+    /// document, and a child session names the `<invoke>` that starts it,
+    /// whose document is the child's. Read it through
+    /// [`Self::source_path`].
+    #[serde(default)]
+    pub source: Option<String>,
+    /// The `<invoke>` that starts this machine as a child session of another
+    /// machine of the deployment (SCE_MESH.md, "Child Sessions in Mesh";
+    /// docs/adr/0043): the parent, and the literal id of its `<invoke>`.
+    /// The entry's key is the child's name on the network, as for any
+    /// machine. Absent for a machine the host starts.
+    #[serde(default)]
+    pub invoked_by: Option<InvokedBy>,
     /// Target ID → transport binding. Keys are SCXML `<send target="...">`
     /// values (e.g. "#motor"), typed as `TargetId` so the domain model stays
     /// stringly-free past the deploy.yaml boundary.
@@ -3062,6 +3076,29 @@ impl MachineConfig {
             .and_then(|pd| StageCopyPolicy::from_wire_str(&pd.stage_copy_policy))
             .unwrap_or(StageCopyPolicy::Warn)
     }
+
+    /// The document a machine the host starts runs, as `source:` names it;
+    /// `None` for a child session ([`Self::invoked_by`]), whose document is
+    /// the one its parent's `<invoke>` names and is read from the parent.
+    pub fn source_path(&self) -> Option<&str> {
+        self.source.as_deref()
+    }
+}
+
+/// `invoked_by:` of a machine entry: the site that starts the machine as a
+/// child session (SCE_MESH.md, "Child Sessions in Mesh"; docs/adr/0043).
+///
+/// One site is one machine. A document invoked from two sites is two
+/// machines, and a hybrid `<invoke>` is one machine whatever candidate its
+/// value names. `machine` may itself be a child, which is how a grandchild is
+/// named.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct InvokedBy {
+    /// The parent: a machine of the same device, by its deploy name.
+    pub machine: String,
+    /// The literal `id` of the parent's `<invoke>`.
+    pub invoke: String,
 }
 
 /// Custom deserializer for [`MachineConfig::someip_service_id`].
@@ -3674,6 +3711,7 @@ pub fn parse_deploy_str(content: &str) -> Result<DeployConfig, DeployError> {
     }
 
     validate_machine_name_uniqueness(&cfg)?;
+    validate_child_entries(&cfg)?;
     validate_ordering_timings(&cfg)?;
     validate_liveliness(&cfg)?;
     validate_server_response_deadline(&cfg)?;
@@ -6685,6 +6723,145 @@ fn validate_machine_name_uniqueness(cfg: &DeployConfig) -> Result<(), DeployErro
     Ok(())
 }
 
+/// The machine entries that are child sessions (SCE_MESH.md, "Child Sessions
+/// in Mesh"; docs/adr/0043), checked against the deploy alone: each entry is a
+/// machine the host starts (`source:`) or a child session (`invoked_by:`),
+/// and not both; a child declares none of its parent process's sections; its
+/// parent is a machine of its device whose chain of parents ends at a
+/// machine the host starts; no two entries name one site; its parent is not
+/// a server pool; and no partition places it.
+///
+/// What needs the parent's document (that the named `<invoke>` exists and has
+/// a literal id, and that every talking child is named) is checked where the
+/// parent is built, by
+/// [`crate::mesh::topology::validate_child_session_sites`].
+///
+/// Walks entries in name order, so the refusal reported first is the same on
+/// every run though `topology` is a `HashMap`. Assumes
+/// [`validate_machine_name_uniqueness`] has run: a name is one entry.
+fn validate_child_entries(cfg: &DeployConfig) -> Result<(), DeployError> {
+    use crate::mesh::error::{ChildEntryFault, ParentChain};
+    let mut entries: BTreeMap<&str, (&str, &MachineConfig)> = BTreeMap::new();
+    for (device_name, device) in &cfg.topology {
+        for (name, machine) in &device.machines {
+            entries.insert(name.as_str(), (device_name.as_str(), machine));
+        }
+    }
+
+    for (name, (_, machine)) in &entries {
+        let fault = match (&machine.source, &machine.invoked_by) {
+            (None, None) => Some(ChildEntryFault::NoOrigin),
+            (Some(_), Some(_)) => Some(ChildEntryFault::BothOrigins),
+            (Some(_), None) => None,
+            (None, Some(_)) => [
+                ("platform", machine.platform.is_some()),
+                ("scheduler", machine.scheduler.is_some()),
+                ("memory", machine.memory.is_some()),
+            ]
+            .into_iter()
+            .find(|(_, declared)| *declared)
+            .map(|(section, _)| ChildEntryFault::ProcessSection(section)),
+        };
+        if let Some(fault) = fault {
+            return Err(DeployError::ChildEntryShape {
+                machine: (*name).to_string(),
+                fault,
+            });
+        }
+    }
+
+    for (name, (device, machine)) in &entries {
+        let Some(invoked_by) = &machine.invoked_by else {
+            continue;
+        };
+        // The machines this child could name: those of its own device.
+        let candidates = || -> Vec<String> {
+            entries
+                .iter()
+                .filter(|(other, (other_device, _))| other != &name && other_device == device)
+                .map(|(other, _)| (*other).to_string())
+                .collect()
+        };
+        let parent_on_device = entries
+            .get(invoked_by.machine.as_str())
+            .is_some_and(|(parent_device, _)| parent_device == device);
+        if !parent_on_device {
+            return Err(DeployError::ChildUnknownParent {
+                machine: (*name).to_string(),
+                parent: invoked_by.machine.clone(),
+                chain: ParentChain::default(),
+                candidates: candidates(),
+            });
+        }
+        // Up the chain of parents until a machine the host starts. A parent
+        // that is no machine of the device is its own entry's refusal.
+        let mut chain = vec![(*name).to_string()];
+        let mut next = Some(invoked_by);
+        while let Some(step) = next {
+            let looped = chain.contains(&step.machine);
+            chain.push(step.machine.clone());
+            if looped {
+                return Err(DeployError::ChildUnknownParent {
+                    machine: (*name).to_string(),
+                    parent: invoked_by.machine.clone(),
+                    chain: ParentChain(chain),
+                    candidates: candidates(),
+                });
+            }
+            next = entries
+                .get(step.machine.as_str())
+                .and_then(|(_, parent)| parent.invoked_by.as_ref());
+        }
+    }
+
+    let mut sites: BTreeMap<(&str, &str), &str> = BTreeMap::new();
+    for (name, (_, machine)) in &entries {
+        let Some(invoked_by) = &machine.invoked_by else {
+            continue;
+        };
+        let site = (invoked_by.machine.as_str(), invoked_by.invoke.as_str());
+        if let Some(first) = sites.insert(site, *name) {
+            return Err(DeployError::ChildDuplicateSite {
+                first: first.to_string(),
+                second: (*name).to_string(),
+                parent: invoked_by.machine.clone(),
+                invoke: invoked_by.invoke.clone(),
+            });
+        }
+        let pooled = entries
+            .get(invoked_by.machine.as_str())
+            .and_then(|(_, parent)| parent.server.as_ref())
+            .is_some_and(|server| server.instances.is_some());
+        if pooled {
+            return Err(DeployError::ChildPooledParent {
+                machine: (*name).to_string(),
+                parent: invoked_by.machine.clone(),
+            });
+        }
+    }
+
+    if let Some(partitions) = &cfg.partitions {
+        for (partition, decl) in partitions.iter() {
+            let listed = decl
+                .machines
+                .iter()
+                .find(|listed| sites.values().any(|child| child == &listed.as_str()));
+            let placed = decl.contains.invokes.iter().find_map(|unit| {
+                sites
+                    .get(&(unit.machine.as_str(), unit.invoke.as_str()))
+                    .map(|child| (*child).to_string())
+            });
+            if let Some(machine) = listed.cloned().or(placed) {
+                return Err(DeployError::ChildPartitioned {
+                    machine,
+                    partition: partition.clone(),
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
 /// SCE Mesh RFC F.X-1 — hybrid (counter + optional author-pin) §mesh-9.6 SOMEIP
 /// scxml-invoke service ID assignment. Returns the assignment map for use
 /// by codegen; errors are converted to [`DeployError`] variants on the way
@@ -7048,6 +7225,26 @@ impl DeployConfig {
             .map(|(name, _)| name.as_str())
     }
 
+    /// The child sessions `parent` starts that the deploy names, as
+    /// `(child name, invoke id)` sorted by name (SCE_MESH.md, "Child Sessions
+    /// in Mesh").
+    pub fn children_of(&self, parent: &str) -> Vec<(&str, &str)> {
+        let mut children: Vec<(&str, &str)> = self
+            .topology
+            .values()
+            .flat_map(|device| device.machines.iter())
+            .filter_map(|(name, machine)| {
+                machine
+                    .invoked_by
+                    .as_ref()
+                    .filter(|site| site.machine == parent)
+                    .map(|site| (name.as_str(), site.invoke.as_str()))
+            })
+            .collect();
+        children.sort_unstable();
+        children
+    }
+
     /// One predicate for "which device owns this machine", so the name
     /// and the config can never come from different devices.
     fn device_entry_for_machine(&self, machine_name: &str) -> Option<(&String, &DeviceConfig)> {
@@ -7069,8 +7266,10 @@ impl DeployConfig {
         let source_suffix = format!("{file_stem}.scxml");
         for device in self.topology.values() {
             for (name, cfg) in &device.machines {
-                if cfg.source == source_suffix || cfg.source.ends_with(&format!("/{source_suffix}"))
-                {
+                let Some(source) = cfg.source_path() else {
+                    continue;
+                };
+                if source == source_suffix || source.ends_with(&format!("/{source_suffix}")) {
                     return Some(name.clone());
                 }
             }
@@ -7184,8 +7383,11 @@ pub fn validate_event_schemas_cross_machine(
     let mut machine_to_scxml: BTreeMap<&str, &crate::model::SCXMLModel> = BTreeMap::new();
     for device in cfg.topology.values() {
         for (machine_name, machine_cfg) in &device.machines {
-            let source_basename = Path::new(&machine_cfg.source)
-                .file_name()
+            // A child session's document is its parent's `<invoke>`'s, not a
+            // file of the build's set, so it has no basename to match here.
+            let source_basename = machine_cfg
+                .source_path()
+                .and_then(|source| Path::new(source).file_name())
                 .and_then(|s| s.to_str())
                 .unwrap_or("");
             if source_basename.is_empty() {
@@ -7428,7 +7630,8 @@ topology:
 "#;
         let cfg = parse_deploy_str(yaml).expect("parse");
         let motor = &cfg.topology["ecu1"].machines["motor"];
-        assert_eq!(motor.source, "motor.scxml");
+        assert_eq!(motor.source_path(), Some("motor.scxml"));
+        assert!(motor.invoked_by.is_none());
         assert!(motor.bindings.is_empty());
     }
 
@@ -7635,6 +7838,246 @@ topology:
         assert!(matches!(parse_deploy_str(yaml), Err(DeployError::Yaml(_))));
     }
 
+    // ── Child sessions (SCE_MESH.md, Child Sessions in Mesh) ──
+
+    /// A deploy with a planner the host starts and the list it invokes,
+    /// with `extra` appended under the list's entry and `rest` after the
+    /// topology.
+    fn with_child(extra: &str, rest: &str) -> String {
+        format!(
+            r#"
+version: "1.0"
+topology:
+  phone:
+    machines:
+      planner: {{ source: planner.scxml }}
+      alice:
+        invoked_by: {{ machine: planner, invoke: list }}
+        bindings:
+          "#server": {{ transport: zenoh_inbox }}
+{extra}
+{rest}"#
+        )
+    }
+
+    #[test]
+    fn a_child_session_is_a_machine_entry_with_no_source() {
+        let cfg = parse_deploy_str(&with_child("", "")).expect("parse");
+        let alice = &cfg.topology["phone"].machines["alice"];
+        assert_eq!(alice.source_path(), None);
+        assert_eq!(
+            alice.invoked_by,
+            Some(InvokedBy {
+                machine: "planner".into(),
+                invoke: "list".into(),
+            })
+        );
+        assert_eq!(cfg.children_of("planner"), vec![("alice", "list")]);
+        assert!(cfg.children_of("alice").is_empty());
+    }
+
+    #[test]
+    fn an_entry_with_neither_source_nor_invoked_by_is_refused() {
+        let yaml = r#"
+version: "1.0"
+topology:
+  phone:
+    machines:
+      planner: {}
+"#;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::ChildEntryShape { machine, fault }) => {
+                assert_eq!(machine, "planner");
+                assert_eq!(fault, crate::mesh::error::ChildEntryFault::NoOrigin);
+            }
+            other => panic!("expected ChildEntryShape, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn an_entry_with_both_source_and_invoked_by_is_refused() {
+        let yaml = with_child("        source: alice.scxml", "");
+        match parse_deploy_str(&yaml) {
+            Err(DeployError::ChildEntryShape { machine, fault }) => {
+                assert_eq!(machine, "alice");
+                assert_eq!(fault, crate::mesh::error::ChildEntryFault::BothOrigins);
+            }
+            other => panic!("expected ChildEntryShape, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_child_that_declares_its_parent_process_platform_is_refused() {
+        let yaml = with_child("        platform: { class: ap, os: linux }", "");
+        match parse_deploy_str(&yaml) {
+            Err(DeployError::ChildEntryShape { machine, fault }) => {
+                assert_eq!(machine, "alice");
+                assert_eq!(
+                    fault,
+                    crate::mesh::error::ChildEntryFault::ProcessSection("platform")
+                );
+            }
+            other => panic!("expected ChildEntryShape, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_child_whose_parent_is_no_machine_of_its_device_is_refused() {
+        let yaml = r#"
+version: "1.0"
+topology:
+  phone:
+    machines:
+      planner: { source: planner.scxml }
+      alice:
+        invoked_by: { machine: planer, invoke: list }
+  server:
+    machines:
+      hub: { source: hub.scxml }
+      bob:
+        invoked_by: { machine: hub, invoke: list }
+"#;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::ChildUnknownParent {
+                machine,
+                parent,
+                chain,
+                candidates,
+            }) => {
+                assert_eq!(machine, "alice");
+                assert_eq!(parent, "planer");
+                assert!(chain.0.is_empty());
+                // The machines of alice's own device, not the server's.
+                assert_eq!(candidates, vec!["planner".to_string()]);
+            }
+            other => panic!("expected ChildUnknownParent, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_child_whose_parent_is_on_another_device_is_refused() {
+        let yaml = r#"
+version: "1.0"
+topology:
+  phone:
+    machines:
+      planner: { source: planner.scxml }
+  server:
+    machines:
+      alice:
+        invoked_by: { machine: planner, invoke: list }
+"#;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::ChildUnknownParent {
+                machine, parent, ..
+            }) => {
+                assert_eq!(machine, "alice");
+                assert_eq!(parent, "planner");
+            }
+            other => panic!("expected ChildUnknownParent, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn children_whose_parents_name_each_other_are_refused() {
+        let yaml = r#"
+version: "1.0"
+topology:
+  phone:
+    machines:
+      alice:
+        invoked_by: { machine: bob, invoke: list }
+      bob:
+        invoked_by: { machine: alice, invoke: list }
+"#;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::ChildUnknownParent {
+                machine,
+                parent,
+                chain,
+                ..
+            }) => {
+                assert_eq!(machine, "alice");
+                assert_eq!(parent, "bob");
+                assert_eq!(chain.0, vec!["alice", "bob", "alice"]);
+            }
+            other => panic!("expected ChildUnknownParent, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_grandchild_names_a_child_as_its_parent() {
+        let yaml = with_child(
+            "      inner:\n        invoked_by: { machine: alice, invoke: nested }",
+            "",
+        );
+        let cfg = parse_deploy_str(&yaml).expect("parse");
+        assert_eq!(cfg.children_of("alice"), vec![("inner", "nested")]);
+    }
+
+    #[test]
+    fn two_entries_for_one_site_are_refused() {
+        let yaml = with_child(
+            "      bob:\n        invoked_by: { machine: planner, invoke: list }",
+            "",
+        );
+        match parse_deploy_str(&yaml) {
+            Err(DeployError::ChildDuplicateSite {
+                first,
+                second,
+                parent,
+                invoke,
+            }) => {
+                assert_eq!((first.as_str(), second.as_str()), ("alice", "bob"));
+                assert_eq!((parent.as_str(), invoke.as_str()), ("planner", "list"));
+            }
+            other => panic!("expected ChildDuplicateSite, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_child_of_a_server_pool_is_refused() {
+        let yaml = r#"
+version: "1.0"
+topology:
+  server:
+    machines:
+      hub:
+        source: hub.scxml
+        server: { transport: someip, service: hub, instances: [1, 2] }
+      list:
+        invoked_by: { machine: hub, invoke: list }
+"#;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::ChildPooledParent { machine, parent }) => {
+                assert_eq!(machine, "list");
+                assert_eq!(parent, "hub");
+            }
+            other => panic!("expected ChildPooledParent, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_partition_that_places_a_child_is_refused() {
+        let yaml = with_child(
+            "",
+            r#"partitions:
+  worker:
+    machines: [planner]
+    contains:
+      invokes:
+        - { machine: planner, invoke: list }
+"#,
+        );
+        match parse_deploy_str(&yaml) {
+            Err(DeployError::ChildPartitioned { machine, partition }) => {
+                assert_eq!(machine, "alice");
+                assert_eq!(partition, "worker");
+            }
+            other => panic!("expected ChildPartitioned, got {other:?}"),
+        }
+    }
+
     // ── Machine name uniqueness ──────────────────────────────
 
     #[test]
@@ -7704,7 +8147,7 @@ topology:
         let cfg = parse_deploy_str(yaml).expect("parse");
         let ecu1 = &cfg.topology["ecu1"];
         assert_eq!(ecu1.machines.len(), 1);
-        assert_eq!(ecu1.machines["brake"].source, "b.scxml");
+        assert_eq!(ecu1.machines["brake"].source_path(), Some("b.scxml"));
     }
 
     #[test]

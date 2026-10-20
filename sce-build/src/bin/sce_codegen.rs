@@ -965,6 +965,10 @@ struct GenerateReport {
     /// the manifest qualifies it by the run's one target language to answer
     /// whether the host must register a Mesh router.
     talks_to_a_mesh_peer: bool,
+    /// The `<invoke type="scxml">` sites of the document whose child needs a
+    /// Mesh router of its own — see `Manifest::child_mesh_routers`. Set with
+    /// [`Self::talks_to_a_mesh_peer`], from the same model.
+    child_mesh_routers: Vec<sce_build::manifest::ChildMeshRouterSite>,
     /// Every `<send target="#_parent">` of the ONE statechart this run
     /// read; `None` when the run is not one statechart document (a forge
     /// kind, or a document set, whose answer is not a union — see
@@ -1121,6 +1125,13 @@ fn build_manifest<'a>(
             report.talks_to_a_mesh_peer
                 && sce_build::host_processor_analyzer::routes_mesh_through_host(language)
         }),
+        // Every backend's runtime asks its host's factory when a child that
+        // needs a router starts, so the answer does not depend on which; a
+        // run with no single target reports none, as above.
+        child_mesh_routers: match target {
+            Some(_) => report.child_mesh_routers.as_slice(),
+            None => &[],
+        },
         needs_parent: report.parent_sends.as_ref().map(|sends| !sends.is_empty()),
         parent_sends: report.parent_sends.as_deref().unwrap_or(&[]),
         computed_routes: report.computed_routes.as_deref().unwrap_or(&[]),
@@ -5189,6 +5200,9 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
             report.needs_host_processor = Some(!model.host_processor_causes.is_empty());
             report.talks_to_a_mesh_peer =
                 sce_build::host_processor_analyzer::talks_to_a_mesh_peer(&model);
+            report.child_mesh_routers = sce_build::manifest::ChildMeshRouterSite::of(
+                &sce_build::host_processor_analyzer::child_mesh_sites(&model),
+            );
             report.host_processor_causes = model.host_processor_cause_records();
             report.host_duties = sce_build::forge::native_action::host_duty_records(&model);
             report
@@ -6335,6 +6349,9 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
         report.needs_host_processor = Some(!model.host_processor_causes.is_empty());
         report.talks_to_a_mesh_peer =
             sce_build::host_processor_analyzer::talks_to_a_mesh_peer(&model);
+        report.child_mesh_routers = sce_build::manifest::ChildMeshRouterSite::of(
+            &sce_build::host_processor_analyzer::child_mesh_sites(&model),
+        );
         report.host_processor_causes = model.host_processor_cause_records();
         report.host_duties = sce_build::forge::native_action::host_duty_records(&model);
         report

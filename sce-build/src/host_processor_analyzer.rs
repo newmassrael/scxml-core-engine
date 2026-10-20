@@ -750,6 +750,66 @@ pub fn sends_to_a_mesh_peer(model: &SCXMLModel) -> bool {
     any_action(model, &mut is_static_mesh_send)
 }
 
+/// What a session running `model` asks of Mesh: whether the document talks
+/// to a peer itself, and what each of its `<invoke type="scxml">` sites starts
+/// (SCE_MESH.md, "Child Sessions in Mesh").
+pub fn child_mesh(model: &SCXMLModel) -> crate::model::ChildMesh {
+    crate::model::ChildMesh {
+        talks: talks_to_a_mesh_peer(model),
+        sites: child_mesh_sites(model),
+    }
+}
+
+/// Every `<invoke type="scxml">` of `model`, static or hybrid, in document
+/// order, with what its child asks of Mesh as the parse read it from the
+/// child's document: over every candidate for a hybrid `<invoke>`, since the
+/// build cannot know which the value will name.
+///
+/// A site whose child the build could not read asks nothing: the build has
+/// no document to read a peer from, and the child is held by its own run.
+pub fn child_mesh_sites(model: &SCXMLModel) -> Vec<crate::model::ChildMeshSite> {
+    let mut states: Vec<&State> = model.states.values().collect();
+    states.sort_by_key(|state| state.document_order);
+    let mut sites = Vec::new();
+    for state in states {
+        for invoke in &state.invokes {
+            let (common, documents, child) = match invoke {
+                Invoke::Scxml(info) => {
+                    // A child written inline is named by no document: its
+                    // `src` is the `#<synth>` reference the parse rewrote it
+                    // to, and its document stem is empty.
+                    let document = if info.inline_child.is_some() {
+                        String::new()
+                    } else {
+                        info.common.child_name.clone()
+                    };
+                    (&info.common, vec![document], info.common.child_mesh.clone())
+                }
+                Invoke::Hybrid(info) => {
+                    let mut child = info.common.child_mesh.clone();
+                    for candidate in &info.candidates {
+                        child.merge(&candidate.child_mesh);
+                    }
+                    let documents = info
+                        .candidates
+                        .iter()
+                        .map(|candidate| candidate.stem.clone())
+                        .collect();
+                    (&info.common, documents, child)
+                }
+                Invoke::MeshRpc(_) | Invoke::Unsupported(_) => continue,
+            };
+            sites.push(crate::model::ChildMeshSite {
+                invoke_id: common.base.invoke_id.clone(),
+                literal_id: !common.base.id_generated && common.base.idlocation.is_empty(),
+                documents,
+                child,
+            });
+        }
+    }
+    sites
+}
+
 /// `model` as `language` renders it: on a backend whose Mesh router is a host
 /// processor, the Mesh constructs become the host-served forms every backend
 /// already carries — [`lower_mesh_sends`] for `<send target="#peer">` and

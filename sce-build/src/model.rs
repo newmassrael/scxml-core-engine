@@ -1924,6 +1924,82 @@ pub struct InvokeSessionCommon {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     #[cfg_attr(test, schemars(skip))]
     pub child_host_type: String,
+    /// Codegen-internal: what the child asks of Mesh, read from the child's
+    /// document when this build read it (SCE_MESH.md, "Child Sessions in
+    /// Mesh"): whether it sends to a peer or requests one, and what its own
+    /// invokes start. A deploy refuses a talking child under a deployed machine
+    /// that names no machine for it, and the manifest reports the sites whose
+    /// child a host must give a router. Not part of the IR.
+    #[serde(skip)]
+    #[cfg_attr(test, schemars(skip))]
+    pub child_mesh: ChildMesh,
+}
+
+/// What a child session asks of Mesh, as the build reads it from the child's
+/// document (SCE_MESH.md, "Child Sessions in Mesh"; docs/adr/0043).
+///
+/// A child that sends to a peer, or requests one, needs a router of its own,
+/// which its parent asks for when it starts it. So does a child that sends
+/// nothing but starts one that does: the router a grandchild is given is
+/// answered by its parent's router, so every session between the deployed
+/// machine and the talking one needs one.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ChildMesh {
+    /// The child's own document sends to a Mesh peer the build can see, or
+    /// requests one (`<invoke type="sce:mesh-rpc">`).
+    pub talks: bool,
+    /// The `<invoke type="scxml">` sites of the child's own document, in
+    /// document order, each with what it starts.
+    pub sites: Vec<ChildMeshSite>,
+}
+
+impl ChildMesh {
+    /// Whether the child needs a router: it talks, or a session it starts does.
+    pub fn needs_router(&self) -> bool {
+        self.talks || self.sites.iter().any(|site| site.child.needs_router())
+    }
+
+    /// The child of a site with several candidate documents, as one: it talks
+    /// when any candidate does, and holds the sites of every candidate, since
+    /// the build cannot know which the value will name.
+    pub fn merge(&mut self, other: &ChildMesh) {
+        self.talks |= other.talks;
+        for site in &other.sites {
+            match self
+                .sites
+                .iter_mut()
+                .find(|mine| mine.invoke_id == site.invoke_id)
+            {
+                Some(mine) => {
+                    mine.literal_id &= site.literal_id;
+                    for document in &site.documents {
+                        if !mine.documents.contains(document) {
+                            mine.documents.push(document.clone());
+                        }
+                    }
+                    mine.child.merge(&site.child);
+                }
+                None => self.sites.push(site.clone()),
+            }
+        }
+    }
+}
+
+/// One `<invoke type="scxml">` of a document, as Mesh sees it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ChildMeshSite {
+    /// The invoke's id, as written, or as generated when none was written.
+    pub invoke_id: String,
+    /// The id was written as a literal `id`: it was not generated, and the
+    /// invoke has no `idlocation`. Only such an id names one site on every
+    /// start, which is what a deploy names a child machine by.
+    pub literal_id: bool,
+    /// The stem of each document the site may start, in the order the
+    /// document gives them: the `src`'s for a static child, empty for a child
+    /// written inline, each candidate's for a hybrid `<invoke>`.
+    pub documents: Vec<String>,
+    /// What the child asks of Mesh, over every document the site may start.
+    pub child: ChildMesh,
 }
 
 impl std::ops::Deref for InvokeSessionCommon {
@@ -2444,6 +2520,12 @@ pub struct InvokeCandidate {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[cfg_attr(test, schemars(skip))]
     pub unkept: Vec<Param>,
+    /// Codegen-internal: what the candidate asks of Mesh —
+    /// [`InvokeSessionCommon::child_mesh`], per candidate. Outside the IR
+    /// contract.
+    #[serde(skip)]
+    #[cfg_attr(test, schemars(skip))]
+    pub child_mesh: ChildMesh,
 }
 
 /// §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: the stem of the document a path

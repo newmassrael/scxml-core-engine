@@ -679,6 +679,82 @@ impl std::fmt::Display for QueryableDocumentFault {
     }
 }
 
+/// What is wrong with the shape of a machine entry that is, or would be, a
+/// child session (SCE_MESH.md, "Child Sessions in Mesh").
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ChildEntryFault {
+    /// The entry has neither `source:` nor `invoked_by:`, so nothing says
+    /// what document it runs.
+    NoOrigin,
+    /// The entry has both: a machine is started by its host or by its
+    /// parent, not by both.
+    BothOrigins,
+    /// A child session carries a section (`platform:`, `scheduler:`,
+    /// `memory:`) that belongs to the process its parent runs in.
+    ProcessSection(&'static str),
+}
+
+impl ChildEntryFault {
+    /// The deploy key that repairs the entry when removed, if one does.
+    pub fn removable_field(&self) -> Option<&'static str> {
+        match self {
+            Self::ProcessSection(section) => Some(*section),
+            Self::NoOrigin | Self::BothOrigins => None,
+        }
+    }
+
+    /// A stable word for the fault, which a diagnostic's id is keyed on.
+    pub fn key(&self) -> &'static str {
+        match self {
+            Self::NoOrigin => "no-origin",
+            Self::BothOrigins => "both-origins",
+            Self::ProcessSection(section) => *section,
+        }
+    }
+}
+
+impl std::fmt::Display for ChildEntryFault {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NoOrigin => write!(
+                f,
+                "the entry has neither `source:` nor `invoked_by:`; a machine the host starts \
+                 names its document, and a child session names the `<invoke>` that starts it"
+            ),
+            Self::BothOrigins => write!(
+                f,
+                "the entry has both `source:` and `invoked_by:`; a machine is started by its \
+                 host or by its parent's `<invoke>`, which names its document, not by both"
+            ),
+            Self::ProcessSection(section) => write!(
+                f,
+                "a child session (`invoked_by:`) runs in its parent's process, so `{section}:` \
+                 is its parent's to declare; remove it from the child"
+            ),
+        }
+    }
+}
+
+/// The chain of parents a child session's `invoked_by` follows, when it comes
+/// back on itself instead of ending at a machine the host starts; empty when
+/// the parent named is no machine of the child's device.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ParentChain(pub Vec<String>);
+
+impl std::fmt::Display for ParentChain {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.0.is_empty() {
+            write!(f, "which is no machine of its device")
+        } else {
+            write!(
+                f,
+                "and its parents name each other: {}",
+                self.0.join(" -> ")
+            )
+        }
+    }
+}
+
 /// Errors from deploy.yaml deserialization.
 #[derive(Debug, thiserror::Error)]
 pub enum DeployError {
@@ -717,6 +793,105 @@ pub enum DeployError {
         machine: String,
         devices: Vec<String>,
     },
+
+    /// A machine entry is neither a machine the host starts nor a child
+    /// session, or is both, or a child session carries a section that
+    /// belongs to the process its parent runs in (SCE_MESH.md, "Child
+    /// Sessions in Mesh"; docs/adr/0043).
+    #[error("machine '{machine}': {fault}")]
+    ChildEntryShape {
+        machine: String,
+        fault: ChildEntryFault,
+    },
+
+    /// A child session's `invoked_by.machine` names no machine of its own
+    /// device, or a chain of parents that never reaches a machine the host
+    /// starts. `candidates` are the machines of the child's device it could
+    /// name instead, sorted.
+    #[error(
+        "machine '{machine}': `invoked_by.machine` names '{parent}', {chain}. A child session's \
+         parent is a machine of the same device, and its chain of parents ends at a machine \
+         with a `source:`."
+    )]
+    ChildUnknownParent {
+        machine: String,
+        parent: String,
+        /// The chain of parents that comes back on itself, in order from the
+        /// child; empty when `parent` is simply not a machine of the device.
+        chain: ParentChain,
+        candidates: Vec<String>,
+    },
+
+    /// Two machine entries name one `<invoke>` site. One site is one machine:
+    /// a document invoked from two sites is two machines, and one site
+    /// started twice is the same machine to its peers.
+    #[error(
+        "machines '{first}' and '{second}' both name `invoked_by: {{machine: {parent}, invoke: \
+         {invoke}}}`. One `<invoke>` site is one machine; remove one of the two entries."
+    )]
+    ChildDuplicateSite {
+        first: String,
+        second: String,
+        parent: String,
+        invoke: String,
+    },
+
+    /// A child session's parent is a machine the host runs as a server pool
+    /// (`server.instances:`), whose sessions would share the child's one name.
+    #[error(
+        "machine '{machine}': its parent '{parent}' is a server pool (`server.instances:`), whose \
+         sessions would each start a child under the one name '{machine}'. A child of a pooled \
+         machine cannot be given a name of its own on the network."
+    )]
+    ChildPooledParent { machine: String, parent: String },
+
+    /// A child session is placed by a partition. A child runs in its parent's
+    /// process; one a partition places in another would need the worker to
+    /// carry its peer sends and its router, which it does not.
+    #[error(
+        "machine '{machine}' is a child session (`invoked_by:`), and partition '{partition}' \
+         places it. A child that talks to its peers runs in its parent's process; placing it in \
+         another partition is not supported."
+    )]
+    ChildPartitioned { machine: String, partition: String },
+
+    /// A child session's `invoked_by.invoke` names no `<invoke type="scxml">`
+    /// of its parent's document. `candidates` are the ids of the parent's
+    /// sites, in document order.
+    #[error(
+        "machine '{machine}': `invoked_by.invoke` names '{invoke}', and the document of \
+         '{parent}' has no `<invoke>` of type scxml with that id."
+    )]
+    ChildUnknownInvoke {
+        machine: String,
+        parent: String,
+        invoke: String,
+        candidates: Vec<String>,
+    },
+
+    /// A child session names an `<invoke>` whose id is not written: it has
+    /// an `idlocation`, or no `id` and so one the processor generates. Such
+    /// an id names a different invocation on every start and cannot name a
+    /// machine.
+    #[error(
+        "machine '{machine}': `invoked_by` names the `<invoke>` '{invoke}' of '{parent}', which \
+         has no literal `id`. Give the `<invoke>` an `id` and name it."
+    )]
+    ChildGeneratedId {
+        machine: String,
+        parent: String,
+        invoke: String,
+    },
+
+    /// A deployed machine starts a child that talks to its Mesh peers (or
+    /// starts one that does), and no machine entry names the site. The child
+    /// needs a name of its own on the network, which only the deploy gives.
+    #[error(
+        "machine '{parent}': the child its `<invoke>` '{invoke}' starts talks to Mesh peers, and \
+         no machine entry names it. Declare it under `machines:` with `invoked_by: {{machine: \
+         {parent}, invoke: {invoke}}}` and the bindings it sends over."
+    )]
+    ChildUndeclared { parent: String, invoke: String },
 
     /// A machine declared an `ordering:` section with a value that
     /// violates the per-machine ordering timing constraints
@@ -3287,6 +3462,114 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
                 k.extend(devices.iter().cloned());
                 k
             },
+        },
+        DeployError::ChildEntryShape { machine, fault } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployChildEntryShape,
+            stage: Stage::MeshDeploy,
+            actual: Some(machine.clone()),
+            expected: None,
+            // A section that belongs to the parent's process is removed from
+            // the child; an entry with neither origin or both has no field
+            // whose removal says which the author meant.
+            fix: fault.removable_field().map(|field| Fix::RemoveFields {
+                location: format!("topology.*.machines.{machine}"),
+                fields: vec![field.to_string()],
+            }),
+            key_fragments: vec![machine.clone(), fault.key().to_string()],
+        },
+        DeployError::ChildUnknownParent {
+            machine,
+            parent,
+            chain,
+            candidates,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployChildUnknownParent,
+            stage: Stage::MeshDeploy,
+            actual: Some(parent.clone()),
+            expected: None,
+            fix: (!candidates.is_empty()).then(|| Fix::ReplaceOneOf {
+                candidates: candidates.clone(),
+            }),
+            key_fragments: {
+                let mut k = vec![machine.clone(), parent.clone()];
+                k.extend(chain.0.iter().cloned());
+                k
+            },
+        },
+        DeployError::ChildDuplicateSite {
+            first,
+            second,
+            parent,
+            invoke,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployChildDuplicateSite,
+            stage: Stage::MeshDeploy,
+            actual: Some(second.clone()),
+            // Which of the two entries is the one meant is the author's to
+            // say; neither removal is a repair the build can choose.
+            expected: None,
+            fix: None,
+            key_fragments: vec![
+                first.clone(),
+                second.clone(),
+                parent.clone(),
+                invoke.clone(),
+            ],
+        },
+        DeployError::ChildPooledParent { machine, parent } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployChildPooledParent,
+            stage: Stage::MeshDeploy,
+            actual: Some(machine.clone()),
+            expected: None,
+            fix: None,
+            key_fragments: vec![machine.clone(), parent.clone()],
+        },
+        DeployError::ChildPartitioned { machine, partition } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployChildPartitioned,
+            stage: Stage::MeshDeploy,
+            actual: Some(machine.clone()),
+            expected: None,
+            fix: None,
+            key_fragments: vec![machine.clone(), partition.clone()],
+        },
+        DeployError::ChildUnknownInvoke {
+            machine,
+            parent,
+            invoke,
+            candidates,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployChildUnknownInvoke,
+            stage: Stage::MeshDeploy,
+            actual: Some(invoke.clone()),
+            expected: None,
+            fix: (!candidates.is_empty()).then(|| Fix::ReplaceOneOf {
+                candidates: candidates.clone(),
+            }),
+            key_fragments: vec![machine.clone(), parent.clone(), invoke.clone()],
+        },
+        DeployError::ChildGeneratedId {
+            machine,
+            parent,
+            invoke,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployChildGeneratedId,
+            stage: Stage::MeshDeploy,
+            actual: Some(invoke.clone()),
+            // The repair is an `id` the author writes on the `<invoke>`,
+            // which is a name of their choosing, not one from a set.
+            expected: None,
+            fix: None,
+            key_fragments: vec![machine.clone(), parent.clone(), invoke.clone()],
+        },
+        DeployError::ChildUndeclared { parent, invoke } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployChildUndeclared,
+            stage: Stage::MeshDeploy,
+            actual: Some(invoke.clone()),
+            // The repair is a new machine entry whose name the author
+            // chooses; there is nothing to substitute into this record.
+            expected: None,
+            fix: None,
+            key_fragments: vec![parent.clone(), invoke.clone()],
         },
         DeployError::InvalidDdsQos { device, reason } => DiagnosticPayload {
             code: DiagnosticCode::MeshDeployInvalidDdsQos,

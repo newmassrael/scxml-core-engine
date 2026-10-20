@@ -84,6 +84,12 @@
       "description": "Whether the host must register a Mesh router — the Event I/O Processor sce:mesh and the invoker sce:mesh-rpc — for this machine: it sends to a Mesh peer (<send target=\"#peer\">, SCE_MESH.md 18) or requests one (<invoke type=\"sce:mesh-rpc\">, SCE_MESH.md 9.5), and on this run's target language the peer is reached through a router the host supplies. false on C++, whose generated TransportRouter carries both itself. The same kind of answer as needs_host_processor: without it a host learns that the machine talks to other machines from the first error.execution. Present exactly when the run has one target language; a run that spans backends has no single answer and omits it.",
       "type": "boolean"
     },
+    "child_mesh_routers": {
+      "description": "The <invoke type=\"scxml\"> sites whose child needs a Mesh router of its own (SCE_MESH.md, Child Sessions in Mesh): the child sends to a Mesh peer or requests one, or starts a child that does. The machine asks its host's factory of children's routers for one each time such a site starts a child, with the invoke's id and the stem of the child's document, so a host learns from the build which children it must answer for. Present on a run with one target language whose one statechart has such a site; omitted (not []) otherwise.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/childMeshRouterSite" }
+    },
     "needs_parent": {
       "description": "Whether this machine sends to its parent session (<send target=\"#_parent\">), and so can only run as a child: started on its own, every such send raises error.communication (W3C SCXML 6.2.4). The document is valid SCXML; whether a parent exists is a fact about the deployment, so a single-document run publishes the need rather than judging it. Present exactly when the run is one statechart document; a document-set run's answer depends on who invokes whom, is not the union of its documents' answers, and is omitted.",
       "type": "boolean"
@@ -322,6 +328,30 @@
           "type": "array",
           "uniqueItems": true,
           "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "childMeshRouterSite": {
+      "type": "object",
+      "required": ["invoke", "documents"],
+      "additionalProperties": false,
+      "properties": {
+        "invoke": {
+          "description": "The id of the <invoke>, which the factory of children's routers is asked with.",
+          "type": "string",
+          "minLength": 1
+        },
+        "documents": {
+          "description": "The stem of each document the site may start, as the factory is asked with it: the src's, empty for a child written inline, each candidate's for a hybrid <invoke>.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" }
+        },
+        "children": {
+          "description": "The child's own sites whose child needs a router, which the router answered for this child must answer in turn. Omitted when none.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/definitions/childMeshRouterSite" }
         }
       }
     },

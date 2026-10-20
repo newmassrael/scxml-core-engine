@@ -7965,6 +7965,10 @@ fn populate_child_metadata_from_model(child_model: &SCXMLModel, common: &mut Inv
     // analyzer (post-parse), so we re-derive here by walking the
     // child's <send> actions for any `delay` / `delayexpr`.
     common.child_needs_event_scheduler = child_has_delayed_send(child_model);
+    // What the child asks of Mesh, its own invokes' children included: the
+    // child model was parsed by this same function, so its invokes already
+    // carry what their children ask.
+    common.child_mesh = crate::host_processor_analyzer::child_mesh(child_model);
 }
 
 fn parse_child_metadata(child_path: &Path, common: &mut InvokeSessionCommon) {
@@ -8003,6 +8007,7 @@ fn populate_candidate_metadata(
     candidate.child_declares_host_duties = common.child_declares_host_duties;
     candidate.child_has_send_to_parent = common.child_has_send_to_parent;
     candidate.child_needs_event_scheduler = common.child_needs_event_scheduler;
+    candidate.child_mesh = common.child_mesh;
 }
 
 // ══════════════════════════════════════════════════════════════

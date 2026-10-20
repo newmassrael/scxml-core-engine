@@ -7664,7 +7664,7 @@ directory, or for C a symbol prefix — so the two compile in one build unit;
 
 ---
 
-## Appendix — `DiagnosticCode` index (451 codes)
+## Appendix — `DiagnosticCode` index (459 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -7979,6 +7979,14 @@ Codes that the author can avoid by writing a better SCXML /
 | `mesh/deploy-parse` | Mesh Deploy |
 | `mesh/deploy-unsupported-version` | Mesh Deploy |
 | `mesh/deploy-duplicate-machine` | Mesh Deploy |
+| `mesh/deploy-child-entry-shape` | Mesh Deploy |
+| `mesh/deploy-child-unknown-parent` | Mesh Deploy |
+| `mesh/deploy-child-duplicate-site` | Mesh Deploy |
+| `mesh/deploy-child-pooled-parent` | Mesh Deploy |
+| `mesh/deploy-child-partitioned` | Mesh Deploy |
+| `mesh/deploy-child-unknown-invoke` | Mesh Deploy |
+| `mesh/deploy-child-generated-id` | Mesh Deploy |
+| `mesh/deploy-child-undeclared` | Mesh Deploy |
 | `mesh/deploy-invalid-ordering-timings` | Mesh Deploy |
 | `mesh/deploy-invalid-dedup-window` | Mesh Deploy |
 | `mesh/deploy-invalid-custom-tcp-socket` | Mesh Deploy |

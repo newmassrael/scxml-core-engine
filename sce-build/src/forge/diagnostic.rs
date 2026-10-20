@@ -2703,6 +2703,36 @@ pub enum DiagnosticCode {
     MeshDeployUnsupportedVersion,
     #[serde(rename = "mesh/deploy-duplicate-machine")]
     MeshDeployDuplicateMachine,
+    /// A machine entry has neither `source:` nor `invoked_by:`, or both, or a
+    /// child session carries a section of its parent's process (SCE_MESH.md,
+    /// "Child Sessions in Mesh").
+    #[serde(rename = "mesh/deploy-child-entry-shape")]
+    MeshDeployChildEntryShape,
+    /// A child session's `invoked_by.machine` names no machine of its device,
+    /// or a chain of parents that never reaches a machine the host starts.
+    #[serde(rename = "mesh/deploy-child-unknown-parent")]
+    MeshDeployChildUnknownParent,
+    /// Two machine entries name one `<invoke>` site.
+    #[serde(rename = "mesh/deploy-child-duplicate-site")]
+    MeshDeployChildDuplicateSite,
+    /// A child session's parent is a server pool, whose sessions would share
+    /// the child's one name.
+    #[serde(rename = "mesh/deploy-child-pooled-parent")]
+    MeshDeployChildPooledParent,
+    /// A partition places a child session, which runs in its parent's process.
+    #[serde(rename = "mesh/deploy-child-partitioned")]
+    MeshDeployChildPartitioned,
+    /// A child session's `invoked_by.invoke` names no `<invoke>` of type scxml
+    /// in its parent's document.
+    #[serde(rename = "mesh/deploy-child-unknown-invoke")]
+    MeshDeployChildUnknownInvoke,
+    /// A child session names an `<invoke>` with no literal `id`.
+    #[serde(rename = "mesh/deploy-child-generated-id")]
+    MeshDeployChildGeneratedId,
+    /// A deployed machine starts a child that talks to its Mesh peers, and no
+    /// machine entry names the site.
+    #[serde(rename = "mesh/deploy-child-undeclared")]
+    MeshDeployChildUndeclared,
     #[serde(rename = "mesh/deploy-invalid-ordering-timings")]
     MeshDeployInvalidOrderingTimings,
     /// A machine's `dedup:` section declares a window that cannot filter
@@ -3883,6 +3913,14 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshDeployParse,
         MeshDeployUnsupportedVersion,
         MeshDeployDuplicateMachine,
+        MeshDeployChildEntryShape,
+        MeshDeployChildUnknownParent,
+        MeshDeployChildDuplicateSite,
+        MeshDeployChildPooledParent,
+        MeshDeployChildPartitioned,
+        MeshDeployChildUnknownInvoke,
+        MeshDeployChildGeneratedId,
+        MeshDeployChildUndeclared,
         MeshDeployInvalidOrderingTimings,
         MeshDeployInvalidDedupWindow,
         MeshDeployInvalidCustomTcpSocket,
@@ -4231,6 +4269,16 @@ impl DiagnosticCode {
             | MeshTopologyInvalidBindingField
             | MeshDeployUnknownBindingField
             | MeshTopologyEventBindingUnused => Some("SCE Mesh §14"),
+
+            // ── Mesh child sessions (SCE_MESH.md, Child Sessions in Mesh) ──
+            MeshDeployChildEntryShape
+            | MeshDeployChildUnknownParent
+            | MeshDeployChildDuplicateSite
+            | MeshDeployChildPooledParent
+            | MeshDeployChildPartitioned
+            | MeshDeployChildUnknownInvoke
+            | MeshDeployChildGeneratedId
+            | MeshDeployChildUndeclared => Some("SCE Mesh §21"),
 
             // ── Mesh remote invoke / topology (SCE_MESH.md §9) ───
             MeshTopologyUnresolvedTargets
@@ -5366,6 +5414,14 @@ impl DiagnosticCode {
             MeshDeployParse => "mesh/deploy-parse",
             MeshDeployUnsupportedVersion => "mesh/deploy-unsupported-version",
             MeshDeployDuplicateMachine => "mesh/deploy-duplicate-machine",
+            MeshDeployChildEntryShape => "mesh/deploy-child-entry-shape",
+            MeshDeployChildUnknownParent => "mesh/deploy-child-unknown-parent",
+            MeshDeployChildDuplicateSite => "mesh/deploy-child-duplicate-site",
+            MeshDeployChildPooledParent => "mesh/deploy-child-pooled-parent",
+            MeshDeployChildPartitioned => "mesh/deploy-child-partitioned",
+            MeshDeployChildUnknownInvoke => "mesh/deploy-child-unknown-invoke",
+            MeshDeployChildGeneratedId => "mesh/deploy-child-generated-id",
+            MeshDeployChildUndeclared => "mesh/deploy-child-undeclared",
             MeshDeployInvalidOrderingTimings => "mesh/deploy-invalid-ordering-timings",
             MeshDeployInvalidDedupWindow => "mesh/deploy-invalid-dedup-window",
             MeshDeployInvalidCustomTcpSocket => "mesh/deploy-invalid-custom-tcp-socket",
@@ -14912,8 +14968,8 @@ mod tests {
     pub(super) fn mesh_golden_entries(
     ) -> Vec<(&'static str, crate::mesh::error::MeshError, &'static str)> {
         use crate::mesh::error::{
-            CodegenError, DeployError, ExternalConfigError, MeshError, RpcClientKind,
-            TopologyError, UnresolvedName,
+            ChildEntryFault, CodegenError, DeployError, ExternalConfigError, MeshError,
+            ParentChain, RpcClientKind, TopologyError, UnresolvedName,
         };
         use crate::mesh::pattern::{CommunicationPattern, PatternViolation};
         use crate::mesh::target::TargetId;
@@ -14951,6 +15007,85 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:2696f6f9c7da22b8","code":"mesh/deploy-duplicate-machine","stage":"mesh-deploy","spec":"SCE Mesh §14","message":"machine 'motor' is declared on multiple devices: ecu_a, ecu_b. Machine names must be globally unique across the deployment.","actual":"motor"}"#,
+            ),
+            (
+                "mesh/deploy-child-entry-shape",
+                DeployError::ChildEntryShape {
+                    machine: "list".into(),
+                    fault: ChildEntryFault::ProcessSection("platform"),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:a9723a07eed593e0","code":"mesh/deploy-child-entry-shape","stage":"mesh-deploy","spec":"SCE Mesh §21","message":"machine 'list': a child session (`invoked_by:`) runs in its parent's process, so `platform:` is its parent's to declare; remove it from the child","actual":"list","fix":{"kind":"remove_fields","location":"topology.*.machines.list","fields":["platform"]}}"#,
+            ),
+            (
+                "mesh/deploy-child-unknown-parent",
+                DeployError::ChildUnknownParent {
+                    machine: "list".into(),
+                    parent: "planer".into(),
+                    chain: ParentChain::default(),
+                    candidates: vec!["planner".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:504845498570c5b8","code":"mesh/deploy-child-unknown-parent","stage":"mesh-deploy","spec":"SCE Mesh §21","message":"machine 'list': `invoked_by.machine` names 'planer', which is no machine of its device. A child session's parent is a machine of the same device, and its chain of parents ends at a machine with a `source:`.","actual":"planer","fix":{"kind":"replace_one_of","candidates":["planner"]}}"#,
+            ),
+            (
+                "mesh/deploy-child-duplicate-site",
+                DeployError::ChildDuplicateSite {
+                    first: "alice".into(),
+                    second: "bob".into(),
+                    parent: "planner".into(),
+                    invoke: "list".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:2079381fb66f2391","code":"mesh/deploy-child-duplicate-site","stage":"mesh-deploy","spec":"SCE Mesh §21","message":"machines 'alice' and 'bob' both name `invoked_by: {machine: planner, invoke: list}`. One `<invoke>` site is one machine; remove one of the two entries.","actual":"bob"}"#,
+            ),
+            (
+                "mesh/deploy-child-pooled-parent",
+                DeployError::ChildPooledParent {
+                    machine: "list".into(),
+                    parent: "server".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:41a4c3622aa92256","code":"mesh/deploy-child-pooled-parent","stage":"mesh-deploy","spec":"SCE Mesh §21","message":"machine 'list': its parent 'server' is a server pool (`server.instances:`), whose sessions would each start a child under the one name 'list'. A child of a pooled machine cannot be given a name of its own on the network.","actual":"list"}"#,
+            ),
+            (
+                "mesh/deploy-child-partitioned",
+                DeployError::ChildPartitioned {
+                    machine: "list".into(),
+                    partition: "worker".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:1e76c3ae625ed96c","code":"mesh/deploy-child-partitioned","stage":"mesh-deploy","spec":"SCE Mesh §21","message":"machine 'list' is a child session (`invoked_by:`), and partition 'worker' places it. A child that talks to its peers runs in its parent's process; placing it in another partition is not supported.","actual":"list"}"#,
+            ),
+            (
+                "mesh/deploy-child-unknown-invoke",
+                DeployError::ChildUnknownInvoke {
+                    machine: "list".into(),
+                    parent: "planner".into(),
+                    invoke: "lst".into(),
+                    candidates: vec!["list".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:8df3392395b56d28","code":"mesh/deploy-child-unknown-invoke","stage":"mesh-deploy","spec":"SCE Mesh §21","message":"machine 'list': `invoked_by.invoke` names 'lst', and the document of 'planner' has no `<invoke>` of type scxml with that id.","actual":"lst","fix":{"kind":"replace_one_of","candidates":["list"]}}"#,
+            ),
+            (
+                "mesh/deploy-child-generated-id",
+                DeployError::ChildGeneratedId {
+                    machine: "list".into(),
+                    parent: "planner".into(),
+                    invoke: "_invoke_0".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:2ff5ad83f70f4a59","code":"mesh/deploy-child-generated-id","stage":"mesh-deploy","spec":"SCE Mesh §21","message":"machine 'list': `invoked_by` names the `<invoke>` '_invoke_0' of 'planner', which has no literal `id`. Give the `<invoke>` an `id` and name it.","actual":"_invoke_0"}"#,
+            ),
+            (
+                "mesh/deploy-child-undeclared",
+                DeployError::ChildUndeclared {
+                    parent: "planner".into(),
+                    invoke: "list".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:ac71a196e65bc0fe","code":"mesh/deploy-child-undeclared","stage":"mesh-deploy","spec":"SCE Mesh §21","message":"machine 'planner': the child its `<invoke>` 'list' starts talks to Mesh peers, and no machine entry names it. Declare it under `machines:` with `invoked_by: {machine: planner, invoke: list}` and the bindings it sends over.","actual":"list"}"#,
             ),
             (
                 "mesh/deploy-invalid-ordering-timings",
@@ -17026,6 +17161,11 @@ mod tests {
             // A closed record's declared members, for the same reason.
             | ExpressionUnknownMember
             | MeshDeployUnsupportedVersion
+            // The machines of the child's device, and the ids of the
+            // parent's `<invoke>` sites: each a closed set the deploy names
+            // one of.
+            | MeshDeployChildUnknownParent
+            | MeshDeployChildUnknownInvoke
             | MeshTopologyMachineNotFound
             | MeshTopologySubscriptionSourceUnbound
             | MeshCodegenUnsupportedLanguage
@@ -17715,6 +17855,15 @@ mod tests {
             | MeshDeployRead
             | MeshDeployParse
             | MeshDeployDuplicateMachine
+            // A child entry's repair is a section removed from it (shape), or
+            // a name, an id or an entry the author writes: none is a choice
+            // among candidates the build knows.
+            | MeshDeployChildEntryShape
+            | MeshDeployChildDuplicateSite
+            | MeshDeployChildPooledParent
+            | MeshDeployChildPartitioned
+            | MeshDeployChildGeneratedId
+            | MeshDeployChildUndeclared
             | MeshDeployInvalidOrderingTimings
             | MeshDeployInvalidDedupWindow
             | MeshDeployInvalidCustomTcpSocket
@@ -18522,6 +18671,10 @@ mod tests {
                 | CliDiagramUnavailable | CliDiagramDoesNotFit | CliProfileUnusable
                 | MeshDeployRead | MeshDeployParse | MeshDeployUnsupportedVersion
                 | MeshDeployDuplicateMachine | MeshDeployInvalidOrderingTimings
+                | MeshDeployChildEntryShape | MeshDeployChildUnknownParent
+                | MeshDeployChildDuplicateSite | MeshDeployChildPooledParent
+                | MeshDeployChildPartitioned | MeshDeployChildUnknownInvoke
+                | MeshDeployChildGeneratedId | MeshDeployChildUndeclared
                 | MeshDeployInvalidDedupWindow
                 | MeshDeployInvalidCustomTcpSocket
                 | MeshDeployInvalidDdsQos
@@ -19513,6 +19666,14 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | MeshDeployParse
             | MeshDeployUnsupportedVersion
             | MeshDeployDuplicateMachine
+            | MeshDeployChildEntryShape
+            | MeshDeployChildUnknownParent
+            | MeshDeployChildDuplicateSite
+            | MeshDeployChildPooledParent
+            | MeshDeployChildPartitioned
+            | MeshDeployChildUnknownInvoke
+            | MeshDeployChildGeneratedId
+            | MeshDeployChildUndeclared
             | MeshDeployInvalidOrderingTimings
             | MeshDeployInvalidDedupWindow
             | MeshDeployInvalidCustomTcpSocket
