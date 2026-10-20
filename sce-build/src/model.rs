@@ -1933,6 +1933,18 @@ pub struct InvokeSessionCommon {
     #[serde(skip)]
     #[cfg_attr(test, schemars(skip))]
     pub child_mesh: ChildMesh,
+    /// Codegen-internal: the child is a document whose whole state a saved
+    /// state can hold, its own children included (docs/adr/0045, "Which
+    /// documents save"): a `datamodel="sce-static"` document this build read
+    /// that waits on no session outside its tree and starts only children that
+    /// are such documents themselves. A parent saves only when every child it
+    /// can start does, so a restore never resumes a parent without the state
+    /// of a child it was running. `false` for a child the build could not read.
+    /// Derived beside [`Self::child_mesh`], from the same child model; not part
+    /// of the IR.
+    #[serde(skip)]
+    #[cfg_attr(test, schemars(skip))]
+    pub child_saves: bool,
 }
 
 /// What a child session asks of Mesh, as the build reads it from the child's
@@ -2526,6 +2538,12 @@ pub struct InvokeCandidate {
     #[serde(skip)]
     #[cfg_attr(test, schemars(skip))]
     pub child_mesh: ChildMesh,
+    /// Codegen-internal: whether a saved state can hold this candidate's whole
+    /// state — [`InvokeSessionCommon::child_saves`], per candidate. Outside the
+    /// IR contract.
+    #[serde(skip)]
+    #[cfg_attr(test, schemars(skip))]
+    pub child_saves: bool,
 }
 
 /// §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: the stem of the document a path

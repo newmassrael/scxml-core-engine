@@ -64,7 +64,7 @@
       }
     },
     "pending": {
-      "description": "The delayed <send>s still waiting (W3C SCXML 6.2), in the order they would be delivered: earliest first, entries due at the same moment in the order they were sent. Each is written as the moment it comes due on the wall clock of the host that saved it, not as a wait: a wait would start again when the process came back, and a timer that ran out while it was dead would be late by exactly as long as it was dead. A restore arms each to come due when its moment does, and one already due to come due now, in this order. A document that makes a delayed send to a parent, an invocation or a child session has no saved state: the session it waits for is not part of this one.",
+      "description": "The delayed <send>s still waiting (W3C SCXML 6.2), in the order they would be delivered: earliest first, entries due at the same moment in the order they were sent. Each is written as the moment it comes due on the wall clock of the host that saved it, not as a wait: a wait would start again when the process came back, and a timer that ran out while it was dead would be late by exactly as long as it was dead. A restore arms each to come due when its moment does, and one already due to come due now, in this order. Format 1 has no act for a delayed send to the parent or to a child, so a format-1 writer refuses a save while one is waiting (format 2 holds it); a document that makes a delayed send to a session outside its tree has no saved state: the session it waits for is not part of this one.",
       "type": "array",
       "items": {
         "oneOf": [

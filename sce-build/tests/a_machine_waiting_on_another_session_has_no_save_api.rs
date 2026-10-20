@@ -6,18 +6,19 @@
 // generated WITHOUT the save API, never with one that would write less than
 // the machine holds.
 //
-// A saved state holds what this session holds: its configuration, its
-// variables, what each `<history>` recorded, the delayed `<send>`s it is
-// waiting to deliver to its own queues or to a host-served processor, the child
-// sessions it is running, static or named by a value among declared candidates
-// (a restore starts each again), the invocations a
-// declared host invoker is running (a restore starts each again from the request
-// it was started with), and its external queue. What it cannot hold is a session
-// whose start a restore cannot repeat — a Mesh request, which the peer may
-// already have acted on, or a delayed send waiting to be delivered to the
-// parent, to an invocation or to a child session. The rule is the safety of the
-// whole feature: a `save()` that left a Mesh request out would restore a machine
-// that waits for a `done.invoke` nobody will send, and nothing would say so.
+// A saved state holds what this session's tree holds (docs/adr/0045): its
+// configuration, its variables, what each `<history>` recorded, the delayed
+// `<send>`s it is waiting to deliver to its own queues, to a host-served
+// processor, to its parent or to a child it runs, the child sessions it is
+// running, static or named by a value among declared candidates, the
+// invocations a declared host invoker is running, a Mesh request in flight (as
+// an interrupted call), and its external queue. What it cannot hold is a
+// session outside the tree — a delayed send waiting to be delivered to a
+// session named by its id — or a child whose own state a saved tree cannot
+// hold: one under another data model, or one that waits on such a session
+// itself. The rule is the safety of the whole feature: a `save()` that left a
+// waiting session out would restore a machine that waits for something nobody
+// will do, and nothing would say so.
 //
 // It is decided by the shape the generator computes (`saved_shape`), from a
 // model the ANALYZER has already read, so this runs the generator end to end
@@ -202,20 +203,43 @@ fn a_delayed_send_to_this_session_is_generated_with_the_save_api() {
 }
 
 #[test]
+fn a_delayed_send_to_the_parent_or_a_child_is_generated_with_the_save_api() {
+    // docs/adr/0045: the parent and a child this session runs are sessions of
+    // the saved tree, so a send waiting on either is held, as one to this
+    // session is.
+    let child = r#"<invoke type="scxml" id="child">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="f" datamodel="sce-static"><final id="f"/></scxml>
+      </content>
+    </invoke>"#;
+    for extra in [
+        r##"<onentry><send event="go" target="#_parent" delay="5s"/></onentry>"##.to_string(),
+        r##"<onentry><send event="go" target="#_parent" delayexpr="'5s'"/></onentry>"##.to_string(),
+        format!(r##"{child}<onexit><send event="go" target="#_child" delay="5s"/></onexit>"##),
+    ] {
+        for (language, has) in save_api_per_backend(&machine(&extra)) {
+            assert!(
+                has,
+                "{language}: a send waiting on a session of the tree is held: {extra}"
+            );
+        }
+    }
+}
+
+#[test]
 fn a_delayed_send_to_another_session_is_generated_without_it() {
-    // A `delayexpr` is a delay: the time it computes is known only when the send
-    // runs, and may be one that waits.
-    for target in ["#_parent", "#_scxml_child_session"] {
-        for delay in [r#"delay="5s""#, r#"delayexpr="'5s'""#] {
-            let extra =
-                format!(r#"<onentry><send event="go" target="{target}" {delay}/></onentry>"#);
-            for (language, has) in save_api_per_backend(&machine(&extra)) {
-                assert!(
-                    !has,
-                    "{language}: a send waiting on a session the saved state does not carry is \
-                     not in it, so the machine must not offer to save one ({target}, {delay})"
-                );
-            }
+    // A session named by its id is not one of the saved tree. A `delayexpr` is
+    // a delay: the time it computes is known only when the send runs, and may
+    // be one that waits.
+    let target = "#_scxml_child_session";
+    for delay in [r#"delay="5s""#, r#"delayexpr="'5s'""#] {
+        let extra = format!(r#"<onentry><send event="go" target="{target}" {delay}/></onentry>"#);
+        for (language, has) in save_api_per_backend(&machine(&extra)) {
+            assert!(
+                !has,
+                "{language}: a send waiting on a session the saved state does not carry is \
+                 not in it, so the machine must not offer to save one ({target}, {delay})"
+            );
         }
     }
 }
@@ -234,12 +258,11 @@ fn a_send_to_another_session_that_is_not_delayed_is_generated_with_it() {
 
 #[test]
 fn a_static_child_session_is_generated_with_the_save_api() {
-    // A saved state names the child that is running and a restore starts it
-    // again from its beginning, so a machine whose only invoke is a static
-    // child session saves.
+    // A saved state holds the child that is running (docs/adr/0045), so a
+    // machine whose only invoke is a `sce-static` child session saves.
     let extra = r#"<invoke type="scxml" id="child">
       <content>
-        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="f"><final id="f"/></scxml>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="f" datamodel="sce-static"><final id="f"/></scxml>
       </content>
     </invoke>"#;
     for (language, has) in save_api_per_backend(&machine(extra)) {
@@ -247,6 +270,33 @@ fn a_static_child_session_is_generated_with_the_save_api() {
             has,
             "{language}: a running child session is in a saved state, so the machine saves it"
         );
+    }
+}
+
+#[test]
+fn a_child_a_saved_tree_cannot_hold_is_generated_without_it() {
+    // A parent saves only when every child it can start does (docs/adr/0045,
+    // "Which documents save"): a child under the null data model has no saved
+    // state, and one that waits on a session outside its tree cannot have one.
+    let null_child = r#"<invoke type="scxml" id="child">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="f"><final id="f"/></scxml>
+      </content>
+    </invoke>"#;
+    let waiting_child = r##"<invoke type="scxml" id="child">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s" datamodel="sce-static">
+          <state id="s"><onentry><send event="later" target="#_scxml_other" delay="5s"/></onentry></state>
+        </scxml>
+      </content>
+    </invoke>"##;
+    for extra in [null_child, waiting_child] {
+        for (language, has) in save_api_per_backend(&machine(extra)) {
+            assert!(
+                !has,
+                "{language}: the child's state cannot be saved, so the parent's cannot: {extra}"
+            );
+        }
     }
 }
 
@@ -353,7 +403,7 @@ fn a_mesh_request_is_generated_with_the_save_api() {
     </invoke>"##;
     let child = r#"<invoke type="scxml" id="child">
       <content>
-        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="f"><final id="f"/></scxml>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="f" datamodel="sce-static"><final id="f"/></scxml>
       </content>
     </invoke>"#;
     for extra in [mesh.to_string(), format!("{child}{mesh}")] {

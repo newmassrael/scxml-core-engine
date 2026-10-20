@@ -18,6 +18,10 @@
   restored needs `a` again before `b` ends the child: `b` alone leaves it in
   `working`. `abort` leaves `working`, which cancels the child, and `idle` has no
   <invoke> — a saved machine there restarts nothing.
+
+  The child is a datamodel="sce-static" document: a parent saves only when
+  every child it can start can be saved too (docs/adr/0045, "Which documents
+  save"), since a format-2 saved state holds the child's own state.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="working" datamodel="sce-static" name="static_invoke">
@@ -27,7 +31,7 @@
   <state id="working">
     <invoke type="scxml" id="worker" autoforward="true">
       <content>
-        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="first">
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="first" datamodel="sce-static">
           <state id="first">
             <transition event="a" target="second"/>
           </state>

@@ -5156,9 +5156,9 @@ the format and the restore every backend moves to.
   raises its `done.invoke` once, when it ends.
 - **Sends between the sessions of a tree.** `pending` gains `parent` (a delayed
   `<send>` to `#_parent`) and `child` (one to `#_<invokeid>` of a running child), so
-  a document that makes either keeps its save API once the generator lands (ADR
-  0045 step 2); until then both still remove it, as the paragraph on waiting on
-  another session below says.
+  a document that makes either keeps its save API. Until its backend writes format
+  2, a save taken while such a send is waiting is refused with a reason naming
+  the send (format 1 has no act for it); one taken while none is waiting succeeds.
 - **What is not in it.** A Mesh endpoint's state (sequence counters, duplicate
   windows, ordering buffers, envelopes held for a peer) changes with the network,
   not with a session's steps, and is saved by the host core beside the tree in one
@@ -5166,7 +5166,10 @@ the format and the restore every backend moves to.
   and are never in either.
 - **Which documents save.** A document saves when its own state can be held and
   every document it can start through an `<invoke type="scxml">` saves, every
-  candidate included.
+  candidate included: a `sce-static` parent whose child is under another data
+  model, or waits on a session outside its tree, is generated without the save
+  API. This holds already for format 1, so that no machine offers a save its
+  format-2 successor would have to take away.
 - **Backends.** Format 2 is written and read by every generated backend once its
   step lands: Rust, Kotlin, then Go, Python, C++ and C11, which have no saved state
   today. The Interpreter does not save: it does not run a `sce-static` document,
@@ -5371,18 +5374,20 @@ chosen: it would need every responder to recognise a repeat and answer it once, 
 contract the Mesh does not make, and a repeat that a responder did not recognise
 is a second side effect.
 
-A document that waits on ANOTHER SESSION whose start a restore cannot repeat has
-state this version of the format does not carry: a peer on another device, or a
-delayed `<send>` whose target is a `#_`
-location other than `#_internal` — the parent, an invocation, a child session —
-which is delivered through a session the state does not hold. Such a machine is
-generated WITHOUT `save` /
+A document that waits on a session OUTSIDE ITS TREE has state the format does
+not carry: a peer on another device, or a delayed `<send>` whose target is a `#_`
+location other than `#_internal`, `#_parent` and `#_<id>` of a child this
+document invokes by a literal id — a session named by its id — which is
+delivered through a session the state does not hold. So does a document that can
+start a child of which that is true, or a child under another data model, since a
+format-2 state holds each running child's own state (docs/adr/0045). Such a
+machine is generated WITHOUT `save` /
 `restore`, so a host finds out when it compiles rather than when a restore
 drops part of the state. A `delayexpr` counts as a delay, since the time it
 computes is known only when the send runs and may be one that waits; the target
 is read as written, or, for a `targetexpr`, as the routes the document declares
-as `sce:targets` — one of them a `#_` location other than `#_internal` is a send
-that may wait on another session. A send to another
+as `sce:targets` — one of them outside the tree is a send that may wait on
+another session. A send to another
 session that is not delayed leaves nothing waiting, and does not take the API
 away.
 `sce-build/tests/a_machine_waiting_on_another_session_has_no_save_api.rs`

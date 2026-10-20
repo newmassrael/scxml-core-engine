@@ -3700,21 +3700,21 @@ impl<'t> TypeDeclarations<'t> {
 /// `<invoke>` a declared host invoker serves, with the type as well. A document
 /// without any hashes exactly what it did before invocations were saved.
 ///
-/// `None` for a machine whose state lives partly in a session other than this
-/// one that a restore cannot start again — an `<invoke>` of any other kind
-/// ([`invokes_what_a_restore_cannot_start`]), or a delayed `<send>` waiting to
-/// be delivered to another session ([`delays_a_send_to_another_session`]) —
-/// which this version of the saved state cannot hold. Such a machine is
-/// generated without the save API rather than with one that would silently drop
-/// part of its state. A delayed `<send>` to this session or to a host-served
-/// processor is not such a send: a saved state holds it as the moment it comes
-/// due.
+/// `None` for a machine whose state a saved state cannot hold whole
+/// ([`a_tree_can_hold`]): one that waits on a session outside its tree — an
+/// `<invoke>` a restore cannot start again, or a delayed `<send>` to a session
+/// the tree does not hold — or one that can start a child whose own state a
+/// saved state cannot hold. Such a machine is generated without the save API
+/// rather than with one that would silently drop part of its state. A delayed
+/// `<send>` to this session, to a host-served processor, to the parent or to a
+/// child of this session is not such a send: each is a session or a processor
+/// the tree holds (docs/adr/0045).
 fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<SavedShape> {
     use sha2::{Digest, Sha256};
     use std::collections::BTreeMap;
     use std::fmt::Write as _;
 
-    if invokes_what_a_restore_cannot_start(model) || delays_a_send_to_another_session(model) {
+    if !a_tree_can_hold(model) {
         return None;
     }
     let mut text = String::from("sce-saved-state-shape 1\n");
@@ -4037,15 +4037,48 @@ fn write_variants(text: &mut String, model: &SCXMLModel, alias: &str, holder: &s
     }
 }
 
+/// Whether a saved state can hold the whole state of a machine of `model`, and
+/// of every session it can start (docs/adr/0045, "Which documents save"): the
+/// document is `datamodel="sce-static"`, it waits on no session outside its
+/// tree ([`invokes_what_a_restore_cannot_start`],
+/// [`delays_a_send_to_another_session`]), and every child it can start through an
+/// `<invoke type="scxml">` — each candidate of a hybrid one — is a document of
+/// which the same holds.
+///
+/// A child's answer is read from what the parse recorded on its `<invoke>`
+/// ([`crate::model::InvokeSessionCommon::child_saves`]), which this function
+/// computed when the child's own document was parsed, so a grandchild is
+/// judged by the same rule without being read twice. A child the build could
+/// not read answers no. A hybrid `<invoke>` with no candidate the build knows
+/// starts a document nobody judged, and answers no as well.
+pub(crate) fn a_tree_can_hold(model: &SCXMLModel) -> bool {
+    model.datamodel == crate::model::Datamodel::SceStatic
+        && !invokes_what_a_restore_cannot_start(model)
+        && !delays_a_send_to_another_session(model)
+        && model
+            .states
+            .values()
+            .flat_map(|s| &s.invokes)
+            .all(|invoke| match invoke {
+                crate::model::Invoke::Scxml(info) => info.common.child_saves,
+                crate::model::Invoke::Hybrid(info) => {
+                    !info.candidates.is_empty() && info.candidates.iter().all(|c| c.child_saves)
+                }
+                crate::model::Invoke::Unsupported(_) | crate::model::Invoke::MeshRpc(_) => true,
+            })
+}
+
 /// Whether the document makes a delayed `<send>` that, when it comes due, is
-/// delivered through a session other than this one (§scxml-6.2.4): its target
-/// is a `#_` location other than `#_internal` — the parent, an invocation, a
-/// child session.
+/// delivered to a session outside its tree (§scxml-6.2.4): its target is a `#_`
+/// location other than this session's own queue (`#_internal`), its parent
+/// (`#_parent`) and a child of this session, named by the literal id of one of
+/// its `<invoke type="scxml">`s (`#_<id>`).
 ///
 /// A saved state holds a waiting send as an event for this session's own
-/// queues or a request a host-served processor performs; a send waiting on
-/// another session is neither, and the session it waits for is not part of the
-/// state.
+/// queues, a request a host-served processor performs, or an event for the
+/// parent or a child (docs/adr/0045): those sessions are in the saved tree. A
+/// send waiting on any other session — one named by its session id, a child of
+/// some other session — waits on a session the tree does not hold.
 ///
 /// A `delayexpr` counts as a delay: the time it computes is known only when the
 /// send runs and may be one that waits, so a machine that has one cannot be
@@ -4054,16 +4087,35 @@ fn write_variants(text: &mut String, model: &SCXMLModel, alias: &str, holder: &s
 ///
 /// A `targetexpr` is a value this document computes, and which sessions it could
 /// name is what it declares as `sce:targets` (docs/adr/0005, decision 3): a
-/// delayed send whose declared routes include one that is not this session's own
-/// queue is a send waiting on another session, as a written target would be.
+/// delayed send whose declared routes include one outside the tree is a send
+/// waiting on another session, as a written target would be.
 /// `a_delayed_sends_target_is_a_literal_under_sce_static` holds the written
 /// form, and `a_delayed_send_to_a_computed_target_waits_on_another_session` the
 /// declared one.
 fn delays_a_send_to_another_session(model: &SCXMLModel) -> bool {
+    let children: Vec<String> = model
+        .states
+        .values()
+        .flat_map(|s| &s.invokes)
+        .filter_map(|invoke| match invoke {
+            crate::model::Invoke::Scxml(info) if !info.common.base.id_generated => {
+                Some(format!("#_{}", info.common.base.invoke_id))
+            }
+            crate::model::Invoke::Hybrid(info) if !info.common.base.id_generated => {
+                Some(format!("#_{}", info.common.base.invoke_id))
+            }
+            _ => None,
+        })
+        .collect();
+    let outside = |route: &str| {
+        route.starts_with("#_")
+            && route != "#_internal"
+            && route != "#_parent"
+            && !children.iter().any(|child| child == route)
+    };
     model.sends().into_iter().any(|(_, send)| {
-        let another_session = |route: &str| route.starts_with("#_") && route != "#_internal";
         (!send.delay.is_empty() || !send.delayexpr.is_empty())
-            && (another_session(&send.target) || send.targets.iter().any(|t| another_session(t)))
+            && (outside(&send.target) || send.targets.iter().any(|t| outside(t)))
     })
 }
 
@@ -9627,13 +9679,38 @@ mod tests {
     }
 
     #[test]
-    fn a_delayed_send_to_another_session_has_no_saved_shape() {
-        // It is delivered through a session the saved state does not carry:
-        // the parent, an invocation, a child by its session id.
-        for target in ["#_parent", "#_child", "#_scxml_session"] {
+    fn a_delayed_send_to_a_session_outside_the_tree_has_no_saved_shape() {
+        // It is delivered through a session the saved tree does not carry: a
+        // session named by its id, or a child this document does not invoke.
+        for target in ["#_child", "#_scxml_session"] {
             let send = format!(r#"<send event="later" target="{target}" delay="5s"/>"#);
             assert_eq!(shape(&counter_sending(&send)), None, "{send}");
         }
+    }
+
+    #[test]
+    fn a_delayed_send_to_the_parent_or_a_child_keeps_the_saved_shape() {
+        // docs/adr/0045: the parent and a child of this session are sessions of
+        // the saved tree, so a send waiting on either is held as the moment it
+        // comes due, and adds nothing the shape names.
+        let base = shape(COUNTER).expect("shape");
+        let to_parent = r##"<send event="later" target="#_parent" delay="5s"/>"##;
+        assert_eq!(
+            shape(&counter_sending(to_parent)),
+            Some(base),
+            "{to_parent}"
+        );
+        let invoking = shape(&counter_invoking(&child_session("worker"))).expect("shape");
+        let to_child = counter_invoking(&child_session("worker")).replace(
+            r#"<transition event="go" target="done"/>"#,
+            r##"<transition event="go" target="done"><send event="later" target="#_worker" delay="5s"/></transition>"##,
+        );
+        assert_ne!(to_child, counter_invoking(&child_session("worker")));
+        assert_eq!(
+            shape(&to_child),
+            Some(invoking),
+            "a send to the child it invokes"
+        );
     }
 
     /// `COUNTER` whose `counting` state holds `invoke`.
@@ -9644,13 +9721,62 @@ mod tests {
         )
     }
 
-    /// A static child session of `id`, which ends as it starts.
+    /// A static child session of `id`, which ends as it starts: a
+    /// `datamodel="sce-static"` document, whose state a saved tree holds.
     fn child_session(id: &str) -> String {
+        child_session_of(id, r#"datamodel="sce-static""#)
+    }
+
+    /// A child session of `id` whose root carries `attributes`.
+    fn child_session_of(id: &str, attributes: &str) -> String {
         format!(
             r#"<invoke type="scxml" id="{id}"><content>
-          <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="f"><final id="f"/></scxml>
+          <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="f" {attributes}><final id="f"/></scxml>
         </content></invoke>"#
         )
+    }
+
+    #[test]
+    fn a_child_whose_state_a_saved_tree_cannot_hold_takes_the_saved_shape_away() {
+        // docs/adr/0045, "Which documents save": a restore resumes every child
+        // it was running from the child's own saved state, so a parent saves
+        // only when each child it can start does. A child under another data
+        // model has no saved state at all.
+        assert!(shape(&counter_invoking(&child_session("worker"))).is_some());
+        assert_eq!(
+            shape(&counter_invoking(&child_session_of("worker", ""))),
+            None,
+            "a child under the null data model"
+        );
+        // A child that itself waits on a session outside its tree.
+        let waiting = r##"<invoke type="scxml" id="worker"><content>
+          <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s" datamodel="sce-static">
+            <state id="s"><onentry><send event="later" target="#_scxml_other" delay="5s"/></onentry></state>
+          </scxml>
+        </content></invoke>"##;
+        assert_eq!(shape(&counter_invoking(waiting)), None, "{waiting}");
+        // A grandchild that cannot be held takes it away from the root too.
+        let grandparent = format!(
+            r#"<invoke type="scxml" id="worker"><content>
+          <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s" datamodel="sce-static">
+            <state id="s">{}</state>
+          </scxml>
+        </content></invoke>"#,
+            child_session_of("inner", "")
+        );
+        assert_eq!(shape(&counter_invoking(&grandparent)), None, "a grandchild");
+        let held = format!(
+            r#"<invoke type="scxml" id="worker"><content>
+          <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s" datamodel="sce-static">
+            <state id="s">{}</state>
+          </scxml>
+        </content></invoke>"#,
+            child_session("inner")
+        );
+        assert!(
+            shape(&counter_invoking(&held)).is_some(),
+            "a grandchild held too"
+        );
     }
 
     #[test]
@@ -9801,9 +9927,13 @@ mod tests {
     #[test]
     fn a_delayed_send_to_a_computed_target_waits_on_another_session() {
         // The declared routes are the sessions the expression could name: one
-        // that is not this session's own queue makes a delayed send a send
-        // waiting on another session, as a written target of it would.
-        for routes in ["#_parent", "#_internal #_parent", "#_scxml_peer #_internal"] {
+        // outside the saved tree makes a delayed send a send waiting on another
+        // session, as a written target of it would.
+        for routes in [
+            "#_scxml_peer",
+            "#_internal #_scxml_peer",
+            "#_scxml_peer #_parent",
+        ] {
             let send = format!(
                 r#"<send event="later" targetexpr="route" sce:targets="{routes}" delay="5s"/>"#
             );
@@ -9818,20 +9948,24 @@ mod tests {
     }
 
     #[test]
-    fn a_delayed_send_to_computed_targets_of_this_session_waits_on_no_other() {
-        let send =
-            r##"<send event="later" targetexpr="route" sce:targets="#_internal" delay="5s"/>"##;
-        let model = SCXMLParser::new()
-            .parse_string(&counter_routing(send), "m")
-            .expect("parses");
-        assert!(!super::delays_a_send_to_another_session(&model));
+    fn a_delayed_send_to_computed_targets_of_the_tree_waits_on_no_other() {
+        // This session's own queue and its parent are both in the saved tree.
+        for routes in ["#_internal", "#_internal #_parent"] {
+            let send = format!(
+                r#"<send event="later" targetexpr="route" sce:targets="{routes}" delay="5s"/>"#
+            );
+            let model = SCXMLParser::new()
+                .parse_string(&counter_routing(&send), "m")
+                .expect("parses");
+            assert!(!super::delays_a_send_to_another_session(&model), "{routes}");
+        }
     }
 
     #[test]
     fn a_computed_delay_to_another_session_has_no_saved_shape() {
         // The time is known only when the send runs, so it may be one that
         // waits: the machine is told apart from one that delays by nothing.
-        for target in ["#_parent", "#_child", "#_scxml_session"] {
+        for target in ["#_child", "#_scxml_session"] {
             let send = format!(r#"<send event="later" target="{target}" delayexpr="'5s'"/>"#);
             assert_eq!(shape(&counter_sending(&send)), None, "{send}");
         }
@@ -9859,7 +9993,7 @@ mod tests {
     fn a_delayed_send_in_a_history_default_is_seen() {
         // A `<history>`'s default transition belongs to its parent state, and
         // is not among the blocks a state's own transitions carry.
-        let history = r##"<history id="h"><transition target="counting"><send event="later" target="#_parent" delay="5s"/></transition></history>"##;
+        let history = r##"<history id="h"><transition target="counting"><send event="later" target="#_scxml_session" delay="5s"/></transition></history>"##;
         assert_eq!(shape(&counter_in_outer(history)), None);
     }
 

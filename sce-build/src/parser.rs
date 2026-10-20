@@ -7969,6 +7969,9 @@ fn populate_child_metadata_from_model(child_model: &SCXMLModel, common: &mut Inv
     // child model was parsed by this same function, so its invokes already
     // carry what their children ask.
     common.child_mesh = crate::host_processor_analyzer::child_mesh(child_model);
+    // Whether a saved state can hold the child's whole state (docs/adr/0045),
+    // read the same way: its own invokes already say whether theirs can.
+    common.child_saves = crate::forge::static_lowering::a_tree_can_hold(child_model);
 }
 
 fn parse_child_metadata(child_path: &Path, common: &mut InvokeSessionCommon) {
@@ -8008,6 +8011,7 @@ fn populate_candidate_metadata(
     candidate.child_has_send_to_parent = common.child_has_send_to_parent;
     candidate.child_needs_event_scheduler = common.child_needs_event_scheduler;
     candidate.child_mesh = common.child_mesh;
+    candidate.child_saves = common.child_saves;
 }
 
 // ══════════════════════════════════════════════════════════════
