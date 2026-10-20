@@ -222,6 +222,26 @@ fn each_rule_of_the_vocabulary_refuses_what_it_is_for() {
             json!({"machine": "m", "steps": [{"expect": {"sent": [{"target": "#peer", "event": "e", "delay": 5}]}}]}),
             "a send carries `delay`",
         ),
+        (
+            step(json!({"invoke": "list"})),
+            "`invoke` belongs to a step that sends an event",
+        ),
+        (
+            step(json!({"event": "e", "invoke": "peer//inner"})),
+            "none of them empty",
+        ),
+        (
+            step(json!({"event": "e", "invoke": "list", "dropped": true})),
+            "`dropped` belongs to an event the machine itself is sent",
+        ),
+        (
+            json!({"machine": "m", "steps": [{"expect": {"sent": [{"target": "#peer", "event": "e", "invoke": "list"}]}}]}),
+            "both its `invoke` and its `start`",
+        ),
+        (
+            json!({"machine": "m", "steps": [{"expect": {"sent": [{"target": "#peer", "event": "e", "invoke": "list", "start": 0}]}}]}),
+            "counts the starts of its invoke from 1",
+        ),
     ];
     for (scenario, reason) in cases {
         match vocabulary::check(&scenario) {

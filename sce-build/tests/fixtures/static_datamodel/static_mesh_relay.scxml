@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Child sessions";
+  SCE_MESH.md, Child Sessions in Mesh): the candidate `static_child_mesh.scxml`'s
+  hybrid `<invoke>` starts. It talks to no Mesh peer itself, and starts `inner`,
+  which does: so the relay needs a router only to answer one for its child, and
+  the grandchild's router is the one the relay's answers.
+
+  `inner` waits for a peer's `inner.ping` and answers it with `inner.pong` to
+  `#server`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="relaying" datamodel="sce-static" name="static_mesh_relay">
+  <state id="relaying">
+    <invoke type="scxml" id="inner">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+               version="1.0" initial="waiting" datamodel="sce-static">
+          <state id="waiting">
+            <transition event="inner.ping">
+              <send target="#server" event="inner.pong"/>
+            </transition>
+          </state>
+        </scxml>
+      </content>
+    </invoke>
+  </state>
+</scxml>

@@ -654,6 +654,25 @@ fn static_child_host_hybrid_gives_a_candidate_the_host_answered_for_it() {
     );
 }
 
+// A child session that talks to a Mesh peer is given a router of its own by the
+// factory the replay registers as the machine's host (SCE_MESH.md, Child Sessions
+// in Mesh): what it sends is recorded under its invoke and start, and a step's
+// `invoke` reaches it through that router, a grandchild's through the router its
+// parent's router answered for it.
+#[test]
+fn static_child_mesh_gives_each_child_a_router_of_its_own() {
+    use sce_rust_scenarios::integration::static_datamodel::static_child_mesh_sm::{
+        StaticChildMeshPersist, StaticChildMeshPolicy,
+    };
+    replay(
+        Engine::new(StaticChildMeshPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_child_mesh.json"
+        ),
+    );
+}
+
 // A child session an <invoke> started is driven through its parent by
 // autoforward, takes the events it waits for in order, and its end reaches the
 // parent as `done.invoke`, which the parent counts.

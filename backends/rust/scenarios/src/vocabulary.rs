@@ -16,8 +16,18 @@ use serde_json::{Map, Value};
 /// The members of a scenario.
 pub const TOP: &[&str] = &["machine", "about", "steps"];
 
-/// The members of a step.
-pub const STEP: &[&str] = &["note", "event", "data", "dropped", "advance_ms", "expect"];
+/// The members of a step. `invoke` sends the step's `event` to the running
+/// child session of that invoke, through the Mesh router the child was given,
+/// as a peer's event: a path of invoke ids joined by `/` for a child's child.
+pub const STEP: &[&str] = &[
+    "note",
+    "event",
+    "data",
+    "dropped",
+    "invoke",
+    "advance_ms",
+    "expect",
+];
 
 /// The members of a step's `expect`.
 pub const EXPECT: &[&str] = &[
@@ -46,8 +56,11 @@ const HOST_CALL: &[&str] = &["action", "args"];
 /// asked of that host in the step (`host_calls`, as a machine's own are).
 const CHILD_HOST: &[&str] = &["invoke", "start", "candidate", "host_calls"];
 
-/// The members of one entry of `sent`.
-const SENT: &[&str] = &["target", "event", "data"];
+/// The members of one entry of `sent`. `invoke` and `start` say which child
+/// session sent it, told as `child_hosts` tells a child: the path of invoke ids
+/// that started it, and how many children that path had started, from 1. An
+/// entry without them is the machine's own.
+const SENT: &[&str] = &["target", "event", "data", "invoke", "start"];
 
 /// Why `scenario` is not one every driver replays the same way, or `Ok` when it is.
 pub fn check(scenario: &Value) -> Result<(), String> {
@@ -80,9 +93,17 @@ fn check_step(step: &Value) -> Result<(), String> {
                 .into(),
         );
     }
-    for key in ["data", "dropped"] {
+    for key in ["data", "dropped", "invoke"] {
         if step.contains_key(key) && !step.contains_key("event") {
             return Err(format!("`{key}` belongs to a step that sends an event"));
+        }
+    }
+    if let Some(path) = step.get("invoke") {
+        check_invoke_path(path, "the step's `invoke`")?;
+        // Whether an event is dropped is a question of the machine's own events;
+        // a child's are not the machine's to judge.
+        if step.contains_key("dropped") {
+            return Err("`dropped` belongs to an event the machine itself is sent".into());
         }
     }
     let expect = step
@@ -126,7 +147,34 @@ fn check_expect(expect: &Map<String, Value>) -> Result<(), String> {
             send.get("event")
                 .and_then(Value::as_str)
                 .ok_or("a send names its `event`")?;
+            // A child's send is told by the path that started it and the start;
+            // one without the other names no child.
+            match (send.get("invoke"), send.get("start")) {
+                (None, None) => {}
+                (Some(path), Some(start)) => {
+                    check_invoke_path(path, "a send's `invoke`")?;
+                    start
+                        .as_u64()
+                        .filter(|start| *start >= 1)
+                        .ok_or("a send's `start` counts the starts of its invoke from 1")?;
+                }
+                _ => return Err("a child's send states both its `invoke` and its `start`".into()),
+            }
         }
+    }
+    Ok(())
+}
+
+/// A path of invoke ids, joined by `/` for a child's child: an XML id cannot
+/// contain `/`, so the join is unambiguous, and no id in it is empty.
+fn check_invoke_path(path: &Value, what: &str) -> Result<(), String> {
+    let path = path
+        .as_str()
+        .ok_or_else(|| format!("{what} is a path of invoke ids"))?;
+    if path.split('/').any(str::is_empty) {
+        return Err(format!(
+            "{what} `{path}` is invoke ids joined by `/`, none of them empty"
+        ));
     }
     Ok(())
 }

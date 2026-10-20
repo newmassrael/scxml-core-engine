@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Child sessions";
+  SCE_MESH.md, Child Sessions in Mesh; docs/adr/0043): a child session that talks
+  to a Mesh peer is given a router of its own by the machine that starts it,
+  asked of the machine's host each time the invocation starts and installed
+  before the child initializes, and never the machine's own router, which would
+  send the child's event under the machine's name.
+
+  `working` invokes `list`, a child that greets `#server` as it is entered
+  (`list.hello`) and answers a peer's `list.ping` with `list.pong`. So the first
+  thing a started machine does is a child's send, which only a router installed
+  before the child's first `<onentry>` can carry. A child given no router has the
+  greeting refused as `error.execution`, ends on it, and the machine counts the
+  end in `refusals`: what a host that registers no factory, or one that answers
+  none, sees.
+
+  `open` enters `joined`, whose hybrid `<invoke>` `peer` starts the candidate
+  `pick` names, `static_mesh_relay`. The relay talks to no peer itself; it
+  starts `inner`, a grandchild that answers a peer's `inner.ping` with
+  `inner.pong`. The grandchild's router is the one the relay's router answers
+  for it, asked with the candidate's stem for the relay and with `inner` for the
+  grandchild.
+
+  `again` leaves `working`, which ends both children, and `back` enters it anew,
+  which starts `list` again: a second start of the same invoke, given a router
+  of its own.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="working" datamodel="sce-static" name="static_child_mesh">
+  <datamodel>
+    <data id="pick" sce:type="string" sce:capacity="48" expr="'static_mesh_relay.scxml'"/>
+    <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="working" initial="alone">
+    <invoke type="scxml" id="list">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+               version="1.0" initial="open" datamodel="sce-static">
+          <state id="open">
+            <onentry>
+              <send target="#server" event="list.hello"/>
+            </onentry>
+            <transition event="list.ping">
+              <send target="#server" event="list.pong"/>
+            </transition>
+            <!-- A send no router took: the child ends, and its parent counts it. -->
+            <transition event="error.execution" target="refused"/>
+          </state>
+          <final id="refused"/>
+        </scxml>
+      </content>
+    </invoke>
+    <transition event="done.invoke.list">
+      <assign location="refusals" expr="refusals + 1"/>
+    </transition>
+    <transition event="again" target="idle"/>
+    <state id="alone">
+      <transition event="open" target="joined"/>
+    </state>
+    <state id="joined">
+      <invoke type="scxml" id="peer" srcexpr="pick" sce:candidates="static_mesh_relay.scxml"/>
+    </state>
+  </state>
+  <state id="idle">
+    <transition event="back" target="working"/>
+  </state>
+</scxml>

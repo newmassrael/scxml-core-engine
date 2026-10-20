@@ -14,6 +14,7 @@
 //! every backend saves byte for byte, so one scenario judges every backend by the
 //! same answer and needs no per-type glue.
 
+pub mod child_mesh;
 pub mod hosts;
 pub mod integration;
 pub mod machines;
@@ -165,6 +166,13 @@ fn replay_recording<P: StatePolicy>(
             .push(Value::Object(send));
         Vec::new()
     });
+    // A child session the machine starts is given a router of its own by the
+    // factory its host registers (SCE_MESH.md, Child Sessions in Mesh), never
+    // the machine's: what a child sends is written into the same list, told by
+    // the invoke that started it and the start, and a step's `invoke` hands its
+    // event to the child through it.
+    let children = child_mesh::Children::new(std::sync::Arc::clone(&sent));
+    engine.register_child_mesh_routers(children.factory());
     engine.initialize();
     // A machine that starts a child session in its first state has that child
     // running, and maybe ended, before any event arrives; it is read as the
@@ -180,15 +188,27 @@ fn replay_recording<P: StatePolicy>(
             engine.advance_time_ms(ms);
         }
         if let Some(event) = step.get("event").and_then(Value::as_str) {
-            let dropped = step.get("dropped").and_then(Value::as_bool) == Some(true);
-            assert_eq!(
-                P::resolve_event_by_name(event).is_none(),
-                dropped,
-                "step {n}: the machine's events {} `{event}`",
-                if dropped { "match" } else { "do not match" }
-            );
             let data = step.get("data").map(Value::to_string).unwrap_or_default();
-            engine.raise_external_by_name(event, &data);
+            match step.get("invoke").and_then(Value::as_str) {
+                // A peer's event for the running child of that invoke, handed to
+                // the router the child was given; its parent applies it when it
+                // next drives the child. The child's events are not the
+                // machine's, so the machine is not asked whether it matches.
+                Some(path) => assert!(
+                    children.deliver(path, event, &data),
+                    "step {n}: no child of `{path}` is running to be sent `{event}`"
+                ),
+                None => {
+                    let dropped = step.get("dropped").and_then(Value::as_bool) == Some(true);
+                    assert_eq!(
+                        P::resolve_event_by_name(event).is_none(),
+                        dropped,
+                        "step {n}: the machine's events {} `{event}`",
+                        if dropped { "match" } else { "do not match" }
+                    );
+                    engine.raise_external_by_name(event, &data);
+                }
+            }
             settle(&mut engine);
         }
         let expect = &step["expect"];

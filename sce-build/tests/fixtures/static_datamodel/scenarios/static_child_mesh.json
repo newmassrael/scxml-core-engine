@@ -1,0 +1,37 @@
+{
+  "machine": "static_child_mesh",
+  "about": "A child session that talks to a Mesh peer is given a router of its own by the machine that starts it, asked of the machine's host each time the invocation starts and installed before the child initializes (SCE_MESH.md, Child Sessions in Mesh). A driver is the host, so it registers a factory whose routers write down what each child sent, told by the path of invoke ids that started it (`invoke`) and how many children that path had started (`start`), and a step's `invoke` hands its event to the running child of that path through its router, which the machine applies when it next drives the child. `list` greets `#server` as it is entered and answers `list.ping`; the hybrid `peer` starts `static_mesh_relay`, which talks to no peer and starts `inner`, whose router is the one the relay's router answers and which answers `inner.ping`. `again` and `back` leave `working` and enter it anew, which starts `list` a second time. A child given no router would have its greeting refused and end, which `refusals` would count: it stays 0 throughout. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "note": "started: `list` was given a router before it was entered, and its greeting went through it, under its own invoke and not the machine's",
+      "expect": { "state": "alone", "variables": { "refusals": 0 },
+                  "sent": [ { "target": "#server", "event": "list.hello", "invoke": "list", "start": 1 } ] } },
+
+    { "note": "a peer's `list.ping` reaches the child through its router, and the child answers through it",
+      "invoke": "list", "event": "list.ping",
+      "expect": { "state": "alone", "variables": { "refusals": 0 },
+                  "sent": [ { "target": "#server", "event": "list.pong", "invoke": "list", "start": 1 } ] } },
+
+    { "note": "`open` enters `joined`, whose hybrid invoke starts the relay; the relay sends nothing and starts `inner`, which waits",
+      "event": "open",
+      "expect": { "state": "joined", "variables": { "refusals": 0 }, "sent": [] } },
+
+    { "note": "a peer's `inner.ping` reaches the grandchild through the router the relay's router answered for it",
+      "invoke": "peer/inner", "event": "inner.ping",
+      "expect": { "state": "joined", "variables": { "refusals": 0 },
+                  "sent": [ { "target": "#server", "event": "inner.pong", "invoke": "peer/inner", "start": 1 } ] } },
+
+    { "note": "`again` leaves `working`, which ends both children: nothing is sent",
+      "event": "again",
+      "expect": { "state": "idle", "variables": { "refusals": 0 }, "sent": [] } },
+
+    { "note": "`back` enters `working` anew and starts `list` a second time, given a router of its own, through which it greets `#server` again",
+      "event": "back",
+      "expect": { "state": "alone", "variables": { "refusals": 0 },
+                  "sent": [ { "target": "#server", "event": "list.hello", "invoke": "list", "start": 2 } ] } },
+
+    { "note": "the second start takes the peer's event, and answers under its own start",
+      "invoke": "list", "event": "list.ping",
+      "expect": { "state": "alone", "variables": { "refusals": 0 },
+                  "sent": [ { "target": "#server", "event": "list.pong", "invoke": "list", "start": 2 } ] } }
+  ]
+}
