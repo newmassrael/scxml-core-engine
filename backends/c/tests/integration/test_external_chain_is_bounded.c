@@ -364,12 +364,13 @@ int main(void) {
                "the budget of the static-zero chain was refused");
 
         deliver(&sm, EXTERNAL_CHAIN_IS_BOUNDED_EVENT_ZERO);
-        EXPECT(external_chain_is_bounded_truncated_event_chains(&sm) == 0u,
+        EXPECT(external_chain_is_bounded_truncated_event_chains(&sm) ==
+                   table_u32("static_zero", "truncated_after_entry"),
                "entering the state arms one entry and pops none: nothing has been cut yet");
 
         external_chain_is_bounded_tick(&sm);
 
-        EXPECT(external_chain_is_bounded_truncated_event_chains(&sm) == 1u,
+        EXPECT(external_chain_is_bounded_truncated_event_chains(&sm) == table_u32("static_zero", "truncated"),
                "the tick popped entries due at its own reading until the budget, left the due one "
                "waiting and said so");
         EXPECT(counter_blinks(&sm) == (int64_t)budget, "the budget of pops at one reading (got %lld)",
@@ -405,6 +406,7 @@ int main(void) {
     {
         const uint32_t timed_budget = table_u32("timed", "budget");
         const uint32_t pulses = table_u32("timed", "pulses");
+        const uint32_t interval_ms = table_u32("timed", "interval_ms");
 
         external_chain_is_bounded_t walked;
         started(&walked);
@@ -412,7 +414,7 @@ int main(void) {
                "the budget of the timed chain was refused");
         deliver(&walked, EXTERNAL_CHAIN_IS_BOUNDED_EVENT_TIMED);
         for (uint32_t i = 0; i < pulses; ++i) {
-            external_chain_is_bounded_advance_time_ms(&walked, 1u);
+            external_chain_is_bounded_advance_time_ms(&walked, interval_ms);
         }
         EXPECT(counter_pulses(&walked) == (int64_t)pulses, "every pulse was heard (got %lld)",
                (long long)counter_pulses(&walked));
@@ -424,7 +426,7 @@ int main(void) {
         EXPECT(external_chain_is_bounded_set_max_external_events_per_call(&jumped, timed_budget),
                "the budget of the timed chain was refused");
         deliver(&jumped, EXTERNAL_CHAIN_IS_BOUNDED_EVENT_TIMED);
-        external_chain_is_bounded_advance_time_ms(&jumped, pulses);
+        external_chain_is_bounded_advance_time_ms(&jumped, pulses * interval_ms);
         EXPECT(counter_pulses(&jumped) == (int64_t)pulses, "every pulse was heard in one jump (got %lld)",
                (long long)counter_pulses(&jumped));
         EXPECT(external_chain_is_bounded_truncated_event_chains(&jumped) == table_u32("timed", "truncated"),

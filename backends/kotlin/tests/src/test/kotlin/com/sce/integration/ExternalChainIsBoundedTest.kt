@@ -193,7 +193,7 @@ class ExternalChainIsBoundedTest {
 
         deliver(sm, ExternalChainIsBoundedEvent.Zero)
         assertEquals(
-            0,
+            count("static_zero", "truncated_after_entry"),
             sm.truncatedEventChains(),
             "entering the state arms one entry and pops none: nothing has been cut yet",
         )
@@ -201,7 +201,7 @@ class ExternalChainIsBoundedTest {
         sm.tick()
 
         assertEquals(
-            1,
+            count("static_zero", "truncated"),
             sm.truncatedEventChains(),
             "the tick popped entries due at its own reading until the budget, left the due one " +
                 "waiting and said so",
@@ -243,10 +243,11 @@ class ExternalChainIsBoundedTest {
     @Test
     fun aChainThatIsFiniteBecauseTheClockIsIsNotRefused() {
         val pulses = number("timed", "pulses")
+        val intervalMs = number("timed", "interval_ms")
         val walked = started()
         walked.setMaxExternalEventsPerCall(count("timed", "budget"))
         deliver(walked, ExternalChainIsBoundedEvent.Timed)
-        repeat(pulses.toInt()) { walked.advanceTimeMs(1) }
+        repeat(pulses.toInt()) { walked.advanceTimeMs(intervalMs) }
         assertEquals(pulses, walked.pulses())
         assertEquals(
             count("timed", "truncated"),
@@ -257,7 +258,7 @@ class ExternalChainIsBoundedTest {
         val jumped = started()
         jumped.setMaxExternalEventsPerCall(count("timed", "budget"))
         deliver(jumped, ExternalChainIsBoundedEvent.Timed)
-        jumped.advanceTimeMs(pulses)
+        jumped.advanceTimeMs(pulses * intervalMs)
         assertEquals(pulses, jumped.pulses())
         assertEquals(
             count("timed", "truncated"),
