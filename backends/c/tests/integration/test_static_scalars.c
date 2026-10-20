@@ -154,6 +154,7 @@
 #include "static_send_params_sm.h"
 #include "static_send_target_sm.h"
 #include "static_send_type_sm.h"
+#include "static_state_algorithm_enum_sm.h"
 #include "static_state_algorithm_sm.h"
 #include "static_string_capacity_sm.h"
 #include "static_text_record_sm.h"
@@ -1462,6 +1463,46 @@ static const record_variable_t state_algorithm_records[] = {RECORD_ROW(static_st
 STATIC_SCENARIO(static_state_algorithm, state_algorithm_states, state_algorithm_variables, NULL, state_algorithm_lists,
                 state_algorithm_records)
 
+// static_state_algorithm_enum: the algorithms are handed records whose field is a
+// value of an enum, and a value of the enum itself, and give back a list of those
+// records and a value of the enum. The machine holds the enum in the type the
+// enum document's header declares, which the algorithms hold it in too, and each
+// value is observed as the name its document declares — the function is named
+// for the document's own name, read from its file: `enum_item_status.scxml`.
+#define ITEM_FIELDS(N, E) N(id) E(status, enum_item_status_declared_name)
+VARIABLE_READER(static_state_algorithm_enum, last)
+VARIABLE_READER(static_state_algorithm_enum, openCount)
+VARIABLE_READER(static_state_algorithm_enum, startedCount)
+VARIABLE_READER(static_state_algorithm_enum, doneCount)
+VARIABLE_READER(static_state_algorithm_enum, checks)
+VARIABLE_READER(static_state_algorithm_enum, refusals)
+RECORD_LIST_READER(static_state_algorithm_enum, items, static_state_algorithm_enum_record_item_view_t,
+                   static_state_algorithm_enum_record_item_t, ITEM_FIELDS)
+
+static const char *static_state_algorithm_enum_text(void *sm, const char *name) {
+    if (strcmp(name, "last") == 0) {
+        return enum_item_status_declared_name(
+            static_state_algorithm_enum_get_last((const static_state_algorithm_enum_t *)sm));
+    }
+    return NULL;
+}
+
+static const name_value_t state_algorithm_enum_states[] = {
+    {"board", STATIC_STATE_ALGORITHM_ENUM_STATE_BOARD},
+};
+static const variable_t state_algorithm_enum_variables[] = {
+    {"last", static_state_algorithm_enum_read_last},
+    {"openCount", static_state_algorithm_enum_read_openCount},
+    {"startedCount", static_state_algorithm_enum_read_startedCount},
+    {"doneCount", static_state_algorithm_enum_read_doneCount},
+    {"checks", static_state_algorithm_enum_read_checks},
+    {"refusals", static_state_algorithm_enum_read_refusals},
+};
+static const record_variable_t state_algorithm_enum_records[] = {RECORD_LIST_ROW(static_state_algorithm_enum, items),
+                                                                 {NULL, NULL, NULL, NULL}};
+STATIC_SCENARIO(static_state_algorithm_enum, state_algorithm_enum_states, state_algorithm_enum_variables,
+                static_state_algorithm_enum_text, no_lists, state_algorithm_enum_records)
+
 // static_record_list_index: a field of the element a list of records is indexed
 // at, read in an assignment, an operand and a guard; an index outside the list
 // reads nothing and raises `error.execution`.
@@ -2551,6 +2592,7 @@ int main(void) {
     bad |= static_record_scenario("static_record", 16);
     bad |= static_record_list_scenario("static_record_list", 14);
     bad |= static_state_algorithm_scenario("static_state_algorithm", 17);
+    bad |= static_state_algorithm_enum_scenario("static_state_algorithm_enum", 18);
     bad |= static_text_record_scenario("static_text_record", 12);
     bad |= static_record_list_index_scenario("static_record_list_index", 19);
     bad |= static_record_enum_scenario("static_record_enum", 29);

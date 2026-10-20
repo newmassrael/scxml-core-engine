@@ -192,6 +192,19 @@ done
 if [ "${#SCHEMAS[@]}" -gt 0 ]; then
     mapfile -t SCHEMAS < <(printf '%s\n' "${SCHEMAS[@]}" | sort -u)
 fi
+# The enums those records and algorithms hold a value of: a record's enum field and
+# an algorithm's enum slot are of the enum document's own class, which the schema,
+# the algorithm and the adapter a machine maps its own variants through import by
+# the package named for the enum (SCE Accepted Subset §2.15).
+ENUMS=()
+for document in "${SCHEMAS[@]}" "${ALGORITHMS[@]}"; do
+    while IFS= read -r enum; do
+        ENUMS+=("$enum")
+    done < <(imports_of enum "$document")
+done
+if [ "${#ENUMS[@]}" -gt 0 ]; then
+    mapfile -t ENUMS < <(printf '%s\n' "${ENUMS[@]}" | sort -u)
+fi
 
 # A generated file's directory is the last name of the package it declares, which
 # the generator takes from the document's own name and not from the path it was
@@ -212,6 +225,10 @@ install_generated() {
         PACKAGES+=("$package")
     done
 }
+for i in "${!ENUMS[@]}"; do
+    "$CODEGEN" generate "${ENUMS[$i]}" -l kotlin -o "$TMP/enum_$i/"
+    install_generated "$TMP/enum_$i"
+done
 for i in "${!SCHEMAS[@]}"; do
     "$CODEGEN" generate "${SCHEMAS[$i]}" -l kotlin -o "$TMP/schema_$i/"
     install_generated "$TMP/schema_$i"

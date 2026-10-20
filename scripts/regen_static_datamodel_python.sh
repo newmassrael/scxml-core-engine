@@ -137,6 +137,19 @@ done
 if [ "${#SCHEMAS[@]}" -gt 0 ]; then
     mapfile -t SCHEMAS < <(printf '%s\n' "${SCHEMAS[@]}" | sort -u)
 fi
+# The enums those records and algorithms hold a value of: a record's enum field and
+# an algorithm's enum slot are of the enum document's own class, a sibling module
+# the schema, the algorithm and the adapter a machine maps its own members through
+# import (SCE Accepted Subset §2.15).
+ENUMS=()
+for document in "${SCHEMAS[@]}" "${ALGORITHMS[@]}"; do
+    while IFS= read -r enum; do
+        ENUMS+=("$enum")
+    done < <(imports_of enum "$document")
+done
+if [ "${#ENUMS[@]}" -gt 0 ]; then
+    mapfile -t ENUMS < <(printf '%s\n' "${ENUMS[@]}" | sort -u)
+fi
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -149,6 +162,9 @@ for i in "${!ALGORITHMS[@]}"; do
 done
 for i in "${!SCHEMAS[@]}"; do
     "$CODEGEN" generate "${SCHEMAS[$i]}" -l python -o "$TMP/schema_$i/"
+done
+for i in "${!ENUMS[@]}"; do
+    "$CODEGEN" generate "${ENUMS[$i]}" -l python -o "$TMP/enum_$i/"
 done
 
 # What this directory holds that is not generated is its package marker and its
@@ -170,6 +186,13 @@ done
 
 for i in "${!SCHEMAS[@]}"; do
     for generated in "$TMP/schema_$i"/*.py; do
+        cp "$generated" "$GENERATED_DIR/"
+        MODULES+=("$(basename "$generated" .py)")
+    done
+done
+
+for i in "${!ENUMS[@]}"; do
+    for generated in "$TMP/enum_$i"/*.py; do
         cp "$generated" "$GENERATED_DIR/"
         MODULES+=("$(basename "$generated" .py)")
     done

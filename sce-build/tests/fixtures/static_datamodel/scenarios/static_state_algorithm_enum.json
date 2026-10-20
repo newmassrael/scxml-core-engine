@@ -1,0 +1,89 @@
+{
+  "machine": "static_state_algorithm_enum",
+  "about": "A statechart hands the algorithms records whose `status` field is a value of an enum, and a value of the enum itself, and holds what they give back: a list of those records with one item's status set (SetStatus, its status taken from the payload of the event), how many items stand at a status named by its variant (CountStatus), and the status of one item (StatusOf), held in a variable of the enum and compared with a variant in a guard. Each value crosses by the name its variant is declared with: `in_progress` is spelled with an underscore and the declared values (2, 5, 7) are not the variants' positions, so a value that crossed by its position or by a backend's own spelling would not read back as written. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "note": "nothing yet",
+      "expect": { "state": "board", "variables": {
+        "items": [], "last": "open", "openCount": 0, "startedCount": 0, "doneCount": 0,
+        "checks": 0, "refusals": 0 } } },
+
+    { "note": "three items come in, each with the status its payload names",
+      "event": "item.added", "data": { "id": 1, "status": "open" },
+      "expect": { "variables": { "items": [ { "id": 1, "status": "open" } ] } } },
+    { "event": "item.added", "data": { "id": 2, "status": "in_progress" },
+      "expect": { "variables": { "items": [
+        { "id": 1, "status": "open" }, { "id": 2, "status": "in_progress" } ] } } },
+    { "event": "item.added", "data": { "id": 3, "status": "open" },
+      "expect": { "variables": { "items": [
+        { "id": 1, "status": "open" }, { "id": 2, "status": "in_progress" },
+        { "id": 3, "status": "open" } ] } } },
+
+    { "note": "the algorithm counts the items whose enum field is the variant the statechart names",
+      "event": "count",
+      "expect": { "variables": { "openCount": 2, "startedCount": 1, "doneCount": 0 } } },
+
+    { "note": "item 1 is open, so the guard on what StatusOf returns is false",
+      "event": "check",
+      "expect": { "variables": { "checks": 0 } } },
+
+    { "note": "item 1 moves to done: the payload's enum field is handed to SetStatus, the list comes back with that item's field set, and StatusOf answers the status it now has",
+      "event": "item.moved", "data": { "id": 1, "status": "done" },
+      "expect": { "variables": {
+        "items": [ { "id": 1, "status": "done" }, { "id": 2, "status": "in_progress" },
+                   { "id": 3, "status": "open" } ],
+        "last": "done" } } },
+
+    { "note": "the value StatusOf returns compares equal to the variant in the guard",
+      "event": "check",
+      "expect": { "variables": { "checks": 1 } } },
+
+    { "event": "count",
+      "expect": { "variables": { "openCount": 1, "startedCount": 1, "doneCount": 1 } } },
+
+    { "note": "no item has id 9: the list comes back as it went in, and StatusOf answers the variant its body starts at",
+      "event": "item.moved", "data": { "id": 9, "status": "in_progress" },
+      "expect": { "variables": {
+        "items": [ { "id": 1, "status": "done" }, { "id": 2, "status": "in_progress" },
+                   { "id": 3, "status": "open" } ],
+        "last": "open" } } },
+
+    { "note": "the variant spelled with an underscore crosses both ways as written",
+      "event": "item.moved", "data": { "id": 3, "status": "in_progress" },
+      "expect": { "variables": {
+        "items": [ { "id": 1, "status": "done" }, { "id": 2, "status": "in_progress" },
+                   { "id": 3, "status": "in_progress" } ],
+        "last": "in_progress" } } },
+
+    { "event": "count",
+      "expect": { "variables": { "openCount": 0, "startedCount": 2, "doneCount": 1 } } },
+
+    { "event": "item.added", "data": { "id": 4, "status": "done" },
+      "expect": { "variables": { "items": [
+        { "id": 1, "status": "done" }, { "id": 2, "status": "in_progress" },
+        { "id": 3, "status": "in_progress" }, { "id": 4, "status": "done" } ],
+        "refusals": 0 } } },
+
+    { "note": "a fifth item does not fit the four the list holds: nothing is appended, and error.execution says so",
+      "event": "item.added", "data": { "id": 5, "status": "open" },
+      "expect": { "variables": { "items": [
+        { "id": 1, "status": "done" }, { "id": 2, "status": "in_progress" },
+        { "id": 3, "status": "in_progress" }, { "id": 4, "status": "done" } ],
+        "refusals": 1 } } },
+
+    { "event": "count",
+      "expect": { "variables": { "openCount": 0, "startedCount": 2, "doneCount": 2 } } },
+
+    { "note": "a full list is handed over and comes back whole, with the one item's status set",
+      "event": "item.moved", "data": { "id": 2, "status": "done" },
+      "expect": { "variables": {
+        "items": [ { "id": 1, "status": "done" }, { "id": 2, "status": "done" },
+                   { "id": 3, "status": "in_progress" }, { "id": 4, "status": "done" } ],
+        "last": "done", "refusals": 1 } } },
+
+    { "event": "count",
+      "expect": { "variables": { "openCount": 0, "startedCount": 1, "doneCount": 3 } } },
+
+    { "event": "check",
+      "expect": { "variables": { "checks": 2 } } }
+  ]
+}

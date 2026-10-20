@@ -155,6 +155,9 @@ use sce_rust_tests::integration::static_datamodel::static_send_target_sm::{
 use sce_rust_tests::integration::static_datamodel::static_send_type_sm::{
     StaticSendTypePersist, StaticSendTypePolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_state_algorithm_enum_sm::{
+    StaticStateAlgorithmEnumPersist, StaticStateAlgorithmEnumPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_state_algorithm_sm::{
     StaticStateAlgorithmPersist, StaticStateAlgorithmPolicy,
 };
@@ -952,6 +955,20 @@ fn static_text_record_hands_bounded_text_to_an_algorithm_and_takes_it_back() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_text_record.json"
+        ),
+    );
+}
+
+// A statechart hands the algorithms records whose field is a value of an enum, and
+// a value of the enum itself, and takes back a list of those records and a value of
+// the enum: each crosses by the name its variant is declared with.
+#[test]
+fn static_state_algorithm_enum_hands_an_enum_to_an_algorithm_and_takes_it_back() {
+    replay(
+        Engine::new(StaticStateAlgorithmEnumPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_state_algorithm_enum.json"
         ),
     );
 }

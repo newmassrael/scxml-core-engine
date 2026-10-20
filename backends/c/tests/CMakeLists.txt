@@ -2600,9 +2600,20 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
                    algorithm_ledger_add.scxml algorithm_ledger_total.scxml algorithm_ledger_amount.scxml
                    algorithm_ledger_bump.scxml algorithm_ledger_ids.scxml
     )
+    # A machine hands algorithms records whose field is a value of an enum, and a value
+    # of the enum itself. The enum's header declares the type the machine and the
+    # algorithms both hold the value in, under the guard the machine's header shares.
+    sce_generate_static_integration_c_test(static_state_algorithm_enum
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_state_algorithm_enum.scxml"
+        STAGE_ALSO schema_item.scxml schema_item_move.scxml enum_item_status.scxml
+                   algorithm_item_status_set.scxml algorithm_item_status_count.scxml
+                   algorithm_item_status_of.scxml
+    )
     set(_STATE_ALGORITHM_HEADERS "")
-    foreach(_STATE_HEADER schema_entry schema_total ledger_add ledger_total ledger_amount ledger_bump ledger_ids)
-        if(_STATE_HEADER MATCHES "^schema_")
+    foreach(_STATE_HEADER schema_entry schema_total ledger_add ledger_total ledger_amount ledger_bump ledger_ids
+                          schema_item enum_item_status item_status_set item_status_count item_status_of)
+        if(_STATE_HEADER MATCHES "^(schema|enum)_")
             set(_STATE_SOURCE
                 "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_STATE_HEADER}.scxml")
         else()
@@ -2975,6 +2986,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${_DAY_RUN_HEADER}
         ${_DAY_REPEAT_HEADER}
         ${INTEGRATION_C_TEST_static_state_algorithm_SOURCES}
+        ${INTEGRATION_C_TEST_static_state_algorithm_enum_SOURCES}
         ${_STATE_ALGORITHM_HEADERS}
         ${INTEGRATION_C_TEST_static_record_fields_SOURCES}
         ${INTEGRATION_C_TEST_static_record_real_SOURCES}

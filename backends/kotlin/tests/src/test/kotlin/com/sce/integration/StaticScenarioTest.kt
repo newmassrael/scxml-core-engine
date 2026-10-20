@@ -80,6 +80,7 @@ import com.sce.integration.static_record_bytes.StaticRecordBytesStateMachine
 import com.sce.integration.static_record_string.StaticRecordStringStateMachine
 import com.sce.integration.static_schema_revision.StaticSchemaRevisionStateMachine
 import com.sce.integration.static_state_algorithm.StaticStateAlgorithmStateMachine
+import com.sce.integration.static_state_algorithm_enum.StaticStateAlgorithmEnumStateMachine
 import com.sce.integration.static_string_capacity.StaticStringCapacityStateMachine
 import com.sce.integration.static_text_record.StaticTextRecordStateMachine
 import com.sce.integration.static_timers.StaticTimersStateMachine
@@ -1234,6 +1235,26 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_text_record"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // A statechart hands the algorithms records whose field is a value of an enum,
+    // and a value of the enum itself, and takes back a list of those records and a
+    // value of the enum: each crosses by the name its variant is declared with.
+    @Test
+    fun staticStateAlgorithmEnumHandsAnEnumToAnAlgorithmAndTakesItBack() {
+        val sm = StaticStateAlgorithmEnumStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_state_algorithm_enum"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },

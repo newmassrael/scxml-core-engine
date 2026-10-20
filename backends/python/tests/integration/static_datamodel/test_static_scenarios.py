@@ -471,6 +471,13 @@ def test_a_statechart_hands_bounded_text_to_an_algorithm_and_takes_it_back() -> 
     replay("static_text_record")
 
 
+# A statechart hands the algorithms records whose field is a value of an enum, and a
+# value of the enum itself, and takes back a list of those records and a value of the
+# enum: each crosses by the name its variant is declared with.
+def test_a_statechart_hands_an_enum_to_an_algorithm_and_takes_it_back() -> None:
+    replay("static_state_algorithm_enum")
+
+
 # An element is read by its index, and an index outside the list is a failure.
 def test_a_list_element_is_read_by_its_index() -> None:
     replay("static_list_index")

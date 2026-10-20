@@ -86,6 +86,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_target"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_type"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_state_algorithm"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_state_algorithm_enum"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_string_capacity"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_text_record"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_timers"
@@ -963,6 +964,31 @@ func TestAStatechartHandsBoundedTextToAnAlgorithmAndTakesItBack(t *testing.T) {
 		"incoming": func() any { return slotJSON(policy.Incoming()) },
 		"known":    func() any { return policy.Known() },
 		"refusals": func() any { return policy.Refusals() },
+	}))
+}
+
+// A statechart hands the algorithms records whose field is a value of an enum, and
+// a value of the enum itself, and takes back a list of those records and a value of
+// the enum: each crosses by the name its variant is declared with, which is what a
+// host reads it back as.
+func TestAStatechartHandsAnEnumToAnAlgorithmAndTakesItBack(t *testing.T) {
+	policy := static_state_algorithm_enum.NewStaticStateAlgorithmEnumPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_state_algorithm_enum", drive[static_state_algorithm_enum.StaticStateAlgorithmEnumState, static_state_algorithm_enum.StaticStateAlgorithmEnumEvent](&policy, map[string]func() any{
+		"items": func() any {
+			items := policy.Items()
+			out := make([]any, len(items))
+			for i, item := range items {
+				out[i] = map[string]any{"id": item.Id(), "status": item.Status().String()}
+			}
+			return out
+		},
+		"last":         func() any { return policy.Last().String() },
+		"openCount":    func() any { return policy.OpenCount() },
+		"startedCount": func() any { return policy.StartedCount() },
+		"doneCount":    func() any { return policy.DoneCount() },
+		"checks":       func() any { return policy.Checks() },
+		"refusals":     func() any { return policy.Refusals() },
 	}))
 }
 

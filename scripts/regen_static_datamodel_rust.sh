@@ -73,9 +73,15 @@ fi
 # its list is what static_list_assign takes whole. A machine's import names
 # each as `super::<name>`, so it is generated beside the machines.
 ALGORITHMS=(days_in_month day_run day_repeat ledger_add ledger_total ledger_amount ledger_bump ledger_ids)
+# static_state_algorithm_enum's: a list of records with an enum field, and a value
+# of the enum, in and out.
+ALGORITHMS+=(item_status_set item_status_count item_status_of)
 # The records static_state_algorithm hands those algorithms and takes back: an
 # algorithm names one as `super::schema_<name>`, so it is generated beside them.
 SCHEMAS=(schema_entry schema_total)
+# ... and static_state_algorithm_enum's record, with the enum its field holds, which
+# the schema, the algorithms and the machine's adapters name as `super::enum_item_status`.
+SCHEMAS+=(schema_item enum_item_status)
 # The schedule todo_peer reads from the fields a to-do holds: the occurrence and schedule
 # records, the rules that order two writes, read a field, tell a conflict, select a day
 # and expand a repetition. Each is named by its file, which a machine's import names as

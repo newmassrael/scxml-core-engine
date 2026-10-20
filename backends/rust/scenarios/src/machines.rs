@@ -188,6 +188,7 @@ scenarios! {
     "static_send_target" => static_send_target_sm::{StaticSendTargetPolicy, StaticSendTargetPersist};
     "static_send_type" => static_send_type_sm::{StaticSendTypePolicy, StaticSendTypePersist};
     "static_state_algorithm" => static_state_algorithm_sm::{StaticStateAlgorithmPolicy, StaticStateAlgorithmPersist};
+    "static_state_algorithm_enum" => static_state_algorithm_enum_sm::{StaticStateAlgorithmEnumPolicy, StaticStateAlgorithmEnumPersist};
     "static_string_capacity" => static_string_capacity_sm::{StaticStringCapacityPolicy, StaticStringCapacityPersist};
     "static_text_record" => static_text_record_sm::{StaticTextRecordPolicy, StaticTextRecordPersist};
     "static_timers" => static_timers_sm::{StaticTimersPolicy, StaticTimersPersist} @ Manual;

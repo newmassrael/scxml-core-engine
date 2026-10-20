@@ -85,6 +85,7 @@
 #include "static_send_params_sm.h"
 #include "static_send_target_sm.h"
 #include "static_send_type_sm.h"
+#include "static_state_algorithm_enum_sm.h"
 #include "static_state_algorithm_sm.h"
 #include "static_string_capacity_sm.h"
 #include "static_text_record_sm.h"
@@ -881,6 +882,32 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, AStatechartHandsBoundedTextToAnAlgori
         {"refusals", [](const Machine &m) { return json(m.refusals()); }},
     });
     replay("static_text_record", driver);
+}
+
+// A statechart hands the algorithms records whose field is a value of an enum, and
+// a value of the enum itself, and takes back a list of those records and a value of
+// the enum: each crosses by the name its variant is declared with, which is what a
+// host reads it back as.
+TEST(AStaticDatamodelRunsGeneratedCppTest, AStatechartHandsAnEnumToAnAlgorithmAndTakesItBack) {
+    namespace E = G::static_state_algorithm_enum;
+    using Machine = E::static_state_algorithm_enum;
+    Driver<Machine> driver({
+        {"items",
+         [](const Machine &m) {
+             json listed = json::array();
+             for (const auto &item : m.items()) {
+                 listed.push_back(json{{"id", item.id}, {"status", std::string(E::sceLogName(item.status))}});
+             }
+             return listed;
+         }},
+        {"last", [](const Machine &m) { return json(std::string(E::sceLogName(m.last()))); }},
+        {"openCount", [](const Machine &m) { return json(m.openCount()); }},
+        {"startedCount", [](const Machine &m) { return json(m.startedCount()); }},
+        {"doneCount", [](const Machine &m) { return json(m.doneCount()); }},
+        {"checks", [](const Machine &m) { return json(m.checks()); }},
+        {"refusals", [](const Machine &m) { return json(m.refusals()); }},
+    });
+    replay("static_state_algorithm_enum", driver);
 }
 
 // An element is read by its index like any number; an index below zero or not

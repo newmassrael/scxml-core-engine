@@ -149,6 +149,19 @@ done
 if [ "${#SCHEMAS[@]}" -gt 0 ]; then
     mapfile -t SCHEMAS < <(printf '%s\n' "${SCHEMAS[@]}" | sort -u)
 fi
+# The enums those records and algorithms hold a value of: a record's enum field and
+# an algorithm's enum slot are of the enum document's own type, a package of its own
+# that the schema, the algorithm and the adapter a machine maps its own constants
+# through import (SCE Accepted Subset §2.15).
+ENUMS=()
+for document in "${SCHEMAS[@]}" "${ALGORITHMS[@]}"; do
+    while IFS= read -r enum; do
+        ENUMS+=("$enum")
+    done < <(imports_of enum "$document")
+done
+if [ "${#ENUMS[@]}" -gt 0 ]; then
+    mapfile -t ENUMS < <(printf '%s\n' "${ENUMS[@]}" | sort -u)
+fi
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -174,6 +187,9 @@ done
 for i in "${!SCHEMAS[@]}"; do
     "$CODEGEN" generate "${SCHEMAS[$i]}" -l go -o "$TMP/schema_$i/" --go-module-prefix "$GO_MODULE_PREFIX"
 done
+for i in "${!ENUMS[@]}"; do
+    "$CODEGEN" generate "${ENUMS[$i]}" -l go -o "$TMP/enum_$i/" --go-module-prefix "$GO_MODULE_PREFIX"
+done
 
 mkdir -p "$GENERATED_DIR"
 find "$GENERATED_DIR" -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} +
@@ -192,6 +208,14 @@ for i in "${!ALGORITHMS[@]}"; do
 done
 for i in "${!SCHEMAS[@]}"; do
     for generated in "$TMP/schema_$i"/*.go; do
+        package="$(basename "$generated" .go)"
+        mkdir -p "$GENERATED_DIR/$package"
+        cp "$generated" "$GENERATED_DIR/$package/"
+        PACKAGES+=("$package")
+    done
+done
+for i in "${!ENUMS[@]}"; do
+    for generated in "$TMP/enum_$i"/*.go; do
         package="$(basename "$generated" .go)"
         mkdir -p "$GENERATED_DIR/$package"
         cp "$generated" "$GENERATED_DIR/$package/"
