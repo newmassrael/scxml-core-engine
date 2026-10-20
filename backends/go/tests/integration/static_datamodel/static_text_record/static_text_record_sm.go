@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 23b50ff6771257bf06531b96d0a47eeaa5c39fb71939d9bd5e537100a9105206
+// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -176,19 +176,19 @@ const (
 
 // StaticTextRecordTextSlotPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `text.slot`. Internal to the package; consumers inject it via
-// the `RaiseTextSlot` seam below (fields are unexported by design).
+// the `StaticTextRecordRaiseTextSlot` seam below (fields are unexported by design).
 type StaticTextRecordTextSlotPayload struct {
 	slot uint32
 	version int64
 	text string
 }
 
-// RaiseTextSlot is the NL→IR Item C1 Path A per-event typed `_event.data`
+// StaticTextRecordRaiseTextSlot is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `text.slot` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseTextSlot` extension-trait method
+// inconsistently. Twin of the Rust `StaticTextRecordInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseTextSlot(e *sce.Engine[StaticTextRecordState, StaticTextRecordEvent], slot uint32, version int64, text string) {
+func StaticTextRecordRaiseTextSlot(e *sce.Engine[StaticTextRecordState, StaticTextRecordEvent], slot uint32, version int64, text string) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[StaticTextRecordEvent]{
 		Event:    StaticTextRecordEventTextSlot,
 		Metadata: sce.EventMetadata{
@@ -229,7 +229,7 @@ func (r StaticTextRecordSlotRecord) Text() string {
 
 
 // ── SCE Accepted Subset §2.15: calls of an algorithm that takes or returns state ──
-func sceAdapt_Holds__vv(p0 []StaticTextRecordSlotRecord, p1 StaticTextRecordSlotRecord) bool {
+func sceAdapt_StaticTextRecord_Holds__vv(p0 []StaticTextRecordSlotRecord, p1 StaticTextRecordSlotRecord) bool {
 	a0 := make([]sce_text_slot.TextSlotPayload, len(p0))
 	for i, e := range p0 {
 		a0[i] = sce_text_slot.TextSlotPayload{Slot: e.slot, Version: e.version, Text: e.text}
@@ -237,13 +237,13 @@ func sceAdapt_Holds__vv(p0 []StaticTextRecordSlotRecord, p1 StaticTextRecordSlot
 	return sce_text_slot_holds.TextSlotHolds(a0, sce_text_slot.TextSlotPayload{Slot: p1.slot, Version: p1.version, Text: p1.text})
 }
 
-func sceAdapt_Latest__vv(p0 StaticTextRecordSlotRecord, p1 StaticTextRecordSlotRecord) StaticTextRecordSlotRecord {
+func sceAdapt_StaticTextRecord_Latest__vv(p0 StaticTextRecordSlotRecord, p1 StaticTextRecordSlotRecord) StaticTextRecordSlotRecord {
 	r := sce_text_slot_latest.TextSlotLatest(sce_text_slot.TextSlotPayload{Slot: p0.slot, Version: p0.version, Text: p0.text}, sce_text_slot.TextSlotPayload{Slot: p1.slot, Version: p1.version, Text: p1.text})
 	out := StaticTextRecordSlotRecord{slot: r.Slot, version: r.Version, text: r.Text}
 	return out
 }
 
-func sceAdapt_Retitled__v(p0 []StaticTextRecordSlotRecord) scealgorithm.Outcome[[]StaticTextRecordSlotRecord] {
+func sceAdapt_StaticTextRecord_Retitled__v(p0 []StaticTextRecordSlotRecord) scealgorithm.Outcome[[]StaticTextRecordSlotRecord] {
 	a0 := make([]sce_text_slot.TextSlotPayload, len(p0))
 	for i, e := range p0 {
 		a0[i] = sce_text_slot.TextSlotPayload{Slot: e.slot, Version: e.version, Text: e.text}
@@ -724,10 +724,10 @@ func (p *StaticTextRecordPolicy) ExecuteTransitionContent(source StaticTextRecor
 
 
 
-	p.vHeld = sceAdapt_Latest__vv(p.vHeld, p.vIncoming)
+	p.vHeld = sceAdapt_StaticTextRecord_Latest__vv(p.vHeld, p.vIncoming)
 
 
-	if sceAdapt_Holds__vv(p.vSlots, p.vIncoming) {
+	if sceAdapt_StaticTextRecord_Holds__vv(p.vSlots, p.vIncoming) {
 
 
 	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vKnown, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticTextRecordEventErrorExecution, "<assign location='known'>: an integer operation overflowed or failed")); return true }; p.vKnown = sceValue; return false }() {
@@ -750,7 +750,7 @@ func (p *StaticTextRecordPolicy) ExecuteTransitionContent(source StaticTextRecor
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_Retitled__v(p.vSlots)), 16); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticTextRecordEventErrorExecution, "<assign location='slots'>: an integer operation overflowed or failed")); return true }; p.vSlots = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_StaticTextRecord_Retitled__v(p.vSlots)), 16); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticTextRecordEventErrorExecution, "<assign location='slots'>: an integer operation overflowed or failed")); return true }; p.vSlots = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

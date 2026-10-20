@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 23b50ff6771257bf06531b96d0a47eeaa5c39fb71939d9bd5e537100a9105206
+// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -171,22 +171,22 @@ func (e StaticDonedataRecordEvent) String() string {
 type StaticDonedataRecordViewModeEnum uint8
 
 const (
-	EnumViewModeMonth StaticDonedataRecordViewModeEnum = 0
-	EnumViewModeWeek StaticDonedataRecordViewModeEnum = 1
-	EnumViewModeDay StaticDonedataRecordViewModeEnum = 2
-	EnumViewModeAgendaList StaticDonedataRecordViewModeEnum = 3
+	StaticDonedataRecordViewModeEnumMonth StaticDonedataRecordViewModeEnum = 0
+	StaticDonedataRecordViewModeEnumWeek StaticDonedataRecordViewModeEnum = 1
+	StaticDonedataRecordViewModeEnumDay StaticDonedataRecordViewModeEnum = 2
+	StaticDonedataRecordViewModeEnumAgendaList StaticDonedataRecordViewModeEnum = 3
 )
 
 // String is the name the enum document declares for the value.
 func (v StaticDonedataRecordViewModeEnum) String() string {
 	switch v {
-	case EnumViewModeMonth:
+	case StaticDonedataRecordViewModeEnumMonth:
 		return "month"
-	case EnumViewModeWeek:
+	case StaticDonedataRecordViewModeEnumWeek:
 		return "week"
-	case EnumViewModeDay:
+	case StaticDonedataRecordViewModeEnumDay:
 		return "day"
-	case EnumViewModeAgendaList:
+	case StaticDonedataRecordViewModeEnumAgendaList:
 		return "agenda_list"
 	}
 	return ""
@@ -231,7 +231,7 @@ type StaticDonedataRecordPolicy struct {
 // NewStaticDonedataRecordPolicy creates a new policy with default values.
 func NewStaticDonedataRecordPolicy() StaticDonedataRecordPolicy {
 	return StaticDonedataRecordPolicy{
-		vShown: StaticDonedataRecordViewRecord{layout: EnumViewModeDay, zoom: 2},
+		vShown: StaticDonedataRecordViewRecord{layout: StaticDonedataRecordViewModeEnumDay, zoom: 2},
 	}
 }
 
@@ -592,7 +592,7 @@ func (p *StaticDonedataRecordPolicy) ExecuteTransitionContent(source StaticDoned
 
 
 
-	p.vShown.layout = EnumViewModeAgendaList
+	p.vShown.layout = StaticDonedataRecordViewModeEnumAgendaList
 
 			}()
 		}

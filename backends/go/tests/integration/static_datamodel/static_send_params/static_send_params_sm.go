@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 23b50ff6771257bf06531b96d0a47eeaa5c39fb71939d9bd5e537100a9105206
+// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -179,7 +179,7 @@ const (
 
 // StaticSendParamsEchoPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `echo`. Internal to the package; consumers inject it via
-// the `RaiseEcho` seam below (fields are unexported by design).
+// the `StaticSendParamsRaiseEcho` seam below (fields are unexported by design).
 type StaticSendParamsEchoPayload struct {
 	total uint32
 	ok bool
@@ -188,18 +188,18 @@ type StaticSendParamsEchoPayload struct {
 
 // StaticSendParamsPartialPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `partial`. Internal to the package; consumers inject it via
-// the `RaisePartial` seam below (fields are unexported by design).
+// the `StaticSendParamsRaisePartial` seam below (fields are unexported by design).
 type StaticSendParamsPartialPayload struct {
 	total uint32
 	part uint8
 }
 
-// RaiseEcho is the NL→IR Item C1 Path A per-event typed `_event.data`
+// StaticSendParamsRaiseEcho is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `echo` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseEcho` extension-trait method
+// inconsistently. Twin of the Rust `StaticSendParamsInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseEcho(e *sce.Engine[StaticSendParamsState, StaticSendParamsEvent], total uint32, ok bool, tag string) {
+func StaticSendParamsRaiseEcho(e *sce.Engine[StaticSendParamsState, StaticSendParamsEvent], total uint32, ok bool, tag string) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[StaticSendParamsEvent]{
 		Event:    StaticSendParamsEventEcho,
 		Metadata: sce.EventMetadata{
@@ -214,12 +214,12 @@ func RaiseEcho(e *sce.Engine[StaticSendParamsState, StaticSendParamsEvent], tota
 	})
 }
 
-// RaisePartial is the NL→IR Item C1 Path A per-event typed `_event.data`
+// StaticSendParamsRaisePartial is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `partial` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaisePartial` extension-trait method
+// inconsistently. Twin of the Rust `StaticSendParamsInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaisePartial(e *sce.Engine[StaticSendParamsState, StaticSendParamsEvent], total uint32, part uint8) {
+func StaticSendParamsRaisePartial(e *sce.Engine[StaticSendParamsState, StaticSendParamsEvent], total uint32, part uint8) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[StaticSendParamsEvent]{
 		Event:    StaticSendParamsEventPartial,
 		Metadata: sce.EventMetadata{

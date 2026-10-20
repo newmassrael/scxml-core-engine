@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 23b50ff6771257bf06531b96d0a47eeaa5c39fb71939d9bd5e537100a9105206
+// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -283,7 +283,7 @@ const (
 
 // StaticHostNotifyDoneInvokeAskPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `done.invoke.ask`. Internal to the package; consumers inject it via
-// the `RaiseDoneInvokeAsk` seam below (fields are unexported by design).
+// the `StaticHostNotifyRaiseDoneInvokeAsk` seam below (fields are unexported by design).
 type StaticHostNotifyDoneInvokeAskPayload struct {
 	error string
 	state string
@@ -291,7 +291,7 @@ type StaticHostNotifyDoneInvokeAskPayload struct {
 
 // StaticHostNotifyDoneInvokeCancelPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `done.invoke.cancel`. Internal to the package; consumers inject it via
-// the `RaiseDoneInvokeCancel` seam below (fields are unexported by design).
+// the `StaticHostNotifyRaiseDoneInvokeCancel` seam below (fields are unexported by design).
 type StaticHostNotifyDoneInvokeCancelPayload struct {
 	error string
 	existed bool
@@ -299,7 +299,7 @@ type StaticHostNotifyDoneInvokeCancelPayload struct {
 
 // StaticHostNotifyDoneInvokeFarPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `done.invoke.far`. Internal to the package; consumers inject it via
-// the `RaiseDoneInvokeFar` seam below (fields are unexported by design).
+// the `StaticHostNotifyRaiseDoneInvokeFar` seam below (fields are unexported by design).
 type StaticHostNotifyDoneInvokeFarPayload struct {
 	error string
 	status string
@@ -307,7 +307,7 @@ type StaticHostNotifyDoneInvokeFarPayload struct {
 
 // StaticHostNotifyDoneInvokePostPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `done.invoke.post`. Internal to the package; consumers inject it via
-// the `RaiseDoneInvokePost` seam below (fields are unexported by design).
+// the `StaticHostNotifyRaiseDoneInvokePost` seam below (fields are unexported by design).
 type StaticHostNotifyDoneInvokePostPayload struct {
 	error string
 	status string
@@ -315,7 +315,7 @@ type StaticHostNotifyDoneInvokePostPayload struct {
 
 // StaticHostNotifyDoneInvokePromptPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `done.invoke.prompt`. Internal to the package; consumers inject it via
-// the `RaiseDoneInvokePrompt` seam below (fields are unexported by design).
+// the `StaticHostNotifyRaiseDoneInvokePrompt` seam below (fields are unexported by design).
 type StaticHostNotifyDoneInvokePromptPayload struct {
 	error string
 	state string
@@ -323,14 +323,14 @@ type StaticHostNotifyDoneInvokePromptPayload struct {
 
 // StaticHostNotifyHostNotifyCancelRequestPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `host.notify.cancel.request`. Internal to the package; consumers inject it via
-// the `RaiseHostNotifyCancelRequest` seam below (fields are unexported by design).
+// the `StaticHostNotifyRaiseHostNotifyCancelRequest` seam below (fields are unexported by design).
 type StaticHostNotifyHostNotifyCancelRequestPayload struct {
 	id string
 }
 
 // StaticHostNotifyHostNotifyPostRequestPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `host.notify.post.request`. Internal to the package; consumers inject it via
-// the `RaiseHostNotifyPostRequest` seam below (fields are unexported by design).
+// the `StaticHostNotifyRaiseHostNotifyPostRequest` seam below (fields are unexported by design).
 type StaticHostNotifyHostNotifyPostRequestPayload struct {
 	id string
 	title string
@@ -338,12 +338,12 @@ type StaticHostNotifyHostNotifyPostRequestPayload struct {
 	at_ms int64
 }
 
-// RaiseHostNotifyCancelRequest is the NL→IR Item C1 Path A per-event typed `_event.data`
+// StaticHostNotifyRaiseHostNotifyCancelRequest is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `host.notify.cancel.request` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseHostNotifyCancelRequest` extension-trait method
+// inconsistently. Twin of the Rust `StaticHostNotifyInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseHostNotifyCancelRequest(e *sce.Engine[StaticHostNotifyState, StaticHostNotifyEvent], id string) {
+func StaticHostNotifyRaiseHostNotifyCancelRequest(e *sce.Engine[StaticHostNotifyState, StaticHostNotifyEvent], id string) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[StaticHostNotifyEvent]{
 		Event:    StaticHostNotifyEventHostNotifyCancelRequest,
 		Metadata: sce.EventMetadata{
@@ -358,12 +358,12 @@ func RaiseHostNotifyCancelRequest(e *sce.Engine[StaticHostNotifyState, StaticHos
 	})
 }
 
-// RaiseHostNotifyPostRequest is the NL→IR Item C1 Path A per-event typed `_event.data`
+// StaticHostNotifyRaiseHostNotifyPostRequest is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `host.notify.post.request` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseHostNotifyPostRequest` extension-trait method
+// inconsistently. Twin of the Rust `StaticHostNotifyInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseHostNotifyPostRequest(e *sce.Engine[StaticHostNotifyState, StaticHostNotifyEvent], id string, title string, body string, at_ms int64) {
+func StaticHostNotifyRaiseHostNotifyPostRequest(e *sce.Engine[StaticHostNotifyState, StaticHostNotifyEvent], id string, title string, body string, at_ms int64) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[StaticHostNotifyEvent]{
 		Event:    StaticHostNotifyEventHostNotifyPostRequest,
 		Metadata: sce.EventMetadata{

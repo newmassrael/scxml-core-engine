@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 23b50ff6771257bf06531b96d0a47eeaa5c39fb71939d9bd5e537100a9105206
+// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -226,14 +226,14 @@ const (
 
 // SyncClientSyncPagePayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `sync.page`. Internal to the package; consumers inject it via
-// the `RaiseSyncPage` seam below (fields are unexported by design).
+// the `SyncClientRaiseSyncPage` seam below (fields are unexported by design).
 type SyncClientSyncPagePayload struct {
 	more bool
 }
 
 // SyncClientSyncResponsePayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `sync.response`. Internal to the package; consumers inject it via
-// the `RaiseSyncResponse` seam below (fields are unexported by design).
+// the `SyncClientRaiseSyncResponse` seam below (fields are unexported by design).
 type SyncClientSyncResponsePayload struct {
 	kind uint8
 	status int32
@@ -245,17 +245,17 @@ type SyncClientSyncResponsePayload struct {
 
 // SyncClientSyncStartPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `sync.start`. Internal to the package; consumers inject it via
-// the `RaiseSyncStart` seam below (fields are unexported by design).
+// the `SyncClientRaiseSyncStart` seam below (fields are unexported by design).
 type SyncClientSyncStartPayload struct {
 	byToken bool
 }
 
-// RaiseSyncPage is the NL→IR Item C1 Path A per-event typed `_event.data`
+// SyncClientRaiseSyncPage is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `sync.page` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseSyncPage` extension-trait method
+// inconsistently. Twin of the Rust `SyncClientInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseSyncPage(e *sce.Engine[SyncClientState, SyncClientEvent], more bool) {
+func SyncClientRaiseSyncPage(e *sce.Engine[SyncClientState, SyncClientEvent], more bool) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[SyncClientEvent]{
 		Event:    SyncClientEventSyncPage,
 		Metadata: sce.EventMetadata{
@@ -270,12 +270,12 @@ func RaiseSyncPage(e *sce.Engine[SyncClientState, SyncClientEvent], more bool) {
 	})
 }
 
-// RaiseSyncResponse is the NL→IR Item C1 Path A per-event typed `_event.data`
+// SyncClientRaiseSyncResponse is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `sync.response` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseSyncResponse` extension-trait method
+// inconsistently. Twin of the Rust `SyncClientInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseSyncResponse(e *sce.Engine[SyncClientState, SyncClientEvent], kind uint8, status int32, create bool, davError bool, now int64, retryAfter int64) {
+func SyncClientRaiseSyncResponse(e *sce.Engine[SyncClientState, SyncClientEvent], kind uint8, status int32, create bool, davError bool, now int64, retryAfter int64) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[SyncClientEvent]{
 		Event:    SyncClientEventSyncResponse,
 		Metadata: sce.EventMetadata{
@@ -290,12 +290,12 @@ func RaiseSyncResponse(e *sce.Engine[SyncClientState, SyncClientEvent], kind uin
 	})
 }
 
-// RaiseSyncStart is the NL→IR Item C1 Path A per-event typed `_event.data`
+// SyncClientRaiseSyncStart is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `sync.start` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseSyncStart` extension-trait method
+// inconsistently. Twin of the Rust `SyncClientInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseSyncStart(e *sce.Engine[SyncClientState, SyncClientEvent], byToken bool) {
+func SyncClientRaiseSyncStart(e *sce.Engine[SyncClientState, SyncClientEvent], byToken bool) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[SyncClientEvent]{
 		Event:    SyncClientEventSyncStart,
 		Metadata: sce.EventMetadata{

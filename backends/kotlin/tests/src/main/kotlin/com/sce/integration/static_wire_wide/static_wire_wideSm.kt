@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 23b50ff6771257bf06531b96d0a47eeaa5c39fb71939d9bd5e537100a9105206
+// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_wire_wide.scxml
@@ -159,11 +159,20 @@ class StaticWireWideStateMachine(
     // ── SCE Accepted Subset §2.15: saving this machine, restoring it ─────────
 
     /**
-     * The shape a saved state of this document is bound to: a state saved
-     * from a document that renamed, re-typed or moved a state or a variable is
-     * refused, one saved before a guard or an action changed is not.
+     * What a saved state of this document is bound to: a state saved from a
+     * document that renamed, re-typed or moved a state or a variable is
+     * refused, one saved before a guard or an action changed is not, and one
+     * saved at an earlier revision of a record schema is read with each field a
+     * later revision added at its default.
      */
-    val savedShape: String = "e5c2a79f4a67f967a86bc7c09af85d1e1482468f8ce173db72d9c3e90c6c7fbf"
+    val savedShape: SavedShape = SavedShape(
+        first = "e5c2a79f4a67f967a86bc7c09af85d1e1482468f8ce173db72d9c3e90c6c7fbf",
+        revised = "e5554aa626dd97594f1f67371b7e9975e5ac74460f1206f3003d8988dbbfdf93",
+        records = listOf(
+        ),
+        enums = listOf(
+        ),
+    )
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -209,20 +218,22 @@ class StaticWireWideStateMachine(
      *   one of this document, or a value its variable's type cannot hold.
      */
     fun restore(saved: SavedState, wallNowMs: Long) {
-        beginRestore(saved, savedShape)
-        val saved1 = SavedValues.uint64(saved.variable("low"), "low")
-        val saved2 = SavedValues.int64(saved.variable("smallLow"), "smallLow")
-        val saved3 = SavedValues.bool(saved.variable("large"), "large")
-        val saved4 = SavedValues.bool(saved.variable("negative"), "negative")
-        val saved5 = SavedValues.uint32(saved.variable("relays"), "relays")
-        val saved6 = SavedValues.uint32(saved.variable("refusals"), "refusals")
+        // The state as one of this machine: each record saved at an earlier
+        // revision of its schema holds the defaults of the fields added since.
+        val savedGrown = beginRestore(saved, savedShape)
+        val saved1 = SavedValues.uint64(savedGrown.variable("low"), "low")
+        val saved2 = SavedValues.int64(savedGrown.variable("smallLow"), "smallLow")
+        val saved3 = SavedValues.bool(savedGrown.variable("large"), "large")
+        val saved4 = SavedValues.bool(savedGrown.variable("negative"), "negative")
+        val saved5 = SavedValues.uint32(savedGrown.variable("relays"), "relays")
+        val saved6 = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
         vLow = saved1
         vSmallLow = saved2
         vLarge = saved3
         vNegative = saved4
         vRelays = saved5
         vRefusals = saved6
-        enterSaved(saved, wallNowMs)
+        enterSaved(savedGrown, wallNowMs)
     }
 
     /** [restore] at the host's wall clock now. */

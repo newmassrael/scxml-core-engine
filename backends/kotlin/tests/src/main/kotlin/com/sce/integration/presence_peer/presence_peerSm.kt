@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 23b50ff6771257bf06531b96d0a47eeaa5c39fb71939d9bd5e537100a9105206
+// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/presence_peer.scxml
@@ -223,11 +223,32 @@ class PresencePeerStateMachine(
     // ── SCE Accepted Subset §2.15: saving this machine, restoring it ─────────
 
     /**
-     * The shape a saved state of this document is bound to: a state saved
-     * from a document that renamed, re-typed or moved a state or a variable is
-     * refused, one saved before a guard or an action changed is not.
+     * What a saved state of this document is bound to: a state saved from a
+     * document that renamed, re-typed or moved a state or a variable is
+     * refused, one saved before a guard or an action changed is not, and one
+     * saved at an earlier revision of a record schema is read with each field a
+     * later revision added at its default.
      */
-    val savedShape: String = "61319fa1be44c43d13305ba3a241a6aa058882da0d4c2736fb3c896d16fad0e3"
+    val savedShape: SavedShape = SavedShape(
+        first = "61319fa1be44c43d13305ba3a241a6aa058882da0d4c2736fb3c896d16fad0e3",
+        revised = "b0d96ebe733fde22663f4d265dac2287795efe126ca751ed6753da1ff2c53a4a",
+        records = listOf(
+            RecordLineage(
+                event = "presence.seen",
+                revision = 1,
+                revisions = listOf(),
+                added = listOf(
+                ),
+                holders = listOf(
+                    RecordHolder("online", true),
+                    RecordHolder("rebuilt", true),
+                    RecordHolder("entry", false),
+                ),
+            ),
+        ),
+        enums = listOf(
+        ),
+    )
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -279,19 +300,21 @@ class PresencePeerStateMachine(
      *   one of this document, or a value its variable's type cannot hold.
      */
     fun restore(saved: SavedState, wallNowMs: Long) {
-        beginRestore(saved, savedShape)
-        val saved1 = SavedValues.uint32(saved.variable("node"), "node")
-        val saved2 = SavedValues.bool(saved.variable("hub"), "hub")
-        val saved3 = SavedValues.uint32(saved.variable("ttl"), "ttl")
-        val saved4 = SavedValues.uint32(saved.variable("lease"), "lease")
-        val saved5 = SavedValues.list(saved.variable("online"), "online", 128) { e, w -> PresencePeerSeenRecord.fromSaved(e, w) }
-        val saved6 = SavedValues.list(saved.variable("rebuilt"), "rebuilt", 128) { e, w -> PresencePeerSeenRecord.fromSaved(e, w) }
-        val saved7 = PresencePeerSeenRecord.fromSaved(saved.variable("entry"), "entry")
-        val saved8 = SavedValues.uint32(saved.variable("serial"), "serial")
-        val saved9 = SavedValues.bool(saved.variable("known"), "known")
-        val saved10 = SavedValues.bool(saved.variable("fresh"), "fresh")
-        val saved11 = SavedValues.uint32(saved.variable("lost"), "lost")
-        val saved12 = SavedValues.uint32(saved.variable("refusals"), "refusals")
+        // The state as one of this machine: each record saved at an earlier
+        // revision of its schema holds the defaults of the fields added since.
+        val savedGrown = beginRestore(saved, savedShape)
+        val saved1 = SavedValues.uint32(savedGrown.variable("node"), "node")
+        val saved2 = SavedValues.bool(savedGrown.variable("hub"), "hub")
+        val saved3 = SavedValues.uint32(savedGrown.variable("ttl"), "ttl")
+        val saved4 = SavedValues.uint32(savedGrown.variable("lease"), "lease")
+        val saved5 = SavedValues.list(savedGrown.variable("online"), "online", 128) { e, w -> PresencePeerSeenRecord.fromSaved(e, w) }
+        val saved6 = SavedValues.list(savedGrown.variable("rebuilt"), "rebuilt", 128) { e, w -> PresencePeerSeenRecord.fromSaved(e, w) }
+        val saved7 = PresencePeerSeenRecord.fromSaved(savedGrown.variable("entry"), "entry")
+        val saved8 = SavedValues.uint32(savedGrown.variable("serial"), "serial")
+        val saved9 = SavedValues.bool(savedGrown.variable("known"), "known")
+        val saved10 = SavedValues.bool(savedGrown.variable("fresh"), "fresh")
+        val saved11 = SavedValues.uint32(savedGrown.variable("lost"), "lost")
+        val saved12 = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
         vNode = saved1
         vHub = saved2
         vTtl = saved3
@@ -304,7 +327,7 @@ class PresencePeerStateMachine(
         vFresh = saved10
         vLost = saved11
         vRefusals = saved12
-        enterSaved(saved, wallNowMs)
+        enterSaved(savedGrown, wallNowMs)
     }
 
     /** [restore] at the host's wall clock now. */

@@ -195,18 +195,18 @@ const (
 
 // StatechartNativeActionFragmentReceivedPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `fragment.received`. Internal to the package; consumers inject it via
-// the `RaiseFragmentReceived` seam below (fields are unexported by design).
+// the `StatechartNativeActionRaiseFragmentReceived` seam below (fields are unexported by design).
 type StatechartNativeActionFragmentReceivedPayload struct {
 	payload []byte
 	offset uint32
 }
 
-// RaiseFragmentReceived is the NL→IR Item C1 Path A per-event typed `_event.data`
+// StatechartNativeActionRaiseFragmentReceived is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `fragment.received` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseFragmentReceived` extension-trait method
+// inconsistently. Twin of the Rust `StatechartNativeActionInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseFragmentReceived(e *sce.Engine[StatechartNativeActionState, StatechartNativeActionEvent], payload []byte, offset uint32) {
+func StatechartNativeActionRaiseFragmentReceived(e *sce.Engine[StatechartNativeActionState, StatechartNativeActionEvent], payload []byte, offset uint32) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[StatechartNativeActionEvent]{
 		Event:    StatechartNativeActionEventFragmentReceived,
 		Metadata: sce.EventMetadata{

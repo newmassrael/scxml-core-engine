@@ -137,11 +137,20 @@ class StatechartStaticHostParamsStateMachine(
     // ── SCE Accepted Subset §2.15: saving this machine, restoring it ─────────
 
     /**
-     * The shape a saved state of this document is bound to: a state saved
-     * from a document that renamed, re-typed or moved a state or a variable is
-     * refused, one saved before a guard or an action changed is not.
+     * What a saved state of this document is bound to: a state saved from a
+     * document that renamed, re-typed or moved a state or a variable is
+     * refused, one saved before a guard or an action changed is not, and one
+     * saved at an earlier revision of a record schema is read with each field a
+     * later revision added at its default.
      */
-    val savedShape: String = "b286785fdef50776d9642d37e26700602e2eff4718258424a77f400ff92c5e20"
+    val savedShape: SavedShape = SavedShape(
+        first = "b286785fdef50776d9642d37e26700602e2eff4718258424a77f400ff92c5e20",
+        revised = "93ef05f6eb9aadfc384df76112d432c484e071a161d90eb0cbd084451f589d59",
+        records = listOf(
+        ),
+        enums = listOf(
+        ),
+    )
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -189,15 +198,17 @@ class StatechartStaticHostParamsStateMachine(
      *   one of this document, or a value its variable's type cannot hold.
      */
     fun restore(saved: SavedState, wallNowMs: Long) {
-        beginRestore(saved, savedShape)
-        val saved1 = SavedValues.uint32(saved.variable("count"), "count")
-        val saved2 = SavedValues.bool(saved.variable("ready"), "ready")
-        val saved3 = SavedValues.string(saved.variable("label"), "label", 16)
-        val saved4 = SavedValues.int16(saved.variable("delta"), "delta")
-        val saved5 = SavedValues.float64(saved.variable("ratio"), "ratio")
-        val saved6 = SavedValues.string(saved.variable("tag"), "tag", 16)
-        val saved7 = SavedValues.uint32(saved.variable("huge"), "huge")
-        val saved8 = SavedValues.uint32(saved.variable("errors"), "errors")
+        // The state as one of this machine: each record saved at an earlier
+        // revision of its schema holds the defaults of the fields added since.
+        val savedGrown = beginRestore(saved, savedShape)
+        val saved1 = SavedValues.uint32(savedGrown.variable("count"), "count")
+        val saved2 = SavedValues.bool(savedGrown.variable("ready"), "ready")
+        val saved3 = SavedValues.string(savedGrown.variable("label"), "label", 16)
+        val saved4 = SavedValues.int16(savedGrown.variable("delta"), "delta")
+        val saved5 = SavedValues.float64(savedGrown.variable("ratio"), "ratio")
+        val saved6 = SavedValues.string(savedGrown.variable("tag"), "tag", 16)
+        val saved7 = SavedValues.uint32(savedGrown.variable("huge"), "huge")
+        val saved8 = SavedValues.uint32(savedGrown.variable("errors"), "errors")
         vCount = saved1
         vReady = saved2
         vLabel = saved3
@@ -206,7 +217,7 @@ class StatechartStaticHostParamsStateMachine(
         vTag = saved6
         vHuge = saved7
         vErrors = saved8
-        enterSaved(saved, wallNowMs)
+        enterSaved(savedGrown, wallNowMs)
     }
 
     /** [restore] at the host's wall clock now. */

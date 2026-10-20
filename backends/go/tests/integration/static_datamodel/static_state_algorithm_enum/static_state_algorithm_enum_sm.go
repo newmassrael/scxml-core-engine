@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 23b50ff6771257bf06531b96d0a47eeaa5c39fb71939d9bd5e537100a9105206
+// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -184,7 +184,7 @@ const (
 
 // StaticStateAlgorithmEnumItemAddedPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `item.added`. Internal to the package; consumers inject it via
-// the `RaiseItemAdded` seam below (fields are unexported by design).
+// the `StaticStateAlgorithmEnumRaiseItemAdded` seam below (fields are unexported by design).
 type StaticStateAlgorithmEnumItemAddedPayload struct {
 	id uint32
 	status StaticStateAlgorithmEnumStatusEnum
@@ -192,18 +192,18 @@ type StaticStateAlgorithmEnumItemAddedPayload struct {
 
 // StaticStateAlgorithmEnumItemMovedPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `item.moved`. Internal to the package; consumers inject it via
-// the `RaiseItemMoved` seam below (fields are unexported by design).
+// the `StaticStateAlgorithmEnumRaiseItemMoved` seam below (fields are unexported by design).
 type StaticStateAlgorithmEnumItemMovedPayload struct {
 	id uint32
 	status StaticStateAlgorithmEnumStatusEnum
 }
 
-// RaiseItemAdded is the NL→IR Item C1 Path A per-event typed `_event.data`
+// StaticStateAlgorithmEnumRaiseItemAdded is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `item.added` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseItemAdded` extension-trait method
+// inconsistently. Twin of the Rust `StaticStateAlgorithmEnumInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseItemAdded(e *sce.Engine[StaticStateAlgorithmEnumState, StaticStateAlgorithmEnumEvent], id uint32, status StaticStateAlgorithmEnumStatusEnum) {
+func StaticStateAlgorithmEnumRaiseItemAdded(e *sce.Engine[StaticStateAlgorithmEnumState, StaticStateAlgorithmEnumEvent], id uint32, status StaticStateAlgorithmEnumStatusEnum) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[StaticStateAlgorithmEnumEvent]{
 		Event:    StaticStateAlgorithmEnumEventItemAdded,
 		Metadata: sce.EventMetadata{
@@ -218,12 +218,12 @@ func RaiseItemAdded(e *sce.Engine[StaticStateAlgorithmEnumState, StaticStateAlgo
 	})
 }
 
-// RaiseItemMoved is the NL→IR Item C1 Path A per-event typed `_event.data`
+// StaticStateAlgorithmEnumRaiseItemMoved is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `item.moved` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseItemMoved` extension-trait method
+// inconsistently. Twin of the Rust `StaticStateAlgorithmEnumInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseItemMoved(e *sce.Engine[StaticStateAlgorithmEnumState, StaticStateAlgorithmEnumEvent], id uint32, status StaticStateAlgorithmEnumStatusEnum) {
+func StaticStateAlgorithmEnumRaiseItemMoved(e *sce.Engine[StaticStateAlgorithmEnumState, StaticStateAlgorithmEnumEvent], id uint32, status StaticStateAlgorithmEnumStatusEnum) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[StaticStateAlgorithmEnumEvent]{
 		Event:    StaticStateAlgorithmEnumEventItemMoved,
 		Metadata: sce.EventMetadata{
@@ -244,19 +244,19 @@ func RaiseItemMoved(e *sce.Engine[StaticStateAlgorithmEnumState, StaticStateAlgo
 type StaticStateAlgorithmEnumStatusEnum uint8
 
 const (
-	EnumItemStatusOpen StaticStateAlgorithmEnumStatusEnum = 2
-	EnumItemStatusInProgress StaticStateAlgorithmEnumStatusEnum = 5
-	EnumItemStatusDone StaticStateAlgorithmEnumStatusEnum = 7
+	StaticStateAlgorithmEnumStatusEnumOpen StaticStateAlgorithmEnumStatusEnum = 2
+	StaticStateAlgorithmEnumStatusEnumInProgress StaticStateAlgorithmEnumStatusEnum = 5
+	StaticStateAlgorithmEnumStatusEnumDone StaticStateAlgorithmEnumStatusEnum = 7
 )
 
 // String is the name the enum document declares for the value.
 func (v StaticStateAlgorithmEnumStatusEnum) String() string {
 	switch v {
-	case EnumItemStatusOpen:
+	case StaticStateAlgorithmEnumStatusEnumOpen:
 		return "open"
-	case EnumItemStatusInProgress:
+	case StaticStateAlgorithmEnumStatusEnumInProgress:
 		return "in_progress"
-	case EnumItemStatusDone:
+	case StaticStateAlgorithmEnumStatusEnumDone:
 		return "done"
 	}
 	return ""
@@ -280,38 +280,38 @@ func (r StaticStateAlgorithmEnumItemRecord) Status() StaticStateAlgorithmEnumSta
 
 
 // ── SCE Accepted Subset §2.15: calls of an algorithm that takes or returns state ──
-func sceAdapt_CountStatus__v(p0 []StaticStateAlgorithmEnumItemRecord, p1 StaticStateAlgorithmEnumStatusEnum) scealgorithm.Outcome[uint32] {
+func sceAdapt_StaticStateAlgorithmEnum_CountStatus__v(p0 []StaticStateAlgorithmEnumItemRecord, p1 StaticStateAlgorithmEnumStatusEnum) scealgorithm.Outcome[uint32] {
 	a0 := make([]sce_schema_item.SchemaItemPayload, len(p0))
 	for i, e := range p0 {
-		a0[i] = sce_schema_item.SchemaItemPayload{Id: e.id, Status: map[StaticStateAlgorithmEnumStatusEnum]sce_enum_item_status.EnumItemStatus{EnumItemStatusOpen: sce_enum_item_status.EnumItemStatusOpen, EnumItemStatusInProgress: sce_enum_item_status.EnumItemStatusInProgress, EnumItemStatusDone: sce_enum_item_status.EnumItemStatusDone}[e.status]}
+		a0[i] = sce_schema_item.SchemaItemPayload{Id: e.id, Status: map[StaticStateAlgorithmEnumStatusEnum]sce_enum_item_status.EnumItemStatus{StaticStateAlgorithmEnumStatusEnumOpen: sce_enum_item_status.EnumItemStatusOpen, StaticStateAlgorithmEnumStatusEnumInProgress: sce_enum_item_status.EnumItemStatusInProgress, StaticStateAlgorithmEnumStatusEnumDone: sce_enum_item_status.EnumItemStatusDone}[e.status]}
 	}
-	r, err := sce_item_status_count.ItemStatusCount(a0, map[StaticStateAlgorithmEnumStatusEnum]sce_enum_item_status.EnumItemStatus{EnumItemStatusOpen: sce_enum_item_status.EnumItemStatusOpen, EnumItemStatusInProgress: sce_enum_item_status.EnumItemStatusInProgress, EnumItemStatusDone: sce_enum_item_status.EnumItemStatusDone}[p1])
+	r, err := sce_item_status_count.ItemStatusCount(a0, map[StaticStateAlgorithmEnumStatusEnum]sce_enum_item_status.EnumItemStatus{StaticStateAlgorithmEnumStatusEnumOpen: sce_enum_item_status.EnumItemStatusOpen, StaticStateAlgorithmEnumStatusEnumInProgress: sce_enum_item_status.EnumItemStatusInProgress, StaticStateAlgorithmEnumStatusEnumDone: sce_enum_item_status.EnumItemStatusDone}[p1])
 	return scealgorithm.Outcome[uint32]{Value: r, Err: err}
 }
 
-func sceAdapt_SetStatus__v(p0 []StaticStateAlgorithmEnumItemRecord, p1 uint32, p2 StaticStateAlgorithmEnumStatusEnum) scealgorithm.Outcome[[]StaticStateAlgorithmEnumItemRecord] {
+func sceAdapt_StaticStateAlgorithmEnum_SetStatus__v(p0 []StaticStateAlgorithmEnumItemRecord, p1 uint32, p2 StaticStateAlgorithmEnumStatusEnum) scealgorithm.Outcome[[]StaticStateAlgorithmEnumItemRecord] {
 	a0 := make([]sce_schema_item.SchemaItemPayload, len(p0))
 	for i, e := range p0 {
-		a0[i] = sce_schema_item.SchemaItemPayload{Id: e.id, Status: map[StaticStateAlgorithmEnumStatusEnum]sce_enum_item_status.EnumItemStatus{EnumItemStatusOpen: sce_enum_item_status.EnumItemStatusOpen, EnumItemStatusInProgress: sce_enum_item_status.EnumItemStatusInProgress, EnumItemStatusDone: sce_enum_item_status.EnumItemStatusDone}[e.status]}
+		a0[i] = sce_schema_item.SchemaItemPayload{Id: e.id, Status: map[StaticStateAlgorithmEnumStatusEnum]sce_enum_item_status.EnumItemStatus{StaticStateAlgorithmEnumStatusEnumOpen: sce_enum_item_status.EnumItemStatusOpen, StaticStateAlgorithmEnumStatusEnumInProgress: sce_enum_item_status.EnumItemStatusInProgress, StaticStateAlgorithmEnumStatusEnumDone: sce_enum_item_status.EnumItemStatusDone}[e.status]}
 	}
-	r, err := sce_item_status_set.ItemStatusSet(a0, p1, map[StaticStateAlgorithmEnumStatusEnum]sce_enum_item_status.EnumItemStatus{EnumItemStatusOpen: sce_enum_item_status.EnumItemStatusOpen, EnumItemStatusInProgress: sce_enum_item_status.EnumItemStatusInProgress, EnumItemStatusDone: sce_enum_item_status.EnumItemStatusDone}[p2])
+	r, err := sce_item_status_set.ItemStatusSet(a0, p1, map[StaticStateAlgorithmEnumStatusEnum]sce_enum_item_status.EnumItemStatus{StaticStateAlgorithmEnumStatusEnumOpen: sce_enum_item_status.EnumItemStatusOpen, StaticStateAlgorithmEnumStatusEnumInProgress: sce_enum_item_status.EnumItemStatusInProgress, StaticStateAlgorithmEnumStatusEnumDone: sce_enum_item_status.EnumItemStatusDone}[p2])
 	if err != nil {
 		return scealgorithm.Outcome[[]StaticStateAlgorithmEnumItemRecord]{Err: err}
 	}
 	out := make([]StaticStateAlgorithmEnumItemRecord, len(r))
 	for i, e := range r {
-		out[i] = StaticStateAlgorithmEnumItemRecord{id: e.Id, status: map[sce_enum_item_status.EnumItemStatus]StaticStateAlgorithmEnumStatusEnum{sce_enum_item_status.EnumItemStatusOpen: EnumItemStatusOpen, sce_enum_item_status.EnumItemStatusInProgress: EnumItemStatusInProgress, sce_enum_item_status.EnumItemStatusDone: EnumItemStatusDone}[e.Status]}
+		out[i] = StaticStateAlgorithmEnumItemRecord{id: e.Id, status: map[sce_enum_item_status.EnumItemStatus]StaticStateAlgorithmEnumStatusEnum{sce_enum_item_status.EnumItemStatusOpen: StaticStateAlgorithmEnumStatusEnumOpen, sce_enum_item_status.EnumItemStatusInProgress: StaticStateAlgorithmEnumStatusEnumInProgress, sce_enum_item_status.EnumItemStatusDone: StaticStateAlgorithmEnumStatusEnumDone}[e.Status]}
 	}
 	return scealgorithm.Outcome[[]StaticStateAlgorithmEnumItemRecord]{Value: out}
 }
 
-func sceAdapt_StatusOf__v(p0 []StaticStateAlgorithmEnumItemRecord, p1 uint32) StaticStateAlgorithmEnumStatusEnum {
+func sceAdapt_StaticStateAlgorithmEnum_StatusOf__v(p0 []StaticStateAlgorithmEnumItemRecord, p1 uint32) StaticStateAlgorithmEnumStatusEnum {
 	a0 := make([]sce_schema_item.SchemaItemPayload, len(p0))
 	for i, e := range p0 {
-		a0[i] = sce_schema_item.SchemaItemPayload{Id: e.id, Status: map[StaticStateAlgorithmEnumStatusEnum]sce_enum_item_status.EnumItemStatus{EnumItemStatusOpen: sce_enum_item_status.EnumItemStatusOpen, EnumItemStatusInProgress: sce_enum_item_status.EnumItemStatusInProgress, EnumItemStatusDone: sce_enum_item_status.EnumItemStatusDone}[e.status]}
+		a0[i] = sce_schema_item.SchemaItemPayload{Id: e.id, Status: map[StaticStateAlgorithmEnumStatusEnum]sce_enum_item_status.EnumItemStatus{StaticStateAlgorithmEnumStatusEnumOpen: sce_enum_item_status.EnumItemStatusOpen, StaticStateAlgorithmEnumStatusEnumInProgress: sce_enum_item_status.EnumItemStatusInProgress, StaticStateAlgorithmEnumStatusEnumDone: sce_enum_item_status.EnumItemStatusDone}[e.status]}
 	}
 	r := sce_item_status_of.ItemStatusOf(a0, p1)
-	out := map[sce_enum_item_status.EnumItemStatus]StaticStateAlgorithmEnumStatusEnum{sce_enum_item_status.EnumItemStatusOpen: EnumItemStatusOpen, sce_enum_item_status.EnumItemStatusInProgress: EnumItemStatusInProgress, sce_enum_item_status.EnumItemStatusDone: EnumItemStatusDone}[r]
+	out := map[sce_enum_item_status.EnumItemStatus]StaticStateAlgorithmEnumStatusEnum{sce_enum_item_status.EnumItemStatusOpen: StaticStateAlgorithmEnumStatusEnumOpen, sce_enum_item_status.EnumItemStatusInProgress: StaticStateAlgorithmEnumStatusEnumInProgress, sce_enum_item_status.EnumItemStatusDone: StaticStateAlgorithmEnumStatusEnumDone}[r]
 	return out
 }
 
@@ -361,8 +361,8 @@ type StaticStateAlgorithmEnumPolicy struct {
 func NewStaticStateAlgorithmEnumPolicy() StaticStateAlgorithmEnumPolicy {
 	return StaticStateAlgorithmEnumPolicy{
 		vItems: nil,
-		vDraft: StaticStateAlgorithmEnumItemRecord{id: 0, status: EnumItemStatusOpen},
-		vLast: EnumItemStatusOpen,
+		vDraft: StaticStateAlgorithmEnumItemRecord{id: 0, status: StaticStateAlgorithmEnumStatusEnumOpen},
+		vLast: StaticStateAlgorithmEnumStatusEnumOpen,
 		vOpenCount: 0,
 		vStartedCount: 0,
 		vDoneCount: 0,
@@ -685,7 +685,7 @@ func (p *StaticStateAlgorithmEnumPolicy) LiftTypedPayload(event StaticStateAlgor
 		if payload.id, err = sce.PayloadUnsigned[uint32](fields, "id"); err != nil {
 			return err
 		}
-		if payload.status, err = func() (StaticStateAlgorithmEnumStatusEnum, error) { name, err := sce.PayloadString(fields, "status"); if err != nil { return 0, err }; switch name { case "open": return EnumItemStatusOpen, nil; case "in_progress": return EnumItemStatusInProgress, nil; case "done": return EnumItemStatusDone, nil; }; return 0, fmt.Errorf("%q (%s) is not a variant of Status", "status", name) }(); err != nil {
+		if payload.status, err = func() (StaticStateAlgorithmEnumStatusEnum, error) { name, err := sce.PayloadString(fields, "status"); if err != nil { return 0, err }; switch name { case "open": return StaticStateAlgorithmEnumStatusEnumOpen, nil; case "in_progress": return StaticStateAlgorithmEnumStatusEnumInProgress, nil; case "done": return StaticStateAlgorithmEnumStatusEnumDone, nil; }; return 0, fmt.Errorf("%q (%s) is not a variant of Status", "status", name) }(); err != nil {
 			return err
 		}
 		p.pendingItemAddedPayload = payload
@@ -699,7 +699,7 @@ func (p *StaticStateAlgorithmEnumPolicy) LiftTypedPayload(event StaticStateAlgor
 		if payload.id, err = sce.PayloadUnsigned[uint32](fields, "id"); err != nil {
 			return err
 		}
-		if payload.status, err = func() (StaticStateAlgorithmEnumStatusEnum, error) { name, err := sce.PayloadString(fields, "status"); if err != nil { return 0, err }; switch name { case "open": return EnumItemStatusOpen, nil; case "in_progress": return EnumItemStatusInProgress, nil; case "done": return EnumItemStatusDone, nil; }; return 0, fmt.Errorf("%q (%s) is not a variant of Status", "status", name) }(); err != nil {
+		if payload.status, err = func() (StaticStateAlgorithmEnumStatusEnum, error) { name, err := sce.PayloadString(fields, "status"); if err != nil { return 0, err }; switch name { case "open": return StaticStateAlgorithmEnumStatusEnumOpen, nil; case "in_progress": return StaticStateAlgorithmEnumStatusEnumInProgress, nil; case "done": return StaticStateAlgorithmEnumStatusEnumDone, nil; }; return 0, fmt.Errorf("%q (%s) is not a variant of Status", "status", name) }(); err != nil {
 			return err
 		}
 		p.pendingItemMovedPayload = payload
@@ -810,7 +810,7 @@ func (p *StaticStateAlgorithmEnumPolicy) FirstEnabledTransition(state StaticStat
 			// NL→IR Item C1 Path A: native typed `_event.data` guard — cond
 			// "StatusOf(items, 1) === Status.done" lowered to a tag-checked field comparison on
 			// the lifted `pending<Event>Payload` (no script engine).
-			if sceAdapt_StatusOf__v(p.vItems, 1) == EnumItemStatusDone {
+			if sceAdapt_StaticStateAlgorithmEnum_StatusOf__v(p.vItems, 1) == StaticStateAlgorithmEnumStatusEnumDone {
 				return sce.EnabledTransition[StaticStateAlgorithmEnumState, sce.HistoryID]{
 					Source:          state,
 					TransitionIndex: 3,
@@ -868,13 +868,13 @@ func (p *StaticStateAlgorithmEnumPolicy) ExecuteTransitionContent(source StaticS
 				}
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_SetStatus__v(p.vItems, p.pendingItemMovedPayload.id, p.pendingItemMovedPayload.status)), 4); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticStateAlgorithmEnumEventErrorExecution, "<assign location='items'>: an integer operation overflowed or failed")); return true }; p.vItems = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_StaticStateAlgorithmEnum_SetStatus__v(p.vItems, p.pendingItemMovedPayload.id, p.pendingItemMovedPayload.status)), 4); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticStateAlgorithmEnumEventErrorExecution, "<assign location='items'>: an integer operation overflowed or failed")); return true }; p.vItems = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	p.vLast = sceAdapt_StatusOf__v(p.vItems, p.pendingItemMovedPayload.id)
+	p.vLast = sceAdapt_StaticStateAlgorithmEnum_StatusOf__v(p.vItems, p.pendingItemMovedPayload.id)
 
 			}()
 		case 2:
@@ -883,19 +883,19 @@ func (p *StaticStateAlgorithmEnumPolicy) ExecuteTransitionContent(source StaticS
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_CountStatus__v(p.vItems, EnumItemStatusOpen)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticStateAlgorithmEnumEventErrorExecution, "<assign location='openCount'>: an integer operation overflowed or failed")); return true }; p.vOpenCount = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_StaticStateAlgorithmEnum_CountStatus__v(p.vItems, StaticStateAlgorithmEnumStatusEnumOpen)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticStateAlgorithmEnumEventErrorExecution, "<assign location='openCount'>: an integer operation overflowed or failed")); return true }; p.vOpenCount = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_CountStatus__v(p.vItems, EnumItemStatusInProgress)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticStateAlgorithmEnumEventErrorExecution, "<assign location='startedCount'>: an integer operation overflowed or failed")); return true }; p.vStartedCount = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_StaticStateAlgorithmEnum_CountStatus__v(p.vItems, StaticStateAlgorithmEnumStatusEnumInProgress)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticStateAlgorithmEnumEventErrorExecution, "<assign location='startedCount'>: an integer operation overflowed or failed")); return true }; p.vStartedCount = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_CountStatus__v(p.vItems, EnumItemStatusDone)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticStateAlgorithmEnumEventErrorExecution, "<assign location='doneCount'>: an integer operation overflowed or failed")); return true }; p.vDoneCount = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_StaticStateAlgorithmEnum_CountStatus__v(p.vItems, StaticStateAlgorithmEnumStatusEnumDone)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticStateAlgorithmEnumEventErrorExecution, "<assign location='doneCount'>: an integer operation overflowed or failed")); return true }; p.vDoneCount = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

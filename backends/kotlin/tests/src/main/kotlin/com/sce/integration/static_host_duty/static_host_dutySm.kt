@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 23b50ff6771257bf06531b96d0a47eeaa5c39fb71939d9bd5e537100a9105206
+// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_host_duty.scxml
@@ -107,11 +107,20 @@ class StaticHostDutyStateMachine(
     // ── SCE Accepted Subset §2.15: saving this machine, restoring it ─────────
 
     /**
-     * The shape a saved state of this document is bound to: a state saved
-     * from a document that renamed, re-typed or moved a state or a variable is
-     * refused, one saved before a guard or an action changed is not.
+     * What a saved state of this document is bound to: a state saved from a
+     * document that renamed, re-typed or moved a state or a variable is
+     * refused, one saved before a guard or an action changed is not, and one
+     * saved at an earlier revision of a record schema is read with each field a
+     * later revision added at its default.
      */
-    val savedShape: String = "5d52249374bda754d71b700a06673eba7505416f31282d135d0709089191effa"
+    val savedShape: SavedShape = SavedShape(
+        first = "5d52249374bda754d71b700a06673eba7505416f31282d135d0709089191effa",
+        revised = "4c7995c5d033d96a315e1875fae1059c6dd6971fad03cd0a0a8e70b72b749d1a",
+        records = listOf(
+        ),
+        enums = listOf(
+        ),
+    )
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -151,8 +160,10 @@ class StaticHostDutyStateMachine(
      *   one of this document, or a value its variable's type cannot hold.
      */
     fun restore(saved: SavedState, wallNowMs: Long) {
-        beginRestore(saved, savedShape)
-        enterSaved(saved, wallNowMs)
+        // The state as one of this machine: each record saved at an earlier
+        // revision of its schema holds the defaults of the fields added since.
+        val savedGrown = beginRestore(saved, savedShape)
+        enterSaved(savedGrown, wallNowMs)
     }
 
     /** [restore] at the host's wall clock now. */

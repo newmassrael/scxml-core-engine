@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 23b50ff6771257bf06531b96d0a47eeaa5c39fb71939d9bd5e537100a9105206
+// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -165,22 +165,22 @@ func (e StaticEnumEvent) String() string {
 type StaticEnumViewModeEnum uint8
 
 const (
-	EnumViewModeMonth StaticEnumViewModeEnum = 0
-	EnumViewModeWeek StaticEnumViewModeEnum = 1
-	EnumViewModeDay StaticEnumViewModeEnum = 2
-	EnumViewModeAgendaList StaticEnumViewModeEnum = 3
+	StaticEnumViewModeEnumMonth StaticEnumViewModeEnum = 0
+	StaticEnumViewModeEnumWeek StaticEnumViewModeEnum = 1
+	StaticEnumViewModeEnumDay StaticEnumViewModeEnum = 2
+	StaticEnumViewModeEnumAgendaList StaticEnumViewModeEnum = 3
 )
 
 // String is the name the enum document declares for the value.
 func (v StaticEnumViewModeEnum) String() string {
 	switch v {
-	case EnumViewModeMonth:
+	case StaticEnumViewModeEnumMonth:
 		return "month"
-	case EnumViewModeWeek:
+	case StaticEnumViewModeEnumWeek:
 		return "week"
-	case EnumViewModeDay:
+	case StaticEnumViewModeEnumDay:
 		return "day"
-	case EnumViewModeAgendaList:
+	case StaticEnumViewModeEnumAgendaList:
 		return "agenda_list"
 	}
 	return ""
@@ -212,8 +212,8 @@ type StaticEnumPolicy struct {
 // NewStaticEnumPolicy creates a new policy with default values.
 func NewStaticEnumPolicy() StaticEnumPolicy {
 	return StaticEnumPolicy{
-		vLayout: EnumViewModeMonth,
-		vPrevious: EnumViewModeMonth,
+		vLayout: StaticEnumViewModeEnumMonth,
+		vPrevious: StaticEnumViewModeEnumMonth,
 		vChanges: 0,
 	}
 }
@@ -524,7 +524,7 @@ func (p *StaticEnumPolicy) FirstEnabledTransition(state StaticEnumState, event S
 			// NL→IR Item C1 Path A: native typed `_event.data` guard — cond
 			// "layout === ViewMode.month" lowered to a tag-checked field comparison on
 			// the lifted `pending<Event>Payload` (no script engine).
-			if p.vLayout == EnumViewModeMonth {
+			if p.vLayout == StaticEnumViewModeEnumMonth {
 				return sce.EnabledTransition[StaticEnumState, sce.HistoryID]{
 					Source:          state,
 					TransitionIndex: 0,
@@ -537,7 +537,7 @@ func (p *StaticEnumPolicy) FirstEnabledTransition(state StaticEnumState, event S
 			// NL→IR Item C1 Path A: native typed `_event.data` guard — cond
 			// "layout === ViewMode.week" lowered to a tag-checked field comparison on
 			// the lifted `pending<Event>Payload` (no script engine).
-			if p.vLayout == EnumViewModeWeek {
+			if p.vLayout == StaticEnumViewModeEnumWeek {
 				return sce.EnabledTransition[StaticEnumState, sce.HistoryID]{
 					Source:          state,
 					TransitionIndex: 1,
@@ -600,7 +600,7 @@ func (p *StaticEnumPolicy) ExecuteTransitionContent(source StaticEnumState, tran
 
 
 
-	p.vLayout = EnumViewModeDay
+	p.vLayout = StaticEnumViewModeEnumDay
 
 
 
@@ -619,7 +619,7 @@ func (p *StaticEnumPolicy) ExecuteTransitionContent(source StaticEnumState, tran
 
 
 
-	p.vLayout = EnumViewModeDay
+	p.vLayout = StaticEnumViewModeEnumDay
 
 
 
@@ -653,7 +653,7 @@ func (p *StaticEnumPolicy) ExecuteTransitionContent(source StaticEnumState, tran
 
 
 
-	p.vLayout = scealgorithm.Choose(p.vLayout == EnumViewModeWeek, EnumViewModeMonth, EnumViewModeWeek)
+	p.vLayout = scealgorithm.Choose(p.vLayout == StaticEnumViewModeEnumWeek, StaticEnumViewModeEnumMonth, StaticEnumViewModeEnumWeek)
 
 
 
@@ -672,7 +672,7 @@ func (p *StaticEnumPolicy) ExecuteTransitionContent(source StaticEnumState, tran
 
 
 
-	p.vLayout = EnumViewModeAgendaList
+	p.vLayout = StaticEnumViewModeEnumAgendaList
 
 
 

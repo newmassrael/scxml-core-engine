@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 23b50ff6771257bf06531b96d0a47eeaa5c39fb71939d9bd5e537100a9105206
+// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -266,7 +266,7 @@ const (
 
 // StaticHostKvDoneInvokeDelPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `done.invoke.del`. Internal to the package; consumers inject it via
-// the `RaiseDoneInvokeDel` seam below (fields are unexported by design).
+// the `StaticHostKvRaiseDoneInvokeDel` seam below (fields are unexported by design).
 type StaticHostKvDoneInvokeDelPayload struct {
 	error string
 	existed bool
@@ -274,7 +274,7 @@ type StaticHostKvDoneInvokeDelPayload struct {
 
 // StaticHostKvDoneInvokeGetPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `done.invoke.get`. Internal to the package; consumers inject it via
-// the `RaiseDoneInvokeGet` seam below (fields are unexported by design).
+// the `StaticHostKvRaiseDoneInvokeGet` seam below (fields are unexported by design).
 type StaticHostKvDoneInvokeGetPayload struct {
 	error string
 	found bool
@@ -283,7 +283,7 @@ type StaticHostKvDoneInvokeGetPayload struct {
 
 // StaticHostKvDoneInvokePutPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `done.invoke.put`. Internal to the package; consumers inject it via
-// the `RaiseDoneInvokePut` seam below (fields are unexported by design).
+// the `StaticHostKvRaiseDoneInvokePut` seam below (fields are unexported by design).
 type StaticHostKvDoneInvokePutPayload struct {
 	error string
 	replaced bool
@@ -291,7 +291,7 @@ type StaticHostKvDoneInvokePutPayload struct {
 
 // StaticHostKvDoneInvokeWalkPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `done.invoke.walk`. Internal to the package; consumers inject it via
-// the `RaiseDoneInvokeWalk` seam below (fields are unexported by design).
+// the `StaticHostKvRaiseDoneInvokeWalk` seam below (fields are unexported by design).
 type StaticHostKvDoneInvokeWalkPayload struct {
 	error string
 	found bool
@@ -300,21 +300,21 @@ type StaticHostKvDoneInvokeWalkPayload struct {
 
 // StaticHostKvHostKvDeleteRequestPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `host.kv.delete.request`. Internal to the package; consumers inject it via
-// the `RaiseHostKvDeleteRequest` seam below (fields are unexported by design).
+// the `StaticHostKvRaiseHostKvDeleteRequest` seam below (fields are unexported by design).
 type StaticHostKvHostKvDeleteRequestPayload struct {
 	key string
 }
 
 // StaticHostKvHostKvGetRequestPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `host.kv.get.request`. Internal to the package; consumers inject it via
-// the `RaiseHostKvGetRequest` seam below (fields are unexported by design).
+// the `StaticHostKvRaiseHostKvGetRequest` seam below (fields are unexported by design).
 type StaticHostKvHostKvGetRequestPayload struct {
 	key string
 }
 
 // StaticHostKvHostKvNextKeyRequestPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `host.kv.next_key.request`. Internal to the package; consumers inject it via
-// the `RaiseHostKvNextKeyRequest` seam below (fields are unexported by design).
+// the `StaticHostKvRaiseHostKvNextKeyRequest` seam below (fields are unexported by design).
 type StaticHostKvHostKvNextKeyRequestPayload struct {
 	after string
 	prefix string
@@ -322,18 +322,18 @@ type StaticHostKvHostKvNextKeyRequestPayload struct {
 
 // StaticHostKvHostKvPutRequestPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `host.kv.put.request`. Internal to the package; consumers inject it via
-// the `RaiseHostKvPutRequest` seam below (fields are unexported by design).
+// the `StaticHostKvRaiseHostKvPutRequest` seam below (fields are unexported by design).
 type StaticHostKvHostKvPutRequestPayload struct {
 	key string
 	value string
 }
 
-// RaiseHostKvDeleteRequest is the NL→IR Item C1 Path A per-event typed `_event.data`
+// StaticHostKvRaiseHostKvDeleteRequest is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `host.kv.delete.request` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseHostKvDeleteRequest` extension-trait method
+// inconsistently. Twin of the Rust `StaticHostKvInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseHostKvDeleteRequest(e *sce.Engine[StaticHostKvState, StaticHostKvEvent], key string) {
+func StaticHostKvRaiseHostKvDeleteRequest(e *sce.Engine[StaticHostKvState, StaticHostKvEvent], key string) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[StaticHostKvEvent]{
 		Event:    StaticHostKvEventHostKvDeleteRequest,
 		Metadata: sce.EventMetadata{
@@ -348,12 +348,12 @@ func RaiseHostKvDeleteRequest(e *sce.Engine[StaticHostKvState, StaticHostKvEvent
 	})
 }
 
-// RaiseHostKvGetRequest is the NL→IR Item C1 Path A per-event typed `_event.data`
+// StaticHostKvRaiseHostKvGetRequest is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `host.kv.get.request` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseHostKvGetRequest` extension-trait method
+// inconsistently. Twin of the Rust `StaticHostKvInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseHostKvGetRequest(e *sce.Engine[StaticHostKvState, StaticHostKvEvent], key string) {
+func StaticHostKvRaiseHostKvGetRequest(e *sce.Engine[StaticHostKvState, StaticHostKvEvent], key string) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[StaticHostKvEvent]{
 		Event:    StaticHostKvEventHostKvGetRequest,
 		Metadata: sce.EventMetadata{
@@ -368,12 +368,12 @@ func RaiseHostKvGetRequest(e *sce.Engine[StaticHostKvState, StaticHostKvEvent], 
 	})
 }
 
-// RaiseHostKvNextKeyRequest is the NL→IR Item C1 Path A per-event typed `_event.data`
+// StaticHostKvRaiseHostKvNextKeyRequest is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `host.kv.next_key.request` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseHostKvNextKeyRequest` extension-trait method
+// inconsistently. Twin of the Rust `StaticHostKvInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseHostKvNextKeyRequest(e *sce.Engine[StaticHostKvState, StaticHostKvEvent], after string, prefix string) {
+func StaticHostKvRaiseHostKvNextKeyRequest(e *sce.Engine[StaticHostKvState, StaticHostKvEvent], after string, prefix string) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[StaticHostKvEvent]{
 		Event:    StaticHostKvEventHostKvNextKeyRequest,
 		Metadata: sce.EventMetadata{
@@ -388,12 +388,12 @@ func RaiseHostKvNextKeyRequest(e *sce.Engine[StaticHostKvState, StaticHostKvEven
 	})
 }
 
-// RaiseHostKvPutRequest is the NL→IR Item C1 Path A per-event typed `_event.data`
+// StaticHostKvRaiseHostKvPutRequest is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `host.kv.put.request` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseHostKvPutRequest` extension-trait method
+// inconsistently. Twin of the Rust `StaticHostKvInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseHostKvPutRequest(e *sce.Engine[StaticHostKvState, StaticHostKvEvent], key string, value string) {
+func StaticHostKvRaiseHostKvPutRequest(e *sce.Engine[StaticHostKvState, StaticHostKvEvent], key string, value string) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[StaticHostKvEvent]{
 		Event:    StaticHostKvEventHostKvPutRequest,
 		Metadata: sce.EventMetadata{

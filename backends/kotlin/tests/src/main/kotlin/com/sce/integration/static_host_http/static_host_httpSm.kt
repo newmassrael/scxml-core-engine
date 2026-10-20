@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 23b50ff6771257bf06531b96d0a47eeaa5c39fb71939d9bd5e537100a9105206
+// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_host_http.scxml
@@ -208,11 +208,20 @@ class StaticHostHttpStateMachine(
     // ── SCE Accepted Subset §2.15: saving this machine, restoring it ─────────
 
     /**
-     * The shape a saved state of this document is bound to: a state saved
-     * from a document that renamed, re-typed or moved a state or a variable is
-     * refused, one saved before a guard or an action changed is not.
+     * What a saved state of this document is bound to: a state saved from a
+     * document that renamed, re-typed or moved a state or a variable is
+     * refused, one saved before a guard or an action changed is not, and one
+     * saved at an earlier revision of a record schema is read with each field a
+     * later revision added at its default.
      */
-    val savedShape: String = "448e3c50f8d63de0f3a6240edee966889d1d15938aedd4a15fc2e2e733f46d5e"
+    val savedShape: SavedShape = SavedShape(
+        first = "448e3c50f8d63de0f3a6240edee966889d1d15938aedd4a15fc2e2e733f46d5e",
+        revised = "4ea95f1cb7f5532c4fb84d343bb273dae3034a36d54fa2c946a9b541f7508478",
+        records = listOf(
+        ),
+        enums = listOf(
+        ),
+    )
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -260,15 +269,17 @@ class StaticHostHttpStateMachine(
      *   one of this document, or a value its variable's type cannot hold.
      */
     fun restore(saved: SavedState, wallNowMs: Long) {
-        beginRestore(saved, savedShape)
-        val saved1 = SavedValues.string(saved.variable("method"), "method", 8)
-        val saved2 = SavedValues.string(saved.variable("url"), "url", 2048)
-        val saved3 = SavedValues.string(saved.variable("request_headers"), "request_headers", 2048)
-        val saved4 = SavedValues.string(saved.variable("request_body"), "request_body", 16384)
-        val saved5 = SavedValues.string(saved.variable("outcome"), "outcome", 24)
-        val saved6 = SavedValues.uint16(saved.variable("status"), "status")
-        val saved7 = SavedValues.string(saved.variable("response_headers"), "response_headers", 4096)
-        val saved8 = SavedValues.string(saved.variable("response_body"), "response_body", 16384)
+        // The state as one of this machine: each record saved at an earlier
+        // revision of its schema holds the defaults of the fields added since.
+        val savedGrown = beginRestore(saved, savedShape)
+        val saved1 = SavedValues.string(savedGrown.variable("method"), "method", 8)
+        val saved2 = SavedValues.string(savedGrown.variable("url"), "url", 2048)
+        val saved3 = SavedValues.string(savedGrown.variable("request_headers"), "request_headers", 2048)
+        val saved4 = SavedValues.string(savedGrown.variable("request_body"), "request_body", 16384)
+        val saved5 = SavedValues.string(savedGrown.variable("outcome"), "outcome", 24)
+        val saved6 = SavedValues.uint16(savedGrown.variable("status"), "status")
+        val saved7 = SavedValues.string(savedGrown.variable("response_headers"), "response_headers", 4096)
+        val saved8 = SavedValues.string(savedGrown.variable("response_body"), "response_body", 16384)
         vMethod = saved1
         vUrl = saved2
         vRequestHeaders = saved3
@@ -277,7 +288,7 @@ class StaticHostHttpStateMachine(
         vStatus = saved6
         vResponseHeaders = saved7
         vResponseBody = saved8
-        enterSaved(saved, wallNowMs)
+        enterSaved(savedGrown, wallNowMs)
     }
 
     /** [restore] at the host's wall clock now. */

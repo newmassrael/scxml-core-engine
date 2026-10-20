@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 23b50ff6771257bf06531b96d0a47eeaa5c39fb71939d9bd5e537100a9105206
+// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -166,18 +166,18 @@ const (
 
 // StaticPayloadEnumViewShownPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `view.shown`. Internal to the package; consumers inject it via
-// the `RaiseViewShown` seam below (fields are unexported by design).
+// the `StaticPayloadEnumRaiseViewShown` seam below (fields are unexported by design).
 type StaticPayloadEnumViewShownPayload struct {
 	layout StaticPayloadEnumViewModeEnum
 	zoom uint8
 }
 
-// RaiseViewShown is the NL→IR Item C1 Path A per-event typed `_event.data`
+// StaticPayloadEnumRaiseViewShown is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `view.shown` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseViewShown` extension-trait method
+// inconsistently. Twin of the Rust `StaticPayloadEnumInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseViewShown(e *sce.Engine[StaticPayloadEnumState, StaticPayloadEnumEvent], layout StaticPayloadEnumViewModeEnum, zoom uint8) {
+func StaticPayloadEnumRaiseViewShown(e *sce.Engine[StaticPayloadEnumState, StaticPayloadEnumEvent], layout StaticPayloadEnumViewModeEnum, zoom uint8) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[StaticPayloadEnumEvent]{
 		Event:    StaticPayloadEnumEventViewShown,
 		Metadata: sce.EventMetadata{
@@ -198,22 +198,22 @@ func RaiseViewShown(e *sce.Engine[StaticPayloadEnumState, StaticPayloadEnumEvent
 type StaticPayloadEnumViewModeEnum uint8
 
 const (
-	EnumViewModeMonth StaticPayloadEnumViewModeEnum = 0
-	EnumViewModeWeek StaticPayloadEnumViewModeEnum = 1
-	EnumViewModeDay StaticPayloadEnumViewModeEnum = 2
-	EnumViewModeAgendaList StaticPayloadEnumViewModeEnum = 3
+	StaticPayloadEnumViewModeEnumMonth StaticPayloadEnumViewModeEnum = 0
+	StaticPayloadEnumViewModeEnumWeek StaticPayloadEnumViewModeEnum = 1
+	StaticPayloadEnumViewModeEnumDay StaticPayloadEnumViewModeEnum = 2
+	StaticPayloadEnumViewModeEnumAgendaList StaticPayloadEnumViewModeEnum = 3
 )
 
 // String is the name the enum document declares for the value.
 func (v StaticPayloadEnumViewModeEnum) String() string {
 	switch v {
-	case EnumViewModeMonth:
+	case StaticPayloadEnumViewModeEnumMonth:
 		return "month"
-	case EnumViewModeWeek:
+	case StaticPayloadEnumViewModeEnumWeek:
 		return "week"
-	case EnumViewModeDay:
+	case StaticPayloadEnumViewModeEnumDay:
 		return "day"
-	case EnumViewModeAgendaList:
+	case StaticPayloadEnumViewModeEnumAgendaList:
 		return "agenda_list"
 	}
 	return ""
@@ -255,7 +255,7 @@ type StaticPayloadEnumPolicy struct {
 // NewStaticPayloadEnumPolicy creates a new policy with default values.
 func NewStaticPayloadEnumPolicy() StaticPayloadEnumPolicy {
 	return StaticPayloadEnumPolicy{
-		vLayout: EnumViewModeMonth,
+		vLayout: StaticPayloadEnumViewModeEnumMonth,
 		vZoom: 0,
 		vAgenda: false,
 		vShown: 0,
@@ -536,7 +536,7 @@ func (p *StaticPayloadEnumPolicy) LiftTypedPayload(event StaticPayloadEnumEvent,
 			return err
 		}
 		var payload StaticPayloadEnumViewShownPayload
-		if payload.layout, err = func() (StaticPayloadEnumViewModeEnum, error) { name, err := sce.PayloadString(fields, "layout"); if err != nil { return 0, err }; switch name { case "month": return EnumViewModeMonth, nil; case "week": return EnumViewModeWeek, nil; case "day": return EnumViewModeDay, nil; case "agenda_list": return EnumViewModeAgendaList, nil; }; return 0, fmt.Errorf("%q (%s) is not a variant of ViewMode", "layout", name) }(); err != nil {
+		if payload.layout, err = func() (StaticPayloadEnumViewModeEnum, error) { name, err := sce.PayloadString(fields, "layout"); if err != nil { return 0, err }; switch name { case "month": return StaticPayloadEnumViewModeEnumMonth, nil; case "week": return StaticPayloadEnumViewModeEnumWeek, nil; case "day": return StaticPayloadEnumViewModeEnumDay, nil; case "agenda_list": return StaticPayloadEnumViewModeEnumAgendaList, nil; }; return 0, fmt.Errorf("%q (%s) is not a variant of ViewMode", "layout", name) }(); err != nil {
 			return err
 		}
 		if payload.zoom, err = sce.PayloadUnsigned[uint8](fields, "zoom"); err != nil {
@@ -620,7 +620,7 @@ func (p *StaticPayloadEnumPolicy) FirstEnabledTransition(state StaticPayloadEnum
 			// NL→IR Item C1 Path A: native typed `_event.data` guard — cond
 			// "_event.data.layout === ViewMode.agenda_list" lowered to a tag-checked field comparison on
 			// the lifted `pending<Event>Payload` (no script engine).
-			if p.pendingPayloadTag == StaticPayloadEnumPayloadTagViewShown && (p.pendingViewShownPayload.layout == EnumViewModeAgendaList) {
+			if p.pendingPayloadTag == StaticPayloadEnumPayloadTagViewShown && (p.pendingViewShownPayload.layout == StaticPayloadEnumViewModeEnumAgendaList) {
 				return sce.EnabledTransition[StaticPayloadEnumState, sce.HistoryID]{
 					Source:          state,
 					TransitionIndex: 0,

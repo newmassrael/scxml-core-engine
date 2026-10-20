@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 23b50ff6771257bf06531b96d0a47eeaa5c39fb71939d9bd5e537100a9105206
+// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -193,7 +193,7 @@ const (
 
 // PresencePeerPresenceAlivePayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `presence.alive`. Internal to the package; consumers inject it via
-// the `RaisePresenceAlive` seam below (fields are unexported by design).
+// the `PresencePeerRaisePresenceAlive` seam below (fields are unexported by design).
 type PresencePeerPresenceAlivePayload struct {
 	client uint32
 	at int64
@@ -201,21 +201,21 @@ type PresencePeerPresenceAlivePayload struct {
 
 // PresencePeerPresenceBeatPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `presence.beat`. Internal to the package; consumers inject it via
-// the `RaisePresenceBeat` seam below (fields are unexported by design).
+// the `PresencePeerRaisePresenceBeat` seam below (fields are unexported by design).
 type PresencePeerPresenceBeatPayload struct {
 	now int64
 }
 
 // PresencePeerPresenceExpirePayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `presence.expire`. Internal to the package; consumers inject it via
-// the `RaisePresenceExpire` seam below (fields are unexported by design).
+// the `PresencePeerRaisePresenceExpire` seam below (fields are unexported by design).
 type PresencePeerPresenceExpirePayload struct {
 	gen uint32
 }
 
 // PresencePeerPresenceJoinPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `presence.join`. Internal to the package; consumers inject it via
-// the `RaisePresenceJoin` seam below (fields are unexported by design).
+// the `PresencePeerRaisePresenceJoin` seam below (fields are unexported by design).
 type PresencePeerPresenceJoinPayload struct {
 	node uint32
 	hub bool
@@ -225,7 +225,7 @@ type PresencePeerPresenceJoinPayload struct {
 
 // PresencePeerPresenceLeftPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `presence.left`. Internal to the package; consumers inject it via
-// the `RaisePresenceLeft` seam below (fields are unexported by design).
+// the `PresencePeerRaisePresenceLeft` seam below (fields are unexported by design).
 type PresencePeerPresenceLeftPayload struct {
 	client uint32
 	last int64
@@ -233,19 +233,19 @@ type PresencePeerPresenceLeftPayload struct {
 
 // PresencePeerPresenceSeenPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `presence.seen`. Internal to the package; consumers inject it via
-// the `RaisePresenceSeen` seam below (fields are unexported by design).
+// the `PresencePeerRaisePresenceSeen` seam below (fields are unexported by design).
 type PresencePeerPresenceSeenPayload struct {
 	client uint32
 	last int64
 	gen uint32
 }
 
-// RaisePresenceAlive is the NL→IR Item C1 Path A per-event typed `_event.data`
+// PresencePeerRaisePresenceAlive is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `presence.alive` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaisePresenceAlive` extension-trait method
+// inconsistently. Twin of the Rust `PresencePeerInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaisePresenceAlive(e *sce.Engine[PresencePeerState, PresencePeerEvent], client uint32, at int64) {
+func PresencePeerRaisePresenceAlive(e *sce.Engine[PresencePeerState, PresencePeerEvent], client uint32, at int64) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[PresencePeerEvent]{
 		Event:    PresencePeerEventPresenceAlive,
 		Metadata: sce.EventMetadata{
@@ -260,12 +260,12 @@ func RaisePresenceAlive(e *sce.Engine[PresencePeerState, PresencePeerEvent], cli
 	})
 }
 
-// RaisePresenceBeat is the NL→IR Item C1 Path A per-event typed `_event.data`
+// PresencePeerRaisePresenceBeat is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `presence.beat` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaisePresenceBeat` extension-trait method
+// inconsistently. Twin of the Rust `PresencePeerInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaisePresenceBeat(e *sce.Engine[PresencePeerState, PresencePeerEvent], now int64) {
+func PresencePeerRaisePresenceBeat(e *sce.Engine[PresencePeerState, PresencePeerEvent], now int64) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[PresencePeerEvent]{
 		Event:    PresencePeerEventPresenceBeat,
 		Metadata: sce.EventMetadata{
@@ -280,12 +280,12 @@ func RaisePresenceBeat(e *sce.Engine[PresencePeerState, PresencePeerEvent], now 
 	})
 }
 
-// RaisePresenceExpire is the NL→IR Item C1 Path A per-event typed `_event.data`
+// PresencePeerRaisePresenceExpire is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `presence.expire` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaisePresenceExpire` extension-trait method
+// inconsistently. Twin of the Rust `PresencePeerInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaisePresenceExpire(e *sce.Engine[PresencePeerState, PresencePeerEvent], gen uint32) {
+func PresencePeerRaisePresenceExpire(e *sce.Engine[PresencePeerState, PresencePeerEvent], gen uint32) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[PresencePeerEvent]{
 		Event:    PresencePeerEventPresenceExpire,
 		Metadata: sce.EventMetadata{
@@ -300,12 +300,12 @@ func RaisePresenceExpire(e *sce.Engine[PresencePeerState, PresencePeerEvent], ge
 	})
 }
 
-// RaisePresenceJoin is the NL→IR Item C1 Path A per-event typed `_event.data`
+// PresencePeerRaisePresenceJoin is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `presence.join` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaisePresenceJoin` extension-trait method
+// inconsistently. Twin of the Rust `PresencePeerInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaisePresenceJoin(e *sce.Engine[PresencePeerState, PresencePeerEvent], node uint32, hub bool, ttl uint32, slack uint32) {
+func PresencePeerRaisePresenceJoin(e *sce.Engine[PresencePeerState, PresencePeerEvent], node uint32, hub bool, ttl uint32, slack uint32) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[PresencePeerEvent]{
 		Event:    PresencePeerEventPresenceJoin,
 		Metadata: sce.EventMetadata{
@@ -320,12 +320,12 @@ func RaisePresenceJoin(e *sce.Engine[PresencePeerState, PresencePeerEvent], node
 	})
 }
 
-// RaisePresenceLeft is the NL→IR Item C1 Path A per-event typed `_event.data`
+// PresencePeerRaisePresenceLeft is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `presence.left` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaisePresenceLeft` extension-trait method
+// inconsistently. Twin of the Rust `PresencePeerInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaisePresenceLeft(e *sce.Engine[PresencePeerState, PresencePeerEvent], client uint32, last int64) {
+func PresencePeerRaisePresenceLeft(e *sce.Engine[PresencePeerState, PresencePeerEvent], client uint32, last int64) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[PresencePeerEvent]{
 		Event:    PresencePeerEventPresenceLeft,
 		Metadata: sce.EventMetadata{
@@ -340,12 +340,12 @@ func RaisePresenceLeft(e *sce.Engine[PresencePeerState, PresencePeerEvent], clie
 	})
 }
 
-// RaisePresenceSeen is the NL→IR Item C1 Path A per-event typed `_event.data`
+// PresencePeerRaisePresenceSeen is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `presence.seen` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaisePresenceSeen` extension-trait method
+// inconsistently. Twin of the Rust `PresencePeerInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaisePresenceSeen(e *sce.Engine[PresencePeerState, PresencePeerEvent], client uint32, last int64, gen uint32) {
+func PresencePeerRaisePresenceSeen(e *sce.Engine[PresencePeerState, PresencePeerEvent], client uint32, last int64, gen uint32) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[PresencePeerEvent]{
 		Event:    PresencePeerEventPresenceSeen,
 		Metadata: sce.EventMetadata{

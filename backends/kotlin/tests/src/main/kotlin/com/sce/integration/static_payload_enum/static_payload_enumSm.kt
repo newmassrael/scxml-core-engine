@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 23b50ff6771257bf06531b96d0a47eeaa5c39fb71939d9bd5e537100a9105206
+// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_payload_enum.scxml
@@ -150,11 +150,30 @@ class StaticPayloadEnumStateMachine(
     // ── SCE Accepted Subset §2.15: saving this machine, restoring it ─────────
 
     /**
-     * The shape a saved state of this document is bound to: a state saved
-     * from a document that renamed, re-typed or moved a state or a variable is
-     * refused, one saved before a guard or an action changed is not.
+     * What a saved state of this document is bound to: a state saved from a
+     * document that renamed, re-typed or moved a state or a variable is
+     * refused, one saved before a guard or an action changed is not, and one
+     * saved at an earlier revision of a record schema is read with each field a
+     * later revision added at its default.
      */
-    val savedShape: String = "1b285f0009995c3b4881af97d94c25e4e3673020ba3c53351fd4a413ae0ac64f"
+    val savedShape: SavedShape = SavedShape(
+        first = "1b285f0009995c3b4881af97d94c25e4e3673020ba3c53351fd4a413ae0ac64f",
+        revised = "31e2fa158b14337ea1e405a1b1f9ced4a60c1c4fd4ea0410219e80e6a74b592b",
+        records = listOf(
+        ),
+        enums = listOf(
+            EnumLineage(
+                key = "enum:enum_view_mode.scxml",
+                revision = 1,
+                revisions = listOf(),
+                added = listOf(
+                ),
+                holders = listOf(
+                    EnumHolder("layout", null, false),
+                ),
+            ),
+        ),
+    )
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -198,16 +217,18 @@ class StaticPayloadEnumStateMachine(
      *   one of this document, or a value its variable's type cannot hold.
      */
     fun restore(saved: SavedState, wallNowMs: Long) {
-        beginRestore(saved, savedShape)
-        val saved1 = StaticPayloadEnumViewModeEnum.fromSaved(saved.variable("layout"), "layout")
-        val saved2 = SavedValues.uint8(saved.variable("zoom"), "zoom")
-        val saved3 = SavedValues.bool(saved.variable("agenda"), "agenda")
-        val saved4 = SavedValues.uint32(saved.variable("shown"), "shown")
+        // The state as one of this machine: each record saved at an earlier
+        // revision of its schema holds the defaults of the fields added since.
+        val savedGrown = beginRestore(saved, savedShape)
+        val saved1 = StaticPayloadEnumViewModeEnum.fromSaved(savedGrown.variable("layout"), "layout")
+        val saved2 = SavedValues.uint8(savedGrown.variable("zoom"), "zoom")
+        val saved3 = SavedValues.bool(savedGrown.variable("agenda"), "agenda")
+        val saved4 = SavedValues.uint32(savedGrown.variable("shown"), "shown")
         vLayout = saved1
         vZoom = saved2
         vAgenda = saved3
         vShown = saved4
-        enterSaved(saved, wallNowMs)
+        enterSaved(savedGrown, wallNowMs)
     }
 
     /** [restore] at the host's wall clock now. */

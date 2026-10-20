@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 23b50ff6771257bf06531b96d0a47eeaa5c39fb71939d9bd5e537100a9105206
+// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -260,7 +260,7 @@ const (
 
 // TodoPeerTodoAckPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `todo.ack`. Internal to the package; consumers inject it via
-// the `RaiseTodoAck` seam below (fields are unexported by design).
+// the `TodoPeerRaiseTodoAck` seam below (fields are unexported by design).
 type TodoPeerTodoAckPayload struct {
 	sender uint64
 	before int64
@@ -269,7 +269,7 @@ type TodoPeerTodoAckPayload struct {
 
 // TodoPeerTodoAgendaPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `todo.agenda`. Internal to the package; consumers inject it via
-// the `RaiseTodoAgenda` seam below (fields are unexported by design).
+// the `TodoPeerRaiseTodoAgenda` seam below (fields are unexported by design).
 type TodoPeerTodoAgendaPayload struct {
 	id uint32
 	windowStart int64
@@ -279,14 +279,14 @@ type TodoPeerTodoAgendaPayload struct {
 
 // TodoPeerTodoCompactPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `todo.compact`. Internal to the package; consumers inject it via
-// the `RaiseTodoCompact` seam below (fields are unexported by design).
+// the `TodoPeerRaiseTodoCompact` seam below (fields are unexported by design).
 type TodoPeerTodoCompactPayload struct {
 	before int64
 }
 
 // TodoPeerTodoEditPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `todo.edit`. Internal to the package; consumers inject it via
-// the `RaiseTodoEdit` seam below (fields are unexported by design).
+// the `TodoPeerRaiseTodoEdit` seam below (fields are unexported by design).
 type TodoPeerTodoEditPayload struct {
 	id uint32
 	field uint16
@@ -297,7 +297,7 @@ type TodoPeerTodoEditPayload struct {
 
 // TodoPeerTodoFloorPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `todo.floor`. Internal to the package; consumers inject it via
-// the `RaiseTodoFloor` seam below (fields are unexported by design).
+// the `TodoPeerRaiseTodoFloor` seam below (fields are unexported by design).
 type TodoPeerTodoFloorPayload struct {
 	before int64
 	hash uint32
@@ -305,7 +305,7 @@ type TodoPeerTodoFloorPayload struct {
 
 // TodoPeerTodoJoinPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `todo.join`. Internal to the package; consumers inject it via
-// the `RaiseTodoJoin` seam below (fields are unexported by design).
+// the `TodoPeerRaiseTodoJoin` seam below (fields are unexported by design).
 type TodoPeerTodoJoinPayload struct {
 	node uint64
 	hub bool
@@ -313,7 +313,7 @@ type TodoPeerTodoJoinPayload struct {
 
 // TodoPeerTodoKeepPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `todo.keep`. Internal to the package; consumers inject it via
-// the `RaiseTodoKeep` seam below (fields are unexported by design).
+// the `TodoPeerRaiseTodoKeep` seam below (fields are unexported by design).
 type TodoPeerTodoKeepPayload struct {
 	kind uint8
 	element uint64
@@ -324,7 +324,7 @@ type TodoPeerTodoKeepPayload struct {
 
 // TodoPeerTodoNodePayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `todo.node`. Internal to the package; consumers inject it via
-// the `RaiseTodoNode` seam below (fields are unexported by design).
+// the `TodoPeerRaiseTodoNode` seam below (fields are unexported by design).
 type TodoPeerTodoNodePayload struct {
 	sender uint64
 	to uint64
@@ -336,14 +336,14 @@ type TodoPeerTodoNodePayload struct {
 
 // TodoPeerTodoProposePayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `todo.propose`. Internal to the package; consumers inject it via
-// the `RaiseTodoPropose` seam below (fields are unexported by design).
+// the `TodoPeerRaiseTodoPropose` seam below (fields are unexported by design).
 type TodoPeerTodoProposePayload struct {
 	before int64
 }
 
 // TodoPeerTodoRolePayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `todo.role`. Internal to the package; consumers inject it via
-// the `RaiseTodoRole` seam below (fields are unexported by design).
+// the `TodoPeerRaiseTodoRole` seam below (fields are unexported by design).
 type TodoPeerTodoRolePayload struct {
 	node uint64
 	role uint8
@@ -351,7 +351,7 @@ type TodoPeerTodoRolePayload struct {
 
 // TodoPeerTodoRoomPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `todo.room`. Internal to the package; consumers inject it via
-// the `RaiseTodoRoom` seam below (fields are unexported by design).
+// the `TodoPeerRaiseTodoRoom` seam below (fields are unexported by design).
 type TodoPeerTodoRoomPayload struct {
 	values uint32
 	history uint32
@@ -360,7 +360,7 @@ type TodoPeerTodoRoomPayload struct {
 
 // TodoPeerTodoSettlePayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `todo.settle`. Internal to the package; consumers inject it via
-// the `RaiseTodoSettle` seam below (fields are unexported by design).
+// the `TodoPeerRaiseTodoSettle` seam below (fields are unexported by design).
 type TodoPeerTodoSettlePayload struct {
 	before int64
 	members uint32
@@ -368,7 +368,7 @@ type TodoPeerTodoSettlePayload struct {
 
 // TodoPeerTodoSharePayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `todo.share`. Internal to the package; consumers inject it via
-// the `RaiseTodoShare` seam below (fields are unexported by design).
+// the `TodoPeerRaiseTodoShare` seam below (fields are unexported by design).
 type TodoPeerTodoSharePayload struct {
 	to uint64
 	minute uint64
@@ -376,7 +376,7 @@ type TodoPeerTodoSharePayload struct {
 
 // TodoPeerTodoSupersedePayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `todo.supersede`. Internal to the package; consumers inject it via
-// the `RaiseTodoSupersede` seam below (fields are unexported by design).
+// the `TodoPeerRaiseTodoSupersede` seam below (fields are unexported by design).
 type TodoPeerTodoSupersedePayload struct {
 	id uint32
 	field uint16
@@ -388,7 +388,7 @@ type TodoPeerTodoSupersedePayload struct {
 
 // TodoPeerTodoVisitPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `todo.visit`. Internal to the package; consumers inject it via
-// the `RaiseTodoVisit` seam below (fields are unexported by design).
+// the `TodoPeerRaiseTodoVisit` seam below (fields are unexported by design).
 type TodoPeerTodoVisitPayload struct {
 	to uint64
 	depth uint8
@@ -398,7 +398,7 @@ type TodoPeerTodoVisitPayload struct {
 
 // TodoPeerTodoWritePayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `todo.write`. Internal to the package; consumers inject it via
-// the `RaiseTodoWrite` seam below (fields are unexported by design).
+// the `TodoPeerRaiseTodoWrite` seam below (fields are unexported by design).
 type TodoPeerTodoWritePayload struct {
 	id uint32
 	field uint16
@@ -411,19 +411,19 @@ type TodoPeerTodoWritePayload struct {
 
 // TodoPeerTodoZonePayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `todo.zone`. Internal to the package; consumers inject it via
-// the `RaiseTodoZone` seam below (fields are unexported by design).
+// the `TodoPeerRaiseTodoZone` seam below (fields are unexported by design).
 type TodoPeerTodoZonePayload struct {
 	zone uint8
 	start int64
 	offset int32
 }
 
-// RaiseTodoAck is the NL→IR Item C1 Path A per-event typed `_event.data`
+// TodoPeerRaiseTodoAck is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `todo.ack` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseTodoAck` extension-trait method
+// inconsistently. Twin of the Rust `TodoPeerInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseTodoAck(e *sce.Engine[TodoPeerState, TodoPeerEvent], sender uint64, before int64, hash uint32) {
+func TodoPeerRaiseTodoAck(e *sce.Engine[TodoPeerState, TodoPeerEvent], sender uint64, before int64, hash uint32) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[TodoPeerEvent]{
 		Event:    TodoPeerEventTodoAck,
 		Metadata: sce.EventMetadata{
@@ -438,12 +438,12 @@ func RaiseTodoAck(e *sce.Engine[TodoPeerState, TodoPeerEvent], sender uint64, be
 	})
 }
 
-// RaiseTodoAgenda is the NL→IR Item C1 Path A per-event typed `_event.data`
+// TodoPeerRaiseTodoAgenda is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `todo.agenda` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseTodoAgenda` extension-trait method
+// inconsistently. Twin of the Rust `TodoPeerInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseTodoAgenda(e *sce.Engine[TodoPeerState, TodoPeerEvent], id uint32, windowStart int64, windowEnd int64, skip uint32) {
+func TodoPeerRaiseTodoAgenda(e *sce.Engine[TodoPeerState, TodoPeerEvent], id uint32, windowStart int64, windowEnd int64, skip uint32) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[TodoPeerEvent]{
 		Event:    TodoPeerEventTodoAgenda,
 		Metadata: sce.EventMetadata{
@@ -458,12 +458,12 @@ func RaiseTodoAgenda(e *sce.Engine[TodoPeerState, TodoPeerEvent], id uint32, win
 	})
 }
 
-// RaiseTodoCompact is the NL→IR Item C1 Path A per-event typed `_event.data`
+// TodoPeerRaiseTodoCompact is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `todo.compact` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseTodoCompact` extension-trait method
+// inconsistently. Twin of the Rust `TodoPeerInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseTodoCompact(e *sce.Engine[TodoPeerState, TodoPeerEvent], before int64) {
+func TodoPeerRaiseTodoCompact(e *sce.Engine[TodoPeerState, TodoPeerEvent], before int64) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[TodoPeerEvent]{
 		Event:    TodoPeerEventTodoCompact,
 		Metadata: sce.EventMetadata{
@@ -478,12 +478,12 @@ func RaiseTodoCompact(e *sce.Engine[TodoPeerState, TodoPeerEvent], before int64)
 	})
 }
 
-// RaiseTodoEdit is the NL→IR Item C1 Path A per-event typed `_event.data`
+// TodoPeerRaiseTodoEdit is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `todo.edit` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseTodoEdit` extension-trait method
+// inconsistently. Twin of the Rust `TodoPeerInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseTodoEdit(e *sce.Engine[TodoPeerState, TodoPeerEvent], id uint32, field uint16, value int64, text string, now int64) {
+func TodoPeerRaiseTodoEdit(e *sce.Engine[TodoPeerState, TodoPeerEvent], id uint32, field uint16, value int64, text string, now int64) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[TodoPeerEvent]{
 		Event:    TodoPeerEventTodoEdit,
 		Metadata: sce.EventMetadata{
@@ -498,12 +498,12 @@ func RaiseTodoEdit(e *sce.Engine[TodoPeerState, TodoPeerEvent], id uint32, field
 	})
 }
 
-// RaiseTodoFloor is the NL→IR Item C1 Path A per-event typed `_event.data`
+// TodoPeerRaiseTodoFloor is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `todo.floor` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseTodoFloor` extension-trait method
+// inconsistently. Twin of the Rust `TodoPeerInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseTodoFloor(e *sce.Engine[TodoPeerState, TodoPeerEvent], before int64, hash uint32) {
+func TodoPeerRaiseTodoFloor(e *sce.Engine[TodoPeerState, TodoPeerEvent], before int64, hash uint32) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[TodoPeerEvent]{
 		Event:    TodoPeerEventTodoFloor,
 		Metadata: sce.EventMetadata{
@@ -518,12 +518,12 @@ func RaiseTodoFloor(e *sce.Engine[TodoPeerState, TodoPeerEvent], before int64, h
 	})
 }
 
-// RaiseTodoJoin is the NL→IR Item C1 Path A per-event typed `_event.data`
+// TodoPeerRaiseTodoJoin is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `todo.join` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseTodoJoin` extension-trait method
+// inconsistently. Twin of the Rust `TodoPeerInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseTodoJoin(e *sce.Engine[TodoPeerState, TodoPeerEvent], node uint64, hub bool) {
+func TodoPeerRaiseTodoJoin(e *sce.Engine[TodoPeerState, TodoPeerEvent], node uint64, hub bool) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[TodoPeerEvent]{
 		Event:    TodoPeerEventTodoJoin,
 		Metadata: sce.EventMetadata{
@@ -538,12 +538,12 @@ func RaiseTodoJoin(e *sce.Engine[TodoPeerState, TodoPeerEvent], node uint64, hub
 	})
 }
 
-// RaiseTodoKeep is the NL→IR Item C1 Path A per-event typed `_event.data`
+// TodoPeerRaiseTodoKeep is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `todo.keep` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseTodoKeep` extension-trait method
+// inconsistently. Twin of the Rust `TodoPeerInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseTodoKeep(e *sce.Engine[TodoPeerState, TodoPeerEvent], kind uint8, element uint64, wallTime int64, counter uint32, nodeId uint64) {
+func TodoPeerRaiseTodoKeep(e *sce.Engine[TodoPeerState, TodoPeerEvent], kind uint8, element uint64, wallTime int64, counter uint32, nodeId uint64) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[TodoPeerEvent]{
 		Event:    TodoPeerEventTodoKeep,
 		Metadata: sce.EventMetadata{
@@ -558,12 +558,12 @@ func RaiseTodoKeep(e *sce.Engine[TodoPeerState, TodoPeerEvent], kind uint8, elem
 	})
 }
 
-// RaiseTodoNode is the NL→IR Item C1 Path A per-event typed `_event.data`
+// TodoPeerRaiseTodoNode is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `todo.node` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseTodoNode` extension-trait method
+// inconsistently. Twin of the Rust `TodoPeerInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseTodoNode(e *sce.Engine[TodoPeerState, TodoPeerEvent], sender uint64, to uint64, depth uint8, prefix uint64, hash uint32, reply bool) {
+func TodoPeerRaiseTodoNode(e *sce.Engine[TodoPeerState, TodoPeerEvent], sender uint64, to uint64, depth uint8, prefix uint64, hash uint32, reply bool) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[TodoPeerEvent]{
 		Event:    TodoPeerEventTodoNode,
 		Metadata: sce.EventMetadata{
@@ -578,12 +578,12 @@ func RaiseTodoNode(e *sce.Engine[TodoPeerState, TodoPeerEvent], sender uint64, t
 	})
 }
 
-// RaiseTodoPropose is the NL→IR Item C1 Path A per-event typed `_event.data`
+// TodoPeerRaiseTodoPropose is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `todo.propose` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseTodoPropose` extension-trait method
+// inconsistently. Twin of the Rust `TodoPeerInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseTodoPropose(e *sce.Engine[TodoPeerState, TodoPeerEvent], before int64) {
+func TodoPeerRaiseTodoPropose(e *sce.Engine[TodoPeerState, TodoPeerEvent], before int64) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[TodoPeerEvent]{
 		Event:    TodoPeerEventTodoPropose,
 		Metadata: sce.EventMetadata{
@@ -598,12 +598,12 @@ func RaiseTodoPropose(e *sce.Engine[TodoPeerState, TodoPeerEvent], before int64)
 	})
 }
 
-// RaiseTodoRole is the NL→IR Item C1 Path A per-event typed `_event.data`
+// TodoPeerRaiseTodoRole is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `todo.role` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseTodoRole` extension-trait method
+// inconsistently. Twin of the Rust `TodoPeerInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseTodoRole(e *sce.Engine[TodoPeerState, TodoPeerEvent], node uint64, role uint8) {
+func TodoPeerRaiseTodoRole(e *sce.Engine[TodoPeerState, TodoPeerEvent], node uint64, role uint8) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[TodoPeerEvent]{
 		Event:    TodoPeerEventTodoRole,
 		Metadata: sce.EventMetadata{
@@ -618,12 +618,12 @@ func RaiseTodoRole(e *sce.Engine[TodoPeerState, TodoPeerEvent], node uint64, rol
 	})
 }
 
-// RaiseTodoRoom is the NL→IR Item C1 Path A per-event typed `_event.data`
+// TodoPeerRaiseTodoRoom is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `todo.room` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseTodoRoom` extension-trait method
+// inconsistently. Twin of the Rust `TodoPeerInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseTodoRoom(e *sce.Engine[TodoPeerState, TodoPeerEvent], values uint32, history uint32, digest uint32) {
+func TodoPeerRaiseTodoRoom(e *sce.Engine[TodoPeerState, TodoPeerEvent], values uint32, history uint32, digest uint32) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[TodoPeerEvent]{
 		Event:    TodoPeerEventTodoRoom,
 		Metadata: sce.EventMetadata{
@@ -638,12 +638,12 @@ func RaiseTodoRoom(e *sce.Engine[TodoPeerState, TodoPeerEvent], values uint32, h
 	})
 }
 
-// RaiseTodoSettle is the NL→IR Item C1 Path A per-event typed `_event.data`
+// TodoPeerRaiseTodoSettle is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `todo.settle` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseTodoSettle` extension-trait method
+// inconsistently. Twin of the Rust `TodoPeerInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseTodoSettle(e *sce.Engine[TodoPeerState, TodoPeerEvent], before int64, members uint32) {
+func TodoPeerRaiseTodoSettle(e *sce.Engine[TodoPeerState, TodoPeerEvent], before int64, members uint32) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[TodoPeerEvent]{
 		Event:    TodoPeerEventTodoSettle,
 		Metadata: sce.EventMetadata{
@@ -658,12 +658,12 @@ func RaiseTodoSettle(e *sce.Engine[TodoPeerState, TodoPeerEvent], before int64, 
 	})
 }
 
-// RaiseTodoShare is the NL→IR Item C1 Path A per-event typed `_event.data`
+// TodoPeerRaiseTodoShare is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `todo.share` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseTodoShare` extension-trait method
+// inconsistently. Twin of the Rust `TodoPeerInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseTodoShare(e *sce.Engine[TodoPeerState, TodoPeerEvent], to uint64, minute uint64) {
+func TodoPeerRaiseTodoShare(e *sce.Engine[TodoPeerState, TodoPeerEvent], to uint64, minute uint64) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[TodoPeerEvent]{
 		Event:    TodoPeerEventTodoShare,
 		Metadata: sce.EventMetadata{
@@ -678,12 +678,12 @@ func RaiseTodoShare(e *sce.Engine[TodoPeerState, TodoPeerEvent], to uint64, minu
 	})
 }
 
-// RaiseTodoSupersede is the NL→IR Item C1 Path A per-event typed `_event.data`
+// TodoPeerRaiseTodoSupersede is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `todo.supersede` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseTodoSupersede` extension-trait method
+// inconsistently. Twin of the Rust `TodoPeerInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseTodoSupersede(e *sce.Engine[TodoPeerState, TodoPeerEvent], id uint32, field uint16, wallTime int64, counter uint32, nodeId uint64, by uint64) {
+func TodoPeerRaiseTodoSupersede(e *sce.Engine[TodoPeerState, TodoPeerEvent], id uint32, field uint16, wallTime int64, counter uint32, nodeId uint64, by uint64) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[TodoPeerEvent]{
 		Event:    TodoPeerEventTodoSupersede,
 		Metadata: sce.EventMetadata{
@@ -698,12 +698,12 @@ func RaiseTodoSupersede(e *sce.Engine[TodoPeerState, TodoPeerEvent], id uint32, 
 	})
 }
 
-// RaiseTodoVisit is the NL→IR Item C1 Path A per-event typed `_event.data`
+// TodoPeerRaiseTodoVisit is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `todo.visit` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseTodoVisit` extension-trait method
+// inconsistently. Twin of the Rust `TodoPeerInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseTodoVisit(e *sce.Engine[TodoPeerState, TodoPeerEvent], to uint64, depth uint8, prefix uint64, reply bool) {
+func TodoPeerRaiseTodoVisit(e *sce.Engine[TodoPeerState, TodoPeerEvent], to uint64, depth uint8, prefix uint64, reply bool) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[TodoPeerEvent]{
 		Event:    TodoPeerEventTodoVisit,
 		Metadata: sce.EventMetadata{
@@ -718,12 +718,12 @@ func RaiseTodoVisit(e *sce.Engine[TodoPeerState, TodoPeerEvent], to uint64, dept
 	})
 }
 
-// RaiseTodoWrite is the NL→IR Item C1 Path A per-event typed `_event.data`
+// TodoPeerRaiseTodoWrite is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `todo.write` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseTodoWrite` extension-trait method
+// inconsistently. Twin of the Rust `TodoPeerInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseTodoWrite(e *sce.Engine[TodoPeerState, TodoPeerEvent], id uint32, field uint16, value int64, text string, wallTime int64, counter uint32, nodeId uint64) {
+func TodoPeerRaiseTodoWrite(e *sce.Engine[TodoPeerState, TodoPeerEvent], id uint32, field uint16, value int64, text string, wallTime int64, counter uint32, nodeId uint64) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[TodoPeerEvent]{
 		Event:    TodoPeerEventTodoWrite,
 		Metadata: sce.EventMetadata{
@@ -738,12 +738,12 @@ func RaiseTodoWrite(e *sce.Engine[TodoPeerState, TodoPeerEvent], id uint32, fiel
 	})
 }
 
-// RaiseTodoZone is the NL→IR Item C1 Path A per-event typed `_event.data`
+// TodoPeerRaiseTodoZone is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `todo.zone` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseTodoZone` extension-trait method
+// inconsistently. Twin of the Rust `TodoPeerInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseTodoZone(e *sce.Engine[TodoPeerState, TodoPeerEvent], zone uint8, start int64, offset int32) {
+func TodoPeerRaiseTodoZone(e *sce.Engine[TodoPeerState, TodoPeerEvent], zone uint8, start int64, offset int32) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[TodoPeerEvent]{
 		Event:    TodoPeerEventTodoZone,
 		Metadata: sce.EventMetadata{
@@ -1227,7 +1227,7 @@ func (r TodoPeerMemberRecord) Role() uint8 {
 
 
 // ── SCE Accepted Subset §2.15: calls of an algorithm that takes or returns state ──
-func sceAdapt_EventAgenda__vv(p0 TodoPeerScheduleRecord, p1 []TodoPeerValueRecord, p2 uint64, p3 int64, p4 int64, p5 uint32) scealgorithm.Outcome[[]TodoPeerOccurrenceRecord] {
+func sceAdapt_TodoPeer_EventAgenda__vv(p0 TodoPeerScheduleRecord, p1 []TodoPeerValueRecord, p2 uint64, p3 int64, p4 int64, p5 uint32) scealgorithm.Outcome[[]TodoPeerOccurrenceRecord] {
 	a1 := make([]sce_mv_value.MvValuePayload, len(p1))
 	for i, e := range p1 {
 		a1[i] = sce_mv_value.MvValuePayload{Id: e.id, Field: e.field, Value: e.value, Text: e.text, WallTime: e.wallTime, Counter: e.counter, NodeId: e.nodeId}
@@ -1243,7 +1243,7 @@ func sceAdapt_EventAgenda__vv(p0 TodoPeerScheduleRecord, p1 []TodoPeerValueRecor
 	return scealgorithm.Outcome[[]TodoPeerOccurrenceRecord]{Value: out}
 }
 
-func sceAdapt_EventConflict__v(p0 []TodoPeerValueRecord, p1 uint64) bool {
+func sceAdapt_TodoPeer_EventConflict__v(p0 []TodoPeerValueRecord, p1 uint64) bool {
 	a0 := make([]sce_mv_value.MvValuePayload, len(p0))
 	for i, e := range p0 {
 		a0[i] = sce_mv_value.MvValuePayload{Id: e.id, Field: e.field, Value: e.value, Text: e.text, WallTime: e.wallTime, Counter: e.counter, NodeId: e.nodeId}
@@ -1251,7 +1251,7 @@ func sceAdapt_EventConflict__v(p0 []TodoPeerValueRecord, p1 uint64) bool {
 	return sce_event_conflict.EventConflict(a0, p1)
 }
 
-func sceAdapt_EventLatest__v(p0 []TodoPeerValueRecord, p1 uint64, p2 uint64, p3 int64) int64 {
+func sceAdapt_TodoPeer_EventLatest__v(p0 []TodoPeerValueRecord, p1 uint64, p2 uint64, p3 int64) int64 {
 	a0 := make([]sce_mv_value.MvValuePayload, len(p0))
 	for i, e := range p0 {
 		a0[i] = sce_mv_value.MvValuePayload{Id: e.id, Field: e.field, Value: e.value, Text: e.text, WallTime: e.wallTime, Counter: e.counter, NodeId: e.nodeId}
@@ -1259,7 +1259,7 @@ func sceAdapt_EventLatest__v(p0 []TodoPeerValueRecord, p1 uint64, p2 uint64, p3 
 	return sce_event_latest.EventLatest(a0, p1, p2, p3)
 }
 
-func sceAdapt_EventRoster__v(p0 []TodoPeerMemberRecord, p1 uint64, p2 uint8) scealgorithm.Outcome[[]TodoPeerMemberRecord] {
+func sceAdapt_TodoPeer_EventRoster__v(p0 []TodoPeerMemberRecord, p1 uint64, p2 uint8) scealgorithm.Outcome[[]TodoPeerMemberRecord] {
 	a0 := make([]sce_event_member.EventMemberPayload, len(p0))
 	for i, e := range p0 {
 		a0[i] = sce_event_member.EventMemberPayload{Node: e.node, Role: e.role}
@@ -1275,7 +1275,7 @@ func sceAdapt_EventRoster__v(p0 []TodoPeerMemberRecord, p1 uint64, p2 uint8) sce
 	return scealgorithm.Outcome[[]TodoPeerMemberRecord]{Value: out}
 }
 
-func sceAdapt_EventSettled__vv(p0 []TodoPeerEntryRecord, p1 []TodoPeerEntryRecord, p2 int64) scealgorithm.Outcome[uint32] {
+func sceAdapt_TodoPeer_EventSettled__vv(p0 []TodoPeerEntryRecord, p1 []TodoPeerEntryRecord, p2 int64) scealgorithm.Outcome[uint32] {
 	a0 := make([]sce_orset_entry.OrsetEntryPayload, len(p0))
 	for i, e := range p0 {
 		a0[i] = sce_orset_entry.OrsetEntryPayload{Element: e.element, WallTime: e.wallTime, Counter: e.counter, NodeId: e.nodeId}
@@ -1288,7 +1288,7 @@ func sceAdapt_EventSettled__vv(p0 []TodoPeerEntryRecord, p1 []TodoPeerEntryRecor
 	return scealgorithm.Outcome[uint32]{Value: r, Err: err}
 }
 
-func sceAdapt_HlcReceive__vv(p0 TodoPeerHlcRecord, p1 TodoPeerHlcRecord, p2 int64, p3 uint64) scealgorithm.Outcome[TodoPeerHlcRecord] {
+func sceAdapt_TodoPeer_HlcReceive__vv(p0 TodoPeerHlcRecord, p1 TodoPeerHlcRecord, p2 int64, p3 uint64) scealgorithm.Outcome[TodoPeerHlcRecord] {
 	r, err := sce_hlc_receive.HlcReceive(sce_hlc_timestamp.HlcTimestampPayload{WallTime: p0.wallTime, Counter: p0.counter, NodeId: p0.nodeId}, sce_hlc_timestamp.HlcTimestampPayload{WallTime: p1.wallTime, Counter: p1.counter, NodeId: p1.nodeId}, p2, p3)
 	if err != nil {
 		return scealgorithm.Outcome[TodoPeerHlcRecord]{Err: err}
@@ -1297,7 +1297,7 @@ func sceAdapt_HlcReceive__vv(p0 TodoPeerHlcRecord, p1 TodoPeerHlcRecord, p2 int6
 	return scealgorithm.Outcome[TodoPeerHlcRecord]{Value: out}
 }
 
-func sceAdapt_HlcSend__v(p0 TodoPeerHlcRecord, p1 int64, p2 uint64) scealgorithm.Outcome[TodoPeerHlcRecord] {
+func sceAdapt_TodoPeer_HlcSend__v(p0 TodoPeerHlcRecord, p1 int64, p2 uint64) scealgorithm.Outcome[TodoPeerHlcRecord] {
 	r, err := sce_hlc_send.HlcSend(sce_hlc_timestamp.HlcTimestampPayload{WallTime: p0.wallTime, Counter: p0.counter, NodeId: p0.nodeId}, p1, p2)
 	if err != nil {
 		return scealgorithm.Outcome[TodoPeerHlcRecord]{Err: err}
@@ -1306,17 +1306,17 @@ func sceAdapt_HlcSend__v(p0 TodoPeerHlcRecord, p1 int64, p2 uint64) scealgorithm
 	return scealgorithm.Outcome[TodoPeerHlcRecord]{Value: out}
 }
 
-func sceAdapt_MerkleChangeHash__i(p0 TodoPeerEntryRecord, p1 uint8) scealgorithm.Outcome[uint32] {
+func sceAdapt_TodoPeer_MerkleChangeHash__i(p0 TodoPeerEntryRecord, p1 uint8) scealgorithm.Outcome[uint32] {
 	r, err := sce_merkle_change_hash.MerkleChangeHash(sce_orset_entry.OrsetEntryPayload{Element: p0.element, WallTime: p0.wallTime, Counter: p0.counter, NodeId: p0.nodeId}, p1)
 	return scealgorithm.Outcome[uint32]{Value: r, Err: err}
 }
 
-func sceAdapt_MerkleChangeHash__v(p0 TodoPeerEntryRecord, p1 uint8) scealgorithm.Outcome[uint32] {
+func sceAdapt_TodoPeer_MerkleChangeHash__v(p0 TodoPeerEntryRecord, p1 uint8) scealgorithm.Outcome[uint32] {
 	r, err := sce_merkle_change_hash.MerkleChangeHash(sce_orset_entry.OrsetEntryPayload{Element: p0.element, WallTime: p0.wallTime, Counter: p0.counter, NodeId: p0.nodeId}, p1)
 	return scealgorithm.Outcome[uint32]{Value: r, Err: err}
 }
 
-func sceAdapt_MerkleInsert__v(p0 []TodoPeerNodeRecord, p1 int64, p2 uint32) scealgorithm.Outcome[[]TodoPeerNodeRecord] {
+func sceAdapt_TodoPeer_MerkleInsert__v(p0 []TodoPeerNodeRecord, p1 int64, p2 uint32) scealgorithm.Outcome[[]TodoPeerNodeRecord] {
 	a0 := make([]sce_merkle_node.MerkleNodePayload, len(p0))
 	for i, e := range p0 {
 		a0[i] = sce_merkle_node.MerkleNodePayload{Depth: e.depth, Prefix: e.prefix, Hash: e.hash}
@@ -1332,7 +1332,7 @@ func sceAdapt_MerkleInsert__v(p0 []TodoPeerNodeRecord, p1 int64, p2 uint32) scea
 	return scealgorithm.Outcome[[]TodoPeerNodeRecord]{Value: out}
 }
 
-func sceAdapt_MvValueDrop__vv(p0 []TodoPeerValueRecord, p1 TodoPeerValueRecord) scealgorithm.Outcome[[]TodoPeerValueRecord] {
+func sceAdapt_TodoPeer_MvValueDrop__vv(p0 []TodoPeerValueRecord, p1 TodoPeerValueRecord) scealgorithm.Outcome[[]TodoPeerValueRecord] {
 	a0 := make([]sce_mv_value.MvValuePayload, len(p0))
 	for i, e := range p0 {
 		a0[i] = sce_mv_value.MvValuePayload{Id: e.id, Field: e.field, Value: e.value, Text: e.text, WallTime: e.wallTime, Counter: e.counter, NodeId: e.nodeId}
@@ -1348,7 +1348,7 @@ func sceAdapt_MvValueDrop__vv(p0 []TodoPeerValueRecord, p1 TodoPeerValueRecord) 
 	return scealgorithm.Outcome[[]TodoPeerValueRecord]{Value: out}
 }
 
-func sceAdapt_MvValueHolds__vv(p0 []TodoPeerValueRecord, p1 TodoPeerValueRecord) bool {
+func sceAdapt_TodoPeer_MvValueHolds__vv(p0 []TodoPeerValueRecord, p1 TodoPeerValueRecord) bool {
 	a0 := make([]sce_mv_value.MvValuePayload, len(p0))
 	for i, e := range p0 {
 		a0[i] = sce_mv_value.MvValuePayload{Id: e.id, Field: e.field, Value: e.value, Text: e.text, WallTime: e.wallTime, Counter: e.counter, NodeId: e.nodeId}
@@ -1356,7 +1356,7 @@ func sceAdapt_MvValueHolds__vv(p0 []TodoPeerValueRecord, p1 TodoPeerValueRecord)
 	return sce_mv_value_holds.MvValueHolds(a0, sce_mv_value.MvValuePayload{Id: p1.id, Field: p1.field, Value: p1.value, Text: p1.text, WallTime: p1.wallTime, Counter: p1.counter, NodeId: p1.nodeId})
 }
 
-func sceAdapt_MvValueKeep__vv(p0 []TodoPeerValueRecord, p1 TodoPeerValueRecord) scealgorithm.Outcome[[]TodoPeerValueRecord] {
+func sceAdapt_TodoPeer_MvValueKeep__vv(p0 []TodoPeerValueRecord, p1 TodoPeerValueRecord) scealgorithm.Outcome[[]TodoPeerValueRecord] {
 	a0 := make([]sce_mv_value.MvValuePayload, len(p0))
 	for i, e := range p0 {
 		a0[i] = sce_mv_value.MvValuePayload{Id: e.id, Field: e.field, Value: e.value, Text: e.text, WallTime: e.wallTime, Counter: e.counter, NodeId: e.nodeId}
@@ -1372,7 +1372,7 @@ func sceAdapt_MvValueKeep__vv(p0 []TodoPeerValueRecord, p1 TodoPeerValueRecord) 
 	return scealgorithm.Outcome[[]TodoPeerValueRecord]{Value: out}
 }
 
-func sceAdapt_OrsetLive__vv(p0 []TodoPeerEntryRecord, p1 []TodoPeerEntryRecord) scealgorithm.Outcome[[]TodoPeerEntryRecord] {
+func sceAdapt_TodoPeer_OrsetLive__vv(p0 []TodoPeerEntryRecord, p1 []TodoPeerEntryRecord) scealgorithm.Outcome[[]TodoPeerEntryRecord] {
 	a0 := make([]sce_orset_entry.OrsetEntryPayload, len(p0))
 	for i, e := range p0 {
 		a0[i] = sce_orset_entry.OrsetEntryPayload{Element: e.element, WallTime: e.wallTime, Counter: e.counter, NodeId: e.nodeId}
@@ -1392,7 +1392,7 @@ func sceAdapt_OrsetLive__vv(p0 []TodoPeerEntryRecord, p1 []TodoPeerEntryRecord) 
 	return scealgorithm.Outcome[[]TodoPeerEntryRecord]{Value: out}
 }
 
-func sceAdapt_OrsetUnion__vv(p0 []TodoPeerEntryRecord, p1 []TodoPeerEntryRecord) scealgorithm.Outcome[[]TodoPeerEntryRecord] {
+func sceAdapt_TodoPeer_OrsetUnion__vv(p0 []TodoPeerEntryRecord, p1 []TodoPeerEntryRecord) scealgorithm.Outcome[[]TodoPeerEntryRecord] {
 	a0 := make([]sce_orset_entry.OrsetEntryPayload, len(p0))
 	for i, e := range p0 {
 		a0[i] = sce_orset_entry.OrsetEntryPayload{Element: e.element, WallTime: e.wallTime, Counter: e.counter, NodeId: e.nodeId}
@@ -1412,7 +1412,7 @@ func sceAdapt_OrsetUnion__vv(p0 []TodoPeerEntryRecord, p1 []TodoPeerEntryRecord)
 	return scealgorithm.Outcome[[]TodoPeerEntryRecord]{Value: out}
 }
 
-func sceAdapt_UtcFromLocal__vv(p0 []int64, p1 []int32, p2 int64) scealgorithm.Outcome[int64] {
+func sceAdapt_TodoPeer_UtcFromLocal__vv(p0 []int64, p1 []int32, p2 int64) scealgorithm.Outcome[int64] {
 	r, err := sce_utc_from_local.UtcFromLocal(p0, p1, p2)
 	return scealgorithm.Outcome[int64]{Value: r, Err: err}
 }
@@ -2852,7 +2852,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 				}
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_EventRoster__v(p.vRoster, p.pendingTodoRolePayload.node, p.pendingTodoRolePayload.role)), 64); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='roster'>: an integer operation overflowed or failed")); return true }; p.vRoster = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_TodoPeer_EventRoster__v(p.vRoster, p.pendingTodoRolePayload.node, p.pendingTodoRolePayload.role)), 64); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='roster'>: an integer operation overflowed or failed")); return true }; p.vRoster = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -2958,7 +2958,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 	if !p.vBlocked && !p.vForbidden {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_HlcSend__v(p.vClock, p.pendingTodoEditPayload.now, p.vNode)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='clock'>: an integer operation overflowed or failed")); return true }; p.vClock = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_TodoPeer_HlcSend__v(p.vClock, p.pendingTodoEditPayload.now, p.vNode)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='clock'>: an integer operation overflowed or failed")); return true }; p.vClock = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -3280,7 +3280,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 
 
 
-	p.vPresent = sceAdapt_MvValueHolds__vv(p.vValues, p.vHeld)
+	p.vPresent = sceAdapt_TodoPeer_MvValueHolds__vv(p.vValues, p.vHeld)
 
 
 	if !p.vPresent {
@@ -3360,7 +3360,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_HlcReceive__vv(p.vClock, p.vStamp, p.vClock.wallTime, p.vNode)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='clock'>: an integer operation overflowed or failed")); return true }; p.vClock = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_TodoPeer_HlcReceive__vv(p.vClock, p.vStamp, p.vClock.wallTime, p.vNode)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='clock'>: an integer operation overflowed or failed")); return true }; p.vClock = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -3434,7 +3434,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_OrsetUnion__vv(p.vAdds, p.vOne)), 1024); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='adds'>: an integer operation overflowed or failed")); return true }; p.vAdds = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_TodoPeer_OrsetUnion__vv(p.vAdds, p.vOne)), 1024); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='adds'>: an integer operation overflowed or failed")); return true }; p.vAdds = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -3466,13 +3466,13 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 
 
 
-	p.vPresent = sceAdapt_MvValueHolds__vv(p.vValues, p.vHeld)
+	p.vPresent = sceAdapt_TodoPeer_MvValueHolds__vv(p.vValues, p.vHeld)
 
 
 	if p.vIsLive && !p.vPresent {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_MvValueKeep__vv(p.vValues, p.vHeld)), 512); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='values'>: an integer operation overflowed or failed")); return true }; p.vValues = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_TodoPeer_MvValueKeep__vv(p.vValues, p.vHeld)), 512); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='values'>: an integer operation overflowed or failed")); return true }; p.vValues = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -3806,13 +3806,13 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_OrsetUnion__vv(p.vTombstones, p.vOne)), 1024); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='tombstones'>: an integer operation overflowed or failed")); return true }; p.vTombstones = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_TodoPeer_OrsetUnion__vv(p.vTombstones, p.vOne)), 1024); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='tombstones'>: an integer operation overflowed or failed")); return true }; p.vTombstones = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_OrsetLive__vv(p.vAdds, p.vOne)), 1024); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='adds'>: an integer operation overflowed or failed")); return true }; p.vAdds = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_TodoPeer_OrsetLive__vv(p.vAdds, p.vOne)), 1024); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='adds'>: an integer operation overflowed or failed")); return true }; p.vAdds = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -3838,11 +3838,11 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 
 
 
-	p.vWasLive = sceAdapt_MvValueHolds__vv(p.vValues, p.vHeld)
+	p.vWasLive = sceAdapt_TodoPeer_MvValueHolds__vv(p.vValues, p.vHeld)
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_MvValueDrop__vv(p.vValues, p.vHeld)), 512); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='values'>: an integer operation overflowed or failed")); return true }; p.vValues = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_TodoPeer_MvValueDrop__vv(p.vValues, p.vHeld)), 512); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='values'>: an integer operation overflowed or failed")); return true }; p.vValues = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -4150,13 +4150,13 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_MerkleChangeHash__v(p.vEntry, p.pendingTodoKeepPayload.kind)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='mine'>: an integer operation overflowed or failed")); return true }; p.vMine = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_TodoPeer_MerkleChangeHash__v(p.vEntry, p.pendingTodoKeepPayload.kind)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='mine'>: an integer operation overflowed or failed")); return true }; p.vMine = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_MerkleInsert__v(p.vDigest, scealgorithm.DivInt64(&sceFailure, p.pendingTodoKeepPayload.wallTime, 60000), p.vMine)), 2048); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='digest'>: an integer operation overflowed or failed")); return true }; p.vDigest = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_TodoPeer_MerkleInsert__v(p.vDigest, scealgorithm.DivInt64(&sceFailure, p.pendingTodoKeepPayload.wallTime, 60000), p.vMine)), 2048); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='digest'>: an integer operation overflowed or failed")); return true }; p.vDigest = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -4192,13 +4192,13 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_MerkleChangeHash__i(t, 1)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='mine'>: an integer operation overflowed or failed")); return true }; p.vMine = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_TodoPeer_MerkleChangeHash__i(t, 1)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='mine'>: an integer operation overflowed or failed")); return true }; p.vMine = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_MerkleInsert__v(p.vDigest, scealgorithm.DivInt64(&sceFailure, t.wallTime, 60000), p.vMine)), 2048); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='digest'>: an integer operation overflowed or failed")); return true }; p.vDigest = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_TodoPeer_MerkleInsert__v(p.vDigest, scealgorithm.DivInt64(&sceFailure, t.wallTime, 60000), p.vMine)), 2048); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='digest'>: an integer operation overflowed or failed")); return true }; p.vDigest = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -4208,7 +4208,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_OrsetLive__vv(p.vTombstones, p.vStable)), 1024); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='tombstones'>: an integer operation overflowed or failed")); return true }; p.vTombstones = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_TodoPeer_OrsetLive__vv(p.vTombstones, p.vStable)), 1024); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='tombstones'>: an integer operation overflowed or failed")); return true }; p.vTombstones = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -4431,7 +4431,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_EventSettled__vv(p.vAdds, p.vTombstones, p.pendingTodoProposePayload.before)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='frozenHash'>: an integer operation overflowed or failed")); return true }; p.vFrozenHash = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_TodoPeer_EventSettled__vv(p.vAdds, p.vTombstones, p.pendingTodoProposePayload.before)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='frozenHash'>: an integer operation overflowed or failed")); return true }; p.vFrozenHash = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -4517,7 +4517,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 	if p.vHub && p.pendingTodoAckPayload.before == p.vPending {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_EventSettled__vv(p.vAdds, p.vTombstones, p.vPending)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='mine'>: an integer operation overflowed or failed")); return true }; p.vMine = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_TodoPeer_EventSettled__vv(p.vAdds, p.vTombstones, p.vPending)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='mine'>: an integer operation overflowed or failed")); return true }; p.vMine = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -4956,7 +4956,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_EventSettled__vv(p.vAdds, p.vTombstones, p.pendingTodoFloorPayload.before)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='frozenHash'>: an integer operation overflowed or failed")); return true }; p.vFrozenHash = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_TodoPeer_EventSettled__vv(p.vAdds, p.vTombstones, p.pendingTodoFloorPayload.before)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='frozenHash'>: an integer operation overflowed or failed")); return true }; p.vFrozenHash = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -4984,13 +4984,13 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 		_ = t
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_MerkleChangeHash__i(t, 1)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='mine'>: an integer operation overflowed or failed")); return true }; p.vMine = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_TodoPeer_MerkleChangeHash__i(t, 1)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='mine'>: an integer operation overflowed or failed")); return true }; p.vMine = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_MerkleInsert__v(p.vDigest, scealgorithm.DivInt64(&sceFailure, t.wallTime, 60000), p.vMine)), 2048); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='digest'>: an integer operation overflowed or failed")); return true }; p.vDigest = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_TodoPeer_MerkleInsert__v(p.vDigest, scealgorithm.DivInt64(&sceFailure, t.wallTime, 60000), p.vMine)), 2048); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='digest'>: an integer operation overflowed or failed")); return true }; p.vDigest = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -4998,7 +4998,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_OrsetLive__vv(p.vTombstones, p.vStable)), 1024); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='tombstones'>: an integer operation overflowed or failed")); return true }; p.vTombstones = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_TodoPeer_OrsetLive__vv(p.vTombstones, p.vStable)), 1024); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='tombstones'>: an integer operation overflowed or failed")); return true }; p.vTombstones = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -6266,183 +6266,183 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 
 
 
-	p.vSched.zone = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 15, 0)
+	p.vSched.zone = sceAdapt_TodoPeer_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 15, 0)
 
 
 
-	p.vSched.start = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 16, -1)
+	p.vSched.start = sceAdapt_TodoPeer_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 16, -1)
 
 
 
-	p.vSched.length = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 17, 0)
+	p.vSched.length = sceAdapt_TodoPeer_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 17, 0)
 
 
 
-	p.vSched.freq = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 18, 0)
+	p.vSched.freq = sceAdapt_TodoPeer_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 18, 0)
 
 
 
-	p.vSched.interval = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 19, 1)
+	p.vSched.interval = sceAdapt_TodoPeer_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 19, 1)
 
 
 
-	p.vSched.days = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 20, 0)
+	p.vSched.days = sceAdapt_TodoPeer_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 20, 0)
 
 
 
-	p.vSched.count = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 21, 0)
+	p.vSched.count = sceAdapt_TodoPeer_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 21, 0)
 
 
 
-	p.vSched.until = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 22, 0)
+	p.vSched.until = sceAdapt_TodoPeer_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 22, 0)
 
 
 
-	p.vSched.bymonth = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 23, 0)
+	p.vSched.bymonth = sceAdapt_TodoPeer_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 23, 0)
 
 
 
-	p.vSched.mdPos = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 24, 0)
+	p.vSched.mdPos = sceAdapt_TodoPeer_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 24, 0)
 
 
 
-	p.vSched.mdNeg = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 25, 0)
+	p.vSched.mdNeg = sceAdapt_TodoPeer_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 25, 0)
 
 
 
-	p.vSched.invalid = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 26, 0)
+	p.vSched.invalid = sceAdapt_TodoPeer_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 26, 0)
 
 
 
-	p.vSched.op0 = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 45, 0)
+	p.vSched.op0 = sceAdapt_TodoPeer_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 45, 0)
 
 
 
-	p.vSched.op1 = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 46, 0)
+	p.vSched.op1 = sceAdapt_TodoPeer_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 46, 0)
 
 
 
-	p.vSched.op2 = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 47, 0)
+	p.vSched.op2 = sceAdapt_TodoPeer_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 47, 0)
 
 
 
-	p.vSched.op3 = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 48, 0)
+	p.vSched.op3 = sceAdapt_TodoPeer_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 48, 0)
 
 
 
-	p.vSched.op4 = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 49, 0)
+	p.vSched.op4 = sceAdapt_TodoPeer_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 49, 0)
 
 
 
-	p.vSched.op5 = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 50, 0)
+	p.vSched.op5 = sceAdapt_TodoPeer_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 50, 0)
 
 
 
-	p.vSched.op6 = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 51, 0)
+	p.vSched.op6 = sceAdapt_TodoPeer_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 51, 0)
 
 
 
-	p.vSched.on0 = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 52, 0)
+	p.vSched.on0 = sceAdapt_TodoPeer_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 52, 0)
 
 
 
-	p.vSched.on1 = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 53, 0)
+	p.vSched.on1 = sceAdapt_TodoPeer_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 53, 0)
 
 
 
-	p.vSched.on2 = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 54, 0)
+	p.vSched.on2 = sceAdapt_TodoPeer_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 54, 0)
 
 
 
-	p.vSched.on3 = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 55, 0)
+	p.vSched.on3 = sceAdapt_TodoPeer_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 55, 0)
 
 
 
-	p.vSched.on4 = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 56, 0)
+	p.vSched.on4 = sceAdapt_TodoPeer_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 56, 0)
 
 
 
-	p.vSched.on5 = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 57, 0)
+	p.vSched.on5 = sceAdapt_TodoPeer_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 57, 0)
 
 
 
-	p.vSched.on6 = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 58, 0)
+	p.vSched.on6 = sceAdapt_TodoPeer_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 58, 0)
 
 
 
-	p.vSched.spPos = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 28, 0)
+	p.vSched.spPos = sceAdapt_TodoPeer_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 28, 0)
 
 
 
-	p.vSched.spNeg = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 29, 0)
+	p.vSched.spNeg = sceAdapt_TodoPeer_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 29, 0)
 
 
 
-	p.vSched.wkst = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 30, 1)
+	p.vSched.wkst = sceAdapt_TodoPeer_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 30, 1)
 
 
 
-	p.vSched.wnPos = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 31, 0)
+	p.vSched.wnPos = sceAdapt_TodoPeer_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 31, 0)
 
 
 
-	p.vSched.wnNeg = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 32, 0)
+	p.vSched.wnNeg = sceAdapt_TodoPeer_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 32, 0)
 
 
 
-	p.vSched.yd0 = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 33, 0)
+	p.vSched.yd0 = sceAdapt_TodoPeer_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 33, 0)
 
 
 
-	p.vSched.yd1 = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 34, 0)
+	p.vSched.yd1 = sceAdapt_TodoPeer_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 34, 0)
 
 
 
-	p.vSched.yd2 = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 35, 0)
+	p.vSched.yd2 = sceAdapt_TodoPeer_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 35, 0)
 
 
 
-	p.vSched.yd3 = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 36, 0)
+	p.vSched.yd3 = sceAdapt_TodoPeer_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 36, 0)
 
 
 
-	p.vSched.yd4 = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 37, 0)
+	p.vSched.yd4 = sceAdapt_TodoPeer_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 37, 0)
 
 
 
-	p.vSched.yd5 = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 38, 0)
+	p.vSched.yd5 = sceAdapt_TodoPeer_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 38, 0)
 
 
 
-	p.vSched.ydn0 = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 39, 0)
+	p.vSched.ydn0 = sceAdapt_TodoPeer_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 39, 0)
 
 
 
-	p.vSched.ydn1 = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 40, 0)
+	p.vSched.ydn1 = sceAdapt_TodoPeer_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 40, 0)
 
 
 
-	p.vSched.ydn2 = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 41, 0)
+	p.vSched.ydn2 = sceAdapt_TodoPeer_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 41, 0)
 
 
 
-	p.vSched.ydn3 = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 42, 0)
+	p.vSched.ydn3 = sceAdapt_TodoPeer_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 42, 0)
 
 
 
-	p.vSched.ydn4 = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 43, 0)
+	p.vSched.ydn4 = sceAdapt_TodoPeer_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 43, 0)
 
 
 
-	p.vSched.ydn5 = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 44, 0)
+	p.vSched.ydn5 = sceAdapt_TodoPeer_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 44, 0)
 
 
 
-	p.vSched.gone = sceAdapt_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 9, 0)
+	p.vSched.gone = sceAdapt_TodoPeer_EventLatest__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id), 9, 0)
 
 
 
-	p.vSplit = sceAdapt_EventConflict__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id))
+	p.vSplit = sceAdapt_TodoPeer_EventConflict__v(p.vValues, uint64(p.pendingTodoAgendaPayload.id))
 
 
 
@@ -6618,7 +6618,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 	if p.vZoneRows == 0 {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_EventAgenda__vv(p.vSched, p.vValues, uint64(p.pendingTodoAgendaPayload.id), p.pendingTodoAgendaPayload.windowStart, p.pendingTodoAgendaPayload.windowEnd, p.pendingTodoAgendaPayload.skip)), 64); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='agenda'>: an integer operation overflowed or failed")); return true }; p.vAgenda = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_TodoPeer_EventAgenda__vv(p.vSched, p.vValues, uint64(p.pendingTodoAgendaPayload.id), p.pendingTodoAgendaPayload.windowStart, p.pendingTodoAgendaPayload.windowEnd, p.pendingTodoAgendaPayload.skip)), 64); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='agenda'>: an integer operation overflowed or failed")); return true }; p.vAgenda = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -6644,7 +6644,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 	if p.vZoneRows != 0 {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_EventAgenda__vv(p.vSched, p.vValues, uint64(p.pendingTodoAgendaPayload.id), scealgorithm.SubInt64(&sceFailure, p.pendingTodoAgendaPayload.windowStart, 86400000), scealgorithm.AddInt64(&sceFailure, p.pendingTodoAgendaPayload.windowEnd, 86400000), p.pendingTodoAgendaPayload.skip)), 64); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='local'>: an integer operation overflowed or failed")); return true }; p.vLocal = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_TodoPeer_EventAgenda__vv(p.vSched, p.vValues, uint64(p.pendingTodoAgendaPayload.id), scealgorithm.SubInt64(&sceFailure, p.pendingTodoAgendaPayload.windowStart, 86400000), scealgorithm.AddInt64(&sceFailure, p.pendingTodoAgendaPayload.windowEnd, 86400000), p.pendingTodoAgendaPayload.skip)), 64); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='local'>: an integer operation overflowed or failed")); return true }; p.vLocal = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -6676,7 +6676,7 @@ func (p *TodoPeerPolicy) ExecuteTransitionContent(source TodoPeerState, transiti
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_UtcFromLocal__vv(p.vZoneStarts, p.vZoneOffsets, scealgorithm.DivInt64(&sceFailure, l.start, 1000))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='utcSec'>: an integer operation overflowed or failed")); return true }; p.vUtcSec = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_TodoPeer_UtcFromLocal__vv(p.vZoneStarts, p.vZoneOffsets, scealgorithm.DivInt64(&sceFailure, l.start, 1000))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(TodoPeerEventErrorExecution, "<assign location='utcSec'>: an integer operation overflowed or failed")); return true }; p.vUtcSec = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

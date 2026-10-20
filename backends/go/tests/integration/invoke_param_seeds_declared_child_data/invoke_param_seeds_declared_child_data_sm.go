@@ -643,7 +643,7 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 			childEngine.Initialize()
 
 			// W3C SCXML 6.4: Store child and create wrapper
-			wrapper := &childEngineWrapperInvInfinite{engine: childEngine, policy: &childPolicy}
+			wrapper := &childEngineWrapperInvokeParamSeedsDeclaredChildData_InvInfinite{engine: childEngine, policy: &childPolicy}
 			p.childInvInfinite = wrapper
 
 			// W3C SCXML 6.4: Drain child-to-parent events raised during initialize
@@ -726,7 +726,7 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 			childEngine.Initialize()
 
 			// W3C SCXML 6.4: Store child and create wrapper
-			wrapper := &childEngineWrapperInvNamelist{engine: childEngine, policy: &childPolicy}
+			wrapper := &childEngineWrapperInvokeParamSeedsDeclaredChildData_InvNamelist{engine: childEngine, policy: &childPolicy}
 			p.childInvNamelist = wrapper
 
 			// W3C SCXML 6.4: Drain child-to-parent events raised during initialize
@@ -807,7 +807,7 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 			childEngine.Initialize()
 
 			// W3C SCXML 6.4: Store child and create wrapper
-			wrapper := &childEngineWrapperInvShadow{engine: childEngine, policy: &childPolicy}
+			wrapper := &childEngineWrapperInvokeParamSeedsDeclaredChildData_InvShadow{engine: childEngine, policy: &childPolicy}
 			p.childInvShadow = wrapper
 
 			// W3C SCXML 6.4: Drain child-to-parent events raised during initialize
@@ -888,7 +888,7 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 			childEngine.Initialize()
 
 			// W3C SCXML 6.4: Store child and create wrapper
-			wrapper := &childEngineWrapperInvSole{engine: childEngine, policy: &childPolicy}
+			wrapper := &childEngineWrapperInvokeParamSeedsDeclaredChildData_InvSole{engine: childEngine, policy: &childPolicy}
 			p.childInvSole = wrapper
 
 			// W3C SCXML 6.4: Drain child-to-parent events raised during initialize
@@ -983,7 +983,7 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 			childEngine.Initialize()
 
 			// W3C SCXML 6.4: Store child and create wrapper
-			wrapper := &childEngineWrapperInvUnmatched{engine: childEngine, policy: &childPolicy}
+			wrapper := &childEngineWrapperInvokeParamSeedsDeclaredChildData_InvUnmatched{engine: childEngine, policy: &childPolicy}
 			p.childInvUnmatched = wrapper
 
 			// W3C SCXML 6.4: Drain child-to-parent events raised during initialize
@@ -1244,81 +1244,81 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) DeliverToChildSession(childSes
 
 // ── Child engine wrappers (implement sce.ChildEngine interface) ──
 
-type childEngineWrapperInvShadow struct {
+type childEngineWrapperInvokeParamSeedsDeclaredChildData_InvShadow struct {
 	engine *sce.Engine[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent]
 	policy *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy
 }
-func (w *childEngineWrapperInvShadow) Initialize() { w.engine.Initialize() }
-func (w *childEngineWrapperInvShadow) Tick() { w.engine.Tick() }
-func (w *childEngineWrapperInvShadow) Step() { w.engine.Step() }
-func (w *childEngineWrapperInvShadow) Stop() { w.engine.Stop() }
-func (w *childEngineWrapperInvShadow) IsInFinalState() bool { return w.engine.IsInFinalState() }
-func (w *childEngineWrapperInvShadow) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
-func (w *childEngineWrapperInvShadow) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
-func (w *childEngineWrapperInvShadow) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperInvShadow) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
-func (w *childEngineWrapperInvShadow) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
-func (w *childEngineWrapperInvShadow) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
-type childEngineWrapperInvSole struct {
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvShadow) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvShadow) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvShadow) Step() { w.engine.Step() }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvShadow) Stop() { w.engine.Stop() }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvShadow) IsInFinalState() bool { return w.engine.IsInFinalState() }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvShadow) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvShadow) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvShadow) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvShadow) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvShadow) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvShadow) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+type childEngineWrapperInvokeParamSeedsDeclaredChildData_InvSole struct {
 	engine *sce.Engine[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleState, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEvent]
 	policy *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSolePolicy
 }
-func (w *childEngineWrapperInvSole) Initialize() { w.engine.Initialize() }
-func (w *childEngineWrapperInvSole) Tick() { w.engine.Tick() }
-func (w *childEngineWrapperInvSole) Step() { w.engine.Step() }
-func (w *childEngineWrapperInvSole) Stop() { w.engine.Stop() }
-func (w *childEngineWrapperInvSole) IsInFinalState() bool { return w.engine.IsInFinalState() }
-func (w *childEngineWrapperInvSole) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
-func (w *childEngineWrapperInvSole) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
-func (w *childEngineWrapperInvSole) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperInvSole) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
-func (w *childEngineWrapperInvSole) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
-func (w *childEngineWrapperInvSole) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
-type childEngineWrapperInvUnmatched struct {
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvSole) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvSole) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvSole) Step() { w.engine.Step() }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvSole) Stop() { w.engine.Stop() }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvSole) IsInFinalState() bool { return w.engine.IsInFinalState() }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvSole) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvSole) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvSole) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvSole) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvSole) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvSole) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+type childEngineWrapperInvokeParamSeedsDeclaredChildData_InvUnmatched struct {
 	engine *sce.Engine[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedEvent]
 	policy *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedPolicy
 }
-func (w *childEngineWrapperInvUnmatched) Initialize() { w.engine.Initialize() }
-func (w *childEngineWrapperInvUnmatched) Tick() { w.engine.Tick() }
-func (w *childEngineWrapperInvUnmatched) Step() { w.engine.Step() }
-func (w *childEngineWrapperInvUnmatched) Stop() { w.engine.Stop() }
-func (w *childEngineWrapperInvUnmatched) IsInFinalState() bool { return w.engine.IsInFinalState() }
-func (w *childEngineWrapperInvUnmatched) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
-func (w *childEngineWrapperInvUnmatched) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
-func (w *childEngineWrapperInvUnmatched) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperInvUnmatched) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
-func (w *childEngineWrapperInvUnmatched) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
-func (w *childEngineWrapperInvUnmatched) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
-type childEngineWrapperInvNamelist struct {
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvUnmatched) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvUnmatched) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvUnmatched) Step() { w.engine.Step() }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvUnmatched) Stop() { w.engine.Stop() }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvUnmatched) IsInFinalState() bool { return w.engine.IsInFinalState() }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvUnmatched) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvUnmatched) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvUnmatched) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvUnmatched) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvUnmatched) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvUnmatched) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+type childEngineWrapperInvokeParamSeedsDeclaredChildData_InvNamelist struct {
 	engine *sce.Engine[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistEvent]
 	policy *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistPolicy
 }
-func (w *childEngineWrapperInvNamelist) Initialize() { w.engine.Initialize() }
-func (w *childEngineWrapperInvNamelist) Tick() { w.engine.Tick() }
-func (w *childEngineWrapperInvNamelist) Step() { w.engine.Step() }
-func (w *childEngineWrapperInvNamelist) Stop() { w.engine.Stop() }
-func (w *childEngineWrapperInvNamelist) IsInFinalState() bool { return w.engine.IsInFinalState() }
-func (w *childEngineWrapperInvNamelist) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
-func (w *childEngineWrapperInvNamelist) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
-func (w *childEngineWrapperInvNamelist) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperInvNamelist) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
-func (w *childEngineWrapperInvNamelist) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
-func (w *childEngineWrapperInvNamelist) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
-type childEngineWrapperInvInfinite struct {
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvNamelist) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvNamelist) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvNamelist) Step() { w.engine.Step() }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvNamelist) Stop() { w.engine.Stop() }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvNamelist) IsInFinalState() bool { return w.engine.IsInFinalState() }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvNamelist) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvNamelist) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvNamelist) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvNamelist) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvNamelist) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvNamelist) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+type childEngineWrapperInvokeParamSeedsDeclaredChildData_InvInfinite struct {
 	engine *sce.Engine[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteEvent]
 	policy *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy
 }
-func (w *childEngineWrapperInvInfinite) Initialize() { w.engine.Initialize() }
-func (w *childEngineWrapperInvInfinite) Tick() { w.engine.Tick() }
-func (w *childEngineWrapperInvInfinite) Step() { w.engine.Step() }
-func (w *childEngineWrapperInvInfinite) Stop() { w.engine.Stop() }
-func (w *childEngineWrapperInvInfinite) IsInFinalState() bool { return w.engine.IsInFinalState() }
-func (w *childEngineWrapperInvInfinite) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
-func (w *childEngineWrapperInvInfinite) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
-func (w *childEngineWrapperInvInfinite) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperInvInfinite) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
-func (w *childEngineWrapperInvInfinite) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
-func (w *childEngineWrapperInvInfinite) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvInfinite) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvInfinite) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvInfinite) Step() { w.engine.Step() }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvInfinite) Stop() { w.engine.Stop() }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvInfinite) IsInFinalState() bool { return w.engine.IsInFinalState() }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvInfinite) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvInfinite) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvInfinite) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvInfinite) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvInfinite) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvInfinite) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 
 
 // DeliverToParent delivers a delayed `<send target="#_parent">` whose wait is

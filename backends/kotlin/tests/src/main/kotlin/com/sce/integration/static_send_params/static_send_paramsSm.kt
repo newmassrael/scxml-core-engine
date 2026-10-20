@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 23b50ff6771257bf06531b96d0a47eeaa5c39fb71939d9bd5e537100a9105206
+// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_send_params.scxml
@@ -166,11 +166,20 @@ class StaticSendParamsStateMachine(
     // ── SCE Accepted Subset §2.15: saving this machine, restoring it ─────────
 
     /**
-     * The shape a saved state of this document is bound to: a state saved
-     * from a document that renamed, re-typed or moved a state or a variable is
-     * refused, one saved before a guard or an action changed is not.
+     * What a saved state of this document is bound to: a state saved from a
+     * document that renamed, re-typed or moved a state or a variable is
+     * refused, one saved before a guard or an action changed is not, and one
+     * saved at an earlier revision of a record schema is read with each field a
+     * later revision added at its default.
      */
-    val savedShape: String = "7e5e95cee8de997396fe13304f2b1d4514e4e762405c5db762384b1df906a243"
+    val savedShape: SavedShape = SavedShape(
+        first = "7e5e95cee8de997396fe13304f2b1d4514e4e762405c5db762384b1df906a243",
+        revised = "7e38631c4ad4fb4e0086252d3257a27fbbe316fe81cc222ff55b9a23a0a9825e",
+        records = listOf(
+        ),
+        enums = listOf(
+        ),
+    )
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -219,16 +228,18 @@ class StaticSendParamsStateMachine(
      *   one of this document, or a value its variable's type cannot hold.
      */
     fun restore(saved: SavedState, wallNowMs: Long) {
-        beginRestore(saved, savedShape)
-        val saved1 = SavedValues.uint32(saved.variable("count"), "count")
-        val saved2 = SavedValues.uint8(saved.variable("small"), "small")
-        val saved3 = SavedValues.string(saved.variable("label"), "label", 16)
-        val saved4 = SavedValues.uint32(saved.variable("total"), "total")
-        val saved5 = SavedValues.bool(saved.variable("ok"), "ok")
-        val saved6 = SavedValues.string(saved.variable("tag"), "tag", 16)
-        val saved7 = SavedValues.uint32(saved.variable("partialTotal"), "partialTotal")
-        val saved8 = SavedValues.uint8(saved.variable("partialPart"), "partialPart")
-        val saved9 = SavedValues.uint32(saved.variable("refusals"), "refusals")
+        // The state as one of this machine: each record saved at an earlier
+        // revision of its schema holds the defaults of the fields added since.
+        val savedGrown = beginRestore(saved, savedShape)
+        val saved1 = SavedValues.uint32(savedGrown.variable("count"), "count")
+        val saved2 = SavedValues.uint8(savedGrown.variable("small"), "small")
+        val saved3 = SavedValues.string(savedGrown.variable("label"), "label", 16)
+        val saved4 = SavedValues.uint32(savedGrown.variable("total"), "total")
+        val saved5 = SavedValues.bool(savedGrown.variable("ok"), "ok")
+        val saved6 = SavedValues.string(savedGrown.variable("tag"), "tag", 16)
+        val saved7 = SavedValues.uint32(savedGrown.variable("partialTotal"), "partialTotal")
+        val saved8 = SavedValues.uint8(savedGrown.variable("partialPart"), "partialPart")
+        val saved9 = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
         vCount = saved1
         vSmall = saved2
         vLabel = saved3
@@ -238,7 +249,7 @@ class StaticSendParamsStateMachine(
         vPartialTotal = saved7
         vPartialPart = saved8
         vRefusals = saved9
-        enterSaved(saved, wallNowMs)
+        enterSaved(savedGrown, wallNowMs)
     }
 
     /** [restore] at the host's wall clock now. */

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 23b50ff6771257bf06531b96d0a47eeaa5c39fb71939d9bd5e537100a9105206
+// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_record_list.scxml
@@ -161,11 +161,33 @@ class StaticRecordListStateMachine(
     // ── SCE Accepted Subset §2.15: saving this machine, restoring it ─────────
 
     /**
-     * The shape a saved state of this document is bound to: a state saved
-     * from a document that renamed, re-typed or moved a state or a variable is
-     * refused, one saved before a guard or an action changed is not.
+     * What a saved state of this document is bound to: a state saved from a
+     * document that renamed, re-typed or moved a state or a variable is
+     * refused, one saved before a guard or an action changed is not, and one
+     * saved at an earlier revision of a record schema is read with each field a
+     * later revision added at its default.
      */
-    val savedShape: String = "e6e67decba7328a76e16c522269b667c9df51c2beab7540118fb8a22a0ce7f0b"
+    val savedShape: SavedShape = SavedShape(
+        first = "e6e67decba7328a76e16c522269b667c9df51c2beab7540118fb8a22a0ce7f0b",
+        revised = "afe024a9eb8d535a9f2b9d73afbed9506d1090ad1174fcc2e106fa6eb2ca4a66",
+        records = listOf(
+            RecordLineage(
+                event = "day.picked",
+                revision = 1,
+                revisions = listOf(),
+                added = listOf(
+                ),
+                holders = listOf(
+                    RecordHolder("draft", false),
+                    RecordHolder("last", false),
+                    RecordHolder("days", true),
+                    RecordHolder("copies", true),
+                ),
+            ),
+        ),
+        enums = listOf(
+        ),
+    )
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -211,20 +233,22 @@ class StaticRecordListStateMachine(
      *   one of this document, or a value its variable's type cannot hold.
      */
     fun restore(saved: SavedState, wallNowMs: Long) {
-        beginRestore(saved, savedShape)
-        val saved1 = StaticRecordListDayRecord.fromSaved(saved.variable("draft"), "draft")
-        val saved2 = StaticRecordListDayRecord.fromSaved(saved.variable("last"), "last")
-        val saved3 = SavedValues.list(saved.variable("days"), "days", 3) { e, w -> StaticRecordListDayRecord.fromSaved(e, w) }
-        val saved4 = SavedValues.list(saved.variable("copies"), "copies", 3) { e, w -> StaticRecordListDayRecord.fromSaved(e, w) }
-        val saved5 = SavedValues.uint32(saved.variable("total"), "total")
-        val saved6 = SavedValues.uint32(saved.variable("errors"), "errors")
+        // The state as one of this machine: each record saved at an earlier
+        // revision of its schema holds the defaults of the fields added since.
+        val savedGrown = beginRestore(saved, savedShape)
+        val saved1 = StaticRecordListDayRecord.fromSaved(savedGrown.variable("draft"), "draft")
+        val saved2 = StaticRecordListDayRecord.fromSaved(savedGrown.variable("last"), "last")
+        val saved3 = SavedValues.list(savedGrown.variable("days"), "days", 3) { e, w -> StaticRecordListDayRecord.fromSaved(e, w) }
+        val saved4 = SavedValues.list(savedGrown.variable("copies"), "copies", 3) { e, w -> StaticRecordListDayRecord.fromSaved(e, w) }
+        val saved5 = SavedValues.uint32(savedGrown.variable("total"), "total")
+        val saved6 = SavedValues.uint32(savedGrown.variable("errors"), "errors")
         vDraft = saved1
         vLast = saved2
         vDays = saved3
         vCopies = saved4
         vTotal = saved5
         vErrors = saved6
-        enterSaved(saved, wallNowMs)
+        enterSaved(savedGrown, wallNowMs)
     }
 
     /** [restore] at the host's wall clock now. */

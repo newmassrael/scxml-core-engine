@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 23b50ff6771257bf06531b96d0a47eeaa5c39fb71939d9bd5e537100a9105206
+// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_invoke_string.scxml
@@ -113,11 +113,20 @@ class StaticInvokeStringStateMachine(
     // ── SCE Accepted Subset §2.15: saving this machine, restoring it ─────────
 
     /**
-     * The shape a saved state of this document is bound to: a state saved
-     * from a document that renamed, re-typed or moved a state or a variable is
-     * refused, one saved before a guard or an action changed is not.
+     * What a saved state of this document is bound to: a state saved from a
+     * document that renamed, re-typed or moved a state or a variable is
+     * refused, one saved before a guard or an action changed is not, and one
+     * saved at an earlier revision of a record schema is read with each field a
+     * later revision added at its default.
      */
-    val savedShape: String = "e9a22043aaf9b92bc7cb8f09f41bafcbd0cab178ab3d26e9e39d7ab73b453106"
+    val savedShape: SavedShape = SavedShape(
+        first = "e9a22043aaf9b92bc7cb8f09f41bafcbd0cab178ab3d26e9e39d7ab73b453106",
+        revised = "17ae5c17673c1da8161a1df07e130299c5c8d02e0e338535b2beac1b311a3116",
+        records = listOf(
+        ),
+        enums = listOf(
+        ),
+    )
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -160,14 +169,16 @@ class StaticInvokeStringStateMachine(
      *   one of this document, or a value its variable's type cannot hold.
      */
     fun restore(saved: SavedState, wallNowMs: Long) {
-        beginRestore(saved, savedShape)
-        val saved1 = SavedValues.string(saved.variable("lengthy"), "lengthy", 8)
-        val saved2 = SavedValues.uint32(saved.variable("completed"), "completed")
-        val saved3 = SavedValues.uint32(saved.variable("errors"), "errors")
+        // The state as one of this machine: each record saved at an earlier
+        // revision of its schema holds the defaults of the fields added since.
+        val savedGrown = beginRestore(saved, savedShape)
+        val saved1 = SavedValues.string(savedGrown.variable("lengthy"), "lengthy", 8)
+        val saved2 = SavedValues.uint32(savedGrown.variable("completed"), "completed")
+        val saved3 = SavedValues.uint32(savedGrown.variable("errors"), "errors")
         vLengthy = saved1
         vCompleted = saved2
         vErrors = saved3
-        enterSaved(saved, wallNowMs)
+        enterSaved(savedGrown, wallNowMs)
     }
 
     /** [restore] at the host's wall clock now. */

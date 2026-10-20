@@ -487,7 +487,7 @@ func (p *AChildReplyArrivesWithoutATickPolicy) ExecutePendingInvokes(engine *sce
 			childEngine.Initialize()
 
 			// W3C SCXML 6.4: Store child and create wrapper
-			wrapper := &childEngineWrapperKid{engine: childEngine, policy: &childPolicy}
+			wrapper := &childEngineWrapperAChildReplyArrivesWithoutATick_Kid{engine: childEngine, policy: &childPolicy}
 			p.childKid = wrapper
 
 			// W3C SCXML 6.4: Drain child-to-parent events raised during initialize
@@ -604,21 +604,21 @@ func (p *AChildReplyArrivesWithoutATickPolicy) DeliverToChildSession(childSessio
 
 // ── Child engine wrappers (implement sce.ChildEngine interface) ──
 
-type childEngineWrapperKid struct {
+type childEngineWrapperAChildReplyArrivesWithoutATick_Kid struct {
 	engine *sce.Engine[AChildReplyArrivesWithoutATickSceSynthInvokeKidState, AChildReplyArrivesWithoutATickSceSynthInvokeKidEvent]
 	policy *AChildReplyArrivesWithoutATickSceSynthInvokeKidPolicy
 }
-func (w *childEngineWrapperKid) Initialize() { w.engine.Initialize() }
-func (w *childEngineWrapperKid) Tick() { w.engine.Tick() }
-func (w *childEngineWrapperKid) Step() { w.engine.Step() }
-func (w *childEngineWrapperKid) Stop() { w.engine.Stop() }
-func (w *childEngineWrapperKid) IsInFinalState() bool { return w.engine.IsInFinalState() }
-func (w *childEngineWrapperKid) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
-func (w *childEngineWrapperKid) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
-func (w *childEngineWrapperKid) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperKid) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
-func (w *childEngineWrapperKid) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
-func (w *childEngineWrapperKid) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperAChildReplyArrivesWithoutATick_Kid) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperAChildReplyArrivesWithoutATick_Kid) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperAChildReplyArrivesWithoutATick_Kid) Step() { w.engine.Step() }
+func (w *childEngineWrapperAChildReplyArrivesWithoutATick_Kid) Stop() { w.engine.Stop() }
+func (w *childEngineWrapperAChildReplyArrivesWithoutATick_Kid) IsInFinalState() bool { return w.engine.IsInFinalState() }
+func (w *childEngineWrapperAChildReplyArrivesWithoutATick_Kid) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
+func (w *childEngineWrapperAChildReplyArrivesWithoutATick_Kid) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
+func (w *childEngineWrapperAChildReplyArrivesWithoutATick_Kid) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
+func (w *childEngineWrapperAChildReplyArrivesWithoutATick_Kid) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperAChildReplyArrivesWithoutATick_Kid) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapperAChildReplyArrivesWithoutATick_Kid) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 
 
 // DeliverToParent delivers a delayed `<send target="#_parent">` whose wait is

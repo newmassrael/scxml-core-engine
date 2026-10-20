@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 23b50ff6771257bf06531b96d0a47eeaa5c39fb71939d9bd5e537100a9105206
+// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -325,10 +325,12 @@ pub trait StaticSchemaRevisionPersist: Sized {
     /// as it would be for `initialize`.
     type Policy;
 
-    /// The shape a saved state of this document is bound to: a state saved
-    /// from a document that renamed, re-typed or moved a state or a variable
-    /// is refused, one saved before a guard or an action changed is not.
-    const SHAPE: &'static str;
+    /// What a saved state of this document is bound to: a state saved from a
+    /// document that renamed, re-typed or moved a state or a variable is
+    /// refused, one saved before a guard or an action changed is not, and one
+    /// saved at an earlier revision of a record schema is read with each field
+    /// a later revision added at its default.
+    const SHAPE: ::sce_rust_runtime::saved_state::SavedShape;
 
     /// The document's `<history>` pseudo-states, by the id a saved state keys
     /// them by — what a saved state records of each, and what a restore reads
@@ -400,7 +402,46 @@ pub trait StaticSchemaRevisionPersist: Sized {
 impl StaticSchemaRevisionPersist for Engine<StaticSchemaRevisionPolicy> {
     type Policy = StaticSchemaRevisionPolicy;
 
-    const SHAPE: &'static str = "9ebff4e62a7e4f683158f83d5d0e0597589c68fc214b65698615f86db43a1d34";
+    const SHAPE: ::sce_rust_runtime::saved_state::SavedShape =
+        ::sce_rust_runtime::saved_state::SavedShape {
+            first: "11dbc3cc8b1f883cc9da011d2d5c3968ac0eeb404a0f494deede91552cd6623d",
+            revised: "cb771df5efc33bf380bfd5a267ca027b408f8cd064bbc7eec5ca0266e23d06f5",
+            records: &[::sce_rust_runtime::saved_state::RecordLineage {
+                event: "reading.revised",
+                revision: 3,
+                revisions: &[
+                    "d9ba6a71207a3f219929c8fda298d7a35c76cb7950cc287ae2fa8a8b8ff45ad7",
+                    "e511eddacf1d4e220c85f78c95988fe26a2a1319cf119cb085f1a84f4f197f8d",
+                ],
+                added: &[
+                    ::sce_rust_runtime::saved_state::AddedField {
+                        id: "layout",
+                        since: 2,
+                        default: "\"week\"",
+                    },
+                    ::sce_rust_runtime::saved_state::AddedField {
+                        id: "urgent",
+                        since: 3,
+                        default: "true",
+                    },
+                ],
+                holders: &[::sce_rust_runtime::saved_state::RecordHolder {
+                    variable: "last",
+                    list: false,
+                }],
+            }],
+            enums: &[::sce_rust_runtime::saved_state::EnumLineage {
+                key: "enum:enum_view_mode.scxml",
+                revision: 1,
+                revisions: &[],
+                added: &[],
+                holders: &[::sce_rust_runtime::saved_state::EnumHolder {
+                    variable: "last",
+                    field: Some("layout"),
+                    list: false,
+                }],
+            }],
+        };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<
         ::sce_rust_runtime::NoHistory,
@@ -416,7 +457,7 @@ impl StaticSchemaRevisionPersist for Engine<StaticSchemaRevisionPolicy> {
         let policy = self.policy();
         ::sce_rust_runtime::saved_state::save(
             self,
-            Self::SHAPE,
+            &Self::SHAPE,
             vec![
                 (
                     "last".to_string(),
@@ -442,7 +483,10 @@ impl StaticSchemaRevisionPersist for Engine<StaticSchemaRevisionPolicy> {
         clock: ::sce_rust_runtime::SceClock,
         wall_now_ms: u64,
     ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
-        ::sce_rust_runtime::saved_state::check_shape(saved, Self::SHAPE)?;
+        // The shape, the revision of each record schema, and each record of an
+        // earlier revision grown by the defaults of the fields added since, so
+        // what is read below is a state of this machine.
+        let saved = &::sce_rust_runtime::saved_state::upgrade(saved, &Self::SHAPE)?;
         // Judged with the configuration and before any value is written, so a
         // refused restore holds no half of a state. A document with no
         // `<history>` refuses any a saved state records.

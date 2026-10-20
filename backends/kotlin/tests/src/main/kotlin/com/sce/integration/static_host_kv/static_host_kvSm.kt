@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 23b50ff6771257bf06531b96d0a47eeaa5c39fb71939d9bd5e537100a9105206
+// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_host_kv.scxml
@@ -371,11 +371,20 @@ class StaticHostKvStateMachine(
     // ── SCE Accepted Subset §2.15: saving this machine, restoring it ─────────
 
     /**
-     * The shape a saved state of this document is bound to: a state saved
-     * from a document that renamed, re-typed or moved a state or a variable is
-     * refused, one saved before a guard or an action changed is not.
+     * What a saved state of this document is bound to: a state saved from a
+     * document that renamed, re-typed or moved a state or a variable is
+     * refused, one saved before a guard or an action changed is not, and one
+     * saved at an earlier revision of a record schema is read with each field a
+     * later revision added at its default.
      */
-    val savedShape: String = "e559d3befc5e45e1282094d521bf840ef102b9aac72ec8ceabae510e75799631"
+    val savedShape: SavedShape = SavedShape(
+        first = "e559d3befc5e45e1282094d521bf840ef102b9aac72ec8ceabae510e75799631",
+        revised = "c60ffa2d12ab7efa1e75901224798d2ee7ca6959393d9395cb652f94b16cd632",
+        records = listOf(
+        ),
+        enums = listOf(
+        ),
+    )
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -426,18 +435,20 @@ class StaticHostKvStateMachine(
      *   one of this document, or a value its variable's type cannot hold.
      */
     fun restore(saved: SavedState, wallNowMs: Long) {
-        beginRestore(saved, savedShape)
-        val saved1 = SavedValues.string(saved.variable("key"), "key", 256)
-        val saved2 = SavedValues.string(saved.variable("value"), "value", 4096)
-        val saved3 = SavedValues.string(saved.variable("after"), "after", 256)
-        val saved4 = SavedValues.string(saved.variable("prefix"), "prefix", 256)
-        val saved5 = SavedValues.string(saved.variable("outcome"), "outcome", 24)
-        val saved6 = SavedValues.bool(saved.variable("found"), "found")
-        val saved7 = SavedValues.string(saved.variable("got"), "got", 4096)
-        val saved8 = SavedValues.bool(saved.variable("replaced"), "replaced")
-        val saved9 = SavedValues.bool(saved.variable("existed"), "existed")
-        val saved10 = SavedValues.bool(saved.variable("next_found"), "next_found")
-        val saved11 = SavedValues.string(saved.variable("next"), "next", 256)
+        // The state as one of this machine: each record saved at an earlier
+        // revision of its schema holds the defaults of the fields added since.
+        val savedGrown = beginRestore(saved, savedShape)
+        val saved1 = SavedValues.string(savedGrown.variable("key"), "key", 256)
+        val saved2 = SavedValues.string(savedGrown.variable("value"), "value", 4096)
+        val saved3 = SavedValues.string(savedGrown.variable("after"), "after", 256)
+        val saved4 = SavedValues.string(savedGrown.variable("prefix"), "prefix", 256)
+        val saved5 = SavedValues.string(savedGrown.variable("outcome"), "outcome", 24)
+        val saved6 = SavedValues.bool(savedGrown.variable("found"), "found")
+        val saved7 = SavedValues.string(savedGrown.variable("got"), "got", 4096)
+        val saved8 = SavedValues.bool(savedGrown.variable("replaced"), "replaced")
+        val saved9 = SavedValues.bool(savedGrown.variable("existed"), "existed")
+        val saved10 = SavedValues.bool(savedGrown.variable("next_found"), "next_found")
+        val saved11 = SavedValues.string(savedGrown.variable("next"), "next", 256)
         vKey = saved1
         vValue = saved2
         vAfter = saved3
@@ -449,7 +460,7 @@ class StaticHostKvStateMachine(
         vExisted = saved9
         vNextFound = saved10
         vNext = saved11
-        enterSaved(saved, wallNowMs)
+        enterSaved(savedGrown, wallNowMs)
     }
 
     /** [restore] at the host's wall clock now. */

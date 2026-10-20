@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 23b50ff6771257bf06531b96d0a47eeaa5c39fb71939d9bd5e537100a9105206
+// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_real.scxml
@@ -141,11 +141,20 @@ class StaticRealStateMachine(
     // ── SCE Accepted Subset §2.15: saving this machine, restoring it ─────────
 
     /**
-     * The shape a saved state of this document is bound to: a state saved
-     * from a document that renamed, re-typed or moved a state or a variable is
-     * refused, one saved before a guard or an action changed is not.
+     * What a saved state of this document is bound to: a state saved from a
+     * document that renamed, re-typed or moved a state or a variable is
+     * refused, one saved before a guard or an action changed is not, and one
+     * saved at an earlier revision of a record schema is read with each field a
+     * later revision added at its default.
      */
-    val savedShape: String = "f44ab1df16ee701bda26935e1acf131aaf19f648ffc8db1be27381c1a76a4133"
+    val savedShape: SavedShape = SavedShape(
+        first = "f44ab1df16ee701bda26935e1acf131aaf19f648ffc8db1be27381c1a76a4133",
+        revised = "2587ba0a8cc82b3651360f544a67d759659dde6552f8fcdf2cc117fe60bbdf1f",
+        records = listOf(
+        ),
+        enums = listOf(
+        ),
+    )
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -192,14 +201,16 @@ class StaticRealStateMachine(
      *   one of this document, or a value its variable's type cannot hold.
      */
     fun restore(saved: SavedState, wallNowMs: Long) {
-        beginRestore(saved, savedShape)
-        val saved1 = SavedValues.float64(saved.variable("level"), "level")
-        val saved2 = SavedValues.float64(saved.variable("rate"), "rate")
-        val saved3 = SavedValues.float64(saved.variable("total"), "total")
-        val saved4 = SavedValues.float64(saved.variable("tenth"), "tenth")
-        val saved5 = SavedValues.float64(saved.variable("drift"), "drift")
-        val saved6 = SavedValues.list(saved.variable("samples"), "samples", 3) { e, w -> SavedValues.float64(e, w) }
-        val saved7 = SavedValues.uint32(saved.variable("errors"), "errors")
+        // The state as one of this machine: each record saved at an earlier
+        // revision of its schema holds the defaults of the fields added since.
+        val savedGrown = beginRestore(saved, savedShape)
+        val saved1 = SavedValues.float64(savedGrown.variable("level"), "level")
+        val saved2 = SavedValues.float64(savedGrown.variable("rate"), "rate")
+        val saved3 = SavedValues.float64(savedGrown.variable("total"), "total")
+        val saved4 = SavedValues.float64(savedGrown.variable("tenth"), "tenth")
+        val saved5 = SavedValues.float64(savedGrown.variable("drift"), "drift")
+        val saved6 = SavedValues.list(savedGrown.variable("samples"), "samples", 3) { e, w -> SavedValues.float64(e, w) }
+        val saved7 = SavedValues.uint32(savedGrown.variable("errors"), "errors")
         vLevel = saved1
         vRate = saved2
         vTotal = saved3
@@ -207,7 +218,7 @@ class StaticRealStateMachine(
         vDrift = saved5
         vSamples = saved6
         vErrors = saved7
-        enterSaved(saved, wallNowMs)
+        enterSaved(savedGrown, wallNowMs)
     }
 
     /** [restore] at the host's wall clock now. */

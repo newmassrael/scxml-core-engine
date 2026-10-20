@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 23b50ff6771257bf06531b96d0a47eeaa5c39fb71939d9bd5e537100a9105206
+// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -179,7 +179,7 @@ const (
 
 // StaticSendContentViewRelayedPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `view.relayed`. Internal to the package; consumers inject it via
-// the `RaiseViewRelayed` seam below (fields are unexported by design).
+// the `StaticSendContentRaiseViewRelayed` seam below (fields are unexported by design).
 type StaticSendContentViewRelayedPayload struct {
 	layout StaticSendContentViewModeEnum
 	zoom uint8
@@ -187,18 +187,18 @@ type StaticSendContentViewRelayedPayload struct {
 
 // StaticSendContentViewShownPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `view.shown`. Internal to the package; consumers inject it via
-// the `RaiseViewShown` seam below (fields are unexported by design).
+// the `StaticSendContentRaiseViewShown` seam below (fields are unexported by design).
 type StaticSendContentViewShownPayload struct {
 	layout StaticSendContentViewModeEnum
 	zoom uint8
 }
 
-// RaiseViewRelayed is the NL→IR Item C1 Path A per-event typed `_event.data`
+// StaticSendContentRaiseViewRelayed is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `view.relayed` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseViewRelayed` extension-trait method
+// inconsistently. Twin of the Rust `StaticSendContentInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseViewRelayed(e *sce.Engine[StaticSendContentState, StaticSendContentEvent], layout StaticSendContentViewModeEnum, zoom uint8) {
+func StaticSendContentRaiseViewRelayed(e *sce.Engine[StaticSendContentState, StaticSendContentEvent], layout StaticSendContentViewModeEnum, zoom uint8) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[StaticSendContentEvent]{
 		Event:    StaticSendContentEventViewRelayed,
 		Metadata: sce.EventMetadata{
@@ -213,12 +213,12 @@ func RaiseViewRelayed(e *sce.Engine[StaticSendContentState, StaticSendContentEve
 	})
 }
 
-// RaiseViewShown is the NL→IR Item C1 Path A per-event typed `_event.data`
+// StaticSendContentRaiseViewShown is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `view.shown` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseViewShown` extension-trait method
+// inconsistently. Twin of the Rust `StaticSendContentInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseViewShown(e *sce.Engine[StaticSendContentState, StaticSendContentEvent], layout StaticSendContentViewModeEnum, zoom uint8) {
+func StaticSendContentRaiseViewShown(e *sce.Engine[StaticSendContentState, StaticSendContentEvent], layout StaticSendContentViewModeEnum, zoom uint8) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[StaticSendContentEvent]{
 		Event:    StaticSendContentEventViewShown,
 		Metadata: sce.EventMetadata{
@@ -239,22 +239,22 @@ func RaiseViewShown(e *sce.Engine[StaticSendContentState, StaticSendContentEvent
 type StaticSendContentViewModeEnum uint8
 
 const (
-	EnumViewModeMonth StaticSendContentViewModeEnum = 0
-	EnumViewModeWeek StaticSendContentViewModeEnum = 1
-	EnumViewModeDay StaticSendContentViewModeEnum = 2
-	EnumViewModeAgendaList StaticSendContentViewModeEnum = 3
+	StaticSendContentViewModeEnumMonth StaticSendContentViewModeEnum = 0
+	StaticSendContentViewModeEnumWeek StaticSendContentViewModeEnum = 1
+	StaticSendContentViewModeEnumDay StaticSendContentViewModeEnum = 2
+	StaticSendContentViewModeEnumAgendaList StaticSendContentViewModeEnum = 3
 )
 
 // String is the name the enum document declares for the value.
 func (v StaticSendContentViewModeEnum) String() string {
 	switch v {
-	case EnumViewModeMonth:
+	case StaticSendContentViewModeEnumMonth:
 		return "month"
-	case EnumViewModeWeek:
+	case StaticSendContentViewModeEnumWeek:
 		return "week"
-	case EnumViewModeDay:
+	case StaticSendContentViewModeEnumDay:
 		return "day"
-	case EnumViewModeAgendaList:
+	case StaticSendContentViewModeEnumAgendaList:
 		return "agenda_list"
 	}
 	return ""
@@ -314,8 +314,8 @@ type StaticSendContentPolicy struct {
 // NewStaticSendContentPolicy creates a new policy with default values.
 func NewStaticSendContentPolicy() StaticSendContentPolicy {
 	return StaticSendContentPolicy{
-		vShown: StaticSendContentViewRecord{layout: EnumViewModeDay, zoom: 2},
-		vReceived: EnumViewModeMonth,
+		vShown: StaticSendContentViewRecord{layout: StaticSendContentViewModeEnumDay, zoom: 2},
+		vReceived: StaticSendContentViewModeEnumMonth,
 		vLevel: 0,
 		vRelays: 0,
 	}
@@ -602,7 +602,7 @@ func (p *StaticSendContentPolicy) LiftTypedPayload(event StaticSendContentEvent,
 			return err
 		}
 		var payload StaticSendContentViewRelayedPayload
-		if payload.layout, err = func() (StaticSendContentViewModeEnum, error) { name, err := sce.PayloadString(fields, "layout"); if err != nil { return 0, err }; switch name { case "month": return EnumViewModeMonth, nil; case "week": return EnumViewModeWeek, nil; case "day": return EnumViewModeDay, nil; case "agenda_list": return EnumViewModeAgendaList, nil; }; return 0, fmt.Errorf("%q (%s) is not a variant of ViewMode", "layout", name) }(); err != nil {
+		if payload.layout, err = func() (StaticSendContentViewModeEnum, error) { name, err := sce.PayloadString(fields, "layout"); if err != nil { return 0, err }; switch name { case "month": return StaticSendContentViewModeEnumMonth, nil; case "week": return StaticSendContentViewModeEnumWeek, nil; case "day": return StaticSendContentViewModeEnumDay, nil; case "agenda_list": return StaticSendContentViewModeEnumAgendaList, nil; }; return 0, fmt.Errorf("%q (%s) is not a variant of ViewMode", "layout", name) }(); err != nil {
 			return err
 		}
 		if payload.zoom, err = sce.PayloadUnsigned[uint8](fields, "zoom"); err != nil {
@@ -616,7 +616,7 @@ func (p *StaticSendContentPolicy) LiftTypedPayload(event StaticSendContentEvent,
 			return err
 		}
 		var payload StaticSendContentViewShownPayload
-		if payload.layout, err = func() (StaticSendContentViewModeEnum, error) { name, err := sce.PayloadString(fields, "layout"); if err != nil { return 0, err }; switch name { case "month": return EnumViewModeMonth, nil; case "week": return EnumViewModeWeek, nil; case "day": return EnumViewModeDay, nil; case "agenda_list": return EnumViewModeAgendaList, nil; }; return 0, fmt.Errorf("%q (%s) is not a variant of ViewMode", "layout", name) }(); err != nil {
+		if payload.layout, err = func() (StaticSendContentViewModeEnum, error) { name, err := sce.PayloadString(fields, "layout"); if err != nil { return 0, err }; switch name { case "month": return StaticSendContentViewModeEnumMonth, nil; case "week": return StaticSendContentViewModeEnumWeek, nil; case "day": return StaticSendContentViewModeEnumDay, nil; case "agenda_list": return StaticSendContentViewModeEnumAgendaList, nil; }; return 0, fmt.Errorf("%q (%s) is not a variant of ViewMode", "layout", name) }(); err != nil {
 			return err
 		}
 		if payload.zoom, err = sce.PayloadUnsigned[uint8](fields, "zoom"); err != nil {
@@ -759,7 +759,7 @@ func (p *StaticSendContentPolicy) ExecuteTransitionContent(source StaticSendCont
 
 
 
-	p.vShown.layout = EnumViewModeWeek
+	p.vShown.layout = StaticSendContentViewModeEnumWeek
 
 			}()
 		case 1:

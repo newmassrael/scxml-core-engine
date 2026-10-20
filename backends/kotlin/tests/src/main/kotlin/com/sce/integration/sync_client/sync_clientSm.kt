@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 23b50ff6771257bf06531b96d0a47eeaa5c39fb71939d9bd5e537100a9105206
+// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/sync_client.scxml
@@ -203,11 +203,20 @@ class SyncClientStateMachine(
     // ── SCE Accepted Subset §2.15: saving this machine, restoring it ─────────
 
     /**
-     * The shape a saved state of this document is bound to: a state saved
-     * from a document that renamed, re-typed or moved a state or a variable is
-     * refused, one saved before a guard or an action changed is not.
+     * What a saved state of this document is bound to: a state saved from a
+     * document that renamed, re-typed or moved a state or a variable is
+     * refused, one saved before a guard or an action changed is not, and one
+     * saved at an earlier revision of a record schema is read with each field a
+     * later revision added at its default.
      */
-    val savedShape: String = "b07ee998a49953bb6dcbd8a8f1b5201424834bdf432224e225a612af803dcbe2"
+    val savedShape: SavedShape = SavedShape(
+        first = "b07ee998a49953bb6dcbd8a8f1b5201424834bdf432224e225a612af803dcbe2",
+        revised = "59efa08979bdda6f4ee18d6353512b4c4be9f0964013cc38a9000088eddfdeda",
+        records = listOf(
+        ),
+        enums = listOf(
+        ),
+    )
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -256,16 +265,18 @@ class SyncClientStateMachine(
      *   one of this document, or a value its variable's type cannot hold.
      */
     fun restore(saved: SavedState, wallNowMs: Long) {
-        beginRestore(saved, savedShape)
-        val saved1 = SavedValues.bool(saved.variable("byToken"), "byToken")
-        val saved2 = SavedValues.bool(saved.variable("fullListing"), "fullListing")
-        val saved3 = SavedValues.uint8(saved.variable("outcome"), "outcome")
-        val saved4 = SavedValues.int64(saved.variable("retryAt"), "retryAt")
-        val saved5 = SavedValues.uint32(saved.variable("deleted"), "deleted")
-        val saved6 = SavedValues.uint32(saved.variable("uploaded"), "uploaded")
-        val saved7 = SavedValues.uint32(saved.variable("discarded"), "discarded")
-        val saved8 = SavedValues.uint32(saved.variable("pages"), "pages")
-        val saved9 = SavedValues.uint32(saved.variable("refusals"), "refusals")
+        // The state as one of this machine: each record saved at an earlier
+        // revision of its schema holds the defaults of the fields added since.
+        val savedGrown = beginRestore(saved, savedShape)
+        val saved1 = SavedValues.bool(savedGrown.variable("byToken"), "byToken")
+        val saved2 = SavedValues.bool(savedGrown.variable("fullListing"), "fullListing")
+        val saved3 = SavedValues.uint8(savedGrown.variable("outcome"), "outcome")
+        val saved4 = SavedValues.int64(savedGrown.variable("retryAt"), "retryAt")
+        val saved5 = SavedValues.uint32(savedGrown.variable("deleted"), "deleted")
+        val saved6 = SavedValues.uint32(savedGrown.variable("uploaded"), "uploaded")
+        val saved7 = SavedValues.uint32(savedGrown.variable("discarded"), "discarded")
+        val saved8 = SavedValues.uint32(savedGrown.variable("pages"), "pages")
+        val saved9 = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
         vByToken = saved1
         vFullListing = saved2
         vOutcome = saved3
@@ -275,7 +286,7 @@ class SyncClientStateMachine(
         vDiscarded = saved7
         vPages = saved8
         vRefusals = saved9
-        enterSaved(saved, wallNowMs)
+        enterSaved(savedGrown, wallNowMs)
     }
 
     /** [restore] at the host's wall clock now. */

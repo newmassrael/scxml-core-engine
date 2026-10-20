@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 23b50ff6771257bf06531b96d0a47eeaa5c39fb71939d9bd5e537100a9105206
+// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -216,7 +216,7 @@ const (
 
 // StaticHostClockDoneInvokeNowPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `done.invoke.now`. Internal to the package; consumers inject it via
-// the `RaiseDoneInvokeNow` seam below (fields are unexported by design).
+// the `StaticHostClockRaiseDoneInvokeNow` seam below (fields are unexported by design).
 type StaticHostClockDoneInvokeNowPayload struct {
 	error string
 	utc_ms int64
@@ -225,7 +225,7 @@ type StaticHostClockDoneInvokeNowPayload struct {
 
 // StaticHostClockDoneInvokeZonePayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `done.invoke.zone`. Internal to the package; consumers inject it via
-// the `RaiseDoneInvokeZone` seam below (fields are unexported by design).
+// the `StaticHostClockRaiseDoneInvokeZone` seam below (fields are unexported by design).
 type StaticHostClockDoneInvokeZonePayload struct {
 	error string
 	zone_id string

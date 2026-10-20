@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 23b50ff6771257bf06531b96d0a47eeaa5c39fb71939d9bd5e537100a9105206
+// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_host_clock.scxml
@@ -223,11 +223,20 @@ class StaticHostClockStateMachine(
     // ── SCE Accepted Subset §2.15: saving this machine, restoring it ─────────
 
     /**
-     * The shape a saved state of this document is bound to: a state saved
-     * from a document that renamed, re-typed or moved a state or a variable is
-     * refused, one saved before a guard or an action changed is not.
+     * What a saved state of this document is bound to: a state saved from a
+     * document that renamed, re-typed or moved a state or a variable is
+     * refused, one saved before a guard or an action changed is not, and one
+     * saved at an earlier revision of a record schema is read with each field a
+     * later revision added at its default.
      */
-    val savedShape: String = "141dd63c49b9a5468a2b25316c88f8e51335fc52b99a414f3690a97bddae4723"
+    val savedShape: SavedShape = SavedShape(
+        first = "141dd63c49b9a5468a2b25316c88f8e51335fc52b99a414f3690a97bddae4723",
+        revised = "9e2c0126d926e2df92012105a0f1d3d2582fa4ceb0b69a155973d005b28fb879",
+        records = listOf(
+        ),
+        enums = listOf(
+        ),
+    )
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -272,18 +281,20 @@ class StaticHostClockStateMachine(
      *   one of this document, or a value its variable's type cannot hold.
      */
     fun restore(saved: SavedState, wallNowMs: Long) {
-        beginRestore(saved, savedShape)
-        val saved1 = SavedValues.string(saved.variable("outcome"), "outcome", 24)
-        val saved2 = SavedValues.int64(saved.variable("utc_ms"), "utc_ms")
-        val saved3 = SavedValues.int64(saved.variable("monotonic_ms"), "monotonic_ms")
-        val saved4 = SavedValues.string(saved.variable("zone_id"), "zone_id", 64)
-        val saved5 = SavedValues.int32(saved.variable("utc_offset_s"), "utc_offset_s")
+        // The state as one of this machine: each record saved at an earlier
+        // revision of its schema holds the defaults of the fields added since.
+        val savedGrown = beginRestore(saved, savedShape)
+        val saved1 = SavedValues.string(savedGrown.variable("outcome"), "outcome", 24)
+        val saved2 = SavedValues.int64(savedGrown.variable("utc_ms"), "utc_ms")
+        val saved3 = SavedValues.int64(savedGrown.variable("monotonic_ms"), "monotonic_ms")
+        val saved4 = SavedValues.string(savedGrown.variable("zone_id"), "zone_id", 64)
+        val saved5 = SavedValues.int32(savedGrown.variable("utc_offset_s"), "utc_offset_s")
         vOutcome = saved1
         vUtcMs = saved2
         vMonotonicMs = saved3
         vZoneId = saved4
         vUtcOffsetS = saved5
-        enterSaved(saved, wallNowMs)
+        enterSaved(savedGrown, wallNowMs)
     }
 
     /** [restore] at the host's wall clock now. */

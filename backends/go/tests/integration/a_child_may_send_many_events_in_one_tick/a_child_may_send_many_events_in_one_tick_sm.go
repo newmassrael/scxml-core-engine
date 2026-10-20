@@ -488,7 +488,7 @@ func (p *AChildMaySendManyEventsInOneTickPolicy) ExecutePendingInvokes(engine *s
 			childEngine.Initialize()
 
 			// W3C SCXML 6.4: Store child and create wrapper
-			wrapper := &childEngineWrapperChatty{engine: childEngine, policy: &childPolicy}
+			wrapper := &childEngineWrapperAChildMaySendManyEventsInOneTick_Chatty{engine: childEngine, policy: &childPolicy}
 			p.childChatty = wrapper
 
 			// W3C SCXML 6.4: Drain child-to-parent events raised during initialize
@@ -605,21 +605,21 @@ func (p *AChildMaySendManyEventsInOneTickPolicy) DeliverToChildSession(childSess
 
 // ── Child engine wrappers (implement sce.ChildEngine interface) ──
 
-type childEngineWrapperChatty struct {
+type childEngineWrapperAChildMaySendManyEventsInOneTick_Chatty struct {
 	engine *sce.Engine[AChildMaySendManyEventsInOneTickSceSynthInvokeChattyState, AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEvent]
 	policy *AChildMaySendManyEventsInOneTickSceSynthInvokeChattyPolicy
 }
-func (w *childEngineWrapperChatty) Initialize() { w.engine.Initialize() }
-func (w *childEngineWrapperChatty) Tick() { w.engine.Tick() }
-func (w *childEngineWrapperChatty) Step() { w.engine.Step() }
-func (w *childEngineWrapperChatty) Stop() { w.engine.Stop() }
-func (w *childEngineWrapperChatty) IsInFinalState() bool { return w.engine.IsInFinalState() }
-func (w *childEngineWrapperChatty) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
-func (w *childEngineWrapperChatty) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
-func (w *childEngineWrapperChatty) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperChatty) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
-func (w *childEngineWrapperChatty) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
-func (w *childEngineWrapperChatty) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperAChildMaySendManyEventsInOneTick_Chatty) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperAChildMaySendManyEventsInOneTick_Chatty) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperAChildMaySendManyEventsInOneTick_Chatty) Step() { w.engine.Step() }
+func (w *childEngineWrapperAChildMaySendManyEventsInOneTick_Chatty) Stop() { w.engine.Stop() }
+func (w *childEngineWrapperAChildMaySendManyEventsInOneTick_Chatty) IsInFinalState() bool { return w.engine.IsInFinalState() }
+func (w *childEngineWrapperAChildMaySendManyEventsInOneTick_Chatty) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
+func (w *childEngineWrapperAChildMaySendManyEventsInOneTick_Chatty) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
+func (w *childEngineWrapperAChildMaySendManyEventsInOneTick_Chatty) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
+func (w *childEngineWrapperAChildMaySendManyEventsInOneTick_Chatty) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperAChildMaySendManyEventsInOneTick_Chatty) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapperAChildMaySendManyEventsInOneTick_Chatty) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 
 
 // DeliverToParent delivers a delayed `<send target="#_parent">` whose wait is

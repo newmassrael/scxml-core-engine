@@ -173,17 +173,17 @@ const (
 
 // StatechartBytesSignalReceivedPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `signal.received`. Internal to the package; consumers inject it via
-// the `RaiseSignalReceived` seam below (fields are unexported by design).
+// the `StatechartBytesRaiseSignalReceived` seam below (fields are unexported by design).
 type StatechartBytesSignalReceivedPayload struct {
 	raw []byte
 }
 
-// RaiseSignalReceived is the NL→IR Item C1 Path A per-event typed `_event.data`
+// StatechartBytesRaiseSignalReceived is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `signal.received` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseSignalReceived` extension-trait method
+// inconsistently. Twin of the Rust `StatechartBytesInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseSignalReceived(e *sce.Engine[StatechartBytesState, StatechartBytesEvent], raw []byte) {
+func StatechartBytesRaiseSignalReceived(e *sce.Engine[StatechartBytesState, StatechartBytesEvent], raw []byte) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[StatechartBytesEvent]{
 		Event:    StatechartBytesEventSignalReceived,
 		Metadata: sce.EventMetadata{

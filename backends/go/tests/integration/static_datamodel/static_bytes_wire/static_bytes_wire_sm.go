@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 23b50ff6771257bf06531b96d0a47eeaa5c39fb71939d9bd5e537100a9105206
+// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -188,7 +188,7 @@ const (
 
 // StaticBytesWireFramedRelayedPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `framed.relayed`. Internal to the package; consumers inject it via
-// the `RaiseFramedRelayed` seam below (fields are unexported by design).
+// the `StaticBytesWireRaiseFramedRelayed` seam below (fields are unexported by design).
 type StaticBytesWireFramedRelayedPayload struct {
 	sensor uint8
 	frame []byte
@@ -196,18 +196,18 @@ type StaticBytesWireFramedRelayedPayload struct {
 
 // StaticBytesWireFramedTakenPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `framed.taken`. Internal to the package; consumers inject it via
-// the `RaiseFramedTaken` seam below (fields are unexported by design).
+// the `StaticBytesWireRaiseFramedTaken` seam below (fields are unexported by design).
 type StaticBytesWireFramedTakenPayload struct {
 	sensor uint8
 	frame []byte
 }
 
-// RaiseFramedRelayed is the NL→IR Item C1 Path A per-event typed `_event.data`
+// StaticBytesWireRaiseFramedRelayed is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `framed.relayed` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseFramedRelayed` extension-trait method
+// inconsistently. Twin of the Rust `StaticBytesWireInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseFramedRelayed(e *sce.Engine[StaticBytesWireState, StaticBytesWireEvent], sensor uint8, frame []byte) {
+func StaticBytesWireRaiseFramedRelayed(e *sce.Engine[StaticBytesWireState, StaticBytesWireEvent], sensor uint8, frame []byte) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[StaticBytesWireEvent]{
 		Event:    StaticBytesWireEventFramedRelayed,
 		Metadata: sce.EventMetadata{
@@ -222,12 +222,12 @@ func RaiseFramedRelayed(e *sce.Engine[StaticBytesWireState, StaticBytesWireEvent
 	})
 }
 
-// RaiseFramedTaken is the NL→IR Item C1 Path A per-event typed `_event.data`
+// StaticBytesWireRaiseFramedTaken is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `framed.taken` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseFramedTaken` extension-trait method
+// inconsistently. Twin of the Rust `StaticBytesWireInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseFramedTaken(e *sce.Engine[StaticBytesWireState, StaticBytesWireEvent], sensor uint8, frame []byte) {
+func StaticBytesWireRaiseFramedTaken(e *sce.Engine[StaticBytesWireState, StaticBytesWireEvent], sensor uint8, frame []byte) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[StaticBytesWireEvent]{
 		Event:    StaticBytesWireEventFramedTaken,
 		Metadata: sce.EventMetadata{

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 23b50ff6771257bf06531b96d0a47eeaa5c39fb71939d9bd5e537100a9105206
+// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -173,7 +173,7 @@ const (
 
 // StaticWireWideWideInPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `wide.in`. Internal to the package; consumers inject it via
-// the `RaiseWideIn` seam below (fields are unexported by design).
+// the `StaticWireWideRaiseWideIn` seam below (fields are unexported by design).
 type StaticWireWideWideInPayload struct {
 	big uint64
 	small int64
@@ -181,18 +181,18 @@ type StaticWireWideWideInPayload struct {
 
 // StaticWireWideWideRelayedPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `wide.relayed`. Internal to the package; consumers inject it via
-// the `RaiseWideRelayed` seam below (fields are unexported by design).
+// the `StaticWireWideRaiseWideRelayed` seam below (fields are unexported by design).
 type StaticWireWideWideRelayedPayload struct {
 	big uint64
 	small int64
 }
 
-// RaiseWideIn is the NL→IR Item C1 Path A per-event typed `_event.data`
+// StaticWireWideRaiseWideIn is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `wide.in` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseWideIn` extension-trait method
+// inconsistently. Twin of the Rust `StaticWireWideInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseWideIn(e *sce.Engine[StaticWireWideState, StaticWireWideEvent], big uint64, small int64) {
+func StaticWireWideRaiseWideIn(e *sce.Engine[StaticWireWideState, StaticWireWideEvent], big uint64, small int64) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[StaticWireWideEvent]{
 		Event:    StaticWireWideEventWideIn,
 		Metadata: sce.EventMetadata{
@@ -207,12 +207,12 @@ func RaiseWideIn(e *sce.Engine[StaticWireWideState, StaticWireWideEvent], big ui
 	})
 }
 
-// RaiseWideRelayed is the NL→IR Item C1 Path A per-event typed `_event.data`
+// StaticWireWideRaiseWideRelayed is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `wide.relayed` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseWideRelayed` extension-trait method
+// inconsistently. Twin of the Rust `StaticWireWideInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseWideRelayed(e *sce.Engine[StaticWireWideState, StaticWireWideEvent], big uint64, small int64) {
+func StaticWireWideRaiseWideRelayed(e *sce.Engine[StaticWireWideState, StaticWireWideEvent], big uint64, small int64) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[StaticWireWideEvent]{
 		Event:    StaticWireWideEventWideRelayed,
 		Metadata: sce.EventMetadata{

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 23b50ff6771257bf06531b96d0a47eeaa5c39fb71939d9bd5e537100a9105206
+// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_payload_bytes.scxml
@@ -175,11 +175,31 @@ class StaticPayloadBytesStateMachine(
     // ── SCE Accepted Subset §2.15: saving this machine, restoring it ─────────
 
     /**
-     * The shape a saved state of this document is bound to: a state saved
-     * from a document that renamed, re-typed or moved a state or a variable is
-     * refused, one saved before a guard or an action changed is not.
+     * What a saved state of this document is bound to: a state saved from a
+     * document that renamed, re-typed or moved a state or a variable is
+     * refused, one saved before a guard or an action changed is not, and one
+     * saved at an earlier revision of a record schema is read with each field a
+     * later revision added at its default.
      */
-    val savedShape: String = "1d99c0231d4ab8a7c44c92f7adf331ab1bfc3c6129d0ab0293cbbc7394d4f46a"
+    val savedShape: SavedShape = SavedShape(
+        first = "1d99c0231d4ab8a7c44c92f7adf331ab1bfc3c6129d0ab0293cbbc7394d4f46a",
+        revised = "fe0a0f7e2b6e502d7e3540680d34108416e8900538fc98fe0767b11f788432be",
+        records = listOf(
+            RecordLineage(
+                event = "framed.taken",
+                revision = 1,
+                revisions = listOf(),
+                added = listOf(
+                ),
+                holders = listOf(
+                    RecordHolder("last", false),
+                    RecordHolder("frames", true),
+                ),
+            ),
+        ),
+        enums = listOf(
+        ),
+    )
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -226,14 +246,16 @@ class StaticPayloadBytesStateMachine(
      *   one of this document, or a value its variable's type cannot hold.
      */
     fun restore(saved: SavedState, wallNowMs: Long) {
-        beginRestore(saved, savedShape)
-        val saved1 = StaticPayloadBytesFramedRecord.fromSaved(saved.variable("last"), "last")
-        val saved2 = SavedValues.bytes(saved.variable("held"), "held", 4)
-        val saved3 = SavedValues.list(saved.variable("frames"), "frames", 3) { e, w -> StaticPayloadBytesFramedRecord.fromSaved(e, w) }
-        val saved4 = SavedValues.uint32(saved.variable("size"), "size")
-        val saved5 = SavedValues.uint32(saved.variable("matches"), "matches")
-        val saved6 = SavedValues.uint32(saved.variable("misses"), "misses")
-        val saved7 = SavedValues.uint32(saved.variable("errors"), "errors")
+        // The state as one of this machine: each record saved at an earlier
+        // revision of its schema holds the defaults of the fields added since.
+        val savedGrown = beginRestore(saved, savedShape)
+        val saved1 = StaticPayloadBytesFramedRecord.fromSaved(savedGrown.variable("last"), "last")
+        val saved2 = SavedValues.bytes(savedGrown.variable("held"), "held", 4)
+        val saved3 = SavedValues.list(savedGrown.variable("frames"), "frames", 3) { e, w -> StaticPayloadBytesFramedRecord.fromSaved(e, w) }
+        val saved4 = SavedValues.uint32(savedGrown.variable("size"), "size")
+        val saved5 = SavedValues.uint32(savedGrown.variable("matches"), "matches")
+        val saved6 = SavedValues.uint32(savedGrown.variable("misses"), "misses")
+        val saved7 = SavedValues.uint32(savedGrown.variable("errors"), "errors")
         vLast = saved1
         vHeld = saved2
         vFrames = saved3
@@ -241,7 +263,7 @@ class StaticPayloadBytesStateMachine(
         vMatches = saved5
         vMisses = saved6
         vErrors = saved7
-        enterSaved(saved, wallNowMs)
+        enterSaved(savedGrown, wallNowMs)
     }
 
     /** [restore] at the host's wall clock now. */

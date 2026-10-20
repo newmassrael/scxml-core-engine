@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 23b50ff6771257bf06531b96d0a47eeaa5c39fb71939d9bd5e537100a9105206
+// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -169,19 +169,19 @@ const (
 
 // StaticSchemaRevisionReadingRevisedPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `reading.revised`. Internal to the package; consumers inject it via
-// the `RaiseReadingRevised` seam below (fields are unexported by design).
+// the `StaticSchemaRevisionRaiseReadingRevised` seam below (fields are unexported by design).
 type StaticSchemaRevisionReadingRevisedPayload struct {
 	level uint8
 	layout StaticSchemaRevisionViewModeEnum
 	urgent bool
 }
 
-// RaiseReadingRevised is the NL→IR Item C1 Path A per-event typed `_event.data`
+// StaticSchemaRevisionRaiseReadingRevised is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `reading.revised` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseReadingRevised` extension-trait method
+// inconsistently. Twin of the Rust `StaticSchemaRevisionInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseReadingRevised(e *sce.Engine[StaticSchemaRevisionState, StaticSchemaRevisionEvent], level uint8, layout StaticSchemaRevisionViewModeEnum, urgent bool) {
+func StaticSchemaRevisionRaiseReadingRevised(e *sce.Engine[StaticSchemaRevisionState, StaticSchemaRevisionEvent], level uint8, layout StaticSchemaRevisionViewModeEnum, urgent bool) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[StaticSchemaRevisionEvent]{
 		Event:    StaticSchemaRevisionEventReadingRevised,
 		Metadata: sce.EventMetadata{
@@ -202,22 +202,22 @@ func RaiseReadingRevised(e *sce.Engine[StaticSchemaRevisionState, StaticSchemaRe
 type StaticSchemaRevisionViewModeEnum uint8
 
 const (
-	EnumViewModeMonth StaticSchemaRevisionViewModeEnum = 0
-	EnumViewModeWeek StaticSchemaRevisionViewModeEnum = 1
-	EnumViewModeDay StaticSchemaRevisionViewModeEnum = 2
-	EnumViewModeAgendaList StaticSchemaRevisionViewModeEnum = 3
+	StaticSchemaRevisionViewModeEnumMonth StaticSchemaRevisionViewModeEnum = 0
+	StaticSchemaRevisionViewModeEnumWeek StaticSchemaRevisionViewModeEnum = 1
+	StaticSchemaRevisionViewModeEnumDay StaticSchemaRevisionViewModeEnum = 2
+	StaticSchemaRevisionViewModeEnumAgendaList StaticSchemaRevisionViewModeEnum = 3
 )
 
 // String is the name the enum document declares for the value.
 func (v StaticSchemaRevisionViewModeEnum) String() string {
 	switch v {
-	case EnumViewModeMonth:
+	case StaticSchemaRevisionViewModeEnumMonth:
 		return "month"
-	case EnumViewModeWeek:
+	case StaticSchemaRevisionViewModeEnumWeek:
 		return "week"
-	case EnumViewModeDay:
+	case StaticSchemaRevisionViewModeEnumDay:
 		return "day"
-	case EnumViewModeAgendaList:
+	case StaticSchemaRevisionViewModeEnumAgendaList:
 		return "agenda_list"
 	}
 	return ""
@@ -280,7 +280,7 @@ type StaticSchemaRevisionPolicy struct {
 // NewStaticSchemaRevisionPolicy creates a new policy with default values.
 func NewStaticSchemaRevisionPolicy() StaticSchemaRevisionPolicy {
 	return StaticSchemaRevisionPolicy{
-		vLast: StaticSchemaRevisionRevisedRecord{level: 0, layout: EnumViewModeMonth, urgent: false},
+		vLast: StaticSchemaRevisionRevisedRecord{level: 0, layout: StaticSchemaRevisionViewModeEnumMonth, urgent: false},
 		vTaken: 0,
 		vRefusals: 0,
 	}
@@ -555,7 +555,7 @@ func (p *StaticSchemaRevisionPolicy) LiftTypedPayload(event StaticSchemaRevision
 		if payload.level, err = sce.PayloadUnsigned[uint8](fields, "level"); err != nil {
 			return err
 		}
-		if payload.layout, err = func() (StaticSchemaRevisionViewModeEnum, error) { name, err := sce.PayloadString(fields, "layout"); if err != nil { return 0, err }; switch name { case "month": return EnumViewModeMonth, nil; case "week": return EnumViewModeWeek, nil; case "day": return EnumViewModeDay, nil; case "agenda_list": return EnumViewModeAgendaList, nil; }; return 0, fmt.Errorf("%q (%s) is not a variant of ViewMode", "layout", name) }(); err != nil {
+		if payload.layout, err = func() (StaticSchemaRevisionViewModeEnum, error) { name, err := sce.PayloadString(fields, "layout"); if err != nil { return 0, err }; switch name { case "month": return StaticSchemaRevisionViewModeEnumMonth, nil; case "week": return StaticSchemaRevisionViewModeEnumWeek, nil; case "day": return StaticSchemaRevisionViewModeEnumDay, nil; case "agenda_list": return StaticSchemaRevisionViewModeEnumAgendaList, nil; }; return 0, fmt.Errorf("%q (%s) is not a variant of ViewMode", "layout", name) }(); err != nil {
 			return err
 		}
 		if payload.urgent, err = sce.PayloadBool(fields, "urgent"); err != nil {

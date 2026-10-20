@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 23b50ff6771257bf06531b96d0a47eeaa5c39fb71939d9bd5e537100a9105206
+// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_schema_revision.scxml
@@ -154,11 +154,42 @@ class StaticSchemaRevisionStateMachine(
     // ── SCE Accepted Subset §2.15: saving this machine, restoring it ─────────
 
     /**
-     * The shape a saved state of this document is bound to: a state saved
-     * from a document that renamed, re-typed or moved a state or a variable is
-     * refused, one saved before a guard or an action changed is not.
+     * What a saved state of this document is bound to: a state saved from a
+     * document that renamed, re-typed or moved a state or a variable is
+     * refused, one saved before a guard or an action changed is not, and one
+     * saved at an earlier revision of a record schema is read with each field a
+     * later revision added at its default.
      */
-    val savedShape: String = "9ebff4e62a7e4f683158f83d5d0e0597589c68fc214b65698615f86db43a1d34"
+    val savedShape: SavedShape = SavedShape(
+        first = "11dbc3cc8b1f883cc9da011d2d5c3968ac0eeb404a0f494deede91552cd6623d",
+        revised = "cb771df5efc33bf380bfd5a267ca027b408f8cd064bbc7eec5ca0266e23d06f5",
+        records = listOf(
+            RecordLineage(
+                event = "reading.revised",
+                revision = 3,
+                revisions = listOf("d9ba6a71207a3f219929c8fda298d7a35c76cb7950cc287ae2fa8a8b8ff45ad7", "e511eddacf1d4e220c85f78c95988fe26a2a1319cf119cb085f1a84f4f197f8d"),
+                added = listOf(
+                    AddedField("layout", 2, "\"week\""),
+                    AddedField("urgent", 3, "true"),
+                ),
+                holders = listOf(
+                    RecordHolder("last", false),
+                ),
+            ),
+        ),
+        enums = listOf(
+            EnumLineage(
+                key = "enum:enum_view_mode.scxml",
+                revision = 1,
+                revisions = listOf(),
+                added = listOf(
+                ),
+                holders = listOf(
+                    EnumHolder("last", "layout", false),
+                ),
+            ),
+        ),
+    )
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -201,14 +232,16 @@ class StaticSchemaRevisionStateMachine(
      *   one of this document, or a value its variable's type cannot hold.
      */
     fun restore(saved: SavedState, wallNowMs: Long) {
-        beginRestore(saved, savedShape)
-        val saved1 = StaticSchemaRevisionRevisedRecord.fromSaved(saved.variable("last"), "last")
-        val saved2 = SavedValues.uint32(saved.variable("taken"), "taken")
-        val saved3 = SavedValues.uint32(saved.variable("refusals"), "refusals")
+        // The state as one of this machine: each record saved at an earlier
+        // revision of its schema holds the defaults of the fields added since.
+        val savedGrown = beginRestore(saved, savedShape)
+        val saved1 = StaticSchemaRevisionRevisedRecord.fromSaved(savedGrown.variable("last"), "last")
+        val saved2 = SavedValues.uint32(savedGrown.variable("taken"), "taken")
+        val saved3 = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
         vLast = saved1
         vTaken = saved2
         vRefusals = saved3
-        enterSaved(saved, wallNowMs)
+        enterSaved(savedGrown, wallNowMs)
     }
 
     /** [restore] at the host's wall clock now. */

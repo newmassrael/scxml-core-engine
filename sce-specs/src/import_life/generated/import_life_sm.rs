@@ -292,10 +292,12 @@ pub trait ImportLifePersist: Sized {
     /// as it would be for `initialize`.
     type Policy;
 
-    /// The shape a saved state of this document is bound to: a state saved
-    /// from a document that renamed, re-typed or moved a state or a variable
-    /// is refused, one saved before a guard or an action changed is not.
-    const SHAPE: &'static str;
+    /// What a saved state of this document is bound to: a state saved from a
+    /// document that renamed, re-typed or moved a state or a variable is
+    /// refused, one saved before a guard or an action changed is not, and one
+    /// saved at an earlier revision of a record schema is read with each field
+    /// a later revision added at its default.
+    const SHAPE: ::sce_rust_runtime::saved_state::SavedShape;
 
     /// The document's `<history>` pseudo-states, by the id a saved state keys
     /// them by — what a saved state records of each, and what a restore reads
@@ -367,7 +369,23 @@ pub trait ImportLifePersist: Sized {
 impl ImportLifePersist for Engine<ImportLifePolicy> {
     type Policy = ImportLifePolicy;
 
-    const SHAPE: &'static str = "9c953033d22f4e52bfa23c651397b7c3dcea5b4a9e8797f1d53da962bcfb727c";
+    const SHAPE: ::sce_rust_runtime::saved_state::SavedShape =
+        ::sce_rust_runtime::saved_state::SavedShape {
+            first: "9c953033d22f4e52bfa23c651397b7c3dcea5b4a9e8797f1d53da962bcfb727c",
+            revised: "16901aa74a4f002cf5b20ba196a5457bfb12f9f5439947911eb600771ee27bd0",
+            records: &[],
+            enums: &[::sce_rust_runtime::saved_state::EnumLineage {
+                key: "enum:enum_verdict.scxml",
+                revision: 1,
+                revisions: &[],
+                added: &[],
+                holders: &[::sce_rust_runtime::saved_state::EnumHolder {
+                    variable: "verdict",
+                    field: None,
+                    list: false,
+                }],
+            }],
+        };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<
         ::sce_rust_runtime::NoHistory,
@@ -383,7 +401,7 @@ impl ImportLifePersist for Engine<ImportLifePolicy> {
         let policy = self.policy();
         ::sce_rust_runtime::saved_state::save(
             self,
-            Self::SHAPE,
+            &Self::SHAPE,
             vec![(
                 "verdict".to_string(),
                 ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.verdict),
@@ -399,7 +417,10 @@ impl ImportLifePersist for Engine<ImportLifePolicy> {
         clock: ::sce_rust_runtime::SceClock,
         wall_now_ms: u64,
     ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
-        ::sce_rust_runtime::saved_state::check_shape(saved, Self::SHAPE)?;
+        // The shape, the revision of each record schema, and each record of an
+        // earlier revision grown by the defaults of the fields added since, so
+        // what is read below is a state of this machine.
+        let saved = &::sce_rust_runtime::saved_state::upgrade(saved, &Self::SHAPE)?;
         // Judged with the configuration and before any value is written, so a
         // refused restore holds no half of a state. A document with no
         // `<history>` refuses any a saved state records.

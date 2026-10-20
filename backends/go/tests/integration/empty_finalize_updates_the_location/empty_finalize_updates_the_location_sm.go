@@ -629,7 +629,7 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecutePendingInvokes(engine *sc
 			childEngine.Initialize()
 
 			// W3C SCXML 6.4: Store child and create wrapper
-			wrapper := &childEngineWrapperInvAbsent{engine: childEngine, policy: &childPolicy}
+			wrapper := &childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvAbsent{engine: childEngine, policy: &childPolicy}
 			p.childInvAbsent = wrapper
 
 			// W3C SCXML 6.4: Drain child-to-parent events raised during initialize
@@ -712,7 +712,7 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecutePendingInvokes(engine *sc
 			childEngine.Initialize()
 
 			// W3C SCXML 6.4: Store child and create wrapper
-			wrapper := &childEngineWrapperInvEmpty{engine: childEngine, policy: &childPolicy}
+			wrapper := &childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvEmpty{engine: childEngine, policy: &childPolicy}
 			p.childInvEmpty = wrapper
 
 			// W3C SCXML 6.4: Drain child-to-parent events raised during initialize
@@ -795,7 +795,7 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecutePendingInvokes(engine *sc
 			childEngine.Initialize()
 
 			// W3C SCXML 6.4: Store child and create wrapper
-			wrapper := &childEngineWrapperInvUnmatched{engine: childEngine, policy: &childPolicy}
+			wrapper := &childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvUnmatched{engine: childEngine, policy: &childPolicy}
 			p.childInvUnmatched = wrapper
 
 			// W3C SCXML 6.4: Drain child-to-parent events raised during initialize
@@ -1032,51 +1032,51 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecuteFinalizeForChildEvent(eve
 
 // ── Child engine wrappers (implement sce.ChildEngine interface) ──
 
-type childEngineWrapperInvEmpty struct {
+type childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvEmpty struct {
 	engine *sce.Engine[EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyState, EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyEvent]
 	policy *EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyPolicy
 }
-func (w *childEngineWrapperInvEmpty) Initialize() { w.engine.Initialize() }
-func (w *childEngineWrapperInvEmpty) Tick() { w.engine.Tick() }
-func (w *childEngineWrapperInvEmpty) Step() { w.engine.Step() }
-func (w *childEngineWrapperInvEmpty) Stop() { w.engine.Stop() }
-func (w *childEngineWrapperInvEmpty) IsInFinalState() bool { return w.engine.IsInFinalState() }
-func (w *childEngineWrapperInvEmpty) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
-func (w *childEngineWrapperInvEmpty) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
-func (w *childEngineWrapperInvEmpty) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperInvEmpty) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
-func (w *childEngineWrapperInvEmpty) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
-func (w *childEngineWrapperInvEmpty) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
-type childEngineWrapperInvAbsent struct {
+func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvEmpty) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvEmpty) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvEmpty) Step() { w.engine.Step() }
+func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvEmpty) Stop() { w.engine.Stop() }
+func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvEmpty) IsInFinalState() bool { return w.engine.IsInFinalState() }
+func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvEmpty) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
+func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvEmpty) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
+func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvEmpty) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
+func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvEmpty) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvEmpty) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvEmpty) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+type childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvAbsent struct {
 	engine *sce.Engine[EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentState, EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentEvent]
 	policy *EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentPolicy
 }
-func (w *childEngineWrapperInvAbsent) Initialize() { w.engine.Initialize() }
-func (w *childEngineWrapperInvAbsent) Tick() { w.engine.Tick() }
-func (w *childEngineWrapperInvAbsent) Step() { w.engine.Step() }
-func (w *childEngineWrapperInvAbsent) Stop() { w.engine.Stop() }
-func (w *childEngineWrapperInvAbsent) IsInFinalState() bool { return w.engine.IsInFinalState() }
-func (w *childEngineWrapperInvAbsent) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
-func (w *childEngineWrapperInvAbsent) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
-func (w *childEngineWrapperInvAbsent) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperInvAbsent) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
-func (w *childEngineWrapperInvAbsent) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
-func (w *childEngineWrapperInvAbsent) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
-type childEngineWrapperInvUnmatched struct {
+func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvAbsent) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvAbsent) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvAbsent) Step() { w.engine.Step() }
+func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvAbsent) Stop() { w.engine.Stop() }
+func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvAbsent) IsInFinalState() bool { return w.engine.IsInFinalState() }
+func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvAbsent) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
+func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvAbsent) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
+func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvAbsent) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
+func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvAbsent) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvAbsent) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvAbsent) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+type childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvUnmatched struct {
 	engine *sce.Engine[EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState, EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedEvent]
 	policy *EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedPolicy
 }
-func (w *childEngineWrapperInvUnmatched) Initialize() { w.engine.Initialize() }
-func (w *childEngineWrapperInvUnmatched) Tick() { w.engine.Tick() }
-func (w *childEngineWrapperInvUnmatched) Step() { w.engine.Step() }
-func (w *childEngineWrapperInvUnmatched) Stop() { w.engine.Stop() }
-func (w *childEngineWrapperInvUnmatched) IsInFinalState() bool { return w.engine.IsInFinalState() }
-func (w *childEngineWrapperInvUnmatched) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
-func (w *childEngineWrapperInvUnmatched) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
-func (w *childEngineWrapperInvUnmatched) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperInvUnmatched) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
-func (w *childEngineWrapperInvUnmatched) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
-func (w *childEngineWrapperInvUnmatched) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvUnmatched) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvUnmatched) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvUnmatched) Step() { w.engine.Step() }
+func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvUnmatched) Stop() { w.engine.Stop() }
+func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvUnmatched) IsInFinalState() bool { return w.engine.IsInFinalState() }
+func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvUnmatched) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
+func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvUnmatched) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
+func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvUnmatched) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
+func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvUnmatched) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvUnmatched) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvUnmatched) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 
 
 // DeliverToParent delivers a delayed `<send target="#_parent">` whose wait is

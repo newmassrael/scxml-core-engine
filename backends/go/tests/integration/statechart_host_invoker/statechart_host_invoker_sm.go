@@ -303,7 +303,7 @@ const (
 
 // StatechartHostInvokerDoneInvokePermPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `done.invoke.perm`. Internal to the package; consumers inject it via
-// the `RaiseDoneInvokePerm` seam below (fields are unexported by design).
+// the `StatechartHostInvokerRaiseDoneInvokePerm` seam below (fields are unexported by design).
 type StatechartHostInvokerDoneInvokePermPayload struct {
 	granted bool
 }

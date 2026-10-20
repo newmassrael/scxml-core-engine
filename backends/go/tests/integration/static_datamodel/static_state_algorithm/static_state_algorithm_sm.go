@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 23b50ff6771257bf06531b96d0a47eeaa5c39fb71939d9bd5e537100a9105206
+// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -182,18 +182,18 @@ const (
 
 // StaticStateAlgorithmLedgerEntryPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `ledger.entry`. Internal to the package; consumers inject it via
-// the `RaiseLedgerEntry` seam below (fields are unexported by design).
+// the `StaticStateAlgorithmRaiseLedgerEntry` seam below (fields are unexported by design).
 type StaticStateAlgorithmLedgerEntryPayload struct {
 	id uint32
 	amount int32
 }
 
-// RaiseLedgerEntry is the NL→IR Item C1 Path A per-event typed `_event.data`
+// StaticStateAlgorithmRaiseLedgerEntry is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `ledger.entry` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseLedgerEntry` extension-trait method
+// inconsistently. Twin of the Rust `StaticStateAlgorithmInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseLedgerEntry(e *sce.Engine[StaticStateAlgorithmState, StaticStateAlgorithmEvent], id uint32, amount int32) {
+func StaticStateAlgorithmRaiseLedgerEntry(e *sce.Engine[StaticStateAlgorithmState, StaticStateAlgorithmEvent], id uint32, amount int32) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[StaticStateAlgorithmEvent]{
 		Event:    StaticStateAlgorithmEventLedgerEntry,
 		Metadata: sce.EventMetadata{
@@ -245,7 +245,7 @@ func (r StaticStateAlgorithmTotalRecord) Sum() int32 {
 
 
 // ── SCE Accepted Subset §2.15: calls of an algorithm that takes or returns state ──
-func sceAdapt_AddEntry__v(p0 []StaticStateAlgorithmEntryRecord, p1 uint32, p2 int32) scealgorithm.Outcome[[]StaticStateAlgorithmEntryRecord] {
+func sceAdapt_StaticStateAlgorithm_AddEntry__v(p0 []StaticStateAlgorithmEntryRecord, p1 uint32, p2 int32) scealgorithm.Outcome[[]StaticStateAlgorithmEntryRecord] {
 	a0 := make([]sce_schema_entry.SchemaEntryPayload, len(p0))
 	for i, e := range p0 {
 		a0[i] = sce_schema_entry.SchemaEntryPayload{Id: e.id, Amount: e.amount}
@@ -261,11 +261,11 @@ func sceAdapt_AddEntry__v(p0 []StaticStateAlgorithmEntryRecord, p1 uint32, p2 in
 	return scealgorithm.Outcome[[]StaticStateAlgorithmEntryRecord]{Value: out}
 }
 
-func sceAdapt_AmountOf__p(p0 StaticStateAlgorithmLedgerEntryPayload) int32 {
+func sceAdapt_StaticStateAlgorithm_AmountOf__p(p0 StaticStateAlgorithmLedgerEntryPayload) int32 {
 	return sce_ledger_amount.LedgerAmount(sce_schema_entry.SchemaEntryPayload{Id: p0.id, Amount: p0.amount})
 }
 
-func sceAdapt_Bump__v(p0 StaticStateAlgorithmTotalRecord, p1 int32) scealgorithm.Outcome[StaticStateAlgorithmTotalRecord] {
+func sceAdapt_StaticStateAlgorithm_Bump__v(p0 StaticStateAlgorithmTotalRecord, p1 int32) scealgorithm.Outcome[StaticStateAlgorithmTotalRecord] {
 	r, err := sce_ledger_bump.LedgerBump(sce_schema_total.SchemaTotalPayload{Count: p0.count, Sum: p0.sum}, p1)
 	if err != nil {
 		return scealgorithm.Outcome[StaticStateAlgorithmTotalRecord]{Err: err}
@@ -274,12 +274,12 @@ func sceAdapt_Bump__v(p0 StaticStateAlgorithmTotalRecord, p1 int32) scealgorithm
 	return scealgorithm.Outcome[StaticStateAlgorithmTotalRecord]{Value: out}
 }
 
-func sceAdapt_IdSum__v(p0 []uint32) scealgorithm.Outcome[uint32] {
+func sceAdapt_StaticStateAlgorithm_IdSum__v(p0 []uint32) scealgorithm.Outcome[uint32] {
 	r, err := sce_ledger_ids.LedgerIds(p0)
 	return scealgorithm.Outcome[uint32]{Value: r, Err: err}
 }
 
-func sceAdapt_TotalOf__v(p0 []StaticStateAlgorithmEntryRecord) scealgorithm.Outcome[StaticStateAlgorithmTotalRecord] {
+func sceAdapt_StaticStateAlgorithm_TotalOf__v(p0 []StaticStateAlgorithmEntryRecord) scealgorithm.Outcome[StaticStateAlgorithmTotalRecord] {
 	a0 := make([]sce_schema_entry.SchemaEntryPayload, len(p0))
 	for i, e := range p0 {
 		a0[i] = sce_schema_entry.SchemaEntryPayload{Id: e.id, Amount: e.amount}
@@ -783,13 +783,13 @@ func (p *StaticStateAlgorithmPolicy) ExecuteTransitionContent(source StaticState
 				}
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_AddEntry__v(p.vEntries, p.pendingLedgerEntryPayload.id, p.pendingLedgerEntryPayload.amount)), 8); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticStateAlgorithmEventErrorExecution, "<assign location='entries'>: an integer operation overflowed or failed")); return true }; p.vEntries = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_StaticStateAlgorithm_AddEntry__v(p.vEntries, p.pendingLedgerEntryPayload.id, p.pendingLedgerEntryPayload.amount)), 8); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticStateAlgorithmEventErrorExecution, "<assign location='entries'>: an integer operation overflowed or failed")); return true }; p.vEntries = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_TotalOf__v(p.vEntries)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticStateAlgorithmEventErrorExecution, "<assign location='total'>: an integer operation overflowed or failed")); return true }; p.vTotal = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_StaticStateAlgorithm_TotalOf__v(p.vEntries)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticStateAlgorithmEventErrorExecution, "<assign location='total'>: an integer operation overflowed or failed")); return true }; p.vTotal = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -798,7 +798,7 @@ func (p *StaticStateAlgorithmPolicy) ExecuteTransitionContent(source StaticState
 	p.vLast = StaticStateAlgorithmEntryRecord{id: p.pendingLedgerEntryPayload.id, amount: p.pendingLedgerEntryPayload.amount}
 
 
-	if sceAdapt_AmountOf__p(p.pendingLedgerEntryPayload) > 100 {
+	if sceAdapt_StaticStateAlgorithm_AmountOf__p(p.pendingLedgerEntryPayload) > 100 {
 
 
 	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vLarge, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticStateAlgorithmEventErrorExecution, "<assign location='large'>: an integer operation overflowed or failed")); return true }; p.vLarge = sceValue; return false }() {
@@ -814,7 +814,7 @@ func (p *StaticStateAlgorithmPolicy) ExecuteTransitionContent(source StaticState
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_Bump__v(p.vTotal, 1)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticStateAlgorithmEventErrorExecution, "<assign location='total'>: an integer operation overflowed or failed")); return true }; p.vTotal = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_StaticStateAlgorithm_Bump__v(p.vTotal, 1)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticStateAlgorithmEventErrorExecution, "<assign location='total'>: an integer operation overflowed or failed")); return true }; p.vTotal = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -832,7 +832,7 @@ func (p *StaticStateAlgorithmPolicy) ExecuteTransitionContent(source StaticState
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_IdSum__v(p.vIds)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticStateAlgorithmEventErrorExecution, "<assign location='idsum'>: an integer operation overflowed or failed")); return true }; p.vIdsum = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_StaticStateAlgorithm_IdSum__v(p.vIds)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticStateAlgorithmEventErrorExecution, "<assign location='idsum'>: an integer operation overflowed or failed")); return true }; p.vIdsum = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 23b50ff6771257bf06531b96d0a47eeaa5c39fb71939d9bd5e537100a9105206
+// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_block_ends.scxml
@@ -179,11 +179,20 @@ class StaticBlockEndsStateMachine(
     // ── SCE Accepted Subset §2.15: saving this machine, restoring it ─────────
 
     /**
-     * The shape a saved state of this document is bound to: a state saved
-     * from a document that renamed, re-typed or moved a state or a variable is
-     * refused, one saved before a guard or an action changed is not.
+     * What a saved state of this document is bound to: a state saved from a
+     * document that renamed, re-typed or moved a state or a variable is
+     * refused, one saved before a guard or an action changed is not, and one
+     * saved at an earlier revision of a record schema is read with each field a
+     * later revision added at its default.
      */
-    val savedShape: String = "3392e4c39beb56ba9cc0d257d4b7e2fe3e78865fd9251747ebba45ab05882c51"
+    val savedShape: SavedShape = SavedShape(
+        first = "3392e4c39beb56ba9cc0d257d4b7e2fe3e78865fd9251747ebba45ab05882c51",
+        revised = "49722041863d35d2b2ef736d0a7663d2462f845efe740a017d404a4897ec0292",
+        records = listOf(
+        ),
+        enums = listOf(
+        ),
+    )
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -233,17 +242,19 @@ class StaticBlockEndsStateMachine(
      *   one of this document, or a value its variable's type cannot hold.
      */
     fun restore(saved: SavedState, wallNowMs: Long) {
-        beginRestore(saved, savedShape)
-        val saved1 = SavedValues.uint8(saved.variable("a"), "a")
-        val saved2 = SavedValues.uint8(saved.variable("b"), "b")
-        val saved3 = SavedValues.uint8(saved.variable("afterAssign"), "afterAssign")
-        val saved4 = SavedValues.uint8(saved.variable("thenRan"), "thenRan")
-        val saved5 = SavedValues.uint8(saved.variable("elseRan"), "elseRan")
-        val saved6 = SavedValues.uint8(saved.variable("afterIf"), "afterIf")
-        val saved7 = SavedValues.uint8(saved.variable("inBranch"), "inBranch")
-        val saved8 = SavedValues.uint8(saved.variable("afterBranch"), "afterBranch")
-        val saved9 = SavedValues.uint8(saved.variable("afterOk"), "afterOk")
-        val saved10 = SavedValues.uint8(saved.variable("errors"), "errors")
+        // The state as one of this machine: each record saved at an earlier
+        // revision of its schema holds the defaults of the fields added since.
+        val savedGrown = beginRestore(saved, savedShape)
+        val saved1 = SavedValues.uint8(savedGrown.variable("a"), "a")
+        val saved2 = SavedValues.uint8(savedGrown.variable("b"), "b")
+        val saved3 = SavedValues.uint8(savedGrown.variable("afterAssign"), "afterAssign")
+        val saved4 = SavedValues.uint8(savedGrown.variable("thenRan"), "thenRan")
+        val saved5 = SavedValues.uint8(savedGrown.variable("elseRan"), "elseRan")
+        val saved6 = SavedValues.uint8(savedGrown.variable("afterIf"), "afterIf")
+        val saved7 = SavedValues.uint8(savedGrown.variable("inBranch"), "inBranch")
+        val saved8 = SavedValues.uint8(savedGrown.variable("afterBranch"), "afterBranch")
+        val saved9 = SavedValues.uint8(savedGrown.variable("afterOk"), "afterOk")
+        val saved10 = SavedValues.uint8(savedGrown.variable("errors"), "errors")
         vA = saved1
         vB = saved2
         vAfterAssign = saved3
@@ -254,7 +265,7 @@ class StaticBlockEndsStateMachine(
         vAfterBranch = saved8
         vAfterOk = saved9
         vErrors = saved10
-        enterSaved(saved, wallNowMs)
+        enterSaved(savedGrown, wallNowMs)
     }
 
     /** [restore] at the host's wall clock now. */

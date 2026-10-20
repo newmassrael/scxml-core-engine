@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 23b50ff6771257bf06531b96d0a47eeaa5c39fb71939d9bd5e537100a9105206
+// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/sheet_peer.scxml
@@ -385,11 +385,76 @@ class SheetPeerStateMachine(
     // ── SCE Accepted Subset §2.15: saving this machine, restoring it ─────────
 
     /**
-     * The shape a saved state of this document is bound to: a state saved
-     * from a document that renamed, re-typed or moved a state or a variable is
-     * refused, one saved before a guard or an action changed is not.
+     * What a saved state of this document is bound to: a state saved from a
+     * document that renamed, re-typed or moved a state or a variable is
+     * refused, one saved before a guard or an action changed is not, and one
+     * saved at an earlier revision of a record schema is read with each field a
+     * later revision added at its default.
      */
-    val savedShape: String = "1ac6b3f2603c6108cd17580f835aab53156fb15bf1be7c02a34b837cfb45cf6f"
+    val savedShape: SavedShape = SavedShape(
+        first = "1ac6b3f2603c6108cd17580f835aab53156fb15bf1be7c02a34b837cfb45cf6f",
+        revised = "39d5b3f2c18c95ec3df531f209693d1fb88669a01f6dae41d6c56ccffbef3d08",
+        records = listOf(
+            RecordLineage(
+                event = "merge.hlc_timestamp",
+                revision = 1,
+                revisions = listOf(),
+                added = listOf(
+                ),
+                holders = listOf(
+                    RecordHolder("clock", false),
+                    RecordHolder("stamp", false),
+                ),
+            ),
+            RecordLineage(
+                event = "merge.lww_cell",
+                revision = 1,
+                revisions = listOf(),
+                added = listOf(
+                ),
+                holders = listOf(
+                    RecordHolder("cells", true),
+                    RecordHolder("write", false),
+                ),
+            ),
+            RecordLineage(
+                event = "merge.rga_gone",
+                revision = 1,
+                revisions = listOf(),
+                added = listOf(
+                ),
+                holders = listOf(
+                    RecordHolder("gone", true),
+                    RecordHolder("goneCols", true),
+                    RecordHolder("removal", false),
+                ),
+            ),
+            RecordLineage(
+                event = "merge.rga_node",
+                revision = 1,
+                revisions = listOf(),
+                added = listOf(
+                ),
+                holders = listOf(
+                    RecordHolder("rows", true),
+                    RecordHolder("cols", true),
+                    RecordHolder("placed", false),
+                ),
+            ),
+            RecordLineage(
+                event = "merge.sheet_shown",
+                revision = 1,
+                revisions = listOf(),
+                added = listOf(
+                ),
+                holders = listOf(
+                    RecordHolder("shown", true),
+                ),
+            ),
+        ),
+        enums = listOf(
+        ),
+    )
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -449,27 +514,29 @@ class SheetPeerStateMachine(
      *   one of this document, or a value its variable's type cannot hold.
      */
     fun restore(saved: SavedState, wallNowMs: Long) {
-        beginRestore(saved, savedShape)
-        val saved1 = SavedValues.uint64(saved.variable("node"), "node")
-        val saved2 = SavedValues.bool(saved.variable("hub"), "hub")
-        val saved3 = SheetPeerHlcRecord.fromSaved(saved.variable("clock"), "clock")
-        val saved4 = SheetPeerHlcRecord.fromSaved(saved.variable("stamp"), "stamp")
-        val saved5 = SavedValues.list(saved.variable("cells"), "cells", 256) { e, w -> SheetPeerLwwCellRecord.fromSaved(e, w) }
-        val saved6 = SavedValues.list(saved.variable("rows"), "rows", 256) { e, w -> SheetPeerRgaNodeRecord.fromSaved(e, w) }
-        val saved7 = SavedValues.list(saved.variable("gone"), "gone", 256) { e, w -> SheetPeerRgaGoneRecord.fromSaved(e, w) }
-        val saved8 = SavedValues.list(saved.variable("cols"), "cols", 256) { e, w -> SheetPeerRgaNodeRecord.fromSaved(e, w) }
-        val saved9 = SavedValues.list(saved.variable("goneCols"), "goneCols", 256) { e, w -> SheetPeerRgaGoneRecord.fromSaved(e, w) }
-        val saved10 = SavedValues.list(saved.variable("trail"), "trail", 768) { e, w -> SavedValues.int64(e, w) }
-        val saved11 = SavedValues.list(saved.variable("shown"), "shown", 256) { e, w -> SheetPeerShownRecord.fromSaved(e, w) }
-        val saved12 = SheetPeerLwwCellRecord.fromSaved(saved.variable("write"), "write")
-        val saved13 = SheetPeerRgaNodeRecord.fromSaved(saved.variable("placed"), "placed")
-        val saved14 = SheetPeerRgaGoneRecord.fromSaved(saved.variable("removal"), "removal")
-        val saved15 = SavedValues.uint64(saved.variable("lamport"), "lamport")
-        val saved16 = SavedValues.uint64(saved.variable("newKey"), "newKey")
-        val saved17 = SavedValues.uint64(saved.variable("noKey"), "noKey")
-        val saved18 = SavedValues.int64(saved.variable("noNumber"), "noNumber")
-        val saved19 = SavedValues.uint32(saved.variable("orphans"), "orphans")
-        val saved20 = SavedValues.uint32(saved.variable("refusals"), "refusals")
+        // The state as one of this machine: each record saved at an earlier
+        // revision of its schema holds the defaults of the fields added since.
+        val savedGrown = beginRestore(saved, savedShape)
+        val saved1 = SavedValues.uint64(savedGrown.variable("node"), "node")
+        val saved2 = SavedValues.bool(savedGrown.variable("hub"), "hub")
+        val saved3 = SheetPeerHlcRecord.fromSaved(savedGrown.variable("clock"), "clock")
+        val saved4 = SheetPeerHlcRecord.fromSaved(savedGrown.variable("stamp"), "stamp")
+        val saved5 = SavedValues.list(savedGrown.variable("cells"), "cells", 256) { e, w -> SheetPeerLwwCellRecord.fromSaved(e, w) }
+        val saved6 = SavedValues.list(savedGrown.variable("rows"), "rows", 256) { e, w -> SheetPeerRgaNodeRecord.fromSaved(e, w) }
+        val saved7 = SavedValues.list(savedGrown.variable("gone"), "gone", 256) { e, w -> SheetPeerRgaGoneRecord.fromSaved(e, w) }
+        val saved8 = SavedValues.list(savedGrown.variable("cols"), "cols", 256) { e, w -> SheetPeerRgaNodeRecord.fromSaved(e, w) }
+        val saved9 = SavedValues.list(savedGrown.variable("goneCols"), "goneCols", 256) { e, w -> SheetPeerRgaGoneRecord.fromSaved(e, w) }
+        val saved10 = SavedValues.list(savedGrown.variable("trail"), "trail", 768) { e, w -> SavedValues.int64(e, w) }
+        val saved11 = SavedValues.list(savedGrown.variable("shown"), "shown", 256) { e, w -> SheetPeerShownRecord.fromSaved(e, w) }
+        val saved12 = SheetPeerLwwCellRecord.fromSaved(savedGrown.variable("write"), "write")
+        val saved13 = SheetPeerRgaNodeRecord.fromSaved(savedGrown.variable("placed"), "placed")
+        val saved14 = SheetPeerRgaGoneRecord.fromSaved(savedGrown.variable("removal"), "removal")
+        val saved15 = SavedValues.uint64(savedGrown.variable("lamport"), "lamport")
+        val saved16 = SavedValues.uint64(savedGrown.variable("newKey"), "newKey")
+        val saved17 = SavedValues.uint64(savedGrown.variable("noKey"), "noKey")
+        val saved18 = SavedValues.int64(savedGrown.variable("noNumber"), "noNumber")
+        val saved19 = SavedValues.uint32(savedGrown.variable("orphans"), "orphans")
+        val saved20 = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
         vNode = saved1
         vHub = saved2
         vClock = saved3
@@ -490,7 +557,7 @@ class SheetPeerStateMachine(
         vNoNumber = saved18
         vOrphans = saved19
         vRefusals = saved20
-        enterSaved(saved, wallNowMs)
+        enterSaved(savedGrown, wallNowMs)
     }
 
     /** [restore] at the host's wall clock now. */

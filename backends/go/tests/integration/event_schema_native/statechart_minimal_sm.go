@@ -173,17 +173,17 @@ const (
 
 // StatechartMinimalJobCompletedPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `job.completed`. Internal to the package; consumers inject it via
-// the `RaiseJobCompleted` seam below (fields are unexported by design).
+// the `StatechartMinimalRaiseJobCompleted` seam below (fields are unexported by design).
 type StatechartMinimalJobCompletedPayload struct {
 	elapsed_ms uint32
 }
 
-// RaiseJobCompleted is the NL→IR Item C1 Path A per-event typed `_event.data`
+// StatechartMinimalRaiseJobCompleted is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `job.completed` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseJobCompleted` extension-trait method
+// inconsistently. Twin of the Rust `StatechartMinimalInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseJobCompleted(e *sce.Engine[StatechartMinimalState, StatechartMinimalEvent], elapsed_ms uint32) {
+func StatechartMinimalRaiseJobCompleted(e *sce.Engine[StatechartMinimalState, StatechartMinimalEvent], elapsed_ms uint32) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[StatechartMinimalEvent]{
 		Event:    StatechartMinimalEventJobCompleted,
 		Metadata: sce.EventMetadata{

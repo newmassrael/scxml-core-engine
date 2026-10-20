@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 23b50ff6771257bf06531b96d0a47eeaa5c39fb71939d9bd5e537100a9105206
+// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_block_ends_list.scxml
@@ -109,11 +109,20 @@ class StaticBlockEndsListStateMachine(
     // ── SCE Accepted Subset §2.15: saving this machine, restoring it ─────────
 
     /**
-     * The shape a saved state of this document is bound to: a state saved
-     * from a document that renamed, re-typed or moved a state or a variable is
-     * refused, one saved before a guard or an action changed is not.
+     * What a saved state of this document is bound to: a state saved from a
+     * document that renamed, re-typed or moved a state or a variable is
+     * refused, one saved before a guard or an action changed is not, and one
+     * saved at an earlier revision of a record schema is read with each field a
+     * later revision added at its default.
      */
-    val savedShape: String = "670c183cda40bb46e81808b12dca21830ecda45892b88b766b37c8ca951c6b57"
+    val savedShape: SavedShape = SavedShape(
+        first = "670c183cda40bb46e81808b12dca21830ecda45892b88b766b37c8ca951c6b57",
+        revised = "477ce602987924dbcd2a95efc5be11a2493e2f18abd5c65d64c942bac07b5e90",
+        records = listOf(
+        ),
+        enums = listOf(
+        ),
+    )
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -156,14 +165,16 @@ class StaticBlockEndsListStateMachine(
      *   one of this document, or a value its variable's type cannot hold.
      */
     fun restore(saved: SavedState, wallNowMs: Long) {
-        beginRestore(saved, savedShape)
-        val saved1 = SavedValues.list(saved.variable("picked"), "picked", 2) { e, w -> SavedValues.uint8(e, w) }
-        val saved2 = SavedValues.uint8(saved.variable("afterAppend"), "afterAppend")
-        val saved3 = SavedValues.uint8(saved.variable("errors"), "errors")
+        // The state as one of this machine: each record saved at an earlier
+        // revision of its schema holds the defaults of the fields added since.
+        val savedGrown = beginRestore(saved, savedShape)
+        val saved1 = SavedValues.list(savedGrown.variable("picked"), "picked", 2) { e, w -> SavedValues.uint8(e, w) }
+        val saved2 = SavedValues.uint8(savedGrown.variable("afterAppend"), "afterAppend")
+        val saved3 = SavedValues.uint8(savedGrown.variable("errors"), "errors")
         vPicked = saved1
         vAfterAppend = saved2
         vErrors = saved3
-        enterSaved(saved, wallNowMs)
+        enterSaved(savedGrown, wallNowMs)
     }
 
     /** [restore] at the host's wall clock now. */

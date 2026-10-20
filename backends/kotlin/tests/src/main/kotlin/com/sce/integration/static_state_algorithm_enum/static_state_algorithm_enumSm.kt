@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 23b50ff6771257bf06531b96d0a47eeaa5c39fb71939d9bd5e537100a9105206
+// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_state_algorithm_enum.scxml
@@ -218,11 +218,43 @@ class StaticStateAlgorithmEnumStateMachine(
     // ── SCE Accepted Subset §2.15: saving this machine, restoring it ─────────
 
     /**
-     * The shape a saved state of this document is bound to: a state saved
-     * from a document that renamed, re-typed or moved a state or a variable is
-     * refused, one saved before a guard or an action changed is not.
+     * What a saved state of this document is bound to: a state saved from a
+     * document that renamed, re-typed or moved a state or a variable is
+     * refused, one saved before a guard or an action changed is not, and one
+     * saved at an earlier revision of a record schema is read with each field a
+     * later revision added at its default.
      */
-    val savedShape: String = "1281fa7afe0032f4ca9df6e2eab14d8e902566321a56264f5a071aa354e7b0a0"
+    val savedShape: SavedShape = SavedShape(
+        first = "1281fa7afe0032f4ca9df6e2eab14d8e902566321a56264f5a071aa354e7b0a0",
+        revised = "bd414277a1759a184a40341a429d5f4c069357ddf31a20ac51ba23bfbeca2bd3",
+        records = listOf(
+            RecordLineage(
+                event = "item.added",
+                revision = 1,
+                revisions = listOf(),
+                added = listOf(
+                ),
+                holders = listOf(
+                    RecordHolder("items", true),
+                    RecordHolder("draft", false),
+                ),
+            ),
+        ),
+        enums = listOf(
+            EnumLineage(
+                key = "enum:enum_item_status.scxml",
+                revision = 1,
+                revisions = listOf(),
+                added = listOf(
+                ),
+                holders = listOf(
+                    EnumHolder("items", "status", true),
+                    EnumHolder("draft", "status", false),
+                    EnumHolder("last", null, false),
+                ),
+            ),
+        ),
+    )
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -270,15 +302,17 @@ class StaticStateAlgorithmEnumStateMachine(
      *   one of this document, or a value its variable's type cannot hold.
      */
     fun restore(saved: SavedState, wallNowMs: Long) {
-        beginRestore(saved, savedShape)
-        val saved1 = SavedValues.list(saved.variable("items"), "items", 4) { e, w -> StaticStateAlgorithmEnumItemRecord.fromSaved(e, w) }
-        val saved2 = StaticStateAlgorithmEnumItemRecord.fromSaved(saved.variable("draft"), "draft")
-        val saved3 = StaticStateAlgorithmEnumStatusEnum.fromSaved(saved.variable("last"), "last")
-        val saved4 = SavedValues.uint32(saved.variable("openCount"), "openCount")
-        val saved5 = SavedValues.uint32(saved.variable("startedCount"), "startedCount")
-        val saved6 = SavedValues.uint32(saved.variable("doneCount"), "doneCount")
-        val saved7 = SavedValues.uint32(saved.variable("checks"), "checks")
-        val saved8 = SavedValues.uint32(saved.variable("refusals"), "refusals")
+        // The state as one of this machine: each record saved at an earlier
+        // revision of its schema holds the defaults of the fields added since.
+        val savedGrown = beginRestore(saved, savedShape)
+        val saved1 = SavedValues.list(savedGrown.variable("items"), "items", 4) { e, w -> StaticStateAlgorithmEnumItemRecord.fromSaved(e, w) }
+        val saved2 = StaticStateAlgorithmEnumItemRecord.fromSaved(savedGrown.variable("draft"), "draft")
+        val saved3 = StaticStateAlgorithmEnumStatusEnum.fromSaved(savedGrown.variable("last"), "last")
+        val saved4 = SavedValues.uint32(savedGrown.variable("openCount"), "openCount")
+        val saved5 = SavedValues.uint32(savedGrown.variable("startedCount"), "startedCount")
+        val saved6 = SavedValues.uint32(savedGrown.variable("doneCount"), "doneCount")
+        val saved7 = SavedValues.uint32(savedGrown.variable("checks"), "checks")
+        val saved8 = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
         vItems = saved1
         vDraft = saved2
         vLast = saved3
@@ -287,7 +321,7 @@ class StaticStateAlgorithmEnumStateMachine(
         vDoneCount = saved6
         vChecks = saved7
         vRefusals = saved8
-        enterSaved(saved, wallNowMs)
+        enterSaved(savedGrown, wallNowMs)
     }
 
     /** [restore] at the host's wall clock now. */

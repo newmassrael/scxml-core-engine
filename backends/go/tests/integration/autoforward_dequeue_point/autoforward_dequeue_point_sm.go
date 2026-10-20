@@ -284,7 +284,7 @@ func (p *AutoforwardDequeuePointPolicy) ExecutePendingInvokes(engine *sce.Engine
 			childEngine.Initialize()
 
 			// W3C SCXML 6.4: Store child and create wrapper
-			wrapper := &childEngineWrapperInvProbe{engine: childEngine, policy: &childPolicy}
+			wrapper := &childEngineWrapperAutoforwardDequeuePoint_InvProbe{engine: childEngine, policy: &childPolicy}
 			p.childInvProbe = wrapper
 
 			// W3C SCXML 6.4: Drain child-to-parent events raised during initialize
@@ -421,21 +421,21 @@ func (p *AutoforwardDequeuePointPolicy) DeliverToChildSession(childSessionID, ev
 
 // ── Child engine wrappers (implement sce.ChildEngine interface) ──
 
-type childEngineWrapperInvProbe struct {
+type childEngineWrapperAutoforwardDequeuePoint_InvProbe struct {
 	engine *sce.Engine[AutoforwardDequeuePointSceSynthInvokeInvProbeState, AutoforwardDequeuePointSceSynthInvokeInvProbeEvent]
 	policy *AutoforwardDequeuePointSceSynthInvokeInvProbePolicy
 }
-func (w *childEngineWrapperInvProbe) Initialize() { w.engine.Initialize() }
-func (w *childEngineWrapperInvProbe) Tick() { w.engine.Tick() }
-func (w *childEngineWrapperInvProbe) Step() { w.engine.Step() }
-func (w *childEngineWrapperInvProbe) Stop() { w.engine.Stop() }
-func (w *childEngineWrapperInvProbe) IsInFinalState() bool { return w.engine.IsInFinalState() }
-func (w *childEngineWrapperInvProbe) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
-func (w *childEngineWrapperInvProbe) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
-func (w *childEngineWrapperInvProbe) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperInvProbe) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
-func (w *childEngineWrapperInvProbe) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
-func (w *childEngineWrapperInvProbe) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperAutoforwardDequeuePoint_InvProbe) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperAutoforwardDequeuePoint_InvProbe) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperAutoforwardDequeuePoint_InvProbe) Step() { w.engine.Step() }
+func (w *childEngineWrapperAutoforwardDequeuePoint_InvProbe) Stop() { w.engine.Stop() }
+func (w *childEngineWrapperAutoforwardDequeuePoint_InvProbe) IsInFinalState() bool { return w.engine.IsInFinalState() }
+func (w *childEngineWrapperAutoforwardDequeuePoint_InvProbe) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
+func (w *childEngineWrapperAutoforwardDequeuePoint_InvProbe) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
+func (w *childEngineWrapperAutoforwardDequeuePoint_InvProbe) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
+func (w *childEngineWrapperAutoforwardDequeuePoint_InvProbe) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperAutoforwardDequeuePoint_InvProbe) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapperAutoforwardDequeuePoint_InvProbe) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 
 
 // DeliverToParent delivers a delayed `<send target="#_parent">` whose wait is

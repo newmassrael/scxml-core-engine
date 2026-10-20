@@ -482,7 +482,7 @@ func (p *InvokeExpressionFailureIsReportedPolicy) ExecutePendingInvokes(engine *
 			childEngine.SetCompletionCallback(func() {})
 			childEngine.Initialize()
 
-			wrapper := &childEngineWrapperInvoke0{engine: childEngine, policy: &childPolicy}
+			wrapper := &childEngineWrapperInvokeExpressionFailureIsReported_Invoke0{engine: childEngine, policy: &childPolicy}
 			p.childInvoke0 = wrapper
 
 			sce.DrainAndRaiseChildEvents(wrapper, p.activeInvokes, "_invoke_0", engine)
@@ -564,21 +564,21 @@ func (p *InvokeExpressionFailureIsReportedPolicy) IsInvocationRunning(invokeID s
 
 // ── Child engine wrappers (implement sce.ChildEngine interface) ──
 
-type childEngineWrapperInvoke0 struct {
+type childEngineWrapperInvokeExpressionFailureIsReported_Invoke0 struct {
 	engine *sce.Engine[InvokeExpressionFailureIsReportedHybrid0State, InvokeExpressionFailureIsReportedHybrid0Event]
 	policy *InvokeExpressionFailureIsReportedHybrid0Policy
 }
-func (w *childEngineWrapperInvoke0) Initialize() { w.engine.Initialize() }
-func (w *childEngineWrapperInvoke0) Tick() { w.engine.Tick() }
-func (w *childEngineWrapperInvoke0) Step() { w.engine.Step() }
-func (w *childEngineWrapperInvoke0) Stop() { w.engine.Stop() }
-func (w *childEngineWrapperInvoke0) IsInFinalState() bool { return w.engine.IsInFinalState() }
-func (w *childEngineWrapperInvoke0) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
-func (w *childEngineWrapperInvoke0) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
-func (w *childEngineWrapperInvoke0) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperInvoke0) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
-func (w *childEngineWrapperInvoke0) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
-func (w *childEngineWrapperInvoke0) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperInvokeExpressionFailureIsReported_Invoke0) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperInvokeExpressionFailureIsReported_Invoke0) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvokeExpressionFailureIsReported_Invoke0) Step() { w.engine.Step() }
+func (w *childEngineWrapperInvokeExpressionFailureIsReported_Invoke0) Stop() { w.engine.Stop() }
+func (w *childEngineWrapperInvokeExpressionFailureIsReported_Invoke0) IsInFinalState() bool { return w.engine.IsInFinalState() }
+func (w *childEngineWrapperInvokeExpressionFailureIsReported_Invoke0) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
+func (w *childEngineWrapperInvokeExpressionFailureIsReported_Invoke0) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
+func (w *childEngineWrapperInvokeExpressionFailureIsReported_Invoke0) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
+func (w *childEngineWrapperInvokeExpressionFailureIsReported_Invoke0) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperInvokeExpressionFailureIsReported_Invoke0) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapperInvokeExpressionFailureIsReported_Invoke0) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 
 
 // DeliverToParent delivers a delayed `<send target="#_parent">` whose wait is

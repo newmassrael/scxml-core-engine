@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 23b50ff6771257bf06531b96d0a47eeaa5c39fb71939d9bd5e537100a9105206
+// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_text_record.scxml
@@ -169,11 +169,32 @@ class StaticTextRecordStateMachine(
     // ── SCE Accepted Subset §2.15: saving this machine, restoring it ─────────
 
     /**
-     * The shape a saved state of this document is bound to: a state saved
-     * from a document that renamed, re-typed or moved a state or a variable is
-     * refused, one saved before a guard or an action changed is not.
+     * What a saved state of this document is bound to: a state saved from a
+     * document that renamed, re-typed or moved a state or a variable is
+     * refused, one saved before a guard or an action changed is not, and one
+     * saved at an earlier revision of a record schema is read with each field a
+     * later revision added at its default.
      */
-    val savedShape: String = "58fff1e777041e7697c25e2df69b4fe0c77d445be391d30ae03c3f285ae9076d"
+    val savedShape: SavedShape = SavedShape(
+        first = "58fff1e777041e7697c25e2df69b4fe0c77d445be391d30ae03c3f285ae9076d",
+        revised = "2cde5acaac7e84bf9fcd80e0d7634ff9754198115b76527014df8fd4758406bf",
+        records = listOf(
+            RecordLineage(
+                event = "text.slot",
+                revision = 1,
+                revisions = listOf(),
+                added = listOf(
+                ),
+                holders = listOf(
+                    RecordHolder("slots", true),
+                    RecordHolder("held", false),
+                    RecordHolder("incoming", false),
+                ),
+            ),
+        ),
+        enums = listOf(
+        ),
+    )
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -218,18 +239,20 @@ class StaticTextRecordStateMachine(
      *   one of this document, or a value its variable's type cannot hold.
      */
     fun restore(saved: SavedState, wallNowMs: Long) {
-        beginRestore(saved, savedShape)
-        val saved1 = SavedValues.list(saved.variable("slots"), "slots", 16) { e, w -> StaticTextRecordSlotRecord.fromSaved(e, w) }
-        val saved2 = StaticTextRecordSlotRecord.fromSaved(saved.variable("held"), "held")
-        val saved3 = StaticTextRecordSlotRecord.fromSaved(saved.variable("incoming"), "incoming")
-        val saved4 = SavedValues.uint32(saved.variable("known"), "known")
-        val saved5 = SavedValues.uint32(saved.variable("refusals"), "refusals")
+        // The state as one of this machine: each record saved at an earlier
+        // revision of its schema holds the defaults of the fields added since.
+        val savedGrown = beginRestore(saved, savedShape)
+        val saved1 = SavedValues.list(savedGrown.variable("slots"), "slots", 16) { e, w -> StaticTextRecordSlotRecord.fromSaved(e, w) }
+        val saved2 = StaticTextRecordSlotRecord.fromSaved(savedGrown.variable("held"), "held")
+        val saved3 = StaticTextRecordSlotRecord.fromSaved(savedGrown.variable("incoming"), "incoming")
+        val saved4 = SavedValues.uint32(savedGrown.variable("known"), "known")
+        val saved5 = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
         vSlots = saved1
         vHeld = saved2
         vIncoming = saved3
         vKnown = saved4
         vRefusals = saved5
-        enterSaved(saved, wallNowMs)
+        enterSaved(savedGrown, wallNowMs)
     }
 
     /** [restore] at the host's wall clock now. */

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 23b50ff6771257bf06531b96d0a47eeaa5c39fb71939d9bd5e537100a9105206
+// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -353,10 +353,12 @@ pub trait StaticSendContentPersist: Sized {
     /// as it would be for `initialize`.
     type Policy;
 
-    /// The shape a saved state of this document is bound to: a state saved
-    /// from a document that renamed, re-typed or moved a state or a variable
-    /// is refused, one saved before a guard or an action changed is not.
-    const SHAPE: &'static str;
+    /// What a saved state of this document is bound to: a state saved from a
+    /// document that renamed, re-typed or moved a state or a variable is
+    /// refused, one saved before a guard or an action changed is not, and one
+    /// saved at an earlier revision of a record schema is read with each field
+    /// a later revision added at its default.
+    const SHAPE: ::sce_rust_runtime::saved_state::SavedShape;
 
     /// The document's `<history>` pseudo-states, by the id a saved state keys
     /// them by — what a saved state records of each, and what a restore reads
@@ -428,7 +430,39 @@ pub trait StaticSendContentPersist: Sized {
 impl StaticSendContentPersist for Engine<StaticSendContentPolicy> {
     type Policy = StaticSendContentPolicy;
 
-    const SHAPE: &'static str = "6f33e5b00a3a440af82bab37051ecfb5a5a93fab315376e997123933d7aa034e";
+    const SHAPE: ::sce_rust_runtime::saved_state::SavedShape =
+        ::sce_rust_runtime::saved_state::SavedShape {
+            first: "6f33e5b00a3a440af82bab37051ecfb5a5a93fab315376e997123933d7aa034e",
+            revised: "cde129524ee5f351001fc3bfe85e45638f9602adfb1eafc0335c4aeb2f6ec51b",
+            records: &[::sce_rust_runtime::saved_state::RecordLineage {
+                event: "view.shown",
+                revision: 1,
+                revisions: &[],
+                added: &[],
+                holders: &[::sce_rust_runtime::saved_state::RecordHolder {
+                    variable: "shown",
+                    list: false,
+                }],
+            }],
+            enums: &[::sce_rust_runtime::saved_state::EnumLineage {
+                key: "enum:enum_view_mode.scxml",
+                revision: 1,
+                revisions: &[],
+                added: &[],
+                holders: &[
+                    ::sce_rust_runtime::saved_state::EnumHolder {
+                        variable: "shown",
+                        field: Some("layout"),
+                        list: false,
+                    },
+                    ::sce_rust_runtime::saved_state::EnumHolder {
+                        variable: "received",
+                        field: None,
+                        list: false,
+                    },
+                ],
+            }],
+        };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<
         ::sce_rust_runtime::NoHistory,
@@ -444,7 +478,7 @@ impl StaticSendContentPersist for Engine<StaticSendContentPolicy> {
         let policy = self.policy();
         ::sce_rust_runtime::saved_state::save(
             self,
-            Self::SHAPE,
+            &Self::SHAPE,
             vec![
                 (
                     "shown".to_string(),
@@ -474,7 +508,10 @@ impl StaticSendContentPersist for Engine<StaticSendContentPolicy> {
         clock: ::sce_rust_runtime::SceClock,
         wall_now_ms: u64,
     ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
-        ::sce_rust_runtime::saved_state::check_shape(saved, Self::SHAPE)?;
+        // The shape, the revision of each record schema, and each record of an
+        // earlier revision grown by the defaults of the fields added since, so
+        // what is read below is a state of this machine.
+        let saved = &::sce_rust_runtime::saved_state::upgrade(saved, &Self::SHAPE)?;
         // Judged with the configuration and before any value is written, so a
         // refused restore holds no half of a state. A document with no
         // `<history>` refuses any a saved state records.

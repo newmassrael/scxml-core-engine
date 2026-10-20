@@ -536,7 +536,7 @@ func (p *SessionIdsAreDistinctPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 			childEngine.Initialize()
 
 			// W3C SCXML 6.4: Store child and create wrapper
-			wrapper := &childEngineWrapperInvA{engine: childEngine, policy: &childPolicy}
+			wrapper := &childEngineWrapperSessionIdsAreDistinct_InvA{engine: childEngine, policy: &childPolicy}
 			p.childInvA = wrapper
 
 			// W3C SCXML 6.4: Drain child-to-parent events raised during initialize
@@ -598,7 +598,7 @@ func (p *SessionIdsAreDistinctPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 			childEngine.Initialize()
 
 			// W3C SCXML 6.4: Store child and create wrapper
-			wrapper := &childEngineWrapperInvB{engine: childEngine, policy: &childPolicy}
+			wrapper := &childEngineWrapperSessionIdsAreDistinct_InvB{engine: childEngine, policy: &childPolicy}
 			p.childInvB = wrapper
 
 			// W3C SCXML 6.4: Drain child-to-parent events raised during initialize
@@ -751,36 +751,36 @@ func (p *SessionIdsAreDistinctPolicy) DeliverToChildSession(childSessionID, even
 
 // ── Child engine wrappers (implement sce.ChildEngine interface) ──
 
-type childEngineWrapperInvA struct {
+type childEngineWrapperSessionIdsAreDistinct_InvA struct {
 	engine *sce.Engine[SessionIdsAreDistinctSceSynthInvokeInvAState, SessionIdsAreDistinctSceSynthInvokeInvAEvent]
 	policy *SessionIdsAreDistinctSceSynthInvokeInvAPolicy
 }
-func (w *childEngineWrapperInvA) Initialize() { w.engine.Initialize() }
-func (w *childEngineWrapperInvA) Tick() { w.engine.Tick() }
-func (w *childEngineWrapperInvA) Step() { w.engine.Step() }
-func (w *childEngineWrapperInvA) Stop() { w.engine.Stop() }
-func (w *childEngineWrapperInvA) IsInFinalState() bool { return w.engine.IsInFinalState() }
-func (w *childEngineWrapperInvA) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
-func (w *childEngineWrapperInvA) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
-func (w *childEngineWrapperInvA) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperInvA) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
-func (w *childEngineWrapperInvA) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
-func (w *childEngineWrapperInvA) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
-type childEngineWrapperInvB struct {
+func (w *childEngineWrapperSessionIdsAreDistinct_InvA) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperSessionIdsAreDistinct_InvA) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperSessionIdsAreDistinct_InvA) Step() { w.engine.Step() }
+func (w *childEngineWrapperSessionIdsAreDistinct_InvA) Stop() { w.engine.Stop() }
+func (w *childEngineWrapperSessionIdsAreDistinct_InvA) IsInFinalState() bool { return w.engine.IsInFinalState() }
+func (w *childEngineWrapperSessionIdsAreDistinct_InvA) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
+func (w *childEngineWrapperSessionIdsAreDistinct_InvA) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
+func (w *childEngineWrapperSessionIdsAreDistinct_InvA) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
+func (w *childEngineWrapperSessionIdsAreDistinct_InvA) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperSessionIdsAreDistinct_InvA) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapperSessionIdsAreDistinct_InvA) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+type childEngineWrapperSessionIdsAreDistinct_InvB struct {
 	engine *sce.Engine[SessionIdsAreDistinctSceSynthInvokeInvBState, SessionIdsAreDistinctSceSynthInvokeInvBEvent]
 	policy *SessionIdsAreDistinctSceSynthInvokeInvBPolicy
 }
-func (w *childEngineWrapperInvB) Initialize() { w.engine.Initialize() }
-func (w *childEngineWrapperInvB) Tick() { w.engine.Tick() }
-func (w *childEngineWrapperInvB) Step() { w.engine.Step() }
-func (w *childEngineWrapperInvB) Stop() { w.engine.Stop() }
-func (w *childEngineWrapperInvB) IsInFinalState() bool { return w.engine.IsInFinalState() }
-func (w *childEngineWrapperInvB) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
-func (w *childEngineWrapperInvB) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
-func (w *childEngineWrapperInvB) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperInvB) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
-func (w *childEngineWrapperInvB) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
-func (w *childEngineWrapperInvB) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperSessionIdsAreDistinct_InvB) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperSessionIdsAreDistinct_InvB) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperSessionIdsAreDistinct_InvB) Step() { w.engine.Step() }
+func (w *childEngineWrapperSessionIdsAreDistinct_InvB) Stop() { w.engine.Stop() }
+func (w *childEngineWrapperSessionIdsAreDistinct_InvB) IsInFinalState() bool { return w.engine.IsInFinalState() }
+func (w *childEngineWrapperSessionIdsAreDistinct_InvB) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
+func (w *childEngineWrapperSessionIdsAreDistinct_InvB) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
+func (w *childEngineWrapperSessionIdsAreDistinct_InvB) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
+func (w *childEngineWrapperSessionIdsAreDistinct_InvB) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperSessionIdsAreDistinct_InvB) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapperSessionIdsAreDistinct_InvB) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 
 
 // DeliverToParent delivers a delayed `<send target="#_parent">` whose wait is

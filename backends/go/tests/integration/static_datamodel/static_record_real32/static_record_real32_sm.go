@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 23b50ff6771257bf06531b96d0a47eeaa5c39fb71939d9bd5e537100a9105206
+// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -172,18 +172,18 @@ const (
 
 // StaticRecordReal32Reading32TakenPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `reading32.taken`. Internal to the package; consumers inject it via
-// the `RaiseReading32Taken` seam below (fields are unexported by design).
+// the `StaticRecordReal32RaiseReading32Taken` seam below (fields are unexported by design).
 type StaticRecordReal32Reading32TakenPayload struct {
 	sensor uint8
 	value float32
 }
 
-// RaiseReading32Taken is the NL→IR Item C1 Path A per-event typed `_event.data`
+// StaticRecordReal32RaiseReading32Taken is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `reading32.taken` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseReading32Taken` extension-trait method
+// inconsistently. Twin of the Rust `StaticRecordReal32Inject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseReading32Taken(e *sce.Engine[StaticRecordReal32State, StaticRecordReal32Event], sensor uint8, value float32) {
+func StaticRecordReal32RaiseReading32Taken(e *sce.Engine[StaticRecordReal32State, StaticRecordReal32Event], sensor uint8, value float32) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[StaticRecordReal32Event]{
 		Event:    StaticRecordReal32EventReading32Taken,
 		Metadata: sce.EventMetadata{

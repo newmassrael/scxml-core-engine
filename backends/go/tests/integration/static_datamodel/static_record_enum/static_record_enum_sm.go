@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 23b50ff6771257bf06531b96d0a47eeaa5c39fb71939d9bd5e537100a9105206
+// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -192,22 +192,22 @@ func (e StaticRecordEnumEvent) String() string {
 type StaticRecordEnumViewModeEnum uint8
 
 const (
-	EnumViewModeMonth StaticRecordEnumViewModeEnum = 0
-	EnumViewModeWeek StaticRecordEnumViewModeEnum = 1
-	EnumViewModeDay StaticRecordEnumViewModeEnum = 2
-	EnumViewModeAgendaList StaticRecordEnumViewModeEnum = 3
+	StaticRecordEnumViewModeEnumMonth StaticRecordEnumViewModeEnum = 0
+	StaticRecordEnumViewModeEnumWeek StaticRecordEnumViewModeEnum = 1
+	StaticRecordEnumViewModeEnumDay StaticRecordEnumViewModeEnum = 2
+	StaticRecordEnumViewModeEnumAgendaList StaticRecordEnumViewModeEnum = 3
 )
 
 // String is the name the enum document declares for the value.
 func (v StaticRecordEnumViewModeEnum) String() string {
 	switch v {
-	case EnumViewModeMonth:
+	case StaticRecordEnumViewModeEnumMonth:
 		return "month"
-	case EnumViewModeWeek:
+	case StaticRecordEnumViewModeEnumWeek:
 		return "week"
-	case EnumViewModeDay:
+	case StaticRecordEnumViewModeEnumDay:
 		return "day"
-	case EnumViewModeAgendaList:
+	case StaticRecordEnumViewModeEnumAgendaList:
 		return "agenda_list"
 	}
 	return ""
@@ -260,7 +260,7 @@ type StaticRecordEnumPolicy struct {
 // NewStaticRecordEnumPolicy creates a new policy with default values.
 func NewStaticRecordEnumPolicy() StaticRecordEnumPolicy {
 	return StaticRecordEnumPolicy{
-		vShown: StaticRecordEnumViewRecord{layout: EnumViewModeMonth, zoom: 1},
+		vShown: StaticRecordEnumViewRecord{layout: StaticRecordEnumViewModeEnumMonth, zoom: 1},
 		vSeen: nil,
 		vWeeks: 0,
 		vFlips: 0,
@@ -618,7 +618,7 @@ func (p *StaticRecordEnumPolicy) FirstEnabledTransition(state StaticRecordEnumSt
 			// NL→IR Item C1 Path A: native typed `_event.data` guard — cond
 			// "shown.layout === ViewMode.month" lowered to a tag-checked field comparison on
 			// the lifted `pending<Event>Payload` (no script engine).
-			if p.vShown.layout == EnumViewModeMonth {
+			if p.vShown.layout == StaticRecordEnumViewModeEnumMonth {
 				return sce.EnabledTransition[StaticRecordEnumState, sce.HistoryID]{
 					Source:          state,
 					TransitionIndex: 0,
@@ -631,7 +631,7 @@ func (p *StaticRecordEnumPolicy) FirstEnabledTransition(state StaticRecordEnumSt
 			// NL→IR Item C1 Path A: native typed `_event.data` guard — cond
 			// "shown.layout === ViewMode.week" lowered to a tag-checked field comparison on
 			// the lifted `pending<Event>Payload` (no script engine).
-			if p.vShown.layout == EnumViewModeWeek {
+			if p.vShown.layout == StaticRecordEnumViewModeEnumWeek {
 				return sce.EnabledTransition[StaticRecordEnumState, sce.HistoryID]{
 					Source:          state,
 					TransitionIndex: 1,
@@ -724,7 +724,7 @@ func (p *StaticRecordEnumPolicy) FirstEnabledTransition(state StaticRecordEnumSt
 			// NL→IR Item C1 Path A: native typed `_event.data` guard — cond
 			// "seen[0].layout === ViewMode.week" lowered to a tag-checked field comparison on
 			// the lifted `pending<Event>Payload` (no script engine).
-			if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vSeen[:], int64(0)).layout == EnumViewModeWeek; if sceFailure.Failed() { return false }; return sceValue }() {
+			if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vSeen[:], int64(0)).layout == StaticRecordEnumViewModeEnumWeek; if sceFailure.Failed() { return false }; return sceValue }() {
 				return sce.EnabledTransition[StaticRecordEnumState, sce.HistoryID]{
 					Source:          state,
 					TransitionIndex: 10,
@@ -780,7 +780,7 @@ func (p *StaticRecordEnumPolicy) ExecuteTransitionContent(source StaticRecordEnu
 			func() {
 
 
-	p.vShown.layout = EnumViewModeWeek
+	p.vShown.layout = StaticRecordEnumViewModeEnumWeek
 
 
 
@@ -795,7 +795,7 @@ func (p *StaticRecordEnumPolicy) ExecuteTransitionContent(source StaticRecordEnu
 			func() {
 
 
-	p.vShown.layout = EnumViewModeMonth
+	p.vShown.layout = StaticRecordEnumViewModeEnumMonth
 
 
 
@@ -810,7 +810,7 @@ func (p *StaticRecordEnumPolicy) ExecuteTransitionContent(source StaticRecordEnu
 			func() {
 
 
-	p.vShown.layout = EnumViewModeAgendaList
+	p.vShown.layout = StaticRecordEnumViewModeEnumAgendaList
 
 			}()
 		case 3:
@@ -819,7 +819,7 @@ func (p *StaticRecordEnumPolicy) ExecuteTransitionContent(source StaticRecordEnu
 			func() {
 
 
-	p.vShown.layout = EnumViewModeMonth
+	p.vShown.layout = StaticRecordEnumViewModeEnumMonth
 
 			}()
 		case 4:
@@ -858,7 +858,7 @@ func (p *StaticRecordEnumPolicy) ExecuteTransitionContent(source StaticRecordEnu
 	for _, v := range append(p.vSeen[:0:0], p.vSeen...) {
 		_ = v
 
-	if v.layout == EnumViewModeWeek {
+	if v.layout == StaticRecordEnumViewModeEnumWeek {
 
 
 	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vWeeks, 1); if sceFailure.Failed() { return true }; p.vWeeks = sceValue; return false }() {

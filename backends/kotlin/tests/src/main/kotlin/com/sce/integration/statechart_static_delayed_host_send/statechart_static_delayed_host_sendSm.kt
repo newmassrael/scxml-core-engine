@@ -88,11 +88,20 @@ class StatechartStaticDelayedHostSendStateMachine(
     // ── SCE Accepted Subset §2.15: saving this machine, restoring it ─────────
 
     /**
-     * The shape a saved state of this document is bound to: a state saved
-     * from a document that renamed, re-typed or moved a state or a variable is
-     * refused, one saved before a guard or an action changed is not.
+     * What a saved state of this document is bound to: a state saved from a
+     * document that renamed, re-typed or moved a state or a variable is
+     * refused, one saved before a guard or an action changed is not, and one
+     * saved at an earlier revision of a record schema is read with each field a
+     * later revision added at its default.
      */
-    val savedShape: String = "3dd18182ce8f84df8c1ae5222a201ee2019781e2717fef02bdf86519c43df534"
+    val savedShape: SavedShape = SavedShape(
+        first = "3dd18182ce8f84df8c1ae5222a201ee2019781e2717fef02bdf86519c43df534",
+        revised = "eeef36f37f7020ec93667ca4414f5eb99e868b95be3aac83cee972aebde5cce9",
+        records = listOf(
+        ),
+        enums = listOf(
+        ),
+    )
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -134,12 +143,14 @@ class StatechartStaticDelayedHostSendStateMachine(
      *   one of this document, or a value its variable's type cannot hold.
      */
     fun restore(saved: SavedState, wallNowMs: Long) {
-        beginRestore(saved, savedShape)
-        val saved1 = SavedValues.uint32(saved.variable("job"), "job")
-        val saved2 = SavedValues.string(saved.variable("label"), "label", 16)
+        // The state as one of this machine: each record saved at an earlier
+        // revision of its schema holds the defaults of the fields added since.
+        val savedGrown = beginRestore(saved, savedShape)
+        val saved1 = SavedValues.uint32(savedGrown.variable("job"), "job")
+        val saved2 = SavedValues.string(savedGrown.variable("label"), "label", 16)
         vJob = saved1
         vLabel = saved2
-        enterSaved(saved, wallNowMs)
+        enterSaved(savedGrown, wallNowMs)
     }
 
     /** [restore] at the host's wall clock now. */

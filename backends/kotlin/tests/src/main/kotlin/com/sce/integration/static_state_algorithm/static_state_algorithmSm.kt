@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 23b50ff6771257bf06531b96d0a47eeaa5c39fb71939d9bd5e537100a9105206
+// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_state_algorithm.scxml
@@ -211,11 +211,41 @@ class StaticStateAlgorithmStateMachine(
     // ── SCE Accepted Subset §2.15: saving this machine, restoring it ─────────
 
     /**
-     * The shape a saved state of this document is bound to: a state saved
-     * from a document that renamed, re-typed or moved a state or a variable is
-     * refused, one saved before a guard or an action changed is not.
+     * What a saved state of this document is bound to: a state saved from a
+     * document that renamed, re-typed or moved a state or a variable is
+     * refused, one saved before a guard or an action changed is not, and one
+     * saved at an earlier revision of a record schema is read with each field a
+     * later revision added at its default.
      */
-    val savedShape: String = "9974bd59dfcaa3327314694f10c51b9c6ca6182a91e88cc96fb36c167a4eb0da"
+    val savedShape: SavedShape = SavedShape(
+        first = "9974bd59dfcaa3327314694f10c51b9c6ca6182a91e88cc96fb36c167a4eb0da",
+        revised = "4fb501ba430e00423e29ccdd50010c6e3c4909d1de3df4c575ac6341cb1d2a5f",
+        records = listOf(
+            RecordLineage(
+                event = "ledger.entry",
+                revision = 1,
+                revisions = listOf(),
+                added = listOf(
+                ),
+                holders = listOf(
+                    RecordHolder("entries", true),
+                    RecordHolder("last", false),
+                ),
+            ),
+            RecordLineage(
+                event = "ledger.total",
+                revision = 1,
+                revisions = listOf(),
+                added = listOf(
+                ),
+                holders = listOf(
+                    RecordHolder("total", false),
+                ),
+            ),
+        ),
+        enums = listOf(
+        ),
+    )
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -262,14 +292,16 @@ class StaticStateAlgorithmStateMachine(
      *   one of this document, or a value its variable's type cannot hold.
      */
     fun restore(saved: SavedState, wallNowMs: Long) {
-        beginRestore(saved, savedShape)
-        val saved1 = SavedValues.list(saved.variable("entries"), "entries", 8) { e, w -> StaticStateAlgorithmEntryRecord.fromSaved(e, w) }
-        val saved2 = StaticStateAlgorithmTotalRecord.fromSaved(saved.variable("total"), "total")
-        val saved3 = StaticStateAlgorithmEntryRecord.fromSaved(saved.variable("last"), "last")
-        val saved4 = SavedValues.list(saved.variable("ids"), "ids", 8) { e, w -> SavedValues.uint32(e, w) }
-        val saved5 = SavedValues.uint32(saved.variable("idsum"), "idsum")
-        val saved6 = SavedValues.uint32(saved.variable("large"), "large")
-        val saved7 = SavedValues.uint32(saved.variable("refusals"), "refusals")
+        // The state as one of this machine: each record saved at an earlier
+        // revision of its schema holds the defaults of the fields added since.
+        val savedGrown = beginRestore(saved, savedShape)
+        val saved1 = SavedValues.list(savedGrown.variable("entries"), "entries", 8) { e, w -> StaticStateAlgorithmEntryRecord.fromSaved(e, w) }
+        val saved2 = StaticStateAlgorithmTotalRecord.fromSaved(savedGrown.variable("total"), "total")
+        val saved3 = StaticStateAlgorithmEntryRecord.fromSaved(savedGrown.variable("last"), "last")
+        val saved4 = SavedValues.list(savedGrown.variable("ids"), "ids", 8) { e, w -> SavedValues.uint32(e, w) }
+        val saved5 = SavedValues.uint32(savedGrown.variable("idsum"), "idsum")
+        val saved6 = SavedValues.uint32(savedGrown.variable("large"), "large")
+        val saved7 = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
         vEntries = saved1
         vTotal = saved2
         vLast = saved3
@@ -277,7 +309,7 @@ class StaticStateAlgorithmStateMachine(
         vIdsum = saved5
         vLarge = saved6
         vRefusals = saved7
-        enterSaved(saved, wallNowMs)
+        enterSaved(savedGrown, wallNowMs)
     }
 
     /** [restore] at the host's wall clock now. */

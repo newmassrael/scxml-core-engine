@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 23b50ff6771257bf06531b96d0a47eeaa5c39fb71939d9bd5e537100a9105206
+// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -228,21 +228,21 @@ const (
 
 // SheetPeerSheetAddColPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `sheet.add_col`. Internal to the package; consumers inject it via
-// the `RaiseSheetAddCol` seam below (fields are unexported by design).
+// the `SheetPeerRaiseSheetAddCol` seam below (fields are unexported by design).
 type SheetPeerSheetAddColPayload struct {
 	after uint64
 }
 
 // SheetPeerSheetAddRowPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `sheet.add_row`. Internal to the package; consumers inject it via
-// the `RaiseSheetAddRow` seam below (fields are unexported by design).
+// the `SheetPeerRaiseSheetAddRow` seam below (fields are unexported by design).
 type SheetPeerSheetAddRowPayload struct {
 	after uint64
 }
 
 // SheetPeerSheetCellPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `sheet.cell`. Internal to the package; consumers inject it via
-// the `RaiseSheetCell` seam below (fields are unexported by design).
+// the `SheetPeerRaiseSheetCell` seam below (fields are unexported by design).
 type SheetPeerSheetCellPayload struct {
 	row uint64
 	col uint64
@@ -263,7 +263,7 @@ type SheetPeerSheetCellPayload struct {
 
 // SheetPeerSheetColPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `sheet.col`. Internal to the package; consumers inject it via
-// the `RaiseSheetCol` seam below (fields are unexported by design).
+// the `SheetPeerRaiseSheetCol` seam below (fields are unexported by design).
 type SheetPeerSheetColPayload struct {
 	key uint64
 	after uint64
@@ -271,21 +271,21 @@ type SheetPeerSheetColPayload struct {
 
 // SheetPeerSheetDropColPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `sheet.drop_col`. Internal to the package; consumers inject it via
-// the `RaiseSheetDropCol` seam below (fields are unexported by design).
+// the `SheetPeerRaiseSheetDropCol` seam below (fields are unexported by design).
 type SheetPeerSheetDropColPayload struct {
 	col uint64
 }
 
 // SheetPeerSheetDropRowPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `sheet.drop_row`. Internal to the package; consumers inject it via
-// the `RaiseSheetDropRow` seam below (fields are unexported by design).
+// the `SheetPeerRaiseSheetDropRow` seam below (fields are unexported by design).
 type SheetPeerSheetDropRowPayload struct {
 	row uint64
 }
 
 // SheetPeerSheetEditPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `sheet.edit`. Internal to the package; consumers inject it via
-// the `RaiseSheetEdit` seam below (fields are unexported by design).
+// the `SheetPeerRaiseSheetEdit` seam below (fields are unexported by design).
 type SheetPeerSheetEditPayload struct {
 	row uint64
 	col uint64
@@ -295,7 +295,7 @@ type SheetPeerSheetEditPayload struct {
 
 // SheetPeerSheetFormulaPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `sheet.formula`. Internal to the package; consumers inject it via
-// the `RaiseSheetFormula` seam below (fields are unexported by design).
+// the `SheetPeerRaiseSheetFormula` seam below (fields are unexported by design).
 type SheetPeerSheetFormulaPayload struct {
 	row uint64
 	col uint64
@@ -313,7 +313,7 @@ type SheetPeerSheetFormulaPayload struct {
 
 // SheetPeerSheetGonePayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `sheet.gone`. Internal to the package; consumers inject it via
-// the `RaiseSheetGone` seam below (fields are unexported by design).
+// the `SheetPeerRaiseSheetGone` seam below (fields are unexported by design).
 type SheetPeerSheetGonePayload struct {
 	key uint64
 	by uint64
@@ -321,7 +321,7 @@ type SheetPeerSheetGonePayload struct {
 
 // SheetPeerSheetGoneColPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `sheet.gone_col`. Internal to the package; consumers inject it via
-// the `RaiseSheetGoneCol` seam below (fields are unexported by design).
+// the `SheetPeerRaiseSheetGoneCol` seam below (fields are unexported by design).
 type SheetPeerSheetGoneColPayload struct {
 	key uint64
 	by uint64
@@ -329,7 +329,7 @@ type SheetPeerSheetGoneColPayload struct {
 
 // SheetPeerSheetJoinPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `sheet.join`. Internal to the package; consumers inject it via
-// the `RaiseSheetJoin` seam below (fields are unexported by design).
+// the `SheetPeerRaiseSheetJoin` seam below (fields are unexported by design).
 type SheetPeerSheetJoinPayload struct {
 	node uint64
 	hub bool
@@ -337,18 +337,18 @@ type SheetPeerSheetJoinPayload struct {
 
 // SheetPeerSheetRowPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `sheet.row`. Internal to the package; consumers inject it via
-// the `RaiseSheetRow` seam below (fields are unexported by design).
+// the `SheetPeerRaiseSheetRow` seam below (fields are unexported by design).
 type SheetPeerSheetRowPayload struct {
 	key uint64
 	after uint64
 }
 
-// RaiseSheetAddCol is the NL→IR Item C1 Path A per-event typed `_event.data`
+// SheetPeerRaiseSheetAddCol is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `sheet.add_col` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseSheetAddCol` extension-trait method
+// inconsistently. Twin of the Rust `SheetPeerInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseSheetAddCol(e *sce.Engine[SheetPeerState, SheetPeerEvent], after uint64) {
+func SheetPeerRaiseSheetAddCol(e *sce.Engine[SheetPeerState, SheetPeerEvent], after uint64) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[SheetPeerEvent]{
 		Event:    SheetPeerEventSheetAddCol,
 		Metadata: sce.EventMetadata{
@@ -363,12 +363,12 @@ func RaiseSheetAddCol(e *sce.Engine[SheetPeerState, SheetPeerEvent], after uint6
 	})
 }
 
-// RaiseSheetAddRow is the NL→IR Item C1 Path A per-event typed `_event.data`
+// SheetPeerRaiseSheetAddRow is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `sheet.add_row` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseSheetAddRow` extension-trait method
+// inconsistently. Twin of the Rust `SheetPeerInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseSheetAddRow(e *sce.Engine[SheetPeerState, SheetPeerEvent], after uint64) {
+func SheetPeerRaiseSheetAddRow(e *sce.Engine[SheetPeerState, SheetPeerEvent], after uint64) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[SheetPeerEvent]{
 		Event:    SheetPeerEventSheetAddRow,
 		Metadata: sce.EventMetadata{
@@ -383,12 +383,12 @@ func RaiseSheetAddRow(e *sce.Engine[SheetPeerState, SheetPeerEvent], after uint6
 	})
 }
 
-// RaiseSheetCell is the NL→IR Item C1 Path A per-event typed `_event.data`
+// SheetPeerRaiseSheetCell is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `sheet.cell` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseSheetCell` extension-trait method
+// inconsistently. Twin of the Rust `SheetPeerInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseSheetCell(e *sce.Engine[SheetPeerState, SheetPeerEvent], row uint64, col uint64, value int64, wallTime int64, counter uint32, nodeId uint64, op uint8, aRef bool, aRow uint64, aCol uint64, aVal int64, bRef bool, bRow uint64, bCol uint64, bVal int64) {
+func SheetPeerRaiseSheetCell(e *sce.Engine[SheetPeerState, SheetPeerEvent], row uint64, col uint64, value int64, wallTime int64, counter uint32, nodeId uint64, op uint8, aRef bool, aRow uint64, aCol uint64, aVal int64, bRef bool, bRow uint64, bCol uint64, bVal int64) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[SheetPeerEvent]{
 		Event:    SheetPeerEventSheetCell,
 		Metadata: sce.EventMetadata{
@@ -403,12 +403,12 @@ func RaiseSheetCell(e *sce.Engine[SheetPeerState, SheetPeerEvent], row uint64, c
 	})
 }
 
-// RaiseSheetCol is the NL→IR Item C1 Path A per-event typed `_event.data`
+// SheetPeerRaiseSheetCol is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `sheet.col` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseSheetCol` extension-trait method
+// inconsistently. Twin of the Rust `SheetPeerInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseSheetCol(e *sce.Engine[SheetPeerState, SheetPeerEvent], key uint64, after uint64) {
+func SheetPeerRaiseSheetCol(e *sce.Engine[SheetPeerState, SheetPeerEvent], key uint64, after uint64) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[SheetPeerEvent]{
 		Event:    SheetPeerEventSheetCol,
 		Metadata: sce.EventMetadata{
@@ -423,12 +423,12 @@ func RaiseSheetCol(e *sce.Engine[SheetPeerState, SheetPeerEvent], key uint64, af
 	})
 }
 
-// RaiseSheetDropCol is the NL→IR Item C1 Path A per-event typed `_event.data`
+// SheetPeerRaiseSheetDropCol is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `sheet.drop_col` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseSheetDropCol` extension-trait method
+// inconsistently. Twin of the Rust `SheetPeerInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseSheetDropCol(e *sce.Engine[SheetPeerState, SheetPeerEvent], col uint64) {
+func SheetPeerRaiseSheetDropCol(e *sce.Engine[SheetPeerState, SheetPeerEvent], col uint64) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[SheetPeerEvent]{
 		Event:    SheetPeerEventSheetDropCol,
 		Metadata: sce.EventMetadata{
@@ -443,12 +443,12 @@ func RaiseSheetDropCol(e *sce.Engine[SheetPeerState, SheetPeerEvent], col uint64
 	})
 }
 
-// RaiseSheetDropRow is the NL→IR Item C1 Path A per-event typed `_event.data`
+// SheetPeerRaiseSheetDropRow is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `sheet.drop_row` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseSheetDropRow` extension-trait method
+// inconsistently. Twin of the Rust `SheetPeerInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseSheetDropRow(e *sce.Engine[SheetPeerState, SheetPeerEvent], row uint64) {
+func SheetPeerRaiseSheetDropRow(e *sce.Engine[SheetPeerState, SheetPeerEvent], row uint64) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[SheetPeerEvent]{
 		Event:    SheetPeerEventSheetDropRow,
 		Metadata: sce.EventMetadata{
@@ -463,12 +463,12 @@ func RaiseSheetDropRow(e *sce.Engine[SheetPeerState, SheetPeerEvent], row uint64
 	})
 }
 
-// RaiseSheetEdit is the NL→IR Item C1 Path A per-event typed `_event.data`
+// SheetPeerRaiseSheetEdit is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `sheet.edit` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseSheetEdit` extension-trait method
+// inconsistently. Twin of the Rust `SheetPeerInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseSheetEdit(e *sce.Engine[SheetPeerState, SheetPeerEvent], row uint64, col uint64, value int64, now int64) {
+func SheetPeerRaiseSheetEdit(e *sce.Engine[SheetPeerState, SheetPeerEvent], row uint64, col uint64, value int64, now int64) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[SheetPeerEvent]{
 		Event:    SheetPeerEventSheetEdit,
 		Metadata: sce.EventMetadata{
@@ -483,12 +483,12 @@ func RaiseSheetEdit(e *sce.Engine[SheetPeerState, SheetPeerEvent], row uint64, c
 	})
 }
 
-// RaiseSheetFormula is the NL→IR Item C1 Path A per-event typed `_event.data`
+// SheetPeerRaiseSheetFormula is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `sheet.formula` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseSheetFormula` extension-trait method
+// inconsistently. Twin of the Rust `SheetPeerInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseSheetFormula(e *sce.Engine[SheetPeerState, SheetPeerEvent], row uint64, col uint64, op uint8, aRef bool, aRow uint64, aCol uint64, aVal int64, bRef bool, bRow uint64, bCol uint64, bVal int64, now int64) {
+func SheetPeerRaiseSheetFormula(e *sce.Engine[SheetPeerState, SheetPeerEvent], row uint64, col uint64, op uint8, aRef bool, aRow uint64, aCol uint64, aVal int64, bRef bool, bRow uint64, bCol uint64, bVal int64, now int64) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[SheetPeerEvent]{
 		Event:    SheetPeerEventSheetFormula,
 		Metadata: sce.EventMetadata{
@@ -503,12 +503,12 @@ func RaiseSheetFormula(e *sce.Engine[SheetPeerState, SheetPeerEvent], row uint64
 	})
 }
 
-// RaiseSheetGone is the NL→IR Item C1 Path A per-event typed `_event.data`
+// SheetPeerRaiseSheetGone is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `sheet.gone` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseSheetGone` extension-trait method
+// inconsistently. Twin of the Rust `SheetPeerInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseSheetGone(e *sce.Engine[SheetPeerState, SheetPeerEvent], key uint64, by uint64) {
+func SheetPeerRaiseSheetGone(e *sce.Engine[SheetPeerState, SheetPeerEvent], key uint64, by uint64) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[SheetPeerEvent]{
 		Event:    SheetPeerEventSheetGone,
 		Metadata: sce.EventMetadata{
@@ -523,12 +523,12 @@ func RaiseSheetGone(e *sce.Engine[SheetPeerState, SheetPeerEvent], key uint64, b
 	})
 }
 
-// RaiseSheetGoneCol is the NL→IR Item C1 Path A per-event typed `_event.data`
+// SheetPeerRaiseSheetGoneCol is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `sheet.gone_col` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseSheetGoneCol` extension-trait method
+// inconsistently. Twin of the Rust `SheetPeerInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseSheetGoneCol(e *sce.Engine[SheetPeerState, SheetPeerEvent], key uint64, by uint64) {
+func SheetPeerRaiseSheetGoneCol(e *sce.Engine[SheetPeerState, SheetPeerEvent], key uint64, by uint64) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[SheetPeerEvent]{
 		Event:    SheetPeerEventSheetGoneCol,
 		Metadata: sce.EventMetadata{
@@ -543,12 +543,12 @@ func RaiseSheetGoneCol(e *sce.Engine[SheetPeerState, SheetPeerEvent], key uint64
 	})
 }
 
-// RaiseSheetJoin is the NL→IR Item C1 Path A per-event typed `_event.data`
+// SheetPeerRaiseSheetJoin is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `sheet.join` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseSheetJoin` extension-trait method
+// inconsistently. Twin of the Rust `SheetPeerInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseSheetJoin(e *sce.Engine[SheetPeerState, SheetPeerEvent], node uint64, hub bool) {
+func SheetPeerRaiseSheetJoin(e *sce.Engine[SheetPeerState, SheetPeerEvent], node uint64, hub bool) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[SheetPeerEvent]{
 		Event:    SheetPeerEventSheetJoin,
 		Metadata: sce.EventMetadata{
@@ -563,12 +563,12 @@ func RaiseSheetJoin(e *sce.Engine[SheetPeerState, SheetPeerEvent], node uint64, 
 	})
 }
 
-// RaiseSheetRow is the NL→IR Item C1 Path A per-event typed `_event.data`
+// SheetPeerRaiseSheetRow is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `sheet.row` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseSheetRow` extension-trait method
+// inconsistently. Twin of the Rust `SheetPeerInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseSheetRow(e *sce.Engine[SheetPeerState, SheetPeerEvent], key uint64, after uint64) {
+func SheetPeerRaiseSheetRow(e *sce.Engine[SheetPeerState, SheetPeerEvent], key uint64, after uint64) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[SheetPeerEvent]{
 		Event:    SheetPeerEventSheetRow,
 		Metadata: sce.EventMetadata{
@@ -767,7 +767,7 @@ func (r SheetPeerShownRecord) Fault() uint8 {
 
 
 // ── SCE Accepted Subset §2.15: calls of an algorithm that takes or returns state ──
-func sceAdapt_HlcReceive__vv(p0 SheetPeerHlcRecord, p1 SheetPeerHlcRecord, p2 int64, p3 uint64) scealgorithm.Outcome[SheetPeerHlcRecord] {
+func sceAdapt_SheetPeer_HlcReceive__vv(p0 SheetPeerHlcRecord, p1 SheetPeerHlcRecord, p2 int64, p3 uint64) scealgorithm.Outcome[SheetPeerHlcRecord] {
 	r, err := sce_hlc_receive.HlcReceive(sce_hlc_timestamp.HlcTimestampPayload{WallTime: p0.wallTime, Counter: p0.counter, NodeId: p0.nodeId}, sce_hlc_timestamp.HlcTimestampPayload{WallTime: p1.wallTime, Counter: p1.counter, NodeId: p1.nodeId}, p2, p3)
 	if err != nil {
 		return scealgorithm.Outcome[SheetPeerHlcRecord]{Err: err}
@@ -776,7 +776,7 @@ func sceAdapt_HlcReceive__vv(p0 SheetPeerHlcRecord, p1 SheetPeerHlcRecord, p2 in
 	return scealgorithm.Outcome[SheetPeerHlcRecord]{Value: out}
 }
 
-func sceAdapt_HlcSend__v(p0 SheetPeerHlcRecord, p1 int64, p2 uint64) scealgorithm.Outcome[SheetPeerHlcRecord] {
+func sceAdapt_SheetPeer_HlcSend__v(p0 SheetPeerHlcRecord, p1 int64, p2 uint64) scealgorithm.Outcome[SheetPeerHlcRecord] {
 	r, err := sce_hlc_send.HlcSend(sce_hlc_timestamp.HlcTimestampPayload{WallTime: p0.wallTime, Counter: p0.counter, NodeId: p0.nodeId}, p1, p2)
 	if err != nil {
 		return scealgorithm.Outcome[SheetPeerHlcRecord]{Err: err}
@@ -785,7 +785,7 @@ func sceAdapt_HlcSend__v(p0 SheetPeerHlcRecord, p1 int64, p2 uint64) scealgorith
 	return scealgorithm.Outcome[SheetPeerHlcRecord]{Value: out}
 }
 
-func sceAdapt_LwwWrite__vv(p0 []SheetPeerLwwCellRecord, p1 SheetPeerLwwCellRecord) scealgorithm.Outcome[[]SheetPeerLwwCellRecord] {
+func sceAdapt_SheetPeer_LwwWrite__vv(p0 []SheetPeerLwwCellRecord, p1 SheetPeerLwwCellRecord) scealgorithm.Outcome[[]SheetPeerLwwCellRecord] {
 	a0 := make([]sce_lww_cell.LwwCellPayload, len(p0))
 	for i, e := range p0 {
 		a0[i] = sce_lww_cell.LwwCellPayload{Row: e.row, Col: e.col, Value: e.value, WallTime: e.wallTime, Counter: e.counter, NodeId: e.nodeId, Op: e.op, ARef: e.aRef, ARow: e.aRow, ACol: e.aCol, AVal: e.aVal, BRef: e.bRef, BRow: e.bRow, BCol: e.bCol, BVal: e.bVal}
@@ -801,7 +801,7 @@ func sceAdapt_LwwWrite__vv(p0 []SheetPeerLwwCellRecord, p1 SheetPeerLwwCellRecor
 	return scealgorithm.Outcome[[]SheetPeerLwwCellRecord]{Value: out}
 }
 
-func sceAdapt_RgaHolds__v(p0 []SheetPeerRgaNodeRecord, p1 uint64) bool {
+func sceAdapt_SheetPeer_RgaHolds__v(p0 []SheetPeerRgaNodeRecord, p1 uint64) bool {
 	a0 := make([]sce_rga_node.RgaNodePayload, len(p0))
 	for i, e := range p0 {
 		a0[i] = sce_rga_node.RgaNodePayload{Key: e.key, After: e.after}
@@ -809,7 +809,7 @@ func sceAdapt_RgaHolds__v(p0 []SheetPeerRgaNodeRecord, p1 uint64) bool {
 	return sce_rga_holds.RgaHolds(a0, p1)
 }
 
-func sceAdapt_RgaInsert__vv(p0 []SheetPeerRgaNodeRecord, p1 SheetPeerRgaNodeRecord) scealgorithm.Outcome[[]SheetPeerRgaNodeRecord] {
+func sceAdapt_SheetPeer_RgaInsert__vv(p0 []SheetPeerRgaNodeRecord, p1 SheetPeerRgaNodeRecord) scealgorithm.Outcome[[]SheetPeerRgaNodeRecord] {
 	a0 := make([]sce_rga_node.RgaNodePayload, len(p0))
 	for i, e := range p0 {
 		a0[i] = sce_rga_node.RgaNodePayload{Key: e.key, After: e.after}
@@ -825,7 +825,7 @@ func sceAdapt_RgaInsert__vv(p0 []SheetPeerRgaNodeRecord, p1 SheetPeerRgaNodeReco
 	return scealgorithm.Outcome[[]SheetPeerRgaNodeRecord]{Value: out}
 }
 
-func sceAdapt_RgaRemove__vv(p0 []SheetPeerRgaGoneRecord, p1 SheetPeerRgaGoneRecord) scealgorithm.Outcome[[]SheetPeerRgaGoneRecord] {
+func sceAdapt_SheetPeer_RgaRemove__vv(p0 []SheetPeerRgaGoneRecord, p1 SheetPeerRgaGoneRecord) scealgorithm.Outcome[[]SheetPeerRgaGoneRecord] {
 	a0 := make([]sce_rga_gone.RgaGonePayload, len(p0))
 	for i, e := range p0 {
 		a0[i] = sce_rga_gone.RgaGonePayload{Key: e.key, By: e.by}
@@ -841,7 +841,7 @@ func sceAdapt_RgaRemove__vv(p0 []SheetPeerRgaGoneRecord, p1 SheetPeerRgaGoneReco
 	return scealgorithm.Outcome[[]SheetPeerRgaGoneRecord]{Value: out}
 }
 
-func sceAdapt_SheetSettle__vvvvv(p0 []SheetPeerLwwCellRecord, p1 []SheetPeerRgaNodeRecord, p2 []SheetPeerRgaGoneRecord, p3 []SheetPeerRgaNodeRecord, p4 []SheetPeerRgaGoneRecord) scealgorithm.Outcome[[]int64] {
+func sceAdapt_SheetPeer_SheetSettle__vvvvv(p0 []SheetPeerLwwCellRecord, p1 []SheetPeerRgaNodeRecord, p2 []SheetPeerRgaGoneRecord, p3 []SheetPeerRgaNodeRecord, p4 []SheetPeerRgaGoneRecord) scealgorithm.Outcome[[]int64] {
 	a0 := make([]sce_lww_cell.LwwCellPayload, len(p0))
 	for i, e := range p0 {
 		a0[i] = sce_lww_cell.LwwCellPayload{Row: e.row, Col: e.col, Value: e.value, WallTime: e.wallTime, Counter: e.counter, NodeId: e.nodeId, Op: e.op, ARef: e.aRef, ARow: e.aRow, ACol: e.aCol, AVal: e.aVal, BRef: e.bRef, BRow: e.bRow, BCol: e.bCol, BVal: e.bVal}
@@ -870,7 +870,7 @@ func sceAdapt_SheetSettle__vvvvv(p0 []SheetPeerLwwCellRecord, p1 []SheetPeerRgaN
 	return scealgorithm.Outcome[[]int64]{Value: out}
 }
 
-func sceAdapt_SheetShow__vv(p0 []SheetPeerLwwCellRecord, p1 []int64) scealgorithm.Outcome[[]SheetPeerShownRecord] {
+func sceAdapt_SheetPeer_SheetShow__vv(p0 []SheetPeerLwwCellRecord, p1 []int64) scealgorithm.Outcome[[]SheetPeerShownRecord] {
 	a0 := make([]sce_lww_cell.LwwCellPayload, len(p0))
 	for i, e := range p0 {
 		a0[i] = sce_lww_cell.LwwCellPayload{Row: e.row, Col: e.col, Value: e.value, WallTime: e.wallTime, Counter: e.counter, NodeId: e.nodeId, Op: e.op, ARef: e.aRef, ARow: e.aRow, ACol: e.aCol, AVal: e.aVal, BRef: e.bRef, BRow: e.bRow, BCol: e.bCol, BVal: e.bVal}
@@ -1865,7 +1865,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 				}
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_HlcSend__v(p.vClock, p.pendingSheetEditPayload.now, p.vNode)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<assign location='clock'>: an integer operation overflowed or failed")); return true }; p.vClock = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_SheetPeer_HlcSend__v(p.vClock, p.pendingSheetEditPayload.now, p.vNode)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<assign location='clock'>: an integer operation overflowed or failed")); return true }; p.vClock = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -2085,7 +2085,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 				}
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_HlcSend__v(p.vClock, p.pendingSheetFormulaPayload.now, p.vNode)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<assign location='clock'>: an integer operation overflowed or failed")); return true }; p.vClock = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_SheetPeer_HlcSend__v(p.vClock, p.pendingSheetFormulaPayload.now, p.vNode)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<assign location='clock'>: an integer operation overflowed or failed")); return true }; p.vClock = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -2319,7 +2319,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_HlcReceive__vv(p.vClock, p.vStamp, p.vClock.wallTime, p.vNode)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<assign location='clock'>: an integer operation overflowed or failed")); return true }; p.vClock = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_SheetPeer_HlcReceive__vv(p.vClock, p.vStamp, p.vClock.wallTime, p.vNode)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<assign location='clock'>: an integer operation overflowed or failed")); return true }; p.vClock = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -2387,7 +2387,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_LwwWrite__vv(p.vCells, p.vWrite)), 256); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<assign location='cells'>: an integer operation overflowed or failed")); return true }; p.vCells = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_SheetPeer_LwwWrite__vv(p.vCells, p.vWrite)), 256); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<assign location='cells'>: an integer operation overflowed or failed")); return true }; p.vCells = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -2653,13 +2653,13 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_SheetSettle__vvvvv(p.vCells, p.vRows, p.vGone, p.vCols, p.vGoneCols)), 768); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<assign location='trail'>: an integer operation overflowed or failed")); return true }; p.vTrail = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_SheetPeer_SheetSettle__vvvvv(p.vCells, p.vRows, p.vGone, p.vCols, p.vGoneCols)), 768); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<assign location='trail'>: an integer operation overflowed or failed")); return true }; p.vTrail = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_SheetShow__vv(p.vCells, p.vTrail)), 256); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<assign location='shown'>: an integer operation overflowed or failed")); return true }; p.vShown = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_SheetPeer_SheetShow__vv(p.vCells, p.vTrail)), 256); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<assign location='shown'>: an integer operation overflowed or failed")); return true }; p.vShown = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -2818,7 +2818,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 	p.vPlaced.after = p.pendingSheetRowPayload.after
 
 
-	if p.pendingSheetRowPayload.after != 0 && !sceAdapt_RgaHolds__v(p.vRows, p.pendingSheetRowPayload.key) && !sceAdapt_RgaHolds__v(p.vRows, p.pendingSheetRowPayload.after) {
+	if p.pendingSheetRowPayload.after != 0 && !sceAdapt_SheetPeer_RgaHolds__v(p.vRows, p.pendingSheetRowPayload.key) && !sceAdapt_SheetPeer_RgaHolds__v(p.vRows, p.pendingSheetRowPayload.after) {
 
 
 	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vOrphans, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<assign location='orphans'>: an integer operation overflowed or failed")); return true }; p.vOrphans = sceValue; return false }() {
@@ -2829,7 +2829,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_RgaInsert__vv(p.vRows, p.vPlaced)), 256); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<assign location='rows'>: an integer operation overflowed or failed")); return true }; p.vRows = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_SheetPeer_RgaInsert__vv(p.vRows, p.vPlaced)), 256); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<assign location='rows'>: an integer operation overflowed or failed")); return true }; p.vRows = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -3124,7 +3124,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_RgaRemove__vv(p.vGone, p.vRemoval)), 256); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<assign location='gone'>: an integer operation overflowed or failed")); return true }; p.vGone = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_SheetPeer_RgaRemove__vv(p.vGone, p.vRemoval)), 256); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<assign location='gone'>: an integer operation overflowed or failed")); return true }; p.vGone = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -3434,7 +3434,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 	p.vPlaced.after = p.pendingSheetColPayload.after
 
 
-	if p.pendingSheetColPayload.after != 0 && !sceAdapt_RgaHolds__v(p.vCols, p.pendingSheetColPayload.key) && !sceAdapt_RgaHolds__v(p.vCols, p.pendingSheetColPayload.after) {
+	if p.pendingSheetColPayload.after != 0 && !sceAdapt_SheetPeer_RgaHolds__v(p.vCols, p.pendingSheetColPayload.key) && !sceAdapt_SheetPeer_RgaHolds__v(p.vCols, p.pendingSheetColPayload.after) {
 
 
 	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vOrphans, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<assign location='orphans'>: an integer operation overflowed or failed")); return true }; p.vOrphans = sceValue; return false }() {
@@ -3445,7 +3445,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_RgaInsert__vv(p.vCols, p.vPlaced)), 256); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<assign location='cols'>: an integer operation overflowed or failed")); return true }; p.vCols = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_SheetPeer_RgaInsert__vv(p.vCols, p.vPlaced)), 256); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<assign location='cols'>: an integer operation overflowed or failed")); return true }; p.vCols = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -3740,7 +3740,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_RgaRemove__vv(p.vGoneCols, p.vRemoval)), 256); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<assign location='goneCols'>: an integer operation overflowed or failed")); return true }; p.vGoneCols = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_SheetPeer_RgaRemove__vv(p.vGoneCols, p.vRemoval)), 256); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<assign location='goneCols'>: an integer operation overflowed or failed")); return true }; p.vGoneCols = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

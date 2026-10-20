@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 23b50ff6771257bf06531b96d0a47eeaa5c39fb71939d9bd5e537100a9105206
+// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -196,10 +196,12 @@ pub trait StaticRealPersist: Sized {
     /// as it would be for `initialize`.
     type Policy;
 
-    /// The shape a saved state of this document is bound to: a state saved
-    /// from a document that renamed, re-typed or moved a state or a variable
-    /// is refused, one saved before a guard or an action changed is not.
-    const SHAPE: &'static str;
+    /// What a saved state of this document is bound to: a state saved from a
+    /// document that renamed, re-typed or moved a state or a variable is
+    /// refused, one saved before a guard or an action changed is not, and one
+    /// saved at an earlier revision of a record schema is read with each field
+    /// a later revision added at its default.
+    const SHAPE: ::sce_rust_runtime::saved_state::SavedShape;
 
     /// The document's `<history>` pseudo-states, by the id a saved state keys
     /// them by — what a saved state records of each, and what a restore reads
@@ -271,7 +273,13 @@ pub trait StaticRealPersist: Sized {
 impl StaticRealPersist for Engine<StaticRealPolicy> {
     type Policy = StaticRealPolicy;
 
-    const SHAPE: &'static str = "f44ab1df16ee701bda26935e1acf131aaf19f648ffc8db1be27381c1a76a4133";
+    const SHAPE: ::sce_rust_runtime::saved_state::SavedShape =
+        ::sce_rust_runtime::saved_state::SavedShape {
+            first: "f44ab1df16ee701bda26935e1acf131aaf19f648ffc8db1be27381c1a76a4133",
+            revised: "2587ba0a8cc82b3651360f544a67d759659dde6552f8fcdf2cc117fe60bbdf1f",
+            records: &[],
+            enums: &[],
+        };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<
         ::sce_rust_runtime::NoHistory,
@@ -287,7 +295,7 @@ impl StaticRealPersist for Engine<StaticRealPolicy> {
         let policy = self.policy();
         ::sce_rust_runtime::saved_state::save(
             self,
-            Self::SHAPE,
+            &Self::SHAPE,
             vec![
                 (
                     "level".to_string(),
@@ -329,7 +337,10 @@ impl StaticRealPersist for Engine<StaticRealPolicy> {
         clock: ::sce_rust_runtime::SceClock,
         wall_now_ms: u64,
     ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
-        ::sce_rust_runtime::saved_state::check_shape(saved, Self::SHAPE)?;
+        // The shape, the revision of each record schema, and each record of an
+        // earlier revision grown by the defaults of the fields added since, so
+        // what is read below is a state of this machine.
+        let saved = &::sce_rust_runtime::saved_state::upgrade(saved, &Self::SHAPE)?;
         // Judged with the configuration and before any value is written, so a
         // refused restore holds no half of a state. A document with no
         // `<history>` refuses any a saved state records.

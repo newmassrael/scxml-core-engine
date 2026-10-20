@@ -120,11 +120,20 @@ class StatechartStaticHostInvokeStateMachine(
     // ── SCE Accepted Subset §2.15: saving this machine, restoring it ─────────
 
     /**
-     * The shape a saved state of this document is bound to: a state saved
-     * from a document that renamed, re-typed or moved a state or a variable is
-     * refused, one saved before a guard or an action changed is not.
+     * What a saved state of this document is bound to: a state saved from a
+     * document that renamed, re-typed or moved a state or a variable is
+     * refused, one saved before a guard or an action changed is not, and one
+     * saved at an earlier revision of a record schema is read with each field a
+     * later revision added at its default.
      */
-    val savedShape: String = "647781765f19981584d6277b376df1cb577a70c191c4983ee2d71737b9f93ac9"
+    val savedShape: SavedShape = SavedShape(
+        first = "647781765f19981584d6277b376df1cb577a70c191c4983ee2d71737b9f93ac9",
+        revised = "919f78480d6684c23f3346c8c52ce39ea292a6c52e231bbd5e748199175b2f42",
+        records = listOf(
+        ),
+        enums = listOf(
+        ),
+    )
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -168,16 +177,18 @@ class StatechartStaticHostInvokeStateMachine(
      *   one of this document, or a value its variable's type cannot hold.
      */
     fun restore(saved: SavedState, wallNowMs: Long) {
-        beginRestore(saved, savedShape)
-        val saved1 = SavedValues.uint32(saved.variable("job"), "job")
-        val saved2 = SavedValues.string(saved.variable("label"), "label", 16)
-        val saved3 = SavedValues.string(saved.variable("place"), "place", 16)
-        val saved4 = SavedValues.uint32(saved.variable("seen"), "seen")
+        // The state as one of this machine: each record saved at an earlier
+        // revision of its schema holds the defaults of the fields added since.
+        val savedGrown = beginRestore(saved, savedShape)
+        val saved1 = SavedValues.uint32(savedGrown.variable("job"), "job")
+        val saved2 = SavedValues.string(savedGrown.variable("label"), "label", 16)
+        val saved3 = SavedValues.string(savedGrown.variable("place"), "place", 16)
+        val saved4 = SavedValues.uint32(savedGrown.variable("seen"), "seen")
         vJob = saved1
         vLabel = saved2
         vPlace = saved3
         vSeen = saved4
-        enterSaved(saved, wallNowMs)
+        enterSaved(savedGrown, wallNowMs)
     }
 
     /** [restore] at the host's wall clock now. */

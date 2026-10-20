@@ -523,7 +523,7 @@ func (p *InvokeCandidateSelectsTheChildPolicy) ExecutePendingInvokes(engine *sce
 			childEngine.SetCompletionCallback(func() {})
 			childEngine.Initialize()
 
-			wrapper := &childEngineWrapperInvoke0Chosen{engine: childEngine, policy: &childPolicy}
+			wrapper := &childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Chosen{engine: childEngine, policy: &childPolicy}
 			p.childInvoke0 = wrapper
 
 			sce.DrainAndRaiseChildEvents(wrapper, p.activeInvokes, "_invoke_0", engine)
@@ -577,7 +577,7 @@ func (p *InvokeCandidateSelectsTheChildPolicy) ExecutePendingInvokes(engine *sce
 			childEngine.SetCompletionCallback(func() {})
 			childEngine.Initialize()
 
-			wrapper := &childEngineWrapperInvoke0Other{engine: childEngine, policy: &childPolicy}
+			wrapper := &childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Other{engine: childEngine, policy: &childPolicy}
 			p.childInvoke0 = wrapper
 
 			sce.DrainAndRaiseChildEvents(wrapper, p.activeInvokes, "_invoke_0", engine)
@@ -661,36 +661,36 @@ func (p *InvokeCandidateSelectsTheChildPolicy) IsInvocationRunning(invokeID stri
 
 // ── Child engine wrappers (implement sce.ChildEngine interface) ──
 
-type childEngineWrapperInvoke0Chosen struct {
+type childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Chosen struct {
 	engine *sce.Engine[ChosenState, ChosenEvent]
 	policy *ChosenPolicy
 }
-func (w *childEngineWrapperInvoke0Chosen) Initialize() { w.engine.Initialize() }
-func (w *childEngineWrapperInvoke0Chosen) Tick() { w.engine.Tick() }
-func (w *childEngineWrapperInvoke0Chosen) Step() { w.engine.Step() }
-func (w *childEngineWrapperInvoke0Chosen) Stop() { w.engine.Stop() }
-func (w *childEngineWrapperInvoke0Chosen) IsInFinalState() bool { return w.engine.IsInFinalState() }
-func (w *childEngineWrapperInvoke0Chosen) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
-func (w *childEngineWrapperInvoke0Chosen) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
-func (w *childEngineWrapperInvoke0Chosen) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperInvoke0Chosen) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
-func (w *childEngineWrapperInvoke0Chosen) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
-func (w *childEngineWrapperInvoke0Chosen) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
-type childEngineWrapperInvoke0Other struct {
+func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Chosen) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Chosen) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Chosen) Step() { w.engine.Step() }
+func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Chosen) Stop() { w.engine.Stop() }
+func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Chosen) IsInFinalState() bool { return w.engine.IsInFinalState() }
+func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Chosen) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
+func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Chosen) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
+func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Chosen) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
+func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Chosen) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Chosen) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Chosen) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+type childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Other struct {
 	engine *sce.Engine[OtherState, OtherEvent]
 	policy *OtherPolicy
 }
-func (w *childEngineWrapperInvoke0Other) Initialize() { w.engine.Initialize() }
-func (w *childEngineWrapperInvoke0Other) Tick() { w.engine.Tick() }
-func (w *childEngineWrapperInvoke0Other) Step() { w.engine.Step() }
-func (w *childEngineWrapperInvoke0Other) Stop() { w.engine.Stop() }
-func (w *childEngineWrapperInvoke0Other) IsInFinalState() bool { return w.engine.IsInFinalState() }
-func (w *childEngineWrapperInvoke0Other) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
-func (w *childEngineWrapperInvoke0Other) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
-func (w *childEngineWrapperInvoke0Other) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperInvoke0Other) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
-func (w *childEngineWrapperInvoke0Other) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
-func (w *childEngineWrapperInvoke0Other) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Other) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Other) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Other) Step() { w.engine.Step() }
+func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Other) Stop() { w.engine.Stop() }
+func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Other) IsInFinalState() bool { return w.engine.IsInFinalState() }
+func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Other) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
+func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Other) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
+func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Other) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
+func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Other) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Other) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Other) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 
 
 // DeliverToParent delivers a delayed `<send target="#_parent">` whose wait is

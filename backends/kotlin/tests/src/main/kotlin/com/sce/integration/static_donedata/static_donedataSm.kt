@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 23b50ff6771257bf06531b96d0a47eeaa5c39fb71939d9bd5e537100a9105206
+// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_donedata.scxml
@@ -126,11 +126,30 @@ class StaticDonedataStateMachine(
     // ── SCE Accepted Subset §2.15: saving this machine, restoring it ─────────
 
     /**
-     * The shape a saved state of this document is bound to: a state saved
-     * from a document that renamed, re-typed or moved a state or a variable is
-     * refused, one saved before a guard or an action changed is not.
+     * What a saved state of this document is bound to: a state saved from a
+     * document that renamed, re-typed or moved a state or a variable is
+     * refused, one saved before a guard or an action changed is not, and one
+     * saved at an earlier revision of a record schema is read with each field a
+     * later revision added at its default.
      */
-    val savedShape: String = "0d0759aeddae60c9eb915b9c754c292935f6f65a9f8c69a23d950ddd6d8adc6d"
+    val savedShape: SavedShape = SavedShape(
+        first = "0d0759aeddae60c9eb915b9c754c292935f6f65a9f8c69a23d950ddd6d8adc6d",
+        revised = "8dd92a183235e2d9c1a44309a93537d8e17e06426fd3354f2621ba63e309c2d1",
+        records = listOf(
+        ),
+        enums = listOf(
+            EnumLineage(
+                key = "enum:enum_view_mode.scxml",
+                revision = 1,
+                revisions = listOf(),
+                added = listOf(
+                ),
+                holders = listOf(
+                    EnumHolder("layout", null, false),
+                ),
+            ),
+        ),
+    )
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -174,16 +193,18 @@ class StaticDonedataStateMachine(
      *   one of this document, or a value its variable's type cannot hold.
      */
     fun restore(saved: SavedState, wallNowMs: Long) {
-        beginRestore(saved, savedShape)
-        val saved1 = SavedValues.uint32(saved.variable("count"), "count")
-        val saved2 = SavedValues.uint8(saved.variable("small"), "small")
-        val saved3 = SavedValues.string(saved.variable("label"), "label", 16)
-        val saved4 = StaticDonedataViewModeEnum.fromSaved(saved.variable("layout"), "layout")
+        // The state as one of this machine: each record saved at an earlier
+        // revision of its schema holds the defaults of the fields added since.
+        val savedGrown = beginRestore(saved, savedShape)
+        val saved1 = SavedValues.uint32(savedGrown.variable("count"), "count")
+        val saved2 = SavedValues.uint8(savedGrown.variable("small"), "small")
+        val saved3 = SavedValues.string(savedGrown.variable("label"), "label", 16)
+        val saved4 = StaticDonedataViewModeEnum.fromSaved(savedGrown.variable("layout"), "layout")
         vCount = saved1
         vSmall = saved2
         vLabel = saved3
         vLayout = saved4
-        enterSaved(saved, wallNowMs)
+        enterSaved(savedGrown, wallNowMs)
     }
 
     /** [restore] at the host's wall clock now. */

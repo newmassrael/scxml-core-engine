@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 23b50ff6771257bf06531b96d0a47eeaa5c39fb71939d9bd5e537100a9105206
+// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_record_bytes.scxml
@@ -185,11 +185,31 @@ class StaticRecordBytesStateMachine(
     // ── SCE Accepted Subset §2.15: saving this machine, restoring it ─────────
 
     /**
-     * The shape a saved state of this document is bound to: a state saved
-     * from a document that renamed, re-typed or moved a state or a variable is
-     * refused, one saved before a guard or an action changed is not.
+     * What a saved state of this document is bound to: a state saved from a
+     * document that renamed, re-typed or moved a state or a variable is
+     * refused, one saved before a guard or an action changed is not, and one
+     * saved at an earlier revision of a record schema is read with each field a
+     * later revision added at its default.
      */
-    val savedShape: String = "0f24f88f0f95e9cba72cf2c8194a035f79adde795a2ee38234a238dd2ed59cb8"
+    val savedShape: SavedShape = SavedShape(
+        first = "0f24f88f0f95e9cba72cf2c8194a035f79adde795a2ee38234a238dd2ed59cb8",
+        revised = "a4673fed412eef9b82de968dadba304e219c25bfc193ba1b4a9a8579adf08aab",
+        records = listOf(
+            RecordLineage(
+                event = "framed.taken",
+                revision = 1,
+                revisions = listOf(),
+                added = listOf(
+                ),
+                holders = listOf(
+                    RecordHolder("last", false),
+                    RecordHolder("frames", true),
+                ),
+            ),
+        ),
+        enums = listOf(
+        ),
+    )
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -237,15 +257,17 @@ class StaticRecordBytesStateMachine(
      *   one of this document, or a value its variable's type cannot hold.
      */
     fun restore(saved: SavedState, wallNowMs: Long) {
-        beginRestore(saved, savedShape)
-        val saved1 = StaticRecordBytesFramedRecord.fromSaved(saved.variable("last"), "last")
-        val saved2 = SavedValues.bytes(saved.variable("spare"), "spare", 16)
-        val saved3 = SavedValues.list(saved.variable("frames"), "frames", 3) { e, w -> StaticRecordBytesFramedRecord.fromSaved(e, w) }
-        val saved4 = SavedValues.uint32(saved.variable("size"), "size")
-        val saved5 = SavedValues.uint32(saved.variable("matches"), "matches")
-        val saved6 = SavedValues.uint32(saved.variable("misses"), "misses")
-        val saved7 = SavedValues.uint32(saved.variable("leads"), "leads")
-        val saved8 = SavedValues.uint32(saved.variable("errors"), "errors")
+        // The state as one of this machine: each record saved at an earlier
+        // revision of its schema holds the defaults of the fields added since.
+        val savedGrown = beginRestore(saved, savedShape)
+        val saved1 = StaticRecordBytesFramedRecord.fromSaved(savedGrown.variable("last"), "last")
+        val saved2 = SavedValues.bytes(savedGrown.variable("spare"), "spare", 16)
+        val saved3 = SavedValues.list(savedGrown.variable("frames"), "frames", 3) { e, w -> StaticRecordBytesFramedRecord.fromSaved(e, w) }
+        val saved4 = SavedValues.uint32(savedGrown.variable("size"), "size")
+        val saved5 = SavedValues.uint32(savedGrown.variable("matches"), "matches")
+        val saved6 = SavedValues.uint32(savedGrown.variable("misses"), "misses")
+        val saved7 = SavedValues.uint32(savedGrown.variable("leads"), "leads")
+        val saved8 = SavedValues.uint32(savedGrown.variable("errors"), "errors")
         vLast = saved1
         vSpare = saved2
         vFrames = saved3
@@ -254,7 +276,7 @@ class StaticRecordBytesStateMachine(
         vMisses = saved6
         vLeads = saved7
         vErrors = saved8
-        enterSaved(saved, wallNowMs)
+        enterSaved(savedGrown, wallNowMs)
     }
 
     /** [restore] at the host's wall clock now. */

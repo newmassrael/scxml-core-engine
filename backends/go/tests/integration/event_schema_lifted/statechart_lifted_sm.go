@@ -183,17 +183,17 @@ const (
 
 // StatechartLiftedJobCompletedPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `job.completed`. Internal to the package; consumers inject it via
-// the `RaiseJobCompleted` seam below (fields are unexported by design).
+// the `StatechartLiftedRaiseJobCompleted` seam below (fields are unexported by design).
 type StatechartLiftedJobCompletedPayload struct {
 	elapsed_ms uint32
 }
 
-// RaiseJobCompleted is the NL→IR Item C1 Path A per-event typed `_event.data`
+// StatechartLiftedRaiseJobCompleted is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `job.completed` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RaiseJobCompleted` extension-trait method
+// inconsistently. Twin of the Rust `StatechartLiftedInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RaiseJobCompleted(e *sce.Engine[StatechartLiftedState, StatechartLiftedEvent], elapsed_ms uint32) {
+func StatechartLiftedRaiseJobCompleted(e *sce.Engine[StatechartLiftedState, StatechartLiftedEvent], elapsed_ms uint32) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[StatechartLiftedEvent]{
 		Event:    StatechartLiftedEventJobCompleted,
 		Metadata: sce.EventMetadata{

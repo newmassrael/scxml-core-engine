@@ -496,7 +496,7 @@ func (p *EventOriginIsALocationPolicy) ExecutePendingInvokes(engine *sce.Engine[
 			childEngine.Initialize()
 
 			// W3C SCXML 6.4: Store child and create wrapper
-			wrapper := &childEngineWrapperInvPeer{engine: childEngine, policy: &childPolicy}
+			wrapper := &childEngineWrapperEventOriginIsALocation_InvPeer{engine: childEngine, policy: &childPolicy}
 			p.childInvPeer = wrapper
 
 			// W3C SCXML 6.4: Drain child-to-parent events raised during initialize
@@ -613,21 +613,21 @@ func (p *EventOriginIsALocationPolicy) DeliverToChildSession(childSessionID, eve
 
 // ── Child engine wrappers (implement sce.ChildEngine interface) ──
 
-type childEngineWrapperInvPeer struct {
+type childEngineWrapperEventOriginIsALocation_InvPeer struct {
 	engine *sce.Engine[EventOriginIsALocationSceSynthInvokeInvPeerState, EventOriginIsALocationSceSynthInvokeInvPeerEvent]
 	policy *EventOriginIsALocationSceSynthInvokeInvPeerPolicy
 }
-func (w *childEngineWrapperInvPeer) Initialize() { w.engine.Initialize() }
-func (w *childEngineWrapperInvPeer) Tick() { w.engine.Tick() }
-func (w *childEngineWrapperInvPeer) Step() { w.engine.Step() }
-func (w *childEngineWrapperInvPeer) Stop() { w.engine.Stop() }
-func (w *childEngineWrapperInvPeer) IsInFinalState() bool { return w.engine.IsInFinalState() }
-func (w *childEngineWrapperInvPeer) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
-func (w *childEngineWrapperInvPeer) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
-func (w *childEngineWrapperInvPeer) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperInvPeer) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
-func (w *childEngineWrapperInvPeer) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
-func (w *childEngineWrapperInvPeer) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperEventOriginIsALocation_InvPeer) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperEventOriginIsALocation_InvPeer) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperEventOriginIsALocation_InvPeer) Step() { w.engine.Step() }
+func (w *childEngineWrapperEventOriginIsALocation_InvPeer) Stop() { w.engine.Stop() }
+func (w *childEngineWrapperEventOriginIsALocation_InvPeer) IsInFinalState() bool { return w.engine.IsInFinalState() }
+func (w *childEngineWrapperEventOriginIsALocation_InvPeer) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
+func (w *childEngineWrapperEventOriginIsALocation_InvPeer) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
+func (w *childEngineWrapperEventOriginIsALocation_InvPeer) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
+func (w *childEngineWrapperEventOriginIsALocation_InvPeer) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperEventOriginIsALocation_InvPeer) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapperEventOriginIsALocation_InvPeer) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 
 
 // DeliverToParent delivers a delayed `<send target="#_parent">` whose wait is

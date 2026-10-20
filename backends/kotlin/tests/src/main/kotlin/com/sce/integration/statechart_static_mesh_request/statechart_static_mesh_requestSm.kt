@@ -137,11 +137,20 @@ class StatechartStaticMeshRequestStateMachine(
     // ── SCE Accepted Subset §2.15: saving this machine, restoring it ─────────
 
     /**
-     * The shape a saved state of this document is bound to: a state saved
-     * from a document that renamed, re-typed or moved a state or a variable is
-     * refused, one saved before a guard or an action changed is not.
+     * What a saved state of this document is bound to: a state saved from a
+     * document that renamed, re-typed or moved a state or a variable is
+     * refused, one saved before a guard or an action changed is not, and one
+     * saved at an earlier revision of a record schema is read with each field a
+     * later revision added at its default.
      */
-    val savedShape: String = "d4fc8b35c38b20ad10aa11be11d5f07569eb9d8721c7120f1a810d27608af7db"
+    val savedShape: SavedShape = SavedShape(
+        first = "d4fc8b35c38b20ad10aa11be11d5f07569eb9d8721c7120f1a810d27608af7db",
+        revised = "d3738709582b65e60555168c61077ca2d1dc40123f6c88652f8d4882a10a3e3c",
+        records = listOf(
+        ),
+        enums = listOf(
+        ),
+    )
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -187,20 +196,22 @@ class StatechartStaticMeshRequestStateMachine(
      *   one of this document, or a value its variable's type cannot hold.
      */
     fun restore(saved: SavedState, wallNowMs: Long) {
-        beginRestore(saved, savedShape)
-        val saved1 = SavedValues.uint32(saved.variable("load"), "load")
-        val saved2 = SavedValues.string(saved.variable("label"), "label", 16)
-        val saved3 = SavedValues.string(saved.variable("peer"), "peer", 16)
-        val saved4 = SavedValues.uint32(saved.variable("answered"), "answered")
-        val saved5 = SavedValues.uint32(saved.variable("failed"), "failed")
-        val saved6 = SavedValues.uint32(saved.variable("refused"), "refused")
+        // The state as one of this machine: each record saved at an earlier
+        // revision of its schema holds the defaults of the fields added since.
+        val savedGrown = beginRestore(saved, savedShape)
+        val saved1 = SavedValues.uint32(savedGrown.variable("load"), "load")
+        val saved2 = SavedValues.string(savedGrown.variable("label"), "label", 16)
+        val saved3 = SavedValues.string(savedGrown.variable("peer"), "peer", 16)
+        val saved4 = SavedValues.uint32(savedGrown.variable("answered"), "answered")
+        val saved5 = SavedValues.uint32(savedGrown.variable("failed"), "failed")
+        val saved6 = SavedValues.uint32(savedGrown.variable("refused"), "refused")
         vLoad = saved1
         vLabel = saved2
         vPeer = saved3
         vAnswered = saved4
         vFailed = saved5
         vRefused = saved6
-        enterSaved(saved, wallNowMs)
+        enterSaved(savedGrown, wallNowMs)
     }
 
     /** [restore] at the host's wall clock now. */

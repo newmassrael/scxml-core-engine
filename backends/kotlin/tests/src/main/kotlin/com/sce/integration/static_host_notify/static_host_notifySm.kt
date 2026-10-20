@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 23b50ff6771257bf06531b96d0a47eeaa5c39fb71939d9bd5e537100a9105206
+// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_host_notify.scxml
@@ -359,11 +359,20 @@ class StaticHostNotifyStateMachine(
     // ── SCE Accepted Subset §2.15: saving this machine, restoring it ─────────
 
     /**
-     * The shape a saved state of this document is bound to: a state saved
-     * from a document that renamed, re-typed or moved a state or a variable is
-     * refused, one saved before a guard or an action changed is not.
+     * What a saved state of this document is bound to: a state saved from a
+     * document that renamed, re-typed or moved a state or a variable is
+     * refused, one saved before a guard or an action changed is not, and one
+     * saved at an earlier revision of a record schema is read with each field a
+     * later revision added at its default.
      */
-    val savedShape: String = "aacb68b4caadf48158b4802424684c04db0f2ce532b000706210688c7dbdc377"
+    val savedShape: SavedShape = SavedShape(
+        first = "aacb68b4caadf48158b4802424684c04db0f2ce532b000706210688c7dbdc377",
+        revised = "f69e00d7b93736246a373797c7ed9feb7becad59326b3a6f673ffa13fd0c1c0c",
+        records = listOf(
+        ),
+        enums = listOf(
+        ),
+    )
 
     /**
      * This machine's whole state at the macrostep boundary it stands at —
@@ -411,15 +420,17 @@ class StaticHostNotifyStateMachine(
      *   one of this document, or a value its variable's type cannot hold.
      */
     fun restore(saved: SavedState, wallNowMs: Long) {
-        beginRestore(saved, savedShape)
-        val saved1 = SavedValues.string(saved.variable("id"), "id", 64)
-        val saved2 = SavedValues.string(saved.variable("title"), "title", 128)
-        val saved3 = SavedValues.string(saved.variable("body"), "body", 512)
-        val saved4 = SavedValues.int64(saved.variable("at_ms"), "at_ms")
-        val saved5 = SavedValues.string(saved.variable("outcome"), "outcome", 24)
-        val saved6 = SavedValues.string(saved.variable("permission"), "permission", 16)
-        val saved7 = SavedValues.string(saved.variable("status"), "status", 16)
-        val saved8 = SavedValues.bool(saved.variable("existed"), "existed")
+        // The state as one of this machine: each record saved at an earlier
+        // revision of its schema holds the defaults of the fields added since.
+        val savedGrown = beginRestore(saved, savedShape)
+        val saved1 = SavedValues.string(savedGrown.variable("id"), "id", 64)
+        val saved2 = SavedValues.string(savedGrown.variable("title"), "title", 128)
+        val saved3 = SavedValues.string(savedGrown.variable("body"), "body", 512)
+        val saved4 = SavedValues.int64(savedGrown.variable("at_ms"), "at_ms")
+        val saved5 = SavedValues.string(savedGrown.variable("outcome"), "outcome", 24)
+        val saved6 = SavedValues.string(savedGrown.variable("permission"), "permission", 16)
+        val saved7 = SavedValues.string(savedGrown.variable("status"), "status", 16)
+        val saved8 = SavedValues.bool(savedGrown.variable("existed"), "existed")
         vId = saved1
         vTitle = saved2
         vBody = saved3
@@ -428,7 +439,7 @@ class StaticHostNotifyStateMachine(
         vPermission = saved6
         vStatus = saved7
         vExisted = saved8
-        enterSaved(saved, wallNowMs)
+        enterSaved(savedGrown, wallNowMs)
     }
 
     /** [restore] at the host's wall clock now. */

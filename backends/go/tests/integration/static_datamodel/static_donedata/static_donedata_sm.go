@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 23b50ff6771257bf06531b96d0a47eeaa5c39fb71939d9bd5e537100a9105206
+// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -174,22 +174,22 @@ func (e StaticDonedataEvent) String() string {
 type StaticDonedataViewModeEnum uint8
 
 const (
-	EnumViewModeMonth StaticDonedataViewModeEnum = 0
-	EnumViewModeWeek StaticDonedataViewModeEnum = 1
-	EnumViewModeDay StaticDonedataViewModeEnum = 2
-	EnumViewModeAgendaList StaticDonedataViewModeEnum = 3
+	StaticDonedataViewModeEnumMonth StaticDonedataViewModeEnum = 0
+	StaticDonedataViewModeEnumWeek StaticDonedataViewModeEnum = 1
+	StaticDonedataViewModeEnumDay StaticDonedataViewModeEnum = 2
+	StaticDonedataViewModeEnumAgendaList StaticDonedataViewModeEnum = 3
 )
 
 // String is the name the enum document declares for the value.
 func (v StaticDonedataViewModeEnum) String() string {
 	switch v {
-	case EnumViewModeMonth:
+	case StaticDonedataViewModeEnumMonth:
 		return "month"
-	case EnumViewModeWeek:
+	case StaticDonedataViewModeEnumWeek:
 		return "week"
-	case EnumViewModeDay:
+	case StaticDonedataViewModeEnumDay:
 		return "day"
-	case EnumViewModeAgendaList:
+	case StaticDonedataViewModeEnumAgendaList:
 		return "agenda_list"
 	}
 	return ""
@@ -226,7 +226,7 @@ func NewStaticDonedataPolicy() StaticDonedataPolicy {
 		vCount: 0,
 		vSmall: 250,
 		vLabel: "tally",
-		vLayout: EnumViewModeMonth,
+		vLayout: StaticDonedataViewModeEnumMonth,
 	}
 }
 
@@ -651,7 +651,7 @@ func (p *StaticDonedataPolicy) ExecuteTransitionContent(source StaticDonedataSta
 			func() {
 
 
-	p.vLayout = EnumViewModeAgendaList
+	p.vLayout = StaticDonedataViewModeEnumAgendaList
 
 			}()
 		}

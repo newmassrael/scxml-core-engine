@@ -351,7 +351,7 @@ func (p *StaticInvokeEntryPolicy) ExecutePendingInvokes(engine *sce.Engine[Stati
 			childEngine.Initialize()
 
 			// W3C SCXML 6.4: Store child and create wrapper
-			wrapper := &childEngineWrapperSecond{engine: childEngine, policy: &childPolicy}
+			wrapper := &childEngineWrapperStaticInvokeEntry_Second{engine: childEngine, policy: &childPolicy}
 			p.childSecond = wrapper
 
 			// W3C SCXML 6.4: Drain child-to-parent events raised during initialize
@@ -429,7 +429,7 @@ func (p *StaticInvokeEntryPolicy) ExecutePendingInvokes(engine *sce.Engine[Stati
 			childEngine.Initialize()
 
 			// W3C SCXML 6.4: Store child and create wrapper
-			wrapper := &childEngineWrapperFirst{engine: childEngine, policy: &childPolicy}
+			wrapper := &childEngineWrapperStaticInvokeEntry_First{engine: childEngine, policy: &childPolicy}
 			p.childFirst = wrapper
 
 			// W3C SCXML 6.4: Drain child-to-parent events raised during initialize
@@ -582,36 +582,36 @@ func (p *StaticInvokeEntryPolicy) DeliverToChildSession(childSessionID, eventNam
 
 // ── Child engine wrappers (implement sce.ChildEngine interface) ──
 
-type childEngineWrapperFirst struct {
+type childEngineWrapperStaticInvokeEntry_First struct {
 	engine *sce.Engine[StaticInvokeEntrySceSynthInvokeFirstState, StaticInvokeEntrySceSynthInvokeFirstEvent]
 	policy *StaticInvokeEntrySceSynthInvokeFirstPolicy
 }
-func (w *childEngineWrapperFirst) Initialize() { w.engine.Initialize() }
-func (w *childEngineWrapperFirst) Tick() { w.engine.Tick() }
-func (w *childEngineWrapperFirst) Step() { w.engine.Step() }
-func (w *childEngineWrapperFirst) Stop() { w.engine.Stop() }
-func (w *childEngineWrapperFirst) IsInFinalState() bool { return w.engine.IsInFinalState() }
-func (w *childEngineWrapperFirst) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
-func (w *childEngineWrapperFirst) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
-func (w *childEngineWrapperFirst) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperFirst) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
-func (w *childEngineWrapperFirst) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
-func (w *childEngineWrapperFirst) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
-type childEngineWrapperSecond struct {
+func (w *childEngineWrapperStaticInvokeEntry_First) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperStaticInvokeEntry_First) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperStaticInvokeEntry_First) Step() { w.engine.Step() }
+func (w *childEngineWrapperStaticInvokeEntry_First) Stop() { w.engine.Stop() }
+func (w *childEngineWrapperStaticInvokeEntry_First) IsInFinalState() bool { return w.engine.IsInFinalState() }
+func (w *childEngineWrapperStaticInvokeEntry_First) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
+func (w *childEngineWrapperStaticInvokeEntry_First) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
+func (w *childEngineWrapperStaticInvokeEntry_First) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
+func (w *childEngineWrapperStaticInvokeEntry_First) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperStaticInvokeEntry_First) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapperStaticInvokeEntry_First) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+type childEngineWrapperStaticInvokeEntry_Second struct {
 	engine *sce.Engine[StaticInvokeEntrySceSynthInvokeSecondState, StaticInvokeEntrySceSynthInvokeSecondEvent]
 	policy *StaticInvokeEntrySceSynthInvokeSecondPolicy
 }
-func (w *childEngineWrapperSecond) Initialize() { w.engine.Initialize() }
-func (w *childEngineWrapperSecond) Tick() { w.engine.Tick() }
-func (w *childEngineWrapperSecond) Step() { w.engine.Step() }
-func (w *childEngineWrapperSecond) Stop() { w.engine.Stop() }
-func (w *childEngineWrapperSecond) IsInFinalState() bool { return w.engine.IsInFinalState() }
-func (w *childEngineWrapperSecond) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
-func (w *childEngineWrapperSecond) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
-func (w *childEngineWrapperSecond) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperSecond) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
-func (w *childEngineWrapperSecond) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
-func (w *childEngineWrapperSecond) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperStaticInvokeEntry_Second) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperStaticInvokeEntry_Second) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperStaticInvokeEntry_Second) Step() { w.engine.Step() }
+func (w *childEngineWrapperStaticInvokeEntry_Second) Stop() { w.engine.Stop() }
+func (w *childEngineWrapperStaticInvokeEntry_Second) IsInFinalState() bool { return w.engine.IsInFinalState() }
+func (w *childEngineWrapperStaticInvokeEntry_Second) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
+func (w *childEngineWrapperStaticInvokeEntry_Second) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
+func (w *childEngineWrapperStaticInvokeEntry_Second) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
+func (w *childEngineWrapperStaticInvokeEntry_Second) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperStaticInvokeEntry_Second) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapperStaticInvokeEntry_Second) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 
 
 // DeliverToParent delivers a delayed `<send target="#_parent">` whose wait is
