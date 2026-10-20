@@ -1,6 +1,6 @@
 # ADR 0045 — A saved state holds its running children, and a restore resumes them where they were
 
-- Status: Accepted (2026-10-20); step 1 in progress
+- Status: Accepted (2026-10-20); step 1 done, step 2 in progress (see its "Where it stands")
 - Date: 2026-10-20
 - Scope: docs/SCE_ACCEPTED_SUBSET.md §2.15 ("Saving and restoring", "Running invocations",
   "Child sessions", the scenario format); `schemas/sce-saved-state.v1.schema.json` and a new
@@ -685,6 +685,17 @@ Each step lands with a test that fails without it.
    renaming an enum import's alias leaves the format-2 shape as it was and moves the format-1 shape,
    and that moving the enum's file moves both; and a cross-backend test shows the six backends'
    generated format-2 shape constants and enum keys equal as text.
+
+   *Where it stands.* Done: the child rule (`a_tree_can_hold`), the two sends that no longer
+   remove the API (a format-1 save refuses with a reason while one waits), a per-invoke start
+   count in every generated parent, the generated invoke id `<state>.<start>.<invoke>` on all six
+   backends, child session ids `<parent>.<invokeid>` on Rust, C++, Go, Python and Kotlin, and a
+   test that pins the shape of every standard statechart that saves. Open: the format-2 shape,
+   which needs ADR 0044's `document_key` and `SavedShape` on the branch it is built on; the C11
+   child session id, whose buffer sizes are decided with C11's saved state (step 5); a Kotlin
+   child that opened a script session to take an argument before its start keeps that session's
+   id; and the id of a `sce-static` root, which today is empty on Rust and Kotlin and drawn by the
+   process on Go, Python, C++ and C11, and must be one text before those four save (step 5).
 3. **Rust.** `SavedState` as a session tree, format 2 written, formats 1 and 2 read, the restore of
    section 3, the transit check, the tree fixture. *Exit:* the Rust tests of section 8.
 4. **Kotlin.** The same over `SavedState.kt` and `StateMachineEngine`. *Exit:* Kotlin saves the tree
