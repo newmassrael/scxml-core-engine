@@ -30,6 +30,7 @@ What is held here:
 from __future__ import annotations
 
 import base64
+import hashlib
 import io
 import json
 import pathlib
@@ -366,6 +367,26 @@ class ThePictureCommandWritesTheFile(unittest.TestCase):
             self.assertEqual(0, done.returncode, done.stderr)
             self.assertEqual(PNG, out.read_bytes())
             self.assertIn(f"{len(PNG)} bytes", done.stdout)
+
+    def test_asked_for_json_it_says_the_size_the_format_and_the_hash_and_null_for_one_that_cannot_be_shown(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            word = pathlib.Path(tmp) / "spec.docx"
+            with zipfile.ZipFile(word, "w") as z:
+                z.writestr("word/document.xml", f'<w:document {NS}><w:body>{para("x")}</w:body></w:document>')
+                z.writestr("word/media/image3.png", PNG)
+                z.writestr("word/media/drawing.emf", b"metafile")
+            said = {}
+            for name in ("image3.png", "drawing.emf"):
+                out = pathlib.Path(tmp) / name
+                done = subprocess.run([sys.executable, "-m", "sce_author", "picture", "--prose", str(word),
+                                       "--name", name, "--out", str(out), "--json"],
+                                      capture_output=True, text=True, check=False)
+                self.assertEqual(0, done.returncode, done.stderr)
+                said[name] = json.loads(done.stdout)
+            self.assertEqual({"bytes": len(PNG), "media_type": "image/png",
+                              "sha256": hashlib.sha256(PNG).hexdigest()}, said["image3.png"])
+            self.assertIsNone(said["drawing.emf"]["media_type"])
+            self.assertEqual(b"metafile", (pathlib.Path(tmp) / "drawing.emf").read_bytes())
 
     def test_a_name_the_document_does_not_hold_fails_and_says_what_it_does(self):
         with tempfile.TemporaryDirectory() as tmp:

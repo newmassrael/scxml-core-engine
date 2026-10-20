@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import collections
+import hashlib
 import json
 import pathlib
 import sys
@@ -95,7 +96,13 @@ def cmd_picture(args) -> int:
                           f"({', '.join(str(one.source) for one in found)}); name one file in --prose")
     out = pathlib.Path(args.out)
     out.write_bytes(found[0].data)
-    print(f"picture: {len(found[0].data)} bytes -> {out}")
+    if args.json:
+        # The format is said so that a host shows the picture or says it cannot; `null` is one a client
+        # cannot be shown (a metafile, a TIFF), whose bytes are still written.
+        print(json.dumps({"bytes": len(found[0].data), "media_type": found[0].mime,
+                          "sha256": hashlib.sha256(found[0].data).hexdigest()}, sort_keys=True))
+    else:
+        print(f"picture: {len(found[0].data)} bytes -> {out}")
     return 0
 
 
@@ -1135,6 +1142,8 @@ def main(argv=None) -> int:
     pic.add_argument("--prose", required=True, nargs="+", help="one or more specification files")
     pic.add_argument("--name", required=True, help="the NAME in the mark, e.g. image3.png")
     pic.add_argument("--out", required=True, help="where to write the picture")
+    pic.add_argument("--json", action="store_true",
+                     help="print its size, its format (null for one a client cannot show) and its SHA-256, as JSON")
     pic.set_defaults(fn=cmd_picture)
 
     ext = sub.add_parser(
