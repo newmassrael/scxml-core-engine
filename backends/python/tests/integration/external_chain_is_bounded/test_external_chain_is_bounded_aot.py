@@ -170,7 +170,7 @@ def test_a_chain_through_a_delay_of_zero_does_not_keep_the_call_from_returning()
 
     engine.send_event(_Event.ZERO)
 
-    assert engine.truncated_event_chains() >= 1
+    assert engine.truncated_event_chains() >= _TABLE["static_zero"]["truncated"]
     assert _counter(engine, se, "blinks") >= 1
     assert engine.is_running
 
@@ -202,7 +202,7 @@ def test_a_chain_that_is_finite_because_the_clock_is_is_not_refused() -> None:
 
     engine.send_event(_Event.TIMED)
     for _ in range(timed["pulses"]):
-        engine.advance_time(1)
+        engine.advance_time(timed["interval_ms"])
 
     assert _counter(engine, se, "pulses") == timed["pulses"]
     assert engine.truncated_event_chains() == timed["truncated"], (
@@ -212,9 +212,9 @@ def test_a_chain_that_is_finite_because_the_clock_is_is_not_refused() -> None:
     jumped, js = _started()
     jumped.set_max_external_events_per_call(timed["budget"])
     jumped.send_event(_Event.TIMED)
-    # Each pulse is due a millisecond after the last, so one jump over all of
-    # them is as many milliseconds as there are pulses.
-    jumped.advance_time(timed["pulses"])
+    # Each pulse is due the table's interval after the last, so one jump over
+    # all of them is that many milliseconds for each pulse.
+    jumped.advance_time(timed["pulses"] * timed["interval_ms"])
     assert _counter(jumped, js, "pulses") == timed["pulses"]
     assert jumped.truncated_event_chains() == timed["truncated"], (
         "eight due entries in one host call are eight loop invocations of one "

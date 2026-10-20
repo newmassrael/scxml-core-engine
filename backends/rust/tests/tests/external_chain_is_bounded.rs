@@ -226,7 +226,7 @@ fn a_chain_through_a_static_delay_of_zero_does_not_keep_the_call_from_returning(
 
     send(&mut engine, Event::Zero);
 
-    assert!(engine.truncated_event_chains() >= 1);
+    assert!(engine.truncated_event_chains() >= count(&["static_zero", "truncated"]));
     assert!(counter(&engine, &se, "blinks") >= 1);
     assert!(engine.is_running());
 }
@@ -272,9 +272,11 @@ fn a_chain_through_a_delay_expression_that_is_zero_does_not_keep_the_tick_from_r
 #[test]
 fn a_chain_that_is_finite_because_the_clock_is_is_not_refused() {
     let pulses = number(&["timed", "pulses"]);
-    // Each pulse is due a millisecond after the last, so one jump over all of
-    // them is as many milliseconds as there are pulses.
-    let jump_ms = u64::try_from(pulses).expect("a pulse count is not negative");
+    let interval_ms = number(&["timed", "interval_ms"]);
+    let step_ms = u64::try_from(interval_ms).expect("a clock step is not negative");
+    // Each pulse is due the table's interval after the last, so one jump over
+    // all of them is that many milliseconds for each pulse.
+    let jump_ms = u64::try_from(pulses * interval_ms).expect("a clock jump is not negative");
     let timed_budget = budget(count(&["timed", "budget"]));
 
     let (mut walked, se) = started();
@@ -282,7 +284,7 @@ fn a_chain_that_is_finite_because_the_clock_is_is_not_refused() {
 
     send(&mut walked, Event::Timed);
     for _ in 0..pulses {
-        walked.advance_time_ms(1);
+        walked.advance_time_ms(step_ms);
     }
     assert_eq!(counter(&walked, &se, "pulses"), pulses);
     assert_eq!(

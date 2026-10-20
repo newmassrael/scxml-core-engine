@@ -45,7 +45,7 @@ import (
 
 // outcomes is the part of the shared table this driver reads. A key the table
 // lacks would decode as zero, so loadOutcomes refuses a table whose default
-// budget or host budget came out zero.
+// budget, host budget, static-zero cut count or timed interval came out zero.
 type outcomes struct {
 	DefaultBudget int64 `json:"default_budget"`
 	Spin          struct {
@@ -69,7 +69,9 @@ type outcomes struct {
 		Truncated            uint32 `json:"truncated"`
 	} `json:"resume"`
 	StaticZero struct {
-		Budget int `json:"budget"`
+		Budget              int    `json:"budget"`
+		TruncatedAfterEntry uint32 `json:"truncated_after_entry"`
+		Truncated           uint32 `json:"truncated"`
 	} `json:"static_zero"`
 	ZeroExpr struct {
 		Budget              int    `json:"budget"`
@@ -78,9 +80,10 @@ type outcomes struct {
 		TruncatedAfterTick  uint32 `json:"truncated_after_tick"`
 	} `json:"zero_expr"`
 	Timed struct {
-		Budget    int    `json:"budget"`
-		Pulses    int64  `json:"pulses"`
-		Truncated uint32 `json:"truncated"`
+		Budget     int    `json:"budget"`
+		Pulses     int64  `json:"pulses"`
+		IntervalMs int64  `json:"interval_ms"`
+		Truncated  uint32 `json:"truncated"`
 	} `json:"timed"`
 	Host struct {
 		Budget  int   `json:"budget"`
@@ -100,7 +103,8 @@ func loadOutcomes(t *testing.T) outcomes {
 	if err := json.Unmarshal(raw, &table); err != nil {
 		t.Fatalf("the shared budget table is not JSON: %v", err)
 	}
-	if table.DefaultBudget < 1 || table.Host.Budget < 1 || len(table.Host.Refused) == 0 {
+	if table.DefaultBudget < 1 || table.Host.Budget < 1 || len(table.Host.Refused) == 0 ||
+		table.StaticZero.Truncated < 1 || table.Timed.IntervalMs < 1 {
 		t.Fatalf("the shared budget table was not read: %+v", table)
 	}
 	return table
@@ -257,13 +261,13 @@ func TestAChainThroughAStaticDelayOfZeroDoesNotKeepTheTickFromReturning(t *testi
 	budget(t, engine, table.StaticZero.Budget)
 
 	engine.ProcessEvent(ExternalChainIsBoundedEventZero)
-	if got := engine.TruncatedEventChains(); got != 0 {
+	if got := engine.TruncatedEventChains(); got != table.StaticZero.TruncatedAfterEntry {
 		t.Fatalf("entering the state arms one entry and pops none: nothing has been cut yet; got %d", got)
 	}
 
 	engine.Tick()
 
-	if got := engine.TruncatedEventChains(); got != 1 {
+	if got := engine.TruncatedEventChains(); got != table.StaticZero.Truncated {
 		t.Fatalf("the tick popped entries due at its own reading until the budget, left the due "+
 			"one waiting and said so; counted %d", got)
 	}
@@ -309,7 +313,7 @@ func TestAChainThatIsFiniteBecauseTheClockIsIsNotRefused(t *testing.T) {
 	budget(t, walked, table.Timed.Budget)
 	walked.ProcessEvent(ExternalChainIsBoundedEventTimed)
 	for i := int64(0); i < table.Timed.Pulses; i++ {
-		walked.AdvanceTimeMs(1)
+		walked.AdvanceTimeMs(table.Timed.IntervalMs)
 	}
 	if got := counter(t, policy, "pulses"); got != table.Timed.Pulses {
 		t.Fatalf("every pulse was heard; pulses = %d", got)
@@ -321,9 +325,9 @@ func TestAChainThatIsFiniteBecauseTheClockIsIsNotRefused(t *testing.T) {
 	jumped, jumpedPolicy := started(t)
 	budget(t, jumped, table.Timed.Budget)
 	jumped.ProcessEvent(ExternalChainIsBoundedEventTimed)
-	// Each pulse is due a millisecond after the last, so one jump over all of
-	// them is as many milliseconds as there are pulses.
-	jumped.AdvanceTimeMs(table.Timed.Pulses)
+	// Each pulse is due the table's interval after the last, so one jump over
+	// all of them is that many milliseconds for each pulse.
+	jumped.AdvanceTimeMs(table.Timed.Pulses * table.Timed.IntervalMs)
 	if got := counter(t, jumpedPolicy, "pulses"); got != table.Timed.Pulses {
 		t.Fatalf("every pulse was heard in one jump; pulses = %d", got)
 	}
