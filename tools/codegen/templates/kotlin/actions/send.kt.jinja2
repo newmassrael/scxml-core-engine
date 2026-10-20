@@ -154,7 +154,7 @@
 {# The form a transport posts is needed only by those that post one. #}
 {% set needs_wire_params = action.send_type_host_served or is_http or dynamic_mesh %}
 {# ── The element's own arguments, evaluated once ──
-   W3C SCXML 6.2: "The Processor MUST evaluate all arguments to <send> when the
+   W3C SCXML 6.2.3: "The Processor MUST evaluate all arguments to <send> when the
    <send> element is evaluated", and "if the evaluation of <send>'s arguments
    produces an error, the Processor MUST discard the message without attempting
    to deliver it". So every argument is read here, before any arm runs. The

@@ -4,6 +4,11 @@
 {#
     Kotlin Event Sealed Interface Template
 
+    W3C SCXML 3.12: an event is its name. Each event name of the model is one
+    member here, and that member is what a transition's `event` attribute is
+    matched against and, unless the event arrived under a longer name the
+    member is a prefix of, what `_event.name` is read from (`eventNameOf`).
+
     W3C SCXML 3.12.1: Event representation as Kotlin sealed interface hierarchy.
     Dot-separated event names become nested sealed interfaces for prefix matching.
 

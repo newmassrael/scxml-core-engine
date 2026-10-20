@@ -30,7 +30,7 @@
     decided here: the child keeps only what its own <data> declares, filtered
     where it applies `pendingInvokeParams`.
 
-    §scxml-6.4: "if the evaluation of its arguments produces an error, the
+    §scxml-6.4.2: "if the evaluation of its arguments produces an error, the
     SCXML Processor MUST terminate the processing of the element without
     further action". A `namelist` name that is not a readable location is such
     an error: ONE error.execution for the element, however many names are bad,
@@ -607,7 +607,7 @@
                 }
 {% endif %}
 {% if state.initial_transition_actions %}
-                // W3C SCXML 3.3: the <initial> transition's content runs when,
+                // W3C SCXML 3.3.2: the <initial> transition's content runs when,
                 // and only when, this state's initial state is entered by
                 // default — not when the state is entered only as the ancestor
                 // of a deeper target.
