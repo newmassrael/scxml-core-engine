@@ -822,7 +822,7 @@ jobs:
     - name: Run W3C Tests
       run: |
         set -o pipefail
-        scripts/gate w3c-go 2>&1 | tee backends/go/go_test_output.log
+        scripts/gate w3c-go 2>&1 | tee go_test_output.log
 
     - name: Upload Test Log
       uses: actions/upload-artifact@v7
