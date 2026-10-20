@@ -15,7 +15,7 @@
 
 mod common;
 
-use common::hostile_document::{code_structure, document, generate, repo_root, BACKENDS, MARKER};
+use common::hostile_document::{backends, code_structure, document, generate, repo_root, MARKER};
 use common::source_lexing::language_of;
 use sce_build::literal_text::{
     encode_template_literals, escaper_for, ALREADY_FIT_FOR_A_LITERAL, GUARD,
@@ -513,7 +513,7 @@ fn hostile_free_text_stays_inside_the_literal_in_every_backend() {
     let _ = std::fs::remove_dir_all(&scratch);
     let mut failures = Vec::new();
     for hazard in HAZARDS {
-        for lang in BACKENDS {
+        for lang in backends() {
             let base = scratch.join(format!("{hazard:?}")).join(lang);
             let hostile_dir = generate(
                 CODEGEN,

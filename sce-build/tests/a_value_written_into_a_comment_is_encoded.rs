@@ -50,7 +50,7 @@ mod common;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use common::hostile_document::{code_structure, generate, BACKENDS, MARKER};
+use common::hostile_document::{backends, code_structure, generate, MARKER};
 use common::rust_source::code_only;
 use common::source_lexing::{comments_blanked, language_of, structure_mask, Lang};
 use sce_build::comment_text::FILTER;
@@ -660,7 +660,7 @@ fn hostile_text_in_an_echoed_field_stays_out_of_code() {
     for hazard in HAZARDS {
         let mut exercised = 0usize;
         let mut census = Vec::new();
-        for lang in BACKENDS {
+        for lang in backends() {
             let base = scratch.join(format!("{hazard:?}")).join(lang);
             let hostile_dir = generate(
                 CODEGEN,

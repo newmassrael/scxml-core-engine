@@ -26,6 +26,8 @@
 
 use std::process::Command;
 
+use sce_build::generator::Language;
+
 fn sce_codegen_bin() -> String {
     env!("CARGO_BIN_EXE_sce-codegen").to_string()
 }
@@ -249,7 +251,10 @@ fn the_refusal_does_not_depend_on_the_language_asked_for() {
     // reviewer reading a green C++ lane would have no reason to doubt it.
     let t = Tmp::new("langs");
     let doc = t.write("mutual.scxml", MUTUAL);
-    for lang in ["python", "cpp", "rust", "go", "kotlin", "c"] {
+    for lang in Language::ALL
+        .iter()
+        .map(|language| language.canonical_name())
+    {
         let (code, _) = generate(&doc, &t.0, lang);
         assert_ne!(
             code,

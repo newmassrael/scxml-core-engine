@@ -16,6 +16,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use sce_build::forge::standard_host::{document, lookup, TYPES};
+use sce_build::generator::Language;
 use tempfile::tempdir;
 
 fn sce_codegen_bin() -> PathBuf {
@@ -52,7 +53,13 @@ fn run(args: &[&str], doc: &str, siblings: &[(&str, &str)]) -> (bool, String) {
     )
 }
 
-const LANGUAGES: [&str; 6] = ["rust", "go", "kotlin", "python", "cpp", "c11"];
+/// Every backend, by the identifier `-l` takes.
+fn languages() -> Vec<&'static str> {
+    Language::ALL
+        .iter()
+        .map(|language| language.canonical_name())
+        .collect()
+}
 
 /// A `sce-static` statechart that asks `sce-host-kv-get` for `key`, a string
 /// the machine holds with the bound `capacity`, importing the records `request`
@@ -145,7 +152,7 @@ fn the_table_and_the_library_name_each_other() {
 #[test]
 fn a_standard_type_is_served_without_a_declaration() {
     let doc = kv_get("256", REQUEST, RESULT, "key");
-    for language in LANGUAGES {
+    for language in languages() {
         let (ok, text) = run(&["check", "-l", language], &doc, &[]);
         assert!(ok, "{language} refused a standard host invoke: {text}");
         assert!(
@@ -220,7 +227,7 @@ fn a_value_the_machine_computes_is_held_to_the_field_it_supplies() {
     // A string held by a variable whose bound is the field's own is shown to
     // fit, on every backend.
     let doc = kv_get("256", REQUEST, RESULT, "key");
-    for language in LANGUAGES {
+    for language in languages() {
         let (ok, text) = run(&["check", "-l", language], &doc, &[]);
         assert!(ok, "{language}: {text}");
     }

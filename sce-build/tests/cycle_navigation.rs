@@ -24,6 +24,8 @@
 
 use std::process::Command;
 
+use sce_build::generator::Language;
+
 fn bin() -> String {
     env!("CARGO_BIN_EXE_sce-codegen").to_string()
 }
@@ -368,7 +370,10 @@ fn every_backend_accepts_the_expanded_form() {
     // while its emitter refused every conditional expression. It now
     // lowers them to a typed function literal (`go_conditional` in
     // forge/expr.rs), so it takes the expansion like the other five.
-    for lang in ["python", "cpp", "rust", "kotlin", "c", "go"] {
+    for lang in Language::ALL
+        .iter()
+        .map(|language| language.canonical_name())
+    {
         let t = Tmp::new(lang);
         t.write("drivemode.scxml", MODE_ENUM);
         let (rc, _, log) = generate(&t, lang);

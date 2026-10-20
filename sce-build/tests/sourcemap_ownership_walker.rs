@@ -215,6 +215,7 @@ fn walker_fires_when_no_marker_reads_back() {
 #[test]
 fn a_marker_names_the_document_it_was_generated_from() {
     use sce_build::forge::sourcemap::read_marker;
+    use sce_build::generator::Language;
 
     const NAME: &str = "back\\slash.scxml";
     // W3C SCXML 5.8: a `<script>` with neither `src` nor content rejects the
@@ -230,7 +231,10 @@ fn a_marker_names_the_document_it_was_generated_from() {
     let tmp = tempfile::TempDir::new().unwrap();
     let mut failures = Vec::new();
     for (path_kind, document) in [("generated", FIXTURE), ("rejected", REJECTED)] {
-        for lang in ["cpp", "c11", "rust", "kotlin", "go", "python"] {
+        for lang in Language::ALL
+            .iter()
+            .map(|language| language.canonical_name())
+        {
             let dir = tmp.path().join(path_kind).join(lang);
             let out_dir = dir.join("out");
             fs::create_dir_all(&out_dir).unwrap();

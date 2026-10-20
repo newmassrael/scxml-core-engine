@@ -27,15 +27,33 @@ mod common;
 
 use std::path::{Path, PathBuf};
 
+use sce_build::generator::Language;
+
 /// Directories scanned for citations. Every file git tracks under them is
 /// read, rather than a list of files — a gate that reads a hand-kept file
 /// list reports full coverage while checking whatever the author had open
 /// (measured, in this repo, at 8%).
 const SCAN_ROOTS: &[&str] = &["sce-build/src", "sce/include", "tools", "tests", "backends"];
 
-const EXTENSIONS: &[&str] = &[
-    "rs", "h", "hpp", "cpp", "inl", "c", "jinja2", "kt", "go", "py",
-];
+/// Extensions scanned that belong to no one backend; each backend's own
+/// source extensions are [`backend_source_extensions`].
+const EXTENSIONS: &[&str] = &["jinja2"];
+
+/// The extensions a backend's sources are written in, all scanned.
+///
+/// A `match` naming every backend rather than a list of extensions, so a new
+/// backend does not compile here until its sources are scanned: a list would
+/// leave its citations unread and the gate would stay green.
+fn backend_source_extensions(language: Language) -> &'static [&'static str] {
+    match language {
+        Language::Rust => &["rs"],
+        Language::Cpp => &["h", "hpp", "cpp", "inl"],
+        Language::Kotlin => &["kt"],
+        Language::Go => &["go"],
+        Language::Python => &["py"],
+        Language::C11 => &["c", "h"],
+    }
+}
 
 /// Spec documents whose citations this gate governs.
 ///
@@ -94,7 +112,8 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
-/// Every tracked source under `SCAN_ROOTS` carrying one of `EXTENSIONS`.
+/// Every tracked source under `SCAN_ROOTS` carrying one of `EXTENSIONS` or
+/// a backend's source extension.
 ///
 /// Tracked rather than walked: a citation in a file nobody committed is
 /// nobody's citation, and a walk judged whatever lay beside the sources.
@@ -112,7 +131,12 @@ fn source_files(root: &Path) -> Vec<PathBuf> {
                 && Path::new(rel)
                     .extension()
                     .and_then(|e| e.to_str())
-                    .is_some_and(|e| EXTENSIONS.contains(&e))
+                    .is_some_and(|e| {
+                        EXTENSIONS.contains(&e)
+                            || Language::ALL
+                                .iter()
+                                .any(|language| backend_source_extensions(*language).contains(&e))
+                    })
         })
         .map(|rel| root.join(rel))
         .collect();

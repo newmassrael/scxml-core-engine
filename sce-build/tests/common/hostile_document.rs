@@ -32,13 +32,20 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use sce_build::generator::Language;
+
 use super::source_lexing::{structure_mask, Lang};
 
-/// Every backend `sce-codegen` generates for.
+/// Every backend `sce-codegen` generates for, by its `--lang` value.
 ///
-/// All six, because an encoding rule is per-language and a sweep over five
-/// proves nothing about the sixth.
-pub const BACKENDS: [&str; 6] = ["cpp", "rust", "c", "go", "kotlin", "python"];
+/// All of them, because an encoding rule is per-language and a sweep over
+/// five proves nothing about the sixth.
+pub fn backends() -> Vec<&'static str> {
+    Language::ALL
+        .iter()
+        .map(|language| language.canonical_name())
+        .collect()
+}
 
 /// Where a hostile document carries its markers, and nowhere else.
 pub const MARKER: &str = "INJ_";

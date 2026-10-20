@@ -21,6 +21,8 @@ mod common;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use sce_build::generator::Language;
+
 /// Directory names never scanned anywhere in the tree: third-party
 /// code, build artifacts, gitignored working docs.
 const EXCLUDED_DIR_NAMES: &[&str] = &[
@@ -45,11 +47,27 @@ const EXCLUDED_PATH_PARTS: &[&str] = &[
     "docs/sce-ledger",          // ledger configs document their regeneration source
 ];
 
-/// File extensions under the gate.
+/// File extensions under the gate that belong to no one backend; each
+/// backend's own source extensions are [`backend_source_extensions`].
 const SCANNED_EXTENSIONS: &[&str] = &[
-    "rs", "h", "hpp", "c", "cc", "cpp", "go", "kt", "py", "jinja2", "sh", "yml", "yaml", "toml",
-    "cmake", "scxml", "xsd",
+    "jinja2", "sh", "yml", "yaml", "toml", "cmake", "scxml", "xsd",
 ];
+
+/// The extensions a backend's sources are written in, all under the gate.
+///
+/// A `match` naming every backend rather than a list of extensions, so a new
+/// backend does not compile here until its sources are put under the gate:
+/// a list would leave them out and the gate would stay green.
+fn backend_source_extensions(language: Language) -> &'static [&'static str] {
+    match language {
+        Language::Rust => &["rs"],
+        Language::Cpp => &["h", "hpp", "cc", "cpp"],
+        Language::Kotlin => &["kt"],
+        Language::Go => &["go"],
+        Language::Python => &["py"],
+        Language::C11 => &["c", "h"],
+    }
+}
 
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -73,9 +91,12 @@ fn is_scanned_file(path: &Path) -> bool {
     if path.file_name().is_some_and(|n| n == "CMakeLists.txt") {
         return true;
     }
-    path.extension()
-        .and_then(|e| e.to_str())
-        .is_some_and(|e| SCANNED_EXTENSIONS.contains(&e))
+    path.extension().and_then(|e| e.to_str()).is_some_and(|e| {
+        SCANNED_EXTENSIONS.contains(&e)
+            || Language::ALL
+                .iter()
+                .any(|language| backend_source_extensions(*language).contains(&e))
+    })
 }
 
 fn is_excluded(rel: &str) -> bool {

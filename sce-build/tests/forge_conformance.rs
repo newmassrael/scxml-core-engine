@@ -10652,7 +10652,7 @@ fn an_observer_importing_a_stateful_kind_is_refused_in_every_backend() {
           sce:on-enter="raiseAlarm" sce:on-leave="clearAlarm"/>
   </datamodel>
 </scxml>"#;
-    for lang in SIX_BACKENDS {
+    for lang in sce_build::generator::Language::ALL {
         let refusal = match sce_build::compile_forge_with_imports(
             document,
             sce_build::DocumentLabel::symmetric("observer_with_a_filter"),
@@ -11348,86 +11348,114 @@ fn assert_crossfile_codegen_languages(
     }
 }
 
-/// Cpp/Kotlin/Rust/Go/Python — every backend that supports the importing
-/// kind. C11 is added per-test below for kinds whose C11 import
-/// lowering exists (procedure/validator); filter/observer rows omit
-/// C11 (no C11 import lowering for those kinds).
-const FIVE_BACKENDS: &[sce_build::generator::Language] = &[
-    sce_build::generator::Language::Cpp,
-    sce_build::generator::Language::Kotlin,
-    sce_build::generator::Language::Rust,
-    sce_build::generator::Language::Go,
-    sce_build::generator::Language::Python,
-];
-
-const SIX_BACKENDS: &[sce_build::generator::Language] = &[
-    sce_build::generator::Language::Cpp,
-    sce_build::generator::Language::Kotlin,
-    sce_build::generator::Language::Rust,
-    sce_build::generator::Language::Go,
-    sce_build::generator::Language::Python,
-    sce_build::generator::Language::C11,
-];
+/// Every backend that supports the importing kind. The rows for kinds
+/// whose C11 import lowering exists (procedure/validator) take every
+/// backend, `Language::ALL`; filter/observer rows take this list, which
+/// omits C11.
+fn backends_lowering_filter_and_observer_imports() -> Vec<sce_build::generator::Language> {
+    sce_build::generator::Language::ALL
+        .iter()
+        .copied()
+        // C11: no C11 import lowering for the filter and observer kinds.
+        .filter(|lang| *lang != sce_build::generator::Language::C11)
+        .collect()
+}
 
 /// Existing golden-backed combos, verified here as codegen-all-languages too.
 #[test]
 fn crossfile_matrix_procedure_codec() {
-    assert_crossfile_codegen_languages("crossfile_procedure_codec", SIX_BACKENDS);
+    assert_crossfile_codegen_languages(
+        "crossfile_procedure_codec",
+        sce_build::generator::Language::ALL,
+    );
 }
 
 #[test]
 fn crossfile_matrix_procedure_codec_mutate() {
-    assert_crossfile_codegen_languages("crossfile_procedure_codec_mutate", SIX_BACKENDS);
+    assert_crossfile_codegen_languages(
+        "crossfile_procedure_codec_mutate",
+        sce_build::generator::Language::ALL,
+    );
 }
 
 #[test]
 fn crossfile_matrix_procedure_filter() {
-    assert_crossfile_codegen_languages("crossfile_procedure_filter", SIX_BACKENDS);
+    assert_crossfile_codegen_languages(
+        "crossfile_procedure_filter",
+        sce_build::generator::Language::ALL,
+    );
 }
 
 #[test]
 fn crossfile_matrix_validator_transform() {
-    assert_crossfile_codegen_languages("crossfile_validator_transform", SIX_BACKENDS);
+    assert_crossfile_codegen_languages(
+        "crossfile_validator_transform",
+        sce_build::generator::Language::ALL,
+    );
 }
 
 #[test]
 fn crossfile_matrix_validator_transform_widening() {
-    assert_crossfile_codegen_languages("crossfile_validator_transform_widening", SIX_BACKENDS);
+    assert_crossfile_codegen_languages(
+        "crossfile_validator_transform_widening",
+        sce_build::generator::Language::ALL,
+    );
 }
 
 #[test]
 fn crossfile_matrix_filter_transform() {
-    assert_crossfile_codegen_languages("crossfile_filter_transform", FIVE_BACKENDS);
+    assert_crossfile_codegen_languages(
+        "crossfile_filter_transform",
+        &backends_lowering_filter_and_observer_imports(),
+    );
 }
 
 #[test]
 fn crossfile_matrix_observer_condition() {
-    assert_crossfile_codegen_languages("crossfile_observer_condition", FIVE_BACKENDS);
+    assert_crossfile_codegen_languages(
+        "crossfile_observer_condition",
+        &backends_lowering_filter_and_observer_imports(),
+    );
 }
 
 #[test]
 fn crossfile_matrix_validator_codec() {
-    assert_crossfile_codegen_languages("crossfile_validator_codec", SIX_BACKENDS);
+    assert_crossfile_codegen_languages(
+        "crossfile_validator_codec",
+        sce_build::generator::Language::ALL,
+    );
 }
 
 #[test]
 fn crossfile_matrix_validator_filter() {
-    assert_crossfile_codegen_languages("crossfile_validator_filter", SIX_BACKENDS);
+    assert_crossfile_codegen_languages(
+        "crossfile_validator_filter",
+        sce_build::generator::Language::ALL,
+    );
 }
 
 #[test]
 fn crossfile_matrix_validator_condition() {
-    assert_crossfile_codegen_languages("crossfile_validator_condition", SIX_BACKENDS);
+    assert_crossfile_codegen_languages(
+        "crossfile_validator_condition",
+        sce_build::generator::Language::ALL,
+    );
 }
 
 #[test]
 fn crossfile_matrix_validator_lookup() {
-    assert_crossfile_codegen_languages("crossfile_validator_lookup", SIX_BACKENDS);
+    assert_crossfile_codegen_languages(
+        "crossfile_validator_lookup",
+        sce_build::generator::Language::ALL,
+    );
 }
 
 #[test]
 fn crossfile_matrix_validator_interpolation() {
-    assert_crossfile_codegen_languages("crossfile_validator_interpolation", SIX_BACKENDS);
+    assert_crossfile_codegen_languages(
+        "crossfile_validator_interpolation",
+        sce_build::generator::Language::ALL,
+    );
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -12407,13 +12435,13 @@ fn forge_parent_tag_inversion_beta_emits_caller_tag_signature() {
     // β leaf must compile on all 6 backends to satisfy the
     // 5-backend parity contract — smoke each language so a
     // single-language regression doesn't slip through.
-    for lang in [
-        sce_build::generator::Language::Cpp,
-        sce_build::generator::Language::Kotlin,
-        sce_build::generator::Language::Go,
-        sce_build::generator::Language::Python,
-        sce_build::generator::Language::C11,
-    ] {
+    for lang in sce_build::generator::Language::ALL
+        .iter()
+        .copied()
+        // Rust: compiled outside this loop, the parent above and the leaf
+        // below, where its output is asserted on.
+        .filter(|lang| *lang != sce_build::generator::Language::Rust)
+    {
         let mut opts = sce_build::ForgeCompileOptions::default();
         if matches!(lang, sce_build::generator::Language::Go) {
             opts.go_module_prefix = Some("github.com/test/codec".to_string());
@@ -19926,14 +19954,7 @@ fn flag_inversion_emits_typed_param_and_predicate_consumption() {
 
     // Compile-smoke on all 6 backends so a single-language regression
     // surfaces here rather than via the conformance compile-gate.
-    for lang in [
-        sce_build::generator::Language::Rust,
-        sce_build::generator::Language::Cpp,
-        sce_build::generator::Language::Kotlin,
-        sce_build::generator::Language::Go,
-        sce_build::generator::Language::Python,
-        sce_build::generator::Language::C11,
-    ] {
+    for lang in sce_build::generator::Language::ALL.iter().copied() {
         let mut opts = sce_build::ForgeCompileOptions::default();
         if matches!(lang, sce_build::generator::Language::Go) {
             opts.go_module_prefix = Some("github.com/test/codec".to_string());
@@ -20092,14 +20113,7 @@ fn flag_inversion_variant_arm_flag_bind_threading() {
     // Compile-smoke on all 6 backends so a single-language regression
     // surfaces immediately rather than via the per-language conformance
     // golden tests.
-    for lang in [
-        sce_build::generator::Language::Rust,
-        sce_build::generator::Language::Cpp,
-        sce_build::generator::Language::Kotlin,
-        sce_build::generator::Language::Go,
-        sce_build::generator::Language::Python,
-        sce_build::generator::Language::C11,
-    ] {
+    for lang in sce_build::generator::Language::ALL.iter().copied() {
         let mut opts = sce_build::ForgeCompileOptions::default();
         if matches!(lang, sce_build::generator::Language::Go) {
             opts.go_module_prefix = Some("github.com/test/codec".to_string());

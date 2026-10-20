@@ -69,14 +69,7 @@ fn enum_template_ships_on_all_six_backends() {
     // Enum lowers to a backend-native typed enum on every Generic-class
     // backend; the matrix flips in lockstep with the 6
     // templates under `tools/codegen/templates/forge/<lang>/enum.<ext>.jinja2`.
-    for lang in [
-        Language::Cpp,
-        Language::Rust,
-        Language::Kotlin,
-        Language::Go,
-        Language::Python,
-        Language::C11,
-    ] {
+    for lang in Language::ALL.iter().copied() {
         assert!(
             template_ships(ForgeKind::Enum, lang),
             "Enum codegen expects template_ships(Enum, {lang:?}) = true; \
@@ -446,14 +439,7 @@ fn strict_variants_defaults_to_strict_and_reaches_every_backend() {
     let explicit_strict = enum_doc(Some("true"));
     let explicit_open = enum_doc(Some("false"));
 
-    for lang in [
-        Language::Cpp,
-        Language::Rust,
-        Language::Kotlin,
-        Language::Go,
-        Language::Python,
-        Language::C11,
-    ] {
+    for lang in Language::ALL.iter().copied() {
         let a = compile_forge_from_string(&implicit, SHARED_LABEL, lang)
             .unwrap_or_else(|e| panic!("{lang:?} compile (implicit): {e:?}"));
         let b = compile_forge_from_string(&explicit_strict, SHARED_LABEL, lang)

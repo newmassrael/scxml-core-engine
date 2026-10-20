@@ -22,6 +22,8 @@
 
 use std::process::Command;
 
+use sce_build::generator::Language;
+
 fn bin() -> String {
     env!("CARGO_BIN_EXE_sce-codegen").to_string()
 }
@@ -357,7 +359,13 @@ fn an_enum_typed_input_generates_instead_of_panicking() {
     let t = Tmp::new("enum_param");
     t.write("fueltype.scxml", FUEL_ENUM);
     let doc = t.write("names_one.scxml", NAMES_ONE);
-    for lang in ["python", "cpp", "rust", "kotlin", "c"] {
+    for lang in Language::ALL
+        .iter()
+        .copied()
+        // excluded: reason not found in the tree, see report
+        .filter(|language| *language != Language::Go)
+        .map(Language::canonical_name)
+    {
         let out = t.0.join(format!("out_{lang}"));
         std::fs::create_dir_all(&out).expect("create output dir");
         let run = Command::new(bin())

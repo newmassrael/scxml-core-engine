@@ -185,20 +185,21 @@ fn every_backend_declares_which_entry_point_the_machine_needs() {
 /// Kotlin `tick()` and Python `advance_time` each drive children, and their
 /// plain-macrostep sibling does not. C11 is deliberately absent — see
 /// [`c11_drives_an_invoked_child_from_the_macrostep_itself`].
-const CHILD_NEEDS_THE_PARENT_TICKED: &[Language] = &[
-    Language::Rust,
-    Language::Cpp,
-    Language::Kotlin,
-    Language::Go,
-    Language::Python,
-];
+fn child_needs_the_parent_ticked() -> Vec<Language> {
+    Language::ALL
+        .iter()
+        .copied()
+        // C11: its parent drives an invoked child from its own macrostep.
+        .filter(|lang| *lang != Language::C11)
+        .collect()
+}
 
 /// The case the union exists for, and the one a naive reading of "needs event
 /// scheduler" gets wrong: the parent owns no scheduler entries at all, and
 /// still cannot be driven with a plain macrostep loop.
 #[test]
 fn a_parent_whose_child_needs_ticking_needs_ticking_too() {
-    for &lang in CHILD_NEEDS_THE_PARENT_TICKED {
+    for lang in child_needs_the_parent_ticked() {
         assert!(
             declares_scheduler_requirement(lang, INVOKES_A_CHILD, "invokes_child"),
             "{lang:?}: the child's queue is reachable only through the parent's tick",
@@ -260,7 +261,7 @@ fn the_field_the_templates_read_agrees_with_the_method_the_manifest_reads() {
             model.needs_event_scheduler_driving(),
             "{name}: the analyzer's field and the model's method are one verdict",
         );
-        for &lang in CHILD_NEEDS_THE_PARENT_TICKED {
+        for lang in child_needs_the_parent_ticked() {
             assert_eq!(
                 model.needs_tick_driving,
                 declares_scheduler_requirement(lang, source, name),

@@ -18,6 +18,8 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use sce_build::generator::Language;
+
 const FIXTURE: &str = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
        initial="s1" datamodel="ecmascript" name="atomic1">
@@ -101,7 +103,13 @@ fn sourcemap_shape_matches_spec() {
 /// before comparing.
 #[test]
 fn sourcemap_byte_identity_across_backends() {
-    let backends = ["rust", "cpp", "kotlin", "go", "c"];
+    let backends: Vec<&str> = Language::ALL
+        .iter()
+        .copied()
+        // excluded: reason not found in the tree, see report
+        .filter(|language| *language != Language::Python)
+        .map(Language::canonical_name)
+        .collect();
     let mut normalised: Vec<String> = Vec::new();
     for lang in &backends {
         let (tmp, json) = generate(lang);

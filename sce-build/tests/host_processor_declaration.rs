@@ -31,6 +31,8 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use sce_build::generator::Language;
+
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -956,7 +958,16 @@ fn a_declared_type_emits_a_dispatch_for_kotlin() {
 /// outright for some unrelated reason.
 #[test]
 fn those_backends_accept_the_same_document_undeclared() {
-    for lang in ["cpp", "c11", "kotlin", "go", "python"] {
+    for lang in Language::ALL
+        .iter()
+        .copied()
+        // Rust: its undeclared run is
+        // `without_a_declaration_the_build_names_the_unserved_send`; the
+        // backends here are the ones with an
+        // `a_declared_type_emits_a_dispatch_for_*` test above.
+        .filter(|language| *language != Language::Rust)
+        .map(Language::canonical_name)
+    {
         let out = out_dir(&format!("accept-{lang}"));
         let r = run(&[
             "generate",
@@ -1024,7 +1035,13 @@ fn the_manifest_says_when_the_host_must_register_a_mesh_router() {
         assert_eq!(r.exit, Some(0), "{lang}: {}", r.stderr);
         manifest(&r)["needs_mesh_router"].clone()
     };
-    for lang in ["rust", "kotlin", "go", "python", "c11"] {
+    for lang in Language::ALL
+        .iter()
+        .copied()
+        // C++: generates its own Mesh router, so it needs none from the host.
+        .filter(|language| *language != Language::Cpp)
+        .map(Language::canonical_name)
+    {
         assert_eq!(needs(&mesh, lang), serde_json::json!(true), "{lang}");
     }
     assert_eq!(needs(&mesh, "cpp"), serde_json::json!(false));

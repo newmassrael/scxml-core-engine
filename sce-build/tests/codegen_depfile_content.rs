@@ -65,12 +65,19 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use sce_build::generator::Language;
 use tempfile::TempDir;
 
 /// Every backend, so a defect present on one is not hidden by five
 /// passing. Defect 3 above was invisible on `cpp` / `c11`, whose loader
-/// scope is the whole tree, and live on the other four.
-const LANGUAGES: &[&str] = &["cpp", "rust", "kotlin", "go", "python", "c11"];
+/// scope is the whole tree, and live on the other four. Each is the
+/// `--lang` value the CLI takes for that backend.
+fn languages() -> Vec<&'static str> {
+    Language::ALL
+        .iter()
+        .map(|language| language.canonical_name())
+        .collect()
+}
 
 /// Lower bound on templates pruned by a single probe, read off a run
 /// rather than guessed (the smallest measured was 176, on `c11`
@@ -82,7 +89,7 @@ const MIN_PRUNED_PER_PROBE: usize = 100;
 /// One probe per (backend, pipeline). Pinned exactly: a scenario that
 /// stops being generated must fail here rather than quietly shrink the
 /// matrix.
-const EXPECTED_PROBES: usize = LANGUAGES.len() * 2;
+const EXPECTED_PROBES: usize = Language::ALL.len() * 2;
 
 fn codegen_bin() -> &'static str {
     env!("CARGO_BIN_EXE_sce-codegen")
@@ -617,7 +624,7 @@ fn every_declared_depfile_names_the_templates_its_render_reads() {
     let mut violations = Vec::new();
     let mut probes = 0usize;
 
-    for lang in LANGUAGES {
+    for lang in languages() {
         for pipeline in [Pipeline::Statechart, Pipeline::Forge] {
             probe(lang, pipeline, &mut violations);
             probes += 1;
@@ -657,7 +664,7 @@ fn forge_imports_are_declared_prerequisites() {
     let mut violations = Vec::new();
     let mut probes = 0usize;
 
-    for lang in LANGUAGES {
+    for lang in languages() {
         for target in CHAIN_DOCS {
             probes += 1;
             let case = format!("{lang}/{}", target.filename);
@@ -716,7 +723,7 @@ fn forge_imports_are_declared_prerequisites() {
         }
     }
 
-    let expected = LANGUAGES.len() * CHAIN_DOCS.len();
+    let expected = Language::ALL.len() * CHAIN_DOCS.len();
     assert_eq!(
         probes, expected,
         "ran {probes} probes, expected {expected} — the chain shrank, and a chain of one \
@@ -768,7 +775,7 @@ fn a_depfile_never_names_a_file_the_run_wrote() {
     let mut probes = 0usize;
     let mut total_written = 0usize;
 
-    for lang in LANGUAGES {
+    for lang in languages() {
         probes += 1;
         let work = TempDir::new().expect("tempdir");
         // Input and output share a directory, as the mesh §9.6.6 stages
@@ -842,9 +849,9 @@ fn a_depfile_never_names_a_file_the_run_wrote() {
 
     assert_eq!(
         probes,
-        LANGUAGES.len(),
+        Language::ALL.len(),
         "ran {probes} probes, expected {} — a backend stopped being covered",
-        LANGUAGES.len(),
+        Language::ALL.len(),
     );
     // Without a write, the disjointness above holds vacuously on every
     // backend and the gate reports green having compared nothing.
@@ -951,7 +958,7 @@ fn a_depfile_names_the_primary_artefact_and_no_other() {
     let mut violations = Vec::new();
     let mut runs_with_several_artefacts = 0usize;
 
-    for lang in LANGUAGES {
+    for lang in languages() {
         let work = TempDir::new().expect("tempdir");
         let doc = write_sources(work.path(), Pipeline::Statechart);
         let out = work.path().join("out");
@@ -1025,7 +1032,7 @@ fn a_rejected_document_still_writes_its_depfile() {
     let mut violations = Vec::new();
     let mut probes = 0usize;
 
-    for lang in LANGUAGES {
+    for lang in languages() {
         probes += 1;
         let work = TempDir::new().expect("tempdir");
         let doc = work.path().join("test301.scxml");
@@ -1068,9 +1075,9 @@ fn a_rejected_document_still_writes_its_depfile() {
 
     assert_eq!(
         probes,
-        LANGUAGES.len(),
+        Language::ALL.len(),
         "ran {probes} probes, expected {} — a backend stopped being covered",
-        LANGUAGES.len(),
+        Language::ALL.len(),
     );
     assert!(
         violations.is_empty(),
@@ -1106,7 +1113,7 @@ fn source_set_members_are_declared_prerequisites() {
     let mut violations = Vec::new();
     let mut probes = 0usize;
 
-    for lang in LANGUAGES {
+    for lang in languages() {
         for pipeline in [Pipeline::Statechart, Pipeline::Forge] {
             probes += 1;
             let case = format!("{lang}/{}", pipeline.label());
@@ -1195,7 +1202,7 @@ fn the_oracle_is_declared_only_where_it_is_read() {
     let mut violations = Vec::new();
     let mut stripped_total = 0usize;
 
-    for lang in LANGUAGES {
+    for lang in languages() {
         let work = TempDir::new().expect("tempdir");
         let manifest = stage_conformance_catalog(&work.path().join("forge"));
         let oracle = manifest
@@ -1244,7 +1251,7 @@ fn the_oracle_is_declared_only_where_it_is_read() {
         // C11 bakes the tolerance and the per-fixture cases, so it reads the
         // oracle whatever the reject vectors do; the other five had nothing
         // else to take from it.
-        let expected = *lang == "c11";
+        let expected = lang == Language::C11.canonical_name();
         if named != expected {
             violations.push(format!(
                 "{lang}: with no reject vectors in the catalog the oracle is {} as a \
@@ -1263,10 +1270,10 @@ fn the_oracle_is_declared_only_where_it_is_read() {
         violations.join("\n\n"),
     );
     assert!(
-        stripped_total >= LANGUAGES.len(),
+        stripped_total >= Language::ALL.len(),
         "stripped {stripped_total} reject arrays across {} probes — under one per probe \
          means a probe ran against an unmodified catalog",
-        LANGUAGES.len(),
+        Language::ALL.len(),
     );
 }
 
@@ -1290,7 +1297,7 @@ fn the_conformance_harness_declares_the_inputs_it_reads() {
     let mut violations = Vec::new();
     let mut probes = 0usize;
 
-    for lang in LANGUAGES {
+    for lang in languages() {
         probes += 1;
         let work = TempDir::new().expect("tempdir");
         let manifest = stage_conformance_catalog(&work.path().join("forge"));
@@ -1480,9 +1487,9 @@ fn the_conformance_harness_declares_the_inputs_it_reads() {
 
     assert_eq!(
         probes,
-        LANGUAGES.len(),
+        Language::ALL.len(),
         "ran {probes} probes, expected {} — a backend stopped being covered",
-        LANGUAGES.len(),
+        Language::ALL.len(),
     );
     assert!(
         violations.is_empty(),

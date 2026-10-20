@@ -30,10 +30,16 @@ use std::process::{Command, Output, Stdio};
 
 use regex::Regex;
 use sce_build::filters;
+use sce_build::generator::Language;
 use sce_build::toolchain;
 
-/// The six backends, by the identifier `generate -l` takes.
-const BACKENDS: [&str; 6] = ["cpp", "c11", "rust", "go", "kotlin", "python"];
+/// Every backend, by the identifier `generate -l` takes.
+fn backends() -> Vec<&'static str> {
+    Language::ALL
+        .iter()
+        .map(|language| language.canonical_name())
+        .collect()
+}
 
 /// The machine's name: the file stem, which every backend derives its names from.
 const STEM: &str = "ttemit";
@@ -424,7 +430,7 @@ fn every_backend_carries_the_table_the_export_lists() {
         "the fixture must reach an absent target, an absent event and an annotation to escape"
     );
 
-    for lang in BACKENDS {
+    for lang in backends() {
         let out = dir.path().join(format!("out_{lang}"));
         generate(lang, &out, &doc);
         let source = generated_source(lang, &out);
@@ -447,7 +453,7 @@ fn the_table_carries_the_hash_of_the_header_of_its_file() {
     let dir = tempfile::tempdir().expect("tempdir");
     let doc = write_doc(dir.path(), DOC);
     let header_hash = Regex::new(r"source-hash:\s*([0-9a-f]{64})").unwrap();
-    for lang in BACKENDS {
+    for lang in backends() {
         let out = dir.path().join(format!("out_{lang}"));
         generate(lang, &out, &doc);
         let source = generated_source(lang, &out);
@@ -496,7 +502,7 @@ fn the_table_is_emitted_only_when_the_document_declares_it() {
     // hash as a named constant (`SOURCE_HASH`, `<Machine>SourceHash`, the C++
     // accessor `sourceHash`), distinct from the `source-hash` header comment.
     let marker = Regex::new(r"SOURCE_HASH|SourceHash|sourceHash").unwrap();
-    for lang in BACKENDS {
+    for lang in backends() {
         let without = dir.path().join(format!("without_{lang}"));
         let with = dir.path().join(format!("with_{lang}"));
         generate(lang, &without, &without_doc);
@@ -564,7 +570,15 @@ fn every_backend_writes_an_annotation_as_the_literal_its_language_needs() {
         annotations.iter().any(|a| a.contains('$')),
         "the document must carry a `$` for this to ask about it"
     );
-    for lang in ["cpp", "c11", "rust", "go", "kotlin"] {
+    for lang in Language::ALL
+        .iter()
+        .copied()
+        // Python: `literal_of` writes no Python literal; its table is held by
+        // `the_python_table_imports_and_holds_the_export`, which imports the
+        // module and compares the values the literals build.
+        .filter(|language| *language != Language::Python)
+        .map(Language::canonical_name)
+    {
         let out = work.join(format!("out_{lang}"));
         generate(lang, &out, &doc);
         let source = generated_source(lang, &out);
@@ -611,7 +625,7 @@ fn an_annotation_round_trips_through_every_backend_unread() {
     let expected = expected_entries(&rows);
     assert_eq!(expected[0].annotation, tokens.join(" "));
     let events = literal_events(&expected);
-    for lang in BACKENDS {
+    for lang in backends() {
         let out = dir.path().join(format!("out_{lang}"));
         generate(lang, &out, &doc);
         let table = read_table(lang, &generated_source(lang, &out), &machine_name());
@@ -634,7 +648,7 @@ fn a_machine_without_transitions_has_an_empty_table() {
 "#;
     let dir = tempfile::tempdir().expect("tempdir");
     let doc = write_doc(dir.path(), doc_text);
-    for lang in BACKENDS {
+    for lang in backends() {
         let out = dir.path().join(format!("out_{lang}"));
         generate(lang, &out, &doc);
         let source = generated_source(lang, &out);

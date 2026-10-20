@@ -46,6 +46,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use sce_build::generator::Language;
+
 fn sce_codegen_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_sce-codegen"))
 }
@@ -81,8 +83,13 @@ impl Drop for ScratchDir {
     }
 }
 
-/// Every backend whose templates bind `_name`.
-const BACKENDS: [&str; 6] = ["rust", "cpp", "go", "kotlin", "python", "c11"];
+/// Every backend, by its `--lang` value: the templates of each bind `_name`.
+fn backends() -> Vec<&'static str> {
+    Language::ALL
+        .iter()
+        .map(|language| language.canonical_name())
+        .collect()
+}
 
 /// W3C test 323 is the fixture because it is the one the specification
 /// sentence belongs to, and because it needs a datamodel — the binding
@@ -204,7 +211,7 @@ fn every_backend_binds_the_declared_name_and_not_the_file_stem() {
     let doc = stage("stem_is_not_the_name", Some(DECLARED), scratch.path());
 
     let mut bound = 0usize;
-    for backend in BACKENDS {
+    for backend in backends() {
         let text = generate(&doc, backend);
         let sites: Vec<String> = binding_sites(&text)
             .into_iter()
@@ -237,7 +244,7 @@ fn an_undeclared_name_falls_back_to_the_document_identity() {
     let scratch = ScratchDir::new("w3c-name-none");
     let doc = stage("identity_from_the_document", None, scratch.path());
 
-    for backend in BACKENDS {
+    for backend in backends() {
         let text = generate(&doc, backend);
         let sites = binding_sites(&text);
         assert!(
@@ -278,7 +285,7 @@ fn an_author_hostile_name_survives_every_literal_boundary_it_crosses() {
         path
     };
 
-    for backend in BACKENDS {
+    for backend in backends() {
         let text = generate(&doc, backend);
         // The raw value must never appear unescaped: that is exactly the
         // shape that closes the host literal early.

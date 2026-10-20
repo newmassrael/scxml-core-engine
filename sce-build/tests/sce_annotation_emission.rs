@@ -20,11 +20,18 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use sce_build::generator::Language;
 use sce_build::provenance::SpecProvenance;
 
-/// The six backends this gate speaks for. Named once so a test that
-/// quietly stopped covering one is a diff rather than an omission.
-const BACKENDS: [&str; 6] = ["python", "rust", "cpp", "c", "go", "kotlin"];
+/// The backends this gate speaks for, by their `--lang` values. Taken
+/// from `Language::ALL` so a backend added there is covered here without
+/// anyone remembering to list it.
+fn backends() -> Vec<&'static str> {
+    Language::ALL
+        .iter()
+        .map(|language| language.canonical_name())
+        .collect()
+}
 
 fn sce_codegen_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_sce-codegen"))
@@ -177,7 +184,7 @@ const BARE_SCXML: &str = r#"<?xml version="1.0"?>
 /// is compiled there, and every backend let annotation text into code
 /// while that sentence stood.
 fn assert_all_backends_emit_annotations(scratch: &Path) {
-    for lang in BACKENDS {
+    for lang in backends() {
         let out_dir = scratch.join(lang);
         std::fs::create_dir_all(&out_dir).expect("create lang scratch");
         let scxml = write_scxml(&out_dir, "annot_emit", ANNOTATED_SCXML);
@@ -214,7 +221,7 @@ fn assert_all_backends_emit_annotations(scratch: &Path) {
 /// emits the empty string in that case, so the surrounding
 /// template's existing whitespace flows through unchanged.
 fn assert_no_backend_emits_annotations(scratch: &Path) {
-    for lang in BACKENDS {
+    for lang in backends() {
         let out_dir = scratch.join(format!("{lang}_bare"));
         std::fs::create_dir_all(&out_dir).expect("create lang scratch");
         let scxml = write_scxml(&out_dir, "annot_emit", BARE_SCXML);
@@ -276,7 +283,7 @@ fn every_backend_emits_the_spec_anchors_and_only_those() {
     std::fs::create_dir_all(&scratch).expect("create scratch");
 
     let declared = declared_anchors();
-    for lang in BACKENDS {
+    for lang in backends() {
         let out_dir = scratch.join(lang);
         std::fs::create_dir_all(&out_dir).expect("create lang scratch");
         let scxml = write_scxml(&out_dir, "annot_emit", ANNOTATED_SCXML);
@@ -393,10 +400,13 @@ const HOSTILE_MARKERS: [&str; 6] = [
 /// C11 block comment when it opens at the start, closes at the end, and
 /// closes nowhere in between.
 fn comment_violations(lang: &str, text: &str) -> Vec<String> {
-    let opener = match lang {
-        "python" => "#",
-        "c" => "/*",
-        _ => "//",
+    let language: Language = lang
+        .parse()
+        .unwrap_or_else(|e| panic!("{lang} names no backend: {e}"));
+    let opener = match language {
+        Language::Python => "#",
+        Language::C11 => "/*",
+        Language::Rust | Language::Cpp | Language::Kotlin | Language::Go => "//",
     };
     text.lines()
         .filter(|line| HOSTILE_MARKERS.iter().any(|m| line.contains(m)))
@@ -404,7 +414,8 @@ fn comment_violations(lang: &str, text: &str) -> Vec<String> {
             let body = line.trim();
             let intact = body.starts_with(opener)
                 && !body.ends_with('\\')
-                && (lang != "c" || (body.ends_with("*/") && body.matches("*/").count() == 1));
+                && (language != Language::C11
+                    || (body.ends_with("*/") && body.matches("*/").count() == 1));
             !intact
         })
         .map(str::to_string)
@@ -438,7 +449,7 @@ fn hostile_annotation_text_stays_inside_its_comment() {
     let _ = std::fs::remove_dir_all(&scratch);
     std::fs::create_dir_all(&scratch).expect("create scratch");
 
-    for lang in BACKENDS {
+    for lang in backends() {
         let out_dir = scratch.join(lang);
         std::fs::create_dir_all(&out_dir).expect("create lang scratch");
         let scxml = write_scxml(&out_dir, "annot_emit", HOSTILE_SCXML);

@@ -38,14 +38,7 @@ use sce_build::generator::{Language, ScriptEngineTarget};
 /// flag cannot have taken an artifact away from anyone.
 #[test]
 fn every_backend_supports_its_own_default() {
-    for language in [
-        Language::Rust,
-        Language::Cpp,
-        Language::Kotlin,
-        Language::Go,
-        Language::Python,
-        Language::C11,
-    ] {
+    for language in Language::ALL.iter().copied() {
         let default = language.default_script_engine_target();
         assert!(
             language.supports_script_engine_target(default),
@@ -60,14 +53,7 @@ fn every_backend_supports_its_own_default() {
 /// ways that must not drift.
 #[test]
 fn the_default_target_and_the_manifest_field_are_one_answer() {
-    for language in [
-        Language::Rust,
-        Language::Cpp,
-        Language::Kotlin,
-        Language::Go,
-        Language::Python,
-        Language::C11,
-    ] {
+    for language in Language::ALL.iter().copied() {
         assert_eq!(
             language.default_script_engine_target().wire_name(),
             language.script_engine_language(),

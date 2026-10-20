@@ -86,7 +86,14 @@ fn refusal(body: &str) -> (Enumeration, String, Clash, Vec<&'static str>) {
     seen.expect("six backends")
 }
 
-const EVERY_BACKEND: [&str; 6] = ["rust", "cpp", "kotlin", "go", "python", "c11"];
+/// Every backend, as a refusal names them: by canonical name, in
+/// `Language::ALL` order.
+fn every_backend() -> Vec<&'static str> {
+    Language::ALL
+        .iter()
+        .map(|language| language.canonical_name())
+        .collect()
+}
 
 #[test]
 fn two_states_that_differ_only_in_case_are_refused_for_every_backend() {
@@ -98,7 +105,7 @@ fn two_states_that_differ_only_in_case_are_refused_for_every_backend() {
     );
     assert_eq!(enumeration, Enumeration::State);
     assert_eq!((name.as_str(), clash), ("idle", Clash::Name("Idle".into())));
-    assert_eq!(backends, EVERY_BACKEND);
+    assert_eq!(backends, every_backend());
 }
 
 #[test]
@@ -128,7 +135,7 @@ fn a_dash_and_an_underscore_in_a_state_are_one_member_everywhere() {
         (name.as_str(), clash),
         ("door_open", Clash::Name("door-open".into()))
     );
-    assert_eq!(backends, EVERY_BACKEND);
+    assert_eq!(backends, every_backend());
 }
 
 #[test]
@@ -147,7 +154,14 @@ fn a_dotted_and_an_underscored_event_are_refused_where_they_fold() {
         (name.as_str(), clash),
         ("door_open", Clash::Name("door.open".into()))
     );
-    assert_eq!(backends, ["rust", "cpp", "go", "python", "c11"]);
+    let folding: Vec<&str> = Language::ALL
+        .iter()
+        .copied()
+        // Kotlin: keeps the dotted and the underscored event apart.
+        .filter(|language| *language != Language::Kotlin)
+        .map(Language::canonical_name)
+        .collect();
+    assert_eq!(backends, folding);
 }
 
 #[test]
@@ -173,7 +187,7 @@ fn an_event_spelled_as_the_wildcards_member_is_refused_for_every_backend() {
         (name.as_str(), clash),
         ("wildcard", Clash::Name("Wildcard".to_string()))
     );
-    assert_eq!(backends, EVERY_BACKEND);
+    assert_eq!(backends, every_backend());
 }
 
 #[test]

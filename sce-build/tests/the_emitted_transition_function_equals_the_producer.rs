@@ -45,8 +45,13 @@ use sce_build::toolchain;
 /// lifecycle that reaches every selection rule.
 const FIXTURES: [&str; 2] = ["flat_lifecycle", "nested_lifecycle"];
 
-/// The six backends, by the identifier `generate -l` takes.
-const BACKENDS: [&str; 6] = ["rust", "cpp", "c11", "go", "kotlin", "python"];
+/// Every backend, by the identifier `generate -l` takes.
+fn backends() -> Vec<&'static str> {
+    Language::ALL
+        .iter()
+        .map(|language| language.canonical_name())
+        .collect()
+}
 
 /// The template each backend renders the function with, under
 /// `tools/codegen/templates/`.
@@ -313,7 +318,7 @@ fn every_fixture_generates_its_machine_and_its_function_in_every_backend() {
     // `SourceHash`) and the literal after it, across a line break if a
     // formatter put one there.
     let carried = Regex::new(r#"(?:SOURCE_HASH|SourceHash)[^"]*"([0-9a-f]{64})""#).unwrap();
-    for lang in BACKENDS {
+    for lang in backends() {
         for stem in FIXTURES {
             let out = scratch(&format!("generated_{lang}_{stem}"));
             generate(lang, &fixture(stem), &out);
@@ -461,7 +466,7 @@ fn written_cells(lang: &str, source: &str, stem: &str) -> Vec<Cell> {
 /// toolchain.
 #[test]
 fn the_generated_source_holds_the_producers_table() {
-    for lang in BACKENDS {
+    for lang in backends() {
         for stem in FIXTURES {
             let out = scratch(&format!("source_{lang}_{stem}"));
             generate(lang, &fixture(stem), &out);
@@ -2267,7 +2272,7 @@ fn an_undeclared_document_is_generated_without_a_function() {
     );
     let doc = work.join("flat_lifecycle.scxml");
     std::fs::write(&doc, without).expect("write the document");
-    for lang in BACKENDS {
+    for lang in backends() {
         let out = work.join(format!("out_{lang}"));
         generate(lang, &doc, &out);
         assert!(
@@ -2288,7 +2293,7 @@ fn an_undeclared_document_is_generated_without_a_function() {
 fn every_backend_accepts_the_declaration() {
     let doc = fixture("flat_lifecycle");
     let doc_str = doc.to_str().unwrap();
-    for lang in BACKENDS {
+    for lang in backends() {
         output_ok(
             codegen(&["--error-format=json", "check", doc_str, "-l", lang]),
             &format!("check -l {lang}"),
@@ -2303,7 +2308,7 @@ fn every_backend_accepts_the_declaration() {
     for verdict in verdicts {
         assert_eq!(verdict["status"], "ok", "{verdict}");
     }
-    assert_eq!(verdicts.len(), BACKENDS.len(), "{manifest}");
+    assert_eq!(verdicts.len(), Language::ALL.len(), "{manifest}");
 }
 
 /// The declaration has one value; any other is refused with the attribute's
