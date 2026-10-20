@@ -4637,15 +4637,15 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             ],
         },
         // ── EventSchema cross-
-        //    machine EventSchema mismatch. For a partial coverage
-        //    `actual` carries the sender's view ("absent" tag) and
-        //    `expected` the receiver's. Two schemas that are not
-        //    revisions of one carry neither: the field they part on
-        //    is written in the schema documents, not in the deploy
-        //    file this record is located in, so the message names it.
-        //    `key_fragments` joins event + both machine names + reason
-        //    tag (+ the field) so two distinct mismatches in the same
-        //    build collapse to different `fnv1a:...` IDs.
+        //    machine EventSchema mismatch. No reason carries `actual`
+        //    or `expected`: the record is located in the deploy file,
+        //    and neither a schema's presence nor the field two schemas
+        //    part on is a token that file holds (SCE_ERROR_CONTRACT.md
+        //    §2.1 — a value not in the document is not an `actual`), so
+        //    the message names them. `key_fragments` joins event + both
+        //    machine names + reason tag (+ the field) so two distinct
+        //    mismatches in the same build collapse to different
+        //    `fnv1a:...` IDs.
         DeployError::EventSchemaMismatch {
             event_name,
             sender_machine,
@@ -4657,7 +4657,7 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
                 sender_machine.clone(),
                 receiver_machine.clone(),
             ];
-            let (actual, expected) = match reason {
+            match reason {
                 EventSchemaMismatchReason::NotOneSchema { divergence, .. } => {
                     use crate::forge::schema_revision::Divergence;
                     let (tag, field) = match divergence {
@@ -4666,28 +4666,19 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
                     };
                     key_fragments.push(tag.to_string());
                     key_fragments.push(field.clone());
-                    (None, None)
                 }
                 EventSchemaMismatchReason::SenderOnly => {
                     key_fragments.push("sender-only".to_string());
-                    (
-                        Some("schema-declared".to_string()),
-                        Some(vec!["schema-absent".to_string()]),
-                    )
                 }
                 EventSchemaMismatchReason::ReceiverOnly => {
                     key_fragments.push("receiver-only".to_string());
-                    (
-                        Some("schema-absent".to_string()),
-                        Some(vec!["schema-declared".to_string()]),
-                    )
                 }
-            };
+            }
             DiagnosticPayload {
                 code: DiagnosticCode::MeshEventSchemaMismatch,
                 stage: Stage::MeshDeploy,
-                actual,
-                expected,
+                actual: None,
+                expected: None,
                 fix: None,
                 key_fragments,
             }

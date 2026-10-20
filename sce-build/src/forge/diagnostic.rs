@@ -16347,6 +16347,31 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:beb22930fc8f4567","code":"mesh/event-schema-mismatch","stage":"mesh-deploy","message":"cross-machine schema mismatch on event 'job.completed' between sender machine 'alpha' and receiver machine 'beta': the two are not revisions of one schema: both declare field 'elapsed_ms' (sender revision 1, receiver revision 2) and declare it differently (its type, bound, sce:since or sce:default)"}"#,
             ),
+            // A schema on one side only: no `actual` or `expected`, since
+            // whether a document declares a schema is no token of the deploy
+            // file the record is located in (SCE_ERROR_CONTRACT.md §2.1).
+            (
+                "mesh/event-schema-mismatch (sender only)",
+                DeployError::EventSchemaMismatch {
+                    event_name: "job.completed".into(),
+                    sender_machine: "alpha".into(),
+                    receiver_machine: "beta".into(),
+                    reason: crate::mesh::error::EventSchemaMismatchReason::SenderOnly,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:c8052b4aa921013d","code":"mesh/event-schema-mismatch","stage":"mesh-deploy","message":"cross-machine schema mismatch on event 'job.completed' between sender machine 'alpha' and receiver machine 'beta': sender declares an EventSchema but receiver does not (partial coverage)"}"#,
+            ),
+            (
+                "mesh/event-schema-mismatch (receiver only)",
+                DeployError::EventSchemaMismatch {
+                    event_name: "job.completed".into(),
+                    sender_machine: "alpha".into(),
+                    receiver_machine: "beta".into(),
+                    reason: crate::mesh::error::EventSchemaMismatchReason::ReceiverOnly,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:f9f772675629e3e1","code":"mesh/event-schema-mismatch","stage":"mesh-deploy","message":"cross-machine schema mismatch on event 'job.completed' between sender machine 'alpha' and receiver machine 'beta': receiver declares an EventSchema but sender does not (partial coverage)"}"#,
+            ),
         ]
     }
 
