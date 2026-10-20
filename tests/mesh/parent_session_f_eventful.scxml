@@ -12,7 +12,7 @@
      delivers it via `raiseExternal`. During the parent's next macrostep,
      the runtime selects the `<transition event="ping">` in the invoking
      state — the `<finalize>` block fires **before** transition
-     execution (W3C §6.4.4), flipping `finalized` from `false` to `true`
+     execution (W3C §6.5), flipping `finalized` from `false` to `true`
      in the parent datamodel. The cond-guarded transition then evaluates
      against the new value and proves end-to-end that:
        (a) the mesh callback routed the child send (wire-16 emitted),
