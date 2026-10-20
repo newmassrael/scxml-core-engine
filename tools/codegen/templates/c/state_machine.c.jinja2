@@ -2769,20 +2769,23 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
         /* W3C SCXML 6.4: defer `<invoke>` execution until macrostep end.
            cpp `entry_exit_actions.jinja2` mirrors this with
            `pendingInvokes_.push_back({...})`; the C11 helper takes the
-           same (state, invoke_idx, id) tuple. Auto-generated ids follow
-           cpp pattern `<state>.<sm_ptr_hex>.<invoke_idx>` (W3C 3.12.1);
+           same (state, invoke_idx, id) tuple. Auto-generated ids are
+           `<state>.<start>.<invoke>` (W3C 3.12.1; docs/adr/0045: the
+           number of this start, so the id comes from the tree alone);
            explicit `<invoke id="...">` overrides use the author-supplied
-           literal verbatim. */
+           literal verbatim. Every start is counted either way. */
         {% for invoke_info in state.invokes | scxml %}
         {
             char _invoke_id_buf[SCE_MAX_ID_LEN];
+            ++sm->invoke_starts_{{ invoke_info.field_suffix }};
             {% if invoke_info.invoke_id and not invoke_info.invoke_id.startswith('_invoke_') %}
             /* W3C SCXML 3.12.1: author-supplied id="{{ invoke_info.invoke_id }}"
                wins over the auto-generated format. */
             sce_copy_bounded_id(_invoke_id_buf, "{{ invoke_info.invoke_id }}");
             {% else %}
-            sce_invoke_format_id(_invoke_id_buf, sizeof(_invoke_id_buf),
-                                 "{{ state_id }}", (const void *)sm, {{ loop.index0 }});
+            sce_invoke_format_start_id(_invoke_id_buf, sizeof(_invoke_id_buf), "{{ state_id }}",
+                                       sm->invoke_starts_{{ invoke_info.field_suffix }},
+                                       "{{ invoke_info.invoke_id | escape_c }}");
             {% endif %}
             {% if invoke_info.idlocation and model.needs_script_engine %}
             /* W3C SCXML 6.4.1 (test223/224/225/338): expose the spawned
@@ -2818,7 +2821,7 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
         /* W3C SCXML 6.4 (test216/530): defer hybrid `<invoke srcexpr=...>` /
            `<invoke><content expr=...>` execution until macrostep end.
            Mirrors the static-scxml defer above — same auto-id format
-           (`<state>.<sm_ptr_hex>.<invoke_idx>`) and same pending-queue
+           (`<state>.<start>.<invoke>`) and same pending-queue
            push. Eval validation runs at execute time
            (`{{ csym_prefix }}{{ model.name }}_execute_pending_invokes`), not at defer
            time, so `<assign>` blocks earlier in this same onentry have
@@ -2828,9 +2831,11 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
         {% for invoke_info in state.invokes | hybrid %}
         {
             char _invoke_id_buf[SCE_MAX_ID_LEN];
-            sce_invoke_format_id(_invoke_id_buf, sizeof(_invoke_id_buf),
-                                 "{{ state_id }}", (const void *)sm,
-                                 {{ (state.invokes | scxml | length) + loop.index0 }});
+            /* docs/adr/0045: numbered by this start, as the static arm is. */
+            ++sm->invoke_starts_{{ invoke_info.field_suffix }};
+            sce_invoke_format_start_id(_invoke_id_buf, sizeof(_invoke_id_buf), "{{ state_id }}",
+                                       sm->invoke_starts_{{ invoke_info.field_suffix }},
+                                       "{{ invoke_info.invoke_id | escape_c }}");
             {% if invoke_info.idlocation and model.needs_script_engine %}
             /* W3C SCXML 6.4.1: idlocation propagation — same shape as the
                static-scxml branch, stored before the invocation is queued. */

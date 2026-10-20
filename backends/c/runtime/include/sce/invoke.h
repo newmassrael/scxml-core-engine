@@ -107,6 +107,21 @@ SCE_C_UNUSED static inline void sce_invoke_format_id(char *buf, size_t bufsz, co
                    invoke_idx);
 }
 
+/* The id a child session's start is made under: `<state_id>.<start>.<invoke_id>`,
+   `start` being which start of that `<invoke>` this is in its parent session,
+   counted from 1, and `invoke_id` the id the document gives the element (one the
+   build generated for an element that names none). It comes from the tree alone,
+   so it is the text every backend writes and a saved state can carry it
+   (docs/adr/0045); the state id and a dot lead it, as test224 reads. */
+SCE_C_UNUSED static inline void sce_invoke_format_start_id(char *buf, size_t bufsz, const char *state_id,
+                                                           uint64_t start, const char *invoke_id) {
+    if (buf == NULL || bufsz == 0u) {
+        return;
+    }
+    (void)snprintf(buf, bufsz, "%s.%llu.%s", state_id != NULL ? state_id : "", (unsigned long long)start,
+                   invoke_id != NULL ? invoke_id : "");
+}
+
 /* §scxml-6.4.3: Format `done.invoke.<id>` event name.
    cpp `InvokeHelper::createDoneInvokeEventName`. Used by the parent's
    completion detector when a child reaches its top-level final state.
