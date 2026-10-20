@@ -29,7 +29,7 @@
 pub mod acceptance;
 pub mod acceptance_run;
 pub mod answers;
-mod base64;
+pub mod base64;
 pub mod bundle;
 pub mod clock;
 pub mod commands;

@@ -9,11 +9,15 @@
 //! white space, a missing `=` and characters after the padding are refused, because a caller that sent
 //! bytes with a damaged encoding has not sent the bytes it meant, and decoding what is readable of them
 //! would make a different document under the same name.
+//!
+//! It is public because the application that keeps this crate's folder hands the same bytes on: a
+//! picture of an original goes to an AI client as base64 too (ADR 0036), and one encoding of the
+//! application's is one encoding to hold.
 
 const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 /// `bytes` as base64 with padding.
-pub(crate) fn encode(bytes: &[u8]) -> String {
+pub fn encode(bytes: &[u8]) -> String {
     let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
     for chunk in bytes.chunks(3) {
         let n = (u32::from(chunk[0]) << 16)
@@ -47,7 +51,7 @@ fn value_of(byte: u8) -> Option<u32> {
 }
 
 /// The bytes `text` says, or what is wrong with it.
-pub(crate) fn decode(text: &str) -> Result<Vec<u8>, String> {
+pub fn decode(text: &str) -> Result<Vec<u8>, String> {
     let bytes = text.as_bytes();
     if !bytes.len().is_multiple_of(4) {
         return Err("its length is not a multiple of four".to_string());
