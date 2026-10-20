@@ -206,6 +206,15 @@ of many pages), as step 6 says. In order:
   `--input-format stream-json`, no tools, and `--json-schema` for the answer's form, which a run on
   2026-10-20 answered in that form. The runtime declares that it reads pictures only once its live test
   passes, as above; the others declare nothing until theirs do.
+- **The attachment path for Codex**, tried live the same day: `codex exec --image=FILE` with the picture
+  a file in the run's own folder, the confinement of a draft (the sandbox that reads that folder and
+  writes nothing, no network, no question, no web search, every unreviewed feature switched off), no
+  server at all, and `--output-schema` for the answer's form. A reading is stopped for any item the
+  client reports but its own words and reasoning, a call of the authoring server included, which a
+  draft may make and a reading may not. A run answered the form for a picture file and for an image
+  drawn from a PDF. Codex does not say which model answered, so a reading records the model the
+  connection pinned and else the word `codex-default`. A model server declares nothing until its own
+  live test passes.
 - **The import reads what the owner marked**, in the import's own step, and the screen gives a figure a third
   state beside chosen and left out.
 - **A picture in a PDF** (landed): an image object a page holds is a figure block named by its page and place
