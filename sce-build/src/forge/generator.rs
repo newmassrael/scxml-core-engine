@@ -1725,7 +1725,11 @@ fn transform_holder_context(
     let self_name = fresh(
         match lang {
             crate::generator::Language::Python => "self",
-            _ => "holder",
+            crate::generator::Language::Rust
+            | crate::generator::Language::Cpp
+            | crate::generator::Language::Kotlin
+            | crate::generator::Language::Go
+            | crate::generator::Language::C11 => "holder",
         }
         .to_string(),
     );
@@ -1848,7 +1852,9 @@ fn render_lookup(
     // (`UByte`), so a Kotlin enum is kept off the standard type names.
     let enum_name = match lang {
         Language::Kotlin => kotlin_declared_type_name(&enum_name),
-        _ => enum_name,
+        Language::Rust | Language::Cpp | Language::Go | Language::Python | Language::C11 => {
+            enum_name
+        }
     };
     // W1 symbol-name SSOT: the bare call-base comes from forge_lookup_symbol
     // (shared with the cross-doc resolver); the C11 flat prefix is applied at
@@ -1864,7 +1870,12 @@ fn render_lookup(
         Language::Go if output_is_string => {
             go_local_spelling_beside(&m.input.id, &[enum_name.as_str()])
         }
-        _ => l.local_id(&m.input.id),
+        Language::Rust
+        | Language::Cpp
+        | Language::Kotlin
+        | Language::Go
+        | Language::Python
+        | Language::C11 => l.local_id(&m.input.id),
     };
 
     // String-enum strategy: entries grouped by output value.
@@ -1888,7 +1899,7 @@ fn render_lookup(
                     serde_json::json!({"value": to_rust_variant(&value), "keys": keys})
                 }).collect()
             }
-            _ => {
+            Language::Cpp | Language::Kotlin | Language::Go | Language::C11 => {
                 raw_ebv.into_iter()
                     .map(|(value, keys)| serde_json::json!({"value": value, "keys": keys}))
                     .collect()
@@ -1901,13 +1912,19 @@ fn render_lookup(
                 .into_iter()
                 .map(|v| to_rust_variant(&v))
                 .collect(),
-            _ => m.unique_values(),
+            Language::Cpp | Language::Kotlin | Language::Go | Language::Python | Language::C11 => {
+                m.unique_values()
+            }
         };
 
         let dv = match &m.miss_policy {
             MissPolicy::Default(s) => match lang {
                 Language::Rust => to_rust_variant(s),
-                _ => s.clone(),
+                Language::Cpp
+                | Language::Kotlin
+                | Language::Go
+                | Language::Python
+                | Language::C11 => s.clone(),
             },
             MissPolicy::Error => String::new(),
         };
@@ -2096,7 +2113,11 @@ fn render_enum(
                 // Kotlin's `UByte`/`UShort` have no literal suffix —
                 // `kotlin_literal` wraps with `0u.toUByte()` etc.
                 Language::Kotlin => kotlin_literal(&value_text, &m.underlying_type),
-                _ => value_text,
+                Language::Rust
+                | Language::Cpp
+                | Language::Go
+                | Language::Python
+                | Language::C11 => value_text,
             };
             // `declared` is the variant's name as the document wrote it
             // (`sce:variant name`), which every backend returns from its
@@ -4791,7 +4812,15 @@ fn codec_scalar_type(l: &LangCtx, ty: &SceType) -> String {
     match (l.lang, ty) {
         (crate::generator::Language::Rust, SceType::Bytes) => "&'a [u8]".to_string(),
         (crate::generator::Language::Rust, SceType::String) => "&'a str".to_string(),
-        _ => l.type_name(ty).to_string(),
+        (
+            crate::generator::Language::Rust
+            | crate::generator::Language::Cpp
+            | crate::generator::Language::Kotlin
+            | crate::generator::Language::Go
+            | crate::generator::Language::Python
+            | crate::generator::Language::C11,
+            _,
+        ) => l.type_name(ty).to_string(),
     }
 }
 
@@ -5241,7 +5270,9 @@ fn render_codec(
                             crate::generator::Language::Kotlin => "kotlin",
                             crate::generator::Language::Go => "go",
                             crate::generator::Language::Python => "python",
-                            _ => unreachable!(),
+                            crate::generator::Language::Rust | crate::generator::Language::C11 => {
+                                unreachable!()
+                            }
                         }
                         .to_string(),
                     },
@@ -6331,7 +6362,7 @@ fn render_codec(
                         // C11 has no nullable wrapper — the gated field
                         // stays as plain `T` and presence is encoded by
                         // the carrier flag bit (set on the struct member).
-                        _ => inner.to_string(),
+                        crate::generator::Language::C11 => inner.to_string(),
                     };
                     obj.insert(type_key.into(), wrapped.into());
                     // Default for the gated optional in languages that
@@ -6863,7 +6894,15 @@ fn render_codec(
             // (`UInt.toInt()` would overflow above 2^31, so we always
             // route Uint32/64 through Long.)
             (crate::generator::Language::Kotlin, SceType::Uint32 | SceType::Uint64) => "L",
-            _ => "",
+            (
+                crate::generator::Language::Rust
+                | crate::generator::Language::Cpp
+                | crate::generator::Language::Kotlin
+                | crate::generator::Language::Go
+                | crate::generator::Language::Python
+                | crate::generator::Language::C11,
+                _,
+            ) => "",
         };
         // C11 emits a tagged-union body struct, which needs a per-arm
         // kind enum constant and a per-arm union field name. Computed
@@ -7200,7 +7239,15 @@ fn render_codec(
                 (format!("{carrier_id}{cast_op}"), carrier_id.clone())
             }
             // ── Multi-bit-flag — masked-shifted formula ──────
-            (Some(flag), lang_) => {
+            (
+                Some(flag),
+                lang_ @ (crate::generator::Language::Rust
+                | crate::generator::Language::Cpp
+                | crate::generator::Language::Kotlin
+                | crate::generator::Language::Go
+                | crate::generator::Language::Python
+                | crate::generator::Language::C11),
+            ) => {
                 let bit = flag.bit;
                 let width = flag.width.max(1);
                 let value_mask: u64 = (1u64 << width) - 1;
@@ -9094,7 +9141,10 @@ fn resolve_variant_arm_decoder(body_alias: &str, lang: crate::generator::Languag
         // `body_type` directly (e.g. `{{ body_type }}::decode`); they
         // ignore this field. Returning empty keeps the JSON shape
         // uniform without forcing a per-language template branch.
-        _ => String::new(),
+        crate::generator::Language::Rust
+        | crate::generator::Language::Cpp
+        | crate::generator::Language::Kotlin
+        | crate::generator::Language::Python => String::new(),
     }
 }
 
@@ -9110,7 +9160,11 @@ fn resolve_variant_arm_encoder(body_alias: &str, lang: crate::generator::Languag
             let snake = filters::to_snake_case(body_alias.to_string());
             format!("{snake}_encode")
         }
-        _ => String::new(),
+        crate::generator::Language::Rust
+        | crate::generator::Language::Cpp
+        | crate::generator::Language::Kotlin
+        | crate::generator::Language::Go
+        | crate::generator::Language::Python => String::new(),
     }
 }
 
@@ -10960,7 +11014,9 @@ fn chain_cursor_empty(lang: crate::generator::Language) -> &'static str {
     match lang {
         Language::C11 => "sce_forge_cursor_remaining(cursor) == 0",
         Language::Go => "cursor.Remaining() == 0",
-        _ => "cursor.remaining() == 0",
+        Language::Rust | Language::Cpp | Language::Kotlin | Language::Python => {
+            "cursor.remaining() == 0"
+        }
     }
 }
 
@@ -10970,7 +11026,9 @@ fn chain_cursor_nonempty(lang: crate::generator::Language) -> &'static str {
     match lang {
         Language::C11 => "sce_forge_cursor_remaining(cursor) > 0",
         Language::Go => "cursor.Remaining() > 0",
-        _ => "cursor.remaining() > 0",
+        Language::Rust | Language::Cpp | Language::Kotlin | Language::Python => {
+            "cursor.remaining() > 0"
+        }
     }
 }
 
@@ -12076,7 +12134,7 @@ fn flag_getter_name(flag_name: &str, lang: crate::generator::Language) -> String
                 snake
             }
         }
-        _ => snake,
+        Language::Rust | Language::Cpp | Language::Python => snake,
     }
 }
 
@@ -12129,7 +12187,9 @@ fn build_flag_ctx(
             let name_set = match lang {
                 Language::Go => format!("Set{pascal}"),
                 Language::Kotlin => format!("set{pascal}"),
-                _ => format!("set_{snake}"),
+                Language::Rust | Language::Cpp | Language::Python | Language::C11 => {
+                    format!("set_{snake}")
+                }
             };
             // Per-language result type for multi-bit accessors.
             // Single-bit returns bool — the `result_type_*` field is
@@ -12212,7 +12272,7 @@ fn codec_field_local_name(id: &str, lang: crate::generator::Language) -> String 
     match lang {
         Language::Go => filters::to_pascal_case(id.to_string()),
         Language::Rust | Language::Python | Language::C11 => filters::to_snake_case(id.to_string()),
-        _ => id.to_string(),
+        Language::Cpp | Language::Kotlin => id.to_string(),
     }
 }
 
@@ -12252,7 +12312,11 @@ pub(crate) fn python_field_local(id: &str) -> String {
 fn codec_field_decode_local(id: &str, lang: crate::generator::Language) -> String {
     match lang {
         crate::generator::Language::Python => python_field_local(id),
-        _ => codec_field_local_name(id, lang),
+        crate::generator::Language::Rust
+        | crate::generator::Language::Cpp
+        | crate::generator::Language::Kotlin
+        | crate::generator::Language::Go
+        | crate::generator::Language::C11 => codec_field_local_name(id, lang),
     }
 }
 
@@ -13566,7 +13630,7 @@ fn present_if_decode_vle(
             Language::Rust | Language::C11 => filters::to_snake_case(id.to_string()),
             // `id` is already the decode local.
             Language::Python => id.to_string(),
-            _ => id.to_string(),
+            Language::Cpp | Language::Kotlin => id.to_string(),
         };
         // C11: the present-if-style streaming branch writes results
         // directly into `out->{id}` (mirrors `present_if_decode_fixed`'s
@@ -14327,7 +14391,9 @@ fn streaming_fixed_field_body(
     if n == 1 {
         return match lang {
             Language::Kotlin => "raw[0].toUByte()".into(),
-            _ => "raw[0]".into(),
+            Language::Rust | Language::Cpp | Language::Go | Language::Python | Language::C11 => {
+                "raw[0]".into()
+            }
         };
     }
 
@@ -14831,7 +14897,11 @@ fn present_if_test_literal_at(
             let rest = present_if_test_literal_at(fields, tail, lang, site);
             let join = match lang {
                 Language::Python => " or ",
-                _ => " || ",
+                Language::Rust
+                | Language::Cpp
+                | Language::Kotlin
+                | Language::Go
+                | Language::C11 => " || ",
             };
             format!("{head}{join}{rest}")
         }
@@ -15080,9 +15150,24 @@ fn present_if_chain_clause(pred: &PresentIfPredicate, lang: crate::generator::La
         .expect("the parser gives every chain-membership clause its identifier");
     let has = chain_has_local(&pred.field_id, value, lang);
     match (pred.negate, lang) {
-        (false, _) => has,
+        (
+            false,
+            crate::generator::Language::Rust
+            | crate::generator::Language::Cpp
+            | crate::generator::Language::Kotlin
+            | crate::generator::Language::Go
+            | crate::generator::Language::Python
+            | crate::generator::Language::C11,
+        ) => has,
         (true, crate::generator::Language::Python) => format!("not {has}"),
-        (true, _) => format!("!{has}"),
+        (
+            true,
+            crate::generator::Language::Rust
+            | crate::generator::Language::Cpp
+            | crate::generator::Language::Kotlin
+            | crate::generator::Language::Go
+            | crate::generator::Language::C11,
+        ) => format!("!{has}"),
     }
 }
 
@@ -15144,7 +15229,9 @@ fn chain_entry_identifier(
     let mask = chain_identifier_literal(mask, lang);
     match lang {
         Language::Kotlin => format!("({whole} and {mask})"),
-        _ => format!("({whole} & {mask})"),
+        Language::Rust | Language::Cpp | Language::Go | Language::Python | Language::C11 => {
+            format!("({whole} & {mask})")
+        }
     }
 }
 
@@ -15670,7 +15757,9 @@ fn vle_decode_stmt(field_id: &str, width_bits: u32, lang: crate::generator::Lang
         (Language::Python, n) => format!(
             "{field_id} = cursor.read_vle_u{n}()"
         ),
-        (_, w) => format!("/* unsupported vle_u{w} on {lang:?} */"),
+        (Language::Rust | Language::Kotlin | Language::Go, w) => {
+            format!("/* unsupported vle_u{w} on {lang:?} */")
+        }
     }
 }
 
@@ -15710,8 +15799,6 @@ fn vle_encode_block(value_expr: &str, width_bits: u32, lang: crate::generator::L
             "\tif err := codec.WriteVLEU{width_bits}(w, uint{width_bits}({value_expr})); err != nil {{\n\t\treturn err\n\t}}"
         ),
         Language::Python => format!("        w.write_vle_u{width_bits}({value_expr})"),
-        #[allow(unreachable_patterns)]
-        _ => format!("/* unsupported vle_u{width_bits} encode on {lang:?} */"),
     }
 }
 
@@ -15758,20 +15845,30 @@ fn generate_decode_expr(
                     // Drop the `>> 0` no-op for a bit-offset-0 field
                     // (clippy::identity_op).
                     Language::Rust if bit_off == 0 => format!("raw[{byte_off}] & 0x{mask:02X}"),
-                    _ => format!("(raw[{byte_off}] >> {bit_off}) & 0x{mask:02X}"),
+                    Language::Rust | Language::Go | Language::Python => {
+                        format!("(raw[{byte_off}] >> {bit_off}) & 0x{mask:02X}")
+                    }
                 }
             } else {
                 match bits {
                     8 => match lang {
                         Language::Kotlin => format!("raw[{byte_off}].toUByte()"),
-                        _ => format!("raw[{byte_off}]"),
+                        Language::Rust
+                        | Language::Cpp
+                        | Language::Go
+                        | Language::Python
+                        | Language::C11 => format!("raw[{byte_off}]"),
                     },
                     16 => decode_multibyte_unified(byte_off, 2, endian, lang),
                     24 => decode_multibyte_unified(byte_off, 3, endian, lang),
                     32 => decode_multibyte_unified(byte_off, 4, endian, lang),
                     _ => match lang {
                         Language::Python => format!("# unsupported {bits}-bit decode"),
-                        _ => format!("/* unsupported {bits}-bit decode */"),
+                        Language::Rust
+                        | Language::Cpp
+                        | Language::Kotlin
+                        | Language::Go
+                        | Language::C11 => format!("/* unsupported {bits}-bit decode */"),
                     },
                 }
             }
@@ -15988,7 +16085,7 @@ fn decode_multibyte_unified(
 
     let sep = match lang {
         Language::Kotlin => " or ",
-        _ => " | ",
+        Language::Rust | Language::Cpp | Language::Go | Language::Python | Language::C11 => " | ",
     };
 
     let joined = shifts.join(sep);
@@ -16615,7 +16712,9 @@ fn parent_tag_apply_simple_path_suffix(
                 format!("{expr}{suffix}")
             }
         }
-        _ => format!("{expr}{suffix}"),
+        Language::Rust | Language::Cpp | Language::Go | Language::Python | Language::C11 => {
+            format!("{expr}{suffix}")
+        }
     }
 }
 
@@ -16679,12 +16778,18 @@ fn generate_encode_exprs(
                     crate::generator::Language::Cpp | crate::generator::Language::C11 => {
                         parts.push(format!("(({field_ref} & 0x{mask:02X}) << {bit_off})"))
                     }
-                    _ => parts.push(format!("({field_ref} & 0x{mask:02X}) << {bit_off}")),
+                    crate::generator::Language::Go | crate::generator::Language::Python => {
+                        parts.push(format!("({field_ref} & 0x{mask:02X}) << {bit_off}"))
+                    }
                 }
             }
             let sep = match lang {
                 crate::generator::Language::Kotlin => " or ",
-                _ => " | ",
+                crate::generator::Language::Rust
+                | crate::generator::Language::Cpp
+                | crate::generator::Language::Go
+                | crate::generator::Language::Python
+                | crate::generator::Language::C11 => " | ",
             };
             let merged = parts.join(sep);
             exprs.push(l.codec_to_byte(&merged));
@@ -16730,7 +16835,11 @@ fn encode_single_field_unified(
                 // Drop the `<< 0` no-op for a bit-offset-0 field
                 // (clippy::identity_op).
                 Language::Rust if bit_off == 0 => format!("{field_ref} & 0x{mask:02X}"),
-                _ => format!("({field_ref} & 0x{mask:02X}) << {bit_off}"),
+                Language::Rust
+                | Language::Cpp
+                | Language::Go
+                | Language::Python
+                | Language::C11 => format!("({field_ref} & 0x{mask:02X}) << {bit_off}"),
             };
             exprs.push(l.codec_to_byte(&inner));
         }
@@ -17741,7 +17850,10 @@ pub fn render_machine_concurrency_artifacts(
                 files.push((format!("{}_scheduler.h", snake), sched));
             }
         }
-        _ => {
+        crate::generator::Language::Cpp
+        | crate::generator::Language::Kotlin
+        | crate::generator::Language::Go
+        | crate::generator::Language::Python => {
             // Backends without `link.*.jinja2` today
             // silent-skip per the listener-pair footprint precedent.
         }
@@ -17813,7 +17925,11 @@ pub fn render_machine_session_runtime_artifacts(
             let snake = filters::to_snake_case(machine_name.to_string());
             Ok(vec![(format!("{snake}_session_runtime.rs"), runtime)])
         }
-        _ => Ok(Vec::new()),
+        crate::generator::Language::Cpp
+        | crate::generator::Language::Kotlin
+        | crate::generator::Language::Go
+        | crate::generator::Language::Python
+        | crate::generator::Language::C11 => Ok(Vec::new()),
     }
 }
 
@@ -19019,7 +19135,14 @@ fn resolve_queue_render_inputs(
             QueueAlgorithm::VyukovMpsc | QueueAlgorithm::VyukovListWithConsumerFlag,
             _,
         ) => "intrusive",
-        (_, QueueAlgorithm::VyukovMpsc | QueueAlgorithm::VyukovListWithConsumerFlag, _) => "Mpsc",
+        (
+            crate::generator::Language::Rust
+            | crate::generator::Language::Cpp
+            | crate::generator::Language::Kotlin
+            | crate::generator::Language::Go,
+            QueueAlgorithm::VyukovMpsc | QueueAlgorithm::VyukovListWithConsumerFlag,
+            _,
+        ) => "Mpsc",
         // The segmented rows: C11's functions are `sce_queue_linked_*` and
         // `sce_queue_lscq_*` (a target with no atomics was refused above).
         (crate::generator::Language::C11, QueueAlgorithm::LinkedLamportRings, _) => "linked",
@@ -19028,12 +19151,40 @@ fn resolve_queue_render_inputs(
         (crate::generator::Language::C11, QueueAlgorithm::LamportRing, _) => "spsc",
         (crate::generator::Language::C11, QueueAlgorithm::Scq, Some(32)) => "scq32",
         (crate::generator::Language::C11, QueueAlgorithm::Scq, _) => "scq64",
-        (_, QueueAlgorithm::LamportRing, _) => "Spsc",
-        (_, QueueAlgorithm::Scq, _) => "Scq",
+        (
+            crate::generator::Language::Rust
+            | crate::generator::Language::Cpp
+            | crate::generator::Language::Kotlin
+            | crate::generator::Language::Go,
+            QueueAlgorithm::LamportRing,
+            _,
+        ) => "Spsc",
+        (
+            crate::generator::Language::Rust
+            | crate::generator::Language::Cpp
+            | crate::generator::Language::Kotlin
+            | crate::generator::Language::Go,
+            QueueAlgorithm::Scq,
+            _,
+        ) => "Scq",
         // The segmented rows, which only a backend with the allocator trait and
         // the domain offers (refused above for the rest).
-        (_, QueueAlgorithm::LinkedLamportRings, _) => "LinkedLamport",
-        (_, QueueAlgorithm::Lscq, _) => "Lscq",
+        (
+            crate::generator::Language::Rust
+            | crate::generator::Language::Cpp
+            | crate::generator::Language::Kotlin
+            | crate::generator::Language::Go,
+            QueueAlgorithm::LinkedLamportRings,
+            _,
+        ) => "LinkedLamport",
+        (
+            crate::generator::Language::Rust
+            | crate::generator::Language::Cpp
+            | crate::generator::Language::Kotlin
+            | crate::generator::Language::Go,
+            QueueAlgorithm::Lscq,
+            _,
+        ) => "Lscq",
     };
     // What each operation gives on this target. Mutual exclusion makes every
     // row `blocking`, whatever the table would give.
@@ -19052,9 +19203,34 @@ fn resolve_queue_render_inputs(
             "a single list of segments under one lock"
         }
         (true, crate::generator::Language::Python, _) => "a single ring under one lock",
-        (true, _, true) => "a single list under an interrupt-masked critical section",
-        (true, _, false) => "a single ring under an interrupt-masked critical section",
-        (false, _, _) => selection.algorithm.name(),
+        (
+            true,
+            crate::generator::Language::Rust
+            | crate::generator::Language::Cpp
+            | crate::generator::Language::Kotlin
+            | crate::generator::Language::Go
+            | crate::generator::Language::C11,
+            true,
+        ) => "a single list under an interrupt-masked critical section",
+        (
+            true,
+            crate::generator::Language::Rust
+            | crate::generator::Language::Cpp
+            | crate::generator::Language::Kotlin
+            | crate::generator::Language::Go
+            | crate::generator::Language::C11,
+            false,
+        ) => "a single ring under an interrupt-masked critical section",
+        (
+            false,
+            crate::generator::Language::Rust
+            | crate::generator::Language::Cpp
+            | crate::generator::Language::Kotlin
+            | crate::generator::Language::Go
+            | crate::generator::Language::Python
+            | crate::generator::Language::C11,
+            _,
+        ) => selection.algorithm.name(),
     };
     let progress = |p: QueueProgress| match p {
         QueueProgress::WaitFree => "wait-free",
@@ -24033,7 +24209,9 @@ impl LangCtx {
             crate::generator::Language::Kotlin => kotlin_default(ty).to_string(),
             crate::generator::Language::Rust => rust_default(ty).to_string(),
             crate::generator::Language::Python => python_default(ty).to_string(),
-            other => unreachable!(
+            other @ (crate::generator::Language::Cpp
+            | crate::generator::Language::Go
+            | crate::generator::Language::C11) => unreachable!(
                 "LangCtx::default_expr called for {other:?} — only the backends \
                  that spell a per-field default have one"
             ),
@@ -24069,7 +24247,9 @@ impl LangCtx {
             crate::generator::Language::Cpp => cpp_param_type(ty),
             crate::generator::Language::Rust => rust_param_type(ty),
             crate::generator::Language::C11 => c_param_type(ty).to_string(),
-            _ => self.type_name(ty).into_owned(),
+            crate::generator::Language::Kotlin
+            | crate::generator::Language::Go
+            | crate::generator::Language::Python => self.type_name(ty).into_owned(),
         }
     }
 
@@ -24213,7 +24393,7 @@ impl LangCtx {
                     format!("SCE_FORGE_{}_H", to_upper_snake(name)).into(),
                 );
             }
-            _ => {}
+            crate::generator::Language::Rust | crate::generator::Language::Python => {}
         }
         m
     }
@@ -24222,7 +24402,11 @@ impl LangCtx {
     fn event_name(&self, s: &str) -> String {
         match self.lang {
             crate::generator::Language::Go => filters::to_pascal_case(s.to_string()),
-            _ => to_upper_snake(s),
+            crate::generator::Language::Rust
+            | crate::generator::Language::Cpp
+            | crate::generator::Language::Kotlin
+            | crate::generator::Language::Python
+            | crate::generator::Language::C11 => to_upper_snake(s),
         }
     }
 
@@ -24281,8 +24465,22 @@ impl LangCtx {
                 match (self.lang, value) {
                     (crate::generator::Language::Python, true) => "True".into(),
                     (crate::generator::Language::Python, false) => "False".into(),
-                    (_, true) => "true".into(),
-                    (_, false) => "false".into(),
+                    (
+                        crate::generator::Language::Rust
+                        | crate::generator::Language::Cpp
+                        | crate::generator::Language::Kotlin
+                        | crate::generator::Language::Go
+                        | crate::generator::Language::C11,
+                        true,
+                    ) => "true".into(),
+                    (
+                        crate::generator::Language::Rust
+                        | crate::generator::Language::Cpp
+                        | crate::generator::Language::Kotlin
+                        | crate::generator::Language::Go
+                        | crate::generator::Language::C11,
+                        false,
+                    ) => "false".into(),
                 }
             }
             ty if ty.is_numeric() => {
@@ -24335,7 +24533,10 @@ impl LangCtx {
                 |header| format!("#include <{header}>"),
                 "header",
             ),
-            _ => {
+            crate::generator::Language::Rust
+            | crate::generator::Language::Kotlin
+            | crate::generator::Language::Python
+            | crate::generator::Language::C11 => {
                 let value = minijinja::Value::from_serialize(&ctx);
                 return Ok(tmpl.render(value).map_err(generator::render_error)?);
             }
@@ -24455,7 +24656,7 @@ impl LangCtx {
             crate::generator::Language::Rust
             | crate::generator::Language::Python
             | crate::generator::Language::C11 => filters::to_snake_case(id.to_string()),
-            _ => id.to_string(),
+            crate::generator::Language::Cpp | crate::generator::Language::Kotlin => id.to_string(),
         }
     }
 
@@ -24476,7 +24677,9 @@ impl LangCtx {
             // C11's encode is a free function `encode(const struct_t *self)`
             // so member access goes through the pointer with `->`.
             crate::generator::Language::C11 => format!("self->{name}"),
-            _ => name.to_string(),
+            crate::generator::Language::Cpp | crate::generator::Language::Kotlin => {
+                name.to_string()
+            }
         }
     }
 
@@ -24499,7 +24702,11 @@ impl LangCtx {
     fn codec_comment(&self, text: &str) -> String {
         match self.lang {
             crate::generator::Language::Python => format!("# {text}"),
-            _ => format!("/* {text} */"),
+            crate::generator::Language::Rust
+            | crate::generator::Language::Cpp
+            | crate::generator::Language::Kotlin
+            | crate::generator::Language::Go
+            | crate::generator::Language::C11 => format!("/* {text} */"),
         }
     }
 
@@ -24517,7 +24724,9 @@ impl LangCtx {
             crate::generator::Language::Kotlin => {
                 format!("scePrev{}", filters::to_pascal_case(id.to_string()))
             }
-            _ => format!("prev{}", filters::to_pascal_case(self.local_id(id))),
+            crate::generator::Language::Cpp | crate::generator::Language::Go => {
+                format!("prev{}", filters::to_pascal_case(self.local_id(id)))
+            }
         }
     }
 }
@@ -24568,7 +24777,7 @@ fn render_filter(
         crate::generator::Language::Go => go_local_spelling(&m.input.id),
         crate::generator::Language::Cpp => cpp_local_spelling(&m.input.id),
         crate::generator::Language::Kotlin => kotlin_local_spelling(&m.input.id),
-        _ => m.input.id.clone(),
+        crate::generator::Language::Python | crate::generator::Language::C11 => m.input.id.clone(),
     };
     ctx.insert("input_id".into(), input_id_emit.into());
     ctx.insert("input_type".into(), l.type_name(&m.input.sce_type).into());
@@ -24633,7 +24842,12 @@ fn render_interpolation(
                 crate::generator::Language::Cpp => {
                     format!("sce_axis_{}", filters::to_snake_case(a.input_id.clone()))
                 }
-                _ => format!("AXIS_{}", a.input_id.to_uppercase()),
+                crate::generator::Language::Rust
+                | crate::generator::Language::Kotlin
+                | crate::generator::Language::Python
+                | crate::generator::Language::C11 => {
+                    format!("AXIS_{}", a.input_id.to_uppercase())
+                }
             };
             serde_json::json!({
                 "input_id": a.input_id,
@@ -24888,7 +25102,9 @@ fn render_observer(
                 // A property the method reads bare, and a name written as
                 // written, so it is spelled as every Kotlin local is.
                 crate::generator::Language::Kotlin => kotlin_local_spelling(&mon.id),
-                _ => mon.id.clone(),
+                crate::generator::Language::Cpp
+                | crate::generator::Language::Python
+                | crate::generator::Language::C11 => mon.id.clone(),
             };
 
             Ok(serde_json::json!({
@@ -25029,7 +25245,15 @@ fn algorithm_param_type(l: &LangCtx, ty: &SceType) -> String {
     match (l.lang, ty) {
         (Language::Cpp, SceType::Bytes) => "std::span<const std::uint8_t>".to_string(),
         (Language::C11, SceType::Bytes) => "sce_forge_bytes_view_t".to_string(),
-        _ => l.param_type(ty),
+        (
+            Language::Rust
+            | Language::Cpp
+            | Language::Kotlin
+            | Language::Go
+            | Language::Python
+            | Language::C11,
+            _,
+        ) => l.param_type(ty),
     }
 }
 
@@ -26165,7 +26389,11 @@ fn lower_algorithm_stmt(
                                  return (byte-buffer-build validator gates this)"
                             ))
                         })?,
-                        _ => "",
+                        Language::Rust
+                        | Language::Cpp
+                        | Language::Kotlin
+                        | Language::Go
+                        | Language::Python => "",
                     };
                     out.push_str(
                         &ListSpelling::new(l, elem, imports)?
@@ -26694,7 +26922,11 @@ fn lower_algorithm_stmt(
                         }
                     }
                 }
-                _ => {
+                Language::Rust
+                | Language::Cpp
+                | Language::Kotlin
+                | Language::Go
+                | Language::C11 => {
                     let (header_open, block_close, if_indent) =
                         channel.braced_if_header(pad, &cond_lowered, indent);
                     let if_pad = "    ".repeat(if_indent);
@@ -26737,7 +26969,11 @@ fn lower_algorithm_stmt(
                     out.push_str(&format!("{pad}if not ({cond_lowered}):\n"));
                     out.push_str(&channel.precondition_failed(&inner_pad));
                 }
-                _ => {
+                Language::Rust
+                | Language::Cpp
+                | Language::Kotlin
+                | Language::Go
+                | Language::C11 => {
                     let negated = format!("!({cond_lowered})");
                     let (header_open, block_close, if_indent) =
                         channel.braced_if_header(pad, &negated, indent);
@@ -26771,7 +27007,11 @@ fn lower_algorithm_stmt(
                         lower_algorithm_stmt_and_check(st, ctx, &inner_pad, indent + 1, out)?;
                     }
                 }
-                _ => {
+                Language::Rust
+                | Language::Cpp
+                | Language::Kotlin
+                | Language::Go
+                | Language::C11 => {
                     // Go has no `while` keyword — `for cond { }` is the
                     // sole condition-only loop form. Cpp/C11/Kotlin all
                     // accept `while (cond) { }`; Rust drops the paren
@@ -26785,7 +27025,9 @@ fn lower_algorithm_stmt(
                         Language::Cpp | Language::C11 if channel.checks_conditions() => {
                             channel.checked_while_header(pad, &cond_lowered, indent)
                         }
-                        _ => format!("{pad}while ({cond_lowered}) {{\n"),
+                        Language::Cpp | Language::Kotlin | Language::Python | Language::C11 => {
+                            format!("{pad}while ({cond_lowered}) {{\n")
+                        }
                     };
                     out.push_str(&header_open);
                     let inner_pad = "    ".repeat(indent + 1);
@@ -27242,7 +27484,9 @@ fn lower_algorithm_stmt(
                 }
                 None => match lang {
                     Language::Python | Language::Kotlin => format!("{pad}return\n"),
-                    _ => format!("{pad}return;\n"),
+                    Language::Rust | Language::Cpp | Language::Go | Language::C11 => {
+                        format!("{pad}return;\n")
+                    }
                 },
             };
             out.push_str(&line);
@@ -27608,7 +27852,11 @@ pub(crate) fn forge_stateless_def_symbol(
 ) -> String {
     match language {
         crate::generator::Language::C11 => forge_c11_flat(name, base),
-        _ => base.to_string(),
+        crate::generator::Language::Rust
+        | crate::generator::Language::Cpp
+        | crate::generator::Language::Kotlin
+        | crate::generator::Language::Go
+        | crate::generator::Language::Python => base.to_string(),
     }
 }
 
@@ -28156,7 +28404,10 @@ pub(crate) fn forge_transform_output_field(
     match language {
         crate::generator::Language::Go => filters::to_pascal_case(output_id.to_string()),
         crate::generator::Language::Python => filters::to_snake_case(output_id.to_string()),
-        _ => forge_local_id(output_id, language),
+        crate::generator::Language::Rust
+        | crate::generator::Language::Cpp
+        | crate::generator::Language::Kotlin
+        | crate::generator::Language::C11 => forge_local_id(output_id, language),
     }
 }
 
@@ -28170,7 +28421,11 @@ pub(crate) fn forge_transform_output_field(
 pub(crate) fn forge_interpolation_symbol(language: crate::generator::Language) -> String {
     match language {
         crate::generator::Language::Go => "Lookup".to_string(),
-        _ => "lookup".to_string(),
+        crate::generator::Language::Rust
+        | crate::generator::Language::Cpp
+        | crate::generator::Language::Kotlin
+        | crate::generator::Language::Python
+        | crate::generator::Language::C11 => "lookup".to_string(),
     }
 }
 
@@ -28373,7 +28628,12 @@ impl ReturnChannel<'_> {
                  {pad}    return sceValue, sceFailure.Err()\n\
                  {pad}}}\n"
             ),
-            _ => String::new(),
+            Language::Rust
+            | Language::Cpp
+            | Language::Kotlin
+            | Language::Go
+            | Language::Python
+            | Language::C11 => String::new(),
         }
     }
 
@@ -28473,7 +28733,9 @@ impl ReturnChannel<'_> {
             Language::Go if self.checks_conditions() => {
                 (self.go_if_header(pad, cond, indent), String::new(), indent)
             }
-            _ => (format!("{pad}if ({cond}) {{\n"), String::new(), indent),
+            Language::Cpp | Language::Kotlin | Language::Go | Language::Python | Language::C11 => {
+                (format!("{pad}if ({cond}) {{\n"), String::new(), indent)
+            }
         }
     }
 
@@ -29218,7 +29480,15 @@ fn render_algorithm(
         _ if return_record.is_some() => return_record
             .map(|record| record.qualified_type.clone())
             .expect("guarded by the arm"),
-        (Some(SceType::Bytes), _) => {
+        (
+            Some(SceType::Bytes),
+            Language::Rust
+            | Language::Cpp
+            | Language::Kotlin
+            | Language::Go
+            | Language::Python
+            | Language::C11,
+        ) => {
             let n = bytes_return_cap.ok_or_else(|| {
                 GenerateError::InvalidConfig(format!(
                     "algorithm '{}' returns `bytes` but declares no \
@@ -29239,7 +29509,15 @@ fn render_algorithm(
                 Language::Kotlin => "ByteArray".to_string(),
             }
         }
-        (Some(t), _) => l.type_name(t).to_string(),
+        (
+            Some(t),
+            Language::Rust
+            | Language::Cpp
+            | Language::Kotlin
+            | Language::Go
+            | Language::Python
+            | Language::C11,
+        ) => l.type_name(t).to_string(),
         (None, Language::Cpp) | (None, Language::C11) => "void".to_string(),
         (None, Language::Rust) => "()".to_string(),
         (None, Language::Go) => String::new(),
@@ -29273,7 +29551,12 @@ fn render_algorithm(
         Language::C11 if may_fail && !returns_buffer => c11_result_name.clone(),
         // Named, so a failure returns the value's zero (`ReturnChannel::check`).
         Language::Go if may_fail => format!("(sceValue {return_type}, sceErr error)"),
-        _ => return_type,
+        Language::Rust
+        | Language::Cpp
+        | Language::Kotlin
+        | Language::Go
+        | Language::Python
+        | Language::C11 => return_type,
     };
 
     // SCE byte-buffer-build (§4.12): per-buffer capacity table (for the C11
@@ -29285,7 +29568,12 @@ fn render_algorithm(
     collect_append_buffers(&m.body, &mut append_buffers);
     let c11_result_type = match lang {
         Language::C11 if returns_buffer => Some(format!("{primary_symbol}_result_t")),
-        _ => None,
+        Language::Rust
+        | Language::Cpp
+        | Language::Kotlin
+        | Language::Go
+        | Language::Python
+        | Language::C11 => None,
     };
     // SCE byte-buffer-build (§4.12): the C++ buffer/return lower to
     // `std::vector`, which needs `<vector>`. Gate the include so algorithms
@@ -30203,7 +30491,9 @@ fn render_codec_test_vector_sidecar(
         Language::Rust => format!("{snake}_test.rs"),
         Language::C11 => format!("{snake}_test.h"),
         // The trunk gate above already rejected the other backends.
-        _ => unreachable!("trunk gate rejects non-Rust/C11 languages"),
+        Language::Cpp | Language::Kotlin | Language::Go | Language::Python => {
+            unreachable!("trunk gate rejects non-Rust/C11 languages")
+        }
     };
     Ok(Some((filename, code)))
 }
