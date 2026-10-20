@@ -645,7 +645,7 @@ fail. Do NOT reintroduce per-engine copies of these operators.
 
 ### JSON Builtins (Single Source of Truth)
 
-`sce/include/scripting/json_builtins.lua` — canonical `JSON.stringify()` / `JSON.parse()` implementation shared across all three backends:
+`sce/include/scripting/json_builtins.lua` — canonical `JSON.stringify()` / `JSON.parse()` implementation shared across every backend:
 
 | Backend | Embedding Mechanism | When |
 |---------|-------------------|------|
@@ -653,8 +653,10 @@ fail. Do NOT reintroduce per-engine copies of these operators.
 | Rust | `include_str!("../../../../sce/include/scripting/json_builtins.lua")` | Compile-time |
 | Kotlin | Gradle `copyJsonBuiltins` → classpath resource `/scripting/json_builtins.lua` | Runtime (lazy) |
 | Go | `//go:embed json_builtins.lua` in `backends/go/lua/` | Compile-time |
+| Python | read from the repository path, when the file is present | Runtime |
+| C11 | emitted into the generated engine bootstrap by codegen | Generation-time |
 
-Do NOT duplicate JSON logic in backend-specific code. All five backends load the same file.
+Do NOT duplicate JSON logic in backend-specific code. All six backends load the same file.
 
 ### JSON Text (Single Source of Truth)
 
