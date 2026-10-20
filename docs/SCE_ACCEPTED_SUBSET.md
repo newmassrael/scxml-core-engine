@@ -3633,8 +3633,9 @@ the send by the id the document holds
 the same name; a `namelist` name is the `<param name="x" expr="x"/>` it
 abbreviates. Under this model a child's variable is a native field that only the
 child's own code sets, so a value is accepted only where the child gives it a
-field to arrive in: the child is a `sce-static` document (written inline, or beside
-this document under `src`), declares the name as a top-level `<data>`, and declares
+field to arrive in: the child is a `sce-static` document (written inline, beside
+this document under `src`, or a standard statechart under its library name, below),
+declares the name as a top-level `<data>`, and declares
 it as a bool, a string, an integer or a real. The value is held to that variable's
 type as an `<assign>` to it would be, read from the invoking machine's fields when
 the invoke executes — at the end of the macrostep that entered its state, after
@@ -3646,6 +3647,20 @@ another kind, a name handed twice and a child under another data model are refus
 at the `<param>` as `scxml/static-datamodel-rule`: each would be typed, accepted
 and never delivered (measured 2026-10-01 on Rust and Kotlin, when no generated code
 handed a parent's `<param>` to a child).
+
+A child may be a statechart of the standard library, named as an import names a
+standard document: `<invoke type="scxml" src="sce:std/shared/record_list.scxml">`
+(docs/adr/0042). Its text is the one `sce-codegen` embeds and is never looked up
+beside the parent, and a name the library does not hold is refused at the `<invoke>`,
+naming the library as where it looked. The child is carried as one written inline is,
+under the same synthesised name (`<parent>__sce_synth_invoke__<id>`), so every backend
+generates it beside its parent as it generates an inline child, and its own imports
+resolve inside the library; the `source-hash` of the parent's tree covers it and every
+standard document it imports. The same statechart is generated on its own by that name
+(`sce-codegen generate sce:std/shared/record_list.scxml`). The Interpreter's lowering
+rewrites an inline child where it stands in its parent's text, and a standard child has
+no place there, so it is refused as an invoke by `src` (`generate/unsupported-feature`).
+`sce-build/tests/a_standard_document_is_imported_by_name.rs` holds this.
 
 A child that declares `<sce:action>`s takes the host that performs its acts when it
 is built, because its first `<onentry>` can already perform an act and a host

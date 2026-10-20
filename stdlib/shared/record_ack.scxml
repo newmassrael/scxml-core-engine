@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/shared/record_ack.scxml — a person's copy of a shared record list (record_list)
+  answers the hub's record_list.propose: `sender`, its node id, `before`, the instant it
+  was asked about, and `hash`, what it holds of the changes up to the instant
+  (record_settled). The hub reads it only for the round it has open, so an answer that
+  arrives late, twice, or out of order settles nothing it should not.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="record_ack"
+       sce:event-name="record_list.ack">
+  <datamodel>
+    <data id="sender" sce:type="uint64" sce:direction="in"/>
+    <data id="before" sce:type="int64" sce:direction="in"/>
+    <data id="hash" sce:type="uint32" sce:direction="in"/>
+  </datamodel>
+</scxml>

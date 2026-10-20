@@ -110,23 +110,34 @@ pub fn documents() -> impl Iterator<Item = (String, &'static str)> {
 /// The namespace SCE's own elements are in (`sce:import` among them).
 const SCE_NAMESPACE: &str = "http://sce.dev/ext";
 
-/// The `src` of every `<sce:import>` a document names, in document order.
+/// The namespace of the SCXML elements a document is written in (`<invoke>` among them).
+const SCXML_NAMESPACE: &str = "http://www.w3.org/2005/07/scxml";
+
+/// The `src` of every `<sce:import>` a document names, and of every
+/// `<invoke>` that names a standard statechart as its child (`sce:std/...`),
+/// in document order: the documents a machine generated from it is made of.
 ///
 /// Read from its elements, never from its text: a comment or a string that
 /// mentions a standard name imports nothing. A document that is not
-/// well-formed names none here; its own parse reports why.
+/// well-formed names none here; its own parse reports why. An `<invoke src>`
+/// that names a file is not a standard document and is left to the reader of
+/// that file.
 pub fn import_sources(content: &str) -> Vec<String> {
     let Ok(document) = roxmltree::Document::parse(content) else {
         return Vec::new();
     };
     document
         .descendants()
-        .filter(|node| {
-            node.is_element()
-                && node.tag_name().name() == "import"
-                && node.tag_name().namespace() == Some(SCE_NAMESPACE)
+        .filter(|node| node.is_element())
+        .filter_map(|node| {
+            let name = node.tag_name();
+            let src = node.attribute("src")?;
+            let imported = name.name() == "import" && name.namespace() == Some(SCE_NAMESPACE);
+            let invoked = name.name() == "invoke"
+                && name.namespace() == Some(SCXML_NAMESPACE)
+                && src.starts_with(SCHEME);
+            (imported || invoked).then(|| src.to_string())
         })
-        .filter_map(|node| node.attribute("src").map(str::to_string))
         .collect()
 }
 
@@ -188,6 +199,35 @@ mod tests {
         assert!(lookup(Path::new("sce:std/../stdlib/time/days_from_civil.scxml")).is_none());
         assert!(lookup(Path::new("sce:std/time/no_such_document.scxml")).is_none());
         assert!(lookup(Path::new("time/days_from_civil.scxml")).is_none());
+    }
+
+    #[test]
+    fn a_standard_statechart_a_document_invokes_is_one_of_its_sources() {
+        // The child a parent invokes by its library name is part of what the
+        // parent's machine is made of, and so is every standard document the
+        // child imports; a child named by a file is not a standard document.
+        let parent = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="s">
+  <sce:import kind="event-schema" src="sce:std/shared/record_register.scxml" as="Register"/>
+  <state id="s">
+    <invoke type="scxml" id="list" src="sce:std/shared/record_list.scxml"/>
+    <invoke type="scxml" id="other" src="worker.scxml"/>
+  </state>
+</scxml>"#;
+        assert_eq!(
+            import_sources(parent),
+            [
+                "sce:std/shared/record_register.scxml",
+                "sce:std/shared/record_list.scxml"
+            ]
+        );
+        let reached = closure(import_sources(parent).into_iter().map(PathBuf::from));
+        for name in [
+            "sce:std/shared/record_list.scxml",
+            "sce:std/shared/record_write.scxml",
+            "sce:std/merge/mv_value.scxml",
+        ] {
+            assert!(reached.contains_key(name), "{name} is not reached");
+        }
     }
 
     #[test]

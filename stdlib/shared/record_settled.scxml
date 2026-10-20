@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/shared/record_settled.scxml — what a copy of a shared record list (record_list)
+  holds of the changes stamped at or before an instant, as one 32-bit number: the XOR of
+  the hash of every add and of every tombstone whose wall time is at most `before`
+  (merge/merkle_change_hash, the hash the digest keeps, an add as kind 0 and a tombstone as
+  kind 1). A copy holds the adds that no tombstone names and nothing else of them, so the
+  adds are the live ones: a copy that was never sent a write that was already written over
+  holds the tombstone and not the add, and holds what a copy that has both holds. Two
+  copies that hold the same adds and the same tombstones up to the instant return the same
+  number, whatever order the changes reached each in; a copy that lacks one, or holds one
+  more, returns another, but for the chance of 2^-32 that the hashes cancel. It is one pass
+  over each list.
+
+  The copies compare it before they compact (record_list.settle): the instant is settled
+  when every copy holds the same up to it and none will stamp a change at or before it
+  again.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       name="record_settled"
+       version="1.0">
+  <sce:import kind="event-schema" src="sce:std/merge/orset_entry.scxml" as="Entry"/>
+  <sce:import kind="algorithm" src="sce:std/merge/merkle_change_hash.scxml" as="MerkleChangeHash"/>
+  <sce:signature>
+    <sce:param name="adds" type="list&lt;record:Entry&gt;"/>
+    <sce:param name="tombstones" type="list&lt;record:Entry&gt;"/>
+    <sce:param name="before" type="int64"/>
+    <sce:return type="uint32" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="h" type="uint32" init="0"/>
+    <sce:foreach item="a" in="adds">
+      <sce:if cond="a.wallTime &lt;= before">
+        <sce:assign target="h" expr="h ^ MerkleChangeHash(a, 0)"/>
+      </sce:if>
+    </sce:foreach>
+    <sce:foreach item="t" in="tombstones">
+      <sce:if cond="t.wallTime &lt;= before">
+        <sce:assign target="h" expr="h ^ MerkleChangeHash(t, 1)"/>
+      </sce:if>
+    </sce:foreach>
+    <sce:return expr="h"/>
+  </sce:body>
+</scxml>

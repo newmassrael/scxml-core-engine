@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/shared/record_role.scxml — the host's word to a copy of a shared record list
+  (record_list) on what a member may do: the member's node and its `role` (record_member).
+  A role of 0 takes the member off the roster. The host tells every copy alike, the hub's
+  included, and it is the host that knows who the member is: the copy takes the word as it
+  takes record_list.room, and a person's copy refuses its own change when its role is less
+  than a writer's, before anything is stamped or sent, while the hub refuses what a member
+  without that role sends it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="record_role"
+       sce:event-name="record_list.role">
+  <datamodel>
+    <data id="node" sce:type="uint64" sce:direction="in"/>
+    <data id="role" sce:type="uint8" sce:direction="in"/>
+  </datamodel>
+</scxml>

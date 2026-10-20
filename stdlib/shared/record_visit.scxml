@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/shared/record_visit.scxml — a copy of a shared record list telling itself to
+  show a peer its digest's node at (`depth`, `prefix`): `to` is the node id of the peer,
+  0 for every person (a person's copy has only the hub to send to and does not read it),
+  and `reply` whether the node answers the peer's own at the last depth (record_node).
+  The copy sends the hash it holds there, which is 0 where it holds nothing, so a peer
+  that holds something there sees the difference.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="record_visit"
+       sce:event-name="record_list.visit">
+  <datamodel>
+    <data id="to" sce:type="uint64" sce:direction="in"/>
+    <data id="depth" sce:type="uint8" sce:direction="in"/>
+    <data id="prefix" sce:type="uint64" sce:direction="in"/>
+    <data id="reply" sce:type="bool" sce:direction="in"/>
+  </datamodel>
+</scxml>

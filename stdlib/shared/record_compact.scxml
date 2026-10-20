@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/shared/record_compact.scxml — the host's word that the changes of a copy of a
+  shared record list (record_list) up to an instant are settled, so that it can forget
+  them: `before`, a wall time in milliseconds. Every tombstone (a write someone wrote
+  over) stamped at or before it is dropped, with the add it names, and leaves the digest.
+  What the copy shows is unchanged: a register holds the values nobody has written over,
+  and a value that was written over is not one of them.
+
+  The host says it only when every copy has taken in every change stamped at or before
+  `before` and none is still on its way: a copy that had not taken in a tombstone, or a
+  write that arrives again after it, would hold an add nothing any longer says was written
+  over, and the value would come back (orset_live). A server that keeps each device's read
+  cursor knows it (stable_point); the host tells every copy the same instant. A host that
+  does not know it asks the hub to settle instead (record_settle).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="record_compact"
+       sce:event-name="record_list.compact">
+  <datamodel>
+    <data id="before" sce:type="int64" sce:direction="in"/>
+  </datamodel>
+</scxml>

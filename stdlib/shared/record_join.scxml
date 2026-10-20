@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/shared/record_join.scxml — what the host tells a copy of a shared record
+  list (record_list) when it starts: the node id its stamps carry, and whether this
+  copy is the hub the others send to.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="record_join"
+       sce:event-name="record_list.join">
+  <datamodel>
+    <data id="node" sce:type="uint64" sce:direction="in"/>
+    <data id="hub" sce:type="bool" sce:direction="in"/>
+  </datamodel>
+</scxml>

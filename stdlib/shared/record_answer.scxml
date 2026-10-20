@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/shared/record_answer.scxml — one answer a person's copy gave the hub of a shared
+  record list (record_list) to the question of what it holds up to an instant
+  (record_list.propose): the copy's node (`sender`) and the hash of what it held (`hash`,
+  record_settled). The hub keeps the answers of the round it has open and settles the
+  instant when as many copies as the host named hold what the hub holds.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="record_answer"
+       sce:event-name="record_list.answer">
+  <datamodel>
+    <data id="sender" sce:type="uint64" sce:direction="in"/>
+    <data id="hash" sce:type="uint32" sce:direction="in"/>
+  </datamodel>
+</scxml>

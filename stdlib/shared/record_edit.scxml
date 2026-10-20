@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/shared/record_edit.scxml — a person's change to one field of a row of a
+  shared record list, as the host or the statechart that invoked the list hands it to a
+  copy: which row, which field, the number or the text, and `now`, the host's wall clock
+  in milliseconds (a machine reads no clock of its own). The copy turns it into a write
+  stamped to sort after everything it has seen (record_write).
+
+  `text` is what a person typed: at most 32 bytes of UTF-8 as written, a bound a build
+  moves by naming `shared_typed_text` (`sce-codegen --limit shared_typed_text=N`), and the
+  copy holds a text past it to the same bound and refuses the change whole. A write
+  carries more (record_write), for what a host puts there in place of the text.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="record_edit"
+       sce:event-name="record_list.edit">
+  <datamodel>
+    <data id="id" sce:type="uint32" sce:direction="in"/>
+    <data id="field" sce:type="uint16" sce:direction="in"/>
+    <data id="value" sce:type="int64" sce:direction="in"/>
+    <data id="text" sce:type="string" sce:max-size="32" sce:limit="shared_typed_text" sce:direction="in"/>
+    <data id="now" sce:type="int64" sce:direction="in"/>
+  </datamodel>
+</scxml>

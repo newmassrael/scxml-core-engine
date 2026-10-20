@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/shared/record_supersede.scxml — one write a person has seen and written over,
+  as it travels between copies of a shared record list: the field it was written to
+  (`id`, `field`), the stamp of that write (`wallTime`, `counter`, `nodeId`: the dot it is
+  known by) and `by`, the node of the person who wrote over it. A write over a field does
+  not erase a value it has not seen, so each copy takes the writes that were seen out one
+  by one, and a value written at the same time by someone who had not seen it is not named
+  here and stays (record_list).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="record_supersede"
+       sce:event-name="record_list.supersede">
+  <datamodel>
+    <data id="id" sce:type="uint32" sce:direction="in"/>
+    <data id="field" sce:type="uint16" sce:direction="in"/>
+    <data id="wallTime" sce:type="int64" sce:direction="in"/>
+    <data id="counter" sce:type="uint32" sce:direction="in"/>
+    <data id="nodeId" sce:type="uint64" sce:direction="in"/>
+    <data id="by" sce:type="uint64" sce:direction="in"/>
+  </datamodel>
+</scxml>

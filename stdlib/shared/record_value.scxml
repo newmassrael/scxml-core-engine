@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/shared/record_value.scxml — a further live value of a register of a shared
+  record list (record_list), told to the statechart that invoked the list after the
+  record_list.register (record_register) that counted it: the row (`id`) and the field
+  (`field`), its place in the order of the register's dots (`ordinal`: 1 for the second
+  value, the first being the one record_list.register carried), the number (`value`), the
+  text (`text`, `merge_text`) and the dot (`wallTime`, `counter`, `nodeId`).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="record_value"
+       sce:event-name="record_list.value">
+  <datamodel>
+    <data id="id" sce:type="uint32" sce:direction="in"/>
+    <data id="field" sce:type="uint16" sce:direction="in"/>
+    <data id="ordinal" sce:type="uint32" sce:direction="in"/>
+    <data id="value" sce:type="int64" sce:direction="in"/>
+    <data id="text" sce:type="string" sce:max-size="96" sce:limit="merge_text" sce:direction="in"/>
+    <data id="wallTime" sce:type="int64" sce:direction="in"/>
+    <data id="counter" sce:type="uint32" sce:direction="in"/>
+    <data id="nodeId" sce:type="uint64" sce:direction="in"/>
+  </datamodel>
+</scxml>

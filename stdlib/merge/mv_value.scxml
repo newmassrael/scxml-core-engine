@@ -19,7 +19,10 @@
   backend gives the buffer it is held in: a write to a field with a smaller bound
   than the text came from is refused where it is written, never cut. A person's text
   is at most 32 (todo_edit); a copy that holds a write whose content a host sealed
-  holds the sealed text, which is longer (todo_write).
+  holds the sealed text, which is longer (todo_write). The bound is named
+  `merge_text`, as the text a write of sce:std/shared/record_list carries is, so a
+  build that gives the name another number moves the write and the value it is kept
+  in together.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -31,7 +34,7 @@
     <data id="id" sce:type="uint64" sce:direction="in"/>
     <data id="field" sce:type="uint64" sce:direction="in"/>
     <data id="value" sce:type="int64" sce:direction="in"/>
-    <data id="text" sce:type="string" sce:max-size="96" sce:direction="in"/>
+    <data id="text" sce:type="string" sce:max-size="96" sce:limit="merge_text" sce:direction="in"/>
     <data id="wallTime" sce:type="int64" sce:direction="in"/>
     <data id="counter" sce:type="uint32" sce:direction="in"/>
     <data id="nodeId" sce:type="uint64" sce:direction="in"/>

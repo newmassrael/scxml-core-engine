@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/shared/record_member.scxml — one member of a shared record list (record_list)
+  and what the host let it do: the member's node (`node`, the id its stamps carry) and its
+  `role`: 1 may read, 2 may also write, 3 may also do what an owner does (the host's to
+  say: a copy takes the host's word on it, as it takes `record_list.room`). A list's
+  roster is the members the host named; a member it did not name has no role, and a list
+  with no roster at all is one the host has not set up and refuses no one. The record type
+  record_roster takes and gives back.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="record_member"
+       sce:event-name="record_list.member">
+  <datamodel>
+    <data id="node" sce:type="uint64" sce:direction="in"/>
+    <data id="role" sce:type="uint8" sce:direction="in"/>
+  </datamodel>
+</scxml>

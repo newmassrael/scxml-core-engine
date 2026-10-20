@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/shared/record_room.scxml — how much a shared record list (record_list) is
+  allowed to hold, as the host tells a copy of it: `values`, the most values its
+  registers hold (a new register is refused when the copy holds that many already),
+  `history`, the most tombstones it keeps before the host has to settle (a change is
+  refused when the copy holds that many) and `digest`, the most nodes of its digest (a
+  change is refused when the copy holds that many). A 0 is no limit of that kind.
+
+  The limits are the host's to give a list because a list is built with the room it has
+  (`sce:limit`, the bounds a deployment chooses) and what a list holds is a plan's: one
+  account's list is given less than another's out of the same build. A person's copy
+  refuses a change of its own, whole, before anything is stamped or sent, and takes in
+  what the others sent without asking: they were judged where they were made. So the
+  numbers are given to every copy alike, and kept below the bound the list is built with by
+  what the people of one list can write at once before they have seen each other's.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="record_room"
+       sce:event-name="record_list.room">
+  <datamodel>
+    <data id="values" sce:type="uint32" sce:direction="in"/>
+    <data id="history" sce:type="uint32" sce:direction="in"/>
+    <data id="digest" sce:type="uint32" sce:direction="in"/>
+  </datamodel>
+</scxml>

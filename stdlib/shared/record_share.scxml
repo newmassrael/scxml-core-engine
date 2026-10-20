@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/shared/record_share.scxml — a copy of a shared record list telling itself to
+  send a peer every change it holds whose dot falls in one minute (`minute`, a minute of
+  the digest's last depth), as the ordinary writes and supersedes they were: `to` is the
+  node id of the peer, as in record_visit.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="record_share"
+       sce:event-name="record_list.share">
+  <datamodel>
+    <data id="to" sce:type="uint64" sce:direction="in"/>
+    <data id="minute" sce:type="uint64" sce:direction="in"/>
+  </datamodel>
+</scxml>

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/shared/record_propose.scxml — the hub's question to a person's copy of a shared
+  record list (record_list), made of a settle (record_list.settle): what do you hold of
+  the changes up to `before`? The copy moves its clock past `before` before it answers,
+  so that nothing it stamps from then on is at or before it, and answers with
+  record_list.ack.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="record_propose"
+       sce:event-name="record_list.propose">
+  <datamodel>
+    <data id="before" sce:type="int64" sce:direction="in"/>
+  </datamodel>
+</scxml>

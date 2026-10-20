@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/shared/record_write.scxml — one write to one field of one row of a shared
+  record list, as it travels between copies: which row (`id`), which field of it
+  (`field`), the number the field is set to (`value`) or, for a text field, the text
+  (`text`), and the stamp of the write (a hybrid logical clock, hlc_timestamp). A row is
+  a set of fields, and each field is its own multi-value register (record_list), so two
+  people changing different fields of one row at once both keep their change.
+
+  The numbers of the rows and of the fields, and what each field means, are the
+  application's: the list keeps a number or a text for each and reads neither. A row is
+  numbered by a uint32 and a field by a uint16, so that the register they name, `id *
+  65536 + field`, is one uint64 below 2^48 (record_list): any number the types hold names
+  a register of its own, and none is refused for being large. An application keeps an
+  enum in a number field by the enum's declared wire number, and a record of its own over
+  several fields of one row.
+
+  `text` holds at most 96 bytes of UTF-8, counted in bytes as every string of a
+  `sce-static` machine is: a bound named `merge_text`, the name the value a copy keeps
+  carries (sce:std/merge/mv_value), so a build that gives it another number moves both.
+  A person writes at most what record_edit holds; the rest is room for what a host puts
+  there instead of the text when it keeps the content from the hub, such as the sealed
+  content.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="record_write"
+       sce:event-name="record_list.write">
+  <datamodel>
+    <data id="id" sce:type="uint32" sce:direction="in"/>
+    <data id="field" sce:type="uint16" sce:direction="in"/>
+    <data id="value" sce:type="int64" sce:direction="in"/>
+    <data id="text" sce:type="string" sce:max-size="96" sce:limit="merge_text" sce:direction="in"/>
+    <data id="wallTime" sce:type="int64" sce:direction="in"/>
+    <data id="counter" sce:type="uint32" sce:direction="in"/>
+    <data id="nodeId" sce:type="uint64" sce:direction="in"/>
+  </datamodel>
+</scxml>

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/shared/record_settle.scxml — the host's request that the hub of a shared record
+  list (record_list) try to settle the changes up to an instant so that the copies can
+  forget them: `before`, a wall time in milliseconds, and `members`, how many people's
+  copies the list has. It is a proposal and not a promise, as record_list.compact is: the
+  hub asks each person's copy (record_list.propose) for what it holds up to the instant,
+  and only when `members` copies, each a different one, hold what the hub holds does it
+  tell them all to forget (record_list.floor). A copy that lacks a change, or whose answer
+  is lost, makes the round settle nothing, and the host asks again.
+
+  The hub does not keep a list of its readers, so who the people are is the host's to say,
+  and it is what the safety of the round rests on: the instant is settled only if every
+  copy took part, and `members` fewer than the copies there are would settle it without
+  one that holds something the others lack.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="record_settle"
+       sce:event-name="record_list.settle">
+  <datamodel>
+    <data id="before" sce:type="int64" sce:direction="in"/>
+    <data id="members" sce:type="uint32" sce:direction="in"/>
+  </datamodel>
+</scxml>

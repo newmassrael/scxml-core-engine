@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/shared/register_values.scxml — the live values of one register of a shared
+  record list (record_list), in the order of their dots: every value of `values` whose
+  row is `id` and whose field is `field`, the one of the earliest dot first, a dot being
+  earlier when its wall time is, then its counter, then its node. A copy keeps its values
+  in the order the writes reached it, which differs between copies, so a register is read
+  in this order wherever it is read: two copies that hold the same values tell a parent the
+  same first value and the same ordinals (record_register, record_value).
+
+  Dots are unique: a write is known by its dot, and a copy holds one value for each
+  (merge/mv_value_keep). Each pass takes the earliest dot after the one taken before, so a
+  register of k values is read in k passes over `values` and one more that finds nothing.
+  The result holds at most 512 values, the bound of `values` itself (`merge_values`).
+
+  values {(1,1)@(100,0,7), (1,2)@(90,0,7), (1,1)@(100,0,3), (1,1)@(99,4,9)}, id 1,
+  field 1 → {(1,1)@(99,4,9), (1,1)@(100,0,3), (1,1)@(100,0,7)} · field 3 → {}.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       name="register_values"
+       version="1.0">
+  <sce:import kind="event-schema" src="sce:std/merge/mv_value.scxml" as="Value"/>
+  <sce:signature>
+    <sce:param name="values" type="list&lt;record:Value&gt;"/>
+    <sce:param name="id" type="uint64"/>
+    <sce:param name="field" type="uint64"/>
+    <sce:return type="list&lt;record:Value&gt;" may-fail="true" returns-max-size="512" sce:limit="merge_values"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="out" type="list&lt;record:Value&gt;" capacity="512" sce:limit="merge_values"/>
+    <sce:var name="started" type="bool" init="false"/>
+    <sce:var name="lastWall" type="int64" init="0"/>
+    <sce:var name="lastCounter" type="uint32" init="0"/>
+    <sce:var name="lastNode" type="uint64" init="0"/>
+    <sce:var name="more" type="bool" init="true"/>
+    <sce:while cond="more">
+      <sce:var name="chosen" type="bool" init="false"/>
+      <sce:var name="bestWall" type="int64" init="0"/>
+      <sce:var name="bestCounter" type="uint32" init="0"/>
+      <sce:var name="bestNode" type="uint64" init="0"/>
+      <sce:foreach item="v" in="values">
+        <sce:if cond="v.id === id &amp;&amp; v.field === field &amp;&amp; (!started || v.wallTime &gt; lastWall || (v.wallTime === lastWall &amp;&amp; (v.counter &gt; lastCounter || (v.counter === lastCounter &amp;&amp; v.nodeId &gt; lastNode)))) &amp;&amp; (!chosen || v.wallTime &lt; bestWall || (v.wallTime === bestWall &amp;&amp; (v.counter &lt; bestCounter || (v.counter === bestCounter &amp;&amp; v.nodeId &lt; bestNode))))">
+          <sce:assign target="chosen" expr="true"/>
+          <sce:assign target="bestWall" expr="v.wallTime"/>
+          <sce:assign target="bestCounter" expr="v.counter"/>
+          <sce:assign target="bestNode" expr="v.nodeId"/>
+        </sce:if>
+      </sce:foreach>
+      <sce:if cond="chosen">
+        <sce:foreach item="w" in="values">
+          <sce:if cond="w.id === id &amp;&amp; w.field === field &amp;&amp; w.wallTime === bestWall &amp;&amp; w.counter === bestCounter &amp;&amp; w.nodeId === bestNode">
+            <sce:append target="out" expr="w"/>
+          </sce:if>
+        </sce:foreach>
+        <sce:assign target="started" expr="true"/>
+        <sce:assign target="lastWall" expr="bestWall"/>
+        <sce:assign target="lastCounter" expr="bestCounter"/>
+        <sce:assign target="lastNode" expr="bestNode"/>
+        <sce:else>
+          <sce:assign target="more" expr="false"/>
+        </sce:else>
+      </sce:if>
+    </sce:while>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>

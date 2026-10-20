@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/shared/record_floor.scxml — the hub's word to every copy of a shared record
+  list (record_list) that the changes up to `before` are settled: every copy held `hash`
+  of them (record_settled) when it was asked, and none stamps a change at or before the
+  instant again. A copy that holds the same forgets what is settled (record_list.compact)
+  and from then on takes in no change stamped at or before the instant that it does not
+  already hold. A copy that holds another is not one the hub asked, a copy restarted from
+  an old save or one that has missed changes: it forgets nothing, and says so (`stale`),
+  so that the host starts it again from what its peers hold.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="record_floor"
+       sce:event-name="record_list.floor">
+  <datamodel>
+    <data id="before" sce:type="int64" sce:direction="in"/>
+    <data id="hash" sce:type="uint32" sce:direction="in"/>
+  </datamodel>
+</scxml>

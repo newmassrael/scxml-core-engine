@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/shared/record_announce.scxml — a register of a shared record list (record_list)
+  whose live values are to be told to the statechart that invoked the list: the row
+  (`id`) and the field (`field`). The list raises it for itself after each change that
+  moved what a register holds, and a parent may send it to ask what one holds now; the
+  list answers with record_list.register and record_list.value (record_register,
+  record_value), and only to a parent that started it asking for them.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="record_announce"
+       sce:event-name="record_list.announce">
+  <datamodel>
+    <data id="id" sce:type="uint32" sce:direction="in"/>
+    <data id="field" sce:type="uint16" sce:direction="in"/>
+  </datamodel>
+</scxml>

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/shared/record_register.scxml — what a shared record list (record_list) tells the
+  statechart that invoked it about one register once a change to it is taken in: the row
+  (`id`) and the field (`field`), how many live values the register holds now (`count`, 0
+  when every value it held was written over), and the first of them in the order of their
+  dots (wall time, then counter, then node: register_values): the number (`value`), the
+  text (`text`, bounded as a write's is, `merge_text`) and the dot (`wallTime`, `counter`,
+  `nodeId`). With `count` 0 the value is 0, the text empty and the dot all 0.
+
+  A register that holds more than one value, because two people wrote it at once and
+  neither saw the other's, is told the rest by record_list.value (record_value), one to
+  each further value, after this one. A parent keeps the last it was told of each
+  register and reads a `count` above 1 as a choice a person has to make.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="record_register"
+       sce:event-name="record_list.register">
+  <datamodel>
+    <data id="id" sce:type="uint32" sce:direction="in"/>
+    <data id="field" sce:type="uint16" sce:direction="in"/>
+    <data id="count" sce:type="uint32" sce:direction="in"/>
+    <data id="value" sce:type="int64" sce:direction="in"/>
+    <data id="text" sce:type="string" sce:max-size="96" sce:limit="merge_text" sce:direction="in"/>
+    <data id="wallTime" sce:type="int64" sce:direction="in"/>
+    <data id="counter" sce:type="uint32" sce:direction="in"/>
+    <data id="nodeId" sce:type="uint64" sce:direction="in"/>
+  </datamodel>
+</scxml>
