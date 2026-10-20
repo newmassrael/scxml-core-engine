@@ -1394,13 +1394,20 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     )
     # This backend bounds the delayed-send queue at SCE_MAX_SCHEDULED
     # (sce/types.h, 4 by default), its documented resource limit, and drops what
-    # does not fit. The `timed` outcome arms eight pulses at once, so this one
-    # target raises it to eight: what is measured is that a chain finite because
-    # the clock is is not refused, not that four of the pulses fit.
+    # does not fit. The `timed` outcome arms all its pulses at once, so this one
+    # target raises the bound to that many: what is measured is that a chain finite
+    # because the clock is is not refused, not that four of the pulses fit. The
+    # pulse count is the shared table's, read here so the bound cannot be moved
+    # without the number it is sized for.
     # The budgets and counters the test holds the engine to are the shared
-    # table's, read at run time from this path.
+    # table's too, read at run time from this path.
+    file(READ "${CMAKE_SOURCE_DIR}/tests/external_event_budget/budget_outcomes.json" _SCE_BUDGET_TABLE)
+    string(JSON _SCE_TIMED_PULSES ERROR_VARIABLE _SCE_TIMED_PULSES_ERR GET "${_SCE_BUDGET_TABLE}" timed pulses)
+    if(_SCE_TIMED_PULSES_ERR)
+        message(FATAL_ERROR "tests/external_event_budget/budget_outcomes.json has no timed.pulses: ${_SCE_TIMED_PULSES_ERR}")
+    endif()
     target_compile_definitions(sce_c_integration_external_chain_is_bounded PRIVATE
-        SCE_MAX_SCHEDULED=8
+        SCE_MAX_SCHEDULED=${_SCE_TIMED_PULSES}
         SCE_EXTERNAL_EVENT_BUDGET_TABLE="${CMAKE_SOURCE_DIR}/tests/external_event_budget/budget_outcomes.json"
     )
     target_link_libraries(sce_c_integration_external_chain_is_bounded PRIVATE
