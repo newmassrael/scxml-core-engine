@@ -214,6 +214,29 @@ pub struct RecordFieldSpec {
     /// every other field. Derived with `fields`, never written.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_size: Option<u32>,
+    /// The enum document a field declared `enum:<alias>` holds a value of: the
+    /// name of the enum fixture of this manifest that generates its type. `None`
+    /// for every other field. Derived with `fields`, never written.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enum_document: Option<String>,
+    /// The variants of that enum, each by the name its document declares, which
+    /// the oracle writes the value as, and the member this language's declaration
+    /// emits for it. Empty for every other field. Derived with `fields`, never
+    /// written.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub variants: Vec<RecordEnumVariant>,
+}
+
+/// One variant of the enum a record's field holds, as a fragment builds the field
+/// from the name the oracle writes and compares it with one.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct RecordEnumVariant {
+    /// The name the enum document declares for the variant.
+    pub name: String,
+    /// The member this language's declaration emits for it
+    /// (`forge::enum_naming::variant_ident`).
+    pub ident: String,
 }
 
 /// Compound output descriptor for fixtures whose `expected` JSON value is an
@@ -1542,15 +1565,18 @@ impl Manifest {
                             }
                         }
                         let declared_bool = field.sce_type == "bool";
-                        let declared_text = field.sce_type == "string";
+                        // An enum field's value is the name a variant declares.
+                        let declared_text =
+                            field.sce_type == "string" || field.sce_type.starts_with("enum:");
                         let value_bool = matches!(field.value, EventSchemaFieldValue::Bool(_));
                         let value_text = matches!(field.value, EventSchemaFieldValue::Text(_));
                         if declared_bool != value_bool || declared_text != value_text {
                             return Err(format!(
                                 "fixture {}: event-schema field `{}` is declared \
                                  `{}` but its value is {} — a `bool` field takes \
-                                 true/false, a `string` field text and every other \
-                                 field a number",
+                                 true/false, a `string` field text, an `enum:` field \
+                                 the name a variant declares and every other field \
+                                 a number",
                                 f.name,
                                 field.name,
                                 field.sce_type,
@@ -2482,29 +2508,59 @@ fn read_record_fields(
     record: &str,
     language: Language,
 ) -> Result<Vec<RecordFieldSpec>, String> {
-    use crate::forge::model::{ForgeDocument, SceType};
+    use crate::forge::model::SceType;
     let path = manifest
         .fixtures
         .iter()
         .find(|g| g.name == record && matches!(g.spec, FixtureSpec::EventSchema { .. }))
         .ok_or_else(|| format!("record `{record}` names no event-schema fixture in this manifest"))?
         .document_path(resource_dir);
-    let text = crate::load_forge_source(&path, &[])
-        .map_err(|e| format!("cannot read {}: {e}", path.display()))?
-        .positions
-        .expanded;
-    let Some(ForgeDocument::EventSchema(m)) =
-        crate::forge::parser::parse_forge(&text, crate::DocumentLabel::symmetric(record))
-            .map_err(|e| format!("{}: {e}", path.display()))?
-    else {
-        return Err(format!(
-            "record `{record}`: {} is not an event-schema document",
-            path.display()
-        ));
-    };
+    let (m, enums) = read_event_schema(&path, record)?;
     m.fields
         .iter()
         .map(|f| {
+            // An enum field is the enum document's own type, which the harness
+            // reaches through the enum fixture of this manifest that generates
+            // it, and which the oracle writes by the name each variant declares.
+            if let SceType::Enum(reference) = &f.sce_type {
+                let model = enums.get(&reference.alias).ok_or_else(|| {
+                    format!(
+                        "record `{record}`: field `{}` holds the enum `{}`, which the schema \
+                         imports from no readable enum document",
+                        f.id, reference.alias
+                    )
+                })?;
+                let generated = manifest
+                    .fixtures
+                    .iter()
+                    .any(|g| g.name == model.name && matches!(g.spec, FixtureSpec::Enum { .. }));
+                if !generated {
+                    return Err(format!(
+                        "record `{record}`: field `{}` holds the enum `{}`, which names no enum \
+                         fixture in this manifest",
+                        f.id, model.name
+                    ));
+                }
+                return Ok(RecordFieldSpec {
+                    name: f.id.clone(),
+                    ident: crate::forge::generator::event_schema_field_ident(&f.id, language),
+                    ty: enum_carrier(record, &f.id, &model.underlying_type)?,
+                    max_size: None,
+                    enum_document: Some(model.name.clone()),
+                    variants: model
+                        .variants
+                        .iter()
+                        .map(|v| RecordEnumVariant {
+                            name: v.name.clone(),
+                            ident: crate::forge::enum_naming::variant_ident(
+                                language,
+                                &model.name,
+                                &v.name,
+                            ),
+                        })
+                        .collect(),
+                });
+            }
             let ty = match &f.sce_type {
                 SceType::Bool => CanonicalType::Bool,
                 SceType::Uint8 => CanonicalType::U8,
@@ -2537,9 +2593,79 @@ fn read_record_fields(
                     CanonicalType::String => f.max_size,
                     _ => None,
                 },
+                enum_document: None,
+                variants: Vec::new(),
             })
         })
         .collect()
+}
+
+/// The canonical type of the carrier an enum's values are held in, which a record
+/// field of the enum declares as its `type`: the harness builds and compares the
+/// field by its variants, and the carrier is what the enum document says it is.
+fn enum_carrier(
+    record: &str,
+    field: &str,
+    underlying: &crate::forge::model::SceType,
+) -> Result<CanonicalType, String> {
+    use crate::forge::model::SceType;
+    Ok(match underlying {
+        SceType::Uint8 => CanonicalType::U8,
+        SceType::Uint16 => CanonicalType::U16,
+        SceType::Uint32 => CanonicalType::U32,
+        SceType::Uint64 => CanonicalType::U64,
+        other => {
+            return Err(format!(
+                "record `{record}`: field `{field}` holds an enum carried as {}, which the \
+                 harness has no canonical type for",
+                other.as_attr()
+            ))
+        }
+    })
+}
+
+/// An event-schema document, and each enum it imports by the alias it imports it
+/// under ([`read_event_schema`]).
+type EventSchemaAndEnums = (
+    crate::forge::model::EventSchemaModel,
+    std::collections::BTreeMap<String, crate::forge::model::EnumModel>,
+);
+
+/// The event-schema document at `path`, and each enum it imports by the alias it
+/// imports it under, read from the schema's own directory as every reader of the
+/// schema reads it. `label` names the document in a refusal.
+fn read_event_schema(path: &Path, label: &str) -> Result<EventSchemaAndEnums, String> {
+    use crate::forge::model::{ForgeDocument, ForgeKind};
+    let text = crate::load_forge_source(path, &[])
+        .map_err(|e| format!("cannot read {}: {e}", path.display()))?
+        .positions
+        .expanded;
+    let parsed = crate::forge::parser::parse_forge_with_imports(
+        &text,
+        crate::DocumentLabel::symmetric(label),
+    )
+    .map_err(|e| format!("{}: {e}", path.display()))?;
+    let Some(crate::forge::model::ParsedForge {
+        document: ForgeDocument::EventSchema(model),
+        imports,
+        ..
+    }) = parsed
+    else {
+        return Err(format!(
+            "record `{label}`: {} is not an event-schema document",
+            path.display()
+        ));
+    };
+    let base_dir = path.parent().unwrap_or_else(|| Path::new("."));
+    let mut enums = std::collections::BTreeMap::new();
+    for import in imports.iter().filter(|i| i.kind == ForgeKind::Enum) {
+        if let Some(ForgeDocument::Enum(enum_model)) =
+            crate::forge::import_source::parse_quietly(base_dir, import).map(|p| p.document)
+        {
+            enums.insert(import.alias.clone(), enum_model);
+        }
+    }
+    Ok((model, enums))
 }
 
 fn read_validator_has_state(scxml_path: &Path) -> Result<bool, String> {
@@ -2824,6 +2950,80 @@ fn fold_enum_identifiers(
                 )
             })?
             .insert("ident".into(), serde_json::Value::from(ident));
+    }
+    Ok(())
+}
+
+/// Put on each enum field of an event-schema fixture the enum document it holds a
+/// value of, `enum_document`, and the member this language's declaration of that
+/// enum emits for the variant the field's value names, `ident` — what a fragment
+/// builds the payload's field from and compares it with. The manifest writes such
+/// a field as `sce_type: "enum:<alias>"` and its value as the variant's declared
+/// name; the alias is read from the schema document's own imports.
+fn fold_event_schema_enum_fields(
+    value: &mut serde_json::Value,
+    fixture: &Fixture,
+    language: Language,
+    resource_dir: &Path,
+) -> Result<(), String> {
+    let FixtureSpec::EventSchema { fields, .. } = &fixture.spec else {
+        return Ok(());
+    };
+    if !fields.iter().any(|f| f.sce_type.starts_with("enum:")) {
+        return Ok(());
+    }
+    let (_, enums) = read_event_schema(&fixture.document_path(resource_dir), &fixture.name)?;
+    let rows = value
+        .get_mut("fields")
+        .and_then(|v| v.as_array_mut())
+        .ok_or_else(|| {
+            format!(
+                "fixture {}: an event-schema fixture did not serialize its 'fields' as an array",
+                fixture.name
+            )
+        })?;
+    for (row, field) in rows.iter_mut().zip(fields) {
+        let Some(alias) = field.sce_type.strip_prefix("enum:") else {
+            continue;
+        };
+        let model = enums.get(alias).ok_or_else(|| {
+            format!(
+                "fixture {}: field `{}` holds the enum `{alias}`, which the schema imports \
+                 from no readable enum document",
+                fixture.name, field.name
+            )
+        })?;
+        let EventSchemaFieldValue::Text(declared) = &field.value else {
+            return Err(format!(
+                "fixture {}: field `{}` holds an enum, whose value is the name a variant \
+                 declares",
+                fixture.name, field.name
+            ));
+        };
+        if !model.variants.iter().any(|v| &v.name == declared) {
+            return Err(format!(
+                "fixture {}: field `{}` holds `{declared}`, which no variant of `{}` declares",
+                fixture.name, field.name, model.name
+            ));
+        }
+        let row = row.as_object_mut().ok_or_else(|| {
+            format!(
+                "fixture {}: field `{}` did not serialize to a JSON object",
+                fixture.name, field.name
+            )
+        })?;
+        row.insert(
+            "enum_document".into(),
+            serde_json::Value::from(model.name.clone()),
+        );
+        row.insert(
+            "ident".into(),
+            serde_json::Value::from(crate::forge::enum_naming::variant_ident(
+                language,
+                &model.name,
+                declared,
+            )),
+        );
     }
     Ok(())
 }
@@ -3235,6 +3435,7 @@ pub fn render_harness(
             baked_from_reference |=
                 fold_reject_vectors(&mut v, &reference, f, language, &reference_path)?;
             fold_enum_identifiers(&mut v, f, language)?;
+            fold_event_schema_enum_fields(&mut v, f, language, resource_dir)?;
             // `oracle_eligible: false` fixtures don't have a field oracle —
             // they're compile-only. Skip the lookup + merge so the harness
             // fragment renders the minimal probe block without any `cases`

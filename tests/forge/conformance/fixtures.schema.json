@@ -729,6 +729,24 @@
         "default"
       ]
     },
+    "RecordEnumVariant": {
+      "description": "One variant of the enum a record's field holds, as a fragment builds the field from the name the oracle writes and compares it with one.",
+      "type": "object",
+      "required": [
+        "ident",
+        "name"
+      ],
+      "properties": {
+        "ident": {
+          "description": "The member this language's declaration emits for it (`forge::enum_naming::variant_ident`).",
+          "type": "string"
+        },
+        "name": {
+          "description": "The name the enum document declares for the variant.",
+          "type": "string"
+        }
+      }
+    },
     "RecordFieldSpec": {
       "description": "One field of a record, as the rendering language spells it.",
       "type": "object",
@@ -738,6 +756,13 @@
         "type"
       ],
       "properties": {
+        "enum_document": {
+          "description": "The enum document a field declared `enum:<alias>` holds a value of: the name of the enum fixture of this manifest that generates its type. `None` for every other field. Derived with `fields`, never written.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "ident": {
           "description": "The field's identifier on the payload struct in this language (`forge::generator::event_schema_field_ident`).",
           "type": "string"
@@ -757,6 +782,13 @@
         },
         "type": {
           "$ref": "#/definitions/CanonicalType"
+        },
+        "variants": {
+          "description": "The variants of that enum, each by the name its document declares, which the oracle writes the value as, and the member this language's declaration emits for it. Empty for every other field. Derived with `fields`, never written.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/RecordEnumVariant"
+          }
         }
       }
     },

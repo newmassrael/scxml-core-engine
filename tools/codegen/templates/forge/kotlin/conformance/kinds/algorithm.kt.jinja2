@@ -18,6 +18,12 @@
    it is judged by the error's contract name before anything reads
    `expected`, and every other case unwraps the value. #}
 {% set call %}{{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %}){% endset %}
+{# A record's field, read from the JSON `raw` as the data class holds it. A
+   field that holds a value of an enum is the enum fixture's own class, which
+   the oracle writes as the name a variant declares: the value is the variant
+   of that name, built the same way for an expected value and compared as the
+   enum. #}
+{% macro field_value(fld, raw, fixture) %}{% if fld.enum_document is defined %}when ({{ raw }}.jsonPrimitive.content) { {% for v in fld.variants %}"{{ v.name }}" -> com.sce.generated.{{ fld.enum_document }}.{{ fld.enum_document | to_pascal_case }}.{{ v.ident }}; {% endfor %}else -> throw AssertionError("{{ fixture }}.{{ fld.name }}: no variant is declared as the name the case writes") }{% else %}{{ raw | kt_unmarshal(fld.type) }}{% endif %}{% endmacro %}
         val cases = ref["{{ f.ref_section }}"]!!.jsonObject["{{ f.name }}"]!!.jsonObject["cases"]!!.jsonArray
         for (case in cases) {
             val args = case.jsonObject["args"]!!.jsonArray
@@ -30,7 +36,7 @@
 {% if arg_ty.record is defined %}
             val arg{{ i }} = com.sce.generated.{{ arg_ty.record }}.{{ arg_ty.record | to_pascal_case }}Payload(
 {% for fld in arg_ty.fields %}
-                {{ fld.ident }} = {{ ("args[" ~ i ~ "].jsonObject[\"" ~ fld.name ~ "\"]!!") | kt_unmarshal(fld.type) }},
+                {{ fld.ident }} = {{ field_value(fld, "args[" ~ i ~ "].jsonObject[\"" ~ fld.name ~ "\"]!!", f.name) }},
 {% endfor %}
             )
 {% elif arg_ty.list_of is defined and arg_ty.list_of.record is defined %}
@@ -39,7 +45,7 @@
             val arg{{ i }} = args[{{ i }}].jsonArray.map { e ->
                 com.sce.generated.{{ r.record }}.{{ r.record | to_pascal_case }}Payload(
 {% for fld in r.fields %}
-                    {{ fld.ident }} = {{ ("e.jsonObject[\"" ~ fld.name ~ "\"]!!") | kt_unmarshal(fld.type) }},
+                    {{ fld.ident }} = {{ field_value(fld, "e.jsonObject[\"" ~ fld.name ~ "\"]!!", f.name) }},
 {% endfor %}
                 )
             }
@@ -76,7 +82,7 @@
 
             val expected = case.jsonObject["expected"]!!.jsonObject
 {% for fld in f.output.fields %}
-            assertEquals({{ ("expected[\"" ~ fld.name ~ "\"]!!") | kt_unmarshal(fld.type) }}, actual.{{ fld.ident }}, "{{ f.name }}.{{ fld.name }}")
+            assertEquals({{ field_value(fld, "expected[\"" ~ fld.name ~ "\"]!!", f.name) }}, actual.{{ fld.ident }}, "{{ f.name }}.{{ fld.name }}")
 {% endfor %}
 {% elif f.output.list_of is defined and f.output.list_of.record is defined %}
 {# A list of records is a `List` of the schema's data class: compared by
@@ -88,7 +94,7 @@
             for (k in expected.indices) {
                 val e = expected[k].jsonObject
 {% for fld in f.output.list_of.fields %}
-                assertEquals({{ ("e[\"" ~ fld.name ~ "\"]!!") | kt_unmarshal(fld.type) }}, actual[k].{{ fld.ident }}, "{{ f.name }}.{{ fld.name }}")
+                assertEquals({{ field_value(fld, "e[\"" ~ fld.name ~ "\"]!!", f.name) }}, actual[k].{{ fld.ident }}, "{{ f.name }}.{{ fld.name }}")
 {% endfor %}
             }
 {% elif f.output.list_of is defined %}

@@ -774,6 +774,34 @@ def text_slot_holds(slots: list, probe: dict):
     return ("ok", any(held["slot"] == probe["slot"] and held["text"] == probe["text"] for held in slots))
 
 
+#: The variants of `enum_task_phase`, by the names its document declares, each with
+#: the one `algorithm_task_phase_advance` moves it to; and the most tasks that
+#: algorithm holds in its result.
+TASK_NEXT_PHASE = {"todo": "in_review", "in_review": "shipped", "shipped": "shipped"}
+TASK_CAPACITY = 4
+
+
+def task_record(task_id: int, phase: str) -> dict:
+    return {"taskId": task_id, "phase": phase}
+
+
+def task_phase_advance(tasks: list):
+    """algorithm_task_phase_advance — each task in order, one phase on, a shipped
+    task staying shipped. A phase is the name its variant declares, which is what
+    the cases write and every backend's harness builds the enum field from. The
+    result holds four tasks at most; a list past that is where the bounded backends
+    fail and the heap backends grow, so a case never reaches it."""
+    assert len(tasks) <= TASK_CAPACITY
+    return ("ok", [task_record(held["taskId"], TASK_NEXT_PHASE[held["phase"]]) for held in tasks])
+
+
+def task_phase_reopened(task: dict):
+    """algorithm_task_phase_reopened — a shipped task back to `todo`, any other as
+    it was."""
+    phase = "todo" if task["phase"] == "shipped" else task["phase"]
+    return ("ok", task_record(task["taskId"], phase))
+
+
 #: The most values `mv_value_keep` and `mv_value_drop` hold in their result.
 MV_CAPACITY = 512
 #: The fields that name a write: the row and field it is to, and its dot. The number
@@ -2577,6 +2605,27 @@ def slot_list(rng: SplitMix64) -> list:
     return held
 
 
+def task_value(rng: SplitMix64) -> dict:
+    """A task: an id at either end of a uint32 or between, and any phase."""
+    task_id = rng.pick([0, 1, 2, 3, 42, rng.below(U32_MAX + 1), U32_MAX - 1, U32_MAX])
+    return task_record(task_id, rng.pick(list(TASK_NEXT_PHASE)))
+
+
+def task_phase_advance_args(rng: SplitMix64):
+    """Up to the four tasks the result holds, an id repeated now and then."""
+    tasks: list = []
+    for _ in range(rng.pick([0, 1, 2, 3, 4, 4])):
+        if tasks and rng.below(5) == 0:
+            tasks.append(task_record(rng.pick(tasks)["taskId"], rng.pick(list(TASK_NEXT_PHASE))))
+        else:
+            tasks.append(task_value(rng))
+    return [tasks]
+
+
+def task_phase_reopened_args(rng: SplitMix64):
+    return [task_value(rng)]
+
+
 def text_slot_retitled_args(rng: SplitMix64):
     held = slot_list(rng)
     if held and rng.below(3) == 0:
@@ -3815,6 +3864,18 @@ FIXTURES = {
     "text_slot_latest": (lambda args: text_slot_latest(*args), text_slot_latest_args, 500, 0xE110_0049),
     "text_slot_retitled": (lambda args: text_slot_retitled(*args), text_slot_retitled_args, 400, 0xE110_004A),
     "text_slot_holds": (lambda args: text_slot_holds(*args), text_slot_holds_args, 500, 0xE110_004B),
+    "algorithm_task_phase_advance": (
+        lambda args: task_phase_advance(*args),
+        task_phase_advance_args,
+        200,
+        0xE110_0058,
+    ),
+    "algorithm_task_phase_reopened": (
+        lambda args: task_phase_reopened(*args),
+        task_phase_reopened_args,
+        60,
+        0xE110_0059,
+    ),
     "sheet_apply": (lambda args: sheet_apply(*args), sheet_apply_args, 500, 0xE110_004C),
     "sheet_settle": (lambda args: sheet_settle(*args), sheet_settle_args, 600, 0xE110_004D),
     "sheet_show": (lambda args: sheet_show(*args), sheet_show_args, 300, 0xE110_004E),

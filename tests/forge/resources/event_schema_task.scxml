@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A task: its id and where it stands. The record type the algorithm fixtures
+  `algorithm_task_phase_advance` and `algorithm_task_phase_reopened` take and
+  return (`record:Task`, SCE_FORGE.md §4.12). `phase` is an enum field, a value of
+  `enum_task_phase`, so a record that holds a value of an enum crosses every
+  backend's harness, built from and compared with the name its variant declares.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="event_schema_task"
+       sce:event-name="task.state">
+  <sce:import src="enum_task_phase.scxml" kind="enum" as="Phase"/>
+  <datamodel>
+    <data id="taskId" sce:type="uint32" sce:direction="in"/>
+    <data id="phase" sce:type="enum:Phase" sce:direction="in"/>
+  </datamodel>
+</scxml>

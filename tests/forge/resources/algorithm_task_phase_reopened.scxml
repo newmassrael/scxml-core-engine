@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A task reopened: a shipped task goes back to be done, and any other comes back as
+  it was. A record whose `phase` is a value of an enum in, a record out
+  (SCE_FORGE.md §4.12).
+
+  Exercises an enum field of a record parameter read and compared with a declared
+  name, copied into a record local built whole, written from a declared name, and
+  returned in a record.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="algorithm"
+       version="1.0">
+  <sce:import kind="event-schema" src="event_schema_task.scxml" as="Task"/>
+  <sce:import kind="enum" src="enum_task_phase.scxml" as="Phase"/>
+  <sce:signature>
+    <sce:param name="task" type="record:Task"/>
+    <sce:return type="record:Task"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="out" type="record:Task">
+      <sce:set name="taskId" expr="task.taskId"/>
+      <sce:set name="phase" expr="task.phase"/>
+    </sce:var>
+    <sce:if cond="task.phase === Phase.shipped">
+      <sce:assign target="out.phase" expr="Phase.todo"/>
+    </sce:if>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>

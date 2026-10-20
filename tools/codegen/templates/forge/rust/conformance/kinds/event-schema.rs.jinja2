@@ -34,6 +34,10 @@
 {% elif field.sce_type == "string" %}
             {{ field.name | to_snake_case }}: ::sce_portable_bytes::SceString::from_text("{{ field.value }}")
                 .expect("{{ f.name }}.{{ field.name }}: the text fits the schema's bound"),
+{% elif field.enum_document is defined %}
+{# A value of an enum is the variant the manifest names, the enum fixture's own
+   member; it reads back as the name the document declares for it. #}
+            {{ field.name | to_snake_case }}: fixtures::{{ field.enum_document }}::{{ field.enum_document | to_pascal_case }}::{{ field.ident }},
 {% else %}
             {{ field.name | to_snake_case }}: {{ field.value }}i64 as _,
 {% endif %}
@@ -55,6 +59,12 @@
 {% elif field.sce_type == "string" %}
         assert_eq!(
             payload.{{ field.name | to_snake_case }}.as_str(),
+            fields[{{ loop.index0 }}]["value"].as_str().unwrap(),
+            "{{ f.name }}.{{ field.name }}"
+        );
+{% elif field.enum_document is defined %}
+        assert_eq!(
+            payload.{{ field.name | to_snake_case }}.declared_name(),
             fields[{{ loop.index0 }}]["value"].as_str().unwrap(),
             "{{ f.name }}.{{ field.name }}"
         );

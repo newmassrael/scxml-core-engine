@@ -22,6 +22,12 @@
    it is judged by the error's contract name before anything reads
    `expected`, and every other case reads the value. #}
 {% set call %}{{ f.name }}.{{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %}){% endset %}
+{# A field that holds a value of an enum is the enum fixture's own type, which
+   the oracle writes as the name a variant declares: the JSON unmarshals into a
+   `string`, and the value is the variant that name maps to, built the same way
+   for an expected value and compared as the enum. #}
+{% macro source_type(fld) %}{% if fld.enum_document is defined %}string{% else %}{{ fld.type | go_type }}{% endif %}{% endmacro %}
+{% macro field_value(fld, read) %}{% if fld.enum_document is defined %}(map[string]{{ fld.enum_document }}.{{ fld.enum_document | to_pascal_case }}{ {% for v in fld.variants %}"{{ v.name }}": {{ fld.enum_document }}.{{ v.ident }}, {% endfor %}})[{{ read }}]{% else %}{{ read }}{% endif %}{% endmacro %}
 	cases := ref.pureCases(t, "{{ f.ref_section }}", "{{ f.name }}")
 	for _, c := range cases {
 {% for arg_ty in f.args %}
@@ -29,13 +35,13 @@
 {% if arg_ty.record is defined %}
 		var arg{{ i }}_src struct {
 {% for fld in arg_ty.fields %}
-			{{ fld.ident }} {{ fld.type | go_type }} `json:"{{ fld.name }}"`
+			{{ fld.ident }} {{ source_type(fld) }} `json:"{{ fld.name }}"`
 {% endfor %}
 		}
 		unmarshalOrFatal(t, c.Args[{{ i }}], &arg{{ i }}_src, "{{ f.name }} arg{{ i }}")
 		arg{{ i }} := {{ arg_ty.record }}.{{ arg_ty.record | to_pascal_case }}Payload{
 {% for fld in arg_ty.fields %}
-			{{ fld.ident }}: arg{{ i }}_src.{{ fld.ident }},
+			{{ fld.ident }}: {{ field_value(fld, "arg" ~ i ~ "_src." ~ fld.ident) }},
 {% endfor %}
 		}
 {% elif arg_ty == "bytes" %}
@@ -49,7 +55,7 @@
 {% set r = arg_ty.list_of %}
 		var arg{{ i }}_src []struct {
 {% for fld in r.fields %}
-			{{ fld.ident }} {{ fld.type | go_type }} `json:"{{ fld.name }}"`
+			{{ fld.ident }} {{ source_type(fld) }} `json:"{{ fld.name }}"`
 {% endfor %}
 		}
 		unmarshalOrFatal(t, c.Args[{{ i }}], &arg{{ i }}_src, "{{ f.name }} arg{{ i }}")
@@ -57,7 +63,7 @@
 		for __i, __v := range arg{{ i }}_src {
 			arg{{ i }}[__i] = {{ r.record }}.{{ r.record | to_pascal_case }}Payload{
 {% for fld in r.fields %}
-				{{ fld.ident }}: __v.{{ fld.ident }},
+				{{ fld.ident }}: {{ field_value(fld, "__v." ~ fld.ident) }},
 {% endfor %}
 			}
 		}
@@ -85,14 +91,14 @@
 {% if f.output.record is defined %}
 		var expected struct {
 {% for fld in f.output.fields %}
-			{{ fld.ident }} {{ fld.type | go_type }} `json:"{{ fld.name }}"`
+			{{ fld.ident }} {{ source_type(fld) }} `json:"{{ fld.name }}"`
 {% endfor %}
 		}
 		unmarshalOrFatal(t, c.Expected, &expected, "{{ f.name }} expected")
 		actual := {% if f.may_fail %}returned{% else %}{{ call }}{% endif %}
 
 {% for fld in f.output.fields %}
-		if actual.{{ fld.ident }} != expected.{{ fld.ident }} {
+		if actual.{{ fld.ident }} != {{ field_value(fld, "expected." ~ fld.ident) }} {
 			t.Errorf("{{ f.name }}.{{ fld.name }}: actual=%v expected=%v", actual.{{ fld.ident }}, expected.{{ fld.ident }})
 		}
 {% endfor %}
@@ -100,7 +106,7 @@
 {# A list of records: compared by length, then field by field. #}
 		var expected []struct {
 {% for fld in f.output.list_of.fields %}
-			{{ fld.ident }} {{ fld.type | go_type }} `json:"{{ fld.name }}"`
+			{{ fld.ident }} {{ source_type(fld) }} `json:"{{ fld.name }}"`
 {% endfor %}
 		}
 		unmarshalOrFatal(t, c.Expected, &expected, "{{ f.name }} expected")
@@ -112,7 +118,7 @@
 		}
 		for __i := range expected {
 {% for fld in f.output.list_of.fields %}
-			if actual[__i].{{ fld.ident }} != expected[__i].{{ fld.ident }} {
+			if actual[__i].{{ fld.ident }} != {{ field_value(fld, "expected[__i]." ~ fld.ident) }} {
 				t.Errorf("{{ f.name }}[%d].{{ fld.name }}: actual=%v expected=%v", __i, actual[__i].{{ fld.ident }}, expected[__i].{{ fld.ident }})
 			}
 {% endfor %}

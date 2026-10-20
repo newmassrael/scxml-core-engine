@@ -31,6 +31,11 @@ static void test_{{ f.name }}(void) {
 {# A bounded text is the buffer `{ char data[N + 1]; }`, which a string literal
    fills as the first member. #}
         .{{ field.name }} = { "{{ field.value }}" }{{ "," if not loop.last }}
+{% elif field.enum_document is defined %}
+{# A value of an enum is the constant the enum fixture's header declares for
+   the variant the manifest names; it is compared by the name the document
+   declares for it, after the table. #}
+        .{{ field.name }} = {{ field.ident }}{{ "," if not loop.last }}
 {% else %}
         .{{ field.name }} = {{ field.value }}{{ "," if not loop.last }}
 {% endif %}
@@ -41,16 +46,17 @@ static void test_{{ f.name }}(void) {
         const char *name;
         long long expected;
     } fields[] = {
-{% for field in f.fields if field.sce_type != "string" %}
+{% for field in f.fields if field.sce_type != "string" and not (field.enum_document is defined) %}
 {# A bool field compares as 0 or 1: `actual` below casts the field to
    long long, and the expected side is written the same way. A text is not a
-   number and is compared with `strcmp` after the table. #}
+   number and is compared with `strcmp` after the table, and so is the name a
+   value of an enum declares. #}
         { "{{ field.name }}", {% if field.sce_type == "bool" %}{{ 1 if field.value else 0 }}{% else %}{{ field.value }}{% endif %}LL }{{ "," if not loop.last }}
 {% endfor %}
     };
 
     const long long actual[] = {
-{% for field in f.fields if field.sce_type != "string" %}
+{% for field in f.fields if field.sce_type != "string" and not (field.enum_document is defined) %}
         (long long)payload.{{ field.name }}{{ "," if not loop.last }}
 {% endfor %}
     };
@@ -70,6 +76,17 @@ static void test_{{ f.name }}(void) {
                 "FAIL: {{ f.name }}.{{ field.name }} = '%s', expected '{{ field.value }}'\n",
                 payload.{{ field.name }}.data);
         ++g_failures;
+    }
+{% endfor %}
+{% for field in f.fields if field.enum_document is defined %}
+    {
+        const char *declared = {{ field.enum_document | to_snake_case }}_declared_name(payload.{{ field.name }});
+        if (declared == NULL || strcmp(declared, "{{ field.value }}") != 0) {
+            fprintf(stderr,
+                    "FAIL: {{ f.name }}.{{ field.name }} declares '%s', expected '{{ field.value }}'\n",
+                    declared != NULL ? declared : "(none)");
+            ++g_failures;
+        }
     }
 {% endfor %}
 }

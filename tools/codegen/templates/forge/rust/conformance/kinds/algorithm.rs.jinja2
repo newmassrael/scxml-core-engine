@@ -29,8 +29,11 @@
    anything reads `expected`, and every other case unwraps the value. #}
 {# A record's `string` field is the runtime's bounded text, `SceString<N>` with
    the schema's `max-size`; the oracle's text is built into it with the fallible
-   copy a host uses, and read back as the `&str` it compares as. #}
-{% macro field_value(fld, raw, fixture) %}{% if fld.type == "string" %}::sce_portable_bytes::SceString::<{{ fld.max_size }}>::from_text({{ raw | rust_unmarshal("string") }}).expect("{{ fixture }}.{{ fld.name }}: the case text fits the schema's bound"){% else %}{{ raw | rust_unmarshal(fld.type) }}{% endif %}{% endmacro %}
+   copy a host uses, and read back as the `&str` it compares as. A field that
+   holds a value of an enum is the enum fixture's own type, which the oracle
+   writes as the name a variant declares: the value is the variant of that name,
+   and an expected value is built the same way and compared as the enum. #}
+{% macro field_value(fld, raw, fixture) %}{% if fld.enum_document is defined %}match {{ raw }}.as_str().expect("{{ fixture }}.{{ fld.name }}: an enum field is the name a variant declares") { {% for v in fld.variants %}"{{ v.name }}" => fixtures::{{ fld.enum_document }}::{{ fld.enum_document | to_pascal_case }}::{{ v.ident }}, {% endfor %}other => panic!("{{ fixture }}.{{ fld.name }}: no variant is declared as {other}") }{% elif fld.type == "string" %}::sce_portable_bytes::SceString::<{{ fld.max_size }}>::from_text({{ raw | rust_unmarshal("string") }}).expect("{{ fixture }}.{{ fld.name }}: the case text fits the schema's bound"){% else %}{{ raw | rust_unmarshal(fld.type) }}{% endif %}{% endmacro %}
 {% set call %}fixtures::{{ f.name }}::{{ f.function }}({% for arg_ty in f.args %}{% if arg_ty == "bytes" or arg_ty.list_of is defined %}&arg{{ loop.index0 }}{% else %}arg{{ loop.index0 }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}){% endset %}
 {% if f.output.compare == "tolerance" %}
     let tol = tolerance(&reference);
@@ -84,7 +87,7 @@
 {% for fld in f.output.fields %}
         assert_eq!(
             actual.{{ fld.ident }}{% if fld.type == "string" %}.as_str(){% endif %},
-            {{ ("case[\"expected\"][\"" ~ fld.name ~ "\"]") | rust_unmarshal(fld.type) }},
+            {% if fld.enum_document is defined %}{{ field_value(fld, "case[\"expected\"][\"" ~ fld.name ~ "\"]", f.name) }}{% else %}{{ ("case[\"expected\"][\"" ~ fld.name ~ "\"]") | rust_unmarshal(fld.type) }}{% endif %},
             "{{ f.name }}.{{ fld.name }}"
         );
 {% endfor %}
@@ -100,7 +103,7 @@
 {% for fld in f.output.list_of.fields %}
             assert_eq!(
                 a.{{ fld.ident }}{% if fld.type == "string" %}.as_str(){% endif %},
-                {{ ("e[\"" ~ fld.name ~ "\"]") | rust_unmarshal(fld.type) }},
+                {% if fld.enum_document is defined %}{{ field_value(fld, "e[\"" ~ fld.name ~ "\"]", f.name) }}{% else %}{{ ("e[\"" ~ fld.name ~ "\"]") | rust_unmarshal(fld.type) }}{% endif %},
                 "{{ f.name }}.{{ fld.name }}"
             );
 {% endfor %}

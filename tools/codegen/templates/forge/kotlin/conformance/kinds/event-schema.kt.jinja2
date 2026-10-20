@@ -39,6 +39,8 @@
             ({{ field.value }}).toLong(),
 {%- elif field.sce_type == "string" %}
             "{{ field.value }}",
+{%- elif field.enum_document is defined %}
+            com.sce.generated.{{ field.enum_document }}.{{ field.enum_document | to_pascal_case }}.{{ field.ident }},
 {%- else %}
             {{ field.value }},
 {%- endif %}
@@ -61,6 +63,13 @@
         assertEquals(
             fields[{{ loop.index0 }}].jsonObject["value"]!!.jsonPrimitive.content,
             payload.{{ field.name }},
+            "{{ f.name }}.{{ field.name }}",
+        )
+{% elif field.enum_document is defined %}
+{# A value of an enum reads back as the name its document declares. #}
+        assertEquals(
+            fields[{{ loop.index0 }}].jsonObject["value"]!!.jsonPrimitive.content,
+            payload.{{ field.name }}.declaredName(),
             "{{ f.name }}.{{ field.name }}",
         )
 {% else %}

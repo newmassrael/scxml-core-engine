@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Each task of a list one phase on: a task to do goes to review, one in review is
+  shipped, and a shipped one stays shipped. A list of records whose `phase` is a
+  value of an enum in, the same list out (SCE_FORGE.md §4.12).
+
+  Exercises an enum field read from a foreach item, compared with `===` and `!==`
+  to the enum's declared names, copied into a record local built whole, written
+  from a declared name by <sce:assign>, and returned in a `may-fail` list filled to
+  its capacity.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="algorithm"
+       version="1.0">
+  <sce:import kind="event-schema" src="event_schema_task.scxml" as="Task"/>
+  <sce:import kind="enum" src="enum_task_phase.scxml" as="Phase"/>
+  <sce:signature>
+    <sce:param name="tasks" type="list&lt;record:Task&gt;"/>
+    <sce:return type="list&lt;record:Task&gt;" may-fail="true" returns-max-size="4"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="out" type="list&lt;record:Task&gt;" capacity="4"/>
+    <sce:foreach item="t" in="tasks">
+      <sce:var name="next" type="record:Task">
+        <sce:set name="taskId" expr="t.taskId"/>
+        <sce:set name="phase" expr="t.phase"/>
+      </sce:var>
+      <sce:if cond="t.phase === Phase.todo">
+        <sce:assign target="next.phase" expr="Phase.in_review"/>
+        <sce:else>
+          <sce:if cond="t.phase !== Phase.shipped">
+            <sce:assign target="next.phase" expr="Phase.shipped"/>
+          </sce:if>
+        </sce:else>
+      </sce:if>
+      <sce:append target="out" expr="next"/>
+    </sce:foreach>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>

@@ -17,6 +17,13 @@
    contract name before anything reads `expected`, and every other case reads
    the value. #}
 {% set call %}SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %}){% endset %}
+{# A record's field read from the JSON `read`, as the payload struct holds it. A
+   field that holds a value of an enum is the enum fixture's own scoped
+   enumeration, which the oracle writes as the name a variant declares: the
+   value is the variant of that name, built the same way for an expected value,
+   compared as the enum and reported by the name it declares. #}
+{% macro field_value(fld, read) %}{% if fld.enum_document is defined %}[&] { const std::string name = {{ read }}.get<std::string>(); {% for v in fld.variants %}if (name == "{{ v.name }}") { return SCE::Generated::{{ fld.enum_document | to_pascal_case }}::{{ fld.enum_document | to_pascal_case }}::{{ v.ident }}; } {% endfor %}std::abort(); }(){% else %}{{ read }}.get<{{ fld.type | cpp_type }}>(){% endif %}{% endmacro %}
+{% macro field_text(fld, value) %}{% if fld.enum_document is defined %}SCE::Generated::{{ fld.enum_document | to_pascal_case }}::declared_name({{ value }}){% elif fld.type == "string" %}{{ value }}.c_str(){% else %}std::to_string({{ value }}).c_str(){% endif %}{% endmacro %}
     const auto &spec = ref["{{ f.ref_section }}"]["{{ f.name }}"];
     int i = 0;
     for (const auto &c : spec["cases"]) {
@@ -29,7 +36,7 @@
 {% if arg_ty.record is defined %}
         SCE::Generated::{{ arg_ty.record | to_pascal_case }}::{{ arg_ty.record | to_pascal_case }}Payload arg{{ ai }}{};
 {% for fld in arg_ty.fields %}
-        arg{{ ai }}.{{ fld.ident }} = c["args"][{{ ai }}]["{{ fld.name }}"].get<{{ fld.type | cpp_type }}>();
+        arg{{ ai }}.{{ fld.ident }} = {{ field_value(fld, "c[\"args\"][" ~ ai ~ "][\"" ~ fld.name ~ "\"]") }};
 {% endfor %}
 {% elif arg_ty == "bytes" %}
         std::vector<std::uint8_t> arg{{ loop.index0 }}_buf;
@@ -45,7 +52,7 @@
         for (const auto &x : c["args"][{{ ai }}]) {
             SCE::Generated::{{ r.record | to_pascal_case }}::{{ r.record | to_pascal_case }}Payload e{};
 {% for fld in r.fields %}
-            e.{{ fld.ident }} = x["{{ fld.name }}"].get<{{ fld.type | cpp_type }}>();
+            e.{{ fld.ident }} = {{ field_value(fld, "x[\"" ~ fld.name ~ "\"]") }};
 {% endfor %}
             arg{{ ai }}.push_back(e);
         }
@@ -78,11 +85,11 @@
 {% if f.output.record is defined %}
         auto actual = {% if f.may_fail %}returned{% else %}{{ call }}{% endif %};
 {% for fld in f.output.fields %}
-        CHECK(actual.{{ fld.ident }} == c["expected"]["{{ fld.name }}"].get<{{ fld.type | cpp_type }}>(),
+        CHECK((actual.{{ fld.ident }} == {{ field_value(fld, "c[\"expected\"][\"" ~ fld.name ~ "\"]") }}),
               "{{ f.name }} case %d: {{ fld.name }} actual=%s expected=%s",
               i,
-              {% if fld.type == "string" %}actual.{{ fld.ident }}.c_str(){% else %}std::to_string(actual.{{ fld.ident }}).c_str(){% endif %},
-              {% if fld.type == "string" %}c["expected"]["{{ fld.name }}"].get<std::string>().c_str(){% else %}std::to_string(c["expected"]["{{ fld.name }}"].get<{{ fld.type | cpp_type }}>()).c_str(){% endif %});
+              {{ field_text(fld, "actual." ~ fld.ident) }},
+              {% if fld.type == "string" or fld.enum_document is defined %}c["expected"]["{{ fld.name }}"].get<std::string>().c_str(){% else %}std::to_string(c["expected"]["{{ fld.name }}"].get<{{ fld.type | cpp_type }}>()).c_str(){% endif %});
 {% endfor %}
 {% elif f.output.list_of is defined and f.output.list_of.record is defined %}
 {# A list of records: compared by length, then field by field. #}
@@ -95,12 +102,12 @@
               expected.size());
         for (std::size_t k = 0; k < expected.size() && k < actual.size(); ++k) {
 {% for fld in f.output.list_of.fields %}
-            CHECK(actual[k].{{ fld.ident }} == expected[k]["{{ fld.name }}"].get<{{ fld.type | cpp_type }}>(),
+            CHECK((actual[k].{{ fld.ident }} == {{ field_value(fld, "expected[k][\"" ~ fld.name ~ "\"]") }}),
                   "{{ f.name }} case %d [%zu]: {{ fld.name }} actual=%s expected=%s",
                   i,
                   k,
-                  {% if fld.type == "string" %}actual[k].{{ fld.ident }}.c_str(){% else %}std::to_string(actual[k].{{ fld.ident }}).c_str(){% endif %},
-                  {% if fld.type == "string" %}expected[k]["{{ fld.name }}"].get<std::string>().c_str(){% else %}std::to_string(expected[k]["{{ fld.name }}"].get<{{ fld.type | cpp_type }}>()).c_str(){% endif %});
+                  {{ field_text(fld, "actual[k]." ~ fld.ident) }},
+                  {% if fld.type == "string" or fld.enum_document is defined %}expected[k]["{{ fld.name }}"].get<std::string>().c_str(){% else %}std::to_string(expected[k]["{{ fld.name }}"].get<{{ fld.type | cpp_type }}>()).c_str(){% endif %});
 {% endfor %}
         }
 {% elif f.output.list_of is defined %}

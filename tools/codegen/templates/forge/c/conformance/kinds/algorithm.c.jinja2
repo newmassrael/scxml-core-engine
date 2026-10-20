@@ -28,6 +28,13 @@
    names a failure (`"fails": "overflow"`) is baked with `fails` set and no
    `expected`, and is judged by the failure's contract name before anything
    reads `expected`. #}
+{# A record's field baked from the oracle's JSON `raw`. A record's text is the
+   bounded buffer `{ char data[N + 1]; }`, which a string literal fills as its
+   first member; it needs no storage of its own beside the case table. A field
+   that holds a value of an enum is baked as the constant the enum fixture's
+   header declares for the variant the oracle names, and compared as the number
+   it is. #}
+{% macro c_field(fld, raw) %}{% if fld.enum_document is defined %}{% for v in fld.variants %}{% if v.name == raw %}{{ v.ident }}{% endif %}{% endfor %}{% elif fld.type == "string" %}{ {{ raw | c_literal(fld.type) }} }{% else %}{{ raw | c_literal(fld.type) }}{% endif %}{% endmacro %}
 {% set call_args %}{% for arg_ty in f.args %}{% if arg_ty == "bytes" %}(sce_forge_bytes_view_t){ arg{{ loop.index0 }}.data, arg{{ loop.index0 }}.len }{% else %}arg{{ loop.index0 }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}{% endset %}
 {% if f.output.list_of is defined or f.output.type == "bytes" %}
 {% set ns = namespace(width=1) %}
@@ -96,12 +103,12 @@ static void test_{{ f.name }}(void) {
 {# A record's text is the bounded buffer `{ char data[N + 1]; }`, which a string
    literal fills as its first member; it needs no storage of its own beside the
    case table. #}
-            .input_arg{{ ai }} = { {% for fld in arg_ty.fields %}.{{ fld.ident }} = {% if fld.type == "string" %}{ {{ c.args[ai][fld.name] | c_literal(fld.type) }} }{% else %}{{ c.args[ai][fld.name] | c_literal(fld.type) }}{% endif %}, {% endfor %}},
+            .input_arg{{ ai }} = { {% for fld in arg_ty.fields %}.{{ fld.ident }} = {{ c_field(fld, c.args[ai][fld.name]) }}, {% endfor %}},
 {% elif arg_ty == "bytes" %}
             .input_arg{{ ai }} = {{ c.args[ai] | c_literal(arg_ty) }},
             .input_arg{{ ai }}_len = {{ c.args[ai] | length }},
 {% elif arg_ty.list_of is defined and arg_ty.list_of.record is defined %}
-            .input_arg{{ ai }} = { {% for v in c.args[ai] %}{ {% for fld in arg_ty.list_of.fields %}.{{ fld.ident }} = {% if fld.type == "string" %}{ {{ v[fld.name] | c_literal(fld.type) }} }{% else %}{{ v[fld.name] | c_literal(fld.type) }}{% endif %}, {% endfor %}}, {% else %}{0}{% endfor %} },
+            .input_arg{{ ai }} = { {% for v in c.args[ai] %}{ {% for fld in arg_ty.list_of.fields %}.{{ fld.ident }} = {{ c_field(fld, v[fld.name]) }}, {% endfor %}}, {% else %}{0}{% endfor %} },
             .input_arg{{ ai }}_len = {{ c.args[ai] | length }},
 {% elif arg_ty.list_of is defined %}
             .input_arg{{ ai }} = { {% for v in c.args[ai] %}{{ v | c_literal(arg_ty.list_of) }}, {% else %}0{% endfor %} },
@@ -113,9 +120,9 @@ static void test_{{ f.name }}(void) {
 {% if c.fails is defined %}
             .fails = "{{ c.fails }}",
 {% elif f.output.record is defined %}
-            .expected = { {% for fld in f.output.fields %}.{{ fld.ident }} = {% if fld.type == "string" %}{ {{ c.expected[fld.name] | c_literal(fld.type) }} }{% else %}{{ c.expected[fld.name] | c_literal(fld.type) }}{% endif %}, {% endfor %}},
+            .expected = { {% for fld in f.output.fields %}.{{ fld.ident }} = {{ c_field(fld, c.expected[fld.name]) }}, {% endfor %}},
 {% elif f.output.list_of is defined and f.output.list_of.record is defined %}
-            .expected = { {% for v in c.expected %}{ {% for fld in f.output.list_of.fields %}.{{ fld.ident }} = {% if fld.type == "string" %}{ {{ v[fld.name] | c_literal(fld.type) }} }{% else %}{{ v[fld.name] | c_literal(fld.type) }}{% endif %}, {% endfor %}}, {% else %}{0}{% endfor %} },
+            .expected = { {% for v in c.expected %}{ {% for fld in f.output.list_of.fields %}.{{ fld.ident }} = {{ c_field(fld, v[fld.name]) }}, {% endfor %}}, {% else %}{0}{% endfor %} },
             .expected_len = {{ c.expected | length }},
 {% elif f.output.list_of is defined %}
             .expected = { {% for v in c.expected %}{{ v | c_literal(f.output.list_of) }}, {% else %}0{% endfor %} },

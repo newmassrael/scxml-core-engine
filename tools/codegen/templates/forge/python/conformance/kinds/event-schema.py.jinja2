@@ -27,6 +27,8 @@
             {{ "True" if field.value else "False" }},
 {% elif field.sce_type == "string" %}
             "{{ field.value }}",
+{% elif field.enum_document is defined %}
+            {{ field.enum_document }}.{{ field.enum_document | to_pascal_case }}.{{ field.ident }},
 {% else %}
             {{ field.value }},
 {% endif %}
@@ -50,6 +52,13 @@
 {% elif field.sce_type == "string" %}
         self.assertEqual(
             payload.{{ field.name }},
+            fields[{{ loop.index0 }}]["value"],
+            "{{ f.name }}.{{ field.name }}",
+        )
+{% elif field.enum_document is defined %}
+        {# A value of an enum reads back as the name its document declares. #}
+        self.assertEqual(
+            payload.{{ field.name }}.declared_name(),
             fields[{{ loop.index0 }}]["value"],
             "{{ f.name }}.{{ field.name }}",
         )

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Where a task stands: the enum the `phase` field of `event_schema_task` holds a
+  value of, which the algorithm fixtures `algorithm_task_phase_advance` and
+  `algorithm_task_phase_reopened` read, compare with its declared names and write
+  from one (SCE_FORGE.md §4.12). The values are not the variants' positions and
+  `in_review` is spelled with an underscore, so a fragment that built or read the
+  field by position or by a backend's own spelling of the constant would not
+  agree with the oracle, which writes the field as the name declared here.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="enum"
+       name="enum_task_phase"
+       sce:underlying-type="uint8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="todo" value="3"/>
+      <sce:variant name="in_review" value="6"/>
+      <sce:variant name="shipped" value="9"/>
+    </data>
+  </datamodel>
+</scxml>

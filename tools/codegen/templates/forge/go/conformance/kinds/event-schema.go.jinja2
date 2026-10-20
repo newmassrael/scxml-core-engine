@@ -24,6 +24,8 @@
 {% for field in f.fields %}
 {% if field.sce_type == "string" %}
 			{{ field.name | to_pascal_case }}: "{{ field.value }}",
+{% elif field.enum_document is defined %}
+			{{ field.name | to_pascal_case }}: {{ field.enum_document }}.{{ field.ident }},
 {% else %}
 			{{ field.name | to_pascal_case }}: {{ field.value }},
 {% endif %}
@@ -44,6 +46,12 @@
 		if want := spec.Fields[{{ loop.index0 }}].stringValue(t); payload.{{ field.name | to_pascal_case }} != want {
 			t.Errorf("{{ f.name }}.{{ field.name }} = %q, want %q",
 				payload.{{ field.name | to_pascal_case }}, want)
+		}
+{% elif field.enum_document is defined %}
+		// A value of an enum reads back as the name its document declares.
+		if declared, ok := payload.{{ field.name | to_pascal_case }}.DeclaredName(); !ok || declared != spec.Fields[{{ loop.index0 }}].stringValue(t) {
+			t.Errorf("{{ f.name }}.{{ field.name }} = %q, want %q",
+				declared, spec.Fields[{{ loop.index0 }}].stringValue(t))
 		}
 {% else %}
 		if want := spec.Fields[{{ loop.index0 }}].int64Value(t); int64(payload.{{ field.name | to_pascal_case }}) != want {
