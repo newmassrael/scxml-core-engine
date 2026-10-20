@@ -258,6 +258,15 @@ _VML = "{urn:schemas-microsoft-com:vml}"
 _MC_FALLBACK = "{http://schemas.openxmlformats.org/markup-compatibility/2006}Fallback"
 _MEDIA = "word/media/"
 
+
+def _media_files(names: Iterable[str]) -> list[str]:
+    """The pictures a word document carries: its members under `word/media/`, in name order.
+
+    A folder entry is not one. Word writes none, but a document zipped by another writer (`zip -r`) has
+    an entry for each folder, and counted as a picture `word/media/` was a second one "not in the body".
+    """
+    return sorted(n for n in names if n.startswith(_MEDIA) and posixpath.basename(n))
+
 # The formats a client can be SHOWN. A picture in any other (a metafile, a bitmap, a TIFF) is still
 # named, counted and placed; `read_pictures` refuses to hand it over and says which format it is.
 SHOWABLE = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
@@ -1135,7 +1144,7 @@ def _read_docx(path: pathlib.Path, headings: bool = False) -> Ingested:
             # fires, in a clause whose conditions were a text table. A picture is
             # therefore marked where it sits and can be asked for (`read_pictures`), and
             # the note below does not say the text is enough.
-            pictures = sorted(n for n in names if n.startswith("word/media/"))
+            pictures = _media_files(names)
             enclosed = read_enclosed(zf)
             pictured = pictured_in(zf)
             if headings:
@@ -1384,8 +1393,7 @@ def picture_names_held(paths: Iterable[pathlib.Path]) -> dict[pathlib.Path, list
             continue
         try:
             with zipfile.ZipFile(path) as zf:
-                held[path] = sorted(posixpath.basename(n) for n in zf.namelist()
-                                    if n.startswith(_MEDIA) and posixpath.basename(n))
+                held[path] = sorted(posixpath.basename(n) for n in _media_files(zf.namelist()))
         except zipfile.BadZipFile:
             continue
     return held

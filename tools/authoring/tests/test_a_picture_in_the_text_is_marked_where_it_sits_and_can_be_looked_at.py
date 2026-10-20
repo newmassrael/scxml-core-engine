@@ -84,9 +84,14 @@ class APictureIsMarkedWhereItSits(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
 
     def docx(self, body: str, relationships: str, media: dict[str, bytes] | None = None,
-             embedded: dict[str, bytes] | None = None, name: str = "spec.docx") -> pathlib.Path:
+             embedded: dict[str, bytes] | None = None, name: str = "spec.docx",
+             folders: bool = False) -> pathlib.Path:
         path = self.tmp / name
         with zipfile.ZipFile(path, "w") as z:
+            if folders:
+                # Word writes no entry for a folder; some zip writers (`zip -r`) write one for each.
+                for folder in ("word/", "word/_rels/", "word/media/", "word/embeddings/"):
+                    z.writestr(folder, b"")
             z.writestr("word/document.xml",
                        f'<?xml version="1.0" encoding="UTF-8"?><w:document {NS}><w:body>{body}</w:body></w:document>')
             z.writestr("word/_rels/document.xml.rels", relationships)
@@ -173,6 +178,15 @@ class APictureIsMarkedWhereItSits(unittest.TestCase):
         self.assertIn("2 picture(s) were not read", said)
         self.assertIn("1 of them sit in the body and are named where they sit", said)
         self.assertIn("1 more are not in the body", said)
+
+    def test_a_folder_entry_a_zip_writer_adds_is_not_a_picture(self):
+        """Counted as one, the folder `word/media/` was a second picture that was "not in the body"."""
+        path = self.docx(para("5.1 The event") + para("", drawn("rId5")),
+                         rels(rId5="image3.png"), {"image3.png": PNG}, folders=True)
+        said = self.note(path)
+        self.assertIn("1 picture(s) were not read", said)
+        self.assertNotIn("not in the body", said)
+        self.assertEqual({path: ["image3.png"]}, picture_names_held([path]))
 
     # ---------------------------------------------------------- the note
 
