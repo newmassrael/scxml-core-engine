@@ -289,7 +289,7 @@ The generated sibling is the transform `climate_temperature`, in whatever shape 
 
 ```xml
 sce:type="uint8 | uint16 | uint32 | uint64 | int8 | int16 | int32 | int64 | float32 | float64 | bool | string | bytes"
-sce:type="enum:<alias>"          <!-- a value of an imported sce:kind="enum" document: §4.2 (a transform input), §4.6 (a codec entry) -->
+sce:type="enum:<alias>"          <!-- a value of an imported sce:kind="enum" document: §4.2 (a transform input), §4.6 (a codec entry), §4.12 (an algorithm's parameter, return or local, written type="enum:<alias>") -->
 sce:direction="in | out | internal"
 sce:unit="celsius | rpm | ms | percent | ..."   <!-- documentation only, no codegen effect -->
 sce:default-endian="big | little | native"  <!-- document-level default, big if omitted -->

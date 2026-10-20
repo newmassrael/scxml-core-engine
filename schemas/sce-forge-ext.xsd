@@ -120,16 +120,18 @@
   </xs:simpleType>
 
   <!-- SCE Forge Section 4.12: an algorithm parameter, return or local — a
-       scalar `sceType`, a record, or `list<T>`, a bounded buffer of scalars
-       or of records. Authored as `list&lt;int64&gt;` /
-       `list&lt;record:Hlc&gt;` in XML. The pattern is lexical, as
-       `sceTypeOrEnumRef`'s is: it admits `list<>` over any `sceType` or
-       record, and the parser (`read_algorithm_value_type`) refuses what v1
-       does not take — a `string`/`bytes` element, a record alias no
-       event-schema import declares — with a diagnostic that names the rule
-       rather than an enumeration. -->
+       scalar `sceType`, a value of an imported enum (`enum:<alias>`, as a
+       field's `sceTypeOrEnumRef` writes it), a record, or `list<T>`, a
+       bounded buffer of scalars or of records. Authored as
+       `list&lt;int64&gt;` / `list&lt;record:Hlc&gt;` in XML. The pattern is
+       lexical, as `sceTypeOrEnumRef`'s is: it admits `list<>` over any
+       `sceType` or record, and the parser (`read_algorithm_value_type`)
+       refuses what v1 does not take — a `string`/`bytes` element, a record
+       or enum alias the document does not import — with a diagnostic that
+       names the rule rather than an enumeration. A list holds no enum
+       element: the pattern below names none. -->
   <xs:simpleType name="algorithmValueType">
-    <xs:union memberTypes="sce:sceType">
+    <xs:union memberTypes="sce:sceTypeOrEnumRef">
       <xs:simpleType>
         <xs:restriction base="xs:string">
           <xs:pattern value="list&lt;\s*(uint8|uint16|uint32|uint64|int8|int16|int32|int64|float32|float64|bool|string|bytes|record:[A-Za-z_][A-Za-z0-9_]*)\s*&gt;"/>

@@ -11494,14 +11494,19 @@ pub(crate) fn read_type_attr(
     })
 }
 
-/// Read an algorithm param / local / return `type=`: a scalar in
-/// [`TypeGrammar::Scalar`], `record:<alias>`, or `list<T>` over an admitted
-/// scalar `T` ([`AlgorithmValueType::list_elem_admitted`]) or a record.
+/// Read an algorithm param / local / return `type=`: a scalar or a value of
+/// an imported enum in [`TypeGrammar::ScalarOrEnumRef`], `record:<alias>`, or
+/// `list<T>` over an admitted scalar `T`
+/// ([`AlgorithmValueType::list_elem_admitted`]) or a record.
 ///
 /// A scalar goes through [`read_type_attr`] unchanged, so a misspelled
-/// scalar is refused with the same candidates it always was. The list form
-/// is a pattern rather than a value, so a list over an element it cannot
-/// hold is refused as a rule violation that names the rule.
+/// scalar is refused with the same candidates it always was, the document's
+/// enums among them, as for a field. A value of an enum crosses to and from
+/// a `sce-static` statechart by its declared name (SCE_FORGE.md §4.12); a
+/// list element stays in [`TypeGrammar::Scalar`], as the grammar's list
+/// pattern does. The list form is a pattern rather than a value, so a list
+/// over an element it cannot hold is refused as a rule violation that names
+/// the rule.
 pub(crate) fn read_algorithm_value_type(
     node: &roxmltree::Node,
     doc_name: &str,
@@ -11518,8 +11523,15 @@ pub(crate) fn read_algorithm_value_type(
         .strip_prefix(AlgorithmValueType::LIST_PREFIX)
         .and_then(|t| t.strip_suffix('>'))
     else {
-        return read_type_attr(node, doc_name, TypeGrammar::Scalar, element, attr, text)
-            .map(AlgorithmValueType::Scalar);
+        return read_type_attr(
+            node,
+            doc_name,
+            TypeGrammar::ScalarOrEnumRef,
+            element,
+            attr,
+            text,
+        )
+        .map(AlgorithmValueType::Scalar);
     };
     // A list of records (SCE_FORGE.md §4.12): the element is judged by the
     // record rule, so a list of records is exactly as closed as one record.

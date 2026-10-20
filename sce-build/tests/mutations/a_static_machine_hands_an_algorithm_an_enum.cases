@@ -16,14 +16,17 @@
 #   a value of another enum is handed to an enum parameter;
 #   a number is handed to an enum parameter;
 #   an open enum crosses;
-#   the Interpreter's algorithm has no value form for an enum.
+#   the Interpreter's algorithm has no value form for an enum;
+#   an algorithm's parameter, return or local is read in the grammar of a scalar,
+#   which names no enum (judged also by `the_grammar_accepts_what_the_parser_accepts`,
+#   which parses the committed algorithm documents with the XSD first).
 #
 # Anchors are literal slices of the source; an edit that moves one is reported
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
-mutation_tests -p sce-build --features cli --test a_static_machine_hands_algorithms_the_state_it_holds
-mutation_targets sce-build/src/forge/static_imports.rs sce-build/src/forge/static_enum.rs sce-build/src/forge/static_js_algorithm.rs
-mutation_oracles sce-build/tests/a_static_machine_hands_algorithms_the_state_it_holds.rs
+mutation_tests -p sce-build --features cli --test a_static_machine_hands_algorithms_the_state_it_holds --test the_grammar_accepts_what_the_parser_accepts
+mutation_targets sce-build/src/forge/static_imports.rs sce-build/src/forge/static_enum.rs sce-build/src/forge/static_js_algorithm.rs sce-build/src/forge/parser.rs
+mutation_oracles sce-build/tests/a_static_machine_hands_algorithms_the_state_it_holds.rs sce-build/tests/the_grammar_accepts_what_the_parser_accepts.rs
 
 mutation_case "an enum field of another document crosses" <<'PY'
 edit("sce-build/src/forge/static_imports.rs",
@@ -53,4 +56,10 @@ mutation_case "the Interpreter's algorithm has no value form for an enum" <<'PY'
 edit("sce-build/src/forge/static_js_algorithm.rs",
      "    !matches!(ty, SceType::Bytes)\n",
      "    !matches!(ty, SceType::Bytes | SceType::Enum(_))\n")
+PY
+
+mutation_case "an algorithm's slot is read in the grammar of a scalar" <<'PY'
+edit("sce-build/src/forge/parser.rs",
+     "            TypeGrammar::ScalarOrEnumRef,\n            element,\n            attr,\n            text,\n        )\n        .map(AlgorithmValueType::Scalar);\n",
+     "            TypeGrammar::Scalar,\n            element,\n            attr,\n            text,\n        )\n        .map(AlgorithmValueType::Scalar);\n")
 PY
