@@ -53,14 +53,24 @@ PY
 
 mutation_case "the check of a review is bounded by the base alone" <<'PY'
 edit("sce-specs/src/review.rs",
-     '            .arg("--lint");\n        let run = run_bounded(command, scratch.path(), self.timeout_for(scratch.path()))?;',
-     '            .arg("--lint");\n        let run = run_bounded(command, scratch.path(), self.timeout_for(std::path::Path::new("/nonexistent")))?;')
+     '        // What is left open is said to the person in the page\'s language, by the product: a screen\n'
+     '        // that translated it would be a second author of those sentences.\n'
+     '        if let Some(lexicon) = request.lexicon {\n'
+     '            command.arg("--lexicon").arg(word("--lexicon", lexicon)?);\n        }\n'
+     '        let run = run_bounded(command, scratch.path(), self.timeout_for(scratch.path()))?;',
+     '        // What is left open is said to the person in the page\'s language, by the product: a screen\n'
+     '        // that translated it would be a second author of those sentences.\n'
+     '        if let Some(lexicon) = request.lexicon {\n'
+     '            command.arg("--lexicon").arg(word("--lexicon", lexicon)?);\n        }\n'
+     '        let run = run_bounded(command, scratch.path(), self.timeout_for(std::path::Path::new("/nonexistent")))?;')
 PY
 
 mutation_case "the page of a review is bounded by the base alone" <<'PY'
 edit("sce-specs/src/review.rs",
+     '            .arg(&document);\n        if let Some(lexicon) = request.lexicon {\n'
      '            command.arg("--lexicon").arg(word("--lexicon", lexicon)?);\n        }\n'
      '        let run = run_bounded(command, scratch.path(), self.timeout_for(scratch.path()))?;',
+     '            .arg(&document);\n        if let Some(lexicon) = request.lexicon {\n'
      '            command.arg("--lexicon").arg(word("--lexicon", lexicon)?);\n        }\n'
      '        let run = run_bounded(command, scratch.path(), self.timeout_for(std::path::Path::new("/nonexistent")))?;')
 PY
