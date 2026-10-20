@@ -17,7 +17,7 @@
 
 mutation_ctest --test-dir build -R '^(c11_unit_json_text|c11_integration_event_schema_real|c11_unit_duration|c11_unit_document_stem)$'
 mutation_runtime_targets tests/json_text/string_escape.json tests/json_text/real_text.json tests/durations/css2_time.json tests/document_stem/document_stem.json
-mutation_oracles backends/c/tests/unit/shared_table.h backends/c/tests/unit/json_text_test.cbackends/c/tests/integration/test_event_schema_real.c backends/c/tests/unit/duration_test.c backends/c/tests/unit/document_stem_test.c
+mutation_oracles backends/c/tests/unit/shared_table.h backends/c/tests/unit/json_text_test.c backends/c/tests/integration/test_event_schema_real.c backends/c/tests/unit/duration_test.c backends/c/tests/unit/document_stem_test.c
 
 mutation_case "a string's escaped form is written down wrongly" <<'PY'
 edit("tests/json_text/string_escape.json",

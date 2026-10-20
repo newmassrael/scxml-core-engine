@@ -24,7 +24,7 @@
 
 mutation_ctest --test-dir build -R '^(c11_unit_json_text|c11_integration_static_host_params|c11_integration_event_schema_real)$'
 mutation_targets backends/c/runtime/include/sce/number_text.h backends/c/forge-runtime/include/sce/forge/wire.h
-mutation_oracles backends/c/tests/unit/shared_table.h backends/c/tests/unit/json_text_test.cbackends/c/tests/integration/test_static_host_params.c backends/c/tests/integration/test_event_schema_real.c
+mutation_oracles backends/c/tests/unit/shared_table.h backends/c/tests/unit/json_text_test.c backends/c/tests/integration/test_static_host_params.c backends/c/tests/integration/test_event_schema_real.c
 
 # ── The digits ─────────────────────────────────────────────────────
 
