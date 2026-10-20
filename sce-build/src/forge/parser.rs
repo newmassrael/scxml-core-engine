@@ -11719,8 +11719,8 @@ const KNOWN_SCE_ATTRS: &[&str] = &[
     "length-arith",
     "length-field",
     "length-from",
-    // Names the bound a `capacity` or `returns-max-size` is, so that a build can give
-    // it another number than the one written (`crate::limits`).
+    // Names the bound a `capacity`, a `returns-max-size` or a field's `max-size` is, so
+    // that a build can give it another number than the one written (`crate::limits`).
     "limit",
     // The most lines of a repeated property a content-line codec holds.
     "max-count",
@@ -12040,7 +12040,18 @@ fn parse_forge_field(
     // Bounded-bytes contract: optional cap
     // on bytes-typed slots. Parsed for every field; the validator
     // pass decides whether to flag it on a non-bytes field.
-    let max_size = sce_attr(data, "max-size").and_then(|s| parse_int(&s));
+    //
+    // `sce:limit` beside it names the bound for the deployment (`crate::limits`): the
+    // number a build gives the name replaces the one written, so a record's text and
+    // the text an event carries into it move with the lists that hold them. Read only
+    // beside a `sce:max-size`, as a statechart reads it only beside a capacity: one
+    // written alone names no bound and is left unread, which the read ledger refuses.
+    let max_size = sce_attr(data, "max-size")
+        .and_then(|s| parse_int(&s))
+        .map(|written| match sce_attr(data, "limit") {
+            Some(name) => crate::limits::resolve(name.trim(), written),
+            None => written,
+        });
 
     // Whitespace-separated, like every other list-valued SCE attribute
     // in the tree (`sce:req`, `sce:unresolved-candidates`) — one

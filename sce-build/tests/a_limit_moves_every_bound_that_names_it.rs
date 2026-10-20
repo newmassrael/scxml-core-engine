@@ -287,6 +287,68 @@ fn what_is_not_a_limit_is_refused_with_its_reason() {
     assert!(out.contains("twice"), "{out}");
 }
 
+/// A schema whose text field holds `bound` bytes, its `sce:max-size` carrying `limit`.
+fn labelled(bound: u32, limit: &str) -> String {
+    format!(
+        r##"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="labelled" sce:event-name="labelled">
+  <datamodel>
+    <data id="text" sce:type="string" sce:max-size="{bound}"{limit} sce:direction="in"/>
+  </datamodel>
+</scxml>
+"##
+    )
+}
+
+/// The statechart whose record of `labelled` starts at six bytes of text.
+const STARTS_AT_SIX: &str = r##"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="sce-static">
+  <sce:import kind="event-schema" src="labelled.scxml" as="Labelled"/>
+  <datamodel>
+    <data id="shown" sce:type="record:Labelled">
+      <sce:set name="text" expr="'abcdef'"/>
+    </data>
+  </datamodel>
+  <state id="s"/>
+</scxml>
+"##;
+
+/// `check` of [`STARTS_AT_SIX`] beside `schema`, under the limits `given`.
+fn check_labelled(schema: &str, given: &[&str]) -> (bool, String) {
+    let dir = tempdir().expect("tempdir");
+    std::fs::write(dir.path().join("labelled.scxml"), schema).expect("write schema");
+    let path = dir.path().join("probe.scxml");
+    std::fs::write(&path, STARTS_AT_SIX).expect("write probe");
+    let mut args: Vec<&str> = Vec::new();
+    for limit in given {
+        args.push("--limit");
+        args.push(limit);
+    }
+    args.extend(["check", "-l", "rust"]);
+    codegen(&args, &path)
+}
+
+/// The text a schema's field holds is a bound a deployment moves as it moves a list: a
+/// record of the schema holds it in a buffer of that size on every backend, and an event
+/// of the schema carries it into one. A list of longer texts built for a server is the
+/// same schema built with a larger number, not a copy of it.
+#[test]
+fn a_name_moves_the_text_a_schema_field_holds() {
+    // Six bytes do not start in a field of four, named or not, when no number is given.
+    let (ok, out) = check_labelled(&labelled(4, ROOM), &[]);
+    assert!(!ok, "six bytes were taken into four:\n{out}");
+    // Given eight, the field holds them; given five, it does not.
+    let (ok, out) = check_labelled(&labelled(4, ROOM), &["room=8"]);
+    assert!(ok, "the field moved to eight:\n{out}");
+    let (ok, out) = check_labelled(&labelled(4, ROOM), &["room=5"]);
+    assert!(!ok, "six bytes were taken into five:\n{out}");
+    // A field that does not name the bound stays at four.
+    let (ok, out) = check_labelled(&labelled(4, ""), &["room=8"]);
+    assert!(!ok, "a field that names no bound moved:\n{out}");
+}
+
 /// Every `sce:limit` the repository's own documents write, with the bound beside it.
 fn limits_the_repository_writes() -> BTreeMap<String, Vec<(PathBuf, u32)>> {
     let mut found: BTreeMap<String, Vec<(PathBuf, u32)>> = BTreeMap::new();
@@ -315,9 +377,11 @@ fn limits_the_repository_writes() -> BTreeMap<String, Vec<(PathBuf, u32)>> {
                         .attribute("capacity")
                         .or_else(|| node.attribute(("http://sce.dev/ext", "capacity")))
                         .or_else(|| node.attribute("returns-max-size"))
+                        .or_else(|| node.attribute(("http://sce.dev/ext", "max-size")))
                         .unwrap_or_else(|| {
                             panic!(
-                                "{}: sce:limit=\"{name}\" is beside no capacity or returns-max-size",
+                                "{}: sce:limit=\"{name}\" is beside no capacity, \
+                                 returns-max-size or max-size",
                                 path.display()
                             )
                         })

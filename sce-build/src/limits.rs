@@ -14,8 +14,10 @@
 //! refused (a list variable may not be smaller than what an algorithm returns).
 //!
 //! `sce:limit="name"` writes that connection. An element that carries a
-//! `capacity` (a list variable or buffer) or a `returns-max-size` (an
-//! algorithm's return) and `sce:limit` takes the number the deployment gave the
+//! `capacity` (a list variable or buffer), a `returns-max-size` (an
+//! algorithm's return) or a `sce:max-size` (the text a schema's field holds,
+//! in a record and in the event that carries it) and `sce:limit` takes the
+//! number the deployment gave the
 //! name when it gave one, and the number the element wrote when it did not. So
 //! one name moves every bound that has to move with it, wherever it is written,
 //! and a document built without a deployment is the document as written.

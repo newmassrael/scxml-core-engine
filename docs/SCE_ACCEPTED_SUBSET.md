@@ -4323,8 +4323,10 @@ bound it is built with, and a build that has to hold more (a team's calendar on 
 server, where a room on a microcontroller holds a few) cannot edit one file and
 leave the other behind: a list may not be smaller than what the algorithm that
 returns it may return, and the two are written in two documents. `sce:limit="name"`
-beside a list's or a string's `sce:capacity`, an algorithm buffer's `capacity` or an
-algorithm's `returns-max-size` names the bound, and `sce-codegen --limit name=N`
+beside a list's or a string's `sce:capacity`, an algorithm buffer's `capacity`, an
+algorithm's `returns-max-size` or a schema field's `sce:max-size` (the text a record of
+the schema holds, and an event of it carries into one) names the bound, and
+`sce-codegen --limit name=N`
 (repeatable; a positive whole number that fits 32 bits, the name a lower-case
 letter, then lower-case letters, digits and underscores) gives it a number: every
 element that carries the name takes it in place of the one it wrote, in the
@@ -4347,8 +4349,9 @@ than 256 KiB (its bound times the bytes of an element) is refused when the algor
 and the machine are generated for C11, naming the bound and what to do. The C++
 backend returns it in a `std::vector` and the others on the heap, and take the bound.
 `sce-build/tests/a_limit_moves_every_bound_that_names_it.rs`
-holds all of this, and that the repository's own bounds that share a name write
-one number.
+holds all of this, the text of a schema's field among it
+(`a_name_moves_the_text_a_schema_field_holds`), and that the repository's own bounds
+that share a name write one number.
 
 **State an algorithm takes and gives back.** A rule that works on what a statechart
 keeps is written once, as an algorithm, and every backend runs the same one:
