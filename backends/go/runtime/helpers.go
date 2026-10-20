@@ -266,10 +266,10 @@ func BuildJSONFromTypedParams(params []EventDataParam) string {
 	return "{" + strings.Join(parts, ",") + "}"
 }
 
-// LoadFileContent loads file content for datamodel src attributes (W3C SCXML 5.2.2).
+// LoadFileContent loads file content for datamodel src attributes (§scxml-5.3.1).
 // Supports "file:" prefix (strips it) and relative paths.
 func LoadFileContent(path string) (string, error) {
-	// W3C SCXML 5.2.2: Strip "file:" prefix
+	// §scxml-5.3.1: Strip "file:" prefix
 	filePath := path
 	if strings.HasPrefix(filePath, "file:") {
 		filePath = filePath[5:]

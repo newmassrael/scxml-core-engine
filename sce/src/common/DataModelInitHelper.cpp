@@ -80,7 +80,7 @@ bool SCE::DataModelInitHelper::isFunctionExpression(const std::string &expr) {
 bool SCE::DataModelInitHelper::initializeVariable(IScriptEngine &jsEngine, const std::string &sessionId,
                                                   const std::string &varId, const ScriptSource &contentSource,
                                                   std::function<void(const std::string &)> errorCallback) {
-    // §scxml-5.2.2 & B.2: Initialize datamodel variable with inline content or expression
+    // §scxml-5.3.2 & B.2: Initialize datamodel variable with inline content or expression
 
     // The AUTHOR's half answers every reading but the expression one: whether
     // the children are XML, and what the string value is when they are not an
@@ -169,7 +169,7 @@ bool SCE::DataModelInitHelper::initializeVariableFromSrc(IScriptEngine &jsEngine
                                                          const std::string &varId, const std::string &src,
                                                          const std::string &basePath,
                                                          std::function<void(const std::string &)> errorCallback) {
-    // §scxml-5.2.2: Load content from external file
+    // §scxml-5.3.1: Load content from external file
     // ARCHITECTURE.MD: Zero Duplication - Use FileLoadingHelper (Single Source of Truth)
 
     std::string content;
@@ -187,7 +187,7 @@ bool SCE::DataModelInitHelper::initializeVariableFromSrc(IScriptEngine &jsEngine
     // read at RUN time: nothing at build time saw this text, so there is no
     // Lua half to pair with it. A Lua engine lowers it through the same
     // frontend at its own boundary — the run-time seat this seam keeps for
-    // exactly the text a build cannot see. §scxml-5.2.2.
+    // exactly the text a build cannot see. §scxml-5.3.1.
     bool initSuccess = initializeVariable(jsEngine, sessionId, varId, ScriptSource::ecmascript(content), errorCallback);
     if (initSuccess) {
         SCE_LOG_DEBUG("DataModelInitHelper: Loaded {} from external file: {}", varId, src);

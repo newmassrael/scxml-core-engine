@@ -1297,7 +1297,7 @@
                 "{{ invoke_info.invoke_id }}",
                 donedata
             ));
-            // W3C §6.4.4/§6.4.5 + SCE_MESH.md §9.6.3: do NOT erase activeInvokes_
+            // W3C SCXML 6.5 + SCE_MESH.md §9.6.3: do NOT erase activeInvokes_
             // here. The entry must survive so any ChildEvent (wire-16) that
             // reached the external queue earlier in the same drain as this
             // wire-18 still matches by `sessionId == eventWithMeta.origin` in
@@ -1307,7 +1307,7 @@
             // event) done.invoke.X → transition selection → onexit of the
             // invoking state calls `activeInvokes_.erase` exactly once.
             // Erasing here would race the still-pending ChildEvent and skip
-            // its `<finalize>`, silently breaking W3C §6.4.4 ordering.
+            // its `<finalize>`, silently breaking W3C SCXML 6.5 ordering.
             AOT_DEBUG("AOT onInvokeDone: raised done.invoke for '{}'", subject);
             return;
         }

@@ -1396,7 +1396,7 @@ mod tests {
         // verbatim — no evaluation, no script engine. This is the
         // native-only path (`cpp:` / `kt:` documents, tc8-harness verdict
         // payloads). The same XML under the ECMAScript datamodel would
-        // route through the Expression variant (Appendix B.2.2 JSON parse),
+        // route through the Expression variant (§scxml-B-2-8-1 JSON parse),
         // exercised in `donedata_content_literal_ecmascript_triggers`.
         let scxml = r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="null" initial="s">
             <state id="s" initial="f">
@@ -1415,7 +1415,7 @@ mod tests {
 
     #[test]
     fn donedata_content_literal_ecmascript_triggers() {
-        // W3C ECMAScript Appendix B.2.2: inline text is parsed as JSON by
+        // §scxml-B-2-8-1: inline text is parsed as JSON by
         // the datamodel — SCE routes that through the script engine by
         // tagging the content as Expression. This pins the contract that
         // ECMAScript-datamodel documents keep the evaluated path.

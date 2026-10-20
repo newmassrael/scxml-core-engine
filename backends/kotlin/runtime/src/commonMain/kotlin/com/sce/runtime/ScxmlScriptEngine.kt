@@ -388,7 +388,7 @@ interface ScxmlScriptEngine {
     )
 
     /**
-     * §scxml-5.2.2: Load external data source content at runtime.
+     * §scxml-5.3.1: Load external data source content at runtime.
      *
      * C++ DataModelInitHelper::initializeVariableFromSrc pattern.
      * Resolves file:// URIs relative to [basePath] and returns file content.

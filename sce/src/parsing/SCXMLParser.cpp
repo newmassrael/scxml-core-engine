@@ -310,7 +310,7 @@ bool SCE::SCXMLParser::parseScxmlNode(const std::shared_ptr<IXMLElement> &scxmlN
         }
         model->setDatamodel(datamodelType);
         context.setDatamodelType(datamodelType);
-        // §scxml-5.5 + Appendix B.2.2: `<donedata><content>text</content>`
+        // §scxml-5.5 + §scxml-B-2-6: `<donedata><content>text</content>`
         // semantics are datamodel-dependent. Propagate the root attribute
         // so `DoneDataParser` can pick Expression vs Literal per document.
         if (doneDataParser_) {

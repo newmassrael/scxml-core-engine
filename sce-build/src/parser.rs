@@ -5347,7 +5347,7 @@ impl SCXMLParser {
             });
         }
 
-        // §scxml-5.5 + 5.6 + Appendix B.2.2:
+        // §scxml-5.5 + 5.6 + §scxml-B-2-6:
         //   - `<content expr="X"/>` → Expression (MUST be evaluated against
         //     the datamodel at runtime — script engine required).
         //   - `<content>text</content>` with ECMAScript datamodel →

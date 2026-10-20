@@ -219,7 +219,7 @@ public:
             auto arrayCheckResult = jsEngine.evaluateExpression(sessionId, ScriptDialect::isArray(arrayExpr)).get();
             if (!arrayCheckResult.isSuccess() || !std::holds_alternative<bool>(arrayCheckResult.getInternalValue()) ||
                 !std::get<bool>(arrayCheckResult.getInternalValue())) {
-                SCE_LOG_ERROR("Foreach array '{}' is not an iterable collection (W3C SCXML 5.4)", arrayExpr.source());
+                SCE_LOG_ERROR("Foreach array '{}' is not an iterable collection (W3C SCXML 4.6)", arrayExpr.source());
                 return std::nullopt;
             }
         }

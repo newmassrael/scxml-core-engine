@@ -63,7 +63,7 @@ func (p *{{ machine_name }}Policy) ensureScriptEngine() {
 {% macro bind_state_data_var(var) %}
 {% if var.src %}
 {% set src_file = var.src | replace("file:", "") %}
-	// W3C SCXML 5.2.2: Load {{ var.id }} from src="{{ var.src }}"
+	// W3C SCXML 5.3.1: Load {{ var.id }} from src="{{ var.src }}"
 	{
 		basePath := filepath.Join("..", "..", "..", "..", "..", "{{ model.scxml_base_path }}")
 		if srcData, err := sce.LoadFileContent(filepath.Join(basePath, "{{ src_file }}")); err == nil {
@@ -121,11 +121,11 @@ func (p *{{ machine_name }}Policy) InitializeDataModel(eng *sce.Engine[{{ machin
 	// W3C SCXML 5.3: Initialize _name
 	_ = engine.SetVariable(sessionID, "_name", "{{ model.scxml_name | default('') | w3c_session_name(model.name) | escape_go }}")
 
-	// W3C SCXML 5.2.2: Initialize global datamodel variables
+	// W3C SCXML 5.3.3: Initialize global datamodel variables
 {% for var in model.variables %}
 {% if var.src %}
 {% set src_file = var.src | replace("file:", "") %}
-	// W3C SCXML 5.2.2: Load {{ var.id }} from src="{{ var.src }}"
+	// W3C SCXML 5.3.1: Load {{ var.id }} from src="{{ var.src }}"
 	{
 		basePath := filepath.Join("..", "..", "..", "..", "..", "{{ model.scxml_base_path }}")
 		if srcData, err := sce.LoadFileContent(filepath.Join(basePath, "{{ src_file }}")); err == nil {

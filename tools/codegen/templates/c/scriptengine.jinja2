@@ -311,7 +311,7 @@
 {{ lua_set_data_global(var.id, var.content | to_lua_data_content, var.content | normalize_ws) }}
         {% endif %}
         {% elif var.src %}
-        /* W3C SCXML 5.2.2: <data id="{{ var.id }}" src="{{ var.src }}">.
+        /* W3C SCXML 5.3.1: <data id="{{ var.id }}" src="{{ var.src }}">.
            C11 codegen-time file read (RFC §synth-5-J-1 R3 zero-deps: no runtime
            fopen in backends/c/runtime). Mirrors cpp
            `DataModelInitHelper::initializeVariableFromSrc` (sce/src/common/
@@ -367,7 +367,7 @@
 {{ lua_set_data_global(var.id, var.content | to_lua_data_content, var.content | normalize_ws) }}
         {% endif %}
         {% elif var.src %}
-        /* W3C SCXML 5.2.2 (early): state '{{ state_id }}' <data id="{{ var.id }}" src="{{ var.src }}"> codegen-time file read. */
+        /* W3C SCXML 5.3.1 + 5.3.3 (early): state '{{ state_id }}' <data id="{{ var.id }}" src="{{ var.src }}"> codegen-time file read. */
         {%- set _src_content = var.src | read_data_src(model.scxml_base_path) %}
         {% if (_src_content | trim) is startingwith('<') %}
         sce_lua_dom_push_object_or_nil(sm->L, "{{ _src_content | escape_c }}");
@@ -450,7 +450,7 @@
 {{ lua_set_data_global(var.id, var.content | to_lua_data_content, var.content | normalize_ws) }}
     {% endif %}
     {% elif var.src %}
-    /* W3C SCXML 5.2.2 (late): state '{{ state_id }}' <data id="{{ var.id }}" src="{{ var.src }}"> codegen-time file read. */
+    /* W3C SCXML 5.3.1 + 5.3.3 (late): state '{{ state_id }}' <data id="{{ var.id }}" src="{{ var.src }}"> codegen-time file read. */
     {%- set _src_content = var.src | read_data_src(model.scxml_base_path) %}
     {% if (_src_content | trim) is startingwith('<') %}
     sce_lua_dom_push_object_or_nil(sm->L, "{{ _src_content | escape_c }}");

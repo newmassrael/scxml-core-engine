@@ -6195,61 +6195,9 @@
       "decision_status": "active",
       "bindings": [
         {
-          "file": "sce/include/common/DataModelInitHelper.h",
-          "symbol": "initializeVariable",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/common/DataModelInitHelper.h",
-          "symbol": "initializeVariableFromExpr",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/common/DataModelInitHelper.h",
-          "symbol": "initializeVariableFromSrc",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/common/FileLoadingHelper.h",
-          "symbol": "loadFileContent",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/common/FileLoadingHelper.h",
-          "symbol": "normalizePath",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/common/DataModelInitHelper.cpp",
-          "symbol": "SCE::DataModelInitHelper::initializeVariable",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/common/DataModelInitHelper.cpp",
-          "symbol": "SCE::DataModelInitHelper::initializeVariableFromSrc",
-          "kind": "implements"
-        },
-        {
           "file": "sce/src/parsing/DataModelParser.cpp",
-          "symbol": "SCE::DataModelParser::loadExternalContent",
+          "symbol": "SCE::DataModelParser::parseDataModelNode",
           "kind": "implements"
-        },
-        {
-          "file": "sce-build/src/filters.rs",
-          "kind": "references"
-        },
-        {
-          "file": "backends/rust/runtime/src/helpers/datamodel_init.rs",
-          "kind": "references"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/ScxmlScriptEngine.kt",
-          "symbol": "loadDataFromSrc",
-          "kind": "implements"
-        },
-        {
-          "file": "sce-build/src/requirements_report.rs",
-          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -6715,6 +6663,54 @@
           "file": "sce/src/parsing/DataModelParser.cpp",
           "symbol": "SCE::DataModelParser::parseDataModelItem",
           "kind": "implements"
+        },
+        {
+          "file": "sce/include/common/DataModelInitHelper.h",
+          "symbol": "initializeVariableFromSrc",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/common/DataModelInitHelper.h",
+          "symbol": "initializeVariableFromExpr",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/common/DataModelInitHelper.cpp",
+          "symbol": "SCE::DataModelInitHelper::initializeVariableFromSrc",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/common/FileLoadingHelper.h",
+          "symbol": "normalizePath",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/common/FileLoadingHelper.h",
+          "symbol": "loadFileContent",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/parsing/DataModelParser.cpp",
+          "symbol": "SCE::DataModelParser::loadExternalContent",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/filters.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/datamodel_init.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/ScxmlScriptEngine.kt",
+          "symbol": "loadDataFromSrc",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/helpers.go",
+          "symbol": "LoadFileContent",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -6748,6 +6744,20 @@
           "file": "sce/src/parsing/DataModelParser.cpp",
           "symbol": "SCE::DataModelParser::parseDataModelItem",
           "kind": "implements"
+        },
+        {
+          "file": "sce/include/common/DataModelInitHelper.h",
+          "symbol": "initializeVariable",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/common/DataModelInitHelper.cpp",
+          "symbol": "SCE::DataModelInitHelper::initializeVariable",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/datamodel_init.rs",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -6781,6 +6791,14 @@
           "file": "sce/src/runtime/DataModelInitializer.cpp",
           "symbol": "DataModelInitializer::initializeStateDataOnEntry",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/requirements_report.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/datamodel_init.rs",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -13725,6 +13743,21 @@
           "file": "sce/src/parsing/DoneDataParser.cpp",
           "symbol": "SCE::DoneDataParser::parseContent",
           "kind": "implements"
+        },
+        {
+          "file": "sce/src/parsing/SCXMLParser.cpp",
+          "symbol": "SCE::SCXMLParser::parseScxmlNode",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/parsing/DoneDataParser.h",
+          "symbol": "setDatamodelType",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "parse_donedata",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -14075,6 +14108,10 @@
         {
           "file": "backends/python/runtime/sce_runtime/engine.py",
           "symbol": "_expire_host_invoke",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/script_engine_analyzer.rs",
           "kind": "references"
         }
       ],
@@ -21852,6 +21889,78 @@
       "target_kind": "section",
       "target_id": "scxml-6.4",
       "reason": "the invoke step moved into completeMacrostep, the one body the loop and both coroutine paths call"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.2.2",
+      "reason": "the cite moved to the section that states the rule (data element attributes, children, binding)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.2.2",
+      "reason": "the cite moved to the section that states the rule (data element attributes, children, binding)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.2.2",
+      "reason": "the cite moved to the section that states the rule (data element attributes, children, binding)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.2.2",
+      "reason": "the cite moved to the section that states the rule (data element attributes, children, binding)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.2.2",
+      "reason": "the cite moved to the section that states the rule (data element attributes, children, binding)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.2.2",
+      "reason": "the cite moved to the section that states the rule (data element attributes, children, binding)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.2.2",
+      "reason": "the cite moved to the section that states the rule (data element attributes, children, binding)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.2.2",
+      "reason": "the cite moved to the section that states the rule (data element attributes, children, binding)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.2.2",
+      "reason": "the cite moved to the section that states the rule (data element attributes, children, binding)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.2.2",
+      "reason": "the cite moved to the section that states the rule (data element attributes, children, binding)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.2.2",
+      "reason": "the cite moved to the section that states the rule (data element attributes, children, binding)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.2.2",
+      "reason": "the cite moved to the section that states the rule (data element attributes, children, binding)"
     }
   ],
   "frames": {},

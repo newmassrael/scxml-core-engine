@@ -74,7 +74,7 @@ public:
      * @param errorCallback Function to call on error (receives error message)
      * @return true if initialization succeeded, false otherwise
      *
-     * §scxml-5.2.2: content, src, and expr are mutually exclusive
+     * §scxml-5.3.2: content, src, and expr are mutually exclusive
      * - If content is non-empty and starts with '<', create DOM object
      * - Otherwise, evaluate content as an expression
      *
@@ -108,7 +108,7 @@ public:
      * @param errorCallback Error callback
      * @return true if initialization succeeded, false otherwise
      *
-     * §scxml-5.2.2: Load content from external source and initialize
+     * §scxml-5.3.1: Load content from external source and initialize
      */
     static bool initializeVariableFromSrc(IScriptEngine &jsEngine, const std::string &sessionId,
                                           const std::string &varId, const std::string &src, const std::string &basePath,
@@ -124,7 +124,7 @@ public:
      * @param errorCallback Error callback
      * @return true if initialization succeeded, false otherwise
      *
-     * §scxml-5.2.2: Evaluate expr and assign to variable
+     * §scxml-5.3.1: Evaluate expr and assign to variable
      */
     static bool initializeVariableFromExpr(IScriptEngine &jsEngine, const std::string &sessionId,
                                            const std::string &varId, const ScriptSource &expr,

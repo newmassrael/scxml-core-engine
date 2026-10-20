@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
-//! §scxml-5.2.2 / 5.3: Datamodel initialization helpers.
+//! §scxml-5.3: Datamodel initialization helpers.
 //!
 //! 1:1 port of `sce/include/common/DataModelInitHelper.h`. Provides utilities
 //! for initializing datamodel variables from content, src, and expr attributes.
@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 #[cfg(not(feature = "no_std"))]
 use crate::scripting::{IScriptEngine, ScriptValue};
 
-/// §scxml-5.2.2: Check if expression is a JavaScript function literal.
+/// §scxml-5.3.1: Check if expression is a JavaScript function literal.
 ///
 /// Function expressions (`function() {...}` or `() => ...`) must preserve
 /// function type and not be evaluated as regular expressions.
@@ -69,7 +69,7 @@ pub fn is_xml_content(content: &str) -> bool {
 ///
 /// Strips the `file:` prefix if present and resolves relative to `base_path`.
 ///
-/// §scxml-5.2.2: External source loading via `src` attribute.
+/// §scxml-5.3.1: External source loading via `src` attribute.
 ///
 /// SCE Protocol-Synthesis RFC §synth-5-J-2: gated to `!no_std` because `Path`/`PathBuf` are
 /// alloc-coupled. Under `--no-std` the codegen-time validator rejects
@@ -87,7 +87,7 @@ pub fn resolve_src_path(src: &str, base_path: &str) -> PathBuf {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// §scxml-5.2.2: Variable initialization orchestration
+// §scxml-5.3.3: Variable initialization orchestration
 // Matches C++ DataModelInitHelper (Zero Duplication: shared by codegen templates)
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -132,7 +132,7 @@ pub fn eval_or_set_string(
     }
 }
 
-/// §scxml-5.2.2: Initialize variable from runtime content string.
+/// §scxml-5.3.2: Initialize variable from runtime content string.
 ///
 /// Three-step process matching C++ `DataModelInitHelper::initializeVariable`:
 /// 1. Empty content -> set to null
@@ -165,7 +165,7 @@ pub fn initialize_variable(
     eval_or_set_string(se, sid, var_id, trimmed, &normalized)
 }
 
-/// §scxml-5.2.2: Load variable from external file via `src` attribute.
+/// §scxml-5.3.1: Load variable from external file via `src` attribute.
 ///
 /// Strips `file:` prefix, resolves path relative to `base_path`, reads file
 /// content, then delegates to [`initialize_variable`].

@@ -90,9 +90,9 @@ bool SCE::DoneDataParser::parseContent(const std::shared_ptr<IXMLElement> &conte
     // §scxml-B-2-6: under the ECMAScript data model a <content> child of <donedata> is
     // interpreted as §scxml-B-2-8-1 defines _event.data, which is why the text body
     // becomes an expression here rather than a verbatim literal.
-    // §scxml-5.5 + 5.6 + Appendix B.2.2:
+    // §scxml-5.5 + 5.6 + §scxml-B-2-6:
     //   - `expr` attribute => Expression (evaluated against the datamodel).
-    //   - Text body with ECMAScript datamodel => Expression (Appendix B.2.2:
+    //   - Text body with ECMAScript datamodel => Expression (§scxml-B-2-8-1:
     //     inline text is parsed as JSON; SCE delegates that parsing to the
     //     script engine so `<content>21</content>` yields number 21 for
     //     `_event.data == 21` style guards).

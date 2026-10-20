@@ -35,7 +35,7 @@ public:
     /**
      * @brief Set active datamodel type for subsequent `parseDoneData` calls.
      *
-     * §scxml-5.5 + ECMAScript Appendix B.2.2: the semantics of inline
+     * §scxml-5.5 + §scxml-B-2-6: the semantics of inline
      * `<content>text</content>` depend on the datamodel — ECMAScript parses
      * it as JSON (routed through the script engine), `null` uses it as the
      * content value verbatim. Must be set by `SCXMLParser` from the root

@@ -357,7 +357,7 @@ pub(crate) fn annotated_nodes(model: &SCXMLModel) -> Vec<AnnotatedNode<'_>> {
 /// own round rather than being folded into this one.
 pub(crate) fn walk_nodes(model: &SCXMLModel) -> Vec<AnnotatedNode<'_>> {
     let mut out = Vec::new();
-    // §scxml-5.2.2: the document's `<datamodel>` is initialised before
+    // §scxml-5.3.3: the document's `<datamodel>` is initialised before
     // anything runs, so its variables lead the walk.
     push_variables(&mut out, None, "variables", &model.variables);
     // §scxml-5.8: a top-level `<script>` is executable content the

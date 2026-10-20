@@ -348,7 +348,7 @@ fn normalize_ws(text: String) -> String {
     RE_WHITESPACE.replace_all(text.trim(), " ").to_string()
 }
 
-/// §scxml-5.2.2: read external data file referenced by `<data src="...">`.
+/// §scxml-5.3.1: read external data file referenced by `<data src="...">`.
 ///
 /// C11 codegen-time read (RFC §synth-5-J-1 zero-deps rule: no runtime
 /// fopen in sce-c-runtime). Mirrors cpp `FileLoadingHelper::loadExternalScript` +
@@ -2017,7 +2017,7 @@ pub fn register_python_filters(env: &mut minijinja::Environment, scope: &Arc<Doc
     env.add_filter("slice_from", filter_slice_from);
     env.add_filter("extern_callback_path", filter_extern_callback_path);
     env.add_filter("callback_lang", filter_callback_lang);
-    // §scxml-5.2.2: `<data src="file:...">` inlining at codegen time —
+    // §scxml-5.3.1: `<data src="file:...">` inlining at codegen time —
     // same filter the C11 backend uses (see
     // `tools/codegen/templates/c/scriptengine.jinja2:272`) so Python
     // can route loaded text through `_init_data_with_content` instead

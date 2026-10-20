@@ -32,7 +32,8 @@ SCE::DataModelParser::parseDataModelNode(const std::shared_ptr<IXMLElement> &dat
     SCE_LOG_DEBUG("Parsing datamodel node");
 
     // §scxml-5.2: <datamodel> is a wrapper that encapsulates any number of <data>
-    // elements, each defining one data object.
+    // elements, each defining one data object. §scxml-5.2.2: its children are
+    // those <data> elements, zero or more.
     // Parse data nodes
     auto dataNodes = SCE::ParsingCommon::findChildElements(datamodelNode, "data");
     for (const auto &dataElement : dataNodes) {
@@ -200,12 +201,12 @@ bool SCE::DataModelParser::matchNodeName(const std::string &nodeName, const std:
 }
 
 void SCE::DataModelParser::loadExternalContent(const std::string &src, std::shared_ptr<IDataModelItem> dataItem) {
-    // §scxml-5.2.2: Load data from external sources
+    // §scxml-5.3.1: Load data from external sources
     // ARCHITECTURE.MD: Zero Duplication - Use FileLoadingHelper (Single Source of Truth)
 
     SCE_LOG_DEBUG("Loading content from: {}", src);
 
-    // §scxml-5.2.2: Handle file:// or file: URIs
+    // §scxml-5.3.1: Handle file:// or file: URIs
     if (src.find("file://") == 0 || src.find("file:") == 0 || src.find("/") == 0 || src.find("./") == 0) {
         std::string content;
         bool success = FileLoadingHelper::loadFromSrc(src, content);

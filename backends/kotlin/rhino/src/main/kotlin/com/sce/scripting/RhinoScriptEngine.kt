@@ -351,7 +351,7 @@ class RhinoScriptEngine : ScxmlScriptEngine {
     }
 
     /**
-     * W3C SCXML 5.2.2: Load external data source content at runtime.
+     * W3C SCXML 5.3.1: Load external data source content at runtime.
      * C++ DataModelInitHelper::initializeVariableFromSrc pattern.
      */
     override fun loadDataFromSrc(src: String, basePath: String): String? {

@@ -52,7 +52,7 @@
             raisePlatformError({{ machine_name }}Event.Error.Execution, "<data id='{{ var.id }}'> expr failed to evaluate")
         }
 {% elif var.src %}
-        // W3C SCXML 5.2.2: Load variable '{{ var.id }}' from external source (C++ DataModelInitHelper pattern)
+        // W3C SCXML 5.3.1: Load variable '{{ var.id }}' from external source (C++ DataModelInitHelper pattern)
         try {
             val srcContent_{{ var.id | to_camel_case }} = engine.loadDataFromSrc("{{ var.src }}", "{{ model.scxml_base_path }}")
             if (srcContent_{{ var.id | to_camel_case }} != null) {

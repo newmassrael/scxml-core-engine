@@ -167,7 +167,7 @@
     def _init_data_with_content(
         self, engine, var_id: str, lua_expr: str, fallback: str
     ) -> None:
-        """W3C SCXML 5.2.2 — initialise a `<data>` element whose content
+        """W3C SCXML 5.3.2 — initialise a `<data>` element whose content
         is inline text. Mirrors Rust's `eval_or_set_string`
         (helpers/datamodel_init.rs:107): try Lua eval first, fall back to
         JSON.parse for `[...]` / `{...}` payloads, then XML→DOM
@@ -867,7 +867,7 @@
         )
 {% endif %}
 {% elif var.src %}
-{# W3C SCXML 5.2.2: `<data src="file:...">` content is inlined at
+{# W3C SCXML 5.3.1: `<data src="file:...">` content is inlined at
    codegen time via the `read_data_src` filter (same pattern as the
    C11 backend at `tools/codegen/templates/c/scriptengine.jinja2:272`)
    and threaded through `_init_data_with_content` so loaded text

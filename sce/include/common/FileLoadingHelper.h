@@ -32,7 +32,7 @@ namespace SCE {
  * - StateMachine (StateMachine.cpp - runtime)
  *
  * W3C SCXML References:
- * - 5.2.2: Data Model - src attribute for external content
+ * - 5.3.1: Data Model - src attribute for external content
  * - 3.3: External SCXML file loading
  */
 class FileLoadingHelper {
@@ -41,13 +41,13 @@ public:
      * @brief Normalize file path by removing URI prefix
      *
      * Single Source of Truth for path normalization.
-     * §scxml-5.2.2: src attribute may use "file:" URI scheme.
+     * §scxml-5.3.1: src attribute may use "file:" URI scheme.
      *
      * @param srcPath Source path (may include "file:" prefix)
      * @return Normalized file path without URI prefix
      */
     static std::string normalizePath(const std::string &srcPath) {
-        // §scxml-5.2.2: Remove "file:" or "file://" prefix
+        // §scxml-5.3.1: Remove "file:" or "file://" prefix
         if (srcPath.find("file://") == 0) {
             return srcPath.substr(7);  // Remove "file://"
         } else if (srcPath.find("file:") == 0) {
@@ -62,7 +62,7 @@ public:
      * Single Source of Truth for file loading logic.
      * Used by both Interpreter (runtime) and sce-codegen (build-time).
      *
-     * §scxml-5.2.2: Content from external file via src attribute.
+     * §scxml-5.3.1: Content from external file via src attribute.
      *
      * @param filePath Path to file (already normalized)
      * @param content Output parameter for file content
@@ -79,7 +79,7 @@ public:
         buffer << file.rdbuf();
         content = buffer.str();
 
-        // §scxml-5.2.2: Trim whitespace for consistency
+        // §scxml-5.3.1: Trim whitespace for consistency
         // Remove leading/trailing whitespace
         size_t start = content.find_first_not_of(" \t\r\n");
         size_t end = content.find_last_not_of(" \t\r\n");

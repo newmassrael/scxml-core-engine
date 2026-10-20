@@ -1678,7 +1678,7 @@ struct TransportRouter {
             // session URI on wire-15; if wire-16 overtook wire-15, the
             // parent's `executeFinalizeForChildEvent` would see an empty
             // `childSession.sessionId` and skip `<finalize>` — silently
-            // violating W3C §6.4.4 ordering (feedback_silently_broken_hooks).
+            // violating W3C SCXML 6.5 ordering (feedback_silently_broken_hooks).
             ::SCE::Mesh::MeshEnvelope started{};
             started.id = SCE::uuid::v7();
             started.source = host_machine_name_;
