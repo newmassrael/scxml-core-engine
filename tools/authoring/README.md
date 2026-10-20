@@ -2162,7 +2162,10 @@ table read as lines loses which value goes with which condition), does not place
 and shapes and does not untangle columns. An image a page holds is a figure block at its box, named
 `page-0003-image-02.png` after its page and its place among that page's images and carrying the hash of
 the bytes the document stores for it; `picture` and `prepare-reading` draw it as PNG from the samples the
-document holds, so a PDF's pictures are read the way a word document's are (`pdf_pictures.py`). A page
+document holds, so a PDF's pictures are read the way a word document's are (`pdf_pictures.py`).
+`render-pictures --document F.pdf --out-dir D` draws them all once, as the PNG files and the
+`renditions.json` a bundle keeps as the PDF's renditions; a picture that is a file of a `renditions` folder
+beside the PDF is handed over as it is, without the pack. A page
 that carries no text is listed by number and is not read as an empty page: reading pixels is a reader's
 work (`docs/adr/0035`). A file or page count past the limits, and a page larger than any sheet, is
 refused with its numbers.

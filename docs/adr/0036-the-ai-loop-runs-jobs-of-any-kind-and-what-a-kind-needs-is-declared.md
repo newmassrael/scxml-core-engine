@@ -219,10 +219,16 @@ of many pages), as step 6 says. In order:
   state beside chosen and left out.
 - **A picture in a PDF** (landed): an image object a page holds is a figure block named by its page and place
   (`page-0003-image-02.png`) and by the hash of the bytes the document stores for it, and what is handed over
-  is a PNG drawn from its decoded samples (`pdf_pictures.py`). The picture is drawn from the document each time
-  it is read, so the bundle keeps no rendition member for it yet; the hash a reading records is of the PNG
-  that was handed over, and a rendition stored at import (ADR 0032) is the step that follows. A drawing made
-  of strokes is not an image object and is not placed; the extraction says so.
+  is a PNG drawn from its decoded samples (`pdf_pictures.py`). The hash a reading records is of the PNG that
+  was handed over. A drawing made of strokes is not an image object and is not placed; the extraction says so.
+- **The renditions of a PDF's pictures are kept at import** (ADR 0032): `render-pictures` draws each picture
+  that can be handed over, and the bundle keeps it as a member with the role `rendition`, beside the PDF in a
+  folder called `renditions`, naming the member it was made from and what drew it. A picture that is a file
+  of that folder is handed over as it is, and the PDF is not opened for it, so what the model saw is kept,
+  does not change with the library, and can be shown on a machine without the pack. The figure's hash names
+  the bytes the PDF stores and cannot be recomputed from a rendition, so a rendition is tied to its document
+  by the manifest and not by a comparison of hashes. A picture not drawn at import (too many, too heavy,
+  not drawable) is said, and is drawn from the document if it is ever read.
 
 ## Alternatives rejected
 

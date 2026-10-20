@@ -183,6 +183,74 @@ def draw_named(path: pathlib.Path, name: str) -> Drawn | None:
         document.close()
 
 
+# The folder, beside a PDF in its bundle, that holds the renditions made of its pictures (ADR 0032): a
+# picture named `NAME` that is a file there is the rendition and is handed over as it is, so that what a
+# reading saw is kept and a machine without the pack can still be shown it.
+RENDITIONS = "renditions"
+
+# The most pictures one document is rendered for, and the most they weigh together. A document with more is
+# not refused: the rest are not rendered, are said, and are drawn from the document when they are read.
+MAX_RENDERED = 1000
+MAX_RENDERED_BYTES = 128 * 1024 * 1024
+
+
+def renderer() -> str:
+    """What draws a rendition, with its version, in the words a bundle records it by."""
+    import pypdfium2 as pdfium
+
+    return f"pdfium {pdfium.version.PDFIUM_INFO}; pypdfium2 {pdfium.version.PYPDFIUM_INFO}"
+
+
+@dataclass(frozen=True)
+class Rendered:
+    """A picture of a PDF drawn to be kept: its name, its PNG, and the hash of the PNG."""
+
+    name: str
+    png: bytes
+    sha256: str
+
+
+def render_all(
+    path: pathlib.Path, limit: int, most: int | None = None, heaviest: int | None = None
+) -> tuple[list[Rendered], list[tuple[str, str]]]:
+    """Every picture a PDF holds that can be drawn and handed over, and the ones that were not, with why.
+
+    A picture is not rendered when it cannot be drawn, when its PNG is heavier than `limit` (a picture is
+    refused and not cut, as it is when it is read), or when the pictures already rendered are `most` or weigh
+    `heaviest`. None of those is an error: the picture is drawn from the document if it is ever read.
+    """
+    most = MAX_RENDERED if most is None else most
+    heaviest = MAX_RENDERED_BYTES if heaviest is None else heaviest
+    pdfium, document = _open(path)
+    rendered: list[Rendered] = []
+    skipped: list[tuple[str, str]] = []
+    weighed = 0
+    try:
+        for number in range(1, len(document) + 1):
+            page = document[number - 1]
+            try:
+                for ordinal, image in enumerate(images_of(page, pdfium), 1):
+                    name = picture_name(number, ordinal)
+                    if len(rendered) >= most:
+                        skipped.append((name, "past the most pictures one document is rendered for"))
+                        continue
+                    png = draw(image)
+                    if png is None:
+                        skipped.append((name, "it cannot be drawn"))
+                    elif len(png) > limit:
+                        skipped.append((name, f"it is {len(png)} bytes drawn and the most handed over is {limit}"))
+                    elif weighed + len(png) > heaviest:
+                        skipped.append((name, "past the most the renditions of one document weigh"))
+                    else:
+                        weighed += len(png)
+                        rendered.append(Rendered(name, png, hashlib.sha256(png).hexdigest()))
+            finally:
+                page.close()
+    finally:
+        document.close()
+    return rendered, skipped
+
+
 def names_in(path: pathlib.Path) -> list[str]:
     """Every picture name a PDF holds, in page order, for saying what could have been asked for."""
     pdfium, document = _open(path)

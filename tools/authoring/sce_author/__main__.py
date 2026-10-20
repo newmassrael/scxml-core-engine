@@ -42,7 +42,9 @@ from .extraction import Extraction
 from .extractors import DEFAULT as DEFAULT_EXTRACTORS
 from .extractors import Unreadable
 from .gaps import ORDER as GAP_ORDER
-from .ingest import picture_names_held, read_pictures
+from . import pdf_pictures
+from .errors import describe_path
+from .ingest import MAX_PICTURE_BYTES, picture_names_held, read_pictures
 from .gaps import report as gap_report
 from .pack import check_pack, load_pack
 from .prose import load_prose
@@ -103,6 +105,32 @@ def cmd_picture(args) -> int:
                           "sha256": hashlib.sha256(found[0].data).hexdigest()}, sort_keys=True))
     else:
         print(f"picture: {len(found[0].data)} bytes -> {out}")
+    return 0
+
+
+def cmd_render_pictures(args) -> int:
+    """Draw every picture a PDF holds that can be handed over, to be kept beside it as its renditions."""
+    document = pathlib.Path(args.document)
+    if document.suffix.lower() != ".pdf":
+        raise IngestError(f"{document}: renditions are made of the images of a PDF, and this is not one")
+    if not document.is_file():
+        raise IngestError(describe_path(document))
+    rendered, skipped = pdf_pictures.render_all(document, MAX_PICTURE_BYTES)
+    out = pathlib.Path(args.out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    for one in rendered:
+        (out / one.name).write_bytes(one.png)
+    listing = {
+        "document": document.name,
+        "renderer": pdf_pictures.renderer() if rendered else None,
+        "pictures": [
+            {"name": one.name, "media_type": "image/png", "bytes": len(one.png), "sha256": one.sha256}
+            for one in rendered
+        ],
+        "skipped": [{"name": name, "why": why} for name, why in skipped],
+    }
+    (out / "renditions.json").write_text(json.dumps(listing, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    print(f"renditions: {len(rendered)} picture(s) drawn, {len(skipped)} not -> {out}")
     return 0
 
 
@@ -1145,6 +1173,14 @@ def main(argv=None) -> int:
     pic.add_argument("--json", action="store_true",
                      help="print its size, its format (null for one a client cannot show) and its SHA-256, as JSON")
     pic.set_defaults(fn=cmd_picture)
+
+    ren = sub.add_parser(
+        "render-pictures",
+        help="draw the images of a PDF as PNG files, to be kept beside it as its renditions (needs the pdf pack)")
+    ren.add_argument("--document", required=True, help="the PDF")
+    ren.add_argument("--out-dir", required=True,
+                     help="where to write the pictures and `renditions.json`, which lists them with their hashes")
+    ren.set_defaults(fn=cmd_render_pictures)
 
     ext = sub.add_parser(
         "extract", help="read one file into blocks, and say what could not be carried (no pack needed)")

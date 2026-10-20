@@ -1329,6 +1329,28 @@ class PictureFile:
     # What a figure block names the picture by when that is not the hash of `data`: a picture in a PDF is
     # drawn from an image object, and the extraction names the object's stored bytes (`pdf_pictures.py`).
     identity: str | None = None
+    # A rendition the document's bundle keeps (`pdf_pictures.RENDITIONS`): handed over as it was drawn, and
+    # tied to the document by the bundle's manifest and not by an identity this file can recompute.
+    derived: bool = False
+
+
+def _rendition_beside(path: pathlib.Path, name: str, limit: int) -> "PictureFile | None":
+    """The rendition of the picture `name` of the PDF `path`, when its bundle keeps one beside it.
+
+    Only a name a PDF's pictures are called by is looked up, and only as a file of the renditions folder
+    itself, so a request for a picture cannot become a request for any file the server can read.
+    """
+    if pdf_pictures.parse_name(name) is None:
+        return None
+    folder = path.parent / pdf_pictures.RENDITIONS
+    kept = folder / name
+    if not kept.is_file() or kept.resolve().parent != folder.resolve():
+        return None
+    size = kept.stat().st_size
+    if size > limit:
+        raise PictureTooLarge(
+            f"{kept}: the picture {name} is {size} bytes and the most handed over is {limit}.")
+    return PictureFile(path, name, "image/png", kept.read_bytes(), None, True)
 
 
 def _plain_name(name: str) -> str:
@@ -1365,6 +1387,10 @@ def read_pictures(paths: Iterable[pathlib.Path], name: str,
         if not path.is_file():
             raise IngestError(describe_path(path))
         if path.suffix.lower() == ".pdf":
+            kept = _rendition_beside(path, name, limit)
+            if kept is not None:
+                found.append(kept)
+                continue
             drawn = pdf_pictures.draw_named(path, name)
             if drawn is None:
                 continue
@@ -1413,7 +1439,13 @@ def picture_names_held(paths: Iterable[pathlib.Path]) -> dict[pathlib.Path, list
     for given in paths:
         path = pathlib.Path(given)
         if path.suffix.lower() == ".pdf" and path.is_file():
-            held[path] = pdf_pictures.names_in(path)
+            try:
+                held[path] = pdf_pictures.names_in(path)
+            except IngestError:
+                # Without the pack the pictures cannot be listed from the document, and what a bundle
+                # kept beside it is what can be asked for.
+                folder = path.parent / pdf_pictures.RENDITIONS
+                held[path] = sorted(p.name for p in folder.glob("*.png")) if folder.is_dir() else []
             continue
         if path.suffix.lower() != ".docx" or not path.is_file():
             continue
