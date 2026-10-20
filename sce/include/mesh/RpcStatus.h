@@ -22,7 +22,7 @@ enum class RpcStatus : uint8_t {
     DeadlineExceeded = 4,
     NotFound = 5,
     Unimplemented = 12,
-    Internal = 13,
+    InternalError = 13,
     Unavailable = 14,
 };
 
@@ -32,7 +32,7 @@ static_assert(static_cast<uint8_t>(RpcStatus::InvalidArgument) == 3, "RpcStatus 
 static_assert(static_cast<uint8_t>(RpcStatus::DeadlineExceeded) == 4, "RpcStatus wire value changed");
 static_assert(static_cast<uint8_t>(RpcStatus::NotFound) == 5, "RpcStatus wire value changed");
 static_assert(static_cast<uint8_t>(RpcStatus::Unimplemented) == 12, "RpcStatus wire value changed");
-static_assert(static_cast<uint8_t>(RpcStatus::Internal) == 13, "RpcStatus wire value changed");
+static_assert(static_cast<uint8_t>(RpcStatus::InternalError) == 13, "RpcStatus wire value changed");
 static_assert(static_cast<uint8_t>(RpcStatus::Unavailable) == 14, "RpcStatus wire value changed");
 
 }  // namespace SCE::Mesh

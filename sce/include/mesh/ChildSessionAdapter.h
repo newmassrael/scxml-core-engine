@@ -101,7 +101,7 @@ inline MeshEnvelope makeInvokeChildInitFailedEnvelope(const std::string &host_ma
     err.invoke_id = invoke_uuid;
     err.subject = invoke_id_string;
     err.child_session_id = child_session_id;
-    err.rpc_status = RpcStatus::Internal;
+    err.rpc_status = RpcStatus::InternalError;
     err.rpc_error_message = std::string(kInvokeChildInitFailed) + ": remote child '" + host_machine_name +
                             "' failed to initialize for invoke '" + invoke_id_string + "'" +
                             (detail.empty() ? std::string() : (" (" + detail + ")"));

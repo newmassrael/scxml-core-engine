@@ -2439,7 +2439,7 @@ enum class RpcStatus : uint8_t {
     Unavailable        = 14,
     Unimplemented      = 12,
     DeadlineExceeded   = 4,
-    Internal           = 13,
+    InternalError      = 13,
 };
 
 /// Cross-transport message envelope. CloudEvents v1.0 field naming where
