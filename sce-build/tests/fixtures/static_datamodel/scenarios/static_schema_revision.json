@@ -1,0 +1,40 @@
+{
+  "machine": "static_schema_revision",
+  "about": "The payload of `reading.revised` taken whole as a record of the third revision of a schema that grew: the level is a field of the first revision, the layout came with the second (default `week`) and the urgency with the third (default `true`). A delivery written against an earlier revision lacks the fields a later one added and takes their defaults, a field the delivery carries is read as it came and held to its type, and a field the schema does not name is not read. A delivery that lacks the level is refused as any payload that does not fit its schema is: nothing is written and error.execution says so, counted by `refusals`. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "note": "the record starts at the values its <sce:set>s give",
+      "expect": { "state": "reading", "variables": { "last": { "level": 0, "layout": "month", "urgent": false }, "taken": 0, "refusals": 0 } } },
+
+    { "note": "a delivery of the first revision carries the level alone: the layout and the urgency take their defaults",
+      "event": "reading.revised", "data": { "level": 4 },
+      "expect": { "variables": { "last": { "level": 4, "layout": "week", "urgent": true }, "taken": 1, "refusals": 0 } } },
+
+    { "note": "a delivery of the second revision carries the layout, and the urgency the third added takes its default",
+      "event": "reading.revised", "data": { "level": 5, "layout": "day" },
+      "expect": { "variables": { "last": { "level": 5, "layout": "day", "urgent": true }, "taken": 2, "refusals": 0 } } },
+
+    { "note": "a delivery of the third revision carries every field, and no default stands in for a value that was sent",
+      "event": "reading.revised", "data": { "level": 6, "layout": "agenda_list", "urgent": false },
+      "expect": { "variables": { "last": { "level": 6, "layout": "agenda_list", "urgent": false }, "taken": 3, "refusals": 0 } } },
+
+    { "note": "a delivery that lacks the level, a field of the first revision, is refused: nothing is written and error.execution says so",
+      "event": "reading.revised", "data": { "layout": "day", "urgent": true },
+      "expect": { "variables": { "last": { "level": 6, "layout": "agenda_list", "urgent": false }, "taken": 3, "refusals": 1 } } },
+
+    { "note": "a newer sender's field the schema does not name is not read, and the delivery is taken",
+      "event": "reading.revised", "data": { "level": 7, "layout": "month", "urgent": false, "source": "phone" },
+      "expect": { "variables": { "last": { "level": 7, "layout": "month", "urgent": false }, "taken": 4, "refusals": 1 } } },
+
+    { "note": "a field the schema does not name may hold an object, walked past to the level after it, and the fields the delivery lacks take their defaults",
+      "event": "reading.revised", "data": { "extra": { "a": [1, 2] }, "level": 8 },
+      "expect": { "variables": { "last": { "level": 8, "layout": "week", "urgent": true }, "taken": 5, "refusals": 1 } } },
+
+    { "note": "a field with a default is still held to its type when a delivery carries it: a text is no truth value, and the delivery is refused",
+      "event": "reading.revised", "data": { "level": 9, "urgent": "yes" },
+      "expect": { "variables": { "last": { "level": 8, "layout": "week", "urgent": true }, "taken": 5, "refusals": 2 } } },
+
+    { "note": "a delivery with no data lacks the level too, and is refused",
+      "event": "reading.revised",
+      "expect": { "variables": { "last": { "level": 8, "layout": "week", "urgent": true }, "taken": 5, "refusals": 3 } } }
+  ]
+}

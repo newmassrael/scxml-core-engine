@@ -2708,6 +2708,13 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_whole_payload.scxml"
         STAGE_ALSO schema_view.scxml enum_view_mode.scxml
     )
+    # A delivery of an earlier revision of a schema that grew takes the defaults of
+    # the fields added since; the schema imports the enum its added field holds.
+    sce_generate_static_integration_c_test(static_schema_revision
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_schema_revision.scxml"
+        STAGE_ALSO schema_revised.scxml enum_view_mode.scxml
+    )
     # An enum value as a `<param>` crosses as the name its enum declares for it.
     sce_generate_static_integration_c_test(static_wire_enum
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
@@ -2980,6 +2987,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_record_list_index_SOURCES}
         ${INTEGRATION_C_TEST_static_record_enum_SOURCES}
         ${INTEGRATION_C_TEST_static_whole_payload_SOURCES}
+        ${INTEGRATION_C_TEST_static_schema_revision_SOURCES}
         ${INTEGRATION_C_TEST_static_wire_wide_SOURCES}
         ${INTEGRATION_C_TEST_static_wire_enum_SOURCES}
         ${INTEGRATION_C_TEST_static_record_SOURCES}

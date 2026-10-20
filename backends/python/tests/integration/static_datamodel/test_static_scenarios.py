@@ -594,6 +594,14 @@ def test_the_payload_of_an_event_is_taken_whole_as_a_record() -> None:
     replay("static_whole_payload")
 
 
+# A delivery written against an earlier revision of a schema that grew lacks the
+# fields a later revision added, and takes their defaults; a delivery that lacks a
+# field of the first revision is refused, and a field the schema does not name is
+# not read.
+def test_a_delivery_of_an_earlier_revision_takes_the_defaults_of_the_fields_added_since() -> None:
+    replay("static_schema_revision")
+
+
 # An enum value as a `<param>` crosses as the name its enum declares for it: a
 # variable, a field of a record variable and a conditional, sent and read back
 # through the schema.

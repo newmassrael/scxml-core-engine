@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A reading whose schema grew: the record `static_schema_revision.scxml` holds and
+  the payload of the event it takes (SCE Accepted Subset, "An event schema that
+  grows"). The first revision carried the level alone; the second added the
+  layout, the third the urgency. A field a later revision added declares the
+  revision that added it and the value a delivery written before it existed
+  takes, so a delivery of any revision reads as this one; the level, a field of
+  the first revision, declares neither and is in every delivery.
+
+  `layout` is an enum field, so the machine that holds the record imports the
+  same enum under the alias this schema writes (`ViewMode`), and its default is
+  one of the names that enum declares.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="schema_revised"
+       sce:event-name="reading.revised"
+       sce:revision="3">
+  <sce:import src="enum_view_mode.scxml" kind="enum" as="ViewMode"/>
+  <datamodel>
+    <data id="level" sce:type="uint8" sce:direction="in"/>
+    <data id="layout" sce:type="enum:ViewMode" sce:direction="in" sce:since="2" sce:default="week"/>
+    <data id="urgent" sce:type="bool" sce:direction="in" sce:since="3" sce:default="true"/>
+  </datamodel>
+</scxml>

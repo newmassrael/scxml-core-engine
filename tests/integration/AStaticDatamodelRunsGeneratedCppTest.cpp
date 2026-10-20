@@ -75,6 +75,7 @@
 #include "static_record_real_sm.h"
 #include "static_record_sm.h"
 #include "static_record_string_sm.h"
+#include "static_schema_revision_sm.h"
 #include "static_send_content_sm.h"
 #include "static_send_delay_sm.h"
 #include "static_send_event_sm.h"
@@ -2127,6 +2128,26 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, ThePayloadOfAnEventIsTakenWholeAsARec
         {"others", [](const Machine &m) { return json(m.others()); }},
     });
     replay("static_whole_payload", driver);
+}
+
+// A delivery written against an earlier revision of a schema that grew lacks the
+// fields a later revision added, and takes their defaults; a delivery that lacks a
+// field of the first revision is refused, and a field the schema does not name is
+// not read.
+TEST(AStaticDatamodelRunsGeneratedCppTest, ADeliveryOfAnEarlierRevisionTakesTheDefaultsOfTheFieldsAddedSince) {
+    namespace E = G::static_schema_revision;
+    using Machine = E::static_schema_revision;
+    Driver<Machine> driver({
+        {"last",
+         [](const Machine &m) {
+             const auto &last = m.last();
+             return json{
+                 {"level", last.level}, {"layout", std::string(E::sceLogName(last.layout))}, {"urgent", last.urgent}};
+         }},
+        {"taken", [](const Machine &m) { return json(m.taken()); }},
+        {"refusals", [](const Machine &m) { return json(m.refusals()); }},
+    });
+    replay("static_schema_revision", driver);
 }
 
 // An enum value as a `<param>` crosses as the name its enum declares for it: a

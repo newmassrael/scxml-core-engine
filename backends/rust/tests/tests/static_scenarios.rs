@@ -128,6 +128,9 @@ use sce_rust_tests::integration::static_datamodel::static_record_sm::{
 use sce_rust_tests::integration::static_datamodel::static_record_string_sm::{
     StaticRecordStringPersist, StaticRecordStringPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_schema_revision_sm::{
+    StaticSchemaRevisionPersist, StaticSchemaRevisionPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_send_content_sm::{
     StaticSendContentPersist, StaticSendContentPolicy,
 };
@@ -511,6 +514,21 @@ fn static_whole_payload_is_taken_whole_as_a_record() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_whole_payload.json"
+        ),
+    );
+}
+
+// A delivery written against an earlier revision of a schema that grew lacks the
+// fields a later revision added, and takes their defaults; a delivery that lacks a
+// field of the first revision is refused, and a field the schema does not name is
+// not read.
+#[test]
+fn static_schema_revision_takes_the_defaults_of_the_fields_added_since() {
+    replay(
+        Engine::new(StaticSchemaRevisionPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_schema_revision.json"
         ),
     );
 }

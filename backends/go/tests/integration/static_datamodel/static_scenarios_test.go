@@ -76,6 +76,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_real"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_real32"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_string"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_schema_revision"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_content"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_delay"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_event"
@@ -1281,6 +1282,23 @@ func TestThePayloadOfAnEventIsTakenWholeAsARecord(t *testing.T) {
 		"updates": func() any { return policy.Updates() },
 		"agendas": func() any { return policy.Agendas() },
 		"others":  func() any { return policy.Others() },
+	}))
+}
+
+// A delivery written against an earlier revision of a schema that grew lacks
+// the fields a later revision added, and takes their defaults; a delivery that
+// lacks a field of the first revision is refused, and a field the schema does
+// not name is not read.
+func TestADeliveryOfAnEarlierRevisionTakesTheDefaultsOfTheFieldsAddedSince(t *testing.T) {
+	policy := static_schema_revision.NewStaticSchemaRevisionPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_schema_revision", drive[static_schema_revision.StaticSchemaRevisionState, static_schema_revision.StaticSchemaRevisionEvent](&policy, map[string]func() any{
+		"last": func() any {
+			last := policy.Last()
+			return map[string]any{"level": last.Level(), "layout": last.Layout().String(), "urgent": last.Urgent()}
+		},
+		"taken":    func() any { return policy.Taken() },
+		"refusals": func() any { return policy.Refusals() },
 	}))
 }
 

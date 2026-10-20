@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md, "An event schema that
+  grows"): a machine that takes the payload of `reading.revised` whole, as a
+  record of schema_revised.scxml, the third revision of a schema that grew.
+
+  A delivery written against an earlier revision lacks the fields a later one
+  added, and the lift reads each one's default in its place: a delivery of the
+  first revision carries the level alone and is read with the layout `week` and
+  the urgency `true`. A delivery that lacks the level, which every revision
+  carries, is refused as any payload that does not fit its schema is: nothing is
+  written, and error.execution says so, which `refusals` counts. A field the
+  schema does not name, which a newer sender may carry, is not read and does not
+  refuse the delivery.
+
+  The payload is read in the first statement of its block, so a refused delivery
+  writes nothing on any engine, the Interpreter's included.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="reading" datamodel="sce-static" name="static_schema_revision">
+  <sce:import kind="event-schema" src="schema_revised.scxml" as="Revised"/>
+  <sce:import kind="enum" src="enum_view_mode.scxml" as="ViewMode"/>
+  <datamodel>
+    <data id="last" sce:type="record:Revised" sce:direction="out">
+      <sce:set name="level" expr="0"/>
+      <sce:set name="layout" expr="ViewMode.month"/>
+      <sce:set name="urgent" expr="false"/>
+    </data>
+    <data id="taken" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="reading">
+    <transition event="reading.revised" type="internal">
+      <assign location="last" expr="_event.data"/>
+      <assign location="taken" expr="taken + 1"/>
+    </transition>
+    <transition event="error.execution" type="internal">
+      <assign location="refusals" expr="refusals + 1"/>
+    </transition>
+  </state>
+</scxml>

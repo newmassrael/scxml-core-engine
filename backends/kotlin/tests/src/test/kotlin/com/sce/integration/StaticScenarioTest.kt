@@ -78,6 +78,7 @@ import com.sce.integration.static_send_target.StaticSendTargetStateMachine
 import com.sce.integration.static_send_type.StaticSendTypeStateMachine
 import com.sce.integration.static_record_bytes.StaticRecordBytesStateMachine
 import com.sce.integration.static_record_string.StaticRecordStringStateMachine
+import com.sce.integration.static_schema_revision.StaticSchemaRevisionStateMachine
 import com.sce.integration.static_state_algorithm.StaticStateAlgorithmStateMachine
 import com.sce.integration.static_string_capacity.StaticStringCapacityStateMachine
 import com.sce.integration.static_text_record.StaticTextRecordStateMachine
@@ -642,6 +643,27 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_whole_payload"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // A delivery written against an earlier revision of a schema that grew lacks
+    // the fields a later revision added, and takes their defaults; a delivery that
+    // lacks a field of the first revision is refused, and a field the schema does
+    // not name is not read.
+    @Test
+    fun staticSchemaRevisionTakesTheDefaultsOfTheFieldsAddedSince() {
+        val sm = StaticSchemaRevisionStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_schema_revision"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },

@@ -145,6 +145,7 @@
 #include "static_record_real_sm.h"
 #include "static_record_sm.h"
 #include "static_record_string_sm.h"
+#include "static_schema_revision_sm.h"
 #include "static_send_content_sm.h"
 #include "static_send_delay_sm.h"
 #include "static_send_event_sm.h"
@@ -1529,6 +1530,26 @@ static const record_variable_t whole_payload_records[] = {
 STATIC_SCENARIO(static_whole_payload, whole_payload_states, whole_payload_variables, NULL, no_lists,
                 whole_payload_records)
 
+// static_schema_revision: a delivery written against an earlier revision of a
+// schema that grew lacks the fields a later revision added, and takes their
+// defaults; a delivery that lacks a field of the first revision is refused, and a
+// field the schema does not name is not read.
+#define REVISED_FIELDS(N, E) N(level) E(layout, enum_view_mode_declared_name) N(urgent)
+VARIABLE_READER(static_schema_revision, taken)
+VARIABLE_READER(static_schema_revision, refusals)
+RECORD_READER(static_schema_revision, last, static_schema_revision_record_revised_t, REVISED_FIELDS)
+static const name_value_t schema_revision_states[] = {
+    {"reading", STATIC_SCHEMA_REVISION_STATE_READING},
+};
+static const variable_t schema_revision_variables[] = {
+    {"taken", static_schema_revision_read_taken},
+    {"refusals", static_schema_revision_read_refusals},
+};
+static const record_variable_t schema_revision_records[] = {RECORD_ROW(static_schema_revision, last),
+                                                            {NULL, NULL, NULL, NULL}};
+STATIC_SCENARIO(static_schema_revision, schema_revision_states, schema_revision_variables, NULL, no_lists,
+                schema_revision_records)
+
 // static_wire_wide: a 64-bit integer crosses a `<param>` as the text of its digits and
 // is read back from it; the machine keeps the remainders by 1000, which a value that was
 // rounded on the way would get wrong.
@@ -2534,6 +2555,7 @@ int main(void) {
     bad |= static_record_list_index_scenario("static_record_list_index", 19);
     bad |= static_record_enum_scenario("static_record_enum", 29);
     bad |= static_whole_payload_scenario("static_whole_payload", 9);
+    bad |= static_schema_revision_scenario("static_schema_revision", 9);
     bad |= static_wire_wide_scenario("static_wire_wide", 9);
     bad |= static_wire_enum_scenario("static_wire_enum", 7);
     bad |= static_payload_scenario("static_payload", 5);
