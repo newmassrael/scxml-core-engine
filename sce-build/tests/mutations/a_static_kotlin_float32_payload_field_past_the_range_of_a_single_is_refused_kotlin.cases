@@ -18,7 +18,7 @@
 
 mutation_gradle . :sce-kotlin-tests:test --tests 'com.sce.integration.StaticScenarioTest'
 mutation_targets backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/EventPayload.kt
-mutation_oracles backends/kotlin/tests/src/test/kotlin/com/sce/integration/StaticScenarioTest.kt sce-build/tests/fixtures/static_datamodel/scenarios/static_record_real32.json
+mutation_oracles backends/kotlin/tests/src/test/kotlin/com/sce/integration/StaticScenarioTest.kt backends/kotlin/scenarios/src/commonMain/kotlin/com/sce/scenarios/Replay.kt sce-build/tests/fixtures/static_datamodel/scenarios/static_record_real32.json
 
 mutation_case "a number past the range of a single is read" <<'PY'
 edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/EventPayload.kt",

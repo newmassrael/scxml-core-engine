@@ -12,11 +12,14 @@
 // the text every backend saves byte for byte, so one scenario judges every
 // backend by the same answer and needs no per-type glue.
 //
-// An event name no event of the machine matches is refused by the Rust and Go
-// twins, which ask the machine's own lookup unless the step says
-// `"dropped": true`; here that lookup is not public, and a step whose event
-// were dropped would fail on the state it expects — or, for a step that expects
-// the drop, on the variables it says did not move.
+// The replay is `:sce-kotlin-scenarios` (`com.sce.scenarios.replay`), the one a
+// build outside this repository holds its own machines to the same scenarios
+// with; this class is the driver of each machine here. An event name no event of
+// the machine matches is refused by the Rust and Go twins, which ask the
+// machine's own lookup unless the step says `"dropped": true`; here that lookup
+// is not public, and a step whose event were dropped would fail on the state it
+// expects — or, for a step that expects the drop, on the variables it says did
+// not move.
 
 package com.sce.integration
 
@@ -88,32 +91,18 @@ import com.sce.integration.sync_client.SyncClientStateMachine
 import com.sce.integration.todo_peer.TodoPeerStateMachine
 import com.sce.runtime.EventMetadata
 import com.sce.runtime.ManualClock
-import com.sce.runtime.SavedState
-import com.sce.runtime.StateMachineEngine
+import com.sce.scenarios.ChildHosts
+import com.sce.scenarios.RecordedSends
+import com.sce.scenarios.SETTLE_TICKS
+import com.sce.scenarios.hostCall
+import com.sce.scenarios.parseScenario
+import com.sce.scenarios.replay
 import java.io.File
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.put
-import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
-
-/**
- * How many rounds a host gives a machine that needs `tick` after an event before
- * it reads the machine back. The engine reports no point at which it has settled,
- * so a host runs rounds: a child session takes an event the parent forwarded in
- * one round and its end reaches the parent in the next, which is two for each
- * level of child. A round that finds nothing to do changes nothing.
- */
-private const val SETTLE_TICKS = 5
 
 @DisplayName("StaticScenario — sce-static machines replay the scenarios every backend replays (Kotlin AOT)")
 class StaticScenarioTest {
@@ -123,41 +112,9 @@ class StaticScenarioTest {
             .first { File(it, "sce-build").isDirectory }
 
     private fun scenario(machine: String): JsonObject =
-        Json.parseToJsonElement(
+        parseScenario(
             File(repoRoot(), "sce-build/tests/fixtures/static_datamodel/scenarios/$machine.json").readText(),
-        ).jsonObject
-
-    /**
-     * Whether a saved value is the scenario's. The saved state writes a 64-bit
-     * integer as its decimal text, so an expected number matches that text of
-     * the same integer. A real is the double its text reads as, however the text
-     * spells it (`Double.toString` writes 2^24 as `1.6777216E7`, the scenario as
-     * `16777216.0`): parsing is exact, so equal doubles are the same number. A
-     * record or a list is held to that field by field and element by element, so
-     * a real inside one is judged the same way. Everything else must be equal as
-     * written.
-     */
-    private fun holds(got: JsonElement?, want: JsonElement): Boolean {
-        if (got is JsonObject && want is JsonObject) {
-            return got.keys == want.keys && want.all { (key, value) -> holds(got[key], value) }
-        }
-        if (got is JsonArray && want is JsonArray) {
-            return got.size == want.size && want.indices.all { holds(got[it], want[it]) }
-        }
-        if (got is JsonPrimitive && want is JsonPrimitive && got.isString && !want.isString) {
-            return want.content.toLongOrNull() != null && got.content == want.content
-        }
-        if (got is JsonPrimitive && want is JsonPrimitive && !got.isString && !want.isString &&
-            (got.content.toLongOrNull() == null || want.content.toLongOrNull() == null)
-        ) {
-            val gotReal = got.content.toDoubleOrNull()
-            val wantReal = want.content.toDoubleOrNull()
-            if (gotReal != null && wantReal != null) {
-                return gotReal == wantReal
-            }
-        }
-        return got == want
-    }
+        )
 
     /**
      * What `static_host_call` asked of its host since this was last called, oldest
@@ -169,10 +126,7 @@ class StaticScenarioTest {
             host.calls.map { call ->
                 when (call) {
                     is RecordingStaticHostCallActions.Call.ShowAttempts ->
-                        buildJsonObject {
-                            put("action", "showAttempts")
-                            put("args", JsonArray(listOf(JsonPrimitive(call.count.toLong()), JsonPrimitive(call.exhausted))))
-                        }
+                        hostCall("showAttempts", JsonPrimitive(call.count.toLong()), JsonPrimitive(call.exhausted))
                 }
             }
         host.clear()
@@ -193,74 +147,11 @@ class StaticScenarioTest {
                         RecordingStaticHostDutyActions.Call.NoteEngaged -> "note_engaged"
                         RecordingStaticHostDutyActions.Call.StopKeepalive -> "stop_keepalive"
                     }
-                buildJsonObject {
-                    put("action", action)
-                    put("args", JsonArray(emptyList()))
-                }
+                hostCall(action)
             }
         host.clear()
         fresh
     }
-
-    /**
-     * The child hosts a machine's host was asked for, in the order asked, and what
-     * each child asked of its host. A child owns the host it was given, so the
-     * host the parent answers is written here as it is made ([open]), with the
-     * function that reads what it recorded as the scenario writes it and forgets it.
-     */
-    private class ChildHosts {
-        private class Child(
-            val invoke: String,
-            val start: Int,
-            val candidate: String?,
-            val take: () -> List<JsonElement>,
-        ) {
-            var announced = false
-        }
-
-        private val children = mutableListOf<Child>()
-
-        /**
-         * The machine's host was asked for the host of a child its [invoke]
-         * started, and answers [host]: [candidate] is the stem of the document when
-         * the invoke names one of several, and [take] reads what the host recorded
-         * as `host_calls` writes it.
-         */
-        fun <H> open(invoke: String, candidate: String?, host: H, take: (H) -> List<JsonElement>): H {
-            val start = 1 + children.count { it.invoke == invoke }
-            children += Child(invoke, start, candidate) { take(host) }
-            return host
-        }
-
-        /**
-         * The children asked for or called since this was last called, oldest asked
-         * first, each as a scenario's `child_hosts` writes it: the invoke, the start
-         * of that invoke, the candidate's document stem where the invoke names one,
-         * and the calls made in this step alone. A child asked for earlier that
-         * called nothing since has no entry.
-         */
-        fun take(): List<JsonElement> =
-            children.mapNotNull { child ->
-                val calls = child.take()
-                if (child.announced && calls.isEmpty()) {
-                    return@mapNotNull null
-                }
-                child.announced = true
-                buildJsonObject {
-                    put("invoke", child.invoke)
-                    put("start", child.start)
-                    child.candidate?.let { put("candidate", it) }
-                    put("host_calls", JsonArray(calls))
-                }
-            }
-    }
-
-    /** One call of a child's host as a scenario's `host_calls` writes it. */
-    private fun hostCall(action: String, vararg args: JsonElement): JsonElement =
-        buildJsonObject {
-            put("action", action)
-            put("args", JsonArray(args.toList()))
-        }
 
     /** What a `worker` child of `static_child_host` recorded, read and forgotten. */
     private fun workerCalls(host: RecordingStaticChildHostSceSynthInvokeWorkerActions): List<JsonElement> {
@@ -298,157 +189,6 @@ class StaticScenarioTest {
             }
         host.clear()
         return fresh
-    }
-
-    /**
-     * What a machine sent its Mesh peers — a `<send>` whose target is `#name` —
-     * as the router a host registers is handed it. Registered before the machine
-     * starts, so that what its start sends is recorded too; with no router
-     * registered such a send is `error.execution` and reaches nobody.
-     */
-    private class RecordedSends {
-        private val requests = mutableListOf<StateMachineEngine.HostSendRequest>()
-
-        val router: (StateMachineEngine.HostSendRequest) -> List<StateMachineEngine.HostSendResponse> = { request ->
-            requests += request
-            emptyList()
-        }
-
-        /**
-         * The sends made since this was last called, oldest first, each as a
-         * scenario's `sent` writes it: the target as the document writes it, the
-         * event's name, and the event's data as the JSON value its text spells,
-         * left out when the send carried none.
-         */
-        fun take(): List<JsonElement> {
-            val fresh =
-                requests.map { request ->
-                    buildJsonObject {
-                        put("target", request.target)
-                        put("event", request.eventName)
-                        if (request.eventData.isNotEmpty()) {
-                            put("data", Json.parseToJsonElement(request.eventData))
-                        }
-                    }
-                }
-            requests.clear()
-            return fresh
-        }
-    }
-
-    /**
-     * Replay [scenario] against a machine driven by [send] and [tick], read
-     * back with [save] after every step, and asked whether it has [ended]. A
-     * machine with a host that records its `<sce:action>`s gives [hostCalls],
-     * one whose children are given hosts that record gives [childHosts], and one
-     * whose sends to its Mesh peers are recorded gives [sent].
-     */
-    private fun replay(
-        scenario: JsonObject,
-        send: (String, String) -> Unit,
-        tick: () -> Unit,
-        save: () -> SavedState,
-        ended: () -> Boolean,
-        donedata: () -> String = { "" },
-        advance: (Long) -> Unit = { error("this machine runs on no manual clock to advance") },
-        hostCalls: (() -> List<JsonElement>)? = null,
-        childHosts: (() -> List<JsonElement>)? = null,
-        sent: (() -> List<JsonElement>)? = null,
-    ) {
-        val steps = scenario.getValue("steps").jsonArray
-        assertTrue(steps.isNotEmpty(), "a scenario with no steps judges nothing")
-        // A machine that starts a child session in its first state has that child
-        // running, and maybe ended, before any event arrives; it is read as the
-        // events leave it, after the rounds that take.
-        tick()
-        steps.forEachIndexed { n, element ->
-            val step = element.jsonObject
-            val note = step["note"]?.jsonPrimitive?.content ?: ""
-            // A step that moves the machine's time on, for a scenario of a delayed
-            // send: the machine runs on a manual clock, so a wait is the one the
-            // step names and not the one the test happened to take.
-            step["advance_ms"]?.jsonPrimitive?.content?.let { ms -> advance(ms.toLong()) }
-            step["event"]?.jsonPrimitive?.content?.let { event ->
-                send(event, step["data"]?.toString() ?: "")
-                tick()
-            }
-            val expect = step.getValue("expect").jsonObject
-            // What the machine asked of its host in this step. Read on every step
-            // so that a step which states nothing does not hand its calls to the
-            // next, and a step that states some needs a driver that records them.
-            val asked = hostCalls?.invoke()
-            expect["host_calls"]?.let { want ->
-                assertTrue(
-                    asked != null,
-                    "step $n ($note): this driver records no host calls, so it cannot hold a step to them",
-                )
-                assertEquals(want, JsonArray(asked!!), "step $n ($note): what the machine asked of its host")
-            }
-            // The child hosts the machine's host was asked for in this step, and what
-            // each child asked of its host, read and held the same way.
-            val children = childHosts?.invoke()
-            expect["child_hosts"]?.let { want ->
-                assertTrue(
-                    children != null,
-                    "step $n ($note): this driver records no child hosts, so it cannot hold a step to them",
-                )
-                assertEquals(
-                    want,
-                    JsonArray(children!!),
-                    "step $n ($note): the child hosts the machine's host was asked for, and what their children asked of them",
-                )
-            }
-            // What the machine sent its Mesh peers in this step, read and held to
-            // the step the same way: every step takes its own, so none is handed
-            // on, and a step that states some needs a driver that records them.
-            val sends = sent?.invoke()
-            expect["sent"]?.let { want ->
-                assertTrue(
-                    sends != null,
-                    "step $n ($note): this driver records no sends to Mesh peers, so it cannot hold a step to them",
-                )
-                assertEquals(want, JsonArray(sends!!), "step $n ($note): what the machine sent its Mesh peers")
-            }
-            // A machine that ended in a top-level <final> has no saved state to
-            // read — the save refuses one — so what a scenario can say of it is
-            // that it ended, and that is the whole of the step.
-            if (expect["ended"]?.jsonPrimitive?.content == "true") {
-                assertTrue(
-                    expect["state"] == null && expect["variables"] == null,
-                    "step $n ($note): an ended machine has no state or variables to read",
-                )
-                assertTrue(ended(), "step $n ($note): the machine ended in a top-level <final>")
-                // The data its <donedata> left for the invoking parent, as the
-                // JSON the done event carries; compared as a value, so the order
-                // the pairs were written in is not part of the answer.
-                expect["donedata"]?.let { want ->
-                    assertEquals(
-                        want,
-                        Json.parseToJsonElement(donedata()),
-                        "step $n ($note): the data the final's done event carries",
-                    )
-                }
-                return@forEachIndexed
-            }
-            val saved = Json.parseToJsonElement(save().toJson()).jsonObject
-            expect["state"]?.let { state ->
-                assertEquals(state, saved["current"], "step $n ($note): the current state")
-            }
-            // Every active state, a compound or a parallel one with the atomic
-            // ones below it. A set: the order the machine lists them in is not
-            // part of the answer.
-            expect["configuration"]?.let { want ->
-                assertEquals(
-                    want.jsonArray.map { it.jsonPrimitive.content }.toSet(),
-                    saved.getValue("configuration").jsonArray.map { it.jsonPrimitive.content }.toSet(),
-                    "step $n ($note): the active states",
-                )
-            }
-            expect["variables"]?.jsonObject?.forEach { (name, want) ->
-                val got = saved.getValue("variables").jsonObject[name]
-                assertTrue(holds(got, want), "step $n ($note): variable `$name` is $got, not $want")
-            }
-        }
     }
 
     @Test

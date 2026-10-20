@@ -25,6 +25,9 @@ dependencies {
     // `tests/host_features/` replay a generated machine against
     // (docs/SCE_HOST_FEATURES.md).
     testImplementation(project(":sce-kotlin-host-features"))
+    // The replay `StaticScenarioTest` holds the generated machines to the shared
+    // scenarios with: the one a build outside this repository uses too.
+    testImplementation(project(":sce-kotlin-scenarios"))
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.junit.jupiter)
     // `EcmaScriptSemanticsTest` reads the shared ECMA-262 table that the C++

@@ -25,7 +25,7 @@ mutation_targets sce-build/src/forge/static_lowering.rs sce-build/src/forge/expr
 mutation_targets backends/kotlin/forge-runtime/src/commonMain/kotlin/com/sce/forge/runtime/Checked.kt
 mutation_targets backends/kotlin/tests/src/main/kotlin/com/sce/integration/static_payload_bytes/static_payload_bytesSm.kt
 mutation_regen scripts/regen_static_datamodel_kotlin.sh
-mutation_oracles backends/kotlin/tests/src/test/kotlin/com/sce/integration/StaticScenarioTest.kt backends/kotlin/tests/src/test/kotlin/com/sce/integration/StaticDatamodelTest.kt sce-build/tests/fixtures/static_datamodel/scenarios/static_payload_bytes.json
+mutation_oracles backends/kotlin/tests/src/test/kotlin/com/sce/integration/StaticScenarioTest.kt backends/kotlin/scenarios/src/commonMain/kotlin/com/sce/scenarios/Replay.kt backends/kotlin/tests/src/test/kotlin/com/sce/integration/StaticDatamodelTest.kt sce-build/tests/fixtures/static_datamodel/scenarios/static_payload_bytes.json
 
 mutation_case "a record taken whole from a payload is not held to its bytes field's bound" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",

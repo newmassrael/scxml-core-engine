@@ -22,7 +22,7 @@
 mutation_gradle . :sce-kotlin-tests:test --tests 'com.sce.integration.StaticScenarioTest.staticSendTargetIsChosenAmongTheDeclaredRoutes'
 mutation_targets tools/codegen/templates/kotlin/actions/send.kt.jinja2 backends/kotlin/tests/src/main/kotlin/com/sce/integration/static_send_target/static_send_targetSm.kt
 mutation_regen scripts/regen_static_datamodel_kotlin.sh
-mutation_oracles backends/kotlin/tests/src/test/kotlin/com/sce/integration/StaticScenarioTest.kt sce-build/tests/fixtures/static_datamodel/static_send_target.scxml sce-build/tests/fixtures/static_datamodel/scenarios/static_send_target.json
+mutation_oracles backends/kotlin/tests/src/test/kotlin/com/sce/integration/StaticScenarioTest.kt backends/kotlin/scenarios/src/commonMain/kotlin/com/sce/scenarios/Replay.kt sce-build/tests/fixtures/static_datamodel/static_send_target.scxml sce-build/tests/fixtures/static_datamodel/scenarios/static_send_target.json
 
 mutation_case "a value that is none of the declared routes is let through" <<'PY'
 edit("tools/codegen/templates/kotlin/actions/send.kt.jinja2",

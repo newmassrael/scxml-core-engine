@@ -19,7 +19,7 @@ mutation_gradle . :sce-kotlin-tests:test --tests 'com.sce.integration.StaticScen
 mutation_targets sce-build/src/forge/static_lowering.rs
 mutation_targets backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/EventPayload.kt
 mutation_regen scripts/regen_static_datamodel_kotlin.sh
-mutation_oracles backends/kotlin/tests/src/test/kotlin/com/sce/integration/StaticScenarioTest.kt sce-build/tests/fixtures/static_datamodel/scenarios/static_wire_wide.json
+mutation_oracles backends/kotlin/tests/src/test/kotlin/com/sce/integration/StaticScenarioTest.kt backends/kotlin/scenarios/src/commonMain/kotlin/com/sce/scenarios/Replay.kt sce-build/tests/fixtures/static_datamodel/scenarios/static_wire_wide.json
 
 mutation_case "a 64-bit param is written as a JSON number" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",

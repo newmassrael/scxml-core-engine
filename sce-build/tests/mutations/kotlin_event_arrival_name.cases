@@ -13,7 +13,8 @@
 # every by-name door of the engine reaches the machine through, and
 # `sce-build/tests/fixtures/static_datamodel/scenarios/static_event_arrival.json`
 # and `static_event_wildcard.json` state what it decides, replayed by
-# `backends/kotlin/tests/src/test/kotlin/com/sce/integration/StaticScenarioTest.kt`.
+# `backends/kotlin/tests/src/test/kotlin/com/sce/integration/StaticScenarioTest.kt`
+# through `backends/kotlin/scenarios` (`com.sce.scenarios.replay`).
 #
 # Things that are easy to get wrong and read as success: a walk that never leaves
 # the whole name (every document that writes its names whole still passes), a
@@ -28,7 +29,7 @@
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_gradle . :sce-kotlin-tests:test --tests 'com.sce.integration.StaticScenarioTest'
-mutation_oracles backends/kotlin/tests/src/test/kotlin/com/sce/integration/StaticScenarioTest.kt
+mutation_oracles backends/kotlin/tests/src/test/kotlin/com/sce/integration/StaticScenarioTest.kt backends/kotlin/scenarios/src/commonMain/kotlin/com/sce/scenarios/Replay.kt
 mutation_targets backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt
 
 mutation_case "the walk never leaves the whole name" <<'PY'

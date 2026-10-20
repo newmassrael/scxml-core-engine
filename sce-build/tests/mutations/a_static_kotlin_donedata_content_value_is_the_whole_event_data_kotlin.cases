@@ -28,7 +28,7 @@ mutation_gradle . :sce-kotlin-tests:test --tests 'com.sce.integration.StaticScen
 mutation_targets tools/codegen/templates/kotlin/entry_exit_actions.kt.jinja2
 mutation_targets backends/kotlin/tests/src/main/kotlin/com/sce/integration/static_donedata_content/static_donedata_contentSm.kt
 mutation_regen scripts/regen_static_datamodel_kotlin.sh
-mutation_oracles backends/kotlin/tests/src/test/kotlin/com/sce/integration/StaticScenarioTest.kt sce-build/tests/fixtures/static_datamodel/scenarios/static_donedata_content_value.json sce-build/tests/fixtures/static_datamodel/scenarios/static_donedata_content_text.json sce-build/tests/fixtures/static_datamodel/scenarios/static_donedata_content_lost.json sce-build/tests/fixtures/static_datamodel/static_donedata_content.scxml
+mutation_oracles backends/kotlin/tests/src/test/kotlin/com/sce/integration/StaticScenarioTest.kt backends/kotlin/scenarios/src/commonMain/kotlin/com/sce/scenarios/Replay.kt sce-build/tests/fixtures/static_datamodel/scenarios/static_donedata_content_value.json sce-build/tests/fixtures/static_datamodel/scenarios/static_donedata_content_text.json sce-build/tests/fixtures/static_datamodel/scenarios/static_donedata_content_lost.json sce-build/tests/fixtures/static_datamodel/static_donedata_content.scxml
 
 # ── A value that cannot be computed is the empty string ────────────
 
