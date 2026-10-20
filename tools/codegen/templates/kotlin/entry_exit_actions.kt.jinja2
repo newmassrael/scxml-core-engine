@@ -147,7 +147,7 @@
                                 return@deferInvoke
                             }
 {% elif inv.contentexpr %}
-                            // W3C SCXML 6.4.4: Evaluate contentexpr → SCXML string → create child.
+                            // W3C SCXML 6.4.2: Evaluate contentexpr → SCXML string → create child.
                             // Split for the reason the srcexpr arm above states.
                             val scxmlContent = try {
                                 eng.evaluateExpr(sid, {{ inv.contentexpr | to_script_source_expr }})?.toString()

@@ -97,7 +97,7 @@
 {% macro invoke_seed_child(invoke_info, child, model, machine_name) %}
 {% if invoke_info.namelist and child.child_needs_script_engine %}
                 // W3C SCXML 6.4.1: Pass validated namelist values to child datamodel
-                // W3C SCXML 6.3.2: Only set if variable is declared in child's datamodel
+                // W3C SCXML 6.4.3: Only set if variable is declared in child's datamodel
                 {
                     let sid = self.session_id.as_ref().unwrap().clone();
                     let se = self.script_engine.clone();
@@ -538,7 +538,7 @@
                     }
                 }
 {% elif invoke_info.contentexpr %}
-                // W3C SCXML 6.4.4: Evaluate contentexpr at runtime
+                // W3C SCXML 6.4.2: Evaluate contentexpr at runtime
                 self.ensure_script_engine();
                 let sid = self.session_id.as_ref().unwrap().clone();
                 let se = self.script_engine.clone();

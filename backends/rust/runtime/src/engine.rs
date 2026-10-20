@@ -1645,7 +1645,7 @@ impl<P: StatePolicy> Engine<P> {
     /// external event and arrives here. Written out because the reverse
     /// was reported in 2026-08 by a consumer whose real problem was an
     /// aborted `<onentry>` block: an error in executable content abandons
-    /// the actions after it (§scxml-4.2), so a `<send>` written below a
+    /// the actions after it (§scxml-4.9), so a `<send>` written below a
     /// failing one never runs, and no amount of `tick` recovers it.
     pub fn step(&mut self) {
         // §scxml-3.13: one host call, one reading. The macrostep below can

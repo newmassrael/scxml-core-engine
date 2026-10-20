@@ -65,6 +65,11 @@ interface ScxmlScriptEngine {
      * Returns the boolean result of the expression. On evaluation failure,
      * throws an exception (caller is responsible for raising error.execution).
      *
+     * §scxml-B-2-3: the result is the expression's effective boolean value,
+     * ECMAScript's ToBoolean of whatever it computes, not a test that it
+     * computed `true`: `undefined`, `null`, `0`, `-0`, `NaN` and the empty string
+     * are false, and every other value, an object included, is true.
+     *
      * @param sessionId Active session
      * @param expr ECMAScript boolean expression (e.g., "Var1 == 1")
      * @return Boolean result of the expression

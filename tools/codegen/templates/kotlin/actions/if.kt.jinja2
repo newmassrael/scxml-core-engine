@@ -37,7 +37,7 @@
 {% elif model.needs_script_engine and outer_if_action.cond %}
             if (evaluateIfCond({{ outer_if_action.cond | to_script_source_guard }}) { {{ if_failed_var }} = true }) {
 {% elif outer_if_action.cond %}
-            // W3C SCXML 4.2: cond="{{ outer_if_action.cond }}" decided at build time
+            // W3C SCXML 4.3: cond="{{ outer_if_action.cond }}" decided at build time
             if ({{ 'true' if outer_if_action.cond_constant else 'false' }}) {
 {% endif %}
 {% for then_action in outer_if_action.then_actions %}

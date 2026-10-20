@@ -28,7 +28,7 @@ if {{ action.cond_cpp | replace('this->', '') | replace('isStateActive', 'self.i
 // W3C SCXML 5.9: Script engine guard ({{ action.cond }})
 if {% if if_script_can_fail %}self.evaluate_if_cond("{{ action.cond | to_lua_guard | escape_rust }}", engine, &mut if_cond_failed){% else %}self.safe_evaluate_guard("{{ action.cond | to_lua_guard | escape_rust }}", engine){% endif %} {
 {% else %}
-// W3C SCXML 4.2: cond="{{ action.cond }}" decided at build time
+// W3C SCXML 4.3: cond="{{ action.cond }}" decided at build time
 if {{ 'true' if action.cond_constant else 'false' }} {
 {% endif %}
 {% for then_action in action.then_actions %}

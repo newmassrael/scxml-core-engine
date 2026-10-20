@@ -855,7 +855,7 @@ sce_copy_bounded_id(_done_evt.name, "done.invoke.{{ invoke_info.invoke_id | esca
 {% endif %}
             lua_pop(sm->L, 1);
             {% elif invoke_info.contentexpr %}
-            /* W3C SCXML 6.4.4: contentexpr eval-validation. */
+            /* W3C SCXML 6.4.2: contentexpr eval-validation. */
             if (luaL_dostring(sm->L,
                 "return ({{ invoke_info.contentexpr | to_lua_expr | escape_c }})") != 0) {
                 lua_pop(sm->L, 1);

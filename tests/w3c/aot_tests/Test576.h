@@ -31,7 +31,7 @@ namespace SCE::W3C::AotTests {
  * - W3C SCXML 3.13: Parallel state initial entry semantics
  * - W3C SCXML 3.3: Hierarchical state entry from root to target
  * - W3C SCXML 3.4: Parallel state child region entry (all regions entered)
- * - W3C SCXML 3.8.1: <raise> element for internal event generation
+ * - W3C SCXML 4.2: <raise> element for internal event generation
  * - W3C SCXML 5.9: Event matching and processing in parallel regions
  * - W3C SCXML 6.2: <send> with delay attribute for timeout guard
  */

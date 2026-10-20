@@ -228,6 +228,8 @@ public:
     /**
      * @brief ECMAScript truthy conversion (ECMA-262 7.1.2 ToBoolean)
      *
+     * §scxml-B-2-3: the effective boolean value of a conditional expression.
+     *
      * Converts the result value to boolean using JavaScript truthiness rules:
      * - bool: direct value
      * - int64_t: true if non-zero

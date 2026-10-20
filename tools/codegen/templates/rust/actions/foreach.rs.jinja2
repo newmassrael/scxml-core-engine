@@ -31,7 +31,7 @@
 }
 {% else %}
 {
-    // W3C SCXML 5.6: <foreach array="{{ action.array | default("") }}" item="{{ action.item | default("") }}">
+    // W3C SCXML 4.6: <foreach array="{{ action.array | default("") }}" item="{{ action.item | default("") }}">
     self.ensure_script_engine();
     let sid = self.session_id.as_ref().unwrap().clone();
     let se = self.script_engine.clone();
@@ -106,7 +106,7 @@
                 }
             }
             Ok(_) => {
-                // Not an array — raise error.execution (W3C SCXML 5.6)
+                // Not an array — raise error.execution (W3C SCXML 4.6)
                 ::sce_rust_runtime::sce_log_error!("Foreach: '{{ action.array | default("") }}' is not an array");
 {% if 'error.execution' in model.events %}
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<foreach array='{{ action.array | default("") }}'> is not an array"));

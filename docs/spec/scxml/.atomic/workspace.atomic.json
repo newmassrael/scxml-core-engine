@@ -3813,11 +3813,6 @@
           "file": "sce/src/actions/RaiseAction.cpp",
           "symbol": "RaiseAction::execute",
           "kind": "implements"
-        },
-        {
-          "file": "backends/rust/runtime/src/engine.rs",
-          "symbol": "step",
-          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -4618,6 +4613,11 @@
         },
         {
           "file": "sce-build/src/parser.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "step",
           "kind": "references"
         }
       ],
@@ -12194,6 +12194,11 @@
         {
           "file": "backends/python/runtime/sce_runtime/invoke.py",
           "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "processNextExternalEvent",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -12696,10 +12701,6 @@
           "kind": "verifies"
         },
         {
-          "file": "backends/rust/runtime/src/scripting/i_script_engine.rs",
-          "kind": "references"
-        },
-        {
           "file": "sce/src/parsing/SCXMLParser.cpp",
           "symbol": "SCE::SCXMLParser::addSystemVariables",
           "kind": "implements"
@@ -12752,11 +12753,6 @@
         {
           "file": "sce-build/src/forge/diagnostic.rs",
           "symbol": "forge_golden_entries",
-          "kind": "references"
-        },
-        {
-          "file": "backends/rust/runtime/src/helpers/event_data.rs",
-          "symbol": "script_value_to_wire_string",
           "kind": "references"
         },
         {
@@ -13640,6 +13636,16 @@
           "file": "backends/rust/runtime/src/scripting/i_script_engine.rs",
           "symbol": "to_bool",
           "kind": "implements"
+        },
+        {
+          "file": "sce/include/scripting/ScriptResult.h",
+          "symbol": "toBool",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/ScxmlScriptEngine.kt",
+          "symbol": "evaluateCondition",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -17338,6 +17344,10 @@
         {
           "file": "backends/go/runtime/engine.go",
           "symbol": "takeInternalEvent",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "kind": "implements"
         }
       ],
@@ -21817,6 +21827,24 @@
       "target_kind": "section",
       "target_id": "scxml-5.10",
       "reason": "the function is renamed raiseHostInvokeFailure: it now carries the reason, deadline or interrupted"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-4.2",
+      "reason": "the citation at step() is about an error ending a block of executable content, which is 4.9, not <raise>"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-B-1",
+      "reason": "the citation says the data model is ECMAScript, which is B.2; B.1 is the null data model"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-B-1",
+      "reason": "the citation says the engine evaluates ECMAScript, which is B.2; B.1 is the null data model"
     }
   ],
   "frames": {},

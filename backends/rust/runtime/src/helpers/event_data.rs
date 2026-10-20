@@ -102,7 +102,7 @@ pub fn script_value_to_json(value: &ScriptValue) -> String {
 /// read `nil` from a Lua-backed sender and `null` from a JavaScript-backed
 /// one.
 ///
-/// The rendering is ECMAScript's `String(value)` — §scxml-B-1 makes the data
+/// The rendering is ECMAScript's `String(value)` — §scxml-B-2 makes the data
 /// model ECMAScript, so its `ToString` is what a number or a boolean means as
 /// text — with the two amendments C++ `ScriptResultUtils::resultToString`
 /// already made:
@@ -120,7 +120,7 @@ pub fn script_value_to_json(value: &ScriptValue) -> String {
 /// here where the C++ helper hands the value to an `ostringstream` and gets
 /// `nan` / `inf`, and a DOM crosses as its document text where the C++ helper
 /// would reach its `JSON.stringify` fallback. Both are the ECMAScript answer
-/// (§scxml-B-1) and neither is reached by any fixture in the corpus, so the
+/// (§scxml-B-2) and neither is reached by any fixture in the corpus, so the
 /// C++ side is a debt to align rather than a divergence to copy.
 pub fn script_value_to_wire_string(value: &ScriptValue) -> String {
     match value {

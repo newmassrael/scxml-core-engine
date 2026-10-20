@@ -144,7 +144,7 @@ pub struct SetCurrentEventArgs<'a> {
 /// The script engine trait — 1:1 port of C++ `SCE::IScriptEngine`.
 ///
 /// Implementations (`sce-rust-lua`, future `sce-rust-quickjs`) provide ECMAScript
-/// evaluation for §scxml-B-1 datamodel support. Engine DI Parity RFC
+/// evaluation for §scxml-B-2 datamodel support. Engine DI Parity RFC
 /// (Path B+): consumers pass an `Arc<dyn IScriptEngine>` to the generated
 /// `Policy::new(engine)` constructor; there is no process-global singleton.
 pub trait IScriptEngine: Send + Sync {

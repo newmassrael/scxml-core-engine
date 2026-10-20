@@ -2308,7 +2308,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
             settleCurrentState()
             flushPendingFinalState()
 
-            // W3C SCXML Appendix D: hand over to the outer loop. The macrostep
+            // §scxml-D-mainEventLoop: hand over to the outer loop. The macrostep
             // completes on eventless transitions and internal events, then the
             // invokes for the states just entered run, and only then is anything
             // taken off the external queue — so an autoforward child is live for
@@ -3130,7 +3130,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
     /**
      * Record one external event this machine will never look at.
      *
-     * W3C SCXML Appendix D: the loop that would have dequeued it has ended, so
+     * §scxml-D-mainEventLoop: the loop that would have dequeued it has ended, so
      * the event is not "pending" — it is over.
      */
     private fun noteUnseenEvent(event: E) {
@@ -3685,7 +3685,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * Matches: checkEventlessTransitions() → executePendingInvokes() → external dequeue → loop
      */
     /**
-     * W3C SCXML Appendix D `mainEventLoop` — the outer loop, and the only place
+     * §scxml-D-mainEventLoop: the outer loop, and the only place
      * the sync entry points ([initialize], [tick]) express macrostep semantics.
      *
      * Appendix D names the external queue exactly once per iteration and it is
@@ -3719,11 +3719,11 @@ abstract class StateMachineEngine<S : State, E : Event>(
         // gets a budget of its own (ARCHITECTURE.md "External-Event Budget").
         var taken = 0
         while (true) {
-            // W3C SCXML Appendix D: complete the macrostep on eventless
+            // §scxml-D-mainEventLoop: complete the macrostep on eventless
             // transitions and internal events alone.
             drainEventlessAndInternal()
             if (isInFinalState) {
-                // W3C SCXML Appendix D's main event loop ends here, and
+                // §scxml-D-mainEventLoop ends here, and
                 // whatever the host put on the external queue ends with it.
                 // That is the clause: a machine that reached a top-level final
                 // state has exited the interpreter. Saying nothing about it is
@@ -3736,7 +3736,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
             }
             // §scxml-6.4: invokes for states entered during this macrostep.
             executePendingInvokes()
-            // W3C SCXML Appendix D: invoking may have raised internal error
+            // §scxml-D-mainEventLoop: invoking may have raised internal error
             // events (and a child that completed synchronously may already have
             // raised done.invoke); handle them before touching the external
             // queue.
@@ -3749,7 +3749,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
             // rescues it is on that queue, and the clause's priority would
             // otherwise hold it behind a chain that never ends.
             if (internalEventQueue.isNotEmpty() && !macrostepTruncated) continue
-            // W3C SCXML Appendix D: the macrostep is complete — the point just
+            // §scxml-D-mainEventLoop: the macrostep is complete — the point just
             // before the external dequeue.
             macrostepSettled()
             if (externalEventQueue.isEmpty()) break
@@ -3767,9 +3767,14 @@ abstract class StateMachineEngine<S : State, E : Event>(
     }
 
     /**
-     * W3C SCXML Appendix D — take exactly one event off the external queue, run
-     * the preliminary `<finalize>` / autoforward step against it, then select
-     * transitions.
+     * §scxml-D-mainEventLoop: take exactly one event off the external queue,
+     * run the preliminary `<finalize>` / autoforward step against it, then
+     * select transitions.
+     *
+     * §scxml-6.4.2 fixes where both preliminary acts happen: `<finalize>` runs
+     * "right before it removes the event from the event queue for processing",
+     * and an autoforward child is sent its copy "at the point at which it
+     * removes it from the external event queue". Both are this dequeue.
      */
     private fun processNextExternalEvent() {
         val queued = externalEventQueue.removeFirst()
@@ -4970,7 +4975,8 @@ abstract class StateMachineEngine<S : State, E : Event>(
     }
 
     /**
-     * W3C SCXML Appendix D: Drain eventless transitions and internal events.
+     * §scxml-D-mainEventLoop's inner loop: drain eventless transitions and
+     * internal events.
      *
      * Repeats until no more eventless transitions are enabled and the
      * internal event queue is empty. This implements the inner loop of
