@@ -41,3 +41,27 @@ edit("tests/external_event_budget/budget_outcomes.json",
      '"beats_after_second_call": 30,',
      '"beats_after_second_call": 31,')
 PY
+
+mutation_case "a static zero's cut count is written down one too many" <<'PY'
+edit("tests/external_event_budget/budget_outcomes.json",
+     '"static_zero": { "budget": 50, "truncated_after_entry": 0, "truncated": 1 }',
+     '"static_zero": { "budget": 50, "truncated_after_entry": 0, "truncated": 2 }')
+PY
+
+mutation_case "the rounds of the session ping-pong are written down one too many" <<'PY'
+edit("tests/external_event_budget/budget_outcomes.json",
+     '"across_sessions": { "budget": 50, "rounds": 49, "truncated": 1 }',
+     '"across_sessions": { "budget": 50, "rounds": 50, "truncated": 1 }')
+PY
+
+mutation_case "the second budget of a mid-run change takes less than the chain needs" <<'PY'
+edit("tests/external_event_budget/budget_outcomes.json",
+     '"second_budget": 100 }',
+     '"second_budget": 5 }')
+PY
+
+mutation_case "the pulses of a timed chain are written down as due together" <<'PY'
+edit("tests/external_event_budget/budget_outcomes.json",
+     '"interval_ms": 1,',
+     '"interval_ms": 0,')
+PY

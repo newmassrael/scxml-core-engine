@@ -40,3 +40,9 @@ edit("tests/external_event_budget/budget_outcomes.json",
      '"beats_after_second_call": 30,',
      '"beats_after_second_call": 31,')
 PY
+
+mutation_case "the pulses of a timed chain are written down as due together" <<'PY'
+edit("tests/external_event_budget/budget_outcomes.json",
+     '"interval_ms": 1,',
+     '"interval_ms": 0,')
+PY
