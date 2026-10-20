@@ -623,6 +623,65 @@ fn a_go_package_declares_each_name_once_where_a_parent_and_its_child_hold_the_sa
     );
 }
 
+/// A parent that invokes a child in-line under the id `kid`, whose child invokes
+/// its own in-line under the same id.
+const NESTED_INVOKE: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="running" datamodel="sce-static" name="nested_invoke">
+  <state id="running">
+    <invoke type="scxml" id="kid">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="waiting">
+          <state id="waiting">
+            <invoke type="scxml" id="kid">
+              <content>
+                <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="done">
+                  <final id="done"/>
+                </scxml>
+              </content>
+            </invoke>
+          </state>
+        </scxml>
+      </content>
+    </invoke>
+  </state>
+</scxml>"#;
+
+/// A parent and the child it invokes, in one Go package, that each invoke a
+/// child under the same id. Each has a wrapper of the engine it starts, and a
+/// wrapper named by the invoke id alone (`childEngineWrapperKid`) was declared
+/// once by each machine. Every package-level name the parent and its child
+/// declare is declared once.
+#[test]
+fn a_go_package_declares_each_name_once_where_a_child_invokes_under_its_parents_id() {
+    let scratch = reset_scratch("go_nested_invoke");
+    let parent = scratch.join("nested_invoke.scxml");
+    std::fs::write(&parent, NESTED_INVOKE).expect("write nested_invoke");
+    let machines = generate_go_package(&parent, &scratch.join("out"));
+    for file_name in [
+        "nested_invoke_sm.go",
+        "nested_invoke__sce_synth_invoke__kid_sm.go",
+    ] {
+        let names = &machines
+            .iter()
+            .find(|(name, _)| name == file_name)
+            .unwrap_or_else(|| panic!("{file_name} was not generated: {machines:?}"))
+            .1;
+        // Each of the two starts a child, so the check below reads the
+        // declarations that collided rather than a file it misread.
+        assert!(
+            names
+                .iter()
+                .any(|name| name.starts_with("childEngineWrapper") && !name.contains('.')),
+            "{file_name} declares no wrapper of the child it invokes: {names:?}"
+        );
+    }
+    let twice = declared_more_than_once(&machines);
+    assert!(
+        twice.is_empty(),
+        "names declared more than once in the package: {twice:?}"
+    );
+}
+
 // NL→IR Item C1 Path A (EventSchema native lowering) — Kotlin parity for
 // `statechart_native_lowering_emits_engine_free_typed_guard`. The Kotlin
 // backend lowers the typed `_event.data.elapsed_ms` guard to a script-engine-

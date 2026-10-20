@@ -332,7 +332,7 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 			childEngine.Initialize()
 
 			// W3C SCXML 6.4: Store child and create wrapper
-			wrapper := &childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}{engine: childEngine, policy: &childPolicy}
+			wrapper := &childEngineWrapper{{ machine_name }}_{{ invoke_info.invoke_id | to_pascal_case }}{engine: childEngine, policy: &childPolicy}
 			p.child{{ invoke_info.invoke_id | to_pascal_case }} = wrapper
 
 			// W3C SCXML 6.4: Drain child-to-parent events raised during initialize
@@ -617,13 +617,13 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 			// the construction differs per candidate.
 {% for candidate in invoke_info.candidates %}
 			if __sceSelected == "{{ candidate.stem }}" {
-{{ hybrid_child_start(invoke_info, candidate, candidate.stem, 'childEngineWrapper' ~ (invoke_info.invoke_id | to_pascal_case) ~ (candidate.stem | to_pascal_case), model, machine_name) }}
+{{ hybrid_child_start(invoke_info, candidate, candidate.stem, 'childEngineWrapper' ~ machine_name ~ '_' ~ (invoke_info.invoke_id | to_pascal_case) ~ (candidate.stem | to_pascal_case), model, machine_name) }}
 				continue
 			}
 {% endfor %}
 			continue
 {% else %}
-{{ hybrid_child_start(invoke_info, invoke_info, invoke_info.child_name, 'childEngineWrapper' ~ (invoke_info.invoke_id | to_pascal_case), model, machine_name) }}
+{{ hybrid_child_start(invoke_info, invoke_info, invoke_info.child_name, 'childEngineWrapper' ~ machine_name ~ '_' ~ (invoke_info.invoke_id | to_pascal_case), model, machine_name) }}
 			continue
 {% endif %}
 		}
@@ -842,24 +842,27 @@ func (p *{{ machine_name }}Policy) ExecuteFinalizeForChildEvent(eventWithMeta *s
 }
 {% endif %}
 
+{# Each wrapper is named by this machine as well as by the invoke: a package holds
+   a parent and every child it invokes, and a child may invoke its own under the
+   same id. #}
 // ── Child engine wrappers (implement sce.ChildEngine interface) ──
 
 {% for invoke_info in model.invokes | scxml %}
-type childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }} struct {
+type childEngineWrapper{{ machine_name }}_{{ invoke_info.invoke_id | to_pascal_case }} struct {
 	engine *sce.Engine[{{ invoke_info.child_name | to_machine_name }}State, {{ invoke_info.child_name | to_machine_name }}Event]
 	policy *{{ invoke_info.child_name | to_machine_name }}Policy
 }
-func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) Initialize() { w.engine.Initialize() }
-func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) Tick() { w.engine.Tick() }
-func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) Step() { w.engine.Step() }
-func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) Stop() { w.engine.Stop() }
-func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) IsInFinalState() bool { return w.engine.IsInFinalState() }
-func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
-func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
-func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
-func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
-func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.invoke_id | to_pascal_case }}) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.invoke_id | to_pascal_case }}) Tick() { w.engine.Tick() }
+func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.invoke_id | to_pascal_case }}) Step() { w.engine.Step() }
+func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.invoke_id | to_pascal_case }}) Stop() { w.engine.Stop() }
+func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.invoke_id | to_pascal_case }}) IsInFinalState() bool { return w.engine.IsInFinalState() }
+func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.invoke_id | to_pascal_case }}) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
+func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.invoke_id | to_pascal_case }}) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
+func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.invoke_id | to_pascal_case }}) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
+func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.invoke_id | to_pascal_case }}) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.invoke_id | to_pascal_case }}) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.invoke_id | to_pascal_case }}) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 {% endfor %}
 {% for invoke_info in model.invokes | hybrid %}
 {#- §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: with candidates declared the
@@ -869,7 +872,7 @@ func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) TimeUnt
     C++ and Rust hold a concrete one and need a slot each. -#}
 {% set wrapper_targets = invoke_info.candidates if invoke_info.candidates else [{'stem': invoke_info.child_name}] %}
 {% for target in wrapper_targets %}
-{% set wrapper = 'childEngineWrapper' ~ (invoke_info.invoke_id | to_pascal_case) ~ ((target.stem | to_pascal_case) if invoke_info.candidates else '') %}
+{% set wrapper = 'childEngineWrapper' ~ machine_name ~ '_' ~ (invoke_info.invoke_id | to_pascal_case) ~ ((target.stem | to_pascal_case) if invoke_info.candidates else '') %}
 type {{ wrapper }} struct {
 	engine *sce.Engine[{{ target.stem | to_machine_name }}State, {{ target.stem | to_machine_name }}Event]
 	policy *{{ target.stem | to_machine_name }}Policy
