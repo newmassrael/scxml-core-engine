@@ -142,8 +142,9 @@
                     }
                 }
 {% elif not namelist and params | rejectattr("is_static_literal") | list | length == 0 %}
-                /* W3C SCXML 6.2 + B-2-9: every value is a literal, so the
-                   payload is finished at codegen time. */
+                /* W3C SCXML 6.2: every value is a literal, so the payload —
+                   the JSON the arm below serialises to (W3C SCXML B.2.9) —
+                   is finished at codegen time. */
                 {
                     static const char _lit[] = "{{ params | static_params_json | escape_c }}";
                     _Static_assert(sizeof(_lit) <= SCE_MAX_DATA_LEN,
@@ -192,6 +193,9 @@
                 }
 {% endif %}
 {% endfor %}
+{# W3C SCXML B.2.9: the pairs leave the data model as JSON, which keeps each
+   value's type for the receiver to reconstruct it. When `JSON.stringify`
+   fails, the message is not sent and error.execution says why. #}
                 if (luaL_dostring(sm->L,
 {% if keep_pairs %}
                     "return JSON.stringify(_scxml_params(table.unpack(_sce_send_pairs)))") != 0) {
@@ -208,7 +212,8 @@
 {{ send_payload_take(csym_prefix, machine, "payload") }}
 {% endif %}
 {% endmacro %}
-{# W3C SCXML 5.10 + B.2 — a `<send>`'s `<content>` as JSON in `_ed`, by the
+{# W3C SCXML 5.6 — the data a `<send>`'s `<content>` holds, passed on as the
+   message's payload: as JSON in `_ed` (W3C SCXML 5.10 + B.2), by the
    same rules as `send_payload_json` above. Inline text takes its reading at
    build time (`to_lua_data_content`: an expression when it is one, otherwise
    the string); text whose first character is `<` crosses as the XML it is,
@@ -1843,7 +1848,8 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
         {{ action.native_code | to_in_predicate_c11(csym_prefix ~ model.name, model.history_states | list) }}
 {% elif action.type == 'raise' %}
         {
-            /* W3C SCXML 3.8.1: <raise event="{{ action.event }}"> */
+            /* W3C SCXML 4.2: <raise event="{{ action.event }}">, onto the
+               internal queue, processed after this block completes. */
             {{ csym_prefix }}{{ model.name }}_event_with_meta_t evt;
             memset(&evt, 0, sizeof(evt));
             evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ action.event | to_c11_upper_ident }};
@@ -2114,7 +2120,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
 {% endif %}
         }
 {% elif action.type == 'log' %}
-        /* W3C SCXML 4.4: <log{% if action.label %} label="{{ action.label }}"{% endif %}{% if action.expr %} expr="{{ action.expr }}"{% endif %}>
+        /* W3C SCXML 4.7: <log{% if action.label %} label="{{ action.label }}"{% endif %}{% if action.expr %} expr="{{ action.expr }}"{% endif %}>
            Logging is observable side-effect only — the W3C spec mandates no
            statechart effect, just developer-facing output. Mirrors cpp
            `actions/log.jinja2`: success path emits the evaluated expression
@@ -2727,10 +2733,11 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
         }
         {% endif %}
         {% for block in state.on_entry_blocks %}
-        /* Onentry block {{ loop.index }}/{{ state.on_entry_blocks | length }} —
-           each block is an independent helper so a `return;` inside
-           (e.g. invalid-target send raising error.execution + W3C 5.10
-           stop-subsequent-content) terminates only that block. */
+        /* W3C SCXML 3.8: onentry block {{ loop.index }}/{{ state.on_entry_blocks | length }},
+           run as the state is entered. Each block is an independent
+           helper so a `return;` inside (e.g. invalid-target send raising
+           error.execution + W3C 5.10 stop-subsequent-content) terminates
+           only that block. */
         {{ csym_prefix }}{{ model.name }}_on_entry_{{ state_id | to_c11_lower_ident }}_block_{{ loop.index }}(sm);
         {% endfor %}
         {% if state.invokes | unsupported %}
@@ -2973,9 +2980,10 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
            its own element. */
         {{ se.lua_eval_donedata_content(state.donedata.content.text | to_lua_data_content) }}
         {% elif state.donedata.content.kind == "literal" %}
-        /* W3C SCXML 5.5 + Appendix B.2.2: <content>literal-text</content>
-           under the "null" datamodel — the inline text is the content
-           value verbatim, no evaluation, no script engine required.
+        /* W3C SCXML 5.5: <content>literal-text</content> under the
+           "null" datamodel, which has no data model and no value
+           expression language (W3C SCXML B.1) — the inline text is the
+           content value verbatim, no evaluation, no script engine required.
            Parser routes to `kind == "literal"` only when datamodel="null";
            models with a value expression language and the same XML route
            through the inline-text arm above. Mirrors cpp `DoneDataHelper::
@@ -3092,9 +3100,10 @@ SCE_SM_FN static void execute_exit_actions({{ csym_prefix }}{{ model.name }}_t *
            of invocation, then configuration.delete(s) (`exit_states` does
            that after this returns). #}
         {% for block in state.on_exit_blocks %}
-        /* Onexit block {{ loop.index }}/{{ state.on_exit_blocks | length }} —
-           each block is an independent helper so a `return;` inside
-           terminates only that block. W3C SCXML 3.13. */
+        /* W3C SCXML 3.9: onexit block {{ loop.index }}/{{ state.on_exit_blocks | length }},
+           run as the state is exited. Each block is an independent
+           helper so a `return;` inside terminates only that block.
+           W3C SCXML 3.13. */
         {{ csym_prefix }}{{ model.name }}_on_exit_{{ state_id | to_c11_lower_ident }}_block_{{ loop.index }}(sm);
         {% endfor %}
         {% for invoke_info in state.invokes | host_invoker %}
@@ -3260,7 +3269,9 @@ SCE_SM_FN static void execute_initial_transition_content({{ csym_prefix }}{{ mod
 {% if model.has_history_states %}
 
 {# §scxml-D-enterStates: a <history>'s default transition content, owed to
-   its parent when nothing was recorded, run once the parent is entered. #}
+   its parent when nothing was recorded, run once the parent is entered.
+   §scxml-3.10.2: that <transition> MAY hold executable content, and it runs
+   only when the default stored state configuration is entered. #}
 SCE_SM_FN static void execute_history_default_content({{ csym_prefix }}{{ model.name }}_t *sm,
                                                       {{ csym_prefix }}{{ model.name }}_history_t h) {
     (void)sm;
@@ -4489,7 +4500,7 @@ SCE_SM_FN static bool process_next_external_event({{ csym_prefix }}{{ model.name
         {% endfor %}
         {% endfor %}
         {% if _has_finalize.any %}
-        /* W3C SCXML 6.4 (test233): run the matching invoke's
+        /* W3C SCXML 6.5 (test233): run the matching invoke's
            `<finalize>` body in the parent's lua_State BEFORE transition
            selection. The finalize body reads `_event.data.<key>` (just
            hydrated above) and writes parent variables — so the

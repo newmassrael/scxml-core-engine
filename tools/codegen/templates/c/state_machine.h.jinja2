@@ -236,7 +236,10 @@ enum {{ csym_prefix }}{{ model.name }}_history_e {
 typedef enum {{ csym_prefix }}{{ model.name }}_history_e {{ csym_prefix }}{{ model.name }}_history_t;
 
 {% endif %}
-/* ── W3C SCXML 6.2: Event enumeration ─────────────────────────────── */
+/* ── W3C SCXML 3.12: Event enumeration ────────────────────────────── */
+{# W3C SCXML 3.12: one member per event name this machine knows. An event
+   it raises or receives is carried as one of these members, and transition
+   selection matches a transition's `event` attribute against the member. #}
 {# `_NONE` is the scheduler-polling default (W3C 6.2). Enumerated first so
    the underlying integer is 0, matching the C++ `Event::NONE` semantics
    (`process_transition.jinja2` peers compare against the unset event with
@@ -532,7 +535,8 @@ typedef struct {{ csym_prefix }}{{ model.name }}_policy {
 {% for field in static_fields %}
     {# SCE Accepted Subset §2.15: under `datamodel="sce-static"` a variable is a
        member of this struct, read and written by the statements the build
-       lowered — no script engine holds it. #}
+       lowered — no script engine holds it. W3C SCXML 5.2: each <data> a
+       <datamodel> wraps is one such data object. #}
     {{ field.ty }} {{ field.name }};
 {% endfor %}
 } {{ csym_prefix }}{{ model.name }}_policy_t;

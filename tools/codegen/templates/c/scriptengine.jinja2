@@ -279,6 +279,8 @@
             {%- endfor -%}
             "}");
         {% endif %}
+        {# W3C SCXML 5.2: the document's top-level <datamodel>, one data object
+           per <data> it wraps, each a global of this session's engine. #}
         {% for var in model.variables %}
         {% if var.expr %}
         /* W3C SCXML 5.3: <data id="{{ var.id }}" expr="{{ var.expr }}">.
@@ -503,6 +505,13 @@
    `result_var` (must be `bool` and already declared by the caller). The
    chunk returns the value, lua_toboolean lifts it, lua_pop drops the
    stack slot.
+
+   W3C SCXML B.2.3: the cond's effective boolean value is ECMAScript's
+   ToBoolean, not Lua's truthiness, which counts `0` and `""` as true.
+   `to_lua_guard` lowers the cond so that every operand that is not already a
+   boolean goes through `_scxml_truthy` (the shared
+   sce/include/scripting/ecma_semantics.lua), so the value the chunk returns
+   is already that boolean and lua_toboolean only lifts it.
 
    W3C SCXML 5.9 (test344): "If a conditional expression cannot be
    evaluated as a boolean value or its evaluation causes an error, the

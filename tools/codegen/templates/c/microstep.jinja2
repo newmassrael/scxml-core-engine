@@ -150,8 +150,9 @@ SCE_SM_FN static SCE_C_UNUSED uint8_t transition_targets({{ _t }}_state_t source
     }
 }
 
-/* §scxml-3.3: each compound state's initial transition target, as written —
-   the first child state when the document names none. */
+/* §scxml-3.3.2: each compound state's default initial state(s) — the target
+   of its `initial` attribute or <initial> element, as written, and its first
+   child state in document order when the document names none. */
 {% for state_id, state in model.states | dictsort %}
 {% if state.initial_targets %}
 static const uint8_t k_initial_targets_{{ loop.index0 }}[] = {{ et.entry_targets(state.initial_targets, model.history_states, _u) }};
@@ -178,7 +179,8 @@ SCE_SM_FN static SCE_C_UNUSED uint8_t initial_targets({{ _t }}_state_t s, const 
 static const uint8_t k_document_initial_targets[] = {{ et.entry_targets(model.initial_targets, model.history_states, _u) }};
 {% if model.has_history_states %}
 
-/* §scxml-3.10: each <history>'s default transition target, as written. */
+/* §scxml-3.10.2: each <history>'s default transition target, as written —
+   its default stored state configuration. */
 {% for hid, info in model.history_states | dictsort %}
 static const uint8_t k_history_default_targets_{{ loop.index0 }}[] = {{ et.entry_targets(info.default_targets, model.history_states, _u) }};
 {% endfor %}
@@ -646,11 +648,13 @@ SCE_SM_FN static void exit_states({{ _t }}_t *sm, const {{ _t }}_transition_info
     if ((states_to_exit & state_bit({{ parent_enum }})) != 0u) {
 {% if info.type == 'deep' %}
         /* §scxml-D-exitStates, <history id="{{ hid }}" type="deep">: the
-           active atomic states below its parent. */
+           active atomic states below its parent, recorded before the
+           transition exits the parent (§scxml-3.10.2). */
         sm->policy.history_{{ hid }}_snapshot = configuration & k_descendant_states[{{ parent_enum }}] & {{ _u }}_ATOMIC_STATES;
 {% else %}
         /* §scxml-D-exitStates, <history id="{{ hid }}" type="shallow">: its
-           parent's active children. */
+           parent's immediately active children, recorded before the
+           transition exits the parent (§scxml-3.10.2). */
         sm->policy.history_{{ hid }}_snapshot = configuration & k_child_states[{{ parent_enum }}];
 {% endif %}
         sm->policy.history_{{ hid }}_recorded = true;
