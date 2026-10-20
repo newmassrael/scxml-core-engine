@@ -23,7 +23,7 @@ enum { FIELD_CAP = 256, MIN_CASES = 20 };
 
 // One string field of the case object at `object`, unescaped into `out`.
 static const char *read_text(const char *object, const char *name, char *out) {
-    sce_payload_fields_t fields = {object};
+    sce_payload_fields_t fields = {object, NULL};
     const char *p = sce_payload_find(&fields, name);
     if (p == NULL) {
         return SCE_PAYLOAD_REFUSE_MISSING;
@@ -39,7 +39,7 @@ static const char *read_text(const char *object, const char *name, char *out) {
 
 // The case's `ms`: false in `*present` for null, otherwise the count.
 static const char *read_ms(const char *object, bool *present, uint64_t *ms) {
-    sce_payload_fields_t fields = {object};
+    sce_payload_fields_t fields = {object, NULL};
     const char *p = sce_payload_find(&fields, "ms");
     if (p == NULL) {
         return SCE_PAYLOAD_REFUSE_MISSING;

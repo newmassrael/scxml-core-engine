@@ -60,7 +60,7 @@ object EventPayload {
      * written in, so a whole number stays exact until it is read at the width
      * its schema declares.
      */
-    class Fields internal constructor(private val values: Map<String, Any?>) {
+    class Fields internal constructor(internal val values: Map<String, Any?>) {
 
         private fun raw(name: String): Any? {
             if (!values.containsKey(name)) {
@@ -244,6 +244,24 @@ object EventPayload {
         }
         @Suppress("UNCHECKED_CAST")
         return Fields(value as Map<String, Any?>)
+    }
+
+    /**
+     * [decode] for a schema a later revision of which added fields: [defaults]
+     * is the JSON object of those fields' defaults, which the generator spells
+     * from the schema, and a field the delivery lacks is read out of it instead
+     * (docs/SCE_ACCEPTED_SUBSET.md, "An event schema that grows").
+     *
+     * A delivery with no data at all lacks every field, so it is read as one
+     * that names none: a field of the first revision is then refused by name,
+     * and a schema all of whose fields came later reads its defaults. A field
+     * the delivery does carry is read as it came, and held to its type as any
+     * other value is.
+     */
+    fun decode(data: String, defaults: String): Fields {
+        val delivered = if (data.isBlank()) emptyMap() else decode(data).values
+        val fallback = decode(defaults).values
+        return Fields(fallback + delivered)
     }
 
     /**

@@ -61,6 +61,37 @@ func LiftPayload(data string) (PayloadFields, error) {
 	return PayloadFields(obj), nil
 }
 
+// LiftPayloadWithDefaults is LiftPayload for a schema a later revision of which
+// added fields: defaults is the JSON object of those fields' defaults, which the
+// generator spells from the schema, and a field the delivery lacks is read out
+// of it instead (docs/SCE_ACCEPTED_SUBSET.md, "An event schema that grows").
+//
+// A delivery with no data at all lacks every field, so it is read as one that
+// names none: a field of the first revision is then refused by name, and a
+// schema all of whose fields came later reads its defaults. A field the delivery
+// does carry is read as it came, and held to its type as any other value is.
+func LiftPayloadWithDefaults(data, defaults string) (PayloadFields, error) {
+	fields := PayloadFields{}
+	if strings.TrimSpace(data) != "" {
+		lifted, err := LiftPayload(data)
+		if err != nil {
+			return nil, err
+		}
+		fields = lifted
+	}
+	fallback, err := LiftPayload(defaults)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"the schema's defaults are not a JSON object, which the generator never writes: %w", err)
+	}
+	for name, value := range fallback {
+		if _, ok := fields[name]; !ok {
+			fields[name] = value
+		}
+	}
+	return fields, nil
+}
+
 // field is the value `name` carries, or a refusal naming what is missing.
 func field(obj PayloadFields, name string) (any, error) {
 	v, ok := obj[name]

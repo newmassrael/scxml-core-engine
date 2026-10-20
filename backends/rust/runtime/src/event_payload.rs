@@ -97,6 +97,36 @@ impl PayloadFields {
         Ok(Self { fields })
     }
 
+    /// [`Self::decode`] for a schema a later revision of which added fields:
+    /// `defaults` is the JSON object of those fields' defaults, which the
+    /// generator spells from the schema, and a field the delivery lacks is
+    /// read out of it instead (docs/SCE_ACCEPTED_SUBSET.md, "An event schema
+    /// that grows").
+    ///
+    /// A delivery with no data at all lacks every field, so it is read as one
+    /// that names none: a field of the first revision is then refused by name,
+    /// and a schema all of whose fields came later reads its defaults. A field
+    /// the delivery does carry is read as it came, and held to its type as any
+    /// other value is.
+    pub fn decode_with_defaults(data: &str, defaults: &str) -> Result<Self, PayloadRefusal> {
+        let mut decoded = if data.trim().is_empty() {
+            Self::default()
+        } else {
+            Self::decode(data)?
+        };
+        let Ok(Value::Object(defaults)) = crate::json::parse(defaults.trim()) else {
+            return Err(PayloadRefusal::new(
+                "the schema's defaults are not a JSON object, which the generator never writes",
+            ));
+        };
+        for (name, value) in defaults {
+            if !decoded.fields.iter().any(|(key, _)| *key == name) {
+                decoded.fields.push((name, value));
+            }
+        }
+        Ok(decoded)
+    }
+
     fn find(&self, name: &str) -> Result<&Value, PayloadRefusal> {
         self.fields
             .iter()
@@ -322,4 +352,58 @@ pub fn bytes_as_payload_text(bytes: &[u8]) -> String {
 /// runtime's one writer ([`crate::json::quote`]).
 pub fn quote(text: &str) -> String {
     crate::json::quote(text)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PayloadFields;
+
+    const DEFAULTS: &str = r#"{"layout":"week","count":"7","urgent":true}"#;
+
+    #[test]
+    fn a_field_the_delivery_lacks_is_read_out_of_the_defaults() {
+        let fields = PayloadFields::decode_with_defaults(r#"{"level": 4}"#, DEFAULTS)
+            .expect("a delivery of the first revision reads");
+        assert_eq!(fields.unsigned::<u8>("level"), Ok(4));
+        assert_eq!(
+            fields.text("layout").map(|s| s.to_string()),
+            Ok("week".into())
+        );
+        assert_eq!(fields.unsigned64("count"), Ok(7));
+        assert_eq!(fields.truth("urgent"), Ok(true));
+    }
+
+    #[test]
+    fn a_field_the_delivery_carries_is_read_as_it_came() {
+        let fields = PayloadFields::decode_with_defaults(
+            r#"{"level": 4, "layout": "day", "urgent": false, "source": {"a": [1]}}"#,
+            DEFAULTS,
+        )
+        .expect("a delivery of a later revision reads, an unknown field and all");
+        assert_eq!(
+            fields.text("layout").map(|s| s.to_string()),
+            Ok("day".into())
+        );
+        assert_eq!(fields.truth("urgent"), Ok(false));
+        // A value of another type is refused, default or not.
+        let fields = PayloadFields::decode_with_defaults(r#"{"level": 4, "urgent": 1}"#, DEFAULTS)
+            .expect("the object reads");
+        assert!(fields.truth("urgent").is_err());
+    }
+
+    #[test]
+    fn a_field_of_the_first_revision_is_still_required() {
+        let fields = PayloadFields::decode_with_defaults(r#"{"layout": "day"}"#, DEFAULTS)
+            .expect("the object reads");
+        let refusal = fields
+            .unsigned::<u8>("level")
+            .expect_err("no default stands in");
+        assert!(refusal.reason().contains("'level'"), "{refusal}");
+        // No data at all is a delivery that names no field.
+        let fields = PayloadFields::decode_with_defaults("", DEFAULTS).expect("reads as no field");
+        assert!(fields.unsigned::<u8>("level").is_err());
+        assert_eq!(fields.truth("urgent"), Ok(true));
+        // A bare value is still no object of named fields.
+        assert!(PayloadFields::decode_with_defaults("5", DEFAULTS).is_err());
+    }
 }

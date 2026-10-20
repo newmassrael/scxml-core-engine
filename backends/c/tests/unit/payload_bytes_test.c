@@ -19,7 +19,7 @@ enum { BUFFER = 8 };
 static int failures = 0;
 
 static void expect_bytes(const char *what, const char *wire, const uint8_t *want, size_t want_len) {
-    sce_payload_fields_t fields = {wire};
+    sce_payload_fields_t fields = {wire, NULL};
     uint8_t out[BUFFER];
     size_t len = 0;
     const char *refusal = sce_payload_read_bytes(&fields, "frame", out, sizeof(out), &len);
@@ -33,7 +33,7 @@ static void expect_bytes(const char *what, const char *wire, const uint8_t *want
 }
 
 static void expect_refusal(const char *what, const char *wire, const char *want) {
-    sce_payload_fields_t fields = {wire};
+    sce_payload_fields_t fields = {wire, NULL};
     uint8_t out[BUFFER];
     size_t len = 0;
     const char *refusal = sce_payload_read_bytes(&fields, "frame", out, sizeof(out), &len);
@@ -42,6 +42,65 @@ static void expect_refusal(const char *what, const char *wire, const char *want)
         failures++;
     } else if (strcmp(refusal, want) != 0) {
         fprintf(stderr, "FAIL: %s: refused as `%s`, wanted `%s`\n", what, refusal, want);
+        failures++;
+    }
+}
+
+// Whether a read was refused with the sentence `want`.
+static bool refused_as(const char *refusal, const char *want) {
+    return refusal != NULL && strcmp(refusal, want) == 0;
+}
+
+// A field a later revision of an event schema added is read out of the schema's
+// defaults where a delivery lacks it, and a field of the first revision is still
+// required (docs/SCE_ACCEPTED_SUBSET.md, "An event schema that grows").
+static void check_defaults(void) {
+    static const char defaults[] = "{\"frame\":\"ack\",\"count\":\"7\",\"urgent\":true}";
+    sce_payload_fields_t fields;
+    uint8_t level = 0;
+    uint64_t count = 0;
+    bool urgent = false;
+    uint8_t frame[BUFFER];
+    size_t frame_len = 0;
+
+    if (sce_payload_decode_with_defaults("{\"level\": 4}", defaults, &fields) != NULL ||
+        sce_payload_read_u8(&fields, "level", &level) != NULL || level != 4u ||
+        sce_payload_read_u64(&fields, "count", &count) != NULL || count != 7u ||
+        sce_payload_read_bool(&fields, "urgent", &urgent) != NULL || !urgent ||
+        sce_payload_read_bytes(&fields, "frame", frame, sizeof(frame), &frame_len) != NULL || frame_len != 3u ||
+        memcmp(frame, "ack", 3u) != 0) {
+        fprintf(stderr, "FAIL: a delivery of the first revision did not read its defaults\n");
+        failures++;
+    }
+
+    if (sce_payload_decode_with_defaults("{\"level\": 4, \"extra\": {\"a\": [1]}, \"urgent\": false}", defaults,
+                                         &fields) != NULL ||
+        sce_payload_read_bool(&fields, "urgent", &urgent) != NULL || urgent) {
+        fprintf(stderr, "FAIL: a field the delivery carries was not read as it came\n");
+        failures++;
+    }
+
+    if (sce_payload_decode_with_defaults("{\"urgent\": 1}", defaults, &fields) != NULL ||
+        !refused_as(sce_payload_read_bool(&fields, "urgent", &urgent), SCE_PAYLOAD_REFUSE_NOT_TRUTH)) {
+        fprintf(stderr, "FAIL: a mistyped value was not refused because the field has a default\n");
+        failures++;
+    }
+
+    if (sce_payload_decode_with_defaults("{\"urgent\": true}", defaults, &fields) != NULL ||
+        !refused_as(sce_payload_read_u8(&fields, "level", &level), SCE_PAYLOAD_REFUSE_MISSING)) {
+        fprintf(stderr, "FAIL: a missing field of the first revision was not refused\n");
+        failures++;
+    }
+
+    if (sce_payload_decode_with_defaults("", defaults, &fields) != NULL ||
+        !refused_as(sce_payload_read_u8(&fields, "level", &level), SCE_PAYLOAD_REFUSE_MISSING) ||
+        sce_payload_read_bool(&fields, "urgent", &urgent) != NULL || !urgent) {
+        fprintf(stderr, "FAIL: no data was not read as a delivery that names no field\n");
+        failures++;
+    }
+
+    if (!refused_as(sce_payload_decode_with_defaults("5", defaults, &fields), SCE_PAYLOAD_REFUSE_NOT_OBJECT)) {
+        fprintf(stderr, "FAIL: a bare value was read as an object of named fields\n");
         failures++;
     }
 }
@@ -93,6 +152,8 @@ int main(void) {
         (void)snprintf(wire, sizeof(wire), "{\"frame\":%s}", quoted);
         expect_bytes("the quoter's own text", wire, everything + start, BUFFER);
     }
+
+    check_defaults();
 
     if (failures != 0) {
         fprintf(stderr, "%d failure(s)\n", failures);

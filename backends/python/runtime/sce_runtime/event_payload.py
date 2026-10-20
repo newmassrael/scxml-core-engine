@@ -218,7 +218,7 @@ def _as(name: str, declared: type, value: Any) -> Any:
         f"for it")
 
 
-def lift(data: Any, fields: Sequence[tuple]) -> list:
+def lift(data: Any, fields: Sequence[tuple], defaults: str | None = None) -> list:
     """Every field of this event's schema, in declaration order.
 
     A field is `(name, declared)`, or `(name, int, low, high)` for an integer of
@@ -228,12 +228,24 @@ def lift(data: Any, fields: Sequence[tuple]) -> list:
     value is the binary32 nearest the number the payload carried, and a number
     past the single's range is refused the same way.
 
+    `defaults`, for a schema a later revision of which added fields, is the JSON
+    object of those fields' defaults, which the generator spells from the schema:
+    a field the delivery lacks is read out of it instead, and held to its type as
+    a delivered value is (docs/SCE_ACCEPTED_SUBSET.md, "An event schema that
+    grows"). A delivery with no data at all then lacks every field and reads as
+    one that names none, so a field of the first revision is refused by name.
+
     Raises `TypedPayloadError` naming the first thing that is wrong, which the
     caller reports as `error.execution` — the answer W3C SCXML 3.13 gives for
     a guard that cannot be evaluated, and the one the script engine gives for
     the same guard on the same data.
     """
-    decoded = _decode(data)
+    if defaults is None:
+        decoded = _decode(data)
+    else:
+        no_data = data is None or (isinstance(data, str) and not data.strip())
+        delivered = {} if no_data else _decode(data)
+        decoded = {**json.loads(defaults), **delivered}
     values = []
     for name, declared, *width in fields:
         if name not in decoded:

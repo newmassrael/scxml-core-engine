@@ -140,3 +140,65 @@ TEST(EventPayloadBytes, HalfACharacterOrABadEscapeIsNoText) {
         EXPECT_NE(fields.readString("label", label), "") << wire;
     }
 }
+
+// A field a later revision of an event schema added is read out of the schema's
+// defaults where a delivery lacks it, and a field of the first revision is still
+// required (docs/SCE_ACCEPTED_SUBSET.md, "An event schema that grows"). The same
+// header-only lift, so it is held here with no runtime library either.
+namespace {
+
+const char *const kRevisedDefaults = "{\"layout\":\"week\",\"count\":\"7\",\"urgent\":true}";
+
+}  // namespace
+
+TEST(EventPayloadDefaults, AFieldTheDeliveryLacksIsReadOutOfTheDefaults) {
+    // The fields borrow the wire, so it outlives them.
+    EventPayloadFields fields;
+    const std::string wire = "{\"level\": 4}";
+    ASSERT_EQ(EventPayloadFields::decode(wire, kRevisedDefaults, fields), "");
+    uint8_t level = 0;
+    EXPECT_EQ(fields.readInteger("level", level), "");
+    EXPECT_EQ(level, 4u);
+    std::string layout;
+    EXPECT_EQ(fields.readString("layout", layout), "");
+    EXPECT_EQ(layout, "week");
+    uint64_t count = 0;
+    EXPECT_EQ(fields.readWide("count", count), "");
+    EXPECT_EQ(count, 7u);
+    bool urgent = false;
+    EXPECT_EQ(fields.readBool("urgent", urgent), "");
+    EXPECT_TRUE(urgent);
+}
+
+TEST(EventPayloadDefaults, AFieldTheDeliveryCarriesIsReadAsItCame) {
+    EventPayloadFields fields;
+    const std::string wire = "{\"level\": 4, \"source\": {\"a\": [1]}, \"layout\": \"day\", \"urgent\": false}";
+    ASSERT_EQ(EventPayloadFields::decode(wire, kRevisedDefaults, fields), "");
+    std::string layout;
+    EXPECT_EQ(fields.readString("layout", layout), "");
+    EXPECT_EQ(layout, "day");
+    bool urgent = true;
+    EXPECT_EQ(fields.readBool("urgent", urgent), "");
+    EXPECT_FALSE(urgent);
+    const std::string mistyped = "{\"level\": 4, \"urgent\": 1}";
+    ASSERT_EQ(EventPayloadFields::decode(mistyped, kRevisedDefaults, fields), "");
+    EXPECT_NE(fields.readBool("urgent", urgent), "");
+}
+
+TEST(EventPayloadDefaults, AFieldOfTheFirstRevisionIsStillRequired) {
+    EventPayloadFields fields;
+    uint8_t level = 0;
+    const std::string lacking = "{\"layout\": \"day\"}";
+    ASSERT_EQ(EventPayloadFields::decode(lacking, kRevisedDefaults, fields), "");
+    EXPECT_EQ(fields.readInteger("level", level), "the event's data has no 'level'");
+    // No data at all is a delivery that names no field.
+    const std::string nothing;
+    ASSERT_EQ(EventPayloadFields::decode(nothing, kRevisedDefaults, fields), "");
+    EXPECT_NE(fields.readInteger("level", level), "");
+    bool urgent = false;
+    EXPECT_EQ(fields.readBool("urgent", urgent), "");
+    EXPECT_TRUE(urgent);
+    // A bare value is still no object of named fields.
+    const std::string bare = "5";
+    EXPECT_NE(EventPayloadFields::decode(bare, kRevisedDefaults, fields), "");
+}

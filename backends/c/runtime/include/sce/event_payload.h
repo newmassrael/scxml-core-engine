@@ -80,7 +80,8 @@ extern "C" {
 /* The fields an event's data names — a borrowed view, valid only while the
    event record it came from is. */
 typedef struct {
-    const char *object; /* at the '{' of the payload object */
+    const char *object;   /* at the '{' of the payload object */
+    const char *defaults; /* at the '{' of the schema's defaults, or NULL */
 } sce_payload_fields_t;
 
 /* ── Walking one payload ────────────────────────────────────────────────── */
@@ -180,12 +181,12 @@ SCE_C_UNUSED static inline bool sce_payload_string_is(const char *p, const char 
     return *p == '"';
 }
 
-/* The value `name` carries, or NULL when the object does not name it. */
-SCE_C_UNUSED static inline const char *sce_payload_find(const sce_payload_fields_t *fields, const char *name) {
-    if (fields == NULL || fields->object == NULL) {
+/* The value `name` carries in the object at `object`, or NULL when it names none. */
+SCE_C_UNUSED static inline const char *sce_payload_find_in(const char *object, const char *name) {
+    if (object == NULL) {
         return NULL;
     }
-    const char *p = sce_payload_skip_space(fields->object + 1); /* past '{' */
+    const char *p = sce_payload_skip_space(object + 1); /* past '{' */
     while (*p != '\0' && *p != '}') {
         if (*p != '"') {
             return NULL;
@@ -217,6 +218,16 @@ SCE_C_UNUSED static inline const char *sce_payload_find(const sce_payload_fields
     return NULL;
 }
 
+/* The value `name` carries: in the delivery, else in the schema's defaults when
+   the decode was given them, else NULL. */
+SCE_C_UNUSED static inline const char *sce_payload_find(const sce_payload_fields_t *fields, const char *name) {
+    if (fields == NULL) {
+        return NULL;
+    }
+    const char *delivered = sce_payload_find_in(fields->object, name);
+    return (delivered != NULL) ? delivered : sce_payload_find_in(fields->defaults, name);
+}
+
 /* Read an event's data as the fields it names.
 
    Returns NULL when `out` was filled, else a static sentence saying why not.
@@ -227,6 +238,7 @@ SCE_C_UNUSED static inline const char *sce_payload_decode(const char *data, sce_
         return SCE_PAYLOAD_REFUSE_NOT_OBJECT;
     }
     out->object = NULL;
+    out->defaults = NULL;
     if (data == NULL) {
         return SCE_PAYLOAD_REFUSE_NO_DATA;
     }
@@ -240,6 +252,38 @@ SCE_C_UNUSED static inline const char *sce_payload_decode(const char *data, sce_
         return SCE_PAYLOAD_REFUSE_NOT_OBJECT;
     }
     out->object = p;
+    return NULL;
+}
+
+/* `sce_payload_decode` for a schema a later revision of which added fields:
+   `defaults` is the JSON object of those fields' defaults, a literal the
+   generated machine holds, and a field the delivery lacks is read out of it
+   instead (docs/SCE_ACCEPTED_SUBSET.md, "An event schema that grows").
+
+   A delivery with no data at all lacks every field, so it is read as one that
+   names none: a field of the first revision is then refused by name, and a
+   schema all of whose fields came later reads its defaults. A field the
+   delivery does carry is read as it came, and held to its type as any other
+   value is. */
+SCE_C_UNUSED static inline const char *sce_payload_decode_with_defaults(const char *data, const char *defaults,
+                                                                        sce_payload_fields_t *out) {
+    if (out == NULL) {
+        return SCE_PAYLOAD_REFUSE_NOT_OBJECT;
+    }
+    out->object = NULL;
+    out->defaults = NULL;
+    if (data != NULL && *sce_payload_skip_space(data) != '\0') {
+        const char *refusal = sce_payload_decode(data, out);
+        if (refusal != NULL) {
+            return refusal;
+        }
+    }
+    if (defaults != NULL) {
+        const char *d = sce_payload_skip_space(defaults);
+        if (*d == '{') {
+            out->defaults = d;
+        }
+    }
     return NULL;
 }
 

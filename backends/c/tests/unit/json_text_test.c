@@ -36,7 +36,7 @@ enum { FIELD_CAP = 256, MIN_CASES = 8, MIN_REAL_CASES = 40 };
 // because a case holds NUL, and a terminated string would end there. `out` is
 // terminated for a reader that wants a C string.
 static const char *read_field(const char *object, const char *name, char *out, size_t *len) {
-    sce_payload_fields_t fields = {object};
+    sce_payload_fields_t fields = {object, NULL};
     const char *p = sce_payload_find(&fields, name);
     if (p == NULL) {
         return SCE_PAYLOAD_REFUSE_MISSING;

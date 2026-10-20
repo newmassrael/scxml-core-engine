@@ -67,6 +67,7 @@ public:
      */
     static std::string decode(const std::string &data, EventPayloadFields &out) {
         out.object_ = nullptr;
+        out.defaults_ = nullptr;
         const char *p = skipSpace(data.c_str());
         if (*p == '\0') {
             return "the event carries no data";
@@ -77,6 +78,38 @@ public:
             return "the event's data is not an object of named fields";
         }
         out.object_ = p;
+        return {};
+    }
+
+    /**
+     * @brief Read an event's data for a schema a later revision of which added fields
+     * @param data The event's `_event.data` wire
+     * @param defaults The JSON object of those fields' defaults, which the generator
+     *        spells from the schema as a string literal that outlives `out`
+     * @param out Receives the fields when the read succeeds
+     * @return An empty string when `out` was filled, else why it was not
+     *
+     * A field the delivery lacks is read out of `defaults` instead
+     * (docs/SCE_ACCEPTED_SUBSET.md, "An event schema that grows"). A delivery with
+     * no data at all lacks every field, so it is read as one that names none: a
+     * field of the first revision is then refused by name, and a schema all of
+     * whose fields came later reads its defaults. A field the delivery does carry
+     * is read as it came, and held to its type as any other value is.
+     */
+    static std::string decode(const std::string &data, const char *defaults, EventPayloadFields &out) {
+        out.object_ = nullptr;
+        out.defaults_ = nullptr;
+        if (*skipSpace(data.c_str()) != '\0') {
+            std::string refusal = decode(data, out);
+            if (!refusal.empty()) {
+                return refusal;
+            }
+        }
+        const char *d = skipSpace(defaults);
+        if (*d != '{') {
+            return "the schema's defaults are not a JSON object, which the generator never writes";
+        }
+        out.defaults_ = d;
         return {};
     }
 
@@ -347,12 +380,21 @@ private:
         return *p == '"';
     }
 
-    /** The value `name` carries, or nullptr when the object does not name it. */
+    /**
+     * The value `name` carries: in the delivery, else in the schema's defaults
+     * when the decode was given them, else nullptr.
+     */
     const char *find(const char *name) const {
-        if (object_ == nullptr) {
+        const char *delivered = findIn(object_, name);
+        return delivered != nullptr ? delivered : findIn(defaults_, name);
+    }
+
+    /** The value `name` carries in the object at `object`, or nullptr when it names none. */
+    static const char *findIn(const char *object, const char *name) {
+        if (object == nullptr) {
             return nullptr;
         }
-        const char *p = skipSpace(object_ + 1);  // past '{'
+        const char *p = skipSpace(object + 1);  // past '{'
         while (*p != '\0' && *p != '}') {
             if (*p != '"') {
                 return nullptr;
@@ -582,6 +624,12 @@ private:
 
     /** At the '{' of the payload object, inside the event record's own data. */
     const char *object_ = nullptr;
+
+    /**
+     * At the '{' of the schema's defaults, a literal the generated machine
+     * holds; nullptr for a schema no later revision added a field to.
+     */
+    const char *defaults_ = nullptr;
 };
 
 }  // namespace SCE::Common

@@ -43,7 +43,7 @@ static void expect_round_trip(const char *what, const uint8_t *bytes, size_t len
         return;
     }
     (void)snprintf(wire, sizeof(wire), "{\"frame\":%s}", json);
-    sce_payload_fields_t fields = {wire};
+    sce_payload_fields_t fields = {wire, NULL};
     const char *refusal = sce_payload_read_bytes(&fields, "frame", back, sizeof(back), &back_len);
     if (refusal != NULL) {
         (void)fprintf(stderr, "FAIL: %s: read back as `%s`, from %s\n", what, refusal, wire);
