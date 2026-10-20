@@ -1151,10 +1151,20 @@ The build tool performs conservative static analysis across all SCXML documents.
 | Pattern capability | SCXML communication pattern is supported by bound transport (see 8.2) | Exact | 3 |
 | Reachability | Every declared state is reachable via some event path | Exact for unconditional, conservative for guarded | 5 |
 | Circular dependency detection | Detect potential circular wait in cross-machine `<invoke>` rings | Conservative — may flag safe cycles | 5 |
+| Event schema agreement | The sender's and receiver's EventSchemas of each cross-machine `<send>` are revisions of one schema (`mesh/event-schema-mismatch`) | Exact | — |
 
 **Cross-transport ordering** was specified as a warning and is instead ruled out by the schema: `bindings:` is keyed by target and each entry names exactly one `transport:`, with per-event configuration limited to method identity. Two events addressed to the same target therefore cannot take different transports, so there is no state for a check to report. A warning here would be unreachable code.
 
 **Circular dependency detection** takes `<invoke>` edges only. A `<send>` is fire-and-forget, so a mutual send pair — the ordinary request/response topology — carries no wait, and treating it as an edge would make the check noise rather than signal. `<invoke>` is the construct that blocks: the invoking state stays active until the child answers, so a ring of invokes is a ring of waits. Targets named by `srcexpr` or by a hybrid invoke are skipped, because a datamodel expression evaluated at invoke time cannot be resolved at build time. Each ring is reported once per build, by its lexicographically smallest member, since every machine in a deployment is compiled and the ring is visible from all of them.
+
+**Event schema agreement across builds.** The devices of one deployment do not all run one build: while it is upgraded, some run the build before a field was added to an event's schema and some the build after (docs/SCE_ACCEPTED_SUBSET.md, "An event schema that grows"). So a sender and a receiver are held to being two REVISIONS OF ONE SCHEMA, not to one schema (docs/adr/0044, `forge::schema_revision::divergence`):
+
+- every field both declare is declared alike — the same type, bound, quantity, `sce:since` and `sce:default`;
+- every field only one declares was added after the other's revision: its `sce:since` is past the other's `sce:revision` (a field of the first revision counts as revision 1).
+
+Anything else is `mesh/event-schema-mismatch`, whose message names the field and both revisions: a field re-typed, removed or renamed, two schemas of one revision that declare different fields, and two builds that disagree about which revision added a field or what its default is. A schema on one side only is refused as before. The defaults are compared because a receiver reads its default for every delivery an older sender writes: two receivers that disagreed about it would read one delivery two ways.
+
+Nothing at run time checks a schema: an envelope carries `_event.data` as JSON with no schema identity, and no SCE engine produces the `typed` codec, which would bind the bytes to a schema (the Rust router refuses an envelope that carries it as `ENVELOPE_CORRUPT`). What the run time owes is what every lane's lift already does, held by the scenario `static_schema_revision` on all seven: an older sender's delivery reads each field it lacks as the receiver's default, and a newer sender's added fields are walked past by an older receiver. The world simulation runs it between two builds (`backends/rust/world/tests/two_builds_of_one_schema_exchange_one_event.rs`, machines generated from two revisions of one schema exchanging one event each way), and the build-time rule is held by `sce-build/tests/event_schema_kind.rs`.
 
 ---
 

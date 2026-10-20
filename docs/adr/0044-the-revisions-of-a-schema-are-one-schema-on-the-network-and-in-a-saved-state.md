@@ -59,8 +59,9 @@ schemas of each cross-machine `<send>` by the rule instead of by a hash. A refus
 as before.
 
 The run-time half needs no change, and no backend has a run-time schema check to change: a Mesh
-envelope carries `_event.data` as JSON with no schema identity, and the codec that would bind the
-bytes to a schema (`typed`) is refused by every router. What the run time must do is what every
+envelope carries `_event.data` as JSON with no schema identity, and no SCE engine produces the codec
+that would bind the bytes to a schema (`typed`; the Rust router refuses an envelope carrying it).
+What the run time must do is what every
 lane's lift already does, held by `static_schema_revision` on all seven: read the default of a
 field an older sender omitted, and walk past a field a newer sender added. The world simulation
 holds it for two builds on one network (`backends/rust/world`, two machines generated from two

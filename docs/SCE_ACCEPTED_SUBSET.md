@@ -5230,6 +5230,41 @@ re-parented or re-bounded refuses it. What the shape cannot see — a
 variable of the same name and type whose meaning changed — is the author's to
 avoid until a document can declare a migration.
 
+**A record schema that grew** (docs/adr/0044). A record variable's fields in the
+shape are those of its schema's FIRST revision, so adding a field to the schema
+a `record:` variable (or a list of records) is of, as "An event schema that
+grows" describes, leaves the shape as it was, and a schema that never grew
+hashes what it did before schemas had revisions. What a later revision added is
+named by the state itself: a machine any of whose record schemas is past its
+first revision writes `revisions`, keyed by the event each schema declares, with
+the revision it was saved at and `fields`, a SHA-256 of what that revision
+declares (each field whose `sce:since` is at most it, with its type and its
+enum's variant names; not its default or its `since`, which a saved state does
+not name). Such a state carries the REVISED shape, the digest of the shape's
+text with one line more, which a reader that predates revisions does not know:
+it refuses the state, as it refused any change of shape, rather than read it
+without the fields it does not know. A machine whose record schemas are all in
+their first revision writes the first shape and no `revisions`, the text it
+wrote before.
+
+A restore (`saved_state::upgrade` in Rust, `SavedState.upgrade` in Kotlin)
+takes the first shape with no `revisions` or the revised shape with them, and
+refuses a revision of a schema no record variable of the machine is of, a
+revision later than the machine's own (a newer build's state in an older
+build), and one whose `fields` is not the machine's own digest of that revision
+(two builds that disagree about what it declares). It then reads the state as
+one of this machine: each record saved at an earlier revision, a record variable
+or each element of a list of records, takes the `sce:default` of every field a
+later revision added, and a record that already holds such a field is refused,
+since its revision does not declare it. An event in the saved external queue or
+in a waiting send holds its data as the wire carried it, and the lift reads it
+with the defaults when it is delivered. The shared fixtures
+`saved/static_schema_revision*.json` are a state of `static_schema_revision`
+saved at its third revision (the text both backends save) and the same machine
+saved by builds of its first and second revisions, one with a delivery of the
+first revision still queued; both backends restore each. Go, Python, C11, C++
+and the Interpreter have no saved state.
+
 A Mesh request (`<invoke type="sce:mesh-rpc">`) is saved, and is the one host-run
 invocation a restore does not start again. Its one request may already have
 reached its peer, which would act on it twice if it were sent again, and the router
@@ -7127,17 +7162,25 @@ schema's declared field surface. Two rejections:
 appears on a statechart deployed to machine A and addresses
 machine B (the `#X` resolves to B's machine id via the
 deploy.yaml topology), the sender and receiver EventSchemas for
-the send's event name must agree on field shape. One rejection:
+the send's event name must be revisions of one schema (docs/adr/0044):
+every field both declare is declared alike (type, bound, quantity,
+`sce:since`, `sce:default`), and every field only one declares was
+added after the other's `sce:revision`. Two builds of one deployment
+that hold two revisions of one schema, as during an upgrade, therefore
+build, and exchange the event as "An event schema that grows" says.
+One rejection:
 
 - `mesh/event-schema-mismatch` — either (a) both sides declare an
-  EventSchema but their canonical structural hashes diverge
-  (fields sorted by id, normalized JSON via schemars), (b) sender
-  declares a schema while receiver does not, or (c) receiver
-  declares a schema while sender does not. The `Display` form
-  names the specific divergence reason so consumers do not have
-  to substring-grep the prose. Repair is two-axis (realign the
-  two schemas, or declare a schema on the side that is missing
-  it) — author-domain choice, no closed candidate set.
+  EventSchema and the two are not revisions of one schema (a field
+  re-typed, removed or renamed, two schemas of one revision that
+  declare different fields, or two that disagree about which revision
+  added a field or what its default is), (b) sender declares a schema
+  while receiver does not, or (c) receiver declares a schema while
+  sender does not. The `Display` form names the specific divergence
+  reason — for (a) the field and both revisions — so consumers do not
+  have to substring-grep the prose. Repair is two-axis (realign the
+  two schemas, or declare a schema on the side that is missing it) —
+  author-domain choice, no closed candidate set.
 
 **Per-backend payload codegen** (DL-6' continuation) ships the
 per-backend payload struct surface (`struct <Schema>Payload` on
@@ -7299,15 +7342,19 @@ to one answer.
   defaults apply to each.
 - A host-run invocation's result whose schema grew is lifted the same way.
 - A `record:<alias>` variable is not a delivery. A record is built whole by its
-  `<sce:set>`s or from a payload already lifted, so nothing reads a default for
-  it. A saved state names each field of a record variable in its shape, so adding
-  a field to a schema a record variable is of changes the shape, and a state
-  saved before the field existed is refused as one whose variable was re-typed.
-  The same holds for an algorithm's record parameter, which is handed a record
-  and never reads a delivery.
-- `mesh/event-schema-mismatch` compares the sender's and receiver's schemas of
-  one deployment, which are built together: a field's `since` and default are
-  part of the fields it compares, and the root's revision number is not.
+  `<sce:set>`s or from a payload already lifted, so no running machine reads a
+  default for it. A SAVED record does (§2.15, "A record schema that grew"): the
+  shape names a record schema's first-revision fields, a state names the revision
+  each later one was saved at, and a restore gives each record saved at an
+  earlier revision the default of every field added since (docs/adr/0044). An
+  algorithm's record parameter is handed a record and never reads a delivery or a
+  saved state.
+- `mesh/event-schema-mismatch` holds the sender's and receiver's schemas of one
+  deployment to being revisions of one schema, not one schema ("Mesh
+  cross-machine validation" above; docs/adr/0044): the devices of a
+  deployment being upgraded run different builds. A field's `since` and default
+  are part of what two schemas must declare alike, since a receiver reads that
+  default for every older delivery.
 - A schema that grew is read by a `datamodel="sce-static"` machine only. Under
   any other data model the script engine binds `_event.data` to the delivery as
   it came, so an `<assign expr="_event.data.urgent">` would read nothing for a
@@ -7319,13 +7366,18 @@ to one answer.
   `validation/attribute-rule-violated` on its `src`. A schema of one revision is
   imported under every data model, as before.
 
-**What a revision does not make safe.** Removing a field needs nothing: a
-delivery of an earlier revision that still carries it carries a field the schema
-does not name, which is not read. Changing a field's type, or renaming one, is
-not made safe by any of this: a delivery of the earlier revision carries a value
-of the old type, or under the old name, and is refused, or reads the new name's
-default where the old name's value was meant. Such a change is a new field (a
-new name with its own `sce:since` and default), not a revision of the old one.
+**What a revision does not make safe.** Changing a field's type, or renaming
+one, is not made safe by any of this: a delivery of the earlier revision carries
+a value of the old type, or under the old name, and is refused, or reads the new
+name's default where the old name's value was meant. Such a change is a new field
+(a new name with its own `sce:since` and default), not a revision of the old
+one. Removing a field is not a revision either: a lift would walk past it in an
+older delivery, but "revision N" would no longer name one set of fields, which
+the Mesh check and a saved state both rely on (docs/adr/0044), so two machines of
+one deployment whose schemas part this way are refused at the build, and a state
+saved with the field is refused at the restore (its revision's digest is not the
+machine's). A field that is no longer wanted stays, and its default is what an
+older delivery reads.
 
 **Cross-doc Enum literal width narrowing** (DL-5'): integer
 literals compared against (receive-side) or assigned to

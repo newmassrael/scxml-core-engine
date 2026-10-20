@@ -192,7 +192,9 @@ promises it does not make and enforcement that does not exist.
    change on every commit. What a saved state must identify is what it
    restores into, and its `shape` does that — a digest of the states and
    typed variables it names, which a machine checks before it reads
-   anything else; the commit that built the machine is the build's to
+   anything else, with `revisions` naming the revision of each record
+   schema past its first (docs/adr/0044, an optional member added
+   additively); the commit that built the machine is the build's to
    record (the `generate` manifest names it). Registered the same way.
 
    The authoring profile deliberately does **not** carry it. It is written
