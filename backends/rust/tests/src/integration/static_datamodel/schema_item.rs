@@ -8,7 +8,7 @@
 // Event name: item.added
 // Do not edit — regenerate from the source SCXML file.
 
-use crate::enum_item_status;
+use super::enum_item_status;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SchemaItemPayload {
