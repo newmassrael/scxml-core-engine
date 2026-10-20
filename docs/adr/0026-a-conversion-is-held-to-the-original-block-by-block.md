@@ -53,6 +53,18 @@ only.
 returns the blocks and a list of what it could not carry (a picture it could not place, a table it
 could not recover, a page with no text and no image). The list is shown, not logged.
 
+**What could not be carried is a code and its facts, and the sentence is written in `notes.py`.** An entry
+says what happened as a code and the facts that go with it (`pdf-pictures-unplaced`, a count, a limit and
+the pages), and never only as a sentence: an extraction is named by its hash, so it cannot hold the sentences
+of the language its reader happened to use. The sentences are written once per language beside the code, in
+`notes.py` (`en`, `ko`), and a code with a sentence in one language and not the other does not load; this is
+the rule `open_matters.rs` holds for what a design leaves open, and for the same reason: a screen that
+translated them would be a second author of the sentences. The extraction keeps the English sentence beside
+the code, for a program that knows no code and for a reader whose language has no sentence for a code this
+version does not know; a stored sentence is never the source of a translation. `render-notes --lexicon LANG`
+says a list of entries in a language, and a host that shows them asks it and writes none. An entry with no
+code (an older tool's) is said as it was stored.
+
 ## Consequences
 
 - The comparison screen, the exception queue and the coverage meter work for every format.

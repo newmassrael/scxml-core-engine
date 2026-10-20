@@ -38,7 +38,8 @@ from .conversion_by_model import (
     split_units,
 )
 from .errors import AuthoringError, IngestError
-from .extraction import Extraction
+from .extraction import Extraction, NotCarried
+from .notes import LANGUAGES as notes_languages
 from .extractors import DEFAULT as DEFAULT_EXTRACTORS
 from .extractors import Unreadable
 from .gaps import ORDER as GAP_ORDER
@@ -226,6 +227,26 @@ def cmd_outline(args) -> int:
               f"{section.characters} characters{pages}]")
         for item in section.items:
             print(f"    {'  ' * (section.level - 1)}- {item.kind} {item.id}: {item.label}")
+    return 0
+
+
+def cmd_render_notes(args) -> int:
+    """Say what could not be carried in a language: a list of entries in, the same list out with the sentences
+    of `--lexicon` written from each entry's code and facts.
+
+    The sentences are written in `notes.py` and nowhere else, so a host that shows them to a reader asks here
+    and writes none (ADR 0026). An entry the language has no sentence for (no code, a code this version does not
+    know) comes out as it went in, in the English its extractor kept.
+    """
+    path = pathlib.Path(args.notes)
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise IngestError(f"{path}: not readable as a list of what was not carried ({exc})") from exc
+    if not isinstance(raw, list):
+        raise IngestError(f"{path}: is not a list of what was not carried")
+    said = [NotCarried.from_dict(entry).in_language(args.lexicon).to_dict() for entry in raw]
+    print(json.dumps(said, sort_keys=True, ensure_ascii=False))
     return 0
 
 
@@ -1203,6 +1224,15 @@ def main(argv=None) -> int:
                      help="divide by headings, pages or not at all (default: headings, else pages, else whole)")
     out.add_argument("--json", action="store_true", help="print the outline as JSON for a host")
     out.set_defaults(fn=cmd_outline)
+
+    rn = sub.add_parser(
+        "render-notes",
+        help="say what could not be carried in a language, from each entry's code and facts (no pack, no model)")
+    rn.add_argument("--notes", required=True,
+                    help="a JSON list of entries (an extraction's or a report's `not_carried`)")
+    rn.add_argument("--lexicon", required=True, choices=notes_languages,
+                    help="the language the sentences are written in")
+    rn.set_defaults(fn=cmd_render_notes)
 
     mks = sub.add_parser(
         "make-scope", help="write the scope of the sections an owner chose")

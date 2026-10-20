@@ -2085,6 +2085,17 @@ that mark them, in its `blocks`) is the part's while one of them is in it, and a
 always is, so a part chosen without a picture is not told to look at it; the report is kept with the proposal,
 so a review read later says the same.
 
+Each entry of `not_carried` (an extraction's and a report's) is a **code and its facts**, with the English
+sentence kept beside them: `{"code": "pdf-pictures-unplaced", "facts": {"pictures": 9, "limit": 200, "pages":
+[3]}, "what": "...", "why": "..."}`. The sentences are written in `notes.py`, once per language, and a code
+that has one in a language and not in the other does not load. **`render-notes --notes FILE --lexicon ko`**
+reads a list of entries (an extraction's or a report's `not_carried`) and prints it with the sentences written
+in that language from each entry's code and facts; an entry with no code (an older tool's), or a code this
+version does not know, comes out as it was stored. A host that shows these to a reader asks for the language
+and writes none of its own: translating them there would be a second author. To add a kind of note, declare its
+code and facts in `notes.py` with a sentence in each language, and give the extractor `NotCarried.of(code,
+...)` (or `Note(code, ...)` in a reader of `ingest.py`).
+
 **make-ledger**, **check-ledger** and **ledger-scopes** divide a document that holds several specs (`ledger.py`,
 ADR 0040). A ledger is a list of allotments: for each destination (a spec that exists, a spec to be made by its
 title, or *left out*, with a reason that may be empty) the blocks that go there. `make-ledger --extraction

@@ -254,13 +254,7 @@ def blocks_of_text(
     flush_run()
     flush_table()
     if short_rows:
-        notes.append(
-            NotCarried(
-                "rows shorter than their table",
-                "the reader wrote them with fewer cells; empty cells were added so the grid is whole",
-                short_rows,
-            )
-        )
+        notes.append(NotCarried.of("short-rows", count=short_rows))
     return blocks, notes
 
 
@@ -290,7 +284,7 @@ class ReaderExtractor:
             ingested.text, path.name, self.line_is_block, self.delimiter_row, ingested.headings
         )
         carried = [
-            NotCarried(note, blocks=_marking(blocks, ingested.concerns.get(index, ())))
+            NotCarried.from_note(note, blocks=_marking(blocks, ingested.concerns.get(index, ())))
             for index, note in enumerate(ingested.notes)
         ] + notes
         return Extraction(

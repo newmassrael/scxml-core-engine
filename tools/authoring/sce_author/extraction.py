@@ -30,6 +30,7 @@ from collections.abc import Collection
 from dataclasses import dataclass, field
 from typing import Any
 
+from . import notes
 from .errors import IngestError
 
 # The version of the wire form. A change that an old reader would misread bumps it.
@@ -201,7 +202,14 @@ class Block:
 
 @dataclass(frozen=True)
 class NotCarried:
-    """Something an extractor could not carry, said in a sentence a person can act on."""
+    """Something an extractor could not carry.
+
+    `code` and `facts` say WHAT happened, in no language (`notes.py`): an extraction is named by its hash, and
+    a sentence is one language's way of saying it. `what` and `why` are the English sentence for that code,
+    kept beside it for a program that knows no code and for a reader whose language has no sentence for one
+    this version does not know. An entry with no code is one an older tool wrote, or an extractor that has
+    none to give, and says only its sentence.
+    """
 
     what: str
     why: str = ""
@@ -209,6 +217,8 @@ class NotCarried:
     # The blocks it is about, when it is about some and not the whole document (pictures the blocks mark):
     # a part of the document that holds none of them has nothing this says (ADR 0039). Empty is the whole.
     blocks: tuple[str, ...] = ()
+    code: str | None = None
+    facts: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.what:
@@ -217,6 +227,41 @@ class NotCarried:
             raise _refuse("counts a negative number of things not carried")
         if any(not block for block in self.blocks) or len(set(self.blocks)) != len(self.blocks):
             raise _refuse("says what was not carried is about a block with no id, or one twice")
+        if self.facts and not self.code:
+            raise _refuse("gives the facts of something not carried and no code to say what they are of")
+        if self.code is not None and not self.code:
+            raise _refuse("gives an empty code for something not carried")
+
+    @classmethod
+    def of(cls, code: str, count: int | None = None, blocks: tuple[str, ...] = (), **facts: Any) -> "NotCarried":
+        """What `code` says, made of the facts it takes: the English sentence is written once, in `notes.py`."""
+        try:
+            said = notes.sentence(code, facts)
+        except notes.NoteError as exc:
+            raise _refuse(f"says what was not carried wrongly ({exc})") from exc
+        return cls(said.what, said.why, count, blocks, code, dict(facts))
+
+    @classmethod
+    def from_note(cls, note: str, blocks: tuple[str, ...] = ()) -> "NotCarried":
+        """A reader's note as an entry: with its code and facts when it has them, as its sentence when not."""
+        if isinstance(note, notes.Note):
+            return cls(str(note), "", None, blocks, note.code, dict(note.facts))
+        return cls(note, blocks=blocks)
+
+    def in_language(self, language: str) -> "NotCarried":
+        """The same entry said in `language`.
+
+        An entry with no code, one whose code this version does not know, one whose facts are not what the code
+        takes, and a language with no sentences are said as they were stored: the English the extractor
+        kept. A stored sentence is never translated; only a code and its facts are written again.
+        """
+        if self.code is None or language not in notes.LANGUAGES:
+            return self
+        try:
+            said = notes.sentence(self.code, self.facts, language)
+        except notes.NoteError:
+            return self
+        return NotCarried(said.what, said.why, self.count, self.blocks, self.code, self.facts)
 
     def to_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {"what": self.what}
@@ -226,19 +271,31 @@ class NotCarried:
             out["count"] = self.count
         if self.blocks:
             out["blocks"] = list(self.blocks)
+        if self.code is not None:
+            out["code"] = self.code
+            if self.facts:
+                out["facts"] = self.facts
         return out
 
     @classmethod
     def from_dict(cls, raw: Any) -> "NotCarried":
-        data = _object(raw, "an entry of what was not carried", {"what", "why", "count", "blocks"})
+        data = _object(raw, "an entry of what was not carried", {"what", "why", "count", "blocks", "code", "facts"})
         blocks = data.get("blocks", [])
         if not isinstance(blocks, list) or not all(isinstance(b, str) for b in blocks):
             raise _refuse("says the blocks something not carried is about other than as a list of ids")
+        code = data.get("code")
+        if code is not None:
+            code = _text(code, "the code of what was not carried")
+        facts = data.get("facts", {})
+        if not isinstance(facts, dict) or any(notes.kind_of(v) is None for v in facts.values()):
+            raise _refuse("says the facts of what was not carried other than as numbers, words and lists of them")
         return cls(
             what=_text(data.get("what"), "what was not carried"),
             why=_text(data.get("why", ""), "why it was not carried", allow_empty=True),
             count=_optional_int(data.get("count"), "a count of what was not carried"),
             blocks=tuple(blocks),
+            code=code,
+            facts=dict(facts),
         )
 
 

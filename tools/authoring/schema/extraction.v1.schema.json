@@ -72,10 +72,26 @@
       "required": ["what"],
       "additionalProperties": false,
       "properties": {
-        "what": { "type": "string", "minLength": 1 },
+        "what": { "type": "string", "minLength": 1, "description": "the English sentence for the code, kept for a program that knows no code" },
         "why": { "type": "string" },
-        "count": { "type": "integer", "minimum": 0 }
-      }
+        "count": { "type": "integer", "minimum": 0 },
+        "blocks": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "code": { "type": "string", "minLength": 1, "description": "what happened, in no language; the sentences are written from it and its facts by `render-notes`" },
+        "facts": {
+          "description": "the facts the code takes, by name: numbers, words, and lists of either",
+          "type": "object",
+          "additionalProperties": {
+            "anyOf": [
+              { "type": "integer" },
+              { "type": "string" },
+              { "type": "boolean" },
+              { "type": "array", "items": { "type": "integer" } },
+              { "type": "array", "items": { "type": "string" } }
+            ]
+          }
+        }
+      },
+      "dependentRequired": { "facts": ["code"] }
     }
   }
 }

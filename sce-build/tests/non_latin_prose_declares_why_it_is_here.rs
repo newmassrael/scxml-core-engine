@@ -178,6 +178,20 @@ const THE_SCRIPT_IS_THE_SUBJECT: &[(&str, &str)] = &[
          order, which an escape would hide",
     ),
     (
+        "tools/authoring/sce_author/notes.py",
+        "holds the Korean sentences of what an extractor could not carry, \
+         beside the English of the same codes: each is what a Korean reader \
+         of an import is told, and a translation is checked by reading it, \
+         which an escape would hide; an English paraphrase would be the \
+         English table a second time, not the Korean one",
+    ),
+    (
+        "tools/authoring/tests/test_what_could_not_be_carried_is_a_code_and_its_facts_said_in_each_language.py",
+        "asserts the Korean sentences notes.py writes: the expected \
+         spellings ARE what a Korean reader is told, so an escape would \
+         hide the one thing the assertion compares",
+    ),
+    (
         "sce-build/src/diagram/words.rs",
         "holds the print figure's Korean phrases beside page.rs's lexicon: \
          each spelling is what the figure prints for that lexicon, and its \

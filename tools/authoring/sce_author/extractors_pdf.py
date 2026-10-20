@@ -72,7 +72,6 @@ HEADING_RATIO = 1.3
 MARGIN_SHIFT = 1.5
 # How different two lines' heights may be, as a share of the smaller, and still be one paragraph.
 SIZE_SHIFT = 0.25
-MOST_LISTED = 12
 # Two characters are on one line when their baselines are no further apart than this share of the larger type
 # size (a raised or lowered glyph is set a part of a size off), and when they are no further apart along it
 # than this many sizes (a word's space is about a third of one; a column gutter is several), or no more
@@ -116,11 +115,6 @@ class Figure:
     name: str
     box: tuple[float, float, float, float]
     identity: str | None
-
-
-def _listed(numbers: list[int]) -> str:
-    shown = ", ".join(str(n) for n in numbers[:MOST_LISTED])
-    return shown + (", ..." if len(numbers) > MOST_LISTED else "")
 
 
 @dataclass
@@ -410,47 +404,22 @@ class PdfTextExtractor:
 
         carried: list[NotCarried] = []
         if blank:
-            carried.append(
-                NotCarried(
-                    f"{len(blank)} of {count} page(s) carry no text: {_listed(blank)}",
-                    "each is a picture or empty, and reading pixels is a reader's work, not this extractor's; "
-                    "an image on it is a figure, and a drawing of lines and shapes is not placed",
-                    len(blank),
-                )
-            )
+            carried.append(NotCarried.of("pdf-pages-without-text", count=len(blank), blank=blank, pages=count))
         if unplaced:
             carried.append(
-                NotCarried(
-                    f"{unplaced} picture(s) past the {MAX_PICTURES_PER_PAGE} a page places, on page(s) {_listed(crowded)}",
-                    "counted and not placed as figures; a page of that many images is a drawing cut into strips "
-                    "and not that many pictures a person can decide about",
-                    unplaced,
+                NotCarried.of(
+                    "pdf-pictures-unplaced",
+                    count=unplaced,
+                    pictures=unplaced,
+                    limit=MAX_PICTURES_PER_PAGE,
+                    pages=crowded,
                 )
             )
         if unidentified:
-            carried.append(
-                NotCarried(
-                    f"{unidentified} picture(s) whose stored bytes could not be read",
-                    "each is a figure that names no picture by hash, so a reading cannot tell it from another",
-                    unidentified,
-                )
-            )
+            carried.append(NotCarried.of("pdf-pictures-unidentified", count=unidentified, pictures=unidentified))
         if pages:
-            carried.append(
-                NotCarried(
-                    "the layout of the pages: tables, columns and the order of what sits side by side",
-                    "lines are read in the order the document's text is in and gathered by their own spacing; "
-                    "a table comes out as its lines and its cells are not recovered, so a value may be "
-                    "separated from the condition it goes with",
-                )
-            )
-            carried.append(
-                NotCarried(
-                    "drawings of lines and shapes: a diagram that is not an image",
-                    "only an image the page holds is placed as a figure; a drawing made of strokes is not an "
-                    "image object, so a page can show one that this extraction does not mention",
-                )
-            )
+            carried.append(NotCarried.of("pdf-layout"))
+            carried.append(NotCarried.of("pdf-drawings"))
         if not blocks and not blank:
             raise IngestError(f"{path}: read as a document and produced no text")
         return Extraction(NAME, VERSION, member, tuple(blocks), tuple(carried))

@@ -57,6 +57,7 @@ class Ingested:
 
 from .errors import READ_ERRORS, IngestError, PictureTooLarge, describe_path  # noqa: E402,F401
 from . import pdf_pictures  # noqa: E402
+from .notes import Note  # noqa: E402
 
 
 # ---------------------------------------------------------------- plain text
@@ -448,13 +449,6 @@ def _clauses_carried_by_a_picture(body) -> tuple[list[str], list[str], int, int,
     return silent, showing, attributed, drawn, len(clauses)
 
 
-def _listed(numbers: list[str], most: int = 12) -> str:
-    """Clause numbers for a sentence: all of them, or the first few and how many were left."""
-    if len(numbers) <= most:
-        return ", ".join(numbers)
-    return f"{', '.join(numbers[:most])} and {len(numbers) - most} more"
-
-
 # ------------------------------------------------- what a document encloses
 
 _XL ="{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
@@ -727,10 +721,7 @@ def _read_enclosed_sheet(blob: bytes) -> tuple[list[str], list[str]]:
             # whole function exists to refuse.
             merges = len(list(root.iter(f"{_XL}mergeCell")))
             if merges:
-                notes.append(f"{merges} merged cell range(s) in "
-                             f"sheet \"{name}\""
-                             " were left as the file stores them -- the value"
-                             " sits in the first cell and the rest are empty")
+                notes.append(Note("xlsx-merged-ranges", count=merges, sheet=name))
             held: dict[tuple[int, int], int] = {}
             number = 0
             for row in root.iter(f"{_XL}row"):
@@ -798,37 +789,23 @@ def _read_enclosed_sheet(blob: bytes) -> tuple[list[str], list[str]]:
         # ⚠ Said once per workbook, and said even when nothing else is: this is
         # the part of an opened workbook a reader would take for read.
         if pictures:
-            notes.append(
-                f"{pictures} picture(s) sit on {cells_with_pictures} cell(s) of this "
-                f"workbook (anchored on the cell, or held in it) and are marked "
-                f"[picture] there. Which cell holds one is carried; what a picture "
-                f"shows is not read, and in a grid a picture can be the whole content "
-                f"of its cell")
+            notes.append(Note("xlsx-pictures", pictures=pictures, cells=cells_with_pictures))
         if rich:
-            notes.append(f"{rich} cell(s) in this workbook hold a rich value that is not "
-                         f"a picture (a data type or an object) and keep only the text the "
-                         f"file stores for them")
+            notes.append(Note("xlsx-rich-values", count=rich))
         if loose:
-            notes.append(
-                f"{loose} picture(s) in this workbook are not anchored on a cell "
-                f"(floating, or inside a group) and were not placed")
+            notes.append(Note("xlsx-loose-pictures", count=loose))
         if other:
-            notes.append(f"{other} drawn object(s) in this workbook other than pictures "
-                         f"(shapes, charts) were not read")
+            notes.append(Note("xlsx-other-objects", count=other))
         if unreadable:
             # ⚠ The loudest of these notes, because this is the loss that looks like an empty
             # cell: a sheet that refers to a drawing the file does not hold, or whose
             # relationships cannot be read, may have held pictures that were never seen, and
             # the cells they sat on read as blank. A reader cannot tell a cell that is empty
             # from one whose picture was lost; this is how it is told.
-            notes.append(
-                f"{unreadable} drawing(s) referred to by sheet(s) {', '.join(unreadable_on)} of "
-                f"this workbook could not be read (the drawing is missing from the file, cannot "
-                f"be parsed, or the sheet's links to it cannot be read). Pictures on those "
-                f"sheets were not seen, and a cell that reads as empty there may have held one")
+            notes.append(Note("xlsx-unreadable-drawings", count=unreadable, sheets=list(unreadable_on)))
         return lines, notes
     except (zipfile.BadZipFile, ET.ParseError, KeyError, IngestError) as exc:
-        return [], [f"an enclosed workbook could not be opened ({exc})"]
+        return [], [Note("enclosed-workbook-unopened", reason=str(exc))]
 
 
 def _read_enclosed_deck(blob: bytes) -> tuple[list[str], list[str]]:
@@ -848,7 +825,7 @@ def _read_enclosed_deck(blob: bytes) -> tuple[list[str], list[str]]:
                     lines.append(said)
         return lines, []
     except (zipfile.BadZipFile, ET.ParseError, KeyError, IngestError) as exc:
-        return [], [f"an enclosed presentation could not be opened ({exc})"]
+        return [], [Note("enclosed-deck-unopened", reason=str(exc))]
 
 
 @dataclass(frozen=True)
@@ -930,11 +907,11 @@ def read_enclosed(archive: zipfile.ZipFile) -> Enclosed:
             blob = _member(archive, part)
         except IngestError as exc:
             # An enclosed file too large to hold is said to be unopened, as one that cannot be parsed is.
-            notes.append(f"{name}: could not be opened ({exc})")
+            notes.append(Note("enclosed-file-unopened", reason=str(exc), in_file=name))
             continue
         opened, trouble = (_read_enclosed_sheet(blob) if part.lower().endswith(".xlsx")
                            else _read_enclosed_deck(blob))
-        notes.extend(f"{name}: {t}" for t in trouble)
+        notes.extend(Note(t.code, **t.facts, in_file=name) for t in trouble)
         if opened:
             rows[name] = opened
     unopened = [names[part] for part in embedded if names[part] not in rows]
@@ -1172,19 +1149,9 @@ def _read_docx(path: pathlib.Path, headings: bool = False) -> Ingested:
     lines.extend(enclosed.carried())
 
     if enclosed.unopened:
-        notes.append(
-            "enclosed objects that could not be opened: "
-            + ", ".join(enclosed.unopened)
-            + " -- when a document hands a requirement to an attachment, the "
-              "decision logic is in there and not in the text. This is the "
-              "loss that looks most like success."
-        )
+        notes.append(Note("enclosed-objects-unopened", names=list(enclosed.unopened)))
     if enclosed.rows:
-        notes.append(
-            f"{len(enclosed.rows)} enclosed file(s) WERE opened and their contents "
-            f"carried; a merged cell keeps the file's own layout, so a table "
-            f"that looked merged on screen reads wider here"
-        )
+        notes.append(Note("enclosed-files-opened", count=len(enclosed.rows)))
     if pictures:
         # ⚠ The count alone used to end with "which no reader of text can tell
         # you". That was false, and being false it left the most dangerous
@@ -1202,43 +1169,16 @@ def _read_docx(path: pathlib.Path, headings: bool = False) -> Ingested:
         # is where each picture is, by a name that can be asked for.
         marked = sorted({name for para in body.iter(f"{_W}p")
                          for name in picture_names(para, pictured, enclosed.attached)})
-        if marked:
-            placed = (f" {len(marked)} of them sit in the body and are named where they sit, as"
-                      " [picture: NAME]; look at one with the `picture` tool.")
-            if len(pictures) > len(marked):
-                placed += (f" {len(pictures) - len(marked)} more are not in the body"
-                           " (a header, a footer) and are not placed.")
-        else:
-            placed = " None could be named where it sits."
+        # Counted, not listed: a word document numbers its headings by a field whose number is not in the
+        # text, so a number read from the text can be a table row's.
         speaking = sorted({number for number in showing if number not in silent})
-        if not numbered:
-            where = (" This document has no numbered clauses, so where they"
-                     " sit could not be answered.")
-        else:
-            where = ""
-            if silent:
-                where += (f" {len(silent)} numbered clause(s) state nothing in text"
-                          f" and show only a picture: {_listed(silent)}."
-                          " There, reading the text is not reading the clause.")
-            if speaking:
-                # Counted, not listed: a word document numbers its headings by a field whose
-                # number is not in the text, so a number read from the text can be a table row's.
-                where += (f" {len(speaking)} numbered clause(s) state something in text"
-                          " and also show a picture."
-                          " The text does not settle that the picture adds nothing: a clause"
-                          " can state a condition in text and leave the rule that decides it"
-                          " to the picture beside it (an example it refers to, a timing, a"
-                          " range). Look at each picture before relying on the text around it.")
-        if drawn and attributed < drawn:
-            where += (f" {drawn - attributed} of {drawn} sit outside the"
-                      " numbering and were not placed.")
         if marked and len(marked) == len(pictures):
             concerns[len(notes)] = tuple(marked)
-        notes.append(
-            f"{len(pictures)} picture(s) were not read"
-            " -- this reader makes no model calls, so it cannot say what a picture"
-            " shows; it says where each one is." + placed + where
-        )
+        notes.append(Note(
+            "docx-pictures-unread",
+            pictures=len(pictures), in_body=len(marked), numbered=bool(numbered), silent=list(silent),
+            speaking=len(speaking), drawn=drawn, attributed=attributed,
+        ))
 
     kept = [(index, line) for index, line in enumerate(lines) if line.strip()]
     text = "\n".join(line for _, line in kept)

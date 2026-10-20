@@ -578,11 +578,13 @@ def _not_carried_after_reading(
     read = {reading.block for reading in conversion.readings}
     kept = [note for note in notes if not (note.blocks and read.issuperset(note.blocks))]
     kept += [
-        NotCarried(
-            what=f"{reading.picture.name} was read by {reading.runtime}, which could not read all of it",
-            why="; ".join(reading.unreadable),
+        NotCarried.of(
+            "picture-read-incomplete",
             count=len(reading.unreadable),
             blocks=(reading.block,),
+            picture=reading.picture.name,
+            runtime=reading.runtime,
+            unreadable=list(reading.unreadable),
         )
         for reading in conversion.readings
         if reading.unreadable and reading.block in chosen
