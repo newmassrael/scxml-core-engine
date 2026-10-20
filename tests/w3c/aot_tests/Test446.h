@@ -14,7 +14,7 @@ namespace SCE::W3C::AotTests {
  * at build time for static code generation. Validates ECMAScript Array type checking
  * with instanceof operator on both inline and externally loaded data.
  *
- * W3C SCXML 5.2.2: Data Model - src attribute for external content
+ * W3C SCXML 5.3.1: Data Model - src attribute for external content
  * W3C SCXML B.2: ECMAScript Data Model - Array type semantics
  */
 struct Test446 : public SimpleAotTest<Test446, 446> {

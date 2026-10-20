@@ -30,7 +30,7 @@ namespace SCE::W3C::AotTests {
  *
  * W3C SCXML Features:
  * - ECMAScript whitespace normalization for non-XML content (B.2)
- * - External data loading via src attribute (5.2.2)
+ * - External data loading via src attribute (5.3.1)
  * - String literal comparison in guard conditions
  */
 struct Test558 : public SimpleAotTest<Test558, 558> {

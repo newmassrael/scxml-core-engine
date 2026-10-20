@@ -15,7 +15,7 @@ namespace SCE::W3C::AotTests {
  * state s0 is entered, and a conditional transition (cond="Var1 == 2") can reference
  * this initialized variable.
  *
- * W3C SCXML 5.2.2 specifies early binding semantics:
+ * W3C SCXML 5.3.3 specifies early binding semantics:
  * - Data elements are initialized at document initialization time
  * - Variables are available for use in conditional guards and executable content
  * - Even if a data element is declared in a state not in the active configuration,
@@ -50,7 +50,7 @@ namespace SCE::W3C::AotTests {
  * - Zero Duplication: Helper functions shared with Interpreter engine
  *
  * W3C SCXML Features:
- * - W3C SCXML 5.2.2: Early binding data initialization with expr attribute
+ * - W3C SCXML 5.3.3: Early binding data initialization with expr attribute
  * - W3C SCXML B.2: ECMAScript datamodel for variable storage
  * - W3C SCXML 3.13: Conditional expressions in transition guards
  * - W3C SCXML 3.3: Eventless transitions (null event processing)

@@ -15,7 +15,7 @@
 //
 // The parent is in the invoking state (`waiting`) and its `<invoke>`
 // declares a `<finalize>` block that assigns `finalized=true`. Per
-// W3C §6.4.4 the runtime runs `<finalize>` **before** evaluating
+// W3C §6.5 the runtime runs `<finalize>` **before** evaluating
 // transition selection for the triggering event, so the cond-guarded
 // `<transition event="ping" cond="finalized == true" target="pass">`
 // sees the flipped value and reaches `pass`. A subsequent wire-18

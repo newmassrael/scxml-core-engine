@@ -28,8 +28,8 @@ namespace SCE::W3C::AotTests {
  * - Uses Helper functions: GuardHelper (for condition evaluation), FileLoadingHelper (for src loading)
  *
  * W3C SCXML Features:
- * - External data loading via src attribute (5.2.2)
- * - Early binding with external source (5.2.2)
+ * - External data loading via src attribute (5.3.1)
+ * - Early binding with external source (5.3.3)
  * - ECMAScript typeof operator (B.2)
  * - Guard condition evaluation (3.13)
  */

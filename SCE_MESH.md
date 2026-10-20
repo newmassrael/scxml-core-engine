@@ -1634,7 +1634,7 @@ The reverse applies to `ParentEvent` arriving at the child: `_event.origin` poin
 
 #### 9.6.4 `<finalize>` semantics preserved
 
-Per W3C §6.4.4, `<finalize>` executes **in the context of the invoking state**, **before** the transition triggered by the child event fires, and modifies the parent's datamodel. Remote invoke preserves this ordering:
+Per W3C §6.5, `<finalize>` executes **in the context of the invoking state**, **before** the transition triggered by the child event fires, and modifies the parent's datamodel. Remote invoke preserves this ordering:
 
 1. `ChildEvent` arrives at parent's transport layer.
 2. Mesh runtime enqueues the event into the parent's external event queue at macrostep boundary.

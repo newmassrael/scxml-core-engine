@@ -25,7 +25,7 @@ namespace SCE::W3C::AotTests {
  * - Uses Helper functions: EventMetadataHelper (_event variable binding)
  *
  * W3C SCXML Features:
- * - W3C SCXML 5.2.2: Late binding variable declaration scoping
+ * - W3C SCXML 5.3.3: Late binding variable declaration scoping
  * - W3C SCXML B.2: Error handling for variable access (no error expected)
  * - W3C SCXML 3.12: Log statements (manual verification component)
  *

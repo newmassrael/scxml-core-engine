@@ -3,7 +3,7 @@
 //
 // W3C SCXML test307 — C11 AOT runner.
 //
-// W3C SCXML 5.2.2 / B.2: with `binding="late"`, accessing a not-yet-
+// W3C SCXML 5.3.3 / B.2: with `binding="late"`, accessing a not-yet-
 // declared `<data>` variable in a parent state's `<log>` MUST NOT
 // raise `error.execution`; the access yields ECMAScript `undefined`
 // silently. Likewise, dereferencing a non-existent property of a bound

@@ -13,7 +13,7 @@ namespace SCE::W3C::AotTests {
  * Validates comprehensive error handling for foreach loops, including invalid array
  * types, illegal item identifiers (reserved keywords), and correct iteration behavior.
  *
- * W3C SCXML 5.4: The foreach element allows iteration over arrays and collections
+ * W3C SCXML 4.6: The foreach element allows iteration over arrays and collections
  * with strict validation requirements. If the array attribute does not evaluate to
  * an iterable collection, or if the item attribute contains an illegal identifier,
  * the SCXML Processor MUST raise error.execution and skip the foreach body.
@@ -29,7 +29,7 @@ namespace SCE::W3C::AotTests {
  *
  * Implementation:
  * - Uses Static Hybrid approach (static state machine + JSEngine for ECMAScript)
- * - ForeachHelper validates array type and item identifier (W3C SCXML 5.4)
+ * - ForeachHelper validates array type and item identifier (W3C SCXML 4.6)
  * - Reserved keyword detection: 'continue', 'break', 'if', 'while', 'for', etc.
  * - Error cases: foreach body NOT executed, error.execution event raised
  * - Success case: Accumulator correctly sums array elements (1+2+3 = 6)

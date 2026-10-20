@@ -4239,7 +4239,7 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     # `is_remote_invoke_target=true` shape — `<send target="#_parent">`
     # routes through `performMeshSend` → adapter's mesh callback →
     # wire-16 envelope. `<finalize>` fires before the parent's
-    # transition selection (W3C §6.4.4) and the cond-guarded transition
+    # transition selection (W3C §6.5) and the cond-guarded transition
     # observes the flipped datamodel variable.
     set(MESH_SESSION_F_EVENTFUL_OUTPUT_DIR
         "${CMAKE_CURRENT_BINARY_DIR}/mesh_session_f_eventful_generated")

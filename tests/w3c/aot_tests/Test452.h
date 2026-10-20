@@ -14,11 +14,11 @@ namespace SCE::W3C::AotTests {
  * specifically validating assignment to object properties rather than
  * only top-level variables.
  *
- * W3C SCXML 5.3: The assign element updates the value of a data location
+ * W3C SCXML 5.4: The assign element updates the value of a data location
  * in the datamodel. The location attribute specifies the data location,
  * which can be a substructure like "foo.bar".
  *
- * W3C SCXML 5.4: ECMAScript datamodel supports object creation via
+ * W3C SCXML B.2: ECMAScript datamodel supports object creation via
  * constructor functions and property access/assignment.
  *
  * W3C SCXML 5.9: ECMAScript expressions in guards evaluate property

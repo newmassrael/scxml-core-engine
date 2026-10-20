@@ -38,7 +38,7 @@ namespace SCE::W3C::AotTests {
  * W3C SCXML Features:
  * - ECMAScript datamodel (B.2)
  * - Inline XML content assignment (B.2)
- * - External XML file loading via src attribute (5.2.2)
+ * - External XML file loading via src attribute (5.3.1)
  * - DOM API support (getElementsByTagName, getAttribute) (B.2)
  * - Eventless transitions with conditional guards (3.13)
  *

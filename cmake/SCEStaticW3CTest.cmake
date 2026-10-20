@@ -554,7 +554,7 @@ function(sce_generate_static_w3c_c_test TEST_NUM OUTPUT_DIR)
     set(RESOURCE_TXT "${RESOURCE_DIR}/test${TEST_NUM}.txt")
     set(_TXT_COPY_CMD)
     if(EXISTS "${RESOURCE_TXT}")
-        # W3C SCXML 5.2.2: <data src="file:test${N}.txt"> reads its sidecar at
+        # W3C SCXML 5.3.1: <data src="file:test${N}.txt"> reads its sidecar at
         # codegen time via the `read_data_src` filter (sce-build/src/filters.rs).
         # Mirror the C++ harness's behaviour (lines 195/220 above) by copying
         # the sidecar alongside the generated SCXML so the codegen base_path

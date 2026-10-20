@@ -28,7 +28,7 @@ namespace SCE::W3C::AotTests {
  * - Uses Helper functions: GuardHelper (for condition evaluation)
  *
  * W3C SCXML Features:
- * - Early binding variable initialization (5.2.2)
+ * - Early binding variable initialization (5.3.3)
  * - Inline content in <data> element (B.2)
  * - ECMAScript typeof operator (B.2)
  * - Guard condition evaluation (3.13)

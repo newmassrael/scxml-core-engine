@@ -296,7 +296,7 @@ TEST(SerializeChildContentXmlns, APrefixedChildDeclaresItsPrefixAndNoDefault) {
                                     << serialized;
 }
 
-// W3C SCXML 5.4: in-line `<data>` content using a prefix its document binds
+// W3C SCXML 5.3.2: in-line `<data>` content using a prefix its document binds
 // above it reads, on its own, as what it read in place.
 TEST(SerializeChildContentXmlns, APrefixItsDocumentBindsIsDeclaredOnTheFragment) {
     const std::string xml = R"(<?xml version="1.0"?>
