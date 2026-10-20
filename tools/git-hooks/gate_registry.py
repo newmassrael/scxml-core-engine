@@ -744,6 +744,10 @@ GATES: dict[str, dict] = {
             # The conformance documents the same test holds to declaring no
             # transition function, which the W3C CMake route relies on.
             "resources/**",
+            # The standard library, whose statecharts that save are held to
+            # their pinned shapes (`a_standard_statechart_that_saves_keeps_its_shape`,
+            # docs/adr/0045): an edit of one alone has to start the suite.
+            "stdlib/**",
         ],
         # The crate whose test suite this gate runs. `include-str-coverage`
         # in the self-test reads it: every file the sources under this root

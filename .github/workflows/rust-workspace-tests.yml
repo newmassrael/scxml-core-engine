@@ -126,6 +126,9 @@ on:
       # transition function, which the hand-kept outputs of the W3C CMake
       # route rely on.
       - 'resources/**'
+      # The standard library: its statecharts that save are held to their
+      # pinned shapes (docs/adr/0045), so an edit of one alone starts the suite.
+      - 'stdlib/**'
   pull_request:
     branches: [ main ]
     paths:
@@ -198,6 +201,9 @@ on:
       # transition function, which the hand-kept outputs of the W3C CMake
       # route rely on.
       - 'resources/**'
+      # The standard library: its statecharts that save are held to their
+      # pinned shapes (docs/adr/0045), so an edit of one alone starts the suite.
+      - 'stdlib/**'
 
 # This lane is not superseded by the push that follows it.
 #

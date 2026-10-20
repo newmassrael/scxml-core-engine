@@ -945,6 +945,12 @@ path = "tests/a_childs_ids_come_from_the_tree.rs"
 required-features = ["cli"]
 
 [[test]]
+# Spawns `sce-codegen` for each standard statechart and reads its shape.
+name = "a_standard_statechart_that_saves_keeps_its_shape"
+path = "tests/a_standard_statechart_that_saves_keeps_its_shape.rs"
+required-features = ["cli"]
+
+[[test]]
 name = "diagnostic_fix_is_applicable"
 path = "tests/diagnostic_fix_is_applicable.rs"
 required-features = ["cli"]
