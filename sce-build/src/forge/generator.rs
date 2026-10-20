@@ -2267,7 +2267,7 @@ fn render_enum(
 // rust `<e>::<E>`, kotlin bare `<E>` under wildcard import, go `<e>.<E>`,
 // python `<e>.<E>`, c11 `<E>_t`). The corresponding include / use /
 // import directive surfaces via the per-backend list contexts
-// (`enum_includes` for cpp/c, `enum_use_paths` for rust,
+// (`enum_includes` for cpp/c, `rust_enum_imports` for rust,
 // `kotlin_enum_imports` for kotlin, `go_enum_imports` for go,
 // `python_enum_imports` for python).
 /// The identifier an event-schema field `id` has on `lang`'s payload struct:
@@ -2419,25 +2419,27 @@ fn render_event_schema(
         .map(|i| format!("{}.h", filters::to_snake_case(i.type_name.clone())))
         .collect();
 
-    // Rust: per-imported-enum bare snake path; the template emits
-    // `use crate::<snake>;` so qualified `<snake>::<Pascal>`
-    // references resolve at use-sites. Pulled from `namespace`
-    // (Rust's resolve_imports arm sets namespace = snake).
-    let enum_use_paths: Vec<String> = enum_imports.iter().map(|i| i.namespace.clone()).collect();
-
-    // Kotlin, Go and Python: the import statement `forge_import_identity`
-    // already wrote for the enum, taken whole. It is the ONE place that
-    // knows how a language brings another document into scope, and the
-    // field types above (`l.type_name`) are spelled to match it — Go and
-    // Python qualify the enum by the alias that statement binds
-    // (`sce_<snake>`), Kotlin leaves it bare under the wildcard it
-    // imports. Re-deriving the statement here from `namespace` /
-    // `type_name` is what once left all three pointing at a module,
-    // package or alias the enum's own file does not have: `namespace` is
-    // a bare snake name on Rust, the PascalCase name on Kotlin, and the
-    // alias on Python.
+    // Rust, Kotlin, Go and Python: the import statement
+    // `forge_import_identity` already wrote for the enum, taken whole. It is
+    // the ONE place that knows how a language brings another document into
+    // scope, and the field types above (`l.type_name`) are spelled to match
+    // it — Rust qualifies the enum by the sibling module that statement
+    // brings in (`use super::<snake>;`, then `<snake>::<Pascal>`), Go and
+    // Python by the alias theirs binds (`sce_<snake>`), and Kotlin leaves it
+    // bare under the wildcard it imports. Re-deriving the statement here
+    // from `namespace` / `type_name` is what once left Kotlin, Go and Python
+    // pointing at a module, package or alias the enum's own file does not
+    // have, and left Rust naming the enum from the crate root
+    // (`use crate::<snake>;`): a path that resolves only where the modules
+    // are mounted at the root, and not in a tree that mounts them under a
+    // module of its own, where every other generated Rust file reaches its
+    // siblings through `super::`.
     //
     // A Go statement keeps its leading tab; the template writes its own.
+    let rust_enum_imports: Vec<String> = enum_imports
+        .iter()
+        .map(|i| i.include_stmt.clone())
+        .collect();
     let kotlin_enum_imports: Vec<String> = enum_imports
         .iter()
         .map(|i| i.include_stmt.clone())
@@ -2471,7 +2473,10 @@ fn render_event_schema(
         .collect();
     ctx.insert("c_text_defs".into(), serde_json::json!(c_text_defs));
     ctx.insert("enum_includes".into(), serde_json::json!(enum_includes));
-    ctx.insert("enum_use_paths".into(), serde_json::json!(enum_use_paths));
+    ctx.insert(
+        "rust_enum_imports".into(),
+        serde_json::json!(rust_enum_imports),
+    );
     ctx.insert(
         "kotlin_enum_imports".into(),
         serde_json::json!(kotlin_enum_imports),

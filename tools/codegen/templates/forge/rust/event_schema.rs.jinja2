@@ -9,8 +9,11 @@
 // Event name: {{ event_name }}
 // Do not edit — regenerate from the source SCXML file.
 
-{% for use_path in enum_use_paths %}
-use crate::{{ use_path }};
+{# Each imported enum as a sibling module (`use super::<snake>;`), the statement
+   `forge_import_identity` writes for every generated Rust file: it resolves
+   whether the modules are mounted at the crate root or under a module. #}
+{% for stmt in rust_enum_imports %}
+{{ stmt }}
 {% endfor %}
 
 {% if fields %}

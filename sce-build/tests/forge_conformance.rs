@@ -17884,6 +17884,38 @@ fn forge_rust_enum_record_layer_runtime() {
     result.expect("an algorithm over an enum-field record must compile and match the table");
 }
 
+/// A Rust event-schema that imports an enum reaches it as a sibling module,
+/// `use super::<snake>;`, the statement every other generated Rust file uses
+/// for what it imports. The runtime test above mounts the modules at the crate
+/// root, where `use crate::<snake>;` resolves too; a tree that mounts them
+/// under a module of its own (`mod static_datamodel { mod schema_item; .. }`,
+/// or the conformance harness's `mod fixtures`) resolves only the sibling
+/// form, and a crate-root path there was a build failure. Read from the
+/// emit, with no compiler, so it holds on a host without `rustc` too.
+#[test]
+fn forge_rust_event_schema_reaches_its_enum_as_a_sibling() {
+    let files = layer_generate(
+        sce_build::generator::Language::Rust,
+        "enum_record_sibling_rust",
+    )
+    .expect("generate the layer documents");
+    let (_, settings) = files
+        .iter()
+        .find(|(name, _)| name.ends_with("policy_settings.rs"))
+        .unwrap_or_else(|| {
+            let names: Vec<&String> = files.iter().map(|(name, _)| name).collect();
+            panic!("no policy_settings.rs among {names:?}")
+        });
+    assert!(
+        settings.contains("use super::policy_mode;"),
+        "the schema reaches its enum as a sibling:\n{settings}"
+    );
+    assert!(
+        !settings.contains("use crate::"),
+        "the schema names nothing from the crate root:\n{settings}"
+    );
+}
+
 #[test]
 fn forge_cpp_enum_record_layer_runtime() {
     let test_id = "enum_record_layer_cpp";
