@@ -923,6 +923,38 @@ def _plan_tokens(text, mask, token_ledgers, lineno):
     return skipped
 
 
+def cited_section_ids(path, ledger_ids, prefix="W3C SCXML"):
+    """The W3C SCXML sections a file cites, in either form, or None when the
+    file is not UTF-8 text.
+
+    The two forms are recognised by the same code the gates use: a prose or
+    bare-sigil cite by the planner `--check` and `--apply` run, an
+    already-§-form token by the pattern `--check-ledger` reads. Regions are
+    the existence check's (`read_mask_for`), so a template, which is read whole,
+    and a Python docstring count as they do there. A label naming no ledger
+    section is left out; what to do about it is `--check-ledger`'s to say.
+
+    Read-only, for the backend parity check, which asks which sections each
+    backend's runtime and templates cite. A second recogniser for that question
+    would be free to disagree with the gates about what a citation is.
+    """
+    text = _read_text(path)
+    if text is None:
+        return None
+    _, migrations, _ = plan_file(path, ledger_ids, prefix, "scxml", mask_fn=read_mask_for)
+    ids = {m["id"] for m in migrations}
+    mask = read_mask_for(path, text)
+    for m in MIGRATED_TOKEN_RE.finditer(text):
+        if m.group("ns") != "scxml" or not mask[m.start()]:
+            continue
+        if _is_code_span_mention(text, m.start()):
+            continue
+        sid = f"scxml-{m.group('leaf')}"
+        if sid in ledger_ids:
+            ids.add(sid)
+    return ids
+
+
 def tracked_paths():
     """Repo-relative paths git tracks, as git stores them.
 
@@ -1076,6 +1108,37 @@ def iter_source_files(paths, predicate=rewritable):
                         yield full
 
 
+def list_cited(args):
+    """`--list-cited`: the sections each tracked file under `args.paths` cites.
+
+    Tracked content only, for the reason the existence gate gives: an untracked
+    file is a build leftover, and a citation is a claim the repository makes.
+    Prints `{"files": {path: [section ids]}, "files_scanned": n,
+    "files_not_text": n}` with paths relative to the repository root and the
+    ids sorted, so two runs over one tree print the same bytes.
+    """
+    ledger_ids = load_ledger_ids(args.ledger or DEFAULT_LEDGER)
+    tracked = _tracked_files()
+
+    def in_scope(path):
+        if tracked is None:
+            return True
+        rel = os.path.relpath(os.path.abspath(path), REPO_ROOT)
+        return rel.startswith("..") or rel in tracked
+
+    report = {"files": {}, "files_scanned": 0, "files_not_text": 0}
+    for path in iter_source_files(args.paths, in_scope):
+        ids = cited_section_ids(path, ledger_ids, args.prefix)
+        if ids is None:
+            report["files_not_text"] += 1
+            continue
+        report["files_scanned"] += 1
+        rel = os.path.relpath(os.path.abspath(path), REPO_ROOT)
+        report["files"][rel] = sorted(ids)
+    print(json.dumps(report, indent=1, sort_keys=True))
+    return 0
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
@@ -1151,7 +1214,27 @@ def main(argv=None):
         "cites in an enrolled file reached CI because the commit stage ran "
         "the existence half only).",
     )
+    ap.add_argument(
+        "--list-cited",
+        action="store_true",
+        help="read-only: print, as JSON, the W3C SCXML sections each tracked "
+        "file under the paths cites in either form, recognised as the gates "
+        "recognise them. For the backend parity check.",
+    )
     args = ap.parse_args(argv)
+
+    if args.list_cited:
+        if args.apply or args.check or args.check_ledger or args.only_enrolled:
+            ap.error("--list-cited reads and reports; it takes paths and no gate flag")
+        if args.namespace != "scxml":
+            ap.error("--list-cited lists W3C SCXML sections, the scxml namespace")
+        if args.from_toml:
+            # The enrolled directories, so a caller asking about the code the
+            # ledger validates names it by the enrolment and not by a copy.
+            args.paths = list(args.paths) + paths_from_toml(args.from_toml)
+        if not args.paths:
+            ap.error("--list-cited needs paths, or --from-toml")
+        return list_cited(args)
 
     # The existence gate reads a wider region than a rewrite may touch — a
     # Python docstring is documentation the language keeps in a string, so it

@@ -202,6 +202,25 @@ impl Language {
         }
     }
 
+    /// The repository tree holding this backend's hand-written runtime.
+    ///
+    /// The directories inside it that the W3C citation ledger validates are
+    /// the enrolment's to name (`docs/spec/scxml/mnemosyne.toml`); this says
+    /// only which tree is whose, so a reader asking "which runtime code is
+    /// this backend's" takes the directories from the enrolment and the owner
+    /// from here, and no list of runtime directories is written twice. C++ is
+    /// `sce`, the engine its generated code runs on.
+    pub fn runtime_tree(self) -> &'static str {
+        match self {
+            Language::Rust => "backends/rust",
+            Language::Cpp => "sce",
+            Language::Kotlin => "backends/kotlin",
+            Language::Go => "backends/go",
+            Language::Python => "backends/python",
+            Language::C11 => "backends/c",
+        }
+    }
+
     /// Directory under `templates/forge/` holding this language's forge
     /// templates — the scope `forge::generator::generate_*` loads.
     ///
@@ -605,6 +624,27 @@ impl Language {
     /// two can only agree when the scanner is working.
     pub fn migrated_expression_sites(self) -> Vec<String> {
         self.expression_sites_with_role(ExpressionSiteRole::Migrated)
+    }
+
+    /// Whether `name` (a template path relative to the tree root) is one of
+    /// this backend's templates in any tree: its directory under each
+    /// feature tree (`forge/`, `mesh/`, `mesh_router/`, by
+    /// [`Self::feature_tree_subdir`]), and otherwise its statechart templates
+    /// ([`Self::owns_template`]). The shared macros (`_macros/`) are every
+    /// backend's and so no one backend's.
+    ///
+    /// [`Self::owns_template`] alone answers a narrower question — which
+    /// statechart templates a backend's renderer reads — and its C++ arm is
+    /// the complement of the others, so it also claims `forge/go/` and
+    /// `mesh_router/rust/`. A reader attributing a template to the backend
+    /// that writes it, as the backend parity check does, asks this instead.
+    pub fn authors_template(self, name: &str) -> bool {
+        for tree in ["forge", "mesh", "mesh_router"] {
+            if let Some(rest) = name.strip_prefix(tree).and_then(|r| r.strip_prefix('/')) {
+                return rest.starts_with(&format!("{}/", self.feature_tree_subdir()));
+            }
+        }
+        !name.starts_with("_macros/") && self.owns_template(name)
     }
 
     /// Whether `name` (a template path relative to the tree root) belongs to

@@ -1307,5 +1307,88 @@ class DottedDirectories(unittest.TestCase):
             self.assertEqual(list(mc.iter_source_files([str(d)], None)), [])
 
 
+class ListCited(unittest.TestCase):
+    """`--list-cited` reports what the gates would call a citation, and only that.
+
+    The backend parity check compares the sections each backend cites. If this
+    listing recognised a citation the gates do not, or missed one they do, the
+    comparison would be about a different question than the one the ledger
+    answers.
+    """
+
+    LEDGER_IDS = {"scxml-5.10", "scxml-6.2", "scxml-3.13"}
+
+    def _ids(self, body, name):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / name
+            p.write_text(body, encoding="utf-8")
+            return mc.cited_section_ids(str(p), self.LEDGER_IDS)
+
+    def test_prose_and_token_forms_are_both_cited(self):
+        ids = self._ids("// W3C SCXML 5.10 vars\n// §scxml-6.2: send\n", "a.rs")
+        self.assertEqual(ids, {"scxml-5.10", "scxml-6.2"})
+
+    def test_a_string_literal_is_not_a_citation(self):
+        ids = self._ids('let s = "W3C SCXML 5.10";\nlet t = "§scxml-6.2";\n', "a.rs")
+        self.assertEqual(ids, set())
+
+    def test_a_section_absent_from_the_ledger_is_left_out(self):
+        ids = self._ids("// W3C SCXML 6.4.6 autoforward\n// §scxml-9.9: none\n", "a.rs")
+        self.assertEqual(ids, set())
+
+    def test_a_template_is_read_whole(self):
+        # A template has no comment grammar of its own, so the existence check
+        # reads all of it; a cite inside an emitted string counts there too.
+        ids = self._ids('{# W3C SCXML 3.13 #}\nemit("// W3C SCXML 5.10");\n', "a.rs.jinja2")
+        self.assertEqual(ids, {"scxml-3.13", "scxml-5.10"})
+
+    def test_the_command_prints_each_file_with_its_sections(self):
+        with tempfile.TemporaryDirectory() as d:
+            src = Path(d) / "src"
+            src.mkdir()
+            (src / "a.rs").write_text("// W3C SCXML 5.10\n", encoding="utf-8")
+            (src / "b.rs").write_text("// nothing cited\n", encoding="utf-8")
+            store = Path(d) / "store.json"
+            store.write_text(json.dumps({"sections": {"scxml-5.10": {}}}), encoding="utf-8")
+            r = subprocess.run(
+                [sys.executable, str(MIGRATE), "--list-cited", "--ledger", str(store), str(src)],
+                capture_output=True, text=True,
+            )
+            self.assertEqual(r.returncode, 0, r.stderr)
+            report = json.loads(r.stdout)
+            cited = {Path(k).name: v for k, v in report["files"].items()}
+            self.assertEqual(cited, {"a.rs": ["scxml-5.10"], "b.rs": []})
+            self.assertEqual(report["files_scanned"], 2)
+
+    def test_the_enrolled_directories_are_listed_with_from_toml(self):
+        # The enrolment is resolved against the repository root, as every other
+        # --from-toml use resolves it, so this reads the repository's own.
+        toml = Path(mc.REPO_ROOT) / "docs" / "spec" / "scxml" / "mnemosyne.toml"
+        r = subprocess.run(
+            [sys.executable, str(MIGRATE), "--list-cited", "--from-toml", str(toml)],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(r.returncode, 0, r.stderr)
+        files = json.loads(r.stdout)["files"]
+        enrolled = [os.path.relpath(p, mc.REPO_ROOT) for p in mc.paths_from_toml(str(toml))]
+        self.assertTrue(files, "the enrolled directories listed no file")
+        for path in files:
+            self.assertTrue(
+                any(path == e or path.startswith(e + os.sep) for e in enrolled),
+                f"{path} is outside every enrolled directory",
+            )
+        self.assertTrue(
+            any(ids for ids in files.values()),
+            "no enrolled file cites a section, so the listing read nothing",
+        )
+
+    def test_a_gate_flag_is_refused_beside_it(self):
+        r = subprocess.run(
+            [sys.executable, str(MIGRATE), "--list-cited", "--check-ledger", "."],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(r.returncode, 2)
+
+
 if __name__ == "__main__":
     unittest.main()
