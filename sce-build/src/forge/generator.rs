@@ -31139,15 +31139,6 @@ mod tests {
         let _ = python_type(&enum_ref("Result"));
     }
 
-    const ALL_LANGS: [crate::generator::Language; 6] = [
-        crate::generator::Language::Cpp,
-        crate::generator::Language::C11,
-        crate::generator::Language::Kotlin,
-        crate::generator::Language::Rust,
-        crate::generator::Language::Go,
-        crate::generator::Language::Python,
-    ];
-
     #[test]
     fn type_name_is_the_bare_lookup_for_every_primitive() {
         // Resolution only ever adds the enum arm: for every primitive the
@@ -31162,7 +31153,7 @@ mod tests {
             SceType::String,
             SceType::Bytes,
         ];
-        for lang in ALL_LANGS {
+        for &lang in crate::generator::Language::ALL {
             let l = LangCtx::new(lang, &[]);
             for ty in cases {
                 let bare = match lang {
