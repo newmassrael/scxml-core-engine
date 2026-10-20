@@ -359,13 +359,12 @@ fn an_enum_typed_input_generates_instead_of_panicking() {
     let t = Tmp::new("enum_param");
     t.write("fueltype.scxml", FUEL_ENUM);
     let doc = t.write("names_one.scxml", NAMES_ONE);
-    for lang in Language::ALL
-        .iter()
-        .copied()
-        // excluded: reason not found in the tree, see report
-        .filter(|language| *language != Language::Go)
-        .map(Language::canonical_name)
-    {
+    // Every backend. The hand-written list this replaced left Go out with no
+    // reason written down; the reason was the `<sce:import>` above, which Go
+    // writes as a module-qualified import and so refuses without the module
+    // path. The path is given to every backend, as other generate tests do;
+    // the rest ignore it.
+    for lang in Language::ALL.iter().copied().map(Language::canonical_name) {
         let out = t.0.join(format!("out_{lang}"));
         std::fs::create_dir_all(&out).expect("create output dir");
         let run = Command::new(bin())
@@ -374,6 +373,8 @@ fn an_enum_typed_input_generates_instead_of_panicking() {
                 doc.to_str().unwrap(),
                 "-l",
                 lang,
+                "--go-module-prefix",
+                "x/y",
                 "-o",
                 out.to_str().unwrap(),
             ])

@@ -3085,11 +3085,11 @@ fn a_send_delayexpr_is_lowered_to_the_string_it_computes_and_needs_no_engine() {
     // is, so no engine evaluates it: the manifest says so, and says that the
     // machine must be driven with `tick()` for the delay to come due.
     let document = sending_with(r#"delayexpr="count + 'ms'""#);
+    // Every backend, C11 too: C11 lowers the joined string since 66e6072f73,
+    // and its own test below reads the buffer the data model sizes for it.
+    // That test asserts generation, not this manifest, so C11 is held here.
     for language in Language::ALL
         .iter()
-        // C11 has its own test below, which reads the buffer the data model
-        // sizes for the joined string.
-        .filter(|language| **language != Language::C11)
         .map(|language| language.canonical_name())
     {
         let out_dir = tempdir().expect("tempdir");
@@ -3345,11 +3345,9 @@ fn a_send_eventexpr_is_lowered_to_the_string_it_computes_and_needs_no_engine() {
     // Read from the machine's fields when the send runs, as a `<param>`'s value
     // is, so no engine evaluates it and the manifest says so.
     let document = sending_event(r#"eventexpr="'on.' + count""#);
+    // Every backend, C11 too, for the reason the delayexpr test gives.
     for language in Language::ALL
         .iter()
-        // C11 has its own test below, which reads the buffer the data model
-        // sizes for the joined string.
-        .filter(|language| **language != Language::C11)
         .map(|language| language.canonical_name())
     {
         let out_dir = tempdir().expect("tempdir");
@@ -3537,11 +3535,9 @@ fn a_cancel_sendidexpr_is_lowered_to_the_string_it_computes_and_needs_no_engine(
     // Read from the machine's fields when the cancel runs, so no engine
     // evaluates it and the manifest says so.
     let document = cancelling(r#"sendidexpr="'timer.' + count""#);
+    // Every backend, C11 too, for the reason the delayexpr test gives.
     for language in Language::ALL
         .iter()
-        // C11 has its own test below, which reads the buffer the data model
-        // sizes for the joined string.
-        .filter(|language| **language != Language::C11)
         .map(|language| language.canonical_name())
     {
         let out_dir = tempdir().expect("tempdir");

@@ -103,11 +103,13 @@ fn sourcemap_shape_matches_spec() {
 /// before comparing.
 #[test]
 fn sourcemap_byte_identity_across_backends() {
+    // Every backend. The hand-written list this replaced named five and left
+    // Python out with no reason in the tree: it was written on 2026-05-14,
+    // the day before the Python backend landed, and the sourcemap is written
+    // on the shared `generate` path for every language.
     let backends: Vec<&str> = Language::ALL
         .iter()
         .copied()
-        // excluded: reason not found in the tree, see report
-        .filter(|language| *language != Language::Python)
         .map(Language::canonical_name)
         .collect();
     let mut normalised: Vec<String> = Vec::new();
