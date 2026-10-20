@@ -5474,7 +5474,7 @@ the Interpreter. These are the first three of the six steps of
 
 | Member | Of | What it says |
 |---|---|---|
-| `machine` | scenario | the fixture the scenario drives, by its stem; several scenarios may drive one (`static_timers_stop` drives `static_timers`), so a scenario is told by its file name |
+| `machine` | scenario | the fixture the scenario drives, by its stem, or a statechart of the standard library, by its library name without `.scxml` (`sce:std/shared/record_list`), whose machine is generated under the last segment of it; several scenarios may drive one (`static_timers_stop` drives `static_timers`), so a scenario is told by its file name |
 | `about` | scenario | prose for the reader; no driver reads it |
 | `steps` | scenario | the steps, in order; a scenario with none judges nothing |
 | `note` | step | prose, shown when the step fails |
@@ -5586,24 +5586,41 @@ the to-do list without its schedule and its host's time zones, its events named
 (`record_write`, `record_edit`, `record_settled`, `record_roster`, `register_values`
 and the rest), and every bound a `sce:limit` that defaults to the to-do list's number
 (`merge_entries`, `merge_values`, `merge_digest`, `merge_text`, `shared_typed_text`,
-`shared_roster`, `shared_answers`). A statechart invokes it as a child session by its
-library name ("Child sessions" above) and hands it `announce`; from then on the list
-tells its parent, after each change that moves what a register holds, the register's
-count and first value in the order of the dots (`record_list.register`) and each further
-value (`record_list.value`). A list a host started keeps `announce` false and tells no
-one: `#_parent` names no session at the top level, and the send names it by an
-expression among its declared `sce:targets`, so the machine keeps the entry a host
-starts it by. The fixture `record_list.scxml` is a link to the standard document, so
-the drivers replay the very text the library holds. Its scenarios `record_list_alice`,
-`record_list_bob` and `record_list_server` are the to-do afternoon's, written by the same
-world test from the same run with the steps of the schedule and the time zones left
-out and the events renamed, so the two copies of the protocol are held to one run
-until `todo_peer` is built on the standard part; `record_list_alone` is the list a host
-started, which tells no parent and fails at nothing; and `record_list_parent` is a
-statechart that invokes it and publishes what it was told: a register's one value,
-two values written at once told as a count of 2 with the earlier dot first, a register
-written over value by value told as a count of 0, and a write already held told nothing.
-The Interpreter replays the first four, and refuses the parent as an invoke by `src`.
+`shared_roster`, `shared_answers`, `shared_moved`). It names no peer: a person's copy
+sends to the route `#hub`, and the hub, the copy `record_list.join` names the hub, sends
+to the route `#people`, which a deployment binds to a key every person's copy listens
+on, so that one send reaches them all, the author of the change included (who holds it
+already, and takes it again as nothing). No condition reads a node number; the hub's
+own change is passed on to the people and sent to no hub. A statechart invokes it as a
+child session by its library name ("Child sessions" above) and hands it `announce`;
+from then on the list tells its parent, once for each change it takes in, each register
+the change moved: its count and first value in the order of the dots
+(`record_list.register`) and each further value (`record_list.value`), as the register
+stands when the change is whole, so a change that writes over two values and writes
+its own is told once. A list a host started keeps `announce` false and tells no one:
+`#_parent` names no session at the top level, and the send names it by an expression
+among its declared `sce:targets`, so the machine keeps the entry a host starts it by.
+Its scenarios name it by its library name (`"machine": "sce:std/shared/record_list"`),
+which every driver, regen script, build rule and the Interpreter's scan take as they
+take a fixture's stem, so no copy of the text stands in the fixture directory; the
+generated machine is named by the last segment of that name. Its scenarios are written
+by hand from a model of the list and are short: `record_list_person` is a person's copy
+(two writes at once both kept, a supersede that drops only what it saw, the walk of the
+digest that finds a lost change, a settle, a floor that forgets tombstones and refuses
+a write at or before it, a copy that answers with another hash and says it is stale,
+the room refusing past its bound, a text past what a person writes and a change of its
+own while its member may only read both refused whole); `record_list_hub` is the hub (passing every change
+on to `#people`, its roster refusing a reader's write and supersede, its own change,
+a settle counted to its end and a differing answer told the last floor, the walk);
+`record_list_alone` is the list a host started, which tells no parent and fails at
+nothing; and `record_list_parent` is a statechart that invokes it and publishes what
+it was told: a register's one value, two values written at once told as a count of 2
+with the earlier dot first, a register written over value by value told as a count of
+0, a write already held told nothing, and the hub's own change told once. The model the
+expected values come from was first held to every step `todo_peer` took in the world's
+to-do afternoon. The world test replays that afternoon on the standard part's Rust
+machine in its own process, the sends by their routes, and writes no file of it. The
+Interpreter replays the first three, and refuses the parent as an invoke by `src`.
 
 A copy need not be a Rust machine. `World::add_external` hosts one in another
 process behind the Mesh endpoint the world keeps for it, driven over a

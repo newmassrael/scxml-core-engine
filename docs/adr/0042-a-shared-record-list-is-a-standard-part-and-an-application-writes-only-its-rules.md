@@ -115,17 +115,34 @@ started.
   own and the C++ one a parent type), and this list is started by a host as often as by a parent.
   `record_list_alone` (a list a host started: `announced` stays 0, nothing fails) and
   `record_list_parent` (what a parent is told) pin it.
-- **A register is told what it holds when the telling is made.** The telling follows every change
-  already waiting before it, so a person's edit, a supersede of each value it saw and then a write,
-  is told once for each, each time as it stands after the write, and a parent keeps the last it was
-  told of each register. The order of the dots is the wall time, then the counter, then the node
-  (`sce:std/shared/register_values.scxml`). `announced` counts what was told.
+- **A register is told once for each change taken in, as it stands when the change is whole.** A
+  write or supersede that moved a register raises `record_list.announce` for it; the first of a
+  change puts the register in `moved` and queues `record_list.tell` behind every event the change
+  has already queued, and a register already in `moved` is not put there twice. The telling then
+  tells each register in `moved` once and empties it. So a person's edit, a supersede of each value
+  it saw and then a write, is told once, as the register stands after the write, where the first
+  build told it once for each event. The order of the dots is the wall time, then the counter, then
+  the node (`sce:std/shared/register_values.scxml`). `announced` counts what was told;
+  `record_list_parent` pins the hub's own change over two values told once.
 - **The bounds are named** `merge_entries`, `merge_values`, `merge_digest` (the names the merge
   rules already carry), `merge_text` (the 96 bytes of text a write carries, which
   `sce:std/merge/mv_value.scxml` now names too, so the value a copy keeps moves with the write),
-  `shared_typed_text` (the 32 bytes a person types, `record_edit`), `shared_roster` and
-  `shared_answers`. A text bound is a schema field's `sce:max-size`, which `sce:limit` could not
-  name before; the generator now reads a `sce:limit` beside it.
+  `shared_typed_text` (the 32 bytes a person types, `record_edit`), `shared_roster`,
+  `shared_answers` and `shared_moved` (the registers one change may move before it is told). A text
+  bound is a schema field's `sce:max-size`, which `sce:limit` could not name before; the generator
+  now reads a `sce:limit` beside it.
+- **The list names routes, not peers.** `todo_peer` sends to `#server`, `#alice` and `#bob` and
+  decides whom to pass a change on to by fixed node numbers (1 and 2). The standard part has two
+  logical targets: a person's copy sends to `#hub`, and the hub (the copy `record_list.join` names
+  the hub, whatever its node) sends to `#people`. A deployment binds both as it binds any `<send
+  target="#name">` today (`machines.<m>.bindings` in deploy.yaml, SCE_MESH.md): `#hub` to the
+  key the hub listens on, and `#people` to one key every person's copy listens on, which the Mesh
+  delivers to each of them, so one send reaches them all. Nothing had to be added to the deploy
+  surface. The hub therefore passes a change on to its author as well; the author holds it already
+  and takes it again as nothing (the sheet's hub does the same). No condition reads a node number:
+  the hub's own change is passed on to the people and sent to no hub, and a node of the digest
+  walk or a share goes to `#hub` from a person and to `#people` from the hub, where the copy it is
+  for reads its `to`. Otherwise the protocol is the one `todo_peer` speaks.
 - **A statechart invokes a standard statechart by its library name**
   (`<invoke type="scxml" src="sce:std/shared/record_list.scxml">`), which no part of the generator
   read before: the child is the library's text, carried in memory as a child written in `<content>`
@@ -135,19 +152,36 @@ started.
   text stands in the parent, and a standard child has none there, so it is refused as an invoke by
   `src` (`generate/unsupported-feature`): `record_list_parent` runs on the six generated backends,
   and the Interpreter replays the list's own scenarios.
-- **The fixture of the list is the standard document.** `record_list.scxml` beside the other
-  fixtures is a link to `stdlib/shared/record_list.scxml`, so every driver replays the text the
-  library holds, and its imports name their documents by library name, which resolves the same from
-  either place. Its scenarios `record_list_alice`, `record_list_bob` and `record_list_server` are
-  written by the world test from the very run that writes `todo_peer`'s, the steps of the schedule
-  and the time zones left out and every event renamed, so the two copies of the protocol are held to
-  one run until step 2.
+- **A scenario names a standard statechart by its library name.** The scenarios of the list say
+  `"machine": "sce:std/shared/record_list"`, and every part of the scenario infrastructure takes
+  that as it takes a fixture's stem: the regen scripts of Rust, Kotlin, Go and Python generate each
+  standard statechart a scenario names from the library, the C++ and C11 build rules
+  (`sce_add_state_machine`, `sce_generate_static_integration_c_test`) take a library name as
+  `sce_add_algorithm` already did, the Interpreter's scan lowers it by that name, each driver reads
+  the machine under the last segment of the name, and the guard that every scenario is replayed
+  wherever its machine lowers reads it from the library. No copy of the document and no link to it
+  stands in the fixture directory.
+- **The list's scenarios are written by hand, and the world holds it to the to-do afternoon in its
+  own process.** A scenario derived from every step of the world's afternoon was some 9 MB for the
+  three copies, too much to commit and to carry in the wasm32 scenario table. The committed ones are
+  short (`record_list_person`, `record_list_hub`, `record_list_alone`, `record_list_parent`, some
+  35 KB in all) and pin each behaviour the derived ones did: two writes at once both kept, a
+  supersede that drops only what it saw, the walk of the digest that finds a lost change, a settle
+  and a floor that forgets tombstones and refuses a write at or before it, a copy that says it is
+  stale, the room's and the roster's refusals, and the hub passing every change on. Their expected
+  values come from a model of the list that was first held to every one of the 777 steps
+  `todo_peer`'s three copies took in the afternoon, not from a backend. The world test still
+  derives the afternoon as the standard list's (the schedule's steps left out, every event renamed,
+  every send by its route, and one send where the to-do hub sent the same change to each person)
+  and replays it on the standard part's Rust machine, writing no file, so the two copies of the
+  protocol stay held to one run until step 2.
 - **A child session cannot reach a Mesh peer today**, on Rust or on Kotlin: a Mesh router is
   registered on the engine a host holds (`sce_rust_mesh::endpoint::register`,
   `StateMachineEngine.registerMeshRouter`), the generated parent builds a child's engine and gives it
-  only its clock and its parent link, and a child's send to `#server` finds no processor and is
+  only its clock and its parent link, and a child's send to `#hub` finds no processor and is
   `error.execution`. What `hostForChild` answers is the host of a child's `<sce:action>`s, not a
-  router. Section 3's second point is therefore the first work of step 2.
+  router. Section 3's second point is therefore the first work of step 2, and is the subject of an
+  ADR of its own; this step leaves the list's sends as they are.
 
 ## Alternatives considered
 
