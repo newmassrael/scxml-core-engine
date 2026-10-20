@@ -4393,12 +4393,15 @@ set_tests_properties(c11_unit_forge_concat PROPERTIES
 #
 # A `<param>` name that repeats is one array in the event's data, in document
 # order, on every engine: the case `tests/json_text/object_key_order.json` holds
-# every writer to, and what a machine can do to it that the table cannot say (a
-# value left out, a run of three, an object that does not fit). Header-only code.
+# every writer to, read from the table by this test, and what a machine can do to
+# it that the table cannot say (a value left out, a run of three, an object that
+# does not fit). Header-only code.
 add_executable(sce_c_forge_wire_repeat_unit_test unit/forge_wire_repeat_test.c)
 target_link_libraries(sce_c_forge_wire_repeat_unit_test PRIVATE sce_c_runtime)
 target_include_directories(sce_c_forge_wire_repeat_unit_test PRIVATE
     "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include")
+target_compile_definitions(sce_c_forge_wire_repeat_unit_test PRIVATE
+    SCE_JSON_KEY_ORDER_TABLE="${CMAKE_SOURCE_DIR}/tests/json_text/object_key_order.json")
 set_target_properties(sce_c_forge_wire_repeat_unit_test PROPERTIES
     C_STANDARD 11
     C_STANDARD_REQUIRED ON

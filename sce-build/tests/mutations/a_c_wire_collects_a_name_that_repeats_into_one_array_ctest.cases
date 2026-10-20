@@ -25,7 +25,7 @@
 
 mutation_ctest --test-dir build -R '^c11_(unit_forge_wire_repeat|integration_static_param_repeat)$'
 mutation_targets backends/c/forge-runtime/include/sce/forge/wire.h
-mutation_oracles backends/c/tests/unit/forge_wire_repeat_test.c backends/c/tests/integration/test_static_param_repeat.c backends/c/tests/integration_resources/static_param_repeat/static_param_repeat.scxml
+mutation_oracles backends/c/tests/unit/forge_wire_repeat_test.c backends/c/tests/unit/shared_table.h tests/json_text/object_key_order.json backends/c/tests/integration/test_static_param_repeat.c backends/c/tests/integration_resources/static_param_repeat/static_param_repeat.scxml
 
 mutation_case "a key that repeats is a pair of its own" <<'PY'
 edit("backends/c/forge-runtime/include/sce/forge/wire.h",
