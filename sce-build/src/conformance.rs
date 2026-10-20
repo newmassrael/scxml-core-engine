@@ -1893,10 +1893,10 @@ pub fn c11_supported_kind(spec: &FixtureSpec) -> bool {
         // because it is exercised — forge-conformance.yml has no C11 job and
         // scripts/gates/ has no forge-c.sh, so no C11 fixture of any kind is
         // run today", and called that absence a lane to build. The lane was
-        // built on 2026-09-17: `scripts/gates/forge-c.sh` runs the suite and
-        // `conformance-c` runs it in CI. The note is kept because a reader
-        // who remembers the old one needs to see that it was retired rather
-        // than quietly edited away.
+        // built on 2026-09-17: `scripts/gates/forge-c11.sh` (named `forge-c`
+        // until 2026-10-20) runs the suite and `conformance-c` runs it in CI.
+        // The note is kept because a reader who remembers the old one needs
+        // to see that it was retired rather than quietly edited away.
         FixtureSpec::Enum { .. } => true,
         // Event-schema payload: `c/event_schema.h.jinja2` emits a plain C
         // struct with the declared fields, which is the whole surface the

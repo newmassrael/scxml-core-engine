@@ -161,7 +161,7 @@ PUSH_BUDGET_S = 300
 # the band, then taking the worse of the last pair. A single reading here
 # says nothing; the first three of nine were still filling caches.
 # 0.287 -> 0.237 on 2026-09-17. Nothing about the paced figures changed; the
-# DENOMINATOR grew, because `forge-c` added 17 measured seconds to what a push
+# DENOMINATOR grew, because `forge-c11` added 17 measured seconds to what a push
 # can select. The share is therefore smaller for a good reason, and the rule
 # here is to follow it down rather than bank the slack: a ceiling left above
 # the real share stops being a ratchet and silently permits the next
@@ -328,7 +328,7 @@ COST_MEASURED: dict[str, str] = {
     # sibling: the C11 arm generates 12 headers and compiles one C file, so
     # borrowing forge-cpp's 59s would have overstated it more than threefold
     # and eaten push budget that is not being spent.
-    "forge-c": "2026-09-17",
+    "forge-c11": "2026-09-17",
     # 52s, timed on the lane's first existence rather than inherited from a
     # sibling. Two readings were taken, 52 and 1, and the 1 is DISCARDED for
     # the reason `forge-go` above discards a lock-bound run: Gradle found every
@@ -899,7 +899,12 @@ GATES: dict[str, dict] = {
     # touches `backends/c/**` or the forge fixtures still selects it. It runs
     # in BOTH places on purpose — the push catches it before it leaves, and
     # the job catches the pushes that bypassed the hooks.
-    "forge-c": {
+    #
+    # Slug `forge-c` until 2026-10-20. A lane gate is named
+    # `<family>-<Language::canonical_name()>`, and this backend's name is
+    # `c11` (its W3C gate was already `w3c-c11`), so the old slug was the one
+    # lane a backend's row could not be derived from.
+    "forge-c11": {
         "workflows": ["forge-conformance.yml"],
         "runner_workflow": True,
         "extra": ["backends/c/**"],
@@ -912,7 +917,7 @@ GATES: dict[str, dict] = {
     # kotlin, cpp, c — and `scripts/gates/` mirrored five. Nothing local ran the
     # Kotlin forge harness; `w3c-kotlin` runs a different Gradle project. So a
     # break confined to the Kotlin forge lowering passed every local lane and
-    # went red only after the push, which is the half of `forge-c`'s story with
+    # went red only after the push, which is the half of `forge-c11`'s story with
     # the sides swapped: there the code existed and nothing ran it, here CI ran
     # it and the mirror did not. Five siblings made the set look complete.
     #

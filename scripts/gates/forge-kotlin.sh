@@ -18,10 +18,10 @@
 # passing local lane is part of what authorises that push, so the gap sat
 # exactly where it did the most damage.
 #
-# This is the shape `forge-c`'s registry note records, with the halves swapped:
-# there the code existed and NOTHING ran it; here CI ran it and the local mirror
-# did not. Both were invisible for the same reason — the sibling arms made the
-# set look complete.
+# This is the shape `forge-c11`'s registry note records, with the halves
+# swapped: there the code existed and NOTHING ran it; here CI ran it and the
+# local mirror did not. Both were invisible for the same reason — the sibling
+# arms made the set look complete.
 #
 # ⚠⚠ JUDGE THE WHOLE SUITE, NOT ONE REPORT. Gradle writes one
 # `TEST-<class>.xml` per test class, and this harness does not put everything in

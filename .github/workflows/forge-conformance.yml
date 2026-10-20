@@ -583,7 +583,7 @@ jobs:
     - name: Run C11 Conformance Harness
       run: |
         set -o pipefail
-        scripts/gate forge-c 2>&1 | tee c_conformance.log
+        scripts/gate forge-c11 2>&1 | tee c_conformance.log
 
     - name: Summarize
       if: always()
