@@ -215,8 +215,7 @@ pub struct SavedShape {
     /// Each record schema a variable is of, by the event it declares, ordered by
     /// it.
     pub records: &'static [RecordLineage],
-    /// Each enum a value of the state is of, by its key (`enum:<alias>`),
-    /// ordered by it.
+    /// Each enum a value of the state is of, by its key, ordered by it.
     pub enums: &'static [EnumLineage],
 }
 
@@ -224,8 +223,11 @@ pub struct SavedShape {
 /// (docs/adr/0044).
 #[derive(Clone, Copy, Debug)]
 pub struct EnumLineage {
-    /// `enum:` and the alias the machine imports the enum as, which names it in
-    /// `revisions`.
+    /// `enum:` and the enum's document, which names it in `revisions`: a
+    /// standard document by its `sce:std/...` name, any other by its path
+    /// relative to the machine's own document, `/`-separated. The document,
+    /// not an alias it is imported under, so renaming an alias leaves it as it
+    /// was.
     pub key: &'static str,
     /// The enum's revision in this machine.
     pub revision: u32,
@@ -2343,7 +2345,7 @@ mod tests {
         revised: REVISED_SHAPE,
         records: &[],
         enums: &[EnumLineage {
-            key: "enum:ViewMode",
+            key: "enum:enum_view_mode.scxml",
             revision: 2,
             revisions: &[SECOND],
             added: &[AddedVariant {
@@ -2383,7 +2385,9 @@ mod tests {
             REVISED_SHAPE,
             "agenda",
             r#"[{"layout":"agenda"}]"#,
-            &format!(r#","revisions":{{"enum:ViewMode":{{"revision":2,"fields":"{SECOND}"}}}}"#),
+            &format!(
+                r#","revisions":{{"enum:enum_view_mode.scxml":{{"revision":2,"fields":"{SECOND}"}}}}"#
+            ),
         );
         assert_eq!(upgrade(&saved, &LAYOUT_SHAPE), Ok(saved));
     }
@@ -2413,7 +2417,9 @@ mod tests {
             REVISED_SHAPE,
             "week",
             "[]",
-            &format!(r#","revisions":{{"enum:ViewMode":{{"revision":3,"fields":"{THIRD}"}}}}"#),
+            &format!(
+                r#","revisions":{{"enum:enum_view_mode.scxml":{{"revision":3,"fields":"{THIRD}"}}}}"#
+            ),
         ));
         assert!(later.contains("later than"), "{later}");
     }

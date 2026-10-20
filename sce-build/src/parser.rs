@@ -3002,6 +3002,10 @@ impl SCXMLParser {
                 &model.imported_event_schemas,
                 diag_label,
             )?;
+            // Each enum the document holds values of, by the document it is:
+            // what a saved state and the Mesh check name an enum by
+            // (docs/adr/0044).
+            model.enum_documents = crate::forge::schema_revision::enum_documents(&model, dir);
             imported_enums
         } else {
             Default::default()

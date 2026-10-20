@@ -462,8 +462,8 @@ data class SavedRevision(val revision: Int, val fields: String) {
  *   does not know.
  * @property records each record schema a variable is of, by the event it
  *   declares, ordered by it.
- * @property enums each enum a value of the state is of, by its key
- *   (`enum:<alias>`), ordered by it.
+ * @property enums each enum a value of the state is of, by its key, ordered by
+ *   it.
  */
 class SavedShape(
     val first: String,
@@ -476,8 +476,11 @@ class SavedShape(
  * An enum a value of a machine's state is of, as a saved state names it
  * (docs/adr/0044).
  *
- * @property key `enum:` and the alias the machine imports the enum as, which
- *   names it in `revisions`.
+ * @property key `enum:` and the enum's document, which names it in
+ *   `revisions`: a standard document by its `sce:std/...` name, any other by
+ *   its path relative to the machine's own document, `/`-separated. The
+ *   document, not an alias it is imported under, so renaming an alias leaves
+ *   it as it was.
  * @property revision the enum's revision in this machine.
  * @property revisions the digest of what each revision from the second to
  *   [revision] declares, in order ([SavedRevision.fields]).

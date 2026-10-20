@@ -381,24 +381,25 @@ pub fn divergence(first: &EventSchemaModel, second: &EventSchemaModel) -> Option
 }
 
 /// [`divergence`], and then, for each enum field both schemas declare, whether
-/// the enum each side holds under its alias (`first_enums`, `second_enums`, by
-/// alias — what each side's machine imports) is a revision of the other's
-/// ([`enum_divergence`]). An alias one side does not hold is not judged here:
-/// the import pass reports it.
+/// the enum document each side's schema names for it (`first_enums`,
+/// `second_enums`, by field id — [`EnumDocuments::by_field`]) is a revision of
+/// the other's ([`enum_divergence`]). An enum is the document its schema
+/// imports, not the alias a machine reads it by. A field one side holds no
+/// document for is not judged here: the import pass reports it.
 pub fn divergence_with_enums(
     first: &EventSchemaModel,
-    first_enums: &BTreeMap<String, EnumModel>,
+    first_enums: &BTreeMap<String, EnumDocument>,
     second: &EventSchemaModel,
-    second_enums: &BTreeMap<String, EnumModel>,
+    second_enums: &BTreeMap<String, EnumDocument>,
 ) -> Option<Divergence> {
     divergence(first, second).or_else(|| {
         first.fields.iter().find_map(|field| {
-            let SceType::Enum(reference) = &field.sce_type else {
+            let SceType::Enum(_) = &field.sce_type else {
                 return None;
             };
             second.fields.iter().find(|theirs| theirs.id == field.id)?;
-            let one = first_enums.get(&reference.alias)?;
-            let other = second_enums.get(&reference.alias)?;
+            let one = &first_enums.get(&field.id)?.model;
+            let other = &second_enums.get(&field.id)?.model;
             enum_divergence(one, other).map(|divergence| Divergence::Enum {
                 field: field.id.clone(),
                 first_revision: one.revision(),
@@ -407,6 +408,143 @@ pub fn divergence_with_enums(
             })
         })
     })
+}
+
+/// An enum document as a saved state and the Mesh check name it
+/// (docs/adr/0044): by the document, as every reader of an enum identifies it
+/// ([`crate::forge::stdlib::identity`]), not by the alias one document imports
+/// it under.
+#[derive(Debug, Clone)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct EnumDocument {
+    /// The document, spelled so that it is one text on every backend and in
+    /// every checkout ([`document_key`]).
+    pub key: String,
+    /// The enum the document declares.
+    pub model: EnumModel,
+}
+
+/// The enum documents a statechart holds values of, resolved where it is parsed.
+#[derive(Debug, Clone, Default)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct EnumDocuments {
+    /// The statechart's own enum imports, by the alias it imports each under —
+    /// what an `enum:<alias>` variable holds.
+    pub by_alias: BTreeMap<String, EnumDocument>,
+    /// For each event schema the statechart imports, by the event it declares,
+    /// the document each enum field of it is of, by field id — read from the
+    /// schema's own imports, since that is the enum the field's value is.
+    pub by_field: BTreeMap<String, BTreeMap<String, EnumDocument>>,
+}
+
+/// The document `path` (an import resolved by [`crate::forge::stdlib::resolve`])
+/// as a saved state spells it, with `base_dir` the directory of the statechart
+/// whose state it is: a standard document by its folded `sce:std/...` name, any
+/// other file by its path relative to `base_dir`, `.` and `..` folded and each
+/// component separated by `/`. The same text on every backend, since the
+/// generator writes it; the same in every checkout, since it holds no absolute
+/// path; and one text for one document however it is imported, since both
+/// sides are the canonical paths [`crate::forge::stdlib::identity`] compares.
+pub fn document_key(base_dir: &Path, path: &Path) -> String {
+    let identity = crate::forge::stdlib::identity(path);
+    if identity.starts_with(crate::forge::stdlib::SCHEME) {
+        return identity;
+    }
+    let base = std::fs::canonicalize(base_dir).unwrap_or_else(|_| base_dir.to_path_buf());
+    relative_key(&base, Path::new(&identity))
+}
+
+/// `target` relative to `base`, component by component, `/`-separated.
+fn relative_key(base: &Path, target: &Path) -> String {
+    use std::path::Component;
+    let parts = |path: &Path| -> Vec<String> {
+        let mut parts: Vec<String> = Vec::new();
+        for component in path.components() {
+            match component {
+                Component::CurDir => {}
+                Component::ParentDir => {
+                    parts.pop();
+                }
+                other => parts.push(other.as_os_str().to_string_lossy().into_owned()),
+            }
+        }
+        parts
+    };
+    let base = parts(base);
+    let target = parts(target);
+    let common = base
+        .iter()
+        .zip(&target)
+        .take_while(|(one, other)| one == other)
+        .count();
+    let mut key: Vec<String> = vec!["..".to_string(); base.len() - common];
+    key.extend(target[common..].iter().cloned());
+    key.join("/")
+}
+
+/// The enum documents `model`, a statechart parsed from `base_dir`, holds values
+/// of ([`EnumDocuments`]). An import that cannot be read is left out: the import
+/// pass reports it.
+pub fn enum_documents(model: &crate::model::SCXMLModel, base_dir: &Path) -> EnumDocuments {
+    use crate::forge::import_source::ImportSource;
+    use crate::forge::model::ForgeKind;
+
+    let read_enum = |import: &crate::forge::model::ForgeImport, dir: &Path| {
+        let source = ImportSource::read(dir, import).ok()?;
+        let parsed = source.parse().ok()??;
+        match parsed.document {
+            ForgeDocument::Enum(enum_model) => Some(EnumDocument {
+                key: document_key(base_dir, &source.path),
+                model: enum_model,
+            }),
+            _ => None,
+        }
+    };
+    let mut documents = EnumDocuments::default();
+    for import in &model.forge_imports {
+        match import.kind {
+            ForgeKind::Enum => {
+                if let Some(document) = read_enum(import, base_dir) {
+                    documents.by_alias.insert(import.alias.clone(), document);
+                }
+            }
+            ForgeKind::EventSchema => {
+                let Ok(source) = ImportSource::read(base_dir, import) else {
+                    continue;
+                };
+                let Ok(Some(parsed)) = source.parse() else {
+                    continue;
+                };
+                let ForgeDocument::EventSchema(schema) = &parsed.document else {
+                    continue;
+                };
+                // The schema's own imports are written relative to the schema.
+                let schema_dir = source.path.parent().unwrap_or(base_dir);
+                let mut fields = BTreeMap::new();
+                for field in &schema.fields {
+                    let SceType::Enum(reference) = &field.sce_type else {
+                        continue;
+                    };
+                    let Some(enum_import) = parsed
+                        .imports
+                        .iter()
+                        .find(|i| i.alias == reference.alias && i.kind == ForgeKind::Enum)
+                    else {
+                        continue;
+                    };
+                    if let Some(document) = read_enum(enum_import, schema_dir) {
+                        fields.insert(field.id.clone(), document);
+                    }
+                }
+                documents
+                    .by_field
+                    .entry(schema.event_name.clone())
+                    .or_insert(fields);
+            }
+            _ => {}
+        }
+    }
+    documents
 }
 
 /// Whether `first` and `second` are revisions of one enum, and where they part
@@ -906,8 +1044,17 @@ mod tests {
         let layout = field("layout", view_mode(), None, None);
         let sender = at_revision(1, vec![level(), layout.clone()]);
         let receiver = at_revision(1, vec![level(), layout]);
-        let enums_at = |model: EnumModel| -> BTreeMap<String, EnumModel> {
-            std::iter::once(("ViewMode".to_string(), model)).collect()
+        // The document each side's schema names for the field, by field id: the
+        // alias a machine reads it by plays no part.
+        let enums_at = |model: EnumModel| -> BTreeMap<String, EnumDocument> {
+            std::iter::once((
+                "layout".to_string(),
+                EnumDocument {
+                    key: "enum_view_mode.scxml".to_string(),
+                    model,
+                },
+            ))
+            .collect()
         };
         let first = enums_at(view_mode_at(1, vec![month(), week()]));
         let second = enums_at(view_mode_at(2, vec![month(), week(), agenda()]));
@@ -931,11 +1078,60 @@ mod tests {
                 },
             })
         );
-        // An alias one side does not hold is the import pass's to report.
+        // A field one side holds no document for is the import pass's to report.
         assert_eq!(
             divergence_with_enums(&sender, &first, &receiver, &BTreeMap::new()),
             None
         );
+    }
+
+    #[test]
+    fn a_document_key_is_relative_to_the_machine_and_names_a_standard_document_by_its_name() {
+        // Lexical, as the canonical paths it is handed are.
+        assert_eq!(
+            relative_key(
+                Path::new("/w/app/machines"),
+                Path::new("/w/app/machines/enum_a.scxml")
+            ),
+            "enum_a.scxml"
+        );
+        assert_eq!(
+            relative_key(
+                Path::new("/w/app/machines"),
+                Path::new("/w/app/enums/level.scxml")
+            ),
+            "../enums/level.scxml"
+        );
+        assert_eq!(
+            relative_key(
+                Path::new("/w/app/./machines"),
+                Path::new("/w/app/x/../machines/a.scxml")
+            ),
+            "a.scxml"
+        );
+        // A standard document is its folded library name wherever it is read from.
+        assert_eq!(
+            document_key(
+                Path::new("/anywhere"),
+                Path::new("sce:std/merge/../merge/lww_cell.scxml")
+            ),
+            "sce:std/merge/lww_cell.scxml"
+        );
+    }
+
+    #[test]
+    fn the_committed_machine_names_each_enum_by_its_document() {
+        let statechart = fixtures().join("static_schema_pending.scxml");
+        let model = crate::parser::SCXMLParser::new()
+            .parse_file(statechart.to_str().expect("a UTF-8 path"))
+            .unwrap_or_else(|e| panic!("the statechart parses: {e:?}"));
+        // The statechart's own import, and the schema's import for its field:
+        // two aliases or paths, one document, one key.
+        let own = &model.enum_documents.by_alias["SignalLevel"];
+        let field = &model.enum_documents.by_field["signal.raised"]["level"];
+        assert_eq!(own.key, "enum_signal_level.scxml");
+        assert_eq!(field.key, "enum_signal_level.scxml");
+        assert_eq!(field.model.revision(), 2);
     }
 
     /// An enum document whose root carries `root` and whose variants are
@@ -1547,6 +1743,11 @@ mod tests {
                 )
             })
             .collect();
-        assert_eq!(enums, [("enum:SignalLevel", 2, 1, vec!["critical"])]);
+        // The enum by its document, relative to the machine's own: the alias the
+        // machine and the schema read it by plays no part.
+        assert_eq!(
+            enums,
+            [("enum:enum_signal_level.scxml", 2, 1, vec!["critical"])]
+        );
     }
 }

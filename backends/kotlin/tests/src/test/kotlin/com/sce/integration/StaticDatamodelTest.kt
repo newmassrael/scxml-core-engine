@@ -900,10 +900,11 @@ class StaticDatamodelTest {
             assertEquals(0u, sm.refusals)
             assertEquals("""{"level":"high","count":7,"urgent":true}""", pendingLast(sm))
             // Saved again, the state names both revisions it now holds: the
-            // schema's by its event, then the enum's by its key.
+            // schema's by its event, then the enum's by its document, relative
+            // to the machine's.
             val saved = sm.save(pendingSavedAtMs + 1000)
             assertEquals(
-                listOf("signal.raised" to 2, "enum:SignalLevel" to 2),
+                listOf("signal.raised" to 2, "enum:enum_signal_level.scxml" to 2),
                 saved.revisions.map { (key, revision) -> key to revision.revision },
             )
             assertEquals("2619b075d4aa2597ecf884cba0f3b6d95715e5dbdca9bb22dc2d20be2f4dead2", saved.shape)

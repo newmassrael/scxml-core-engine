@@ -836,14 +836,17 @@ fn a_waiting_send_saved_at_the_first_revision_is_delivered_with_the_later_defaul
     );
 
     // Saved again, the state names both revisions it now holds: the schema's by
-    // its event, then the enum's by its key.
+    // its event, then the enum's by its document, relative to the machine's.
     let saved = engine.save_at(SAVED_AT_MS + 1000).expect("saves");
     let named: Vec<(&str, u32)> = saved
         .revisions
         .iter()
         .map(|(key, revision)| (key.as_str(), revision.revision))
         .collect();
-    assert_eq!(named, [("signal.raised", 2), ("enum:SignalLevel", 2)]);
+    assert_eq!(
+        named,
+        [("signal.raised", 2), ("enum:enum_signal_level.scxml", 2)]
+    );
     assert_eq!(
         saved.shape,
         "2619b075d4aa2597ecf884cba0f3b6d95715e5dbdca9bb22dc2d20be2f4dead2"
