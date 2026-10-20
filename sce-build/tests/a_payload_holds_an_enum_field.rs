@@ -13,6 +13,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use sce_build::generator::Language;
 use tempfile::tempdir;
 
 fn sce_codegen_bin() -> PathBuf {
@@ -164,7 +165,10 @@ fn the_enum_a_payload_field_holds_is_imported_under_the_alias_the_schema_writes(
     // none of: refused naming the alias, in every language that lowers a payload
     // enum, and not left to stop the generator.
     let body = r#"<assign location="total" expr="_event.data.count"/>"#;
-    for language in ["rust", "kotlin", "go", "python", "cpp", "c11"] {
+    for language in Language::ALL
+        .iter()
+        .map(|language| language.canonical_name())
+    {
         refused(
             &["check", "-l", language],
             &machine(false, body),

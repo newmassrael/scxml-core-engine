@@ -299,14 +299,7 @@ fn keyexpr_match_first_emits_on_all_six_backends() {
     // downstream-side C8 / C12 fixtures (which author their own
     // keyexpr_intersect variants against this v1 contract) exercise
     // the full pattern.
-    for lang in [
-        Language::Rust,
-        Language::Cpp,
-        Language::Kotlin,
-        Language::Go,
-        Language::Python,
-        Language::C11,
-    ] {
+    for &lang in Language::ALL {
         let code = compile_match_first_for(lang);
         // Axis 1: BC iteration surfaces.
         let slot_marker = match lang {

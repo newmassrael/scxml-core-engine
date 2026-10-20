@@ -31,6 +31,7 @@ mod common;
 use sce_build::forge::declared_names::SCOPES;
 use sce_build::forge::diagnostic::ToDiagnostics;
 use sce_build::forge::error::{ForgeError, Located};
+use sce_build::generator::Language;
 use sce_build::reader_names::Case;
 
 const CODE: &str = "\"validation/colliding-code-identifier\"";
@@ -402,7 +403,13 @@ fn a_pair_only_one_backend_folds_is_still_refused_for_all_of_them() {
     let message = refusal.error.to_string();
     let go = format!("go code spells both '{}'", Case::Pascal.spell(first));
     assert!(message.contains(&go), "{message}");
-    for builds in ["rust", "python", "c11", "cpp", "kotlin"] {
+    for builds in Language::ALL
+        .iter()
+        // Go is left out: it is the one backend that folds the pair, because
+        // it capitalises a codec member and folds the underscore away.
+        .filter(|language| **language != Language::Go)
+        .map(|language| language.canonical_name())
+    {
         assert!(
             !message.contains(&format!("{builds} code")),
             "{builds} builds it: {message}"

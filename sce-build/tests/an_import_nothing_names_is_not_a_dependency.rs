@@ -17,15 +17,6 @@
 use sce_build::generator::Language;
 use sce_build::{DocumentLabel, ForgeCompileOptions};
 
-const LANGUAGES: [Language; 6] = [
-    Language::Cpp,
-    Language::C11,
-    Language::Rust,
-    Language::Kotlin,
-    Language::Go,
-    Language::Python,
-];
-
 /// The imported enum's document name — every backend spells the
 /// dependency on it with this snake form (an include, a `use`, a package
 /// path, a module import).
@@ -79,7 +70,7 @@ fn generated(scxml: &str, language: Language) -> String {
 #[test]
 fn an_import_the_document_names_is_a_dependency_on_every_backend() {
     let scxml = transform("enum:Nrc");
-    for language in LANGUAGES {
+    for &language in Language::ALL {
         let code = generated(&scxml, language);
         assert!(
             code.contains(IMPORTED),
@@ -91,7 +82,7 @@ fn an_import_the_document_names_is_a_dependency_on_every_backend() {
 #[test]
 fn an_import_nothing_names_is_not_a_dependency_on_any_backend() {
     let scxml = transform("uint8");
-    for language in LANGUAGES {
+    for &language in Language::ALL {
         let code = generated(&scxml, language);
         assert!(
             !code.contains(IMPORTED),

@@ -17,6 +17,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use sce_build::generator::Language;
 use tempfile::tempdir;
 
 fn sce_codegen_bin() -> PathBuf {
@@ -383,7 +384,11 @@ fn c11_names_each_construct_it_does_not_lower_yet() {
 /// The languages that lower a `sce-static` document, each of which holds a record's
 /// `string` field within the bound its schema declares (docs/adr/0005, decision 1).
 /// Go is checked with a module prefix, which it needs to write its imports.
-const RECORD_STRING_FIELD: &[&str] = &["rust", "kotlin", "go", "cpp", "python", "c11"];
+fn record_string_field() -> impl Iterator<Item = &'static str> {
+    Language::ALL
+        .iter()
+        .map(|language| language.canonical_name())
+}
 
 /// `check -l <lang>` of `document`, with what that language needs to read it.
 fn check_in(lang: &str, document: &str, siblings: &[(&str, &str)]) -> (bool, String) {
@@ -461,7 +466,7 @@ fn every_language_holds_a_record_string_field() {
     let schema = label_schema(r#"sce:max-size="8""#);
     let siblings = [("schema_label.scxml", schema.as_str())];
     for (held, document) in &labelled_documents() {
-        for lang in RECORD_STRING_FIELD {
+        for lang in record_string_field() {
             let (ok, out) = check_in(lang, document, &siblings);
             assert!(ok, "{lang}, {held}: it lowers the field:\n{out}");
         }
@@ -476,7 +481,7 @@ fn a_record_string_field_the_schema_does_not_bound_is_refused_by_every_language(
     let schema = label_schema("");
     let siblings = [("schema_label.scxml", schema.as_str())];
     for (held, document) in &labelled_documents() {
-        for lang in RECORD_STRING_FIELD {
+        for lang in record_string_field() {
             let (ok, out) = check_in(lang, document, &siblings);
             assert!(!ok, "{lang}, {held}: the field has no bound:\n{out}");
             assert!(
@@ -515,7 +520,7 @@ fn a_record_string_field_starts_at_a_literal_that_fits_its_bound() {
       <sce:set name="label" expr="{label}"/>
     </data>"#
         ));
-        for lang in RECORD_STRING_FIELD {
+        for lang in record_string_field() {
             let (ok, out) = check_in(lang, &document, &siblings);
             assert!(
                 !ok,
@@ -534,7 +539,7 @@ fn a_record_string_field_starts_at_a_literal_that_fits_its_bound() {
       <sce:set name="label" expr="'é€€'"/>
     </data>"#,
     );
-    for lang in RECORD_STRING_FIELD {
+    for lang in record_string_field() {
         let (ok, out) = check_in(lang, &fits, &siblings);
         assert!(ok, "{lang}: eight bytes fit a bound of eight:\n{out}");
     }
@@ -545,7 +550,11 @@ fn a_record_string_field_starts_at_a_literal_that_fits_its_bound() {
 /// a variable, a record's field, a typed payload's field and a `<param>`. The
 /// staging that said which language held which place — a refusal by name, lifted
 /// by the commit that lowered the place — was removed when the last of them did.
-const BYTES_LANGUAGES: &[&str] = &["rust", "kotlin", "go", "cpp", "python", "c11"];
+fn bytes_languages() -> impl Iterator<Item = &'static str> {
+    Language::ALL
+        .iter()
+        .map(|language| language.canonical_name())
+}
 
 /// The schema of a record with a byte-string field, bounded by `max_size`
 /// (`sce:max-size="8"`), or by none when that is empty.
@@ -639,7 +648,7 @@ fn every_language_holds_a_byte_string_in_every_place() {
         },
     ];
     for ByteDocument { what, document } in &documents {
-        for lang in BYTES_LANGUAGES {
+        for lang in bytes_languages() {
             let (ok, out) = check_in(lang, document, &siblings);
             assert!(ok, "{lang}, {what}: it lowers the value:\n{out}");
         }
@@ -671,7 +680,7 @@ fn a_byte_string_with_no_bound_is_refused_by_every_language() {
         ),
     ];
     for (held, document, expected) in &documents {
-        for lang in BYTES_LANGUAGES {
+        for lang in bytes_languages() {
             let (ok, out) = check_in(lang, document, &siblings);
             assert!(!ok, "{lang}, {held}: the value has no bound:\n{out}");
             assert!(
@@ -701,7 +710,7 @@ fn a_byte_string_starts_at_printable_ascii_that_fits_its_bound() {
         let document = holding_frame(&format!(
             r#"<data id="frame" sce:type="bytes" sce:capacity="4" expr="{literal}"/>"#
         ));
-        for lang in BYTES_LANGUAGES {
+        for lang in bytes_languages() {
             let (ok, out) = check_in(lang, &document, &siblings);
             assert!(
                 !ok,
@@ -738,7 +747,7 @@ fn a_string_stands_for_bytes_only_as_a_printable_ascii_literal() {
 "##
         )
     };
-    for lang in BYTES_LANGUAGES {
+    for lang in bytes_languages() {
         for (value, stands) in [
             ("'xy'", true),
             ("tail", true),
@@ -805,7 +814,10 @@ fn a_payload_enum_field_the_document_does_not_import_is_refused_by_name_in_every
   </state>
 </scxml>
 "##;
-    for language in ["kotlin", "rust", "cpp", "go", "python", "c"] {
+    for language in Language::ALL
+        .iter()
+        .map(|language| language.canonical_name())
+    {
         let out_dir = tempdir().expect("tempdir");
         let (ok, out) = run_beside(
             &[
@@ -930,7 +942,10 @@ fn a_host_run_invoke_is_lowered_where_its_params_are_read_from_the_fields() {
             .join("sce-build/tests/fixtures/host_processor/statechart_static_host_invoke.scxml"),
     )
     .expect("the host invoke fixture");
-    for lang in ["rust", "kotlin", "go", "cpp", "python", "c11"] {
+    for lang in Language::ALL
+        .iter()
+        .map(|language| language.canonical_name())
+    {
         let (ok, out) = run(
             &[
                 "check",
@@ -962,7 +977,10 @@ fn every_backend_lowers_the_model_with_no_script_engine() {
     // document evaluated by a script engine in a language it never declared is
     // what `datamodel` exists to prevent — and one added to the language list
     // with neither fails here, not for a user.
-    for lang in ["kotlin", "rust", "cpp", "go", "python", "c11"] {
+    for lang in Language::ALL
+        .iter()
+        .map(|language| language.canonical_name())
+    {
         let (ok, out) = run(
             &["check", "-l", lang],
             &machine(
@@ -992,7 +1010,10 @@ fn a_32_bit_real_is_held_by_every_backend_alone_in_a_list_and_as_a_record_field(
     let alone = read("static_real32.scxml");
     let record = read("static_record_real32.scxml");
     let schema = read("schema_reading32.scxml");
-    for lang in ["kotlin", "rust", "cpp", "go", "python", "c11"] {
+    for lang in Language::ALL
+        .iter()
+        .map(|language| language.canonical_name())
+    {
         let (ok, out) = run(&["check", "-l", lang], &alone);
         assert!(
             ok,
@@ -1157,7 +1178,11 @@ fn routing(send: &str) -> String {
 /// that matches (docs/adr/0005, decision 3). Each was refused by name until it did,
 /// and the refusal was removed from the shared walk when the last of them did. The
 /// Interpreter is read through `lower`.
-const COMPUTED_TARGET_LANGUAGES: &[&str] = &["rust", "kotlin", "go", "python", "cpp", "c11"];
+fn computed_target_languages() -> impl Iterator<Item = &'static str> {
+    Language::ALL
+        .iter()
+        .map(|language| language.canonical_name())
+}
 
 #[test]
 fn a_computed_target_that_declares_its_routes_is_accepted_by_the_document() {
@@ -1311,7 +1336,7 @@ fn sce_targets_under_a_script_data_model_is_read_and_not_held_to() {
 fn every_generated_language_accepts_a_computed_target_that_declares_its_routes() {
     let document =
         routing(r##"<send event="go" targetexpr="route" sce:targets="#_internal #_parent"/>"##);
-    for &lang in COMPUTED_TARGET_LANGUAGES {
+    for lang in computed_target_languages() {
         let (ok, out) = run(&check_args(lang), &document);
         assert!(
             ok,
@@ -1515,7 +1540,7 @@ fn every_generated_language_delivers_a_computed_type_by_the_processor_it_names()
     let scxml_only = typing(&format!(
         r##"<send event="go" typeexpr="kind" sce:types="{SCXML_PROCESSOR}"/>"##
     ));
-    for &lang in COMPUTED_TARGET_LANGUAGES {
+    for lang in computed_target_languages() {
         let (ok, out) = run(&check_args(lang), &scxml_only);
         assert!(ok, "{lang} delivers a computed SCXML type:\n{out}");
     }
@@ -1525,7 +1550,7 @@ fn every_generated_language_delivers_a_computed_type_by_the_processor_it_names()
     let with_http = typing(&format!(
         r##"<send event="go" typeexpr="kind" sce:types="{SCXML_PROCESSOR} {HTTP_PROCESSOR}"/>"##
     ));
-    for &lang in COMPUTED_TARGET_LANGUAGES {
+    for lang in computed_target_languages() {
         let (ok, out) = run(&check_args(lang), &with_http);
         assert!(ok, "{lang} delivers a computed BasicHTTP type:\n{out}");
     }
@@ -1539,7 +1564,7 @@ fn every_generated_language_lowers_a_basic_http_send_carrying_params() {
     let document = typing(&format!(
         r##"<send event="note" type="{HTTP_PROCESSOR}" target="http://example.invalid/hook"><param name="k" expr="count"/></send>"##
     ));
-    for &lang in COMPUTED_TARGET_LANGUAGES {
+    for lang in computed_target_languages() {
         let (ok, out) = run(&check_args(lang), &document);
         assert!(ok, "{lang} lowers a BasicHTTP send with a param:\n{out}");
     }
@@ -1900,7 +1925,13 @@ fn every_backend_hands_a_string_to_a_child_that_declares_its_bound() {
         r#"<param name="title" expr="'x'"/>"#,
         r#"<data id="title" sce:type="string" sce:capacity="8" expr="''"/>"#,
     );
-    for lang in ["rust", "kotlin", "cpp", "python", "c11"] {
+    for lang in Language::ALL
+        .iter()
+        // Go is checked below, with the module prefix it needs to write its
+        // imports.
+        .filter(|language| **language != Language::Go)
+        .map(|language| language.canonical_name())
+    {
         let (ok, out) = run(&["check", "-l", lang], &document);
         assert!(ok, "{lang}: the child declares `title`, a string:\n{out}");
     }
@@ -1918,7 +1949,11 @@ fn every_backend_hands_a_string_to_a_child_that_declares_its_bound() {
 /// did. The Interpreter is no generated language: its lowering is read through
 /// `lower`, and its engine gives the child the host
 /// (`INativeActionHost::hostForChild`).
-const CHILD_HOST_LANGUAGES: &[&str] = &["rust", "kotlin", "go", "cpp", "python", "c11"];
+fn child_host_languages() -> impl Iterator<Item = &'static str> {
+    Language::ALL
+        .iter()
+        .map(|language| language.canonical_name())
+}
 
 /// The arguments `check` takes to generate for `lang`: Go also names the module
 /// its packages live under.
@@ -1956,7 +1991,7 @@ fn every_language_builds_a_child_with_the_host_its_parent_answers() {
     <transition event="done.invoke.child" target="done"/>
   </state>"#,
     );
-    for &lang in CHILD_HOST_LANGUAGES {
+    for lang in child_host_languages() {
         let (ok, out) = run(&check_args(lang), &document);
         assert!(
             ok,
@@ -2009,7 +2044,7 @@ fn a_parent_of_another_data_model_gives_its_child_the_host_too() {
   <final id="done"/>
 </scxml>
 "##;
-    for &lang in CHILD_HOST_LANGUAGES {
+    for lang in child_host_languages() {
         let (ok, out) = run(&check_args(lang), document);
         assert!(
             ok,
@@ -2044,7 +2079,7 @@ fn a_candidate_that_declares_acts_is_given_its_host_as_a_child_is() {
         ("first.scxml", HYBRID_FIRST),
         ("second.scxml", HYBRID_ACTING),
     ];
-    for &lang in CHILD_HOST_LANGUAGES {
+    for lang in child_host_languages() {
         let (ok, out) = run_beside(&check_args(lang), &document, &siblings);
         assert!(
             ok,
@@ -3050,7 +3085,13 @@ fn a_send_delayexpr_is_lowered_to_the_string_it_computes_and_needs_no_engine() {
     // is, so no engine evaluates it: the manifest says so, and says that the
     // machine must be driven with `tick()` for the delay to come due.
     let document = sending_with(r#"delayexpr="count + 'ms'""#);
-    for language in ["rust", "go", "kotlin", "python", "cpp"] {
+    for language in Language::ALL
+        .iter()
+        // C11 has its own test below, which reads the buffer the data model
+        // sizes for the joined string.
+        .filter(|language| **language != Language::C11)
+        .map(|language| language.canonical_name())
+    {
         let out_dir = tempdir().expect("tempdir");
         let (ok, out) = run(
             &[
@@ -3304,7 +3345,13 @@ fn a_send_eventexpr_is_lowered_to_the_string_it_computes_and_needs_no_engine() {
     // Read from the machine's fields when the send runs, as a `<param>`'s value
     // is, so no engine evaluates it and the manifest says so.
     let document = sending_event(r#"eventexpr="'on.' + count""#);
-    for language in ["rust", "go", "kotlin", "python", "cpp"] {
+    for language in Language::ALL
+        .iter()
+        // C11 has its own test below, which reads the buffer the data model
+        // sizes for the joined string.
+        .filter(|language| **language != Language::C11)
+        .map(|language| language.canonical_name())
+    {
         let out_dir = tempdir().expect("tempdir");
         let (ok, out) = run(
             &[
@@ -3490,7 +3537,13 @@ fn a_cancel_sendidexpr_is_lowered_to_the_string_it_computes_and_needs_no_engine(
     // Read from the machine's fields when the cancel runs, so no engine
     // evaluates it and the manifest says so.
     let document = cancelling(r#"sendidexpr="'timer.' + count""#);
-    for language in ["rust", "go", "kotlin", "python", "cpp"] {
+    for language in Language::ALL
+        .iter()
+        // C11 has its own test below, which reads the buffer the data model
+        // sizes for the joined string.
+        .filter(|language| **language != Language::C11)
+        .map(|language| language.canonical_name())
+    {
         let out_dir = tempdir().expect("tempdir");
         let (ok, out) = run(
             &[
@@ -4335,7 +4388,7 @@ fn every_generated_language_serves_a_static_mesh_request_by_the_route_it_has() {
     // as a host-served invoke, and C++ sends it by the router it generates. None
     // refuses a static document that carries one.
     let document = mesh_requesting(r#"<param name="k" expr="count"/>"#);
-    for &lang in COMPUTED_TARGET_LANGUAGES {
+    for lang in computed_target_languages() {
         let (ok, out) = run(&check_args(lang), &document);
         assert!(ok, "{lang} serves a static Mesh request:\n{out}");
     }
@@ -4441,7 +4494,7 @@ fn every_generated_language_serves_a_static_mesh_request_that_names_its_peer() {
     // The five without a router of their own hand the request to the host as a
     // host-served invoke, whose `srcexpr` every one of them lowers, and C++ sends it by
     // the router it generates. None refuses a static document that carries one.
-    for &lang in COMPUTED_TARGET_LANGUAGES {
+    for lang in computed_target_languages() {
         let (ok, out) = run(&check_args(lang), &mesh_asking("peer"));
         assert!(
             ok,
@@ -4928,7 +4981,10 @@ fn a_host_run_invoke_namelist_is_the_params_it_abbreviates_and_needs_no_engine()
     let written = invoking_the_host(
         r#"<invoke type="x-sce-host" id="h"><param name="k" expr="count * 2"/><param name="count" expr="count"/><param name="ready" expr="ready"/></invoke>"#,
     );
-    for language in ["rust", "kotlin", "go", "python", "c", "cpp"] {
+    for language in Language::ALL
+        .iter()
+        .map(|language| language.canonical_name())
+    {
         let (out, from_short) = generated_code(language, &short);
         let (_, from_written) = generated_code(language, &written);
         assert!(
@@ -6035,8 +6091,9 @@ fn every_scenario_is_replayed_on_every_backend_that_lowers_its_machine() {
             .iter()
             .map(|(name, text)| (name.as_str(), text.as_str()))
             .collect();
-        let lowering: Vec<&str> = ["cpp", "c11", "go", "python", "kotlin", "rust"]
-            .into_iter()
+        let lowering: Vec<&str> = Language::ALL
+            .iter()
+            .map(|language| language.canonical_name())
             .filter(|lang| run_beside(&["check", "-l", lang], &document, &siblings).0)
             .collect();
         // The Interpreter is no language `check` names, and it finds the scenarios

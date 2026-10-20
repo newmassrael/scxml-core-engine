@@ -28,6 +28,9 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use sce_build::generator::Language;
+use sce_build::manifest::language_wire_name;
+
 fn sce_codegen_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_sce-codegen"))
 }
@@ -80,8 +83,13 @@ impl Drop for ScratchDir {
     }
 }
 
-/// Backends, in the order `Language::ALL` declares them.
-const BACKENDS: &[&str] = &["rust", "cpp", "kotlin", "go", "python", "c11"];
+/// Backends, as `--language` names them, in the order `Language::ALL`
+/// declares them.
+fn backends() -> impl Iterator<Item = &'static str> {
+    Language::ALL
+        .iter()
+        .map(|language| language.canonical_name())
+}
 
 /// What one invocation reported: process exit status and, when it
 /// failed, the `code` of the first NDJSON diagnostic on stderr.
@@ -272,7 +280,7 @@ fn check_and_generate_agree_on_every_document_and_backend() {
 
     for doc in &docs {
         let doc_str = doc.to_str().expect("fixture path is utf8");
-        for backend in BACKENDS {
+        for backend in backends() {
             let (gen_verdict, _) = run(
                 &[
                     "generate",
@@ -467,13 +475,18 @@ fn backend_axis_refusal_is_fatal_only_when_the_backend_was_named() {
 
     assert_eq!(
         verdicts.len(),
-        BACKENDS.len(),
+        Language::ALL.len(),
         "sweep must report every backend: {verdicts:?}",
     );
     assert_eq!(verdicts.get("cpp").map(String::as_str), Some("ok"));
-    for backend in BACKENDS.iter().filter(|b| **b != "cpp") {
+    for backend in Language::ALL
+        .iter()
+        // C++ owns `cpp:` and lowers it, as asserted above.
+        .filter(|language| **language != Language::Cpp)
+        .map(|language| language_wire_name(*language))
+    {
         assert_eq!(
-            verdicts.get(*backend).map(String::as_str),
+            verdicts.get(backend).map(String::as_str),
             Some("rejected"),
             "{backend} cannot lower a `cpp:` guard — it is C++ source — and must \
              report rejected",

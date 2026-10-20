@@ -896,14 +896,7 @@ fn template_ships_matrix_fully_closed() {
     // catches the broken-template fallout.
     use sce_build::forge::codegen_matrix::{lookup, EmitOutcome};
     use sce_build::forge::model::ForgeKind;
-    for lang in [
-        Language::Rust,
-        Language::Cpp,
-        Language::Kotlin,
-        Language::Go,
-        Language::Python,
-        Language::C11,
-    ] {
+    for &lang in Language::ALL {
         assert_eq!(
             lookup(ForgeKind::BoundedCollection, lang),
             EmitOutcome::Emit,

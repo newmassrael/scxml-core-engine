@@ -1162,7 +1162,10 @@ fn a_record_algorithm_is_callable_from_an_algorithm_of_the_same_schema() {
         "probe_record_call_same_schema.scxml",
         "probe_record_call_std_schema.scxml",
     ] {
-        for language in ["rust", "cpp", "c11", "go", "python", "kotlin"] {
+        for language in Language::ALL
+            .iter()
+            .map(|language| language.canonical_name())
+        {
             let output = Command::new(codegen_bin())
                 .current_dir(dir.path())
                 .args([
@@ -1192,7 +1195,10 @@ fn a_record_algorithm_is_callable_from_an_algorithm_of_the_same_schema() {
 #[test]
 fn a_record_with_bounded_text_is_accepted_on_every_backend() {
     let dir = fixture();
-    for language in ["rust", "cpp", "c11", "go", "python", "kotlin"] {
+    for language in Language::ALL
+        .iter()
+        .map(|language| language.canonical_name())
+    {
         let output = Command::new(codegen_bin())
             .current_dir(dir.path())
             .args([

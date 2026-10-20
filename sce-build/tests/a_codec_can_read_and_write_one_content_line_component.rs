@@ -475,14 +475,7 @@ fn every_backend_generates_a_line_record_and_a_list_of_values() {
         .content_line
         .as_ref()
         .is_some_and(|c| c.uses_line_records()));
-    for lang in [
-        Language::Rust,
-        Language::Kotlin,
-        Language::Cpp,
-        Language::Go,
-        Language::Python,
-        Language::C11,
-    ] {
+    for &lang in Language::ALL {
         let refusal = content_line_codec::refusal(lang, &m);
         assert!(refusal.is_none(), "{lang:?}: {refusal:?}");
     }
@@ -495,14 +488,7 @@ fn every_backend_generates_a_line_record_and_a_list_of_values() {
 #[test]
 fn every_backend_generates_a_content_line_codec() {
     let m = codec(&document("", EVENT));
-    for lang in [
-        Language::Rust,
-        Language::Kotlin,
-        Language::Cpp,
-        Language::Go,
-        Language::Python,
-        Language::C11,
-    ] {
+    for &lang in Language::ALL {
         assert!(content_line_codec::lowers(lang), "{lang:?}");
         assert_eq!(content_line_codec::refusal(lang, &m), None, "{lang:?}");
     }
@@ -513,14 +499,15 @@ fn the_generator_writes_the_codec_in_every_language() {
     let dir = tempdir().expect("tempdir");
     let source = dir.path().join("probe_event.scxml");
     std::fs::write(&source, document("", EVENT)).expect("write the document");
-    for lang in ["rust", "kotlin", "cpp", "go", "python", "c11"] {
+    for &language in Language::ALL {
+        let lang = language.canonical_name();
         let out = dir.path().join(format!("out_{lang}"));
         let mut command = Command::new(env!("CARGO_BIN_EXE_sce-codegen"));
         command
             .args(["generate", "-l", lang, "-o"])
             .arg(&out)
             .arg(&source);
-        if lang == "go" {
+        if language == Language::Go {
             command.args(["--go-module-prefix", "x/y"]);
         }
         let output = command.output().expect("run sce-codegen");
@@ -660,14 +647,7 @@ fn an_enum_entry_takes_none_of_a_strings_own_attributes() {
 #[test]
 fn every_backend_generates_an_enum_entry() {
     let m = codec(&enum_document(ENUM_ENTRIES));
-    for lang in [
-        Language::Rust,
-        Language::Kotlin,
-        Language::Cpp,
-        Language::Go,
-        Language::Python,
-        Language::C11,
-    ] {
+    for &lang in Language::ALL {
         let refusal = content_line_codec::refusal(lang, &m);
         assert!(refusal.is_none(), "{lang:?}: {refusal:?}");
     }

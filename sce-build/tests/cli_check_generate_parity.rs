@@ -37,6 +37,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use sce_build::generator::Language;
+
 fn sce_codegen_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_sce-codegen"))
 }
@@ -494,8 +496,13 @@ const HOST_FIXTURE: &str =
     "sce-build/tests/fixtures/host_processor/statechart_host_processor.scxml";
 const DECLARED_TYPE: &str = "x-sce-host";
 
-/// Every backend `generate` and `check` both route to.
-const BACKENDS: [&str; 6] = ["rust", "cpp", "c11", "kotlin", "go", "python"];
+/// Every backend `generate` and `check` both route to, as `--language` names
+/// it.
+fn backends() -> impl Iterator<Item = &'static str> {
+    Language::ALL
+        .iter()
+        .map(|language| language.canonical_name())
+}
 
 /// Enough flags must reach the comparison for a clean result to mean
 /// anything. Measured when this gate was written: `generate` declares 27
@@ -808,7 +815,7 @@ fn check_and_generate_agree_about_a_host_declaration() {
     let mut refused_with_declaration = 0;
     let mut refused_without = 0;
 
-    for backend in BACKENDS {
+    for backend in backends() {
         for declared in [false, true] {
             let out = ScratchDir::new("host-decl");
             let dir = out.path();
@@ -918,7 +925,7 @@ fn check_and_generate_agree_about_a_host_declaration() {
     // by then the manifest agreement above and the per-backend dispatch
     // channels are what hold the seam.
     assert!(
-        refused_with_declaration > 0 || BACKENDS.len() == count_backends_with_registry(),
+        refused_with_declaration > 0 || Language::ALL.len() == count_backends_with_registry(),
         "no backend refused the declaration, and not every backend has a \
          registry either — the flag stopped reaching the backends",
     );
@@ -931,8 +938,7 @@ fn check_and_generate_agree_about_a_host_declaration() {
 fn count_backends_with_registry() -> usize {
     let out = ScratchDir::new("registry-count");
     let dir = out.path();
-    BACKENDS
-        .iter()
+    backends()
         .filter(|b| {
             run(&[
                 "generate",

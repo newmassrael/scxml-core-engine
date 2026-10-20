@@ -22,6 +22,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use sce_build::generator::Language;
 use sce_build::toolchain;
 
 fn sce_codegen_bin() -> String {
@@ -239,7 +240,11 @@ fn delayed(sce_type: &str) -> String {
     )
 }
 
-const LANGUAGES: [&str; 6] = ["python", "cpp", "rust", "go", "kotlin", "c"];
+fn languages() -> impl Iterator<Item = &'static str> {
+    Language::ALL
+        .iter()
+        .map(|language| language.canonical_name())
+}
 
 #[test]
 fn every_backend_generates_a_holder_for_a_document_that_reads_previous() {
@@ -253,7 +258,7 @@ fn every_backend_generates_a_holder_for_a_document_that_reads_previous() {
     <data id="twice" sce:type="int32" sce:direction="out" expr="step * 2"/>"#,
         ),
     );
-    for lang in LANGUAGES {
+    for lang in languages() {
         let run = generated(&doc, &t.dir(lang), lang);
         // The manifest tells the host it must drive a holder, and names
         // it — and every name it gives is one the generated code defines,
@@ -320,7 +325,13 @@ fn a_string_cell_is_lowered_where_the_holder_owns_the_string() {
     let t = Tmp::new("string");
     let text = delayed("string");
     let doc = t.write("delayed.scxml", &text);
-    for lang in ["python", "cpp", "rust", "go", "kotlin"] {
+    for lang in Language::ALL
+        .iter()
+        // C11 is asserted below: it keeps a string as a pointer into the
+        // caller's buffer, so it refuses the cell.
+        .filter(|language| **language != Language::C11)
+        .map(|language| language.canonical_name())
+    {
         generated(&doc, &t.dir(lang), lang);
     }
     // C11 keeps a string as a pointer into the caller's buffer — refused,
@@ -399,7 +410,7 @@ fn a_bytes_cell_is_refused_on_every_backend() {
     let t = Tmp::new("bytes");
     let text = delayed("bytes");
     let doc = t.write("delayed.scxml", &text);
-    for lang in LANGUAGES {
+    for lang in languages() {
         let run = generate(&doc, &t.dir(lang), lang);
         assert_ne!(run.exit, Some(0), "{lang} generated a bytes cell");
         let record = only_record(&run);
@@ -497,7 +508,7 @@ fn a_transform_that_keeps_state_is_not_imported_as_a_pure_function() {
     );
     let text = caller("accumulated.scxml", "imported(step) + 1");
     let stateful = t.write("calls_stateful.scxml", &text);
-    for lang in LANGUAGES {
+    for lang in languages() {
         // Go refuses every import it cannot qualify by module, first; the
         // prefix is what lets the question this asks be asked at all.
         let extra: &[&str] = if lang == "go" {
@@ -575,7 +586,7 @@ fn a_field_named_like_pythons_instance_is_refused_before_any_holder() {
           expr="previous(total) + self"/>"#,
         ),
     );
-    for lang in LANGUAGES {
+    for lang in languages() {
         let run = generate(&doc, &t.dir(lang), lang);
         assert_ne!(run.exit, Some(0), "{lang} generated a field named `self`");
         assert!(
@@ -732,7 +743,7 @@ fn a_retained_field_starts_from_what_the_host_stored() {
     let doc = t.write("stored.scxml", &stored());
     // The manifest names the extra constructor exactly when a retained
     // field is read through `previous()`.
-    for lang in LANGUAGES {
+    for lang in languages() {
         let run = generated(&doc, &t.dir(&format!("{lang}_manifest")), lang);
         assert!(
             run.manifest()["holder"]["restored"].is_string(),

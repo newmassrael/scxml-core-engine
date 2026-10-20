@@ -419,14 +419,7 @@ fn c7_lowering_emits_on_all_six_backends() {
     // that drops the dispatch on one backend would be caught here
     // before `c7_keyexpr_fixture.rs` exercises the full
     // exemplar.
-    for lang in [
-        Language::Rust,
-        Language::Cpp,
-        Language::Kotlin,
-        Language::Go,
-        Language::Python,
-        Language::C11,
-    ] {
+    for &lang in Language::ALL {
         let code = compile_algo_for(lang);
         let slot_marker = match lang {
             Language::Kotlin | Language::Go => "sceSlotIdx",

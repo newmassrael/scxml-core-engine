@@ -14,9 +14,8 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use sce_build::generator::Language;
 use tempfile::tempdir;
-
-const LANGUAGES: [&str; 6] = ["rust", "go", "kotlin", "python", "cpp", "c11"];
 
 const REQUEST: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -116,7 +115,10 @@ fn values_the_fields_hold_are_accepted_on_every_backend() {
     // `byte_v` widens into an int32, `label` is bound within the field's 16
     // bytes, and a float32 variable is the field's own type.
     let accepted = doc("16", "label", "byte_v", "truth", "real_s");
-    for language in LANGUAGES {
+    for language in Language::ALL
+        .iter()
+        .map(|language| language.canonical_name())
+    {
         let (ok, text) = check(&["-l", language], &accepted);
         assert!(ok, "{language} refused a request every field holds: {text}");
     }

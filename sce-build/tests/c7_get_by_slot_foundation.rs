@@ -287,14 +287,7 @@ fn get_by_slot_emits_on_all_six_backends() {
     // foundation contract above. A regression that drops the method
     // on one backend would fail this guard before the foreach-BC
     // lowering tests catch the missing dispatch target.
-    for lang in [
-        Language::Rust,
-        Language::Cpp,
-        Language::Kotlin,
-        Language::Go,
-        Language::Python,
-        Language::C11,
-    ] {
+    for &lang in Language::ALL {
         let code = compile_bc_for(lang);
         let needle = match lang {
             Language::Go => "GetBySlot",
@@ -317,14 +310,7 @@ fn get_by_slot_does_not_disturb_existing_get_handle_path() {
     // Drift guard: introducing `get_by_slot` must NOT alter the
     // existing Handle-based `get(handle)` emit. Catches a refactor
     // regression that accidentally folded the two methods.
-    for lang in [
-        Language::Rust,
-        Language::Cpp,
-        Language::Kotlin,
-        Language::Go,
-        Language::Python,
-        Language::C11,
-    ] {
+    for &lang in Language::ALL {
         let code = compile_bc_for(lang);
         // Each backend's Handle-based get still emits with its
         // generation check inline (the use-after-remove guard).

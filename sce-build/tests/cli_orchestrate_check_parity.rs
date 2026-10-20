@@ -53,6 +53,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use sce_build::generator::Language;
+use sce_build::manifest::language_wire_name;
+
 fn sce_codegen_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_sce-codegen"))
 }
@@ -437,11 +440,6 @@ const HOST_INVOKER_DOC: &str =
 /// two comparable across the change.
 const CPP_HOST_INVOKE_START: &str = "performHostInvoke(";
 
-/// Every backend SCE generates. The parity claim is per backend, not in
-/// aggregate: two commands that disagree about one language while agreeing
-/// about the other five agree about nothing that matters.
-const EVERY_BACKEND: [&str; 6] = ["rust", "cpp", "c11", "go", "python", "kotlin"];
-
 /// §scxml-6.2.5 + §scxml-6.4.1 — the host declarations reach the producer
 /// `check`'s document-set route claims to predict.
 ///
@@ -532,8 +530,12 @@ fn the_host_declarations_reach_the_producer_that_check_predicts() {
 
     // Every backend must appear in the answer. Without this floor a
     // `check` that quietly stopped reporting a language would satisfy the
-    // agreement loop below by having nothing to disagree about.
-    for lang in EVERY_BACKEND {
+    // agreement loop below by having nothing to disagree about. The claim
+    // is per backend, not in aggregate: two commands that disagree about one
+    // language while agreeing about the others agree about nothing that
+    // matters.
+    for &language in Language::ALL {
+        let lang = language_wire_name(language);
         assert!(
             checked.stdout.contains(&format!(r#""language":"{lang}""#)),
             "check reported no verdict at all for {lang}: {}",
@@ -546,7 +548,9 @@ fn the_host_declarations_reach_the_producer_that_check_predicts() {
     // purpose: the property that must hold is "check's verdict is one its
     // producer can reach", and the day one backend stops clearing is
     // exactly the day nobody would think to re-derive it by hand.
-    for lang in EVERY_BACKEND {
+    for &language in Language::ALL {
+        let lang = language.canonical_name();
+        let wire = language_wire_name(language);
         let out = ScratchDir::new(&format!("orch-host-{lang}"));
         let produced = run(&[
             "orchestrate",
@@ -561,7 +565,7 @@ fn the_host_declarations_reach_the_producer_that_check_predicts() {
         ]);
         let predicted_ok = checked
             .stdout
-            .contains(&format!(r#""language":"{lang}","status":"ok""#));
+            .contains(&format!(r#""language":"{wire}","status":"ok""#));
         assert_eq!(
             produced.code == 0,
             predicted_ok,

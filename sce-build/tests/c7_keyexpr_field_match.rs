@@ -186,14 +186,7 @@ fn kotlin_field_match_projects_string_field_to_byte_array() {
 
 #[test]
 fn field_match_projects_on_all_six_backends() {
-    for lang in [
-        Language::Rust,
-        Language::Cpp,
-        Language::Kotlin,
-        Language::Go,
-        Language::Python,
-        Language::C11,
-    ] {
+    for &lang in Language::ALL {
         let code = compile_field_match_for(lang);
         // The bounded-string element field is projected to a byte view.
         let projection_marker = match lang {
