@@ -36117,7 +36117,7 @@
         { "name": "deadlineExceeded", "value": 4 },
         { "name": "notFound", "value": 5 },
         { "name": "unimplemented", "value": 12 },
-        { "name": "internal", "value": 13 },
+        { "name": "internalError", "value": 13 },
         { "name": "unavailable", "value": 14 }
       ]
     }
