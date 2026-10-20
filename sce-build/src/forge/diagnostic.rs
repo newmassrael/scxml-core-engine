@@ -18841,9 +18841,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            451,
+            459,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 451 distinct variants to match the DiagnosticCode \
+             expected 459 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
