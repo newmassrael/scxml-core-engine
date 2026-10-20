@@ -606,9 +606,11 @@ pub trait StaticTarget {
         true
     }
     /// The name the call named `coded` ([`state_call_name`]) of `callee` is called
-    /// by: its adapter's, declared with it, or the algorithm's own where the target
-    /// has no adapters.
-    fn state_adapter_name(&self, _callee: &StaticCallee, coded: &str) -> String {
+    /// by in `machine`: its adapter's, declared with it, or the algorithm's own where
+    /// the target has no adapters. A target whose adapters share a scope with another
+    /// machine's names them by `machine`: a parent and the child it invokes may call
+    /// one algorithm the same way, each through an adapter in its own types.
+    fn state_adapter_name(&self, _machine: &str, _callee: &StaticCallee, coded: &str) -> String {
         coded.to_string()
     }
     /// The declaration of the adapter of one call: a function that takes the
@@ -1366,7 +1368,7 @@ impl StaticTarget for KotlinTarget {
     fn state_argument(&self, _machine: &str, _arg: &StateArg, held: &str) -> String {
         held.to_string()
     }
-    fn state_adapter_name(&self, _callee: &StaticCallee, coded: &str) -> String {
+    fn state_adapter_name(&self, _machine: &str, _callee: &StaticCallee, coded: &str) -> String {
         format!("call_{coded}")
     }
     fn state_list_within(&self, _adapter: &str, value: &str, capacity: u32) -> String {
@@ -1967,7 +1969,7 @@ impl StaticTarget for RustTarget {
     fn state_argument(&self, _machine: &str, _arg: &StateArg, held: &str) -> String {
         format!("&{held}")
     }
-    fn state_adapter_name(&self, _callee: &StaticCallee, coded: &str) -> String {
+    fn state_adapter_name(&self, _machine: &str, _callee: &StaticCallee, coded: &str) -> String {
         format!("call_{coded}")
     }
     fn state_list_within(&self, _adapter: &str, value: &str, capacity: u32) -> String {
@@ -3400,7 +3402,7 @@ pub fn lower(
             })
             .collect();
         let spec = AdapterSpec {
-            name: target.state_adapter_name(callee, coded),
+            name: target.state_adapter_name(machine, callee, coded),
             machine,
             call: target
                 .callee(&callee.document_name)
@@ -4239,7 +4241,10 @@ impl Rewrites<'_> {
         let ret = callee.value.as_ref()?.ret.as_ref()?;
         let rewrite = self.rewrite_state_calls(expr).ok()?;
         let coded = rewrite.calls.first()?;
-        Some((self.target.state_adapter_name(callee, coded), ret))
+        Some((
+            self.target.state_adapter_name(self.machine, callee, coded),
+            ret,
+        ))
     }
 
     /// The calls of `text` that hand an algorithm a record or a list, found in the
@@ -4311,7 +4316,7 @@ impl Rewrites<'_> {
                     .state_call(coded)
                     .and_then(|call| self.scope.value_callee(&call.alias))
                     .expect("a rewrite names a call of a callee with a value signature");
-                self.target.state_adapter_name(callee, coded)
+                self.target.state_adapter_name(self.machine, callee, coded)
             })
             .collect();
         let mut local = renames.clone();
@@ -4477,7 +4482,7 @@ impl StaticTarget for CppTarget {
     fn state_argument(&self, _machine: &str, _arg: &StateArg, held: &str) -> String {
         held.to_string()
     }
-    fn state_adapter_name(&self, _callee: &StaticCallee, coded: &str) -> String {
+    fn state_adapter_name(&self, _machine: &str, _callee: &StaticCallee, coded: &str) -> String {
         format!("call_{coded}")
     }
     // The machine's list is the `std::vector` the adapter answers, counted by its
@@ -5237,9 +5242,15 @@ impl StaticTarget for GoTarget<'_> {
     fn state_argument(&self, _machine: &str, _arg: &StateArg, held: &str) -> String {
         held.to_string()
     }
-    // The prefix tells the expression layer the adapter answers an `Outcome`.
-    fn state_adapter_name(&self, _callee: &StaticCallee, coded: &str) -> String {
-        format!("{}{coded}", crate::forge::expr::STATE_ADAPTER_PREFIX)
+    // The prefix tells the expression layer the adapter answers an `Outcome`. The
+    // machine follows it because a package holds a parent and every child it
+    // invokes, and two of them may call one algorithm the same way, each through an
+    // adapter in its own record types.
+    fn state_adapter_name(&self, machine: &str, _callee: &StaticCallee, coded: &str) -> String {
+        format!(
+            "{}{machine}_{coded}",
+            crate::forge::expr::STATE_ADAPTER_PREFIX
+        )
     }
     fn state_list_within(&self, _adapter: &str, value: &str, capacity: u32) -> String {
         format!("scealgorithm.Within(&sceFailure, {value}, {capacity})")
@@ -6018,7 +6029,7 @@ impl StaticTarget for PythonTarget {
     fn state_argument(&self, _machine: &str, _arg: &StateArg, held: &str) -> String {
         held.to_string()
     }
-    fn state_adapter_name(&self, _callee: &StaticCallee, coded: &str) -> String {
+    fn state_adapter_name(&self, _machine: &str, _callee: &StaticCallee, coded: &str) -> String {
         format!("_call_{coded}")
     }
     fn state_list_within(&self, _adapter: &str, value: &str, capacity: u32) -> String {
@@ -6798,7 +6809,7 @@ impl StaticTarget for CTarget {
             _ => held.to_string(),
         }
     }
-    fn state_adapter_name(&self, _callee: &StaticCallee, coded: &str) -> String {
+    fn state_adapter_name(&self, _machine: &str, _callee: &StaticCallee, coded: &str) -> String {
         format!("call_{coded}")
     }
     // The list an adapter gave back is its result struct, read from `items` and `len`,

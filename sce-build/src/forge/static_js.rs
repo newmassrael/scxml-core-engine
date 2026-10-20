@@ -313,7 +313,7 @@ impl StaticTarget for JsTarget {
     fn state_argument(&self, _machine: &str, _arg: &StateArg, held: &str) -> String {
         held.to_string()
     }
-    fn state_adapter_name(&self, callee: &StaticCallee, _coded: &str) -> String {
+    fn state_adapter_name(&self, _machine: &str, callee: &StaticCallee, _coded: &str) -> String {
         self.callee(&callee.document_name)
             .expect("an algorithm the document imports travels in it")
             .call

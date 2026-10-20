@@ -416,6 +416,64 @@ fn go_leading_identifier(text: &str) -> Option<String> {
     (name != "_" && !first.is_ascii_digit()).then_some(name)
 }
 
+/// Each machine file of one Go package, by file name, with the package-level
+/// names it declares ([`go_package_level_names`]).
+type GoPackageMachines = Vec<(String, Vec<String>)>;
+
+/// Generate `document` for Go into `out_dir`, as a parent and every child it
+/// invokes are generated: into one package. Answers each machine file written,
+/// by name and in name order, with the names it declares at package level.
+fn generate_go_package(document: &Path, out_dir: &Path) -> GoPackageMachines {
+    std::fs::create_dir_all(out_dir).expect("create out dir");
+    let output = Command::new(sce_codegen_bin())
+        .args(["generate", "-l", "go", "-o"])
+        .arg(out_dir)
+        .args([
+            "--go-module-prefix",
+            "example.com/sce-forge/event-schema-smoke",
+        ])
+        .arg(document)
+        .current_dir(repo_root())
+        .output()
+        .expect("spawn sce-codegen");
+    assert!(
+        output.status.success(),
+        "sce-codegen generate -l go {} failed (exit {:?})\nstderr: {}",
+        document.display(),
+        output.status.code(),
+        String::from_utf8_lossy(&output.stderr),
+    );
+    find_by_ext(out_dir, "go")
+        .into_iter()
+        .filter(|path| path.to_string_lossy().ends_with("_sm.go"))
+        .map(|path| {
+            let file_name = path.file_name().unwrap().to_string_lossy().into_owned();
+            let src = std::fs::read_to_string(&path).expect("read go");
+            (file_name, go_package_level_names(&src))
+        })
+        .collect()
+}
+
+/// Every name more than one declaration in `machines` gives, with the files
+/// that declare it — a package that does not compile.
+fn declared_more_than_once(machines: &GoPackageMachines) -> Vec<(String, Vec<String>)> {
+    let mut declared: std::collections::BTreeMap<&str, Vec<String>> =
+        std::collections::BTreeMap::new();
+    for (file_name, names) in machines {
+        for name in names {
+            declared
+                .entry(name.as_str())
+                .or_default()
+                .push(file_name.clone());
+        }
+    }
+    declared
+        .into_iter()
+        .filter(|(_, files)| files.len() > 1)
+        .map(|(name, files)| (name.to_string(), files))
+        .collect()
+}
+
 /// A parent and every child it invokes are generated into one Go package, and
 /// the two may import the same EventSchema: `record_list_parent` guards on four
 /// events of the standard record list it invokes, whose machine guards on them
@@ -428,32 +486,8 @@ fn a_go_package_declares_each_name_once_where_a_parent_and_its_child_share_a_sch
     let out_dir = reset_scratch("go_shared_package");
     let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/static_datamodel/record_list_parent.scxml");
-    let output = Command::new(sce_codegen_bin())
-        .args(["generate", "-l", "go", "-o"])
-        .arg(&out_dir)
-        .args([
-            "--go-module-prefix",
-            "example.com/sce-forge/event-schema-smoke",
-        ])
-        .arg(&fixture)
-        .current_dir(repo_root())
-        .output()
-        .expect("spawn sce-codegen");
-    assert!(
-        output.status.success(),
-        "sce-codegen generate -l go record_list_parent failed (exit {:?})\nstderr: {}",
-        output.status.code(),
-        String::from_utf8_lossy(&output.stderr),
-    );
-
-    let machines: Vec<PathBuf> = find_by_ext(&out_dir, "go")
-        .into_iter()
-        .filter(|path| path.to_string_lossy().ends_with("_sm.go"))
-        .collect();
-    let file_names: Vec<String> = machines
-        .iter()
-        .map(|path| path.file_name().unwrap().to_string_lossy().into_owned())
-        .collect();
+    let machines = generate_go_package(&fixture, &out_dir);
+    let file_names: Vec<&str> = machines.iter().map(|(name, _)| name.as_str()).collect();
     assert_eq!(
         file_names,
         [
@@ -462,12 +496,7 @@ fn a_go_package_declares_each_name_once_where_a_parent_and_its_child_share_a_sch
         ],
         "the parent and its in-line child are generated into one package"
     );
-
-    let mut declared: std::collections::BTreeMap<String, Vec<String>> =
-        std::collections::BTreeMap::new();
-    for (path, file_name) in machines.iter().zip(&file_names) {
-        let src = std::fs::read_to_string(path).expect("read go");
-        let names = go_package_level_names(&src);
+    for (file_name, names) in &machines {
         // The shared event's seam is there in each machine, so the check below
         // reads the declarations that collided rather than a file it misread.
         assert!(
@@ -476,14 +505,104 @@ fn a_go_package_declares_each_name_once_where_a_parent_and_its_child_share_a_sch
                 .any(|name| name.ends_with("RaiseRecordListEdit")),
             "{file_name} declares no inject seam for `record_list.edit`: {names:?}"
         );
-        for name in names {
-            declared.entry(name).or_default().push(file_name.clone());
-        }
     }
-    let twice: Vec<(&String, &Vec<String>)> = declared
-        .iter()
-        .filter(|(_, files)| files.len() > 1)
-        .collect();
+    let twice = declared_more_than_once(&machines);
+    assert!(
+        twice.is_empty(),
+        "names declared more than once in the package: {twice:?}"
+    );
+}
+
+/// The child `shared_state` invokes in-line: it holds what its parent holds and
+/// calls the algorithm its parent calls, the same way.
+const SHARED_STATE_CHILD: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+               version="1.0" initial="running" datamodel="sce-static">
+          <sce:import kind="event-schema" src="sce:std/merge/hlc_timestamp.scxml" as="Hlc"/>
+          <sce:import kind="algorithm" src="sce:std/merge/hlc_send.scxml" as="HlcSend"/>
+          <datamodel>
+            <data id="now" sce:type="int64" expr="0"/>
+            <data id="node" sce:type="uint64" expr="0"/>
+            <data id="clock" sce:type="record:Hlc">
+              <sce:set name="wallTime" expr="0"/>
+              <sce:set name="counter" expr="0"/>
+              <sce:set name="nodeId" expr="0"/>
+            </data>
+          </datamodel>
+          <state id="running">
+            <transition event="tick" type="internal">
+              <assign location="clock" expr="HlcSend(clock, now, node)"/>
+            </transition>
+          </state>
+        </scxml>"#;
+
+/// `shared_state`, written into `dir`: a parent that holds a record of the
+/// standard clock and calls the standard `hlc_send` with it, and invokes in-line
+/// [`SHARED_STATE_CHILD`], which does the same.
+fn shared_state_parent(dir: &Path) -> PathBuf {
+    let path = dir.join("shared_state.scxml");
+    std::fs::write(
+        &path,
+        format!(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="running" datamodel="sce-static" name="shared_state">
+  <sce:import kind="event-schema" src="sce:std/merge/hlc_timestamp.scxml" as="Hlc"/>
+  <sce:import kind="algorithm" src="sce:std/merge/hlc_send.scxml" as="HlcSend"/>
+  <datamodel>
+    <data id="now" sce:type="int64" expr="0"/>
+    <data id="node" sce:type="uint64" expr="0"/>
+    <data id="clock" sce:type="record:Hlc">
+      <sce:set name="wallTime" expr="0"/>
+      <sce:set name="counter" expr="0"/>
+      <sce:set name="nodeId" expr="0"/>
+    </data>
+  </datamodel>
+  <state id="running">
+    <invoke type="scxml" id="kid">
+      <content>
+        {SHARED_STATE_CHILD}
+      </content>
+    </invoke>
+    <transition event="tick" type="internal">
+      <assign location="clock" expr="HlcSend(clock, now, node)"/>
+    </transition>
+  </state>
+</scxml>"#
+        ),
+    )
+    .expect("write shared_state");
+    path
+}
+
+/// A parent and the child it invokes, in one Go package, that call one
+/// algorithm the same way: each has an adapter for the call, which takes and
+/// gives back the machine's own record, and an adapter named by the call alone
+/// (`sceAdapt_HlcSend__v`) was declared once by each machine. Every
+/// package-level name the package's machines declare is declared once.
+#[test]
+fn a_go_package_declares_each_name_once_where_a_parent_and_its_child_hold_the_same_state() {
+    let scratch = reset_scratch("go_shared_state");
+    let parent = shared_state_parent(&scratch);
+    let machines = generate_go_package(&parent, &scratch.join("out"));
+    let file_names: Vec<&str> = machines.iter().map(|(name, _)| name.as_str()).collect();
+    assert_eq!(
+        file_names,
+        [
+            "shared_state__sce_synth_invoke__kid_sm.go",
+            "shared_state_sm.go"
+        ],
+        "the parent and its in-line child are generated into one package"
+    );
+    for (file_name, names) in &machines {
+        // Each machine has its adapter of the call, so the check below reads the
+        // declarations that collided rather than a file it misread.
+        assert!(
+            names
+                .iter()
+                .any(|name| name.starts_with("sceAdapt_") && name.ends_with("HlcSend__v")),
+            "{file_name} declares no adapter of `HlcSend(clock, now, node)`: {names:?}"
+        );
+    }
+    let twice = declared_more_than_once(&machines);
     assert!(
         twice.is_empty(),
         "names declared more than once in the package: {twice:?}"
