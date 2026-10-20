@@ -3894,6 +3894,123 @@ mod tests {
         }
     }
 
+    /// An enum's variants are stated three times and must be the same three:
+    /// by the document that declares them, by the manifest (`fixtures.json`,
+    /// which the harnesses name each variant's identifier from), and by the
+    /// oracle (`numerical_reference.json`, which the C11 harness bakes in and
+    /// the others read at run time).
+    ///
+    /// The manifest and the oracle are written apart from the document on
+    /// purpose: a number that is on a wire must not be read back from the
+    /// declaration it checks, or an edit moves both and nothing fails. The cost
+    /// of that is three places to rename one word, and the harness for one
+    /// language was the first to notice (measured 2026-10-21: renaming a
+    /// status variant failed `forge-go` at link time, twice, after the other
+    /// two statements were fixed one at a time). This is the test that notices
+    /// first, and says which statement differs and where.
+    #[test]
+    fn an_enum_is_stated_the_same_by_its_document_the_manifest_and_the_oracle() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let manifest = Manifest::load(&root.join("tests/forge/conformance/fixtures.json"))
+            .expect("manifest must load and validate");
+        let oracle: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(root.join("tests/forge/conformance/numerical_reference.json"))
+                .expect("read oracle"),
+        )
+        .expect("parse oracle JSON");
+        let resource_dir = root.join("tests/forge/resources");
+
+        let mut checked = 0;
+        let mut failures: Vec<String> = Vec::new();
+        for fixture in &manifest.fixtures {
+            let FixtureSpec::Enum { variants } = &fixture.spec else {
+                continue;
+            };
+            checked += 1;
+            let stated: Vec<(String, i128)> = variants
+                .iter()
+                .map(|v| (v.name.clone(), i128::from(v.value)))
+                .collect();
+
+            let in_oracle: Option<Vec<(String, i128)>> = oracle
+                .get(&fixture.ref_section)
+                .and_then(|section| section.get(&fixture.name))
+                .and_then(|entry| entry.get("variants"))
+                .and_then(|rows| rows.as_array())
+                .map(|rows| {
+                    rows.iter()
+                        .map(|row| {
+                            (
+                                row["name"].as_str().unwrap_or("<no name>").to_string(),
+                                row["value"].as_i64().map_or(i128::MIN, i128::from),
+                            )
+                        })
+                        .collect()
+                });
+
+            let path = fixture.document_path(&resource_dir);
+            let declared: Result<Vec<(String, i128)>, String> =
+                crate::load_forge_source(&path, &[])
+                    .map_err(|e| format!("cannot read {}: {e}", path.display()))
+                    .and_then(|loaded| {
+                        crate::forge::parser::parse_forge_with_imports(
+                            &loaded.positions.expanded,
+                            crate::DocumentLabel::symmetric(&fixture.name),
+                        )
+                        .map_err(|e| format!("{}: {e}", path.display()))
+                    })
+                    .and_then(|parsed| match parsed.map(|p| p.document) {
+                        Some(crate::forge::model::ForgeDocument::Enum(model)) => Ok(model
+                            .variants
+                            .iter()
+                            .map(|v| (v.name.clone(), v.value))
+                            .collect()),
+                        _ => Err(format!("{} is not an enum document", path.display())),
+                    });
+
+            match declared {
+                Err(why) => failures.push(format!("{}: {why}", fixture.name)),
+                Ok(declared) => {
+                    if declared != stated {
+                        failures.push(format!(
+                            "{}: the document declares {declared:?} but the manifest \
+                             (tests/forge/conformance/fixtures.json) states {stated:?}",
+                            fixture.name
+                        ));
+                    }
+                    match &in_oracle {
+                        None => failures.push(format!(
+                            "{}: the oracle has no `variants` under {}.{} \
+                             (tests/forge/conformance/numerical_reference.json)",
+                            fixture.name, fixture.ref_section, fixture.name
+                        )),
+                        Some(oracle_rows) if *oracle_rows != declared => failures.push(format!(
+                            "{}: the document declares {declared:?} but the oracle \
+                             (tests/forge/conformance/numerical_reference.json) states \
+                             {oracle_rows:?}",
+                            fixture.name
+                        )),
+                        Some(_) => {}
+                    }
+                }
+            }
+        }
+
+        // A floor, not an equality: adding an enum must not have to touch this
+        // number, but a manifest that lost its enums must not pass on none.
+        assert!(
+            checked >= 8,
+            "only {checked} enum fixture(s) were compared; the manifest lists more"
+        );
+        assert!(
+            failures.is_empty(),
+            "{} disagreement(s) between the document, the manifest and the oracle on what an \
+             enum declares:\n  {}",
+            failures.len(),
+            failures.join("\n  ")
+        );
+    }
+
     /// Compile gate: verify that every generated Rust conformance fixture
     /// and the rendered harness are syntactically valid Rust.
     ///
