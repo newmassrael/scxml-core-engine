@@ -274,10 +274,14 @@ fn a_hybrid_invoke_is_generated_with_the_save_api() {
     }
 }
 
-/// The shape a generated Rust machine binds its saved state to.
+/// The shape a generated Rust machine binds its saved state to: the `first`
+/// of its `SavedShape`, which a later revision of a record schema leaves where
+/// it was (docs/adr/0044).
 fn rust_shape(text: &str) -> String {
-    const MARKER: &str = "const SHAPE: &'static str = \"";
-    let start = text.find(MARKER).expect("a saved shape in the machine") + MARKER.len();
+    const MARKER: &str = "const SHAPE: ::sce_rust_runtime::saved_state::SavedShape = ";
+    const FIRST: &str = "first: \"";
+    let shape = text.find(MARKER).expect("a saved shape in the machine") + MARKER.len();
+    let start = shape + text[shape..].find(FIRST).expect("the shape's first") + FIRST.len();
     let len = text[start..].find('"').expect("the shape ends");
     text[start..start + len].to_string()
 }

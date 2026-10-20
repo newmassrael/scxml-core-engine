@@ -282,20 +282,22 @@ fn an_enum_that_admits_values_no_variant_names_is_refused() {
     );
 }
 
-/// The `SHAPE` of the Rust machine generated from `doc` with `mode` as the
-/// `Mode` enum document.
+/// The shape the Rust machine generated from `doc` with `mode` as the `Mode`
+/// enum document binds its saved state to: the `first` of its `SavedShape`
+/// (docs/adr/0044).
 fn shape_of(doc: &str, mode: &str) -> String {
+    const MARKER: &str = "const SHAPE: ::sce_rust_runtime::saved_state::SavedShape = ";
+    const FIRST: &str = "first: \"";
     let out_dir = tempdir().expect("tempdir");
     let out_arg = out_dir.path().to_str().expect("utf-8 path").to_string();
     let (ok, out, _) = run_with(&["generate", "-l", "rust", "-o", &out_arg], doc, mode);
     assert!(ok, "the machine generates:\n{out}");
     let generated =
         std::fs::read_to_string(out_dir.path().join("probe_sm.rs")).expect("the generated machine");
-    let line = generated
-        .lines()
-        .find(|l| l.contains("const SHAPE: &'static str = \""))
-        .expect("a saved-state shape");
-    line.split('"').nth(1).expect("the shape text").to_string()
+    let shape = generated.find(MARKER).expect("a saved-state shape") + MARKER.len();
+    let start = shape + generated[shape..].find(FIRST).expect("the shape's first") + FIRST.len();
+    let len = generated[start..].find('"').expect("the shape ends");
+    generated[start..start + len].to_string()
 }
 
 #[test]
