@@ -153,6 +153,13 @@ them that folding under one mask does not depend on how it is grouped, and one f
 document's host step rests on: two policies that each pass the rule can fold into one
 that does not. Rust, Python, Go, Kotlin, C++ and C11 all agreed with the model on every
 case.
+
+Eleventh run, 2026-10-20: `register_values` of sce:std/shared, the values of one
+register of a shared record list in the order of their dots, which the list tells the
+statechart that invoked it in (docs/adr/0042) — 400 cases over the lists the
+`mv_value_*` cases draw, with the register read most of the time one the list holds and
+otherwise one drawn afresh. The order is the wall time, then the counter, then the
+node, so a list is drawn with registers whose dots share one or two of the three.
 """
 
 from __future__ import annotations
@@ -841,6 +848,15 @@ def mv_value_drop(values: list, gone: dict):
     """sce:std/merge/mv_value_drop — every value but the one of the write `gone`
     names, in the order the values had."""
     return ("ok", [dict(there) for there in values if not same_write(there, gone)])
+
+
+def register_values(values: list, row: int, field: int):
+    """sce:std/shared/register_values — the values of the register of `row` and
+    `field`, in the order of their dots: the earlier wall time first, then the
+    earlier counter, then the lower node. Values of one dot keep the order the list
+    had them in, which a list mv_value_keep made never holds twice."""
+    held = [dict(there) for there in values if there["id"] == row and there["field"] == field]
+    return ("ok", sorted(held, key=lambda there: (there["wallTime"], there["counter"], there["nodeId"])))
 
 
 #: The range `policy_scalar_rule` holds `limitDays` to, inclusive.
@@ -2735,6 +2751,18 @@ def mv_value_drop_args(rng: SplitMix64):
     return [held, mv_probe(rng, held)]
 
 
+def register_values_args(rng: SplitMix64):
+    """Values whose registers share rows, fields and parts of dots, as the values of a
+    register written at once by several people do, and the register to read: one a
+    value of the list is in, most of the time, or one drawn afresh, which the list
+    may hold nothing of."""
+    held = mv_list(rng, rng.pick([0, 1, 2, 3, 4, 6, 8, 8]))
+    if held and rng.below(4) != 0:
+        one = rng.pick(held)
+        return [held, one["id"], one["field"]]
+    return [held, rng.pick([0, 1, 2, 2**53]), rng.pick([1, 2, 9])]
+
+
 POLICY_LIMITS = [0, 1, 7, 30, 364, POLICY_LIMIT_MAX, POLICY_LIMIT_MAX + 1, U16_MAX]
 POLICY_BURSTS = [0, 1, 10, 50, U32_MAX]
 
@@ -3882,6 +3910,7 @@ FIXTURES = {
     "mv_value_holds": (lambda args: mv_value_holds(*args), mv_value_holds_args, 400, 0xE110_004F),
     "mv_value_keep": (lambda args: mv_value_keep(*args), mv_value_keep_args, 500, 0xE110_0050),
     "mv_value_drop": (lambda args: mv_value_drop(*args), mv_value_drop_args, 400, 0xE110_0051),
+    "register_values": (lambda args: register_values(*args), register_values_args, 400, 0xE110_0058),
     "policy_scalar_layer": (lambda args: policy_scalar_layer(*args), policy_layer_args, 500, 0xE110_0052),
     # A validator's cases are a `sequence`, and this one holds no state, so each
     # generated case stands alone.

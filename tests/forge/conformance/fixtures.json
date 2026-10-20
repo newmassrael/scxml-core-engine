@@ -2485,6 +2485,22 @@
       }
     },
     {
+      "name": "register_values",
+      "document": "sce:std/shared/register_values.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "register_values",
+      "args": [
+        { "list_of": { "record": "mv_value" } },
+        "u64",
+        "u64"
+      ],
+      "output": {
+        "list_of": { "record": "mv_value" },
+        "compare": "equality"
+      }
+    },
+    {
       "name": "weekday_from_days",
       "document": "sce:std/time/weekday_from_days.scxml",
       "kind": "algorithm",
