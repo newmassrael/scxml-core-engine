@@ -40,7 +40,7 @@ sys.path.insert(0, str(_HERE.parents[1]))
 sys.path.insert(0, str(_HERE.parents[2] / "runtime"))
 sys.path.insert(0, str(_HERE.parents[2] / "forge-runtime"))
 
-from sce_runtime import ActionRealization, EventMetadata  # noqa: E402 -- path inserted above
+from sce_runtime import ActionRealization, EventMetadata, MeshRaise  # noqa: E402 -- path inserted above
 
 # Where the scenarios live, from this file's directory.
 _SCENARIOS = _HERE.parents[4] / "sce-build" / "tests" / "fixtures" / "static_datamodel" / "scenarios"
@@ -242,6 +242,83 @@ class _ScenarioPeers:
         taken, self._sends = self._sends, []
         return taken
 
+    def record_child(self, request, invoke: str, start: int) -> None:
+        """A child session's send, written as the machine's own are, with the
+        path of invoke ids that started the child and the start of that path."""
+        self.route(request)
+        self._sends[-1]["invoke"] = invoke
+        self._sends[-1]["start"] = start
+
+
+class _ChildRouters:
+    """The routers a driver gives the child sessions of the machine it drives
+    (SCE_MESH.md, Child Sessions in Mesh): `factory` answers a router for every
+    child, which writes what the child sends into `peers` under the path of
+    invoke ids that started it and the start of that path, holds what a step's
+    ``invoke`` hands the child until the parent applies it, and answers for the
+    child's own children under ``<path>/<invoke>``."""
+
+    def __init__(self, peers: _ScenarioPeers) -> None:
+        self._peers = peers
+        self._starts: dict[str, int] = {}
+        self._running: dict[str, "_ChildRouter"] = {}
+
+    def factory(self, invoke_id: str, _document: str) -> "_ChildRouter":
+        return self.open(invoke_id)
+
+    def open(self, path: str) -> "_ChildRouter":
+        """A router for a new start of `path`, which is now the session the
+        path is running."""
+        self._starts[path] = self._starts.get(path, 0) + 1
+        router = _ChildRouter(self, path, self._starts[path])
+        self._running[path] = router
+        return router
+
+    def deliver(self, path: str, event: str, data: str) -> bool:
+        """Hand `event`, with `data` as its ``_event.data``, to the running child
+        of `path`; ``False`` when no child of that path is running."""
+        router = self._running.get(path)
+        if router is None:
+            return False
+        router.inbox.append(MeshRaise(event, EventMetadata(data=data)))
+        return True
+
+    def detached(self, router: "_ChildRouter") -> None:
+        if self._running.get(router.path) is router:
+            del self._running[router.path]
+
+    def record(self, request, path: str, start: int) -> None:
+        self._peers.record_child(request, path, start)
+
+
+class _ChildRouter:
+    """The router of one start of one child."""
+
+    def __init__(self, book: _ChildRouters, path: str, start: int) -> None:
+        self._book = book
+        self.path = path
+        self.start = start
+        self.inbox: list = []
+
+    def send(self, request) -> list:
+        self._book.record(request, self.path, self.start)
+        return []
+
+    def invoke(self, _event):
+        # A request the child makes is started and never answered: no peer is
+        # there to answer it.
+        return None
+
+    def take_calls(self) -> list:
+        taken, self.inbox = self.inbox, []
+        return taken
+
+    def detach(self) -> None:
+        self._book.detached(self)
+
+    def child_router(self, invoke_id: str, _document: str) -> "_ChildRouter":
+        return self._book.open(f"{self.path}/{invoke_id}")
+
 
 def _same_json(got, want) -> bool:
     """Whether two JSON values are the same value. Python's own equality says
@@ -300,6 +377,12 @@ def replay(name: str, machine: str | None = None) -> None:
     # calls it.
     peers = _ScenarioPeers()
     engine.register_mesh_router(peers.route)
+    # A child session the machine starts is given a router of its own by the
+    # factory its host registers (SCE_MESH.md, Child Sessions in Mesh), never the
+    # machine's: what a child sends is written into the same list, told by the
+    # invoke that started it and the start.
+    routers = _ChildRouters(peers)
+    engine.register_child_mesh_routers(routers.factory)
     engine.initialize()
     policy = engine.policy
     readers = module.SCE_HOST_NAMES["readers"]
@@ -311,7 +394,19 @@ def replay(name: str, machine: str | None = None) -> None:
         if "advance_ms" in step:
             engine.advance_time(step["advance_ms"])
         event_name = step.get("event")
-        if event_name is not None:
+        if event_name is not None and "invoke" in step:
+            # A peer's event for the running child of that invoke, handed to the
+            # router the child was given; the machine applies it when it next
+            # drives its children, which a turn of its clock that moves no time
+            # does. The child's events are not the machine's, so the machine is
+            # not asked whether it matches.
+            data = json.dumps(step["data"]) if "data" in step else ""
+            assert routers.deliver(step["invoke"], event_name, data), (
+                f"{where}: no child of {step['invoke']!r} is running to be sent {event_name!r}"
+            )
+            for _ in range(5):
+                engine.advance_time(0)
+        elif event_name is not None:
             event = policy.resolve_event_by_name(event_name)
             dropped = step.get("dropped", False)
             assert (event is None) == dropped, (
@@ -788,6 +883,15 @@ def test_a_candidate_is_given_the_host_answered_for_it() -> None:
 # parent as `done.invoke`, which the parent counts.
 def test_an_invoked_child_is_driven_and_counted() -> None:
     replay("static_invoke")
+
+
+# A child session that talks to a Mesh peer is given a router of its own by the
+# factory the driver registers as the machine's host (SCE_MESH.md, Child Sessions
+# in Mesh): what it sends is recorded under its invoke and start, and a step's
+# `invoke` reaches it through that router, a grandchild's through the router its
+# parent's router answered for it.
+def test_a_child_is_given_a_mesh_router_of_its_own() -> None:
+    replay("static_child_mesh")
 
 
 # An `<invoke>` hands its child the values its `<param>`s and `namelist` name, as

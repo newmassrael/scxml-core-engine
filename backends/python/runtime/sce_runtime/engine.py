@@ -63,6 +63,13 @@ from .host_processor import (
     parse_host_invoke_deadline_ms,
     refuse_reserved_type,
 )
+from .child_mesh import (
+    MESH_ORIGIN_SCHEME,
+    ChildMeshRouter,
+    ChildMeshRouters,
+    MeshCall,
+    MeshRaise,
+)
 from .http import HttpSendRequest, HttpSendResponse
 from . import io_processors
 from . import send as send_module
@@ -376,6 +383,12 @@ class Engine(Generic[S, E]):
         # delivering an event is not the same capability as running a
         # process with a lifecycle; see `host_processor.py`'s invoker half.
         self._host_invokers: Dict[str, HostInvokeHandler] = {}
+        # SCE_MESH.md, Child Sessions in Mesh — the factory of the routers of
+        # this machine's children (registered by the host, or on a child by the
+        # router its parent gave it), and the router this machine was given as
+        # a child session.
+        self._child_mesh_routers: Optional[ChildMeshRouters] = None
+        self._installed_mesh: Optional[ChildMeshRouter] = None
         # §scxml-6.4 — every host-run invocation started and neither
         # completed nor cancelled, mapped to its start's token, so the emitted
         # exit chain can be an unconditional call and a completion can be
@@ -1165,6 +1178,98 @@ class Engine(Generic[S, E]):
         answered."""
         # SCE_MESH.md §mesh-9.5: the one door that fills the reserved type.
         self._host_invokers[MESH_RPC_INVOKE_TYPE] = router
+
+    def register_child_mesh_routers(self, factory: ChildMeshRouters) -> None:
+        """Register the factory of the routers of this machine's children
+        (SCE_MESH.md, Child Sessions in Mesh; docs/adr/0043).
+
+        A child session started by ``<invoke type="scxml">`` is given none of
+        this machine's registrations: its peer sends would leave under this
+        machine's name. The generated parent asks `factory` instead, each time
+        an invocation starts a child (on entry, on a restore, and for the
+        candidate a hybrid ``<invoke>`` chose), with the invoke's id and the
+        stem of the child's document, and installs the answer on the child
+        before the child initializes (`start_child_mesh`). A factory that
+        answers ``None``, or none registered, leaves the child with no router:
+        its peer send raises ``error.execution`` in the child, and nothing
+        falls back to this machine's router."""
+        self._child_mesh_routers = factory
+
+    def start_child_mesh(self, child: "Engine[Any, Any]", invoke_id: str, document: str) -> None:
+        """Ask this machine's factory for the router of `child`, which the
+        invoke `invoke_id` is starting from the document whose stem is
+        `document` (empty for a child written inline), and install the answer
+        on `child`. Leaves `child` as it is when no factory is registered or it
+        answers ``None``. Called by the generated parent before `child`
+        initializes."""
+        if self._child_mesh_routers is None:
+            return
+        router = self._child_mesh_routers(invoke_id, document)
+        if router is None:
+            return
+        child._install_child_mesh_router(router)
+
+    def _install_child_mesh_router(self, router: ChildMeshRouter) -> None:
+        """Install `router` as this machine's Mesh router, its request invoker
+        and the factory of its children's routers — the three a host installs
+        on a machine it starts, served by the one router the parent was given
+        for this session."""
+        self.register_mesh_router(router.send)
+        self.register_mesh_rpc_invoker(router.invoke)
+        self._child_mesh_routers = router.child_router
+        self._installed_mesh = router
+
+    def apply_mesh_calls(self) -> None:
+        """Apply what arrived for this machine on the router its parent gave
+        it, in the order the router released it (`apply_mesh_call`). The
+        generated parent calls it each time it drives this child, before the
+        child's macrostep. Does nothing for a machine given no router."""
+        if self._installed_mesh is None:
+            return
+        for call in self._installed_mesh.take_calls():
+            self.apply_mesh_call(call)
+
+    def apply_mesh_call(self, call: MeshCall) -> None:
+        """Tell this engine one thing its Mesh endpoint has for it: raise an
+        event with the ``_event`` the endpoint built, or end a Mesh request. An
+        event name the machine does not declare is dropped, as the engine drops
+        any such event; an end the engine no longer waits for is refused by the
+        token check. An answer carries ``_event.origin`` ``mesh://<source>`` and
+        origin type ``sce:mesh-rpc`` (SCE_MESH.md §mesh-9.5); a deadline the
+        requester reached itself has no peer to name, and carries neither."""
+        if isinstance(call, MeshRaise):
+            metadata = call.metadata
+            self.send_external_by_name(
+                call.name,
+                data=metadata.data,
+                sendid=metadata.send_id,
+                invoke_id=metadata.invoke_id,
+                origin=metadata.origin,
+                origin_type=metadata.origin_type,
+            )
+            return
+        origin = MESH_ORIGIN_SCHEME + call.source if call.source is not None else ""
+        origin_type = MESH_RPC_INVOKE_TYPE if call.source is not None else ""
+        if call.failed:
+            self.fail_host_invoke(
+                MESH_RPC_INVOKE_TYPE, call.invoke_id, call.token, call.data, origin, origin_type
+            )
+        else:
+            self.complete_host_invoke(
+                MESH_RPC_INVOKE_TYPE, call.invoke_id, call.token, call.data, origin, origin_type
+            )
+
+    def detach_mesh(self) -> None:
+        """Tell the router this machine's parent gave it that the session
+        ended, once: after the child reached a top-level ``<final>``, or after
+        it was stopped because the invoking state exited, so a send the child
+        made while stopping was handed over first. Does nothing for a machine
+        given no router."""
+        router = self._installed_mesh
+        if router is None:
+            return
+        self._installed_mesh = None
+        router.detach()
 
     def has_event_processor(self, processor_type: str) -> bool:
         """Whether a handler is registered for `processor_type`.

@@ -11,6 +11,15 @@ through the C++ Interpreter via pybind11, not through this AOT runtime.
 
 from . import scripting
 from .action_realization import ActionRealization
+from .child_mesh import (
+    MESH_ORIGIN_SCHEME,
+    ChildMeshRouter,
+    ChildMeshRouters,
+    MeshCall,
+    MeshEndInvoke,
+    MeshRaise,
+    mesh_event_metadata,
+)
 from .configuration import ConfigurationRejection, validate_configuration
 from .engine import Engine
 from .event import Event, EventMetadata, EventWithMetadata
@@ -63,6 +72,8 @@ from .scripting import (
 
 __all__ = [
     "ActionRealization",
+    "ChildMeshRouter",
+    "ChildMeshRouters",
     "ChildSession",
     "ConfigurationRejection",
     "EnabledTransition",
@@ -86,8 +97,12 @@ __all__ = [
     "IScriptEngine",
     "Invoke",
     "LuaScriptEngine",
+    "MESH_ORIGIN_SCHEME",
     "MESH_PROCESSOR_TYPE",
     "MESH_RPC_INVOKE_TYPE",
+    "MeshCall",
+    "MeshEndInvoke",
+    "MeshRaise",
     "PendingInvoke",
     "RESERVED_TYPE_PREFIX",
     "RequestFieldType",
@@ -108,6 +123,7 @@ __all__ = [
     "is_supported_send_type",
     "is_unreachable_target",
     "parse_delay_ms",
+    "mesh_event_metadata",
     "mesh_peer",
     "parse_host_invoke_deadline_ms",
     "published_origin",

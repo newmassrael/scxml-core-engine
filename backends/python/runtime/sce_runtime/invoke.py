@@ -146,13 +146,25 @@ class ScxmlInvoke(Invoke):
         if not self._started:
             self._child.initialize()
             self._started = True
+            self._detach_if_ended()
 
     def tick(self) -> None:
         # Drain due child schedules + run the child's macrostep so any
         # parent-bound events emitted during this iteration land in
         # `_parent_queue` before the parent's drain_events() call.
         if self._child.is_running and not self._child.reached_final:
+            # SCE_MESH.md, Child Sessions in Mesh: what arrived for the child on
+            # the router it was given, before its macrostep.
+            self._child.apply_mesh_calls()
             self._child.advance_time(0)
+            self._detach_if_ended()
+
+    def _detach_if_ended(self) -> None:
+        # SCE_MESH.md, Child Sessions in Mesh: a session that reached its
+        # top-level <final> has ended, and its router is told so (once; the
+        # engine forgets the router as it tells it).
+        if self._child.reached_final:
+            self._child.detach_mesh()
 
     def is_done(self) -> bool:
         return self._child.reached_final
@@ -205,6 +217,9 @@ class ScxmlInvoke(Invoke):
         # remaining `<send delay>` entries (advance_time gates on
         # `is_running and not reached_final`).
         self._child.stop()
+        # SCE_MESH.md, Child Sessions in Mesh: the session ended, after the
+        # child stopped, so what it sent while stopping was handed over first.
+        self._child.detach_mesh()
 
     def done_data(self) -> Any:
         return getattr(self._child, "done_data", None)

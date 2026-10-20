@@ -435,6 +435,16 @@
                 # installed before the child starts, since its first
                 # `<onentry>` may already use it.
                 _child_policy._parent_queue = []
+                # Child sessions in Mesh (SCE_MESH.md): the child's router,
+                # asked of this machine's factory with the invoke's id and the
+                # stem of the child's document (empty for one written inline),
+                # and installed before the child initializes, since its first
+                # `<onentry>` may already send to a peer.
+                engine.start_child_mesh(
+                    _child_engine,
+                    {{ inv.invoke_id | py_string_literal }},
+                    {% if inv.candidates %}__sce_selected_{{ inv.invoke_id | to_python_const }}{% elif inv.src is defined and inv.src and not inv.src.startswith('#') %}{{ inv.child_name | py_string_literal }}{% else %}""{% endif %},
+                )
                 _invoke = ScxmlInvoke(_child_engine, _child_policy._parent_queue)
                 _invoke.start(engine)
                 # W3C SCXML 6.4: key `_active_invokes` by the static
