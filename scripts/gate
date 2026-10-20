@@ -240,14 +240,26 @@ fi
 # A push always has network, so the sync is reliable when it matters; if it
 # fails we fall back to the existing toolchain with a loud warning rather
 # than refusing to run.
+#
+# A toolchain is pinned only when it runs what the gates run: cargo, not
+# just rustc. `rustup toolchain install` does not add a component to a
+# toolchain that is already there, so one left half installed (measured
+# 2026-10-20 on a build host: `stable` holding only `rustc`) passed a rustc
+# probe, was pinned, and failed every cargo gate with "the 'cargo' binary is
+# not applicable". Its missing components are added here, and a toolchain
+# that still cannot run cargo is not pinned.
 printf '\ngate: syncing "stable" to match CI (dtolnay/rust-toolchain@stable)\n' >&2
 rustup toolchain install stable --profile minimal \
     --component clippy --no-self-update >/dev/null 2>&1 || true
-if rustup run stable rustc --version >/dev/null 2>&1; then
+if ! rustup run stable cargo --version >/dev/null 2>&1; then
+    rustup component add cargo rust-std clippy --toolchain stable >/dev/null 2>&1 || true
+fi
+if rustup run stable rustc --version >/dev/null 2>&1 \
+    && rustup run stable cargo --version >/dev/null 2>&1; then
     export RUSTUP_TOOLCHAIN=stable
     printf '  pinned to %s\n' "$(rustup run stable rustc --version)" >&2
 else
-    printf '  WARNING: no resolvable "stable" toolchain; clippy lint parity\n  with CI is NOT guaranteed for this run.\n' >&2
+    printf '  WARNING: no "stable" toolchain that runs cargo; clippy lint parity\n  with CI is NOT guaranteed for this run.\n' >&2
 fi
 
 printf '\ngate: running %d gate(s): %s\n' "${#ORDER[@]}" "${ORDER[*]}" >&2
