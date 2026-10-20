@@ -4076,6 +4076,8 @@ target_include_directories(sce_c_integration_event_schema_real PRIVATE
     "${SCE_C_INTEGRATION_GENERATED_DIR}"
     "${CMAKE_SOURCE_DIR}/backends/c/runtime/include"
 )
+target_compile_definitions(sce_c_integration_event_schema_real PRIVATE
+    SCE_JSON_REAL_TEXT_TABLE="${CMAKE_SOURCE_DIR}/tests/json_text/real_text.json")
 set_target_properties(sce_c_integration_event_schema_real PROPERTIES
     C_STANDARD 11
     C_STANDARD_REQUIRED ON
