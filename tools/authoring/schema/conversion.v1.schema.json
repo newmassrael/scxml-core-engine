@@ -34,7 +34,48 @@
             "type": "array",
             "items": { "type": "string", "minLength": 1 },
             "uniqueItems": true
+          },
+          "picture": {
+            "description": "The NAME of the picture a model read this block from; the block cites the one figure block that marks it, and the check queues it as read from a picture. Absent for a block written from the words of the original.",
+            "type": "string",
+            "minLength": 1
+          },
+          "unsure": {
+            "description": "The model said it was not sure of what it read here. Only on a block read from a picture.",
+            "const": true
           }
+        }
+      }
+    },
+    "readings": {
+      "description": "One entry for each picture a model read: which figure block marks it, the picture as it was handed over (by SHA-256), and which runtime, model and recipe read it. Absent when no picture was read, so a conversion by rule keeps its revision.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["block", "picture", "recipe", "runtime", "runtime_version", "model", "unreadable", "nothing_to_read"],
+        "additionalProperties": false,
+        "properties": {
+          "block": { "type": "string", "minLength": 1 },
+          "picture": {
+            "type": "object",
+            "required": ["name", "sha256", "media_type"],
+            "additionalProperties": false,
+            "properties": {
+              "name": { "type": "string", "minLength": 1 },
+              "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "media_type": { "type": "string", "minLength": 1 }
+            }
+          },
+          "recipe": { "type": "string", "minLength": 1 },
+          "runtime": { "type": "string", "minLength": 1 },
+          "runtime_version": { "type": "string" },
+          "model": { "type": "string" },
+          "unreadable": {
+            "description": "The places the model said it could not read, in its words. Nothing is guessed for them.",
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "nothing_to_read": { "type": "boolean" }
         }
       }
     }

@@ -188,6 +188,29 @@ Each step lands with its tests and is useful before the next; none is a placehol
    step 4; the omission check from a layout and the reader's text.
 9. **Policy and the sheet.** The data classes, the workspace's policy, the line that says where pages go.
 
+**A picture the owner chose is read before the job record (amended 2026-10-20).** The owner asked that a
+picture in a word document can be handed to AI to read, and that this belongs to the product, not to a later
+step. Of step 8 this needs only the kind and one runtime's attachment path, and not steps 6 and 7: a picture is
+one unit, one answer and seconds of a client's time, so it is asked as one question while the owner waits, the
+way a division is drawn (ADR 0040). The job record is still built when a kind needs a queue (a scanned document
+of many pages), as step 6 says. In order:
+
+- **The kind, with no model** (`reading.py`). The unit is one picture a figure block marks, taken out of the
+  document as it is and named by its hash; what cannot be handed over is refused by a typed reason. The recipe
+  gives the client the picture and its name and none of the document's words, so nothing it writes can be
+  completed from the text beside it. What it read is added after the mark, which stays. Each block names the
+  picture it was read from; the conversion keeps one reading per picture (what was handed over, by hash, which
+  runtime, model and recipe, what it could not read); and the check asks about every such block as *read from
+  a picture* and matches none, since nothing in the original can be compared with it.
+- **The attachment path for Claude Code**, tried live first: an image content block on standard input with
+  `--input-format stream-json`, no tools, and `--json-schema` for the answer's form, which a run on
+  2026-10-20 answered in that form. The runtime declares that it reads pictures only once its live test
+  passes, as above; the others declare nothing until theirs do.
+- **The import reads what the owner marked**, in the import's own step, and the screen gives a figure a third
+  state beside chosen and left out.
+- **A picture in a PDF** next: its reader makes no figure blocks yet, and the rendition of ADR 0032 is what is
+  handed over.
+
 ## Alternatives rejected
 
 - Copying the generation loop for conversion. It would give each kind its own lease, deadline, journal and

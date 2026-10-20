@@ -60,6 +60,7 @@ from .divide_by_model import RECIPE_VERSION as DIVIDE_RECIPE_VERSION
 from .divide_by_model import Prepared as DividePrepared
 from .divide_by_model import offered_from, prepare as prepare_division, read_answer as read_division_answer
 from .ledger import Ledger, check_ledger, make_ledger, scopes_of
+from . import reading as picture_reading
 from .scope import OUTLINES, Scope, outline as outline_of, scope_of
 from .verify import product_findings_of_binding
 from .verify import verify as run_verify
@@ -153,10 +154,11 @@ def _read_scope(path: str | None) -> Scope | None:
 def _summary(report) -> str:
     said = report.to_dict()
     left = f", {said['out_of_scope']} outside the chosen part" if said["out_of_scope"] else ""
+    pictures = f", {len(said['read_from_picture'])} read from a picture" if said["read_from_picture"] else ""
     return (
         f"{'complete' if said['complete'] else 'not complete'}: {said['matched']} matched, "
         f"{len(said['check'])} to check, {len(said['not_in_original'])} not in the original, "
-        f"{len(said['missing'])} missing, {len(said['recognised'])} read from an image{left}"
+        f"{len(said['missing'])} missing, {len(said['recognised'])} read from an image{pictures}{left}"
     )
 
 
@@ -523,6 +525,116 @@ def cmd_finish_conversion(args) -> int:
             f"conversion: {len(made.blocks)} block(s) from {len(report['converted'])} of {len(wanted)} unit(s) "
             f"by {made.converter.name} {made.converter.version}, revision {made.revision()} -> {args.out}"
         )
+        for f in failed:
+            print(f"  unit {f.n} failed: {f.code}")
+    return 1 if failed else 0
+
+
+def cmd_prepare_reading(args) -> int:
+    """Take the pictures the named figure blocks mark out of the document, and write what a model is told.
+
+    For each picture that can be read, its file as it is in the document (`unit-0001.png`) and the text a
+    model is given with it (`unit-0001.prompt.txt`); the form the answer is held to (`answer.schema.json`);
+    and `units.json`, which says which figure and picture each unit is, by hash, and which pictures were not
+    handed over, with a typed reason. A host gives each picture to a model that can see, writes its answer
+    beside it (`unit-0001.answer.json`), and runs `finish-reading`. Nothing here reaches a model.
+    """
+    extraction = _read_extraction(args.extraction)
+    scope = _read_scope(args.scope)
+    handed, refused = picture_reading.units_for(extraction, list(args.block), pathlib.Path(args.document), scope)
+    units = [h.unit for h in handed]
+    out = pathlib.Path(args.out_dir)
+    try:
+        out.mkdir(parents=True, exist_ok=True)
+        for h in handed:
+            (out / h.unit.file_name()).write_bytes(h.data)
+            (out / h.unit.prompt_name()).write_text(picture_reading.prompt_for(h.unit), encoding="utf-8")
+        (out / "answer.schema.json").write_text(
+            json.dumps(picture_reading.ANSWER_SCHEMA, sort_keys=True), encoding="utf-8")
+        listing = {
+            "v": 1,
+            "recipe": picture_reading.RECIPE_NAME,
+            "extraction": extraction.revision(),
+            "scope": "" if scope is None else scope.revision(),
+            "units": [unit.to_dict() for unit in units],
+            "refused": [r.to_dict() for r in refused],
+        }
+        (out / "units.json").write_text(json.dumps(listing, sort_keys=True), encoding="utf-8")
+    except OSError as exc:
+        raise IngestError(f"{out}: cannot be written ({exc})") from exc
+    said = {"units": len(units), "refused": [r.to_dict() for r in refused]}
+    if args.json:
+        print(json.dumps(said, sort_keys=True))
+    else:
+        print(f"reading: {len(units)} picture(s) to read, {len(refused)} not handed over, "
+              f"recipe {picture_reading.RECIPE_NAME} -> {out}")
+        for r in refused:
+            print(f"  {r.block}{'' if r.picture is None else ' ' + r.picture}: {r.code}")
+    return 0
+
+
+def cmd_finish_reading(args) -> int:
+    """Add what a model read of each picture to the conversion by rule, after the mark it read.
+
+    A unit whose answer cannot be taken is named, by its number and a typed reason, and its mark stays as it
+    was; the others are added. The conversion written keeps one reading for each picture read: what was
+    handed over, by its hash, and which runtime and model read it. Exit 1 when any unit failed, so a host
+    can say so; nothing of the picture's words is printed.
+    """
+    extraction = _read_extraction(args.extraction)
+    conversion = _read_conversion(args.conversion)
+    if conversion.extraction != extraction.revision():
+        raise IngestError(
+            f"the conversion is of the extraction {conversion.extraction[:12]}, not of this one "
+            f"({extraction.revision()[:12]}): a reading is not added to another document's conversion"
+        )
+    directory = pathlib.Path(args.dir)
+    try:
+        listing = json.loads((directory / "units.json").read_text(encoding="utf-8"))
+        named = listing["extraction"]
+        units = [picture_reading.Unit.from_dict(unit) for unit in listing["units"]]
+    except (OSError, UnicodeDecodeError, ValueError, KeyError, TypeError) as exc:
+        raise IngestError(f"{directory}: holds no units.json that `prepare-reading` wrote ({exc})") from exc
+    if named != extraction.revision():
+        raise IngestError(
+            f"{directory} was prepared for the extraction {str(named)[:12]}, not for this one "
+            f"({extraction.revision()[:12]}): pictures of another document are not added"
+        )
+    answers: dict[int, picture_reading.Answer] = {}
+    failed: list[picture_reading.Refused] = []
+    for unit in units:
+        path = directory / unit.answer_name()
+        text = None
+        if path.is_file():
+            try:
+                text = path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError) as exc:
+                raise IngestError(f"{path}: not readable ({exc})") from exc
+        taken = picture_reading.parse_answer(unit.n, unit.block, text)
+        if isinstance(taken, picture_reading.Refused):
+            failed.append(taken)
+        else:
+            answers[unit.n] = taken
+    made = picture_reading.with_readings(
+        conversion, units, answers,
+        picture_reading.Runtime(args.runtime, args.runtime_version, args.model),
+    )
+    try:
+        pathlib.Path(args.out).write_text(made.to_json(), encoding="utf-8")
+    except OSError as exc:
+        raise IngestError(f"{args.out}: cannot be written ({exc})") from exc
+    report = {
+        "units": len(units),
+        "read": [unit.n for unit in units if unit.n in answers and answers[unit.n].blocks],
+        "nothing_to_read": [unit.n for unit in units if unit.n in answers and answers[unit.n].nothing_to_read],
+        "failed": [f.to_dict() for f in failed],
+        "revision": made.revision(),
+    }
+    if args.json:
+        print(json.dumps(report, sort_keys=True))
+    else:
+        print(f"reading: {len(report['read'])} of {len(units)} picture(s) read by {args.runtime}, "
+              f"revision {made.revision()} -> {args.out}")
         for f in failed:
             print(f"  unit {f.n} failed: {f.code}")
     return 1 if failed else 0
@@ -1138,6 +1250,30 @@ def main(argv=None) -> int:
     fin.add_argument("--out", required=True, help="where to write the conversion (JSON)")
     fin.add_argument("--json", action="store_true", help="print which units were converted and which failed, as JSON")
     fin.set_defaults(fn=cmd_finish_conversion)
+
+    prr = sub.add_parser(
+        "prepare-reading",
+        help="take the pictures figure blocks mark out of a document, and write what a model that can see is told")
+    prr.add_argument("--extraction", required=True, help="the extraction (JSON) `extract` wrote")
+    prr.add_argument("--document", required=True, help="the document the extraction was read from")
+    prr.add_argument("--block", action="append", required=True,
+                     help="the id of a figure block whose pictures are to be read (repeat for each)")
+    prr.add_argument("--scope", help="the scope (JSON) `make-scope` wrote: a figure outside it is not handed over")
+    prr.add_argument("--out-dir", required=True, help="where to write each picture and what a model is told")
+    prr.add_argument("--json", action="store_true", help="print how many pictures are to be read and which not, as JSON")
+    prr.set_defaults(fn=cmd_prepare_reading)
+
+    fir = sub.add_parser(
+        "finish-reading", help="add what a model read of each picture to the conversion, after its mark")
+    fir.add_argument("--extraction", required=True, help="the extraction the pictures were taken from")
+    fir.add_argument("--conversion", required=True, help="the conversion by rule the readings are added to")
+    fir.add_argument("--dir", required=True, help="the folder `prepare-reading` wrote, with an answer beside each picture")
+    fir.add_argument("--runtime", required=True, help="the runtime that read (claude-code, ...)")
+    fir.add_argument("--runtime-version", default="", help="its version, as it reports one")
+    fir.add_argument("--model", default="", help="the model it reported")
+    fir.add_argument("--out", required=True, help="where to write the conversion with the readings (JSON)")
+    fir.add_argument("--json", action="store_true", help="print which pictures were read and which failed, as JSON")
+    fir.set_defaults(fn=cmd_finish_reading)
 
     asm = sub.add_parser(
         "assemble", help="apply the owner's decisions to a conversion: the text a review ends in")

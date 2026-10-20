@@ -36,6 +36,11 @@ class IngestError(AuthoringError):
     """A document could not be read. Always names what would read it."""
 
 
+class PictureTooLarge(IngestError):
+    """A picture is heavier than may be handed over. The document is readable; this one picture is
+    not handed over, and a caller that reads several says so of it and goes on to the next."""
+
+
 class VerifyError(AuthoringError):
     """Verification could not be performed. Never a verdict about behaviour.
 

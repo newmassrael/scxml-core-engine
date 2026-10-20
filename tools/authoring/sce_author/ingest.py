@@ -55,7 +55,7 @@ class Ingested:
         return not self.notes
 
 
-from .errors import READ_ERRORS, IngestError, describe_path  # noqa: E402,F401
+from .errors import READ_ERRORS, IngestError, PictureTooLarge, describe_path  # noqa: E402,F401
 
 
 # ---------------------------------------------------------------- plain text
@@ -1368,7 +1368,7 @@ def read_pictures(paths: Iterable[pathlib.Path], name: str,
                         continue
                     size = zf.getinfo(part).file_size
                     if size > limit:
-                        raise IngestError(
+                        raise PictureTooLarge(
                             f"{path}: the picture {name} is {size} bytes and the most handed over is "
                             f"{limit}. Open it from the document itself.")
                     data = zf.read(part)
@@ -1382,7 +1382,7 @@ def read_pictures(paths: Iterable[pathlib.Path], name: str,
                 continue
             size = beside.stat().st_size
             if size > limit:
-                raise IngestError(
+                raise PictureTooLarge(
                     f"{beside}: the picture {name} is {size} bytes and the most handed over is {limit}.")
             data = beside.read_bytes()
         found.append(PictureFile(path, name, SHOWABLE.get(suffix), data))

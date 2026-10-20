@@ -232,11 +232,14 @@ class TheServerSpeaksTheProtocol(unittest.TestCase):
         # rest, and a model is never asked where a paragraph that changed belongs. `prepare-division` and
         # `finish-division` are the host's, like `prepare-conversion` and `finish-conversion`: they write what a
         # model is told to draw a division and read what it answered, and the host is what reaches the model.
+        # `prepare-reading` and `finish-reading` are the same host's for a picture the owner asked to be read:
+        # the host hands the picture to a client with no tools, and a client offered a tool that takes
+        # pictures out of a document would be a reader that can do something (docs/adr/0036).
         cli_only = {
             "revise-gate", "views", "extract", "convert", "check-conversion", "assemble",
             "prepare-conversion", "finish-conversion", "outline", "make-scope",
             "make-ledger", "check-ledger", "ledger-scopes", "carry-ledger",
-            "prepare-division", "finish-division",
+            "prepare-division", "finish-division", "prepare-reading", "finish-reading",
         }
         self.assertLessEqual(cli_only, commands, "a command-line-only name that is not a command")
         self.assertEqual(commands - cli_only, {t["name"] for t in mcp.TOOLS} - mcp_only)

@@ -26,6 +26,16 @@ cannot tell the converter's work from a damaged copy of it is a check that does 
 (ADR 0026), so the check lists the cited blocks that were read by `ocr` or `vision`, and the review queue
 asks about those whatever the text says.
 
+**A picture an owner asked a model to read is carried as what it was read as, and asked about.** A figure
+block holds only its `[picture: NAME]` mark, which the converter by rule writes as it is; a model that read
+the picture adds Markdown blocks after it (`reading.py`). Each says which picture it was read from
+(`picture`, citing the figure block) and whether the model was unsure of it, and the conversion keeps one
+`Reading` per picture: what was handed over, by its hash, which runtime and model read it with which recipe,
+and what it could not read. Words read from a picture have nothing to be compared with, so the check queues
+every such block as *read from a picture*, for the owner to keep, correct or drop; a block that says it was
+read from a picture and cites anything but that figure is *check*. A conversion with no reading writes
+neither field, so its text and revision are what they were.
+
 The wire form is a `pre-release` surface: `to_dict` and `from_dict` are its only producer and reader.
 """
 
@@ -52,6 +62,7 @@ CONVERTER_KINDS = ("rules", "model")
 MATCHED = "matched"
 CHECK = "check"
 NOT_IN_ORIGINAL = "not-in-original"
+READ_FROM_PICTURE = "read-from-picture"
 
 
 def _refuse(what: str) -> IngestError:
@@ -65,6 +76,11 @@ class MarkdownBlock:
     id: str
     markdown: str
     cites: tuple[str, ...] = ()
+    # The NAME of the picture this block was read from by a model, when it was; it cites the figure block
+    # that marks the picture. `None` for a block written from the words of the original.
+    picture: str | None = None
+    # The model said it was not sure of what it read here.
+    unsure: bool = False
 
     def __post_init__(self) -> None:
         if not self.id:
@@ -73,20 +89,119 @@ class MarkdownBlock:
             raise _refuse(f"has block {self.id!r} citing one block twice")
         if any(not cite for cite in self.cites):
             raise _refuse(f"has block {self.id!r} citing a block with no id")
+        if self.picture is not None and not self.picture:
+            raise _refuse(f"has block {self.id!r} read from a picture with no name")
+        if self.unsure and self.picture is None:
+            raise _refuse(f"has block {self.id!r} unsure of a reading it is not")
 
     def to_dict(self) -> dict[str, Any]:
-        return {"id": self.id, "markdown": self.markdown, "cites": list(self.cites)}
+        out: dict[str, Any] = {"id": self.id, "markdown": self.markdown, "cites": list(self.cites)}
+        if self.picture is not None:
+            out["picture"] = self.picture
+        if self.unsure:
+            out["unsure"] = True
+        return out
 
     @classmethod
     def from_dict(cls, raw: Any) -> "MarkdownBlock":
-        data = _object(raw, "a block", {"id", "markdown", "cites"})
+        data = _object(raw, "a block", {"id", "markdown", "cites", "picture", "unsure"})
         cites = data.get("cites", [])
         if not isinstance(cites, list) or not all(isinstance(c, str) for c in cites):
             raise _refuse("has block cites that are not a list of block ids")
+        unsure = data.get("unsure", False)
+        if not isinstance(unsure, bool):
+            raise _refuse("has a block whose `unsure` is not true or false")
+        picture = data.get("picture")
         return cls(
             id=_text(data.get("id"), "a block's id"),
             markdown=_text(data.get("markdown"), "a block's markdown", allow_empty=True),
             cites=tuple(cites),
+            picture=None if picture is None else _text(picture, "the picture a block was read from"),
+            unsure=unsure,
+        )
+
+
+@dataclass(frozen=True)
+class Seen:
+    """A picture as it was handed over to be read: its name in the document, its hash and its format."""
+
+    name: str
+    sha256: str
+    media_type: str
+
+    def __post_init__(self) -> None:
+        if not self.name or not self.media_type:
+            raise _refuse("has a reading of a picture with no name or no format")
+        if not re.fullmatch(r"[0-9a-f]{64}", self.sha256):
+            raise _refuse("has a reading of a picture not named by its hash (64 hexadecimal digits)")
+
+    def to_dict(self) -> dict[str, str]:
+        return {"name": self.name, "sha256": self.sha256, "media_type": self.media_type}
+
+    @classmethod
+    def from_dict(cls, raw: Any) -> "Seen":
+        data = _object(raw, "a picture read", {"name", "sha256", "media_type"})
+        return cls(
+            name=_text(data.get("name"), "a picture's name"),
+            sha256=_text(data.get("sha256"), "a picture's hash"),
+            media_type=_text(data.get("media_type"), "a picture's format"),
+        )
+
+
+@dataclass(frozen=True)
+class Reading:
+    """One picture a model read: which figure block marks it, what was handed over, who read it with which
+    recipe, and what it said it could not read. Its blocks are the conversion's blocks that name it."""
+
+    block: str  # the figure block that marks the picture
+    picture: Seen
+    recipe: str
+    runtime: str
+    runtime_version: str
+    model: str
+    unreadable: tuple[str, ...] = ()
+    nothing_to_read: bool = False
+
+    def __post_init__(self) -> None:
+        if not self.block or not self.recipe or not self.runtime:
+            raise _refuse("has a reading that does not say which block, recipe and runtime it is of")
+        if any(not where for where in self.unreadable):
+            raise _refuse("has a reading that says it could not read a place it does not name")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "block": self.block,
+            "picture": self.picture.to_dict(),
+            "recipe": self.recipe,
+            "runtime": self.runtime,
+            "runtime_version": self.runtime_version,
+            "model": self.model,
+            "unreadable": list(self.unreadable),
+            "nothing_to_read": self.nothing_to_read,
+        }
+
+    @classmethod
+    def from_dict(cls, raw: Any) -> "Reading":
+        data = _object(
+            raw,
+            "a reading",
+            {"block", "picture", "recipe", "runtime", "runtime_version", "model", "unreadable", "nothing_to_read"},
+        )
+        unreadable = data.get("unreadable", [])
+        if not isinstance(unreadable, list) or not all(isinstance(u, str) for u in unreadable):
+            raise _refuse("has a reading whose unreadable places are not a list of words")
+        nothing = data.get("nothing_to_read", False)
+        if not isinstance(nothing, bool):
+            raise _refuse("has a reading whose `nothing_to_read` is not true or false")
+        return cls(
+            block=_text(data.get("block"), "the block a reading is of"),
+            picture=Seen.from_dict(data.get("picture")),
+            recipe=_text(data.get("recipe"), "a reading's recipe"),
+            runtime=_text(data.get("runtime"), "a reading's runtime"),
+            runtime_version=_text(data.get("runtime_version", ""), "a runtime's version", allow_empty=True),
+            model=_text(data.get("model", ""), "a reading's model", allow_empty=True),
+            unreadable=tuple(unreadable),
+            nothing_to_read=nothing,
         )
 
 
@@ -124,6 +239,8 @@ class Conversion:
     converter: Converter
     extraction: str  # the revision of the extraction it is of
     blocks: tuple[MarkdownBlock, ...]
+    # The pictures a model read, one for each (figure block, picture name), in the order they were read.
+    readings: tuple[Reading, ...] = ()
 
     def __post_init__(self) -> None:
         if not re.fullmatch(r"[0-9a-f]{64}", self.extraction):
@@ -133,18 +250,37 @@ class Conversion:
             if block.id in seen:
                 raise _refuse(f"has two blocks with the id {block.id!r}")
             seen.add(block.id)
+        read = [(reading.block, reading.picture.name) for reading in self.readings]
+        if len(set(read)) != len(read):
+            raise _refuse("has two readings of one picture")
+        names = {name for _, name in read}
+        unrecorded = [b.id for b in self.blocks if b.picture is not None and b.picture not in names]
+        if unrecorded:
+            raise _refuse(f"has block(s) {', '.join(unrecorded)} read from a picture it keeps no reading of")
+
+    def reading_of(self, block: MarkdownBlock) -> Reading | None:
+        """The reading `block` was made by: the one of its picture, of the figure block it cites."""
+        if block.picture is None:
+            return None
+        return next(
+            (r for r in self.readings if r.picture.name == block.picture and (r.block,) == block.cites),
+            None,
+        )
 
     def markdown(self) -> str:
         """The Markdown a reader reads: the blocks in order, one to a paragraph."""
         return "\n\n".join(block.markdown for block in self.blocks) + "\n"
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        out: dict[str, Any] = {
             "v": SCHEMA_VERSION,
             "converter": self.converter.to_dict(),
             "extraction": self.extraction,
             "blocks": [block.to_dict() for block in self.blocks],
         }
+        if self.readings:
+            out["readings"] = [reading.to_dict() for reading in self.readings]
+        return out
 
     def to_json(self) -> str:
         """The canonical text a conversion is named by: sorted keys, no spaces, UTF-8."""
@@ -163,16 +299,20 @@ class Conversion:
 
     @classmethod
     def from_dict(cls, raw: Any) -> "Conversion":
-        data = _object(raw, "a conversion", {"v", "converter", "extraction", "blocks"})
+        data = _object(raw, "a conversion", {"v", "converter", "extraction", "blocks", "readings"})
         if data.get("v") != SCHEMA_VERSION:
             raise _refuse(f"is of version {data.get('v')!r}; this tool reads version {SCHEMA_VERSION}")
         blocks = data.get("blocks")
         if not isinstance(blocks, list):
             raise _refuse("has no list of blocks")
+        readings = data.get("readings", [])
+        if not isinstance(readings, list):
+            raise _refuse("has readings that are not a list")
         return cls(
             converter=Converter.from_dict(data.get("converter")),
             extraction=_text(data.get("extraction"), "the extraction it is of"),
             blocks=tuple(MarkdownBlock.from_dict(block) for block in blocks),
+            readings=tuple(Reading.from_dict(reading) for reading in readings),
         )
 
 
@@ -303,10 +443,11 @@ class Report:
 
     def queue(self) -> list[tuple[str, str]]:
         """What a person is asked about, in the order they are asked: what the check could not
-        confirm, what was recognised from an image (never exact), what the conversion invented, and
-        what it left out."""
+        confirm, what was recognised from an image (never exact), what a model read from a picture,
+        what the conversion invented, and what it left out."""
         asked = [("check", id_) for id_ in self.ids(CHECK)]
         asked += [("recognised", id_) for id_ in self.recognised]
+        asked += [(READ_FROM_PICTURE, id_) for id_ in self.ids(READ_FROM_PICTURE)]
         asked += [("not-in-original", id_) for id_ in self.ids(NOT_IN_ORIGINAL)]
         asked += [("missing", id_) for id_ in self.missing]
         return asked
@@ -323,6 +464,7 @@ class Report:
             "not_in_original": self.ids(NOT_IN_ORIGINAL),
             "missing": list(self.missing),
             "recognised": list(self.recognised),
+            "read_from_picture": self.ids(READ_FROM_PICTURE),
             "queue": [{"why": why, "id": id_} for why, id_ in self.queue()],
             "not_carried": [entry.to_dict() for entry in self.not_carried],
         }
@@ -380,6 +522,22 @@ def check_conversion(extraction: Extraction, conversion: Conversion, scope: "Sco
             )
             continue
         cited.update(block.cites)
+        if block.picture is not None:
+            # Words read from a picture have nothing in the original to be compared with: they are asked
+            # about, always. What can be held is that the block says which picture, and cites only it.
+            if len(block.cites) != 1 or by_id[block.cites[0]].kind != "figure":
+                verdicts.append(
+                    BlockVerdict(block.id, CHECK, "it says it was read from a picture and does not cite the "
+                                 "one figure block that marks it")
+                )
+            elif conversion.reading_of(block) is None:
+                verdicts.append(
+                    BlockVerdict(block.id, CHECK, f"it says it was read from {block.picture}, and the conversion "
+                                 f"keeps no reading of that picture at {block.cites[0]}")
+                )
+            else:
+                verdicts.append(BlockVerdict(block.id, READ_FROM_PICTURE))
+            continue
         wanted = _normal(" ".join(plain_of_block(by_id[cite]) for cite in block.cites))
         said = plain_of_markdown(block.markdown)
         if said == wanted:

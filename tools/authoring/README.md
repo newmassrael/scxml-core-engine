@@ -2033,6 +2033,27 @@ again for that unit; the other units are kept, and the blocks of the one that fa
 check. The check is `check-conversion`, unchanged: a model that summarised, corrected or changed a number is
 found by the same words-for-words comparison that holds the converter by rule to its own work.
 
+**prepare-reading** and **finish-reading** are the route for a picture the owner asks a model to read
+(`reading.py`, ADR 0036), and nothing in them reaches a model either. A figure block holds only its `[picture:
+NAME]` mark, which `convert` writes as it is. `python3 -m sce_author prepare-reading --extraction
+EXTRACTION.json --document DOCUMENT --block b12 [--block b20] [--scope SCOPE.json] --out-dir DIR [--json]`
+takes each picture the named figure blocks mark out of the document as it is, one unit each, and writes it as
+`DIR/unit-0001.png`, what a model is told with it as `unit-0001.prompt.txt` (the recipe and the picture's name,
+and none of the document's words), the form it answers in as `answer.schema.json`, and `units.json`, which names
+each picture by its SHA-256. A block that cannot be handed over is listed with a typed reason and the rest are:
+`no-such-block`, `not-a-figure`, `outside-scope`, `pictures-unnamed`, `picture-not-found`, `picture-not-showable`
+(a metafile, a TIFF), `picture-too-large` (over 4 MB) and `other-picture` (the document's picture by that name is
+not the one the extraction names). The host gives each picture to a client that can see and has no tools, and
+writes its answer (`{"blocks": [{"kind", "markdown", "unsure"}], "unreadable": [...], "nothing_to_read"}`) as
+`unit-0001.answer.json`; `finish-reading --extraction EXTRACTION.json --conversion CONVERSION.json --dir DIR
+--runtime NAME [--runtime-version VERSION] [--model MODEL] --out CONVERSION.json [--json]` adds what was read
+after the block that writes each mark, under the figure's ids (`b12-r1`, ...) so the ids `convert` gave stay,
+and keeps one reading for each picture: what was handed over, by hash, which runtime and model read it with
+which recipe, and the places it said it could not read. An answer that cannot be taken fails its unit by a
+typed reason (`no-answer`, `not-json`, `empty`, `bad-shape`), its mark stays as it was, and the command exits 1.
+`check-conversion` then asks about every block read from a picture (`read-from-picture`) and matches none of
+them, since nothing in the original can be compared with them; the owner keeps, corrects or drops each.
+
 **outline** and **make-scope** are how an owner imports a part of a document (`scope.py`, ADR 0039).
 `python3 -m sce_author outline --extraction EXTRACTION.json [--json]` lists the parts the owner can choose
 between, each with an id (`s1`, `s2`, ...), its title, its level, its parent, how many blocks and characters it
