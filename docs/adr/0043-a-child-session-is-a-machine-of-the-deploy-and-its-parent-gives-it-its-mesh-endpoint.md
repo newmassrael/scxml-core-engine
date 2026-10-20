@@ -1,6 +1,6 @@
 # ADR 0043 - A child session is a machine of the deploy, and its parent gives it its Mesh endpoint
 
-- Status: Proposed (2026-10-20)
+- Status: Accepted (2026-10-20); steps 1-2 in progress
 - Date: 2026-10-20
 - Scope: a child session started by `<invoke type="scxml">` that sends to or receives from a Mesh
   peer; `deploy.yaml` (SCE_MESH.md §14); the host route of SCE_MESH.md §19 on every backend; the
