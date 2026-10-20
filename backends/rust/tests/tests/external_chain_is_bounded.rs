@@ -15,6 +15,13 @@
 // The delayed outcomes run on `SceClock::Manual`, so nothing here sleeps and the
 // clock moves only where a case moves it.
 //
+// The numbers (the default budget, each outcome's budget and counters) are read
+// from tests/external_event_budget/budget_outcomes.json, the one table every
+// engine's test of this contract is held to. They are read from that file and
+// not from the engine: a test that asked the engine for its own limit would
+// agree with any limit, including one an edit moved by three orders of
+// magnitude.
+//
 // Fixture: tests/integration/external_chain_is_bounded.scxml. It is outside
 // `integration_resources/` for the reason
 // `scripts/regen_external_chain_is_bounded.sh` states.
@@ -23,17 +30,42 @@
 //   scripts/regen_external_chain_is_bounded.sh
 
 use std::num::NonZeroU32;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use sce_rust_runtime::{Engine, IScriptEngine, SceClock};
 use sce_rust_tests::integration::external_chain_is_bounded::{
     ExternalChainIsBoundedEvent as Event, ExternalChainIsBoundedPolicy as Policy,
 };
 
-/// The default the contract states, spelled here rather than read back from the
-/// engine: a test that asked the engine for its own limit would agree with any
-/// limit, including one an edit moved by three orders of magnitude.
-const DEFAULT_BUDGET: u32 = 10_000;
+/// The shared table of outcomes, read once from the repository's `tests/`.
+fn table() -> &'static serde_json::Value {
+    static TABLE: OnceLock<serde_json::Value> = OnceLock::new();
+    TABLE.get_or_init(|| {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../tests/external_event_budget/budget_outcomes.json");
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        serde_json::from_str(&text).expect("the table is JSON")
+    })
+}
+
+/// One whole number of the table, named by its keys from the root.
+fn number(path: &[&str]) -> i64 {
+    let mut at = table();
+    for key in path {
+        at = at
+            .get(*key)
+            .unwrap_or_else(|| panic!("the table has no `{}`", path.join(".")));
+    }
+    at.as_i64()
+        .unwrap_or_else(|| panic!("`{}` is a whole number in the table", path.join(".")))
+}
+
+/// A number of the table that counts events or refusals, as the engine counts.
+fn count(path: &[&str]) -> u32 {
+    u32::try_from(number(path))
+        .unwrap_or_else(|_| panic!("`{}` fits the engine's counter", path.join(".")))
+}
 
 fn budget(events: u32) -> NonZeroU32 {
     NonZeroU32::new(events).expect("a test budget takes at least one event")
@@ -69,7 +101,10 @@ fn counter(engine: &Engine<Policy>, script_engine: &Arc<dyn IScriptEngine>, name
 #[test]
 fn the_default_budget_is_the_documented_one() {
     let (engine, _) = started();
-    assert_eq!(engine.max_external_events_per_call(), DEFAULT_BUDGET);
+    assert_eq!(
+        engine.max_external_events_per_call(),
+        count(&["default_budget"])
+    );
     assert_eq!(engine.truncated_event_chains(), 0);
     assert_eq!(engine.last_truncated_event(), None);
 }
@@ -84,7 +119,7 @@ fn a_chain_that_cannot_end_is_cut_at_the_budget_and_the_call_returns() {
 
     assert_eq!(
         engine.truncated_event_chains(),
-        1,
+        count(&["spin", "truncated"]),
         "the call handed control back with an event still queued, and said so; \
          without the count the host sees a machine that is running and has \
          returned, with no sign that anything went wrong"
@@ -93,7 +128,7 @@ fn a_chain_that_cannot_end_is_cut_at_the_budget_and_the_call_returns() {
     // the host's event and then `budget - 1` links.
     assert_eq!(
         counter(&engine, &se, "links"),
-        i64::from(DEFAULT_BUDGET) - 1,
+        number(&["default_budget"]) - 1,
         "the chain must run exactly as far as the budget allows: fewer means the \
          call was cut early, more means the budget moved"
     );
@@ -116,26 +151,29 @@ fn a_chain_that_cannot_end_is_cut_at_the_budget_and_the_call_returns() {
 #[test]
 fn the_budget_is_exact_for_a_chain_that_ends_by_itself() {
     let (mut exactly, se) = started();
-    exactly.set_max_external_events_per_call(budget(6));
+    exactly.set_max_external_events_per_call(budget(count(&["exact", "budget"])));
     send(&mut exactly, Event::Bounded);
-    assert_eq!(counter(&exactly, &se, "laps"), 5);
+    assert_eq!(counter(&exactly, &se, "laps"), number(&["exact", "laps"]));
     assert_eq!(
         exactly.truncated_event_chains(),
-        0,
+        count(&["exact", "truncated"]),
         "a call that takes exactly the budget and empties the queue refused \
          nothing: a long chain is not a runaway"
     );
     assert_eq!(exactly.last_truncated_event(), None);
 
     let (mut one_short, se) = started();
-    one_short.set_max_external_events_per_call(budget(5));
+    one_short.set_max_external_events_per_call(budget(count(&["one_short", "budget"])));
     send(&mut one_short, Event::Bounded);
     assert_eq!(
         counter(&one_short, &se, "laps"),
-        4,
+        number(&["one_short", "laps"]),
         "one `lap` was left queued"
     );
-    assert_eq!(one_short.truncated_event_chains(), 1);
+    assert_eq!(
+        one_short.truncated_event_chains(),
+        count(&["one_short", "truncated"])
+    );
     assert_eq!(one_short.last_truncated_event(), Some(Event::Lap));
 }
 
@@ -145,31 +183,34 @@ fn the_budget_is_exact_for_a_chain_that_ends_by_itself() {
 #[test]
 fn a_refused_call_leaves_the_queue_so_the_next_call_finishes_the_chain() {
     let (mut engine, se) = started();
-    engine.set_max_external_events_per_call(budget(20));
+    engine.set_max_external_events_per_call(budget(count(&["resume", "budget"])));
 
     send(&mut engine, Event::Resume);
-    assert_eq!(engine.truncated_event_chains(), 1);
+    assert_eq!(
+        engine.truncated_event_chains(),
+        count(&["resume", "truncated"])
+    );
     assert_eq!(
         counter(&engine, &se, "beats"),
-        19,
+        number(&["resume", "beats_after_first_call"]),
         "the host's event and nineteen beats"
     );
 
     send(&mut engine, Event::Poke);
     assert_eq!(
         counter(&engine, &se, "beats"),
-        30,
+        number(&["resume", "beats_after_second_call"]),
         "the second call took the beats the first left on the queue, each in a \
          budget of its own, and finished"
     );
     assert_eq!(
         counter(&engine, &se, "pokes"),
-        1,
+        number(&["resume", "pokes"]),
         "and the host's second event was heard"
     );
     assert_eq!(
         engine.truncated_event_chains(),
-        1,
+        count(&["resume", "truncated"]),
         "the second call ended the way the clause says: nothing more is counted"
     );
 }
@@ -181,7 +222,7 @@ fn a_refused_call_leaves_the_queue_so_the_next_call_finishes_the_chain() {
 #[test]
 fn a_chain_through_a_static_delay_of_zero_does_not_keep_the_call_from_returning() {
     let (mut engine, se) = started();
-    engine.set_max_external_events_per_call(budget(50));
+    engine.set_max_external_events_per_call(budget(count(&["static_zero", "budget"])));
 
     send(&mut engine, Event::Zero);
 
@@ -199,12 +240,12 @@ fn a_chain_through_a_static_delay_of_zero_does_not_keep_the_call_from_returning(
 #[test]
 fn a_chain_through_a_delay_expression_that_is_zero_does_not_keep_the_tick_from_returning() {
     let (mut engine, se) = started();
-    engine.set_max_external_events_per_call(budget(50));
+    engine.set_max_external_events_per_call(budget(count(&["zero_expr", "budget"])));
 
     send(&mut engine, Event::ZeroExpr);
     assert_eq!(
         engine.truncated_event_chains(),
-        0,
+        count(&["zero_expr", "truncated_after_entry"]),
         "entering the state arms one entry and pops none: nothing has been cut yet"
     );
 
@@ -212,13 +253,13 @@ fn a_chain_through_a_delay_expression_that_is_zero_does_not_keep_the_tick_from_r
 
     assert_eq!(
         engine.truncated_event_chains(),
-        1,
+        count(&["zero_expr", "truncated_after_tick"]),
         "the tick popped entries due at its own reading until the budget, left the \
          due one waiting and said so"
     );
     assert_eq!(
         counter(&engine, &se, "exprs"),
-        50,
+        number(&["zero_expr", "exprs"]),
         "the budget of pops at one reading, no more and no fewer"
     );
     assert_eq!(engine.last_truncated_event(), Some(Event::Blink));
@@ -230,28 +271,34 @@ fn a_chain_through_a_delay_expression_that_is_zero_does_not_keep_the_tick_from_r
 /// the budget: three here, against eight events.
 #[test]
 fn a_chain_that_is_finite_because_the_clock_is_is_not_refused() {
+    let pulses = number(&["timed", "pulses"]);
+    // Each pulse is due a millisecond after the last, so one jump over all of
+    // them is as many milliseconds as there are pulses.
+    let jump_ms = u64::try_from(pulses).expect("a pulse count is not negative");
+    let timed_budget = budget(count(&["timed", "budget"]));
+
     let (mut walked, se) = started();
-    walked.set_max_external_events_per_call(budget(3));
+    walked.set_max_external_events_per_call(timed_budget);
 
     send(&mut walked, Event::Timed);
-    for _ in 0..8 {
+    for _ in 0..pulses {
         walked.advance_time_ms(1);
     }
-    assert_eq!(counter(&walked, &se, "pulses"), 8);
+    assert_eq!(counter(&walked, &se, "pulses"), pulses);
     assert_eq!(
         walked.truncated_event_chains(),
-        0,
+        count(&["timed", "truncated"]),
         "each pulse came in a tick of its own, at an instant of its own"
     );
 
     let (mut jumped, js) = started();
-    jumped.set_max_external_events_per_call(budget(3));
+    jumped.set_max_external_events_per_call(timed_budget);
     send(&mut jumped, Event::Timed);
-    jumped.advance_time_ms(8);
-    assert_eq!(counter(&jumped, &js, "pulses"), 8);
+    jumped.advance_time_ms(jump_ms);
+    assert_eq!(counter(&jumped, &js, "pulses"), pulses);
     assert_eq!(
         jumped.truncated_event_chains(),
-        0,
+        count(&["timed", "truncated"]),
         "eight entries came due on the way to one reading, seven of them at \
          earlier instants: a clock that moved a long way is bounded by how far it \
          moved, and is not a chain that does not end"
@@ -261,6 +308,9 @@ fn a_chain_that_is_finite_because_the_clock_is_is_not_refused() {
 #[test]
 fn a_host_chooses_the_budget() {
     let (mut engine, _) = started();
-    engine.set_max_external_events_per_call(budget(7));
-    assert_eq!(engine.max_external_events_per_call(), 7);
+    engine.set_max_external_events_per_call(budget(count(&["host", "budget"])));
+    assert_eq!(
+        engine.max_external_events_per_call(),
+        count(&["host", "budget"])
+    );
 }

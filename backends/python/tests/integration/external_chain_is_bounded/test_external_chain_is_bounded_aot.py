@@ -12,6 +12,13 @@
 # from `send_event`; the authoring driver's processor-time limit stopped it
 # after 25.5 s and called it the machine's doing.
 #
+# The numbers (the default budget, each outcome's budget and counters) are read
+# from tests/external_event_budget/budget_outcomes.json, the one table every
+# engine's test of this contract is held to. They are read from that file and
+# not from the engine: a test that asked the engine for its own limit would
+# agree with any limit, including one an edit moved by three orders of
+# magnitude.
+#
 # Fixture: tests/integration/external_chain_is_bounded.scxml
 #
 # Regeneration (after fixture or template edit):
@@ -19,8 +26,10 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
+from typing import Any, Dict
 
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE))
@@ -32,11 +41,18 @@ from sce_runtime.scripting import LuaScriptEngine  # noqa: E402
 
 _Event = _sm.ExternalChainIsBoundedEvent
 
-# The budget the engine applies when a host does not choose one, spelled here
-# rather than read back from it. A test that asked the engine for its own limit
-# would agree with any limit, including one an edit moved by three orders of
-# magnitude.
-DEFAULT_BUDGET = 10_000
+# The repository root, from this file's own location: the shared table is named
+# by the same path every other reader uses.
+_REPO_ROOT = _HERE.parents[4]
+_TABLE_PATH = _REPO_ROOT / "tests" / "external_event_budget" / "budget_outcomes.json"
+
+
+def _load_table() -> Dict[str, Any]:
+    assert _TABLE_PATH.is_file(), f"cannot read the shared table at {_TABLE_PATH}"
+    return json.loads(_TABLE_PATH.read_text(encoding="utf-8"))
+
+
+_TABLE = _load_table()
 
 
 def _started():
@@ -58,7 +74,7 @@ def _counter(engine, script_engine, name: str) -> int:
 
 def test_the_default_budget_is_the_documented_one() -> None:
     engine, _ = _started()
-    assert engine.max_external_events_per_call() == DEFAULT_BUDGET
+    assert engine.max_external_events_per_call() == _TABLE["default_budget"]
     assert engine.truncated_event_chains() == 0
     assert engine.last_truncated_event() is None
 
@@ -70,14 +86,14 @@ def test_a_chain_that_cannot_end_is_cut_at_the_budget_and_the_call_returns() -> 
 
     engine.send_event(_Event.SPIN)
 
-    assert engine.truncated_event_chains() == 1, (
+    assert engine.truncated_event_chains() == _TABLE["spin"]["truncated"], (
         "the call handed control back with an event still queued, and said so; "
         "without the count the host sees a machine that is running and has "
         "returned, with no sign that anything went wrong"
     )
     # The host's own event is the first of the call, so the budget buys the
     # host's event and then `budget - 1` links.
-    assert _counter(engine, se, "links") == DEFAULT_BUDGET - 1, (
+    assert _counter(engine, se, "links") == _TABLE["default_budget"] - 1, (
         "the chain must run exactly as far as the budget allows: fewer means "
         "the call was cut early, more means the budget moved"
     )
@@ -98,20 +114,22 @@ def test_the_budget_is_exact_for_a_chain_that_ends_by_itself() -> None:
     own is not refused, however close to the budget it comes. `bounded` is the
     host's event and five `lap`s, six in all."""
     exactly, se = _started()
-    exactly.set_max_external_events_per_call(6)
+    exactly.set_max_external_events_per_call(_TABLE["exact"]["budget"])
     exactly.send_event(_Event.BOUNDED)
-    assert _counter(exactly, se, "laps") == 5
-    assert exactly.truncated_event_chains() == 0, (
+    assert _counter(exactly, se, "laps") == _TABLE["exact"]["laps"]
+    assert exactly.truncated_event_chains() == _TABLE["exact"]["truncated"], (
         "a call that takes exactly the budget and empties the queue refused "
         "nothing: a long chain is not a runaway"
     )
     assert exactly.last_truncated_event() is None
 
     one_short, se = _started()
-    one_short.set_max_external_events_per_call(5)
+    one_short.set_max_external_events_per_call(_TABLE["one_short"]["budget"])
     one_short.send_event(_Event.BOUNDED)
-    assert _counter(one_short, se, "laps") == 4, "one `lap` was left queued"
-    assert one_short.truncated_event_chains() == 1
+    assert _counter(one_short, se, "laps") == _TABLE["one_short"]["laps"], (
+        "one `lap` was left queued"
+    )
+    assert one_short.truncated_event_chains() == _TABLE["one_short"]["truncated"]
     assert one_short.policy.get_event_name(one_short.last_truncated_event()) == "lap"
 
 
@@ -120,19 +138,24 @@ def test_a_refused_call_leaves_the_queue_so_the_next_call_finishes_the_chain() -
     queued. An engine that dropped the queue stops short and never finishes; one
     that ran the chain anyway finishes it in the first call."""
     engine, se = _started()
-    engine.set_max_external_events_per_call(20)
+    resume = _TABLE["resume"]
+    engine.set_max_external_events_per_call(resume["budget"])
 
     engine.send_event(_Event.RESUME)
-    assert engine.truncated_event_chains() == 1
-    assert _counter(engine, se, "beats") == 19, "the host's event and nineteen beats"
+    assert engine.truncated_event_chains() == resume["truncated"]
+    assert _counter(engine, se, "beats") == resume["beats_after_first_call"], (
+        "the host's event and nineteen beats"
+    )
 
     engine.send_event(_Event.POKE)
-    assert _counter(engine, se, "beats") == 30, (
+    assert _counter(engine, se, "beats") == resume["beats_after_second_call"], (
         "the second call took the beats the first left on the queue, each in a "
         "budget of its own, and finished"
     )
-    assert _counter(engine, se, "pokes") == 1, "and the host's second event was heard"
-    assert engine.truncated_event_chains() == 1, (
+    assert _counter(engine, se, "pokes") == resume["pokes"], (
+        "and the host's second event was heard"
+    )
+    assert engine.truncated_event_chains() == resume["truncated"], (
         "the second call ended the way the clause says: nothing more is counted"
     )
 
@@ -143,7 +166,7 @@ def test_a_chain_through_a_delay_of_zero_does_not_keep_the_call_from_returning()
     what is held is that the host's call returns and says it was cut. How many
     blinks it handled is not asserted."""
     engine, se = _started()
-    engine.set_max_external_events_per_call(50)
+    engine.set_max_external_events_per_call(_TABLE["static_zero"]["budget"])
 
     engine.send_event(_Event.ZERO)
 
@@ -160,7 +183,7 @@ def test_a_chain_through_a_delay_expression_that_is_zero_does_not_keep_the_call_
     bound (ARCHITECTURE.md "External-Event Budget", rule 5). What is held is the
     same: the host's call returns, and the cut is counted."""
     engine, se = _started()
-    engine.set_max_external_events_per_call(50)
+    engine.set_max_external_events_per_call(_TABLE["zero_expr"]["budget"])
 
     engine.send_event(_Event.ZERO_EXPR)
 
@@ -173,24 +196,27 @@ def test_a_chain_that_is_finite_because_the_clock_is_is_not_refused() -> None:
     """Eight pulses, each due one millisecond after the last. They are due at
     later instants, so a legitimate time-driven workload is not a runaway
     however small the budget: three here, against eight events."""
+    timed = _TABLE["timed"]
     engine, se = _started()
-    engine.set_max_external_events_per_call(3)
+    engine.set_max_external_events_per_call(timed["budget"])
 
     engine.send_event(_Event.TIMED)
-    for _ in range(8):
+    for _ in range(timed["pulses"]):
         engine.advance_time(1)
 
-    assert _counter(engine, se, "pulses") == 8
-    assert engine.truncated_event_chains() == 0, (
+    assert _counter(engine, se, "pulses") == timed["pulses"]
+    assert engine.truncated_event_chains() == timed["truncated"], (
         "each pulse came in a call of its own, at an instant of its own"
     )
 
     jumped, js = _started()
-    jumped.set_max_external_events_per_call(3)
+    jumped.set_max_external_events_per_call(timed["budget"])
     jumped.send_event(_Event.TIMED)
-    jumped.advance_time(8)
-    assert _counter(jumped, js, "pulses") == 8
-    assert jumped.truncated_event_chains() == 0, (
+    # Each pulse is due a millisecond after the last, so one jump over all of
+    # them is as many milliseconds as there are pulses.
+    jumped.advance_time(timed["pulses"])
+    assert _counter(jumped, js, "pulses") == timed["pulses"]
+    assert jumped.truncated_event_chains() == timed["truncated"], (
         "eight due entries in one host call are eight loop invocations of one "
         "event each: the budget is per invocation of the drain, and a clock that "
         "moved a long way is not a chain that does not end"
@@ -198,14 +224,20 @@ def test_a_chain_that_is_finite_because_the_clock_is_is_not_refused() -> None:
 
 
 def test_a_host_chooses_the_budget_and_a_budget_that_takes_no_event_is_refused() -> None:
+    host_budget = _TABLE["host"]["budget"]
     engine, _ = _started()
-    engine.set_max_external_events_per_call(7)
-    assert engine.max_external_events_per_call() == 7
-    for refused in (0, -1, 2.5, True, "5"):
+    engine.set_max_external_events_per_call(host_budget)
+    assert engine.max_external_events_per_call() == host_budget
+    # The table's refused numbers, then the values that are not a whole number
+    # of events at all: a type this driver's language can be handed and Rust's
+    # and Go's typed signatures cannot.
+    for refused in (*_TABLE["host"]["refused"], 2.5, True, "5"):
         try:
             engine.set_max_external_events_per_call(refused)  # type: ignore[arg-type]
         except ValueError as error:
             assert "at least one" in str(error)
         else:  # pragma: no cover - the failure being asserted against
             raise AssertionError(f"a budget of {refused!r} was accepted")
-    assert engine.max_external_events_per_call() == 7, "a refused budget changes nothing"
+    assert engine.max_external_events_per_call() == host_budget, (
+        "a refused budget changes nothing"
+    )
