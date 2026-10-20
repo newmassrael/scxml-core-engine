@@ -896,31 +896,37 @@ fi
 
 sce_gate_step "the emitted Kotlin suite built and passed $suite_cases case(s)"
 
-# ── The Kotlin Mesh core ────────────────────────────────────────────
+# ── The Kotlin modules' own tests ───────────────────────────────────
 #
-# `:sce-kotlin-mesh` is the router core a Kotlin host runs Mesh through, and
-# `backends/kotlin/**` is what selects this gate, so this is where it is run.
-# Its tests are the ones that hold the core to the Rust core's bytes.
+# `backends/kotlin/**` is what selects this gate, so the modules beside the
+# suite are run here too. `:sce-kotlin-mesh` is the router core a Kotlin host
+# runs Mesh through; its tests are the ones that hold the core to the Rust
+# core's bytes. `:sce-kotlin-scenarios` is the replay the suite above, and a
+# build outside this repository, hold a generated machine to a scenario with;
+# its tests hold the replay to what it judges, which the suite cannot: a replay
+# that judged nothing would pass every scenario there.
 #
 # The count is DERIVED from the module's own `@Test` declarations and held as
 # an equality, for the reason the suite rows above read JUnit XML: Gradle says
 # BUILD SUCCESSFUL for a test task that ran nothing, and a floor typed here
 # would go on passing when a test stopped running.
-sce_gate_step "running the Kotlin Mesh core's own tests"
-# Every test source set `jvmTest` compiles: the common core's and the JVM
-# WebSocket client's.
-mesh_declared="$(grep -rh '^\s*@Test' backends/kotlin/mesh/src/*Test | grep -c . || true)"
-mesh_status=0
-./gradlew --console=plain :sce-kotlin-mesh:jvmTest >"$LOG/kotlin-mesh.log" 2>&1 || mesh_status=$?
-if (( mesh_status != 0 )); then
-    tail -n 40 "$LOG/kotlin-mesh.log" >&2
-    sce_gate_fail "the Kotlin Mesh core's tests failed"
-fi
-MESH_REPORTS="backends/kotlin/mesh/build/test-results/jvmTest"
-[ -d "$MESH_REPORTS" ] \
-    || sce_gate_fail "the Kotlin Mesh core reported success without producing a result file"
-read -r mesh_cases mesh_failures mesh_errors < <(
-    python3 - "$MESH_REPORTS" <<'PY'
+kotlin_module_tests() {
+    local task="$1" module="$2" what="$3"
+    local declared status=0 log reports cases failures errors
+    sce_gate_step "running $what's own tests"
+    # Every test source set `jvmTest` compiles: the common one and the JVM one.
+    declared="$(grep -rh '^\s*@Test' "$module"/src/*Test | grep -c . || true)"
+    log="$LOG/kotlin-$(basename "$module").log"
+    ./gradlew --console=plain "$task" >"$log" 2>&1 || status=$?
+    if (( status != 0 )); then
+        tail -n 40 "$log" >&2
+        sce_gate_fail "$what's tests failed"
+    fi
+    reports="$module/build/test-results/jvmTest"
+    [ -d "$reports" ] \
+        || sce_gate_fail "$what reported success without producing a result file"
+    read -r cases failures errors < <(
+        python3 - "$reports" <<'PY'
 import glob, sys, xml.etree.ElementTree as ET
 t = f = e = 0
 for p in glob.glob(sys.argv[1] + "/*.xml"):
@@ -928,9 +934,12 @@ for p in glob.glob(sys.argv[1] + "/*.xml"):
     t += int(r.get("tests", 0)); f += int(r.get("failures", 0)); e += int(r.get("errors", 0))
 print(t, f, e)
 PY
-)
-if (( mesh_declared < 1 || mesh_cases != mesh_declared || mesh_failures != 0 || mesh_errors != 0 )); then
-    sce_gate_fail "the Kotlin Mesh core ran $mesh_cases case(s) of the $mesh_declared its sources declare, with $mesh_failures failure(s) and $mesh_errors error(s)"
-fi
+    )
+    if (( declared < 1 || cases != declared || failures != 0 || errors != 0 )); then
+        sce_gate_fail "$what ran $cases case(s) of the $declared its sources declare, with $failures failure(s) and $errors error(s)"
+    fi
+    sce_gate_step "$what passed all $cases case(s) its sources declare"
+}
 
-sce_gate_step "the Kotlin Mesh core passed all $mesh_cases case(s) its sources declare"
+kotlin_module_tests :sce-kotlin-mesh:jvmTest backends/kotlin/mesh "the Kotlin Mesh core"
+kotlin_module_tests :sce-kotlin-scenarios:jvmTest backends/kotlin/scenarios "the Kotlin scenario replay"

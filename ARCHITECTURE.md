@@ -1308,7 +1308,7 @@ backends/
   c/{runtime, tests, forge-runtime}
   cpp/{forge-runtime}                         # C++ core lives in sce/
   go/{runtime, lua, tests, forge-runtime}
-  kotlin/{runtime, lua, quickjs, rhino, tests, benchmark, spring-boot-starter, android-app, forge-runtime}
+  kotlin/{runtime, lua, quickjs, rhino, tests, scenarios, benchmark, spring-boot-starter, android-app, forge-runtime}
   python/{bindings, runtime, tests, forge-runtime}
   rust/{runtime, lua, tests, link-runtime, portable-bytes, forge-runtime, probes/*}
 ```
@@ -1349,6 +1349,7 @@ backends/kotlin/lua           Lua 5.4 engine via JNI (fastest on Android)
 backends/kotlin/quickjs      QuickJS engine via JNI (full ES6, native)
 backends/kotlin/spring-boot-starter Spring Boot auto-configuration (@AutoConfiguration)
 backends/kotlin/tests        W3C conformance (202/202, all 3 engines)
+backends/kotlin/scenarios    Replay of an engine-neutral scenario against any generated machine
 backends/kotlin/benchmark    JMH benchmarks (3-engine comparison)
 backends/kotlin/android-app         Android real-device benchmark (Compose UI)
 ```

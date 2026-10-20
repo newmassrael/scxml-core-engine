@@ -51,6 +51,13 @@ project(":sce-kotlin-mls-replay").projectDir = file("backends/kotlin/mls-replay"
 // The reference host of the standard host features (docs/SCE_HOST_FEATURES.md).
 include(":sce-kotlin-host-features")
 project(":sce-kotlin-host-features").projectDir = file("backends/kotlin/host-features")
+// The replay of an engine-neutral scenario against a generated machine
+// (backends/kotlin/scenarios/README.md): what `:sce-kotlin-tests` replays the
+// shared scenarios with, and what a build outside this repository replays its
+// own machines with. Its own module so that build takes the replay without the
+// W3C suite.
+include(":sce-kotlin-scenarios")
+project(":sce-kotlin-scenarios").projectDir = file("backends/kotlin/scenarios")
 // ECMA-262 through a Lua-lowered Kotlin artifact. Separate from
 // `:sce-kotlin-tests` because it compiles two artifacts generated from one
 // document with two `--script-engine` selections, which is a different subject
