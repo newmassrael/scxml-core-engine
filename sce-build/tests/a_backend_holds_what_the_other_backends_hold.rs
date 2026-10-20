@@ -32,12 +32,16 @@
 // entries in `ACCEPTED` the list of what is left; the `NotYet` ones close as
 // it gains the capability and the stale check removes them as they do.
 //
-// What this does not read yet: the lanes outside the generator (CI jobs and
-// gates per backend, the integration channels, the shared fixtures each
-// runtime reads). Those are registries of their own and join in their own
-// commit.
+// Outside the generator it reads the integration channel table
+// (`common::integration_channels`, the one `integration_stem_registration`
+// holds the drivers to). What it does not read yet: the gates per backend and
+// the shared fixtures each runtime reads. Those join in their own commit.
+
+mod common;
 
 use std::collections::{BTreeMap, BTreeSet};
+
+use common::integration_channels::Channel;
 
 use sce_build::cli_language::LanguageRoute;
 use sce_build::conformance::harness_layout;
@@ -188,6 +192,14 @@ fn derived_facts() -> Vec<Fact> {
             ),
         },
     ));
+
+    // The integration channels: whether a backend has one. That a channel
+    // drives every stem it does not declare it cannot host is
+    // `integration_stem_registration`'s check over the same table; what it
+    // cannot see is a backend with no channel at all, which is what this asks.
+    facts.push(fact("integration channel", |l| {
+        holds_if(Channel::ALL.iter().any(|c| c.language() == Some(l)))
+    }));
 
     // A capability no backend holds is not one any backend is behind on.
     facts.retain(|f| f.holdings.iter().any(|(_, h)| *h == Holding::Holds));
