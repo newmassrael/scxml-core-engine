@@ -5266,7 +5266,10 @@ machine reads through the event's schema. So a read of a schema field is a call
 of the library's `field`, at the type the schema declares, and it refuses what
 the generated machines' lift of a payload refuses — no data, a bare value, a
 missing field, a value of another type, a value beyond the field's width — by
-throwing, so the expression that read it fails as an overflow does. Four
+throwing, so the expression that read it fails as an overflow does. A field a
+later revision of the schema added is read with its default as a fourth
+argument, which `field` reads where the data lacks the field, as the generated
+lifts do (EventSchema kind, "An event schema that grows"). Four
 differences stand, all for a malformed delivery only: a generated machine
 lifts the payload once when the event is dequeued and raises `error.execution`
 once, where the Interpreter raises one for each expression that reads a field;
@@ -7080,6 +7083,129 @@ either reading.
 engine exists whose reading this one would have to match, so the typed
 payload is the whole channel and neither the wire fill nor the lift is
 emitted.
+
+#### An event schema that grows — `sce:revision`, `sce:since`, `sce:default`
+
+The lift refuses a delivery that lacks a field of its schema (above). That is
+right for a field every sender writes, and wrong for one added after some sender
+was built: a host that keeps the events it sent as a durable, append-only log and
+replays that log into the machine after the application is upgraded, or two
+devices on different versions exchanging events, would see every older delivery
+refused the day a field is added. So a schema says which revision it is, a field
+a later revision added says which revision added it and what a delivery that
+lacks it takes, and the lift reads that default in its place.
+
+```xml
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="schema_revised"
+       sce:event-name="reading.revised" sce:revision="3">
+  <sce:import src="enum_view_mode.scxml" kind="enum" as="ViewMode"/>
+  <datamodel>
+    <data id="level" sce:type="uint8" sce:direction="in"/>
+    <data id="layout" sce:type="enum:ViewMode" sce:direction="in"
+          sce:since="2" sce:default="week"/>
+    <data id="urgent" sce:type="bool" sce:direction="in"
+          sce:since="3" sce:default="true"/>
+  </datamodel>
+</scxml>
+```
+
+**What the schema declares, and what is refused where it is read.**
+
+- `sce:revision` on the root is a positive integer: the revision of the schema
+  the document is. A document that declares none is its first revision. Any
+  other value is `validation/attribute-rule-violated`.
+- A field a later revision added declares `sce:since`, the revision that added
+  it, an integer from 2 up to the root's revision, and `sce:default`, the value
+  a delivery that lacks the field takes. A field of the first revision declares
+  neither: every delivery carries it, and one that lacks it is refused exactly as
+  before.
+- `sce:since` outside `2..=revision` (including any `sce:since` on a schema that
+  declares no revision past the first) is `validation/attribute-rule-violated`;
+  `sce:since` without `sce:default` is `validation/missing-attribute`;
+  `sce:default` without `sce:since` is `validation/attribute-rule-violated`,
+  because a default is only ever read for a field a delivery may lack.
+- A default is a value of its field, held to the rules a delivered value is held
+  to: an integer within its width (decimal, `0x` or `0b`, as every typed numeric
+  attribute reads one), a real that is finite and within its width, `true` or
+  `false` for a `bool` (`validation/invalid-attribute`, naming the two), a text
+  of at most the field's `sce:max-size` UTF-8 bytes when it declares one, a byte
+  string of printable ASCII with no backslash within its bound, and for an enum
+  one of the names its variants declare (`validation/invalid-attribute`, naming
+  them). Every other unfit default is `validation/attribute-rule-violated`. An
+  enum default is judged where the enum document is read: when the schema is
+  compiled, and in every statechart that imports the schema.
+- `sce:revision`, `sce:since` and `sce:default` mean this on an event schema only.
+  On any other kind's `<data>` or root nothing reads them, and they are refused
+  as `validation/sce-attribute-unread`. (`sce:default` on a lookup's mapping
+  `<data>` is that kind's miss policy, as before.)
+
+**The lift.** A field the delivery lacks and a later revision added takes its
+default; a field the delivery carries is read as it came and held to its type
+whether or not it declares a default (a text where a `bool` is declared is
+refused); a delivery that lacks a field of the first revision is refused, as
+`error.execution`, writing nothing. A delivery with no data at all lacks every
+field, so it is read as one that names none: refused when the schema has a field
+of the first revision, and read entirely from the defaults when every field came
+later. A delivery that is not an object of named fields (a bare value) is refused
+as before.
+
+A field the schema does not name is not read, on every engine: a newer sender's
+delivery reads on an older machine, taking what the older schema names. This was
+already so before revisions existed (each lift reads the fields it names and walks
+past the rest, a nested object or array included), and `static_schema_revision`
+now states it.
+
+The default is spelled once, by the generator, as the JSON a delivery would carry
+for the field (`forge::schema_revision::wire_of`: an integer in decimal, a 64-bit
+one as the text of its digits, a real with a point or an exponent, a text, a byte
+string or an enum's declared name quoted), and every engine reads it with the
+reader it reads a delivered value with. The generated lifts on Rust, Kotlin, Go,
+Python, C++ and C11 are handed the schema's defaults as one JSON object and read a
+field the delivery lacks out of it (`PayloadFields::decode_with_defaults`,
+`EventPayload.decode(data, defaults)`, `sce.LiftPayloadWithDefaults`,
+`event_payload.lift(data, fields, defaults)`,
+`EventPayloadFields::decode(data, defaults, out)`,
+`sce_payload_decode_with_defaults`); a schema no later revision added a field to
+generates the lift it always did. The Interpreter's `field` (§2.15) is handed the
+default of the one field it reads as a fourth argument and reads it where the
+data names no such field. `scenarios/static_schema_revision.json` holds all seven
+to one answer.
+
+**Where else a schema's fields are read, and whether the default applies.**
+
+- A saved external queue (`SavedEvent`) holds an event's data as the wire carried
+  it, and the typed view is lifted again when the event is delivered. A queue
+  saved by a build of an earlier revision therefore restores, and its events take
+  the defaults when they are dequeued.
+- A Mesh delivery, a `<send>` with `<param>`s, an invoke forwarding an event and
+  every other producer fill the data wire, which the same lift reads. The
+  defaults apply to each.
+- A host-run invocation's result whose schema grew is lifted the same way.
+- A `record:<alias>` variable is not a delivery. A record is built whole by its
+  `<sce:set>`s or from a payload already lifted, so nothing reads a default for
+  it. A saved state names each field of a record variable in its shape, so adding
+  a field to a schema a record variable is of changes the shape, and a state
+  saved before the field existed is refused as one whose variable was re-typed.
+  The same holds for an algorithm's record parameter, which is handed a record
+  and never reads a delivery.
+- `mesh/event-schema-mismatch` compares the sender's and receiver's schemas of
+  one deployment, which are built together: a field's `since` and default are
+  part of the fields it compares, and the root's revision number is not.
+- Under a data model other than `sce-static` the default is the typed lift's
+  alone: the script engine binds `_event.data` to the delivery as it came, so an
+  `<assign expr="_event.data.urgent">` there reads nothing for a field the
+  delivery lacks. A guard that reads such a field is therefore not lowered
+  natively and stays with the script engine, where it reads what the delivery
+  carried, so the native lowering of the other guards remains unobservable.
+
+**What a revision does not make safe.** Removing a field needs nothing: a
+delivery of an earlier revision that still carries it carries a field the schema
+does not name, which is not read. Changing a field's type, or renaming one, is
+not made safe by any of this: a delivery of the earlier revision carries a value
+of the old type, or under the old name, and is refused, or reads the new name's
+default where the old name's value was meant. Such a change is a new field (a
+new name with its own `sce:since` and default), not a revision of the old one.
 
 **Cross-doc Enum literal width narrowing** (DL-5'): integer
 literals compared against (receive-side) or assigned to
