@@ -251,6 +251,56 @@ fn the_manifest_the_report_and_the_record_say_the_same_words() {
     }
 }
 
+/// A host that shows the manifest to a person who reads Korean asks for it in
+/// Korean (`--lexicon ko`): the same matters in the same order, naming the same
+/// ids, each sentence in Korean. English is the default, and the record is
+/// English whatever the manifest was asked in.
+#[test]
+fn the_manifest_says_the_same_matters_in_korean_when_asked() {
+    let root = design_root("d/gate.scxml", OPEN);
+    let english = manifest_open(root.path(), "d/gate.scxml");
+    let out = ok(
+        run(
+            &["check", "d/gate.scxml", "-l", "rust", "--lexicon", "ko"],
+            root.path(),
+        ),
+        "check in Korean",
+    );
+    let manifest: serde_json::Value = serde_json::from_slice(&out.stdout).expect("one JSON line");
+    let korean: Vec<(String, String)> = manifest["open"]
+        .as_array()
+        .expect("open")
+        .iter()
+        .map(|m| {
+            (
+                m["kind"].as_str().expect("kind").to_string(),
+                m["message"].as_str().expect("message").to_string(),
+            )
+        })
+        .collect();
+
+    let hangul = |text: &str| text.chars().any(|c| ('\u{AC00}'..='\u{D7A3}').contains(&c));
+    let kinds = |list: &[(String, String)]| list.iter().map(|(k, _)| k.clone()).collect::<Vec<_>>();
+    assert_eq!(kinds(&korean), kinds(&english));
+    for ((_, said), id) in korean
+        .iter()
+        .zip(["timeout-policy", "wait-limit", "announce"])
+    {
+        assert!(hangul(said), "not Korean: {said}");
+        assert!(said.contains(id), "{id} is not named: {said}");
+    }
+    assert!(english.iter().all(|(_, said)| !hangul(said)), "{english:?}");
+    let record = accepted(root.path(), "d/gate.scxml");
+    assert!(
+        record["open_at_acceptance"]
+            .as_array()
+            .expect("kept")
+            .iter()
+            .all(|m| !hangul(m["message"].as_str().expect("message"))),
+        "the record is English"
+    );
+}
+
 /// An owner is told when a caller can end a wait early. Measured 2026-09-30,
 /// fifteen drafts by a real client under a closed-interface profile: fourteen
 /// declared the timer they send themselves as an input, so the interface listed

@@ -1072,11 +1072,16 @@ struct RejectedDocument {
 /// the TARGET's answer — C++ and Kotlin hand the engine ECMAScript while the
 /// other four hand it lowered Lua — so a sweep has no single one to report
 /// and says nothing rather than something false.
+///
+/// `lexicon` is the language `open` is said in, for the person a host shows
+/// it to; `generate` and `orchestrate` say it in English, and `check` in the
+/// lexicon it was asked for, English unless it was asked otherwise.
 fn build_manifest<'a>(
     report: &'a GenerateReport,
     kind: ManifestKind,
     languages: Option<Vec<LanguageVerdict>>,
     target: Option<Language>,
+    lexicon: &sce_build::forge::page::Lexicon,
 ) -> Manifest<'a> {
     Manifest {
         v: sce_build::manifest::MANIFEST_SCHEMA_VERSION,
@@ -1127,7 +1132,8 @@ fn build_manifest<'a>(
         // union would name a parent none of them may lack.
         open: {
             let one_document = report.document_kind.is_some();
-            sce_build::open_matters::of(
+            sce_build::open_matters::of_in(
+                lexicon,
                 &report.unresolved,
                 if one_document {
                     report.parent_sends.as_deref().unwrap_or(&[])
@@ -1284,7 +1290,14 @@ fn emit_generate_manifest(report: &GenerateReport) {
     }
     outln!(
         "{}",
-        build_manifest(report, ManifestKind::Generate, None, report.target_language).to_line()
+        build_manifest(
+            report,
+            ManifestKind::Generate,
+            None,
+            report.target_language,
+            &sce_build::forge::page::EN,
+        )
+        .to_line()
     );
 }
 
@@ -2105,6 +2118,16 @@ struct CheckArgs {
     /// for the flag to judge and is refused rather than passed in silence.
     #[arg(long, conflicts_with_all = ["forge"])]
     lint: bool,
+    /// The language the manifest's `open` says what is left open in, for the
+    /// person a host shows it to. Nothing else of the manifest or the records
+    /// changes with it, and English is what every gate and record reads.
+    #[arg(
+        long,
+        value_name = "NAME",
+        default_value = "en",
+        value_parser = registered_lexicons()
+    )]
+    lexicon: String,
     /// Hold the statecharts to an authoring profile: a JSON file the
     /// specification's owner keeps beside the specification, stating what a
     /// design is held to (SCE Accepted Subset §2.17). Mirrors
@@ -3926,6 +3949,7 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
             ManifestKind::Orchestrate,
             None,
             report.target_language,
+            &sce_build::forge::page::EN,
         )
         .to_line()
     );
@@ -4693,6 +4717,7 @@ fn cmd_check_document_set(args: CheckArgs, error_format: ErrorFormat) {
         include_dir,
         strict_unresolved,
         lint,
+        lexicon,
         profile: profile_path,
         go_module_prefix,
         const_fold_budget,
@@ -4706,6 +4731,7 @@ fn cmd_check_document_set(args: CheckArgs, error_format: ErrorFormat) {
         // any more: `orchestrate` carries both, so this route can be told
         // what the producer can be told and is bound to honour it below.
     } = args;
+    let lexicon = check_lexicon(&lexicon);
 
     // Before anything else is read: an unusable profile is the first thing
     // said about the run.
@@ -4811,7 +4837,7 @@ fn cmd_check_document_set(args: CheckArgs, error_format: ErrorFormat) {
 
     outln!(
         "{}",
-        build_manifest(&report, ManifestKind::Check, Some(verdicts), None).to_line()
+        build_manifest(&report, ManifestKind::Check, Some(verdicts), None, lexicon).to_line()
     );
 }
 
@@ -4837,6 +4863,17 @@ fn cmd_check_document_set(args: CheckArgs, error_format: ErrorFormat) {
 /// leaves the writes to its caller — so [`cmd_check_document_set`] is
 /// `cmd_orchestrate` with the write loop absent rather than a second
 /// validation path that has to be kept in agreement with it.
+/// The lexicon `check --lexicon` named. Clap has refused a name the registry
+/// does not carry, so a miss is the parser and the registry disagreeing, and
+/// says which.
+fn check_lexicon(name: &str) -> &'static sce_build::forge::page::Lexicon {
+    sce_build::forge::page::lexicon_named(name).unwrap_or_else(|| {
+        cli_exit(CliError::Usage {
+            detail: format!("the '{name}' lexicon is not in this build's registry"),
+        })
+    })
+}
+
 fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
     // A lone document is checked against `generate`; anything that
     // needs a cross-doc registry or a deploy topology is checked
@@ -4864,6 +4901,7 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
         include_dir,
         strict_unresolved,
         lint,
+        lexicon,
         profile: profile_path,
         go_module_prefix,
         const_fold_budget,
@@ -4871,6 +4909,7 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
         host_processor,
         host_invoker,
     } = args;
+    let lexicon = check_lexicon(&lexicon);
     // The router above leaves only the single-document shape here, and
     // clap's `required_unless_present` guarantees the positional is the
     // one that carries it.
@@ -5063,7 +5102,8 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
                 }
                 outln!(
                     "{}",
-                    build_manifest(&report, ManifestKind::Check, Some(verdicts), None).to_line()
+                    build_manifest(&report, ManifestKind::Check, Some(verdicts), None, lexicon)
+                        .to_line()
                 );
                 return;
             }
@@ -5204,7 +5244,7 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
 
     outln!(
         "{}",
-        build_manifest(&report, ManifestKind::Check, Some(verdicts), None).to_line()
+        build_manifest(&report, ManifestKind::Check, Some(verdicts), None, lexicon).to_line()
     );
 }
 

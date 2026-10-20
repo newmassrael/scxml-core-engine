@@ -165,6 +165,11 @@ impl SceCodegen {
             .args(["--error-format", "json", "check"])
             .arg(&document)
             .arg("--lint");
+        // What is left open is said to the person in the page's language, by the product: a screen
+        // that translated it would be a second author of those sentences.
+        if let Some(lexicon) = request.lexicon {
+            command.arg("--lexicon").arg(word("--lexicon", lexicon)?);
+        }
         let run = run_bounded(command, scratch.path(), self.timeout_for(scratch.path()))?;
         let records = records_of(&run.stderr);
         if !run.success {

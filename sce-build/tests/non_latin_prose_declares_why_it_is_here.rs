@@ -171,6 +171,13 @@ const THE_SCRIPT_IS_THE_SUBJECT: &[(&str, &str)] = &[
          compares, and an English paraphrase would test the English table",
     ),
     (
+        "sce-build/src/open_matters.rs",
+        "holds the Korean sentences of what a design leaves open, beside \
+         page.rs's lexicon: each is what a Korean reader of the manifest is \
+         told, and its test checks the counts and names in the Korean word \
+         order, which an escape would hide",
+    ),
+    (
         "sce-build/src/diagram/words.rs",
         "holds the print figure's Korean phrases beside page.rs's lexicon: \
          each spelling is what the figure prints for that lexicon, and its \
