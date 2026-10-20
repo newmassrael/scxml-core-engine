@@ -1,6 +1,6 @@
 # ADR 0045 — A saved state holds its running children, and a restore resumes them where they were
 
-- Status: Proposed (2026-10-20)
+- Status: Accepted (2026-10-20); step 1 in progress
 - Date: 2026-10-20
 - Scope: docs/SCE_ACCEPTED_SUBSET.md §2.15 ("Saving and restoring", "Running invocations",
   "Child sessions", the scenario format); `schemas/sce-saved-state.v1.schema.json` and a new
@@ -9,7 +9,8 @@
   of the Rust runtime (`sce_rust_runtime::saved_state`, `<Machine>Persist`) and the Kotlin runtime
   (`com.sce.runtime.SavedState`, `StateMachineEngine`); the invoke templates of every backend; a
   saved state for the Go, Python, C++ and C11 backends; the Mesh host cores (`sce-rust-mesh`,
-  `sce-kotlin-mesh`) and SCE_MESH.md §19; the shared instances under
+  `sce-kotlin-mesh`) and SCE_MESH.md §5, §10, §13, §14, §16.7 and §19 (the checkpoint, durable
+  receipt, `deploy.yaml`'s `persistence:` and `receipt:`, pattern 22); the shared instances under
   `sce-build/tests/fixtures/static_datamodel/saved/` and the scenario drivers
 - Related: ADR 0042 (a shared record list is a standard part an application invokes; branch
   `shared-record-list`), ADR 0043 (a child session that talks to Mesh peers has its own endpoint;
@@ -91,7 +92,9 @@ saved state of its own document, under the invoke that started it and the number
 restore judges the whole tree first and then rebuilds every session where it stood, starting none of
 them. What the network changes is not part of a session, and the Mesh host core saves it beside the
 tree in one checkpoint, holding every envelope back until the checkpoint that produced it is
-durable. What the host created and the document cannot name stays the host's.**
+durable. What the host created and the document cannot name stays the host's. Each binding chooses
+in deploy.yaml between the receipt its transport reports, where a restore reports what may have been
+lost, and durable receipt, where nothing the receiver was sent is lost.**
 
 ### 1. What a saved state holds for each running child
 
@@ -258,7 +261,7 @@ document can name it.**
 | Held by | What | Written by | When |
 |---|---|---|---|
 | The saved state | every session of the tree: variables (a list's records among them), configuration, history, queues, waiting sends, running invocations with their requests, counters, session ids, children | the generated machine and its runtime | at a macrostep boundary of the root |
-| The endpoint section of a checkpoint | per machine name of the deployment (the root's and each `invoked_by` child's, ADR 0043 section 1): the outbound sequence counter per target (§10.6.3), the duplicate window per sender (§10.5), the ordering state per source, `next_expected_seq` and the envelopes buffered past it (§10.6.4), the envelopes not yet released to a transport or held for retry (§10.10, ADR 0043 section 5), with their envelope ids, sequence numbers and the wall-clock moment each comes due, and what the endpoint released for a session that the session has not yet taken | the Mesh host core (`sce-rust-mesh`, `sce-kotlin-mesh`), or a host that runs its own router | with the saved state, in one checkpoint |
+| The endpoint section of a checkpoint | per machine name of the deployment (the root's and each `invoked_by` child's, ADR 0043 section 1): the outbound sequence counter per target (§10.6.3), the duplicate window per sender (§10.5), the ordering state per source, `next_expected_seq` and the envelopes buffered past it (§10.6.4), the envelopes not yet released to a transport or held for retry (§10.10, ADR 0043 section 5), with their envelope ids, sequence numbers and the wall-clock moment each comes due, the envelopes a durable binding still holds unacknowledged and, per durable source, the acknowledged mark (section 5), and what the endpoint released for a session that the session has not yet taken | the Mesh host core (`sce-rust-mesh`, `sce-kotlin-mesh`), or a host that runs its own router | with the saved state, in one checkpoint |
 | The host | keys and every part of ADR 0034's trust state (device keys, the MLS group state, the membership and operation logs the host keeps), credentials, the store itself, and what a host keeps for its own host-run work (§2.15 already leaves that to it) | the host | as the host's own storage requires; never rolled back with a checkpoint |
 
 Why the endpoint is not in the saved state: a session's state changes only when the session steps,
@@ -290,17 +293,26 @@ starts over when a process does") without the `(source, routing_id)` keying SCE_
 invariant 5 keeps closed. A host core that does not persist sends at once, as today, and has no
 checkpoint to restore from; it does not offer a checkpoint without holding envelopes back, because
 a checkpoint taken after its envelopes left restores a tree whose next envelopes its peers drop.
+
+**Which machines are checkpointed is declared in the deploy.** A top-level machine whose host core
+checkpoints it says so in deploy.yaml, `persistence: checkpoint` beside its `bindings:` (absent: not
+checkpointed, today's behaviour); its `invoked_by` children are checkpointed with it, since they are
+in its tree. The store is still the host's (it hands the core where and how to write durably); the
+declaration is the deployment's, because section 5's durable receipt is a promise between two
+machines that the build can only check if it sees that both of them checkpoint.
+
 **What arrived after the checkpoint is reported, not silently lost.** SCE_MESH.md §10.4 asks a
 transport for at-least-once delivery, "successful receipt or an `error.communication` event". A
 transport meets that up to the receiving process; an envelope the endpoint admitted after the last
 durable checkpoint is lost with the process, and its sender, whose transport saw it received, is not
-told. A restore cannot know whether that happened, so it says that it may have: a restored endpoint
-raises, in each restored session that holds state for a peer source, one `error.communication` with
-`reason` `"RESTORED"` and the `source` in `_event.data` (a new row of SCE_MESH.md §16.7, after the
-`ORDERING_GAP` row it resembles), and a document that keeps a shared state asks that peer again (the
-list's resync). A checkpoint the host core took after it stopped admitting (an orderly shutdown,
-the links closed first) is marked `clean`, and its restore raises nothing. Whether Mesh should
-instead never lose such an envelope is open question 1.
+told. On a binding with the default receipt (section 5) a restore cannot know whether that happened,
+so it says that it may have: a restored endpoint raises, in each restored session that holds state
+for a peer source, one `error.communication` with `reason` `"RESTORED"` and the `source` in
+`_event.data` (row 17 of SCE_MESH.md §16.7, after the `ORDERING_GAP` row it resembles), and a document
+that keeps a shared state asks that peer again (the list's resync). A checkpoint the host core took
+after it stopped admitting (an orderly shutdown, the links closed first) is marked `clean`, and its
+restore raises nothing. A source whose every route to the restored machine has durable receipt is not
+reported either: nothing it sent can have been lost (section 5).
 
 The `routing_id` (§10.9 invariant 1) is the new router's, generated at construction as always.
 Presence is not saved: attaching a restored session declares it again (ADR 0043 section 5). A Mesh
@@ -314,7 +326,141 @@ least as new as the checkpoint, which is the combination that works: the list re
 now and resyncs what it missed. A checkpoint holds a list's records in the clear, as the saved state
 already does, so a host stores it encrypted at rest under its own key; SCE does not do that for it.
 
-### 5. The JSON schema: a version step
+### 5. Two receipt guarantees, chosen per binding
+
+**The owner's choice (2026-10-20).** Both guarantees are SCE's, and a deployment chooses one per
+binding in deploy.yaml:
+
+- **Receipt as the transport reports it** (the default, no setting): today's SCE_MESH.md §10.4
+  contract, "successful receipt or an `error.communication` event", with a restore reporting a
+  possible loss as `"RESTORED"` (section 4).
+- **Durable receipt** (opt-in per binding): the receiver acknowledges an envelope on the wire only
+  once a durable checkpoint holds it, and the sender keeps the envelope, and sends it again, until
+  that acknowledgement arrives. Nothing the receiver was sent is lost across a crash and a restore of
+  either side.
+
+**Why both.** SCE's domains need both. Deadline-bound and loss-tolerant traffic (a brake command
+that is stale in milliseconds, a sensor sample the next one replaces, a game state update) must not
+pay a durable write and a round trip for every envelope. Traffic with no recovery of its own (a
+command that happens once, a write no peer can give back) must not have to build its own
+acknowledgement protocol in its documents, which every application would then write differently. A
+protocol that recovers by itself, such as the shared list's resync, may use either. That it is a
+deployment choice and not a document's follows SCE_MESH.md §5: QoS is a deployment concern, declared
+per binding in deploy.yaml only, and the same document runs under either.
+
+**The key.** Per binding, `receipt: transport | durable`, default `transport`. It sits beside
+`ordering:` and `codec:`, the binding keys the Mesh core realises itself, and not under `qos:`, which
+holds transport-native settings passed through to the transport. As with `ordering:`, the binding
+key says whether, and an optional per-machine block says how:
+
+```yaml
+topology:
+  phone:
+    machines:
+      alice:
+        invoked_by: { machine: planner, invoke: list }
+        receipt:                      # optional; both fields required when present
+          window: 256                 # envelopes held unacknowledged per target, >= 1
+          retry_ms: 1000              # resend a held envelope after this long, >= 1
+        bindings:
+          "#server":
+            transport: zenoh_inbox
+            receipt: durable          # default: transport
+      planner:
+        source: planner.scxml
+        persistence: checkpoint       # section 4; required at both ends of a durable binding
+```
+
+The defaults when the block is absent are 256 and 1000, constants of `sce-build/src/mesh/deploy.rs`
+as the ordering defaults are. A durable binding requires `persistence: checkpoint` on the machine
+that sends over it and on the machine it reaches (for an `invoked_by` child, on the top-level
+machine whose tree holds it): a receiver that never checkpoints could never acknowledge, and a sender
+that never checkpoints would forget what it holds the first time its process died.
+
+**Native durability does not stand in for it.** No in-tree transport acknowledges an envelope
+against the receiver's checkpoint. DDS durability (`TRANSIENT_LOCAL`, `PERSISTENT`) and Zenoh
+storages keep samples for a reader that joins late, in the writer or the infrastructure; TCP and a
+WebSocket acknowledge what the receiving kernel has. Those are different promises and stay where they
+are (the transport's own settings), composing with `receipt: durable` independently: a binding may
+carry both. The transport registry (SCE_MESH.md §10.4.2) gains two fields mirroring the ordering pair:
+`supplies_durable_receipt` (the transport acknowledges against the receiver's checkpoint itself, so
+the Mesh core does not; `false` for every in-tree transport) and `receipt_representable` (the
+transport can carry an acknowledgement from the receiver back to that one sender; `false` for CAN,
+whose broadcast has no per-sender return path, as it has no per-receiver sequence).
+
+**On the wire: one new pattern, and a sequence number on every durable envelope.** Nothing else
+changes.
+
+- A durable binding stamps `sequence_no` (CBOR key 14, §10.6.3) on every envelope, whatever
+  `ordering:` says. The key and the per-target counter exist; only the rule for when it is stamped
+  widens. The counter is the one section 4 saves.
+- The acknowledgement is a new pattern, `DurableReceipt = 22` (receiver to sender; 22 is the first
+  unused value, SCE_MESH.md §13 "Adding a variant requires a new wire value, never reuse"): `id` a
+  fresh UUID v7, `source` the receiver's name, `type` the empty text, `datacontenttype` `None`, `data`
+  empty, `routing_id` as on every envelope, and `sequence_no` the acknowledged mark: every envelope
+  of the stream from the addressee to `source` numbered at most this is held by a durable checkpoint
+  of `source`. It is cumulative, so a lost acknowledgement is repaired by the next one, and it is
+  idempotent, so it needs no acknowledgement, no sequence number of its own and no duplicate
+  suppression. A receiver knows which streams to acknowledge from the deploy, as it knows which are
+  ordered (§10.6.3: "topology guarantees"), so no envelope carries a flag asking for it.
+- The envelope schema stays a CBOR map with no new key; a reader that does not know pattern 22 is a
+  peer the build did not deploy on a durable binding. SCE_MESH.md §13's key table and pattern enum and
+  §9.6.2's list of assigned values gain the entry.
+
+**How it composes.**
+
+- **With the checkpoint rule.** On the sender the two holds follow one another: an envelope is
+  produced by a drive, held until the checkpoint that holds the drive is durable (section 4), released
+  to the transport, and then held again until a `DurableReceipt` covers it. The first hold means a
+  receiver never holds an envelope its sender's restore does not know it sent; the second means a
+  sender never forgets an envelope its receiver's restore does not know it received. Every held
+  envelope is in the sender's endpoint section, with its id and sequence number, so a sender restored
+  sends again exactly what was not yet acknowledged.
+- **On the receiver.** For each durable source the endpoint keeps `held`, the highest sequence
+  number below which it has admitted every envelope, and `durable`, the value `held` had at the last
+  durable checkpoint, which the endpoint section saves. When the host reports a checkpoint durable,
+  the endpoint sends a `DurableReceipt` to each durable source whose mark moved. An acknowledgement
+  reports a checkpoint that is already durable, so it does not wait for one. A restored receiver goes
+  back to the `durable` it saved; what it admitted after it is still held by its senders (never
+  acknowledged) and is sent again.
+- **With duplicate suppression.** On a durable stream a duplicate is told by its sequence number:
+  one at most `held` is dropped and answered with the current acknowledgement, so a sender whose
+  acknowledgement was lost is answered. This is exact and unbounded, where the §10.5 window (which
+  still runs) is a ring a long retry can outlast.
+- **With ordering.** With `ordering: required` the §10.6.4 buffer releases a durable stream in
+  sequence order, but does not fast-forward past a gap at `gap_timeout`: on a durable stream a gap is
+  an envelope its sender still holds and will send again, not a loss, so `ORDERING_GAP` is never
+  raised for it. With `ordering: none` envelopes are released as they arrive (§10.1) and `held` counts
+  the contiguous prefix.
+- **With retry and readiness.** The sender sends a held envelope again (same id, sequence number and
+  data) after `retry_ms` without an acknowledgement covering it, and at once at each readiness edge
+  of the link (§10.10, ADR 0043 section 5). The held set is bounded by `window`: an admit while
+  `window` envelopes are held is refused with `error.communication` `BACKPRESSURE_DROP` (row 9), so a
+  send that was never accepted is told and nothing accepted is dropped. The §10.10 age bound
+  (`max_age_ms`, `OUTBOUND_STALE_DROP`) does not apply to a durable binding's envelopes: dropping one
+  for age would break the promise, and traffic whose envelopes go stale is what the default receipt is
+  for. A peer that is gone is reported as it is today (`PEER_PARTITIONED`), and its envelopes stay
+  held for it.
+- **With a restore report.** A source whose every route to a restored machine is durable gets no
+  `"RESTORED"` (section 4).
+
+**Which cores carry it.** The two host cores, `sce-rust-mesh` (over `wss` and `zenoh_inbox`) and
+`sce-kotlin-mesh` (over `wss`), with the checkpoint they gain in this ADR. A durable binding the
+machine's backend has no core for is refused at build time by name, as ADR 0043 refuses what a core
+does not carry: the generated C++ `TransportRouter` until its own step lands, and a transport whose
+registry entry is not `receipt_representable`. A Go, Python or C11 host that runs its own router
+(SCE_MESH.md §19, "the host's own") is told by the manifest which of its bindings are durable, as it
+is told it needs a router at all, and carries the contract itself.
+
+**What the build refuses** (each a diagnostic code of its own, entered in the acceptance appendix
+when the parser that raises it lands, order of work step 6): a durable binding whose sending or
+receiving machine is not `persistence: checkpoint`; a durable binding on a transport that is not
+`receipt_representable`; a durable binding the machine's backend has no core for; a `receipt:`
+machine block with no durable binding, or with a field below 1 (the `outbound_buffer:` precedent);
+`persistence: checkpoint` on a machine whose document has no saved state (section 1, "Which
+documents save").
+
+### 6. The JSON schema: a version step
 
 The saved state becomes **format 2**, `schemas/sce-saved-state.v2.schema.json`, `pre-release`. A
 root is `{ "format": 2 }` and a session; a session is today's members with `invokes` as an array of
@@ -337,7 +483,7 @@ first: a build that predates trees refuses a format-2 text by its format, instea
 of it, and a build that has trees knows a format-1 text promises no more than it holds. An additive
 member beside `invokes` would have named every running child twice.
 
-### 6. Every backend saves
+### 7. Every backend saves
 
 The owner asked for the design that lasts longest. A tree saved by one backend restores on another,
 as a single machine does today (docs/SCE_ACCEPTED_SUBSET.md:4960-4964), and ADR 0042's list runs on
@@ -360,7 +506,7 @@ runs the lowered ECMAScript document, which has no shape (docs/SCE_ACCEPTED_SUBS
 scenario driver skips a scenario that saves by name, counted, as the `visualizer-layout` lane skips
 the ones it cannot run, and never passes it.
 
-### 7. Fixtures, scenarios and tests
+### 8. Fixtures, scenarios and tests
 
 - **A tree fixture.** `static_invoke_tree.scxml` with a child and a grandchild, and
   `saved/static_invoke_tree_working.json`: the child has taken one event (its progress is the
@@ -391,8 +537,16 @@ the ones it cannot run, and never passes it.
   checkpoint and shows that no peer received an envelope of that drive; another restores after the
   checkpoint and shows that the peer drops the re-released envelope once and takes the next one;
   a third restores a checkpoint and shows one `"RESTORED"` per peer source in each session, and
-  none for a `clean` one; a world test restores a one-member list from a checkpoint with a write it had not shared and shows
-  the write reach a second member that joins afterwards.
+  none for a `clean` one; a world test restores a one-member list from a checkpoint with a write it
+  had not shared and shows the write reach a second member that joins afterwards.
+- **Durable receipt.** Over each binding a core carries it on: a receiver killed after it admitted an
+  envelope and before its checkpoint was durable is restored and still receives the envelope, once,
+  because its sender held it; a sender killed while it held an unacknowledged envelope is restored and
+  sends it again, and the receiver takes it once and acknowledges it again; an acknowledgement lost on
+  the link is repaired by the next; an ordered durable stream with a gap waits for the resend and
+  raises no `ORDERING_GAP`; an admit past `window` raises `BACKPRESSURE_DROP`; and the same scenario
+  over a default binding loses the envelope and raises `"RESTORED"`. The deploy parser's refusals of
+  section 5 each have a test, and the §8.2 matrix test renders the two registry fields.
 
 ## Alternatives not taken
 
@@ -428,6 +582,22 @@ the ones it cannot run, and never passes it.
   anywhere, ADR 0034 keeps keys in the host, and trust state must never move backward.
 - **Saving on Rust and Kotlin only.** Rejected for the owner's stance: the cross-backend promise of
   §2.15 would hold for two lanes of six, and the standard list runs on all of them.
+- **Durable receipt for every binding.** Rejected by the owner: deadline-bound and loss-tolerant
+  traffic would pay a durable write and a round trip per envelope for a promise it does not want.
+- **Only the reported loss (`"RESTORED"`), with no durable receipt.** Rejected by the owner: traffic
+  that cannot recover by itself would have to carry an acknowledgement protocol in its own documents,
+  once per application and differently each time.
+- **The choice in the document** (an attribute on `<send>`). Rejected: SCE_MESH.md §5 removed QoS
+  from documents, so that one document runs in several deployments.
+- **A flag on each envelope asking for an acknowledgement.** Rejected: the receiver already learns
+  from the deploy which of its streams are ordered, and a durable stream is a property of the same
+  binding; a flag would be a second statement of it that two builds could disagree on.
+- **An acknowledgement per envelope, by its id.** Rejected: the cumulative mark over `sequence_no` is
+  one envelope for any number of envelopes, repairs a lost acknowledgement with the next, and gives an
+  exact duplicate test that a bounded id window does not.
+- **Transport-native durability as the receipt** (DDS `PERSISTENT`, a Zenoh storage). Rejected: it
+  keeps samples for readers that join late and knows nothing of the receiver's checkpoint, so an
+  envelope a crashed receiver had admitted is not sent to it again.
 
 ## Consequences
 
@@ -447,11 +617,14 @@ the ones it cannot run, and never passes it.
 - Every saved-state text changes (format 2), every shared instance is rewritten, and every committed
   generated tree that saves moves with the templates.
 - Go, Python, C++ and C11 gain a saved state, which the docs' "is not saved" sentences lose.
+- deploy.yaml gains `persistence: checkpoint` per machine, `receipt:` per binding and a `receipt:`
+  block per machine; the transport registry gains two fields; the envelope gains one pattern value,
+  22, and no key. A durable binding costs its sender a held copy of every unacknowledged envelope and
+  its receiver one acknowledgement per checkpoint per source.
+- §16.7 gains row 17, `"RESTORED"`, and `ORDERING_GAP` is no longer raised on a durable stream.
 
 ## What this does not decide
 
-- **Keeping an envelope that arrived after the last checkpoint.** Section 4 reports that one may
-  have been lost (`"RESTORED"`); keeping it is open question 1.
 - **Host-run work and host actions after a checkpoint.** A tree restored from a checkpoint older than
   its last drive repeats that drive's `<sce:action>`s; that is the host's, as it is for a single
   machine today.
@@ -462,13 +635,21 @@ the ones it cannot run, and never passes it.
 
 Each step lands with a test that fails without it.
 
-1. **Documentation and the schema.** §2.15 rewritten for trees (the sentences cited in the Context
-   replaced, format 2, the two new pending acts, the scenario member `restore`);
-   `sce-saved-state.v2.schema.json` and the v1 header; SCE_WIRE_CONTRACTS.md's row; the v1 schema's
-   `invokes` description corrected on the way (it says a document with a mesh-rpc call has no saved
-   state, while §2.15 and `invokes_what_a_restore_cannot_start`, static_lowering.rs:3557-3583, save
-   it and interrupt it). *Exit:* `saved_state_schema.rs` validates a hand-written tree and refuses
-   one changed thing.
+1. **Documentation and the schema.** §2.15 states format 2 (trees, the two new pending acts, the
+   scenario member `restore`) as the format the backends move to, and says plainly which format each
+   backend writes until its step lands; `sce-saved-state.v2.schema.json` and the v1 header (a format
+   read and no longer written once step 4 lands); SCE_WIRE_CONTRACTS.md's row and the v2 file in
+   `wire_surface_stability.rs`; the v1 schema's `invokes` description corrected on the way (it says a
+   document with a mesh-rpc call has no saved state, while §2.15 and
+   `invokes_what_a_restore_cannot_start`, static_lowering.rs:3557-3583, save it and interrupt it).
+   SCE_MESH.md states the checkpoint, the `"RESTORED"` row, `persistence:`, `receipt:`, pattern 22
+   and the two registry fields, each marked as not yet parsed or carried, so that a deploy naming
+   `receipt:` or `persistence:` is still refused as an unknown key and no build promises a receipt
+   nobody keeps. The checkpoint's schema and the deploy diagnostics land with their producer and their
+   parser in step 6, because a schema no artifact is validated against is a document and not a
+   contract (SCE_WIRE_CONTRACTS.md policy 5). *Exit:* `saved_state_schema.rs` validates a hand-written
+   tree against v2 and refuses one changed thing, and every format-1 instance still validates
+   against v1.
 2. **The generator.** Which documents save (the child rule), the two acts, `invokestarts` and the
    session id in the model the templates read, and the ids of a child session and of a generated
    invoke derived from the tree on every backend (the spelling keeps the state's id and a dot in
@@ -476,31 +657,32 @@ Each step lands with a test that fails without it.
    extended: a delayed send to `#_parent` or a child now saves, one to a session outside the tree
    still does not, and a parent of a child that cannot save has no API.
 3. **Rust.** `SavedState` as a session tree, format 2 written, formats 1 and 2 read, the restore of
-   section 3, the transit check, the tree fixture. *Exit:* the Rust tests of section 7.
+   section 3, the transit check, the tree fixture. *Exit:* the Rust tests of section 8.
 4. **Kotlin.** The same over `SavedState.kt` and `StateMachineEngine`. *Exit:* Kotlin saves the tree
    fixture byte for byte as Rust does, Kotlin restores the text Rust saved, and Rust the text Kotlin
    saved.
 5. **Go, Python, C++, C11**, one backend per step, each reading and writing the whole format and held
    to every shared instance. *Exit:* per backend, every instance restored, the tree fixture saved byte
    for byte, the scenario `restore` steps run by its driver.
-6. **The host cores** (after ADR 0043 steps 3 and 5): the checkpoint document and its row in
-   SCE_WIRE_CONTRACTS.md, holding envelopes back, the endpoint section saved and restored, the
-   `"RESTORED"` row of SCE_MESH.md §16.7 and its raise on every backend's Mesh error path. *Exit:*
-   the host core tests of section 7.
+6. **The host cores** (after ADR 0043 steps 3 and 5): the checkpoint document, its schema and its
+   row in SCE_WIRE_CONTRACTS.md with a producer status constant in `sce-rust-mesh` and
+   `sce-kotlin-mesh`; holding envelopes back; the endpoint section saved and restored; the
+   `"RESTORED"` raise; durable receipt (pattern 22, the two holds, the receiver's marks, retry and
+   window); the deploy parser's `persistence:`, `receipt:` and their refusals as diagnostic codes in
+   the acceptance appendix; the two registry fields and the §8.2 matrix. *Exit:* the host core and
+   durable receipt tests of section 8.
 7. **The world and ADR 0042 step 2:** a parent restored with its list child in the Rust world and the
-   cross-language world. *Exit:* the one-member list test of section 7.
+   cross-language world. *Exit:* the one-member list test of section 8.
 
 The committed generated trees of every language that saves move with steps 2 to 5 (the invoke and
 save templates are in the template hash of every language) and are regenerated in those steps.
 
-## Open questions for the owner
+## Questions the owner answered
 
-1. **Should a host core that persists also keep what it receives?** Holding envelopes back makes a
-   restored tree's SENT view exact. Its RECEIVED view may miss an envelope admitted after the last
-   durable checkpoint, which section 4 reports as `"RESTORED"` so that §10.4's "receipt or an
-   `error.communication` event" holds. Never missing it would mean the receiving endpoint
-   acknowledges an envelope only once a durable checkpoint holds it, and its sender retries until
-   then: delivery that survives a crash end to end, which needs an acknowledgement on the wire (ADR
-   0043 changes nothing on the wire) and costs every peer a round trip per envelope. The repository's
-   principles accept both a reported loss and a kept envelope; which one Mesh promises is a product
-   choice. The list does not need it (resync recovers); a document that cannot ask again would.
+1. **Should a host core that persists also keep what it receives?** Asked in the proposal: holding
+   envelopes back makes a restored tree's sent view exact, and its received view may miss an envelope
+   admitted after the last durable checkpoint, which the principles allowed either to report or to
+   keep. Answered 2026-10-20: both, chosen per binding in deploy.yaml, the reported loss by default
+   and durable receipt by opt-in (section 5, with the owner's reasons).
+
+No question is open.
