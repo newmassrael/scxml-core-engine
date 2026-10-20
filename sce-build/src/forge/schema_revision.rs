@@ -1697,6 +1697,12 @@ mod tests {
             if !crate::generator::lowers_static_datamodel(language) {
                 continue;
             }
+            // Go has no bare import form: it asks where the generated packages live.
+            let options = crate::ForgeCompileOptions {
+                go_module_prefix: matches!(language, Language::Go)
+                    .then(|| "example.com/consumer/generated".to_string()),
+                ..crate::ForgeCompileOptions::default()
+            };
             crate::compile_scxml_with_imports(
                 &[statechart.as_path()],
                 &[
@@ -1705,7 +1711,7 @@ mod tests {
                 ],
                 &crate::find_template_dir_for(language),
                 language,
-                &crate::ForgeCompileOptions::default(),
+                &options,
                 None,
             )
             .unwrap_or_else(|e| panic!("{language:?}: the machine generates: {e:?}"));
