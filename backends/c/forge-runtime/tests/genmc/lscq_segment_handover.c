@@ -44,9 +44,20 @@
  * twice, did not finish in fifty minutes either (`timeout 3000`, exit status 124,
  * 93 MB, estimation disabled, so how far it had come is not known; measured
  * 2026-10-11 on the pc2 build machine). It is not a result about the algorithm: it
- * is two bounds met, and a smaller scenario or a run with estimation on is the
- * next thing to try. The handshake is checked on the domain by itself, in
- * hazard_keeps_a_named_node.c.
+ * is two bounds met.
+ *
+ * GenMC's reductions do not shorten it. Given the same value, the two producers
+ * run the same function with the same argument, GenMC applies symmetry reduction
+ * to them by itself, and the run stops within two seconds on "Unordered writes":
+ * an enqueue storing a ring's threshold back to 3n-1 and a dequeue decrementing
+ * the same threshold, both atomic and not ordered by happens-before. That pair is
+ * SCQ's own: the reset is a load and a store, not a read-modify-write, in the
+ * ring of every language (queue_scq_width.inc, the Rust runtime's scq.rs), and
+ * GenMC calls it an error only because symmetry reduction and in-place
+ * revisiting assume such pairs away. With both off (`--disable-sr --disable-ipr`)
+ * the same scenario ran 300 seconds without an error and without finishing
+ * (measured 2026-10-20 on pc2). The handshake is checked on the domain by itself,
+ * in hazard_keeps_a_named_node.c.
  *
  * Every element the consumer is given must be exactly one of the three written,
  * whole, and in the order written.
