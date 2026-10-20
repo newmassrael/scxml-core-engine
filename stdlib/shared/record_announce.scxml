@@ -4,10 +4,11 @@
 <!--
   sce:std/shared/record_announce.scxml — a register of a shared record list (record_list)
   whose live values are to be told to the statechart that invoked the list: the row
-  (`id`) and the field (`field`). The list raises it for itself after each change that
-  moved what a register holds, and a parent may send it to ask what one holds now; the
-  list answers with record_list.register and record_list.value (record_register,
-  record_value), and only to a parent that started it asking for them.
+  (`id`) and the field (`field`). The list raises it for itself for each register a
+  change moved, and a parent may send it to ask what one holds now. The registers named
+  while one change is taken in are told together once it is whole, each once, with
+  record_list.register and record_list.value (record_register, record_value), and only to
+  a parent that started the list asking for them.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"

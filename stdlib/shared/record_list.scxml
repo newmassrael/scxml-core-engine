@@ -107,25 +107,26 @@
   adds, tombstones and the lists a change is judged by), `merge_values` (512 values),
   `merge_digest` (2048 nodes of the digest), `merge_text` (the 96 bytes of text a write
   carries and a value keeps), `shared_typed_text` (the 32 bytes of text a person types,
-  record_edit), `shared_roster` (64 members) and `shared_answers` (512 answers to a
-  settle). Each name is carried by the standard algorithms and schemas the list reads
-  through, so the machine and what it calls move together. Every copy of one list is
-  built with the same numbers.
+  record_edit), `shared_roster` (64 members), `shared_answers` (512 answers to a settle)
+  and `shared_moved` (16 registers a change moves before they are told). Each name is
+  carried by the standard algorithms and schemas the list reads through, so the machine
+  and what it calls move together. Every copy of one list is built with the same numbers.
 
   What the list tells its parent. A statechart that invokes the list hands it `announce`
-  (`<param name="announce" expr="true"/>`), and from then on the list tells it, after each
-  change it takes in that moves what a register holds, whatever its source (a person's
-  edit, a peer's write or supersede, a resync), what that register holds now:
-  `record_list.register` (record_register) with the row, the field, how many live values
-  the register holds (`count`, 0 when every value was written over) and the first of them
-  in the order of their dots (register_values), then `record_list.value` (record_value)
-  for each further one, with its place in that order (`ordinal`, from 1). A settle and a
-  compact change no value and are not told. A register is told what it holds when the
-  telling is made, which is after the change that asked for it and every change already
-  waiting before it, so a person's edit, a supersede of each value it saw and then a
-  write, is told once for each, every time as it stands after the write: a parent keeps
-  the last it was told of each register. A parent may ask what a register holds by
-  sending the list `record_list.announce` (record_announce) itself.
+  (`<param name="announce" expr="true"/>`), and from then on the list tells it, once for
+  each change it takes in, every register that change moved, whatever its source (a
+  person's edit, a peer's write or supersede, a resync): `record_list.register`
+  (record_register) with the row, the field, how many live values the register holds
+  (`count`, 0 when every value was written over) and the first of them in the order of
+  their dots (register_values), then `record_list.value` (record_value) for each further
+  one, with its place in that order (`ordinal`, from 1). A settle and a compact change no
+  value and are not told. A write or supersede that moves a register names it to the
+  list itself (`record_list.announce`, record_announce), which keeps the registers named
+  in `moved` and, for the first of them, raises `record_list.tell`; every event the change
+  raised is already waiting before that, so the telling is made once, after the whole
+  change: a person's edit, a supersede of each value it saw and then a write, is told as
+  the one register it moved, as it stands after the write. A parent may name a register
+  itself by sending the list `record_list.announce`, to be told what it holds.
 
   A list a host started has no parent, and `#_parent` names no session there: `announce`
   keeps the value its <data> gives it, false, and the list tells no one. The condition is
@@ -137,8 +138,18 @@
   this one is started by a host as often as by a parent. `announced` counts the events
   told.
 
-  The hub reaches its people by two names, `#alice` and `#bob`, and a person reaches the
-  hub by `#server`: the names the Mesh deployment the list runs in binds to its peers.
+  Its peers. The list sends to its peers by two routes and names no peer of its own:
+  `#hub`, by which a person's copy reaches the hub, and `#people`, by which the hub reaches
+  every person's copy at once. They are the targets a Mesh deployment binds for the machine
+  (`machines.<m>.bindings` of deploy.yaml, SCE_MESH.md "Discovery"): `#hub` to the hub's
+  endpoint, `#people` to one topic every person's copy reads, so a list of any number of
+  people is one route. Which copy is the hub and what each copy's node is are the host's
+  word (`record_list.join`), and nothing of the protocol depends on the number a node is
+  given. A hub sends a person's change to `#people` whoever made it, the person included,
+  who already holds it and takes nothing from it; a node the hub means for one person
+  (`to`) is read by that person and let go by the others. The hub's own change is the
+  one it relays: it is taken in here and sent on to `#people` as any change is, and never
+  sent to `#hub`, which is the hub itself.
 
   `values` and `digest` are what a run compares across copies.
 -->
@@ -277,8 +288,23 @@
          live values of one register in the order of their dots and the place of each. -->
     <data id="announce" sce:type="bool" expr="false"/>
     <data id="announced" sce:type="uint32" expr="0" sce:direction="out"/>
+    <!-- The registers the change in hand moved, by their element, kept until the change
+         is told, and whether the one named now is among them already. -->
+    <data id="moved" sce:type="list&lt;uint64&gt;" sce:capacity="16" sce:limit="shared_moved"/>
+    <data id="listed" sce:type="bool" expr="false"/>
     <data id="live" sce:type="list&lt;record:Value&gt;" sce:capacity="512" sce:limit="merge_values"/>
     <data id="ordinal" sce:type="uint32" expr="0"/>
+    <!-- What a register that holds no value is told as: the number 0, no text and the
+         dot of no write, each of its field's own type. -->
+    <data id="empty" sce:type="record:Value">
+      <sce:set name="id" expr="0"/>
+      <sce:set name="field" expr="0"/>
+      <sce:set name="value" expr="0"/>
+      <sce:set name="text" expr="''"/>
+      <sce:set name="wallTime" expr="0"/>
+      <sce:set name="counter" expr="0"/>
+      <sce:set name="nodeId" expr="0"/>
+    </data>
   </datamodel>
   <state id="open">
     <transition event="record_list.join" type="internal">
@@ -361,14 +387,16 @@
               <param name="nodeId" expr="o.nodeId"/>
               <param name="by" expr="node"/>
             </send>
-            <send target="#server" event="record_list.supersede">
-              <param name="id" expr="_event.data.id"/>
-              <param name="field" expr="_event.data.field"/>
-              <param name="wallTime" expr="o.wallTime"/>
-              <param name="counter" expr="o.counter"/>
-              <param name="nodeId" expr="o.nodeId"/>
-              <param name="by" expr="node"/>
-            </send>
+            <if cond="!hub">
+              <send target="#hub" event="record_list.supersede">
+                <param name="id" expr="_event.data.id"/>
+                <param name="field" expr="_event.data.field"/>
+                <param name="wallTime" expr="o.wallTime"/>
+                <param name="counter" expr="o.counter"/>
+                <param name="nodeId" expr="o.nodeId"/>
+                <param name="by" expr="node"/>
+              </send>
+            </if>
           </if>
         </foreach>
         <send target="#_internal" event="record_list.write">
@@ -380,15 +408,19 @@
           <param name="counter" expr="clock.counter"/>
           <param name="nodeId" expr="node"/>
         </send>
-        <send target="#server" event="record_list.write">
-          <param name="id" expr="_event.data.id"/>
-          <param name="field" expr="_event.data.field"/>
-          <param name="value" expr="_event.data.value"/>
-          <param name="text" expr="_event.data.text"/>
-          <param name="wallTime" expr="clock.wallTime"/>
-          <param name="counter" expr="clock.counter"/>
-          <param name="nodeId" expr="node"/>
-        </send>
+        <!-- A person's change goes to the hub; the hub's own is relayed to the people
+             by the write and the supersedes it takes in here, as any change is. -->
+        <if cond="!hub">
+          <send target="#hub" event="record_list.write">
+            <param name="id" expr="_event.data.id"/>
+            <param name="field" expr="_event.data.field"/>
+            <param name="value" expr="_event.data.value"/>
+            <param name="text" expr="_event.data.text"/>
+            <param name="wallTime" expr="clock.wallTime"/>
+            <param name="counter" expr="clock.counter"/>
+            <param name="nodeId" expr="node"/>
+          </send>
+        </if>
       </if>
     </transition>
 
@@ -494,19 +526,10 @@
           </send>
         </if>
 
-        <if cond="hub &amp;&amp; _event.data.nodeId !== 1">
-          <send target="#alice" event="record_list.write">
-            <param name="id" expr="_event.data.id"/>
-            <param name="field" expr="_event.data.field"/>
-            <param name="value" expr="_event.data.value"/>
-            <param name="text" expr="_event.data.text"/>
-            <param name="wallTime" expr="_event.data.wallTime"/>
-            <param name="counter" expr="_event.data.counter"/>
-            <param name="nodeId" expr="_event.data.nodeId"/>
-          </send>
-        </if>
-        <if cond="hub &amp;&amp; _event.data.nodeId !== 2">
-          <send target="#bob" event="record_list.write">
+        <!-- The hub passes it on to every person's copy, its author's included, which
+             holds it already and takes nothing from it. -->
+        <if cond="hub">
+          <send target="#people" event="record_list.write">
             <param name="id" expr="_event.data.id"/>
             <param name="field" expr="_event.data.field"/>
             <param name="value" expr="_event.data.value"/>
@@ -590,18 +613,8 @@
           </send>
         </if>
 
-        <if cond="hub &amp;&amp; _event.data.by !== 1">
-          <send target="#alice" event="record_list.supersede">
-            <param name="id" expr="_event.data.id"/>
-            <param name="field" expr="_event.data.field"/>
-            <param name="wallTime" expr="_event.data.wallTime"/>
-            <param name="counter" expr="_event.data.counter"/>
-            <param name="nodeId" expr="_event.data.nodeId"/>
-            <param name="by" expr="_event.data.by"/>
-          </send>
-        </if>
-        <if cond="hub &amp;&amp; _event.data.by !== 2">
-          <send target="#bob" event="record_list.supersede">
+        <if cond="hub">
+          <send target="#people" event="record_list.supersede">
             <param name="id" expr="_event.data.id"/>
             <param name="field" expr="_event.data.field"/>
             <param name="wallTime" expr="_event.data.wallTime"/>
@@ -613,57 +626,83 @@
       </if>
     </transition>
 
-    <!-- What a register holds, told to the statechart that invoked the list: the first
-         of its live values in the order of their dots with how many there are, then each
-         further one with its place, or a count of 0 when it holds none. Taken only when
-         a parent started the list asking for it (`announce`): a list a host started has
-         no session `#_parent` names, and is not made to send to one by whatever raised
-         this. `#_parent` is named among the routes the send declares and not written as
-         its target, so the machine keeps the entry a host starts it by. -->
+    <!-- A register the change in hand moved, named to be told: kept in `moved` once,
+         and for the first one named `record_list.tell` is raised, which waits behind
+         every event the change has raised already and so is taken when the change is
+         whole. Taken only when a parent started the list asking for it (`announce`): a
+         list a host started keeps nothing to tell, whatever raised this. -->
     <transition event="record_list.announce" cond="announce" type="internal">
-      <assign location="live" expr="RegisterValues(values, _event.data.id, _event.data.field)"/>
-      <if cond="len(live) === 0">
-        <send event="record_list.register" targetexpr="'#_parent'" sce:targets="#_parent">
-          <param name="id" expr="_event.data.id"/>
-          <param name="field" expr="_event.data.field"/>
-          <param name="count" expr="0"/>
-          <param name="value" expr="0"/>
-          <param name="text" expr="''"/>
-          <param name="wallTime" expr="0"/>
-          <param name="counter" expr="0"/>
-          <param name="nodeId" expr="0"/>
-        </send>
-        <assign location="announced" expr="announced + 1"/>
-      </if>
-      <assign location="ordinal" expr="0"/>
-      <foreach array="live" item="r">
-        <if cond="ordinal === 0">
-          <send event="record_list.register" targetexpr="'#_parent'" sce:targets="#_parent">
-            <param name="id" expr="_event.data.id"/>
-            <param name="field" expr="_event.data.field"/>
-            <param name="count" expr="len(live)"/>
-            <param name="value" expr="r.value"/>
-            <param name="text" expr="r.text"/>
-            <param name="wallTime" expr="r.wallTime"/>
-            <param name="counter" expr="r.counter"/>
-            <param name="nodeId" expr="r.nodeId"/>
-          </send>
+      <assign location="entry.element" expr="_event.data.id"/>
+      <assign location="entry.element" expr="entry.element * 65536 + _event.data.field"/>
+      <assign location="listed" expr="false"/>
+      <foreach array="moved" item="named">
+        <if cond="named === entry.element">
+          <assign location="listed" expr="true"/>
         </if>
-        <if cond="ordinal !== 0">
-          <send event="record_list.value" targetexpr="'#_parent'" sce:targets="#_parent">
-            <param name="id" expr="_event.data.id"/>
-            <param name="field" expr="_event.data.field"/>
-            <param name="ordinal" expr="ordinal"/>
-            <param name="value" expr="r.value"/>
-            <param name="text" expr="r.text"/>
-            <param name="wallTime" expr="r.wallTime"/>
-            <param name="counter" expr="r.counter"/>
-            <param name="nodeId" expr="r.nodeId"/>
-          </send>
-        </if>
-        <assign location="announced" expr="announced + 1"/>
-        <assign location="ordinal" expr="ordinal + 1"/>
       </foreach>
+      <if cond="len(moved) === 0">
+        <send target="#_internal" event="record_list.tell"/>
+      </if>
+      <if cond="!listed">
+        <sce:append target="moved" expr="entry.element"/>
+      </if>
+    </transition>
+
+    <!-- What each register the change moved holds, told to the statechart that invoked
+         the list: the first of its live values in the order of their dots with how many
+         there are, then each further one with its place, or a count of 0 and the empty
+         value when it holds none. `#_parent` is named among the routes the send declares
+         and not written as its target, so the machine keeps the entry a host starts it
+         by. -->
+    <transition event="record_list.tell" cond="announce" type="internal">
+      <foreach array="moved" item="named">
+        <assign location="shareId" expr="named / 65536"/>
+        <assign location="shareField" expr="named % 65536"/>
+        <assign location="live" expr="RegisterValues(values, shareId, shareField)"/>
+        <if cond="len(live) === 0">
+          <send event="record_list.register" targetexpr="'#_parent'" sce:targets="#_parent">
+            <param name="id" expr="shareId"/>
+            <param name="field" expr="shareField"/>
+            <param name="count" expr="0"/>
+            <param name="value" expr="empty.value"/>
+            <param name="text" expr="empty.text"/>
+            <param name="wallTime" expr="empty.wallTime"/>
+            <param name="counter" expr="empty.counter"/>
+            <param name="nodeId" expr="empty.nodeId"/>
+          </send>
+          <assign location="announced" expr="announced + 1"/>
+        </if>
+        <assign location="ordinal" expr="0"/>
+        <foreach array="live" item="r">
+          <if cond="ordinal === 0">
+            <send event="record_list.register" targetexpr="'#_parent'" sce:targets="#_parent">
+              <param name="id" expr="shareId"/>
+              <param name="field" expr="shareField"/>
+              <param name="count" expr="len(live)"/>
+              <param name="value" expr="r.value"/>
+              <param name="text" expr="r.text"/>
+              <param name="wallTime" expr="r.wallTime"/>
+              <param name="counter" expr="r.counter"/>
+              <param name="nodeId" expr="r.nodeId"/>
+            </send>
+          </if>
+          <if cond="ordinal !== 0">
+            <send event="record_list.value" targetexpr="'#_parent'" sce:targets="#_parent">
+              <param name="id" expr="shareId"/>
+              <param name="field" expr="shareField"/>
+              <param name="ordinal" expr="ordinal"/>
+              <param name="value" expr="r.value"/>
+              <param name="text" expr="r.text"/>
+              <param name="wallTime" expr="r.wallTime"/>
+              <param name="counter" expr="r.counter"/>
+              <param name="nodeId" expr="r.nodeId"/>
+            </send>
+          </if>
+          <assign location="announced" expr="announced + 1"/>
+          <assign location="ordinal" expr="ordinal + 1"/>
+        </foreach>
+      </foreach>
+      <sce:clear target="moved"/>
     </transition>
 
     <!-- A change taken in for the first time, told to the digest: its hash is XORed
@@ -717,10 +756,7 @@
           <assign location="clock.wallTime" expr="_event.data.before + 1"/>
           <assign location="clock.counter" expr="0"/>
         </if>
-        <send target="#alice" event="record_list.propose">
-          <param name="before" expr="_event.data.before"/>
-        </send>
-        <send target="#bob" event="record_list.propose">
+        <send target="#people" event="record_list.propose">
           <param name="before" expr="_event.data.before"/>
         </send>
       </if>
@@ -746,7 +782,7 @@
         </foreach>
         <assign location="frozenFor" expr="_event.data.before"/>
         <assign location="frozenHash" expr="RecordSettled(adds, tombstones, _event.data.before)"/>
-        <send target="#server" event="record_list.ack">
+        <send target="#hub" event="record_list.ack">
           <param name="sender" expr="node"/>
           <param name="before" expr="_event.data.before"/>
           <param name="hash" expr="frozenHash"/>
@@ -793,11 +829,7 @@
           </foreach>
           <assign location="frozenFor" expr="pending"/>
           <assign location="frozenHash" expr="mine"/>
-          <send target="#alice" event="record_list.floor">
-            <param name="before" expr="pending"/>
-            <param name="hash" expr="mine"/>
-          </send>
-          <send target="#bob" event="record_list.floor">
+          <send target="#people" event="record_list.floor">
             <param name="before" expr="pending"/>
             <param name="hash" expr="mine"/>
           </send>
@@ -812,11 +844,7 @@
              agreed or has forgotten it already, and one that did not (restarted from an
              old save) finds that it never did, and is stale. -->
         <if cond="_event.data.hash !== mine &amp;&amp; floor &gt; 0">
-          <send target="#alice" event="record_list.floor">
-            <param name="before" expr="floor"/>
-            <param name="hash" expr="agreed"/>
-          </send>
-          <send target="#bob" event="record_list.floor">
+          <send target="#people" event="record_list.floor">
             <param name="before" expr="floor"/>
             <param name="hash" expr="agreed"/>
           </send>
@@ -886,7 +914,7 @@
         </if>
       </foreach>
       <if cond="!hub">
-        <send target="#server" event="record_list.node">
+        <send target="#hub" event="record_list.node">
           <param name="sender" expr="node"/>
           <param name="to" expr="0"/>
           <param name="depth" expr="_event.data.depth"/>
@@ -895,23 +923,11 @@
           <param name="reply" expr="_event.data.reply"/>
         </send>
       </if>
-      <!-- The hub reaches its people by two names, `#alice` and `#bob`: the first is every
-           person but the second and the second every person but the first, so that a
-           person other than those two is reached by either, and the second only by its
-           own. The node says whom it is for (`to`, 0 for all) and a person that it is
+      <!-- The hub reaches its people by one route, `#people`, which every person's copy
+           reads. The node says whom it is for (`to`, 0 for all) and a person that it is
            not for lets it go. -->
-      <if cond="hub &amp;&amp; _event.data.to !== 2">
-        <send target="#alice" event="record_list.node">
-          <param name="sender" expr="node"/>
-          <param name="to" expr="_event.data.to"/>
-          <param name="depth" expr="_event.data.depth"/>
-          <param name="prefix" expr="_event.data.prefix"/>
-          <param name="hash" expr="mine"/>
-          <param name="reply" expr="_event.data.reply"/>
-        </send>
-      </if>
-      <if cond="hub &amp;&amp; (_event.data.to === 2 || _event.data.to === 0)">
-        <send target="#bob" event="record_list.node">
+      <if cond="hub">
+        <send target="#people" event="record_list.node">
           <param name="sender" expr="node"/>
           <param name="to" expr="_event.data.to"/>
           <param name="depth" expr="_event.data.depth"/>
@@ -982,7 +998,7 @@
           <assign location="shareId" expr="v.id"/>
           <assign location="shareField" expr="v.field"/>
           <if cond="!hub">
-            <send target="#server" event="record_list.write">
+            <send target="#hub" event="record_list.write">
               <param name="id" expr="shareId"/>
               <param name="field" expr="shareField"/>
               <param name="value" expr="v.value"/>
@@ -992,19 +1008,8 @@
               <param name="nodeId" expr="v.nodeId"/>
             </send>
           </if>
-          <if cond="hub &amp;&amp; _event.data.to !== 2">
-            <send target="#alice" event="record_list.write">
-              <param name="id" expr="shareId"/>
-              <param name="field" expr="shareField"/>
-              <param name="value" expr="v.value"/>
-              <param name="text" expr="v.text"/>
-              <param name="wallTime" expr="v.wallTime"/>
-              <param name="counter" expr="v.counter"/>
-              <param name="nodeId" expr="v.nodeId"/>
-            </send>
-          </if>
-          <if cond="hub &amp;&amp; _event.data.to === 2">
-            <send target="#bob" event="record_list.write">
+          <if cond="hub">
+            <send target="#people" event="record_list.write">
               <param name="id" expr="shareId"/>
               <param name="field" expr="shareField"/>
               <param name="value" expr="v.value"/>
@@ -1021,7 +1026,7 @@
           <assign location="shareId" expr="t.element / 65536"/>
           <assign location="shareField" expr="t.element % 65536"/>
           <if cond="!hub">
-            <send target="#server" event="record_list.supersede">
+            <send target="#hub" event="record_list.supersede">
               <param name="id" expr="shareId"/>
               <param name="field" expr="shareField"/>
               <param name="wallTime" expr="t.wallTime"/>
@@ -1030,18 +1035,8 @@
               <param name="by" expr="node"/>
             </send>
           </if>
-          <if cond="hub &amp;&amp; _event.data.to !== 2">
-            <send target="#alice" event="record_list.supersede">
-              <param name="id" expr="shareId"/>
-              <param name="field" expr="shareField"/>
-              <param name="wallTime" expr="t.wallTime"/>
-              <param name="counter" expr="t.counter"/>
-              <param name="nodeId" expr="t.nodeId"/>
-              <param name="by" expr="node"/>
-            </send>
-          </if>
-          <if cond="hub &amp;&amp; _event.data.to === 2">
-            <send target="#bob" event="record_list.supersede">
+          <if cond="hub">
+            <send target="#people" event="record_list.supersede">
               <param name="id" expr="shareId"/>
               <param name="field" expr="shareField"/>
               <param name="wallTime" expr="t.wallTime"/>
