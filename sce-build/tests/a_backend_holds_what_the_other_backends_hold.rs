@@ -316,7 +316,7 @@ const ACCEPTED: &[(Language, &str, Why)] = &[
     (
         Language::C11,
         "ECMA-262 lowered-artifact gate",
-        Why::NotYet("no test of the C11 runtime reads the ECMA-262 semantics corpus, so nothing holds its Lua to it"),
+        Why::Design("it always lowers at build time; its Lua engine's tests read the ECMA-262 semantics corpus"),
     ),
     // Mesh (SCE_MESH.md §mesh-19, §mesh-20).
     (

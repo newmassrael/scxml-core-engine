@@ -1,0 +1,34 @@
+# Mutation cases for the ECMA-262 semantics table the C11 bootstrap is held to
+# (ARCHITECTURE.md, "ECMAScript Semantics (Single Source of Truth)"): the C11 test
+# evaluates every case's emitted Lua in the Lua state a generated machine opens, and a
+# test that does not read the table passes whatever the library answers.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/c_reads_the_ecma262_semantics_table_ctest.cases`.
+#
+# The mutants change one expected answer to one no engine gives and leave the table
+# well formed, so only a test that loads the table and evaluates the emission can tell
+# it from the right one. A SURVIVED here means the C11 test reads neither or never
+# reaches the case.
+#
+# Anchors are literal slices of the table; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^c11_integration_ecma262_semantics$'
+mutation_runtime_targets tests/ecmascript/ecma262_semantics.json
+mutation_oracles backends/c/tests/integration/test_ecma262_semantics.c
+
+mutation_case "ECMAScript's AND of a falsy left is written down as true" <<'PY'
+edit("tests/ecmascript/ecma262_semantics.json",
+     '''      "expect": {"bool": false},
+      "clause": "13.13.1 the AND yields its left operand when it is falsy"''',
+     '''      "expect": {"bool": true},
+      "clause": "13.13.1 the AND yields its left operand when it is falsy"''')
+PY
+
+mutation_case "a value-form AND is written down as its right operand" <<'PY'
+edit("tests/ecmascript/ecma262_semantics.json",
+     '''      "expect": {"number": 0},
+      "clause": "13.13.1 the value is an operand, not a boolean"''',
+     '''      "expect": {"number": 5},
+      "clause": "13.13.1 the value is an operand, not a boolean"''')
+PY

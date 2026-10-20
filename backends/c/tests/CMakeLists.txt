@@ -1429,6 +1429,39 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # What ECMA-262 says an expression answers, measured against the Lua state a
+    # generated machine opens (tests/ecmascript/ecma262_semantics.json, with the Lua
+    # the frontend emits for each case in ecma262_emitted_lua.json). The machine is
+    # a carrier for the bootstrap: any `datamodel="ecmascript"` document loads the
+    # shared library in chunks, so the generated sources of
+    # `external_chain_is_bounded` above are reused rather than a fixture added.
+    add_executable(sce_c_integration_ecma262_semantics
+        integration/test_ecma262_semantics.c
+        ${INTEGRATION_C_TEST_external_chain_is_bounded_SOURCES}
+    )
+    target_compile_definitions(sce_c_integration_ecma262_semantics PRIVATE
+        SCE_ECMA262_SEMANTICS_TABLE="${CMAKE_SOURCE_DIR}/tests/ecmascript/ecma262_semantics.json"
+        SCE_ECMA262_EMITTED_LUA_TABLE="${CMAKE_SOURCE_DIR}/tests/ecmascript/ecma262_emitted_lua.json"
+    )
+    target_link_libraries(sce_c_integration_ecma262_semantics PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
+    )
+    target_include_directories(sce_c_integration_ecma262_semantics PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_ecma262_semantics PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_ecma262_semantics
+        COMMAND sce_c_integration_ecma262_semantics
+    )
+    set_tests_properties(c11_integration_ecma262_semantics PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # W3C SCXML 3.3 + Appendix D: a compound state entered only because the
     # target lies inside it takes no default initial child. Appendix D asks that
     # as two functions — `addDescendantStatesToEnter` for the target,
