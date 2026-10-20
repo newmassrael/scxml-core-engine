@@ -390,7 +390,7 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) InitializeDataModel(eng *sce.En
 	// W3C SCXML 5.3: Initialize _name
 	_ = engine.SetVariable(sessionID, "_name", "a_hybrid_invoke_carries_its_arguments")
 
-	// W3C SCXML 5.2.2: Initialize global datamodel variables
+	// W3C SCXML 5.3.3: Initialize global datamodel variables
 	// W3C SCXML 5.2/5.3: Initialize pick from expr="'file:keeper.scxml'"
 	{
 		result, err := engine.EvaluateExpression(sessionID, `"file:keeper.scxml"`)

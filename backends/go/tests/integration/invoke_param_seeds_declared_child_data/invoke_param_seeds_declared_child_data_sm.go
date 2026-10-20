@@ -401,7 +401,7 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) InitializeDataModel(eng *sce.E
 	// W3C SCXML 5.3: Initialize _name
 	_ = engine.SetVariable(sessionID, "_name", "invoke_param_seeds_declared_child_data")
 
-	// W3C SCXML 5.2.2: Initialize global datamodel variables
+	// W3C SCXML 5.3.3: Initialize global datamodel variables
 	// W3C SCXML 5.2/5.3: Initialize token from expr="'parent'"
 	{
 		result, err := engine.EvaluateExpression(sessionID, `"parent"`)

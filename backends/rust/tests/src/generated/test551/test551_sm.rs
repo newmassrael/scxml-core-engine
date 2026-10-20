@@ -242,7 +242,7 @@ impl Test551Policy {
             ::sce_rust_runtime::sce_log_error!("Failed to setup system variables: {}", e);
         }
 
-        // W3C SCXML 5.2.2: Initialize global datamodel variables (no error events)
+        // W3C SCXML 5.3.3: Initialize global datamodel variables (no error events)
 
         // W3C SCXML 5.3: Early binding - Initialize state s1 datamodel variables
         // W3C SCXML B.2: Inline content for 'Var1' (s1, eval with string fallback)
@@ -280,7 +280,7 @@ impl Test551Policy {
             ::sce_rust_runtime::sce_log_error!("Failed to setup system variables: {}", e);
         }
 
-        // W3C SCXML 5.2.2: Initialize global datamodel variables (with error events)
+        // W3C SCXML 5.3.3: Initialize global datamodel variables (with error events)
 
         // W3C SCXML 5.3: Early binding - Initialize state s1 datamodel variables
         // W3C SCXML B.2: Inline content for 'Var1' (s1, eval with string fallback)

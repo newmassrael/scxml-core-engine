@@ -807,7 +807,7 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 	// W3C SCXML 5.3: Initialize _name
 	_ = engine.SetVariable(sessionID, "_name", "statechart_host_invoker")
 
-	// W3C SCXML 5.2.2: Initialize global datamodel variables
+	// W3C SCXML 5.3.3: Initialize global datamodel variables
 	// W3C SCXML 5.2/5.3: Initialize started from expr="0"
 	{
 		result, err := engine.EvaluateExpression(sessionID, `0`)

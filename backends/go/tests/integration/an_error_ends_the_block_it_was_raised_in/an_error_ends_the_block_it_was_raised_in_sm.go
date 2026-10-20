@@ -571,7 +571,7 @@ func (p *AnErrorEndsTheBlockItWasRaisedInPolicy) InitializeDataModel(eng *sce.En
 	// W3C SCXML 5.3: Initialize _name
 	_ = engine.SetVariable(sessionID, "_name", "an_error_ends_the_block_it_was_raised_in")
 
-	// W3C SCXML 5.2.2: Initialize global datamodel variables
+	// W3C SCXML 5.3.3: Initialize global datamodel variables
 	// W3C SCXML 5.2/5.3: Initialize errors from expr="0"
 	{
 		result, err := engine.EvaluateExpression(sessionID, `0`)
@@ -1547,7 +1547,7 @@ func (p *AnErrorEndsTheBlockItWasRaisedInPolicy) ExecuteEntryActions(state AnErr
 					return
 				}
 			} else {
-				// Not an array — raise error.execution (W3C SCXML 5.6)
+				// Not an array — raise error.execution (W3C SCXML 4.6)
 				engine.Raise(sce.NewPlatformError(AnErrorEndsTheBlockItWasRaisedInEventErrorExecution, "<foreach array='inner'> is not an array"))
 				return
 			}
@@ -1560,7 +1560,7 @@ func (p *AnErrorEndsTheBlockItWasRaisedInPolicy) ExecuteEntryActions(state AnErr
 					return
 				}
 			} else {
-				// Not an array — raise error.execution (W3C SCXML 5.6)
+				// Not an array — raise error.execution (W3C SCXML 4.6)
 				engine.Raise(sce.NewPlatformError(AnErrorEndsTheBlockItWasRaisedInEventErrorExecution, "<foreach array='outer'> is not an array"))
 				return
 			}

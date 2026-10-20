@@ -260,7 +260,7 @@ func (p *EventOriginIsALocationSceSynthInvokeInvPeerPolicy) InitializeDataModel(
 	// W3C SCXML 5.3: Initialize _name
 	_ = engine.SetVariable(sessionID, "_name", "event_origin_is_a_location__sce_synth_invoke__inv_peer")
 
-	// W3C SCXML 5.2.2: Initialize global datamodel variables
+	// W3C SCXML 5.3.3: Initialize global datamodel variables
 
 
 

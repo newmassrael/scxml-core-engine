@@ -314,7 +314,7 @@ func (p *TypedReaderNamesPolicy) InitializeDataModel(eng *sce.Engine[TypedReader
 	// W3C SCXML 5.3: Initialize _name
 	_ = engine.SetVariable(sessionID, "_name", "typed_reader_names")
 
-	// W3C SCXML 5.2.2: Initialize global datamodel variables
+	// W3C SCXML 5.3.3: Initialize global datamodel variables
 	// W3C SCXML 5.2/5.3: Initialize box from expr="1"
 	{
 		result, err := engine.EvaluateExpression(sessionID, `1`)

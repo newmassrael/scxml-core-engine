@@ -245,7 +245,7 @@ impl XmlDataIsADomTreePolicy {
             ::sce_rust_runtime::sce_log_error!("Failed to setup system variables: {}", e);
         }
 
-        // W3C SCXML 5.2.2: Initialize global datamodel variables (no error events)
+        // W3C SCXML 5.3.3: Initialize global datamodel variables (no error events)
         // W3C SCXML B.2: XML inline content for 'doc' (global)
         if let Err(e) = se.set_variable_as_dom(&sid, "doc", "<books xmlns=\"\" count=\"2\">\n        <book title=\"t1\">first</book>\n        <book title=\"t2\"></book>\n      </books>") {
             ::sce_rust_runtime::sce_log_error!("Failed to set DOM variable 'doc' in global: {}", e);
@@ -275,7 +275,7 @@ impl XmlDataIsADomTreePolicy {
             ::sce_rust_runtime::sce_log_error!("Failed to setup system variables: {}", e);
         }
 
-        // W3C SCXML 5.2.2: Initialize global datamodel variables (with error events)
+        // W3C SCXML 5.3.3: Initialize global datamodel variables (with error events)
         // W3C SCXML B.2: XML inline content for 'doc' (global)
         if let Err(e) = se.set_variable_as_dom(&sid, "doc", "<books xmlns=\"\" count=\"2\">\n        <book title=\"t1\">first</book>\n        <book title=\"t2\"></book>\n      </books>") {
             ::sce_rust_runtime::sce_log_error!("Failed to set DOM variable 'doc' in global: {}", e);

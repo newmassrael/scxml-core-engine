@@ -287,7 +287,7 @@ func (p *XmlDataIsADomTreePolicy) InitializeDataModel(eng *sce.Engine[XmlDataIsA
 	// W3C SCXML 5.3: Initialize _name
 	_ = engine.SetVariable(sessionID, "_name", "xml_data_is_a_dom_tree")
 
-	// W3C SCXML 5.2.2: Initialize global datamodel variables
+	// W3C SCXML 5.3.3: Initialize global datamodel variables
 	// W3C SCXML B.2: XML inline content for doc
 	_ = engine.SetVariableAsDOM(sessionID, "doc", `<books xmlns="" count="2">
         <book title="t1">first</book>

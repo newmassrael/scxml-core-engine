@@ -778,7 +778,7 @@ func (p *AiLoopPolicy) InitializeDataModel(eng *sce.Engine[AiLoopState, AiLoopEv
 	// W3C SCXML 5.3: Initialize _name
 	_ = engine.SetVariable(sessionID, "_name", "ai_loop")
 
-	// W3C SCXML 5.2.2: Initialize global datamodel variables
+	// W3C SCXML 5.3.3: Initialize global datamodel variables
 	// W3C SCXML 5.2/5.3: Initialize north_star from expr="'(edit me) the outcome this loop exists to reach'"
 	{
 		result, err := engine.EvaluateExpression(sessionID, `"(edit me) the outcome this loop exists to reach"`)

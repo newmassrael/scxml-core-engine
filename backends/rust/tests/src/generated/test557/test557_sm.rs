@@ -242,13 +242,13 @@ impl Test557Policy {
             ::sce_rust_runtime::sce_log_error!("Failed to setup system variables: {}", e);
         }
 
-        // W3C SCXML 5.2.2: Initialize global datamodel variables (no error events)
+        // W3C SCXML 5.3.3: Initialize global datamodel variables (no error events)
         // W3C SCXML B.2: XML inline content for 'var1' (global)
         if let Err(e) = se.set_variable_as_dom(&sid, "var1", "<books xmlns=\"\">\n     <book title=\"title1\"></book>\n     <book title=\"title2\"></book>\n   </books>") {
             ::sce_rust_runtime::sce_log_error!("Failed to set DOM variable 'var1' in global: {}", e);
         }
 
-        // W3C SCXML 5.2.2: Load variable 'var2' from src (global)
+        // W3C SCXML 5.3.1: Load variable 'var2' from src (global)
         {
             let base_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../../resources/557/");
             if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_src(
@@ -289,14 +289,14 @@ impl Test557Policy {
             ::sce_rust_runtime::sce_log_error!("Failed to setup system variables: {}", e);
         }
 
-        // W3C SCXML 5.2.2: Initialize global datamodel variables (with error events)
+        // W3C SCXML 5.3.3: Initialize global datamodel variables (with error events)
         // W3C SCXML B.2: XML inline content for 'var1' (global)
         if let Err(e) = se.set_variable_as_dom(&sid, "var1", "<books xmlns=\"\">\n     <book title=\"title1\"></book>\n     <book title=\"title2\"></book>\n   </books>") {
             ::sce_rust_runtime::sce_log_error!("Failed to set DOM variable 'var1' in global: {}", e);
             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(Test557Event::ErrorExecution, "<data id='var1'> XML content could not be parsed"));
         }
 
-        // W3C SCXML 5.2.2: Load variable 'var2' from src (global)
+        // W3C SCXML 5.3.1: Load variable 'var2' from src (global)
         {
             let base_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../../resources/557/");
             if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_src(

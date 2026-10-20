@@ -400,7 +400,7 @@ func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) InitializeDataModel(eng *s
 	// W3C SCXML 5.3: Initialize _name
 	_ = engine.SetVariable(sessionID, "_name", "a_delayed_send_reaches_what_its_target_names")
 
-	// W3C SCXML 5.2.2: Initialize global datamodel variables
+	// W3C SCXML 5.3.3: Initialize global datamodel variables
 	// W3C SCXML 5.2/5.3: Initialize order from expr="0"
 	{
 		result, err := engine.EvaluateExpression(sessionID, `0`)

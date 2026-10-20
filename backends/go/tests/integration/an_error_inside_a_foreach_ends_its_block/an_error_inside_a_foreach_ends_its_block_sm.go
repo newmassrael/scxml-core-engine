@@ -415,7 +415,7 @@ func (p *AnErrorInsideAForeachEndsItsBlockPolicy) InitializeDataModel(eng *sce.E
 	// W3C SCXML 5.3: Initialize _name
 	_ = engine.SetVariable(sessionID, "_name", "an_error_inside_a_foreach_ends_its_block")
 
-	// W3C SCXML 5.2.2: Initialize global datamodel variables
+	// W3C SCXML 5.3.3: Initialize global datamodel variables
 	// W3C SCXML 5.2/5.3: Initialize errors from expr="0"
 	{
 		result, err := engine.EvaluateExpression(sessionID, `0`)
@@ -992,7 +992,7 @@ func (p *AnErrorInsideAForeachEndsItsBlockPolicy) ExecuteEntryActions(state AnEr
 					return
 				}
 			} else {
-				// Not an array — raise error.execution (W3C SCXML 5.6)
+				// Not an array — raise error.execution (W3C SCXML 4.6)
 				engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, "<foreach array='items'> is not an array"))
 				return
 			}
@@ -1052,7 +1052,7 @@ func (p *AnErrorInsideAForeachEndsItsBlockPolicy) ExecuteEntryActions(state AnEr
 					return
 				}
 			} else {
-				// Not an array — raise error.execution (W3C SCXML 5.6)
+				// Not an array — raise error.execution (W3C SCXML 4.6)
 				engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, "<foreach array='items'> is not an array"))
 				return
 			}
@@ -1294,7 +1294,7 @@ func (p *AnErrorInsideAForeachEndsItsBlockPolicy) ExecuteTransitionContent(sourc
 					return
 				}
 			} else {
-				// Not an array — raise error.execution (W3C SCXML 5.6)
+				// Not an array — raise error.execution (W3C SCXML 4.6)
 				engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, "<foreach array='items'> is not an array"))
 				return
 			}

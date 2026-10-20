@@ -329,7 +329,7 @@ func (p *ErrorCascadeIsBoundedPolicy) InitializeDataModel(eng *sce.Engine[ErrorC
 	// W3C SCXML 5.3: Initialize _name
 	_ = engine.SetVariable(sessionID, "_name", "error_cascade_is_bounded")
 
-	// W3C SCXML 5.2.2: Initialize global datamodel variables
+	// W3C SCXML 5.3.3: Initialize global datamodel variables
 	// W3C SCXML 5.2/5.3: Initialize pokes from expr="0"
 	{
 		result, err := engine.EvaluateExpression(sessionID, `0`)

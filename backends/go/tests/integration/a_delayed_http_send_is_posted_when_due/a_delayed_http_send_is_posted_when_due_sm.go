@@ -284,7 +284,7 @@ func (p *ADelayedHttpSendIsPostedWhenDuePolicy) InitializeDataModel(eng *sce.Eng
 	// W3C SCXML 5.3: Initialize _name
 	_ = engine.SetVariable(sessionID, "_name", "a_delayed_http_send_is_posted_when_due")
 
-	// W3C SCXML 5.2.2: Initialize global datamodel variables
+	// W3C SCXML 5.3.3: Initialize global datamodel variables
 	// W3C SCXML 5.2/5.3: Initialize dynamicUrl from expr="'http://127.0.0.1:18081/dynamic'"
 	{
 		result, err := engine.EvaluateExpression(sessionID, `"http://127.0.0.1:18081/dynamic"`)

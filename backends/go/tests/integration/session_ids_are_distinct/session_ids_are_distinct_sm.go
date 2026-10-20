@@ -313,7 +313,7 @@ func (p *SessionIdsAreDistinctPolicy) InitializeDataModel(eng *sce.Engine[Sessio
 	// W3C SCXML 5.3: Initialize _name
 	_ = engine.SetVariable(sessionID, "_name", "session_ids_are_distinct")
 
-	// W3C SCXML 5.2.2: Initialize global datamodel variables
+	// W3C SCXML 5.3.3: Initialize global datamodel variables
 	// W3C SCXML 5.2/5.3: Initialize firstSid from expr="''"
 	{
 		result, err := engine.EvaluateExpression(sessionID, `""`)

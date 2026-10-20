@@ -245,7 +245,7 @@ impl Test509Policy {
             ::sce_rust_runtime::sce_log_error!("Failed to setup system variables: {}", e);
         }
 
-        // W3C SCXML 5.2.2: Initialize global datamodel variables (no error events)
+        // W3C SCXML 5.3.3: Initialize global datamodel variables (no error events)
 
         self.script_engine_initialized = true;
     }
@@ -271,7 +271,7 @@ impl Test509Policy {
             ::sce_rust_runtime::sce_log_error!("Failed to setup system variables: {}", e);
         }
 
-        // W3C SCXML 5.2.2: Initialize global datamodel variables (with error events)
+        // W3C SCXML 5.3.3: Initialize global datamodel variables (with error events)
 
         self.script_engine_initialized = true;
     }

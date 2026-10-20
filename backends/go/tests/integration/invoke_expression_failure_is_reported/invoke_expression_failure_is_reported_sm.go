@@ -264,7 +264,7 @@ func (p *InvokeExpressionFailureIsReportedPolicy) InitializeDataModel(eng *sce.E
 	// W3C SCXML 5.3: Initialize _name
 	_ = engine.SetVariable(sessionID, "_name", "invoke_expression_failure_is_reported")
 
-	// W3C SCXML 5.2.2: Initialize global datamodel variables
+	// W3C SCXML 5.3.3: Initialize global datamodel variables
 	// W3C SCXML 5.2/5.3: Initialize target from expr="null"
 	{
 		result, err := engine.EvaluateExpression(sessionID, `nil`)

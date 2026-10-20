@@ -254,7 +254,7 @@ func (p *ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidPolicy) Initializ
 	// W3C SCXML 5.3: Initialize _name
 	_ = engine.SetVariable(sessionID, "_name", "a_delayed_send_reaches_what_its_target_names__sce_synth_invoke__kid")
 
-	// W3C SCXML 5.2.2: Initialize global datamodel variables
+	// W3C SCXML 5.3.3: Initialize global datamodel variables
 
 
 

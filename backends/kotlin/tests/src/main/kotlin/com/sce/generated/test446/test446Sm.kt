@@ -179,7 +179,7 @@ class Test446StateMachine(
         } catch (e: Exception) {
             raisePlatformError(Test446Event.Error.Execution, "<data id='var1'> content failed to initialise")
         }
-        // W3C SCXML 5.2.2: Load variable 'var2' from external source (C++ DataModelInitHelper pattern)
+        // W3C SCXML 5.3.1: Load variable 'var2' from external source (C++ DataModelInitHelper pattern)
         try {
             val srcContent_var2 = engine.loadDataFromSrc("file:test446.txt", "resources/446")
             if (srcContent_var2 != null) {

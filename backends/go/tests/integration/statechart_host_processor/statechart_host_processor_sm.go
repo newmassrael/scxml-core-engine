@@ -329,7 +329,7 @@ func (p *StatechartHostProcessorPolicy) InitializeDataModel(eng *sce.Engine[Stat
 	// W3C SCXML 5.3: Initialize _name
 	_ = engine.SetVariable(sessionID, "_name", "statechart_host_processor")
 
-	// W3C SCXML 5.2.2: Initialize global datamodel variables
+	// W3C SCXML 5.3.3: Initialize global datamodel variables
 	// W3C SCXML 5.2/5.3: Initialize served from expr="0"
 	{
 		result, err := engine.EvaluateExpression(sessionID, `0`)

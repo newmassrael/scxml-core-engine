@@ -345,7 +345,7 @@ func (p *ParallelSelfTransitionKeepsItsLeafPolicy) InitializeDataModel(eng *sce.
 	// W3C SCXML 5.3: Initialize _name
 	_ = engine.SetVariable(sessionID, "_name", "parallel_self_transition_keeps_its_leaf")
 
-	// W3C SCXML 5.2.2: Initialize global datamodel variables
+	// W3C SCXML 5.3.3: Initialize global datamodel variables
 	// W3C SCXML 5.2/5.3: Initialize n from expr="0"
 	{
 		result, err := engine.EvaluateExpression(sessionID, `0`)

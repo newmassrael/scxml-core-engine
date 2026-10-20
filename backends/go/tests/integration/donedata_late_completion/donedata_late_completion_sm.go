@@ -277,7 +277,7 @@ func (p *DonedataLateCompletionPolicy) InitializeDataModel(eng *sce.Engine[Doned
 	// W3C SCXML 5.3: Initialize _name
 	_ = engine.SetVariable(sessionID, "_name", "donedata_late_completion")
 
-	// W3C SCXML 5.2.2: Initialize global datamodel variables
+	// W3C SCXML 5.3.3: Initialize global datamodel variables
 
 
 

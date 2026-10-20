@@ -270,7 +270,7 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSolePolicy) Initializ
 	// W3C SCXML 5.3: Initialize _name
 	_ = engine.SetVariable(sessionID, "_name", "invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_sole")
 
-	// W3C SCXML 5.2.2: Initialize global datamodel variables
+	// W3C SCXML 5.3.3: Initialize global datamodel variables
 	// W3C SCXML 5.2/5.3: Initialize seen from expr="'unset'"
 	{
 		result, err := engine.EvaluateExpression(sessionID, `"unset"`)

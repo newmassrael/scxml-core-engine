@@ -275,7 +275,7 @@ func (p *AChildMaySendManyEventsInOneTickPolicy) InitializeDataModel(eng *sce.En
 	// W3C SCXML 5.3: Initialize _name
 	_ = engine.SetVariable(sessionID, "_name", "a_child_may_send_many_events_in_one_tick")
 
-	// W3C SCXML 5.2.2: Initialize global datamodel variables
+	// W3C SCXML 5.3.3: Initialize global datamodel variables
 	// W3C SCXML 5.2/5.3: Initialize ticks from expr="0"
 	{
 		result, err := engine.EvaluateExpression(sessionID, `0`)

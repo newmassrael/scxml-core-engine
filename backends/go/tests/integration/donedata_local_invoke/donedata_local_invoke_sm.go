@@ -296,7 +296,7 @@ func (p *DonedataLocalInvokePolicy) InitializeDataModel(eng *sce.Engine[Donedata
 	// W3C SCXML 5.3: Initialize _name
 	_ = engine.SetVariable(sessionID, "_name", "donedata_local_invoke")
 
-	// W3C SCXML 5.2.2: Initialize global datamodel variables
+	// W3C SCXML 5.3.3: Initialize global datamodel variables
 	// W3C SCXML 5.2/5.3: Initialize param_ok from expr="false"
 	{
 		result, err := engine.EvaluateExpression(sessionID, `false`)

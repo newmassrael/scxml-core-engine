@@ -281,7 +281,7 @@ func (p *ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidPolicy) Initial
 	// W3C SCXML 5.3: Initialize _name
 	_ = engine.SetVariable(sessionID, "_name", "a_target_expression_is_routed_as_its_literal_is__sce_synth_invoke__kid")
 
-	// W3C SCXML 5.2.2: Initialize global datamodel variables
+	// W3C SCXML 5.3.3: Initialize global datamodel variables
 	// W3C SCXML 5.2/5.3: Initialize tParent from expr="'#_parent'"
 	{
 		result, err := engine.EvaluateExpression(sessionID, `"#_parent"`)

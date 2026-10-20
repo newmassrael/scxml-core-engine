@@ -241,8 +241,8 @@ impl Test552Policy {
             ::sce_rust_runtime::sce_log_error!("Failed to setup system variables: {}", e);
         }
 
-        // W3C SCXML 5.2.2: Initialize global datamodel variables (no error events)
-        // W3C SCXML 5.2.2: Load variable 'Var1' from src (global)
+        // W3C SCXML 5.3.3: Initialize global datamodel variables (no error events)
+        // W3C SCXML 5.3.1: Load variable 'Var1' from src (global)
         {
             let base_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../../resources/552/");
             if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_src(
@@ -283,8 +283,8 @@ impl Test552Policy {
             ::sce_rust_runtime::sce_log_error!("Failed to setup system variables: {}", e);
         }
 
-        // W3C SCXML 5.2.2: Initialize global datamodel variables (with error events)
-        // W3C SCXML 5.2.2: Load variable 'Var1' from src (global)
+        // W3C SCXML 5.3.3: Initialize global datamodel variables (with error events)
+        // W3C SCXML 5.3.1: Load variable 'Var1' from src (global)
         {
             let base_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../../resources/552/");
             if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_src(

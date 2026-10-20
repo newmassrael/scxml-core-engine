@@ -254,7 +254,7 @@ func (p *EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentPolicy) Initializ
 	// W3C SCXML 5.3: Initialize _name
 	_ = engine.SetVariable(sessionID, "_name", "empty_finalize_updates_the_location__sce_synth_invoke__inv_absent")
 
-	// W3C SCXML 5.2.2: Initialize global datamodel variables
+	// W3C SCXML 5.3.3: Initialize global datamodel variables
 	// W3C SCXML 5.2: Runtime variable guard (init to nil)
 	_ = engine.SetVariable(sessionID, "guard", nil)
 

@@ -347,7 +347,7 @@ func (p *ABadSendParamEndsItsBlockPolicy) InitializeDataModel(eng *sce.Engine[AB
 	// W3C SCXML 5.3: Initialize _name
 	_ = engine.SetVariable(sessionID, "_name", "a_bad_send_param_ends_its_block")
 
-	// W3C SCXML 5.2.2: Initialize global datamodel variables
+	// W3C SCXML 5.3.3: Initialize global datamodel variables
 	// W3C SCXML 5.2/5.3: Initialize errors from expr="0"
 	{
 		result, err := engine.EvaluateExpression(sessionID, `0`)

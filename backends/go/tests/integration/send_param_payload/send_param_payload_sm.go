@@ -429,7 +429,7 @@ func (p *SendParamPayloadPolicy) InitializeDataModel(eng *sce.Engine[SendParamPa
 	// W3C SCXML 5.3: Initialize _name
 	_ = engine.SetVariable(sessionID, "_name", "send_param_payload")
 
-	// W3C SCXML 5.2.2: Initialize global datamodel variables
+	// W3C SCXML 5.3.3: Initialize global datamodel variables
 	// W3C SCXML 5.2/5.3: Initialize nothing from expr="null"
 	{
 		result, err := engine.EvaluateExpression(sessionID, `nil`)

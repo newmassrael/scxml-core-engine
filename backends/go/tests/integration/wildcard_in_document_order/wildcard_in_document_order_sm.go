@@ -402,7 +402,7 @@ func (p *WildcardInDocumentOrderPolicy) InitializeDataModel(eng *sce.Engine[Wild
 	// W3C SCXML 5.3: Initialize _name
 	_ = engine.SetVariable(sessionID, "_name", "wildcard_in_document_order")
 
-	// W3C SCXML 5.2.2: Initialize global datamodel variables
+	// W3C SCXML 5.3.3: Initialize global datamodel variables
 	// W3C SCXML 5.2/5.3: Initialize armed from expr="false"
 	{
 		result, err := engine.EvaluateExpression(sessionID, `false`)

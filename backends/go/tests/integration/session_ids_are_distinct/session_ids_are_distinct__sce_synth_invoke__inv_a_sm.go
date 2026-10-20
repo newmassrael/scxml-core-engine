@@ -245,7 +245,7 @@ func (p *SessionIdsAreDistinctSceSynthInvokeInvAPolicy) InitializeDataModel(eng 
 	// W3C SCXML 5.3: Initialize _name
 	_ = engine.SetVariable(sessionID, "_name", "session_ids_are_distinct__sce_synth_invoke__inv_a")
 
-	// W3C SCXML 5.2.2: Initialize global datamodel variables
+	// W3C SCXML 5.3.3: Initialize global datamodel variables
 
 
 

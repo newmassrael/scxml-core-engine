@@ -302,7 +302,7 @@ func (p *AMeshRequestReachesTheRouterPolicy) InitializeDataModel(eng *sce.Engine
 	// W3C SCXML 5.3: Initialize _name
 	_ = engine.SetVariable(sessionID, "_name", "a_mesh_request_reaches_the_router")
 
-	// W3C SCXML 5.2.2: Initialize global datamodel variables
+	// W3C SCXML 5.3.3: Initialize global datamodel variables
 	// W3C SCXML 5.2/5.3: Initialize answered from expr="0"
 	{
 		result, err := engine.EvaluateExpression(sessionID, `0`)

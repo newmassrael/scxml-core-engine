@@ -247,7 +247,7 @@ impl InvokeParamErrorStartsTheChildSceSynthInvokeInvProbePolicy {
             ::sce_rust_runtime::sce_log_error!("Failed to setup system variables: {}", e);
         }
 
-        // W3C SCXML 5.2.2: Initialize global datamodel variables (no error events)
+        // W3C SCXML 5.3.3: Initialize global datamodel variables (no error events)
         // W3C SCXML 5.2: Runtime variable 'kept' (global, late binding, init to nil)
         let _ = se.set_variable(&sid, "kept", sce_rust_runtime::ScriptValue::Null);
 
@@ -282,7 +282,7 @@ impl InvokeParamErrorStartsTheChildSceSynthInvokeInvProbePolicy {
             ::sce_rust_runtime::sce_log_error!("Failed to setup system variables: {}", e);
         }
 
-        // W3C SCXML 5.2.2: Initialize global datamodel variables (with error events)
+        // W3C SCXML 5.3.3: Initialize global datamodel variables (with error events)
         // W3C SCXML 5.2: Runtime variable 'kept' (global, late binding, init to nil)
         let _ = se.set_variable(&sid, "kept", sce_rust_runtime::ScriptValue::Null);
 

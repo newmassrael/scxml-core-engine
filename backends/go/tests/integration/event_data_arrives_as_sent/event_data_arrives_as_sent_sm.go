@@ -334,7 +334,7 @@ func (p *EventDataArrivesAsSentPolicy) InitializeDataModel(eng *sce.Engine[Event
 	// W3C SCXML 5.3: Initialize _name
 	_ = engine.SetVariable(sessionID, "_name", "event_data_arrives_as_sent")
 
-	// W3C SCXML 5.2.2: Initialize global datamodel variables
+	// W3C SCXML 5.3.3: Initialize global datamodel variables
 
 
 

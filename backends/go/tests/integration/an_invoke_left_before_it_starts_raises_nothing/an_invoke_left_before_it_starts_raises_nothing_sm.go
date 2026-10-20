@@ -276,7 +276,7 @@ func (p *AnInvokeLeftBeforeItStartsRaisesNothingPolicy) InitializeDataModel(eng 
 	// W3C SCXML 5.3: Initialize _name
 	_ = engine.SetVariable(sessionID, "_name", "an_invoke_left_before_it_starts_raises_nothing")
 
-	// W3C SCXML 5.2.2: Initialize global datamodel variables
+	// W3C SCXML 5.3.3: Initialize global datamodel variables
 	// W3C SCXML 5.2/5.3: Initialize errors from expr="0"
 	{
 		result, err := engine.EvaluateExpression(sessionID, `0`)

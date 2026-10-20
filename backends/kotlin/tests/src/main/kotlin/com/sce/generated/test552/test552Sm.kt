@@ -150,7 +150,7 @@ class Test552StateMachine(
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
-        // W3C SCXML 5.2.2: Load variable 'Var1' from external source (C++ DataModelInitHelper pattern)
+        // W3C SCXML 5.3.1: Load variable 'Var1' from external source (C++ DataModelInitHelper pattern)
         try {
             val srcContent_Var1 = engine.loadDataFromSrc("file:test552.txt", "resources/552")
             if (srcContent_Var1 != null) {

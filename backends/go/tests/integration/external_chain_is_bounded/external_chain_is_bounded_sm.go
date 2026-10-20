@@ -395,7 +395,7 @@ func (p *ExternalChainIsBoundedPolicy) InitializeDataModel(eng *sce.Engine[Exter
 	// W3C SCXML 5.3: Initialize _name
 	_ = engine.SetVariable(sessionID, "_name", "external_chain_is_bounded")
 
-	// W3C SCXML 5.2.2: Initialize global datamodel variables
+	// W3C SCXML 5.3.3: Initialize global datamodel variables
 	// W3C SCXML 5.2/5.3: Initialize pokes from expr="0"
 	{
 		result, err := engine.EvaluateExpression(sessionID, `0`)

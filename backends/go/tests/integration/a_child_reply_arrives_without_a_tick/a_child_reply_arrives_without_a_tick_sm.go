@@ -275,7 +275,7 @@ func (p *AChildReplyArrivesWithoutATickPolicy) InitializeDataModel(eng *sce.Engi
 	// W3C SCXML 5.3: Initialize _name
 	_ = engine.SetVariable(sessionID, "_name", "a_child_reply_arrives_without_a_tick")
 
-	// W3C SCXML 5.2.2: Initialize global datamodel variables
+	// W3C SCXML 5.3.3: Initialize global datamodel variables
 	// W3C SCXML 5.2/5.3: Initialize hellos from expr="0"
 	{
 		result, err := engine.EvaluateExpression(sessionID, `0`)

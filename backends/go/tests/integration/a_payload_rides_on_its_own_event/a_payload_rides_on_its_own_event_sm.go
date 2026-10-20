@@ -323,7 +323,7 @@ func (p *APayloadRidesOnItsOwnEventPolicy) InitializeDataModel(eng *sce.Engine[A
 	// W3C SCXML 5.3: Initialize _name
 	_ = engine.SetVariable(sessionID, "_name", "a_payload_rides_on_its_own_event")
 
-	// W3C SCXML 5.2.2: Initialize global datamodel variables
+	// W3C SCXML 5.3.3: Initialize global datamodel variables
 	// W3C SCXML 5.2/5.3: Initialize got from expr="0"
 	{
 		result, err := engine.EvaluateExpression(sessionID, `0`)

@@ -294,7 +294,7 @@ func (p *DiscardedEventIsObservablePolicy) InitializeDataModel(eng *sce.Engine[D
 	// W3C SCXML 5.3: Initialize _name
 	_ = engine.SetVariable(sessionID, "_name", "discarded_event_is_observable")
 
-	// W3C SCXML 5.2.2: Initialize global datamodel variables
+	// W3C SCXML 5.3.3: Initialize global datamodel variables
 	// W3C SCXML 5.2/5.3: Initialize pokes from expr="0"
 	{
 		result, err := engine.EvaluateExpression(sessionID, `0`)

@@ -241,7 +241,7 @@ impl Test302Policy {
             ::sce_rust_runtime::sce_log_error!("Failed to setup system variables: {}", e);
         }
 
-        // W3C SCXML 5.2.2: Initialize global datamodel variables (no error events)
+        // W3C SCXML 5.3.3: Initialize global datamodel variables (no error events)
 
         // W3C SCXML 5.8: Execute global (top-level) scripts at document load time
         if let Err(e) = se.execute_script(&sid, "Var1 = 1") {
@@ -272,7 +272,7 @@ impl Test302Policy {
             ::sce_rust_runtime::sce_log_error!("Failed to setup system variables: {}", e);
         }
 
-        // W3C SCXML 5.2.2: Initialize global datamodel variables (with error events)
+        // W3C SCXML 5.3.3: Initialize global datamodel variables (with error events)
 
         // W3C SCXML 5.8: Execute global scripts at document load time
         if let Err(e) = se.execute_script(&sid, "Var1 = 1") {

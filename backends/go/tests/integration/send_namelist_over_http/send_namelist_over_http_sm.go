@@ -345,7 +345,7 @@ func (p *SendNamelistOverHttpPolicy) InitializeDataModel(eng *sce.Engine[SendNam
 	// W3C SCXML 5.3: Initialize _name
 	_ = engine.SetVariable(sessionID, "_name", "send_namelist_over_http")
 
-	// W3C SCXML 5.2.2: Initialize global datamodel variables
+	// W3C SCXML 5.3.3: Initialize global datamodel variables
 	// W3C SCXML 5.2/5.3: Initialize Var1 from expr="2"
 	{
 		result, err := engine.EvaluateExpression(sessionID, `2`)

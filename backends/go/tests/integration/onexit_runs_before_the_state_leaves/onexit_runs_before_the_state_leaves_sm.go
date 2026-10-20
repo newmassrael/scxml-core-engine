@@ -381,7 +381,7 @@ func (p *OnexitRunsBeforeTheStateLeavesPolicy) InitializeDataModel(eng *sce.Engi
 	// W3C SCXML 5.3: Initialize _name
 	_ = engine.SetVariable(sessionID, "_name", "onexit_runs_before_the_state_leaves")
 
-	// W3C SCXML 5.2.2: Initialize global datamodel variables
+	// W3C SCXML 5.3.3: Initialize global datamodel variables
 	// W3C SCXML 5.2/5.3: Initialize selfInInner from expr="0"
 	{
 		result, err := engine.EvaluateExpression(sessionID, `0`)

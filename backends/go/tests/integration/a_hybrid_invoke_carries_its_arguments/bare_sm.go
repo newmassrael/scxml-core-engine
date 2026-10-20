@@ -266,7 +266,7 @@ func (p *BarePolicy) InitializeDataModel(eng *sce.Engine[BareState, BareEvent]) 
 	// W3C SCXML 5.3: Initialize _name
 	_ = engine.SetVariable(sessionID, "_name", "bare")
 
-	// W3C SCXML 5.2.2: Initialize global datamodel variables
+	// W3C SCXML 5.3.3: Initialize global datamodel variables
 	// W3C SCXML 5.2/5.3: Initialize nowhere from expr="'unset'"
 	{
 		result, err := engine.EvaluateExpression(sessionID, `"unset"`)

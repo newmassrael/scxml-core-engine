@@ -416,7 +416,7 @@ func (p *AncestorEntryIsNotDefaultEntryPolicy) InitializeDataModel(eng *sce.Engi
 	// W3C SCXML 5.3: Initialize _name
 	_ = engine.SetVariable(sessionID, "_name", "ancestor_entry_is_not_default_entry")
 
-	// W3C SCXML 5.2.2: Initialize global datamodel variables
+	// W3C SCXML 5.3.3: Initialize global datamodel variables
 	// W3C SCXML 5.2/5.3: Initialize defaulted from expr="0"
 	{
 		result, err := engine.EvaluateExpression(sessionID, `0`)

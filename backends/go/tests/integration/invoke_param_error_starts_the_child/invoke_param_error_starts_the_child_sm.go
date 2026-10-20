@@ -303,7 +303,7 @@ func (p *InvokeParamErrorStartsTheChildPolicy) InitializeDataModel(eng *sce.Engi
 	// W3C SCXML 5.3: Initialize _name
 	_ = engine.SetVariable(sessionID, "_name", "invoke_param_error_starts_the_child")
 
-	// W3C SCXML 5.2.2: Initialize global datamodel variables
+	// W3C SCXML 5.3.3: Initialize global datamodel variables
 	// W3C SCXML 5.2/5.3: Initialize nothing from expr="null"
 	{
 		result, err := engine.EvaluateExpression(sessionID, `nil`)

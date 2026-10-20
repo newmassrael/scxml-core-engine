@@ -362,7 +362,7 @@ func (p *ASendContentExprIsThePayloadPolicy) InitializeDataModel(eng *sce.Engine
 	// W3C SCXML 5.3: Initialize _name
 	_ = engine.SetVariable(sessionID, "_name", "a_send_content_expr_is_the_payload")
 
-	// W3C SCXML 5.2.2: Initialize global datamodel variables
+	// W3C SCXML 5.3.3: Initialize global datamodel variables
 	// W3C SCXML 5.2/5.3: Initialize obj from expr="({})"
 	{
 		result, err := engine.EvaluateExpression(sessionID, `{}`)

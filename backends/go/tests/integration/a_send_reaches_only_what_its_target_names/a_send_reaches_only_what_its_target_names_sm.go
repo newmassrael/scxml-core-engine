@@ -428,7 +428,7 @@ func (p *ASendReachesOnlyWhatItsTargetNamesPolicy) InitializeDataModel(eng *sce.
 	// W3C SCXML 5.3: Initialize _name
 	_ = engine.SetVariable(sessionID, "_name", "a_send_reaches_only_what_its_target_names")
 
-	// W3C SCXML 5.2.2: Initialize global datamodel variables
+	// W3C SCXML 5.3.3: Initialize global datamodel variables
 	// W3C SCXML 5.2/5.3: Initialize obj from expr="({})"
 	{
 		result, err := engine.EvaluateExpression(sessionID, `{}`)

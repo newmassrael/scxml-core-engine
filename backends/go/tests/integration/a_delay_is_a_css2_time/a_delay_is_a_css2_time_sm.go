@@ -329,7 +329,7 @@ func (p *ADelayIsACss2TimePolicy) InitializeDataModel(eng *sce.Engine[ADelayIsAC
 	// W3C SCXML 5.3: Initialize _name
 	_ = engine.SetVariable(sessionID, "_name", "a_delay_is_a_css2_time")
 
-	// W3C SCXML 5.2.2: Initialize global datamodel variables
+	// W3C SCXML 5.3.3: Initialize global datamodel variables
 	// W3C SCXML 5.2/5.3: Initialize errors from expr="0"
 	{
 		result, err := engine.EvaluateExpression(sessionID, `0`)

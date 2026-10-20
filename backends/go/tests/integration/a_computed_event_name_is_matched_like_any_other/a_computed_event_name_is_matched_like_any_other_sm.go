@@ -346,7 +346,7 @@ func (p *AComputedEventNameIsMatchedLikeAnyOtherPolicy) InitializeDataModel(eng 
 	// W3C SCXML 5.3: Initialize _name
 	_ = engine.SetVariable(sessionID, "_name", "a_computed_event_name_is_matched_like_any_other")
 
-	// W3C SCXML 5.2.2: Initialize global datamodel variables
+	// W3C SCXML 5.3.3: Initialize global datamodel variables
 
 
 

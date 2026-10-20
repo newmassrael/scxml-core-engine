@@ -254,7 +254,7 @@ func (p *EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyPolicy) Initialize
 	// W3C SCXML 5.3: Initialize _name
 	_ = engine.SetVariable(sessionID, "_name", "empty_finalize_updates_the_location__sce_synth_invoke__inv_empty")
 
-	// W3C SCXML 5.2.2: Initialize global datamodel variables
+	// W3C SCXML 5.3.3: Initialize global datamodel variables
 	// W3C SCXML 5.2: Runtime variable tally (init to nil)
 	_ = engine.SetVariable(sessionID, "tally", nil)
 

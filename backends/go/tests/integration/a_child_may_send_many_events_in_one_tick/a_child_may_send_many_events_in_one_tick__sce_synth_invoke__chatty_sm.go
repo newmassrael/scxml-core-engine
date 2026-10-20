@@ -272,7 +272,7 @@ func (p *AChildMaySendManyEventsInOneTickSceSynthInvokeChattyPolicy) InitializeD
 	// W3C SCXML 5.3: Initialize _name
 	_ = engine.SetVariable(sessionID, "_name", "a_child_may_send_many_events_in_one_tick__sce_synth_invoke__chatty")
 
-	// W3C SCXML 5.2.2: Initialize global datamodel variables
+	// W3C SCXML 5.3.3: Initialize global datamodel variables
 	// W3C SCXML 5.2/5.3: Initialize items from expr="[1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1]"
 	{
 		result, err := engine.EvaluateExpression(sessionID, `{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}`)
@@ -718,7 +718,7 @@ func (p *AChildMaySendManyEventsInOneTickSceSynthInvokeChattyPolicy) ExecuteEntr
 					return
 				}
 			} else {
-				// Not an array — raise error.execution (W3C SCXML 5.6)
+				// Not an array — raise error.execution (W3C SCXML 4.6)
 				engine.Raise(sce.NewPlatformError(AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEventErrorExecution, "<foreach array='items'> is not an array"))
 				return
 			}
