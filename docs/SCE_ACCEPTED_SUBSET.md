@@ -5162,7 +5162,7 @@ the format and the restore every backend moves to.
 - **What is not in it.** A Mesh endpoint's state (sequence counters, duplicate
   windows, ordering buffers, envelopes held for a peer) changes with the network,
   not with a session's steps, and is saved by the host core beside the tree in one
-  checkpoint (SCE_MESH.md §19, "Checkpoint"); keys and trust state are the host's
+  checkpoint (SCE_MESH.md §10.11); keys and trust state are the host's
   and are never in either.
 - **Which documents save.** A document saves when its own state can be held and
   every document it can start through an `<invoke type="scxml">` saves, every
