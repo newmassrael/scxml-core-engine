@@ -70,8 +70,8 @@ write or supersede, a resync, a settle that changes nothing live is not announce
   register written twice at once reaches the parent as both values (ADR 0034's "a person chooses").
 - A parent that is not interested in a field ignores its events; a list started by a host instead of
   a parent sends nothing to a parent (`#_parent` is not addressable at the top level, so the send is
-  written under a condition the list keeps from how it was started, or the announcement is a host
-  call when there is no parent; the implementation chooses one and the scenarios pin it).
+  written under a condition the list keeps from how it was started: `announce`, which the
+  `<invoke>` hands it and a host does not; see "Revisions made in building it").
 
 ### 3. The fixture and the world
 
@@ -93,6 +93,61 @@ write or supersede, a resync, a settle that changes nothing live is not announce
    protocol exists twice, and no change to the protocol is made in either copy alone.
 3. ADR 0034's trust layer and docs/SCE_SHARED_LIST_TRUST.md name the standard part as the document
    they secure.
+
+## Status of the plan
+
+Step 1 is built and not yet verified: the standard part, its schemas, its announcements and its
+scenarios, on the backends `todo_peer` runs on. `todo_peer` is untouched. Steps 2 and 3 are not
+started.
+
+## Revisions made in building it
+
+- **The condition a list keeps of how it was started is `announce`.** The `<invoke>` that starts
+  the list hands it `<param name="announce" expr="true"/>`; a list a host starts keeps the `false`
+  its `<data>` gives it and tells no one. The telling is a transition of its own
+  (`record_list.announce`, which a write or supersede that moved a register raises for itself) and
+  is taken only under that condition, so nothing is sent to `#_parent` by a list no statechart
+  started, whatever raised the event; a parent may raise it too, to ask what a register holds. A
+  host call was not taken instead: an action is refused inside `<if>` and `<foreach>` under this
+  data model, and a register's further values are told in a `<foreach>`. The send names `#_parent`
+  by an expression among its declared `sce:targets` and not as a written target, since a written
+  `#_parent` makes a machine one that is only ever invoked (the C11 backend gives it no entry of its
+  own and the C++ one a parent type), and this list is started by a host as often as by a parent.
+  `record_list_alone` (a list a host started: `announced` stays 0, nothing fails) and
+  `record_list_parent` (what a parent is told) pin it.
+- **A register is told what it holds when the telling is made.** The telling follows every change
+  already waiting before it, so a person's edit, a supersede of each value it saw and then a write,
+  is told once for each, each time as it stands after the write, and a parent keeps the last it was
+  told of each register. The order of the dots is the wall time, then the counter, then the node
+  (`sce:std/shared/register_values.scxml`). `announced` counts what was told.
+- **The bounds are named** `merge_entries`, `merge_values`, `merge_digest` (the names the merge
+  rules already carry), `merge_text` (the 96 bytes of text a write carries, which
+  `sce:std/merge/mv_value.scxml` now names too, so the value a copy keeps moves with the write),
+  `shared_typed_text` (the 32 bytes a person types, `record_edit`), `shared_roster` and
+  `shared_answers`. A text bound is a schema field's `sce:max-size`, which `sce:limit` could not
+  name before; the generator now reads a `sce:limit` beside it.
+- **A statechart invokes a standard statechart by its library name**
+  (`<invoke type="scxml" src="sce:std/shared/record_list.scxml">`), which no part of the generator
+  read before: the child is the library's text, carried in memory as a child written in `<content>`
+  is and generated beside its parent under the same synthesised name, and the `source-hash` of the
+  parent's tree covers it and the documents it imports. `sce-codegen generate` takes a standard
+  statechart by that name as well. The Interpreter's lowering rewrites an in-line child where its
+  text stands in the parent, and a standard child has none there, so it is refused as an invoke by
+  `src` (`generate/unsupported-feature`): `record_list_parent` runs on the six generated backends,
+  and the Interpreter replays the list's own scenarios.
+- **The fixture of the list is the standard document.** `record_list.scxml` beside the other
+  fixtures is a link to `stdlib/shared/record_list.scxml`, so every driver replays the text the
+  library holds, and its imports name their documents by library name, which resolves the same from
+  either place. Its scenarios `record_list_alice`, `record_list_bob` and `record_list_server` are
+  written by the world test from the very run that writes `todo_peer`'s, the steps of the schedule
+  and the time zones left out and every event renamed, so the two copies of the protocol are held to
+  one run until step 2.
+- **A child session cannot reach a Mesh peer today**, on Rust or on Kotlin: a Mesh router is
+  registered on the engine a host holds (`sce_rust_mesh::endpoint::register`,
+  `StateMachineEngine.registerMeshRouter`), the generated parent builds a child's engine and gives it
+  only its clock and its parent link, and a child's send to `#server` finds no processor and is
+  `error.execution`. What `hostForChild` answers is the host of a child's `<sce:action>`s, not a
+  router. Section 3's second point is therefore the first work of step 2.
 
 ## Alternatives considered
 
