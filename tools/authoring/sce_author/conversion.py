@@ -426,7 +426,8 @@ class Report:
     scope: str = ""
     out_of_scope: int = 0
     # What the extractor could not carry of the part counted: a note about blocks outside it is not the
-    # part's (ADR 0039). The report is kept with the proposal, so a review read later says the same.
+    # part's (ADR 0039), and a note about pictures a model read is replaced by what the model could not read
+    # of them. The report is kept with the proposal, so a review read later says the same.
     not_carried: tuple[NotCarried, ...] = field(default_factory=tuple)
 
     def ids(self, status: str) -> list[str]:
@@ -558,8 +559,35 @@ def check_conversion(extraction: Extraction, conversion: Conversion, scope: "Sco
         conversion=conversion.revision(),
         scope="" if scope is None else scope.revision(),
         out_of_scope=sum(1 for b in extraction.blocks if b.id not in chosen and plain_of_block(b)),
-        not_carried=extraction.not_carried_of(None if scope is None else scope.blocks),
+        not_carried=_not_carried_after_reading(
+            extraction.not_carried_of(None if scope is None else scope.blocks), conversion, chosen
+        ),
     )
+
+
+def _not_carried_after_reading(
+    notes: tuple[NotCarried, ...], conversion: Conversion, chosen: dict[str, Block]
+) -> tuple[NotCarried, ...]:
+    """What could not be carried of the part, once the pictures a model read are counted.
+
+    A picture a model read is carried as what it read, and the owner is asked about that block by block: the
+    reader's note that it was not read, when every picture the note is about was, says what is no longer so,
+    and a review that showed it beside the reading would tell the owner two opposite things. What the model
+    said it could not read of a picture is what is now not carried of it, and is said instead, by picture.
+    """
+    read = {reading.block for reading in conversion.readings}
+    kept = [note for note in notes if not (note.blocks and read.issuperset(note.blocks))]
+    kept += [
+        NotCarried(
+            what=f"{reading.picture.name} was read by {reading.runtime}, which could not read all of it",
+            why="; ".join(reading.unreadable),
+            count=len(reading.unreadable),
+            blocks=(reading.block,),
+        )
+        for reading in conversion.readings
+        if reading.unreadable and reading.block in chosen
+    ]
+    return tuple(kept)
 
 
 # ------------------------------------------------------------------------- the converter by rule

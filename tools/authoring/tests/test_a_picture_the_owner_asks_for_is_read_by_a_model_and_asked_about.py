@@ -44,7 +44,7 @@ from sce_author.conversion import (
     convert_by_rules,
 )
 from sce_author.errors import IngestError
-from sce_author.extraction import Block, Extraction, Place
+from sce_author.extraction import Block, Extraction, NotCarried, Place
 from sce_author import reading
 from sce_author.reading import (
     BAD_SHAPE,
@@ -301,6 +301,28 @@ class WhatWasReadFollowsTheMarkAndIsAskedAbout(Base):
         report = check_conversion(self.extraction, Conversion(made.converter, made.extraction, moved, made.readings))
         self.assertEqual([], report.ids(READ_FROM_PICTURE))
         self.assertEqual({"b3-r1", "b3-r2", "b6-r1"}, set(report.ids(CHECK)))
+
+    def test_the_note_that_a_picture_was_not_read_goes_when_it_was_and_what_was_not_read_of_it_is_said(self):
+        whole = NotCarried("the page numbers were not carried")
+        of_b3 = NotCarried("1 picture(s) were not read", blocks=("b3",))
+        of_both = NotCarried("2 picture(s) were not read", blocks=("b3", "b8"))
+        self.extraction = Extraction("docx", "2", "spec.docx", self.extraction.blocks, (whole, of_b3, of_both))
+        by_rule = convert_by_rules(self.extraction)
+        handed, _ = self.units("b3")
+        made = with_readings(by_rule, [h.unit for h in handed],
+                             {1: Answer((ReadBlock("diagram", "- a -> b", False),), ("box 4", "the legend"), False)},
+                             RUNTIME)
+
+        notes = check_conversion(self.extraction, made).not_carried
+
+        # The whole document's note stays; the note of b3 alone goes; a note of b3 and a picture that was not
+        # read stays, since it is still so of the other one.
+        self.assertEqual([whole, of_both], list(notes[:2]))
+        (said,) = notes[2:]
+        self.assertEqual((("b3",), 2, "box 4; the legend"), (said.blocks, said.count, said.why))
+        self.assertIn("state.png", said.what)
+        # Nothing read, nothing changes: the conversion by rule is told the reader's notes as they are.
+        self.assertEqual((whole, of_b3, of_both), check_conversion(self.extraction, by_rule).not_carried)
 
     def test_a_block_that_says_it_was_read_from_a_picture_the_conversion_keeps_no_reading_of_is_refused(self):
         made = with_readings(self.by_rule, self.units_, self.answers(), RUNTIME)
