@@ -95,6 +95,12 @@ pub fn c11_function_prefix(enum_name: &str) -> String {
 /// `a_reference_always_contains_the_declared_identifier` pins, and it is
 /// what stops a reference from drifting away from the declaration it has
 /// to match.
+///
+/// One Go form is the referring document's own and not the enum document's:
+/// a bare type (no package) is a type the document declares for the enum
+/// itself — a `sce-static` machine holds each enum in a type of its own
+/// (`<Machine><Alias>Enum`) — and a constant of it carries that type's name,
+/// as the machine's declaration of it does by calling this.
 pub fn variant_ref(lang: Language, qualified_type: &str, enum_name: &str, variant: &str) -> String {
     let ident = variant_ident(lang, enum_name, variant);
     match lang {
@@ -105,10 +111,15 @@ pub fn variant_ref(lang: Language, qualified_type: &str, enum_name: &str, varian
         Language::Python | Language::Kotlin => format!("{qualified_type}.{ident}"),
         // Go: `qualified_type` is `pkg.Type` but the constant is
         // `pkg.TypeVariant`, so only the package part qualifies —
-        // `ident` already carries the type name.
+        // `ident` already carries the type name. A bare type is the
+        // referring document's own, in a package that may hold another
+        // machine's type for the same enum, so its constant is named by it.
         Language::Go => match qualified_type.split_once('.') {
             Some((pkg, _)) => format!("{pkg}.{ident}"),
-            None => ident,
+            None => format!(
+                "{qualified_type}{}",
+                filters::to_pascal_case(variant.to_string())
+            ),
         },
         // C11: the identifier is already globally unique by construction
         // (it carries the type name) and `X_t` is a typedef, not a scope
@@ -214,6 +225,32 @@ mod tests {
     fn go_qualifies_by_package_because_the_type_is_in_the_identifier() {
         let r = variant_ref(Language::Go, "result.Result", "Result", "error");
         assert_eq!(r, "result.ResultError");
+    }
+
+    /// A bare Go type is the referring document's own: a `sce-static`
+    /// machine's type for an enum it holds. Its constant carries that type's
+    /// name, so two machines of one package that hold the same enum declare
+    /// two constants; for the enum document's own type it is the declared
+    /// identifier.
+    #[test]
+    fn a_bare_go_type_names_its_own_constants() {
+        assert_eq!(
+            variant_ref(Language::Go, "ShellResultEnum", "Result", "error"),
+            "ShellResultEnumError"
+        );
+        assert_ne!(
+            variant_ref(Language::Go, "ShellResultEnum", "Result", "error"),
+            variant_ref(
+                Language::Go,
+                "ShellSceSynthInvokeKidResultEnum",
+                "Result",
+                "error"
+            )
+        );
+        assert_eq!(
+            variant_ref(Language::Go, "Result", "Result", "error"),
+            variant_ident(Language::Go, "Result", "error")
+        );
     }
 
     /// C11 has nothing to qualify with: the typedef is not a scope.

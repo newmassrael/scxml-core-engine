@@ -858,10 +858,11 @@ pub trait StaticTarget {
     fn enum_def(&self, _ty: &str, _alias: &str, _model: &EnumModel) -> String {
         String::new()
     }
-    /// The identifier a variant of the enum document `enum_name` has on
-    /// [`Self::enum_type`] — the declared name itself for a target whose data
-    /// model holds no types, where the variant is that name.
-    fn enum_variant(&self, _enum_name: &str, variant: &str) -> String {
+    /// The identifier a variant of the enum document `enum_name` has on `ty`,
+    /// the [`Self::enum_type`] the machine holds it in — the declared name itself
+    /// for a target whose data model holds no types, where the variant is that
+    /// name.
+    fn enum_variant(&self, _ty: &str, _enum_name: &str, variant: &str) -> String {
         variant.to_string()
     }
     /// The type of a list of `elem`.
@@ -1674,7 +1675,7 @@ impl StaticTarget for KotlinTarget {
             filters::to_pascal_case(alias.to_string())
         ))
     }
-    fn enum_variant(&self, enum_name: &str, variant: &str) -> String {
+    fn enum_variant(&self, _ty: &str, enum_name: &str, variant: &str) -> String {
         crate::forge::enum_naming::variant_ident(Language::Kotlin, enum_name, variant)
     }
     // Its saved form lives on the type, as a record's does: the declared name
@@ -1687,7 +1688,7 @@ impl StaticTarget for KotlinTarget {
             .map(|v| {
                 format!(
                     "{}(\"{}\")",
-                    self.enum_variant(&model.name, &v.name),
+                    self.enum_variant(ty, &model.name, &v.name),
                     filters::escape_kotlin(v.name.clone())
                 )
             })
@@ -2280,7 +2281,7 @@ impl StaticTarget for RustTarget {
             filters::to_pascal_case(alias.to_string())
         ))
     }
-    fn enum_variant(&self, enum_name: &str, variant: &str) -> String {
+    fn enum_variant(&self, _ty: &str, enum_name: &str, variant: &str) -> String {
         crate::forge::enum_naming::variant_ident(Language::Rust, enum_name, variant)
     }
     // The payload struct holds the field in the machine's own enum, lifted from
@@ -2326,7 +2327,7 @@ impl StaticTarget for RustTarget {
         let variants: String = model
             .variants
             .iter()
-            .map(|v| format!("    {},\n", self.enum_variant(&model.name, &v.name)))
+            .map(|v| format!("    {},\n", self.enum_variant(ty, &model.name, &v.name)))
             .collect();
         // `sce_name` answers the name the enum document declares for a value —
         // what a `<param>` carries it as. Not every machine reads it, so it is
@@ -2337,7 +2338,7 @@ impl StaticTarget for RustTarget {
             .map(|v| {
                 format!(
                     "            Self::{} => \"{}\",\n",
-                    self.enum_variant(&model.name, &v.name),
+                    self.enum_variant(ty, &model.name, &v.name),
                     filters::escape_rust(v.name.clone())
                 )
             })
@@ -3567,7 +3568,7 @@ impl<'t> TypeDeclarations<'t> {
                     .iter()
                     .map(|v| StaticEnumVariant {
                         declared: v.name.clone(),
-                        ident: self.target.enum_variant(&model.name, &v.name),
+                        ident: self.target.enum_variant(&ty, &model.name, &v.name),
                     })
                     .collect(),
             });
@@ -4783,7 +4784,7 @@ impl StaticTarget for CppTarget {
             filters::to_pascal_case(alias.to_string())
         ))
     }
-    fn enum_variant(&self, enum_name: &str, variant: &str) -> String {
+    fn enum_variant(&self, _ty: &str, enum_name: &str, variant: &str) -> String {
         crate::forge::enum_naming::variant_ident(Language::Cpp, enum_name, variant)
     }
     // A scoped enumeration over the enum document's own carrier, each variant
@@ -4797,7 +4798,7 @@ impl StaticTarget for CppTarget {
             .map(|v| {
                 format!(
                     "    {} = {},\n",
-                    self.enum_variant(&model.name, &v.name),
+                    self.enum_variant(ty, &model.name, &v.name),
                     v.value
                 )
             })
@@ -4808,7 +4809,7 @@ impl StaticTarget for CppTarget {
             .map(|v| {
                 format!(
                     "    case {ty}::{}: return \"{}\";\n",
-                    self.enum_variant(&model.name, &v.name),
+                    self.enum_variant(ty, &model.name, &v.name),
                     filters::escape_cpp(v.name.clone())
                 )
             })
@@ -5629,10 +5630,13 @@ impl StaticTarget for GoTarget<'_> {
             filters::to_pascal_case(alias.to_string())
         ))
     }
-    // A constant is a package-level identifier in Go, prefixed by the enum's
-    // own name, and the machine is a package of its own.
-    fn enum_variant(&self, enum_name: &str, variant: &str) -> String {
-        crate::forge::enum_naming::variant_ident(Language::Go, enum_name, variant)
+    // A constant is a package-level identifier in Go, so it carries the name of
+    // the machine's own type `ty`: a package holds a parent and every child it
+    // invokes, and two of them may hold one enum, each in a type of its own. A
+    // reference spells it the same way, through the same type
+    // ([`crate::forge::enum_naming::variant_ref`]).
+    fn enum_variant(&self, ty: &str, enum_name: &str, variant: &str) -> String {
+        crate::forge::enum_naming::variant_ref(Language::Go, ty, enum_name, variant)
     }
     // A named integer over the enum document's own carrier, each variant
     // holding the value the document declares for it. `String` answers the name
@@ -5645,7 +5649,7 @@ impl StaticTarget for GoTarget<'_> {
             .map(|v| {
                 format!(
                     "\t{} {ty} = {}\n",
-                    self.enum_variant(&model.name, &v.name),
+                    self.enum_variant(ty, &model.name, &v.name),
                     v.value
                 )
             })
@@ -5656,7 +5660,7 @@ impl StaticTarget for GoTarget<'_> {
             .map(|v| {
                 format!(
                     "\tcase {}:\n\t\treturn \"{}\"\n",
-                    self.enum_variant(&model.name, &v.name),
+                    self.enum_variant(ty, &model.name, &v.name),
                     filters::escape_go(v.name.clone())
                 )
             })
@@ -6275,7 +6279,7 @@ impl StaticTarget for PythonTarget {
             filters::to_pascal_case(alias.to_string())
         ))
     }
-    fn enum_variant(&self, enum_name: &str, variant: &str) -> String {
+    fn enum_variant(&self, _ty: &str, enum_name: &str, variant: &str) -> String {
         crate::forge::enum_naming::variant_ident(Language::Python, enum_name, variant)
     }
     // An `IntEnum` over the values the enum document declares, each member
@@ -6289,7 +6293,7 @@ impl StaticTarget for PythonTarget {
             .map(|v| {
                 format!(
                     "    {} = {}\n",
-                    self.enum_variant(&model.name, &v.name),
+                    self.enum_variant(ty, &model.name, &v.name),
                     v.value
                 )
             })
@@ -7217,7 +7221,7 @@ impl StaticTarget for CTarget {
     // C has no namespace, so the constant carries the document's name — the one
     // spelling the enum kind's own C artifact declares, and a reference to a
     // variant ([`crate::forge::enum_naming::variant_ref`]) contains.
-    fn enum_variant(&self, enum_name: &str, variant: &str) -> String {
+    fn enum_variant(&self, _ty: &str, enum_name: &str, variant: &str) -> String {
         crate::forge::enum_naming::variant_ident(Language::C11, enum_name, variant)
     }
     // The type the enum document's own header declares, written as the same text

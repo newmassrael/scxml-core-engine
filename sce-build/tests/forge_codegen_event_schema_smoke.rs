@@ -513,13 +513,16 @@ fn a_go_package_declares_each_name_once_where_a_parent_and_its_child_share_a_sch
     );
 }
 
-/// The child `shared_state` invokes in-line: it holds what its parent holds and
-/// calls the algorithm its parent calls, the same way.
+/// The child `shared_state` invokes in-line: it holds what its parent holds — a
+/// record of the standard clock and a value of the standard `rpc_status` enum —
+/// and calls the algorithm its parent calls, the same way.
 const SHARED_STATE_CHILD: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
                version="1.0" initial="running" datamodel="sce-static">
           <sce:import kind="event-schema" src="sce:std/merge/hlc_timestamp.scxml" as="Hlc"/>
           <sce:import kind="algorithm" src="sce:std/merge/hlc_send.scxml" as="HlcSend"/>
+          <sce:import kind="enum" src="sce:std/mesh/rpc_status.scxml" as="Status"/>
           <datamodel>
+            <data id="status" sce:type="enum:Status" expr="Status.ok"/>
             <data id="now" sce:type="int64" expr="0"/>
             <data id="node" sce:type="uint64" expr="0"/>
             <data id="clock" sce:type="record:Hlc">
@@ -536,7 +539,8 @@ const SHARED_STATE_CHILD: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxm
         </scxml>"#;
 
 /// `shared_state`, written into `dir`: a parent that holds a record of the
-/// standard clock and calls the standard `hlc_send` with it, and invokes in-line
+/// standard clock and a value of the standard `rpc_status` enum, calls the
+/// standard `hlc_send` with the record, and invokes in-line
 /// [`SHARED_STATE_CHILD`], which does the same.
 fn shared_state_parent(dir: &Path) -> PathBuf {
     let path = dir.join("shared_state.scxml");
@@ -547,7 +551,9 @@ fn shared_state_parent(dir: &Path) -> PathBuf {
        version="1.0" initial="running" datamodel="sce-static" name="shared_state">
   <sce:import kind="event-schema" src="sce:std/merge/hlc_timestamp.scxml" as="Hlc"/>
   <sce:import kind="algorithm" src="sce:std/merge/hlc_send.scxml" as="HlcSend"/>
+  <sce:import kind="enum" src="sce:std/mesh/rpc_status.scxml" as="Status"/>
   <datamodel>
+    <data id="status" sce:type="enum:Status" expr="Status.ok"/>
     <data id="now" sce:type="int64" expr="0"/>
     <data id="node" sce:type="uint64" expr="0"/>
     <data id="clock" sce:type="record:Hlc">
@@ -573,11 +579,13 @@ fn shared_state_parent(dir: &Path) -> PathBuf {
     path
 }
 
-/// A parent and the child it invokes, in one Go package, that call one
-/// algorithm the same way: each has an adapter for the call, which takes and
-/// gives back the machine's own record, and an adapter named by the call alone
-/// (`sceAdapt_HlcSend__v`) was declared once by each machine. Every
-/// package-level name the package's machines declare is declared once.
+/// A parent and the child it invokes, in one Go package, that hold the same
+/// state and call one algorithm the same way. Each has an adapter for the call,
+/// which takes and gives back the machine's own record, and an adapter named by
+/// the call alone (`sceAdapt_HlcSend__v`) was declared once by each machine;
+/// each holds the enum in a type of its own, and a constant named by the enum
+/// alone (`RpcStatusOk`) was declared once by each machine. Every package-level
+/// name the package's machines declare is declared once.
 #[test]
 fn a_go_package_declares_each_name_once_where_a_parent_and_its_child_hold_the_same_state() {
     let scratch = reset_scratch("go_shared_state");
@@ -600,6 +608,12 @@ fn a_go_package_declares_each_name_once_where_a_parent_and_its_child_hold_the_sa
                 .iter()
                 .any(|name| name.starts_with("sceAdapt_") && name.ends_with("HlcSend__v")),
             "{file_name} declares no adapter of `HlcSend(clock, now, node)`: {names:?}"
+        );
+        assert!(
+            names
+                .iter()
+                .any(|name| name.contains("Status") && name.ends_with("Ok")),
+            "{file_name} declares no constant for `Status.ok`: {names:?}"
         );
     }
     let twice = declared_more_than_once(&machines);
