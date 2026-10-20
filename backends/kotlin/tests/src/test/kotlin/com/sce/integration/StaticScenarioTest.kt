@@ -88,6 +88,8 @@ import com.sce.integration.static_whole_payload.StaticWholePayloadStateMachine
 import com.sce.integration.static_wire_wide.StaticWireWideStateMachine
 import com.sce.integration.static_wire_enum.StaticWireEnumStateMachine
 import com.sce.integration.presence_peer.PresencePeerStateMachine
+import com.sce.integration.record_list.RecordListStateMachine
+import com.sce.integration.record_list_parent.RecordListParentStateMachine
 import com.sce.integration.sheet_peer.SheetPeerStateMachine
 import com.sce.integration.sync_client.SyncClientStateMachine
 import com.sce.integration.todo_peer.TodoPeerStateMachine
@@ -1443,6 +1445,73 @@ class StaticScenarioTest {
                 save = { sm.save() },
                 ended = { sm.isInFinalState },
                 sent = { sends.take() },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // The standard shared record list (sce:std/shared/record_list.scxml) through the
+    // same afternoon, as each of the three took part in it: the to-do list without its
+    // schedule, its events named as the standard part names them.
+    @Test
+    fun recordListIsAlicesCopyOfASharedList() {
+        replayRecordList(scenario("record_list_alice"))
+    }
+
+    @Test
+    fun recordListIsBobsCopyOfASharedList() {
+        replayRecordList(scenario("record_list_bob"))
+    }
+
+    @Test
+    fun recordListIsTheHubTheCopiesOfASharedListSendTo() {
+        replayRecordList(scenario("record_list_server"))
+    }
+
+    // A standard record list a host started has no parent: it tells no one of the
+    // registers its changes move, and nothing fails.
+    @Test
+    fun recordListStartedByAHostTellsNoParent() {
+        replayRecordList(scenario("record_list_alone"))
+    }
+
+    /** One run of `record_list`, on a machine of its own whose sends to its peers are recorded. */
+    private fun replayRecordList(scenario: JsonObject) {
+        val sends = RecordedSends()
+        val sm = RecordListStateMachine()
+        sm.registerMeshRouter(sends.router)
+        sm.initialize()
+        try {
+            replay(
+                scenario,
+                send = { event, data -> sm.sendEventByName(event, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+                sent = { sends.take() },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // A statechart that invokes the standard record list by its library name is told
+    // what each register a change moved holds: its count and its values in the order of
+    // their dots, a count of 0 when every value was written over, and nothing for a
+    // write the list already held. The machine needs `tick`: the list takes a write in
+    // one round and what it tells reaches the parent in the next.
+    @Test
+    fun recordListParentIsToldWhatEachRegisterHolds() {
+        val sm = RecordListParentStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("record_list_parent"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { repeat(SETTLE_TICKS) { sm.tick() } },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
             )
         } finally {
             sm.cleanup()

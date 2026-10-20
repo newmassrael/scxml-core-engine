@@ -34,6 +34,8 @@ import (
 	_ "github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_timers"
 
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/presence_peer"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/record_list"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/record_list_parent"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/sheet_peer"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_block_ends"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_block_ends_list"
@@ -1851,6 +1853,99 @@ func TestACopyOfASharedTodoListIsReplayedAsEachPeerSawIt(t *testing.T) {
 	t.Run("alice", func(t *testing.T) { replay(t, "todo_peer_alice", todoCopy()) })
 	t.Run("bob", func(t *testing.T) { replay(t, "todo_peer_bob", todoCopy()) })
 	t.Run("the hub", func(t *testing.T) { replay(t, "todo_peer_server", todoCopy()) })
+}
+
+// recordListCopy is one copy of the standard shared record list
+// (sce:std/shared/record_list.scxml), as a scenario reads it.
+func recordListCopy() machine {
+	policy := record_list.NewRecordListPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	return drive[record_list.RecordListState, record_list.RecordListEvent](&policy, map[string]func() any{
+		"node":       func() any { return digits(policy.Node()) },
+		"hub":        func() any { return policy.Hub() },
+		"clock":      func() any { return hlcJSON(policy.Clock()) },
+		"adds":       func() any { return orsetEntriesJSON(policy.Adds()) },
+		"tombstones": func() any { return orsetEntriesJSON(policy.Tombstones()) },
+		"values":     func() any { return todoValuesJSON(policy.Values()) },
+		"digest":     func() any { return merkleNodesJSON(policy.Digest()) },
+		"refusals":   func() any { return policy.Refusals() },
+		"floor":      func() any { return signedDigits(policy.Floor()) },
+		"stale":      func() any { return policy.Stale() },
+		"late":       func() any { return policy.Late() },
+		"full":       func() any { return policy.Full() },
+		"denied":     func() any { return policy.Denied() },
+		"announced":  func() any { return policy.Announced() },
+	})
+}
+
+// The standard shared record list is replayed through the same afternoon, as each of
+// the three took part in it: the to-do list without its schedule, its events named as
+// the standard part names them. A list a host started tells no parent of the
+// registers its changes move, and nothing fails.
+func TestACopyOfTheStandardRecordListIsReplayedAsEachPeerSawIt(t *testing.T) {
+	t.Run("alice", func(t *testing.T) { replay(t, "record_list_alice", recordListCopy()) })
+	t.Run("bob", func(t *testing.T) { replay(t, "record_list_bob", recordListCopy()) })
+	t.Run("the hub", func(t *testing.T) { replay(t, "record_list_server", recordListCopy()) })
+	t.Run("alone", func(t *testing.T) { replay(t, "record_list_alone", recordListCopy()) })
+}
+
+// registerRecord is a `record:Register` (sce:std/shared/record_register) as a host
+// reads it: what a shared record list told the statechart that invoked it of one
+// register, its count and its first live value with the dot of its write.
+type registerRecord interface {
+	hlcRecord
+	Id() uint32
+	Field() uint16
+	Count() uint32
+	Value() int64
+	Text() string
+}
+
+// registerJSON is such a record as a scenario states it.
+func registerJSON(told registerRecord) any {
+	return map[string]any{
+		"id": told.Id(), "field": told.Field(), "count": told.Count(), "value": signedDigits(told.Value()),
+		"text": told.Text(), "wallTime": signedDigits(told.WallTime()), "counter": told.Counter(),
+		"nodeId": digits(told.NodeId()),
+	}
+}
+
+// registerValueRecord is a `record:RegisterValue` (sce:std/shared/record_value): a
+// further live value of a register, with its place in the order of the dots.
+type registerValueRecord interface {
+	hlcRecord
+	Id() uint32
+	Field() uint16
+	Ordinal() uint32
+	Value() int64
+	Text() string
+}
+
+// registerValuesJSON is a list of such values, in order.
+func registerValuesJSON[R registerValueRecord](values []R) any {
+	out := make([]any, len(values))
+	for i, told := range values {
+		out[i] = map[string]any{
+			"id": told.Id(), "field": told.Field(), "ordinal": told.Ordinal(), "value": signedDigits(told.Value()),
+			"text": told.Text(), "wallTime": signedDigits(told.WallTime()), "counter": told.Counter(),
+			"nodeId": digits(told.NodeId()),
+		}
+	}
+	return out
+}
+
+// A statechart that invokes the standard record list by its library name is told
+// what each register a change moved holds: its count and its values in the order of
+// their dots, a count of 0 when every value was written over, and nothing for a write
+// the list already held.
+func TestAParentIsToldWhatEachRegisterOfItsListHolds(t *testing.T) {
+	policy := record_list_parent.NewRecordListParentPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "record_list_parent", drive[record_list_parent.RecordListParentState, record_list_parent.RecordListParentEvent](&policy, map[string]func() any{
+		"told":   func() any { return policy.Told() },
+		"shown":  func() any { return registerJSON(policy.Shown()) },
+		"others": func() any { return registerValuesJSON(policy.Others()) },
+	}))
 }
 
 // presenceCopy is one copy of the list of who is online, as a scenario reads it.

@@ -403,7 +403,7 @@ target_compile_definitions(static_datamodel_generated_cpp_test
 
 apply_sce_test_policies(static_datamodel_generated_cpp_test)
 
-foreach(_STATIC_CPP_MACHINE static_child_host static_child_host_hybrid static_counter static_event_arrival static_event_wildcard static_overflow static_block_ends static_host_call static_host_duty static_payload static_enum static_list static_list_assign static_list_index static_foreach static_history static_block_ends_list static_bytes static_bytes_wire static_record_fields static_record_list static_record_list_index static_record_enum static_record sync_client static_donedata static_donedata_content static_donedata_record static_invoke static_invoke_hybrid static_invoke_hybrid_saved static_invoke_params static_invoke_string static_cancel_expr static_send_content static_send_delay static_send_event static_send_http static_send_idlocation static_send_namelist static_send_params static_send_target static_send_type static_string_capacity static_timers static_real static_real32 static_record_real static_record_real32 static_record_bytes static_record_string static_payload_bytes static_payload_enum static_payload_relay static_whole_payload static_schema_revision static_wire_enum static_state_algorithm static_state_algorithm_enum static_text_record static_wire_wide todo_peer sheet_peer presence_peer)
+foreach(_STATIC_CPP_MACHINE static_child_host static_child_host_hybrid static_counter static_event_arrival static_event_wildcard static_overflow static_block_ends static_host_call static_host_duty static_payload static_enum static_list static_list_assign static_list_index static_foreach static_history static_block_ends_list static_bytes static_bytes_wire static_record_fields static_record_list static_record_list_index static_record_enum static_record sync_client static_donedata static_donedata_content static_donedata_record static_invoke static_invoke_hybrid static_invoke_hybrid_saved static_invoke_params static_invoke_string static_cancel_expr static_send_content static_send_delay static_send_event static_send_http static_send_idlocation static_send_namelist static_send_params static_send_target static_send_type static_string_capacity static_timers static_real static_real32 static_record_real static_record_real32 static_record_bytes static_record_string static_payload_bytes static_payload_enum static_payload_relay static_whole_payload static_schema_revision static_wire_enum static_state_algorithm static_state_algorithm_enum static_text_record static_wire_wide todo_peer sheet_peer presence_peer record_list record_list_parent)
     sce_add_state_machine(
         TARGET static_datamodel_generated_cpp_test
         SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_STATIC_CPP_MACHINE}.scxml
@@ -493,6 +493,17 @@ foreach(_STD_MERGE_RULE hlc_send hlc_receive hlc_compare lww_write rga_insert rg
         TARGET static_datamodel_generated_cpp_test
         SCXML_FILE sce:std/merge/${_STD_MERGE_RULE}.scxml
         HEADER ${_STD_MERGE_RULE}.h
+    )
+endforeach()
+# The standard shared record list's own rules (record_list, and the child
+# record_list_parent invokes by its library name): the member record its roster rule
+# takes, the roster, the hash a settle compares, and a register's values in the order
+# of their dots. The merge rules it shares with todo_peer are generated above.
+foreach(_STD_SHARED_DOCUMENT record_member record_roster record_settled register_values)
+    sce_add_algorithm(
+        TARGET static_datamodel_generated_cpp_test
+        SCXML_FILE sce:std/shared/${_STD_SHARED_DOCUMENT}.scxml
+        HEADER ${_STD_SHARED_DOCUMENT}.h
     )
 endforeach()
 # todo_peer's time zone: the standard rule that reads a table of transitions.

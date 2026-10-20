@@ -654,6 +654,35 @@ def test_a_shared_list_as_the_hub_its_copies_send_to() -> None:
     replay("todo_peer_server")
 
 
+# The standard shared record list (sce:std/shared/record_list.scxml) through the same
+# afternoon, as each of the three took part in it: the to-do list without its
+# schedule, its events named as the standard part names them.
+def test_the_standard_record_list_as_alice_took_part_in_it() -> None:
+    replay("record_list_alice")
+
+
+def test_the_standard_record_list_as_bob_took_part_in_it() -> None:
+    replay("record_list_bob")
+
+
+def test_the_standard_record_list_as_the_hub_its_copies_send_to() -> None:
+    replay("record_list_server")
+
+
+# A standard record list a host started has no parent: it tells no one of the
+# registers its changes move, and nothing fails.
+def test_a_standard_record_list_started_by_a_host_tells_no_parent() -> None:
+    replay("record_list_alone")
+
+
+# A statechart that invokes the standard record list by its library name is told what
+# each register a change moved holds: its count and its values in the order of their
+# dots, a count of 0 when every value was written over, and nothing for a write the
+# list already held.
+def test_a_parent_is_told_what_each_register_of_its_list_holds() -> None:
+    replay("record_list_parent")
+
+
 # One copy of the list of who is online, as each of the three that took part in one
 # afternoon of it was driven: a client says it is here to the hub, the hub keeps
 # what it was told for a ttl and tells every copy on one topic, and an entry is let

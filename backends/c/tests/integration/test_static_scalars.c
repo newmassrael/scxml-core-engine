@@ -92,6 +92,11 @@
 //     texts, rows and clock the scenario states — a 64-bit field as the text of its
 //     digits — and sent its Mesh peers the sends the scenario states, in their
 //     order, through the router a host installs before the machine starts.
+//   * `record_list`: the standard shared record list (sce:std/shared/record_list),
+//     replayed through the same run as `todo_peer` without its schedule, and started
+//     by a host, when it tells no parent anything; and `record_list_parent`, which
+//     invokes it by its library name and publishes what it was told of each
+//     register.
 //
 // Linked WITHOUT `sce_c_scripting` and `lua54` on purpose: these machines carry
 // no script engine, so the link is the proof. If the emit ever reached for one,
@@ -104,6 +109,8 @@
 #include <string.h>
 
 #include "presence_peer_sm.h"
+#include "record_list_parent_sm.h"
+#include "record_list_sm.h"
 #include "sheet_peer_sm.h"
 #include "static_block_ends_list_sm.h"
 #include "static_block_ends_sm.h"
@@ -2398,6 +2405,114 @@ static const record_variable_t todo_peer_records[] = {RECORD_ROW(todo_peer, cloc
                                                       {NULL, NULL, NULL, NULL}};
 STATIC_SCENARIO_PEERED(todo_peer, todo_peer_states, todo_peer_variables, todo_peer_text, no_lists, todo_peer_records)
 
+// record_list: the standard shared record list (sce:std/shared/record_list), the
+// generic part of todo_peer, replayed through the same run without its schedule and
+// read the same way, and started by a host, so that it tells no parent anything and
+// `announced` stays 0.
+#define RECORD_LIST_VALUE_FIELDS(N, E)                                                                                 \
+    E(id, wide_digits)                                                                                                 \
+    E(field, wide_digits)                                                                                              \
+    E(value, wide_signed_digits)                                                                                       \
+    E(text, record_list_text_text)                                                                                     \
+    E(wallTime, wide_signed_digits)                                                                                    \
+    N(counter)                                                                                                         \
+    E(nodeId, wide_digits)
+VARIABLE_READER(record_list, hub)
+VARIABLE_READER(record_list, refusals)
+VARIABLE_READER(record_list, stale)
+VARIABLE_READER(record_list, late)
+VARIABLE_READER(record_list, full)
+VARIABLE_READER(record_list, denied)
+VARIABLE_READER(record_list, announced)
+
+static const char *record_list_text_text(sce_static_string_96_t text) {
+    static char copy[sizeof(text.data)];
+    memcpy(copy, text.data, sizeof(copy));
+    return copy;
+}
+
+RECORD_READER(record_list, clock, record_list_record_hlc_t, HLC_FIELDS)
+RECORD_LIST_READER(record_list, adds, record_list_record_entry_view_t, record_list_record_entry_t, ORSET_ENTRY_FIELDS)
+RECORD_LIST_READER(record_list, tombstones, record_list_record_entry_view_t, record_list_record_entry_t,
+                   ORSET_ENTRY_FIELDS)
+RECORD_LIST_READER(record_list, values, record_list_record_value_view_t, record_list_record_value_t,
+                   RECORD_LIST_VALUE_FIELDS)
+RECORD_LIST_READER(record_list, digest, record_list_record_node_view_t, record_list_record_node_t, MERKLE_NODE_FIELDS)
+
+static const char *record_list_text(void *sm, const char *name) {
+    if (strcmp(name, "node") == 0) {
+        return wide_digits(record_list_get_node((const record_list_t *)sm));
+    }
+    if (strcmp(name, "floor") == 0) {
+        return wide_signed_digits(record_list_get_floor((const record_list_t *)sm));
+    }
+    return NULL;
+}
+
+static const name_value_t record_list_states[] = {
+    {"open", RECORD_LIST_STATE_OPEN},
+};
+static const variable_t record_list_variables[] = {
+    {"hub", record_list_read_hub},
+    {"refusals", record_list_read_refusals},
+    {"stale", record_list_read_stale},
+    {"late", record_list_read_late},
+    {"full", record_list_read_full},
+    {"denied", record_list_read_denied},
+    {"announced", record_list_read_announced},
+};
+static const record_variable_t record_list_records[] = {
+    RECORD_ROW(record_list, clock),           RECORD_LIST_ROW(record_list, adds),
+    RECORD_LIST_ROW(record_list, tombstones), RECORD_LIST_ROW(record_list, values),
+    RECORD_LIST_ROW(record_list, digest),     {NULL, NULL, NULL, NULL}};
+STATIC_SCENARIO_PEERED(record_list, record_list_states, record_list_variables, record_list_text, no_lists,
+                       record_list_records)
+
+// record_list_parent: a statechart that invokes the standard record list by its
+// library name, passes it the host's writes and supersedes, and publishes what it
+// was told of each register: the last register with its count and first value, and
+// the further values told after it. A 64-bit field is stated as the text of its
+// digits, and the list's text as the buffer of the bound its schema declares.
+#define RECORD_LIST_REGISTER_FIELDS(N, E)                                                                              \
+    N(id)                                                                                                              \
+    N(field)                                                                                                           \
+    N(count)                                                                                                           \
+    E(value, wide_signed_digits)                                                                                       \
+    E(text, record_list_parent_text_text)                                                                              \
+    E(wallTime, wide_signed_digits)                                                                                    \
+    N(counter)                                                                                                         \
+    E(nodeId, wide_digits)
+#define RECORD_LIST_REGISTER_VALUE_FIELDS(N, E)                                                                        \
+    N(id)                                                                                                              \
+    N(field)                                                                                                           \
+    N(ordinal)                                                                                                         \
+    E(value, wide_signed_digits)                                                                                       \
+    E(text, record_list_parent_text_text)                                                                              \
+    E(wallTime, wide_signed_digits)                                                                                    \
+    N(counter)                                                                                                         \
+    E(nodeId, wide_digits)
+VARIABLE_READER(record_list_parent, told)
+
+static const char *record_list_parent_text_text(sce_static_string_96_t text) {
+    static char copy[sizeof(text.data)];
+    memcpy(copy, text.data, sizeof(copy));
+    return copy;
+}
+
+RECORD_READER(record_list_parent, shown, record_list_parent_record_told_t, RECORD_LIST_REGISTER_FIELDS)
+RECORD_LIST_READER(record_list_parent, others, record_list_parent_record_told_value_view_t,
+                   record_list_parent_record_told_value_t, RECORD_LIST_REGISTER_VALUE_FIELDS)
+static const name_value_t record_list_parent_states[] = {
+    {"holding", RECORD_LIST_PARENT_STATE_HOLDING},
+};
+static const variable_t record_list_parent_variables[] = {
+    {"told", record_list_parent_read_told},
+};
+static const record_variable_t record_list_parent_records[] = {
+    RECORD_ROW(record_list_parent, shown), RECORD_LIST_ROW(record_list_parent, others), {NULL, NULL, NULL, NULL}};
+STATIC_SCENARIO(record_list_parent, record_list_parent_states, record_list_parent_variables, NULL, no_lists,
+                record_list_parent_records)
+
 // sheet_peer: one copy of a shared sheet of numbers, replayed the same way: its
 // cells merged by `lww_write`, its rows and columns placed by `rga_insert` and
 // taken out by `rga_remove`, and its clock moved by `hlc_send` and `hlc_receive`.
@@ -2639,6 +2754,11 @@ int main(void) {
     bad |= todo_peer_scenario("todo_peer_alice", 13);
     bad |= todo_peer_scenario("todo_peer_bob", 13);
     bad |= todo_peer_scenario("todo_peer_server", 13);
+    bad |= record_list_scenario("record_list_alice", 13);
+    bad |= record_list_scenario("record_list_bob", 13);
+    bad |= record_list_scenario("record_list_server", 13);
+    bad |= record_list_scenario("record_list_alone", 5);
+    bad |= record_list_parent_scenario("record_list_parent", 8);
     bad |= sheet_peer_scenario("sheet_peer_alice", 24);
     bad |= sheet_peer_scenario("sheet_peer_bob", 26);
     bad |= sheet_peer_scenario("sheet_peer_server", 26);

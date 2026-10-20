@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Child sessions"): a
+  statechart that keeps a shared list of records by invoking the standard one
+  (sce:std/shared/record_list.scxml, docs/adr/0042) and publishes what the list told
+  it, the view an application keeps of the registers it is interested in.
+
+  `holding` invokes the list by its library name and hands it `announce`, so the list
+  tells it, after each change it takes in that moves what a register holds, the
+  register's count and its first live value in the order of the dots
+  (`record_list.register`), then each further value with its place
+  (`record_list.value`). The host's writes and supersedes are the list's own events:
+  the parent passes each to its child (`#_list`) as it was given, the way an
+  application turns a command into the field writes it sends the list. The list is a
+  person's copy (it is told no `record_list.join`, so it is no hub) and passes nothing
+  on to a peer.
+
+  The parent keeps the last register it was told of (`shown`) and the further values
+  told after it (`others`, cleared by each register), and counts every event it was
+  told (`told`). So a register written once reads as one value; two writes made at
+  once, neither having seen the other, read as a count of 2 with the earlier dot
+  first, whatever order they arrived in, and the other value after it; a register
+  whose every value is written over reads as a count of 0; and a write that is
+  already held moves nothing and is told nothing.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="holding" datamodel="sce-static" name="record_list_parent">
+  <sce:import kind="event-schema" src="sce:std/shared/record_write.scxml" as="Write"/>
+  <sce:import kind="event-schema" src="sce:std/shared/record_supersede.scxml" as="Supersede"/>
+  <!-- The records are named for what the list told, and not `Register`: a generated
+       name is spelled from the alias, and `register` is a word of C and C++. -->
+  <sce:import kind="event-schema" src="sce:std/shared/record_register.scxml" as="Told"/>
+  <sce:import kind="event-schema" src="sce:std/shared/record_value.scxml" as="ToldValue"/>
+  <datamodel>
+    <data id="told" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="shown" sce:type="record:Told" sce:direction="out">
+      <sce:set name="id" expr="0"/>
+      <sce:set name="field" expr="0"/>
+      <sce:set name="count" expr="0"/>
+      <sce:set name="value" expr="0"/>
+      <sce:set name="text" expr="''"/>
+      <sce:set name="wallTime" expr="0"/>
+      <sce:set name="counter" expr="0"/>
+      <sce:set name="nodeId" expr="0"/>
+    </data>
+    <data id="others" sce:type="list&lt;record:ToldValue&gt;" sce:capacity="8" sce:direction="out"/>
+    <data id="other" sce:type="record:ToldValue">
+      <sce:set name="id" expr="0"/>
+      <sce:set name="field" expr="0"/>
+      <sce:set name="ordinal" expr="0"/>
+      <sce:set name="value" expr="0"/>
+      <sce:set name="text" expr="''"/>
+      <sce:set name="wallTime" expr="0"/>
+      <sce:set name="counter" expr="0"/>
+      <sce:set name="nodeId" expr="0"/>
+    </data>
+  </datamodel>
+  <state id="holding">
+    <invoke type="scxml" id="list" src="sce:std/shared/record_list.scxml">
+      <param name="announce" expr="true"/>
+    </invoke>
+
+    <!-- What the host writes, passed to the list as the list's own write. -->
+    <transition event="record_list.write" type="internal">
+      <send target="#_list" event="record_list.write">
+        <param name="id" expr="_event.data.id"/>
+        <param name="field" expr="_event.data.field"/>
+        <param name="value" expr="_event.data.value"/>
+        <param name="text" expr="_event.data.text"/>
+        <param name="wallTime" expr="_event.data.wallTime"/>
+        <param name="counter" expr="_event.data.counter"/>
+        <param name="nodeId" expr="_event.data.nodeId"/>
+      </send>
+    </transition>
+    <transition event="record_list.supersede" type="internal">
+      <send target="#_list" event="record_list.supersede">
+        <param name="id" expr="_event.data.id"/>
+        <param name="field" expr="_event.data.field"/>
+        <param name="wallTime" expr="_event.data.wallTime"/>
+        <param name="counter" expr="_event.data.counter"/>
+        <param name="nodeId" expr="_event.data.nodeId"/>
+        <param name="by" expr="_event.data.by"/>
+      </send>
+    </transition>
+
+    <!-- What the list tells: a register, which starts what is shown of it anew, and
+         each further value of it. -->
+    <transition event="record_list.register" type="internal">
+      <assign location="shown.id" expr="_event.data.id"/>
+      <assign location="shown.field" expr="_event.data.field"/>
+      <assign location="shown.count" expr="_event.data.count"/>
+      <assign location="shown.value" expr="_event.data.value"/>
+      <assign location="shown.text" expr="_event.data.text"/>
+      <assign location="shown.wallTime" expr="_event.data.wallTime"/>
+      <assign location="shown.counter" expr="_event.data.counter"/>
+      <assign location="shown.nodeId" expr="_event.data.nodeId"/>
+      <sce:clear target="others"/>
+      <assign location="told" expr="told + 1"/>
+    </transition>
+    <transition event="record_list.value" type="internal">
+      <assign location="other.id" expr="_event.data.id"/>
+      <assign location="other.field" expr="_event.data.field"/>
+      <assign location="other.ordinal" expr="_event.data.ordinal"/>
+      <assign location="other.value" expr="_event.data.value"/>
+      <assign location="other.text" expr="_event.data.text"/>
+      <assign location="other.wallTime" expr="_event.data.wallTime"/>
+      <assign location="other.counter" expr="_event.data.counter"/>
+      <assign location="other.nodeId" expr="_event.data.nodeId"/>
+      <sce:append target="others" expr="other"/>
+      <assign location="told" expr="told + 1"/>
+    </transition>
+  </state>
+</scxml>

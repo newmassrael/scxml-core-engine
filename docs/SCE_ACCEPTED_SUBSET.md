@@ -5579,6 +5579,32 @@ hold that case. The Interpreter's own bound is the one limit that is not the oth
 a wall time past 2^53 milliseconds (year 285,000) is not a value its statechart
 variables hold, which it refuses with `error.execution` where the six backends take it.
 
+**The standard shared record list.** `sce:std/shared/record_list.scxml` (docs/adr/0042) is
+the generic part of `todo_peer`, a statechart of the standard library: the protocol of
+the to-do list without its schedule and its host's time zones, its events named
+`record_list.<verb>`, its schemas and its own rules under `stdlib/shared/`
+(`record_write`, `record_edit`, `record_settled`, `record_roster`, `register_values`
+and the rest), and every bound a `sce:limit` that defaults to the to-do list's number
+(`merge_entries`, `merge_values`, `merge_digest`, `merge_text`, `shared_typed_text`,
+`shared_roster`, `shared_answers`). A statechart invokes it as a child session by its
+library name ("Child sessions" above) and hands it `announce`; from then on the list
+tells its parent, after each change that moves what a register holds, the register's
+count and first value in the order of the dots (`record_list.register`) and each further
+value (`record_list.value`). A list a host started keeps `announce` false and tells no
+one: `#_parent` names no session at the top level, and the send names it by an
+expression among its declared `sce:targets`, so the machine keeps the entry a host
+starts it by. The fixture `record_list.scxml` is a link to the standard document, so
+the drivers replay the very text the library holds. Its scenarios `record_list_alice`,
+`record_list_bob` and `record_list_server` are the to-do afternoon's, written by the same
+world test from the same run with the steps of the schedule and the time zones left
+out and the events renamed, so the two copies of the protocol are held to one run
+until `todo_peer` is built on the standard part; `record_list_alone` is the list a host
+started, which tells no parent and fails at nothing; and `record_list_parent` is a
+statechart that invokes it and publishes what it was told: a register's one value,
+two values written at once told as a count of 2 with the earlier dot first, a register
+written over value by value told as a count of 0, and a write already held told nothing.
+The Interpreter replays the first four, and refuses the parent as an invoke by `src`.
+
 A copy need not be a Rust machine. `World::add_external` hosts one in another
 process behind the Mesh endpoint the world keeps for it, driven over a
 line-delimited JSON step protocol (`sce_rust_world::external`: `start`, `raise`,

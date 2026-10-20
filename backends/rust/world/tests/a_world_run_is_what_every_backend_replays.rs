@@ -56,6 +56,28 @@ const TODO_PUBLISHED: &[&str] = &[
     "denied",
 ];
 
+/// The variables a copy of the standard shared record list publishes that the to-do
+/// list publishes too: every one of them but the schedule's.
+const RECORD_LIST_PUBLISHED: &[&str] = &[
+    "node",
+    "hub",
+    "clock",
+    "adds",
+    "tombstones",
+    "values",
+    "digest",
+    "refusals",
+    "floor",
+    "stale",
+    "late",
+    "full",
+    "denied",
+];
+
+/// The events of the to-do list that are its schedule and its host's time zones, which
+/// the standard shared record list does not hold and which change nothing it holds.
+const SCHEDULE_EVENTS: &[&str] = &["todo.agenda", "todo.zone", "todo.zone_clear"];
+
 /// The variables a copy of the presence list publishes.
 const PRESENCE_PUBLISHED: &[&str] = &[
     "node", "hub", "ttl", "lease", "online", "serial", "lost", "refusals",
@@ -124,17 +146,73 @@ fn step_of(taken: &Taken, published: &[&str]) -> Value {
 /// A record as the text of a scenario: a step to a line, so a step that moved is a
 /// line of the diff.
 fn scenario_of(machine: &str, about: &str, record: &[Taken], published: &[&str]) -> String {
+    let steps: Vec<Value> = record
+        .iter()
+        .map(|taken| step_of(taken, published))
+        .collect();
+    scenario_text(machine, about, &steps)
+}
+
+/// The steps of a scenario as its text, a step to a line.
+fn scenario_text(machine: &str, about: &str, steps: &[Value]) -> String {
     let mut text = String::from("{\n");
     text.push_str(&format!("  \"machine\": {},\n", json!(machine)));
     text.push_str(&format!("  \"about\": {},\n", json!(about)));
     text.push_str("  \"steps\": [\n");
-    for (n, taken) in record.iter().enumerate() {
+    for (n, step) in steps.iter().enumerate() {
         text.push_str("    ");
-        text.push_str(&step_of(taken, published).to_string());
-        text.push_str(if n + 1 < record.len() { ",\n" } else { "\n" });
+        text.push_str(&step.to_string());
+        text.push_str(if n + 1 < steps.len() { ",\n" } else { "\n" });
     }
     text.push_str("  ]\n}\n");
     text
+}
+
+/// An event of the to-do list by the name the standard shared record list gives it
+/// (`todo.write` is `record_list.write`); any other name as it is.
+fn record_list_name(name: &str) -> String {
+    match name.strip_prefix("todo.") {
+        Some(verb) => format!("record_list.{verb}"),
+        None => name.to_string(),
+    }
+}
+
+/// A copy's record of the to-do afternoon as a scenario of the standard shared record
+/// list (sce:std/shared/record_list.scxml, docs/adr/0042), which is the to-do list
+/// without its schedule: the steps of the schedule and of the host's time zones are
+/// left out, as they change nothing the list holds and publishes, and every event, the
+/// one a step is given and each one it sends, is named as the standard part names it.
+/// A list started by a host, as the world starts each copy, tells no parent anything,
+/// so a step holds exactly what the to-do list's did.
+fn record_list_scenario(about: &str, record: &[Taken]) -> String {
+    let steps: Vec<Value> = record
+        .iter()
+        .filter(|taken| {
+            !taken
+                .event
+                .as_ref()
+                .is_some_and(|(event, _)| SCHEDULE_EVENTS.contains(&event.as_str()))
+        })
+        .map(|taken| {
+            let mut step = step_of(taken, RECORD_LIST_PUBLISHED);
+            let renamed = step
+                .get("event")
+                .and_then(Value::as_str)
+                .map(record_list_name);
+            if let Some(named) = renamed {
+                step["event"] = json!(named);
+            }
+            if let Some(sent) = step["expect"]["sent"].as_array_mut() {
+                for entry in sent {
+                    let named =
+                        record_list_name(entry["event"].as_str().expect("a send names its event"));
+                    entry["event"] = json!(named);
+                }
+            }
+            step
+        })
+        .collect();
+    scenario_text("record_list", about, &steps)
 }
 
 /// Hold the committed scenario `name` to `text`, or write it when the run is asked to.
@@ -511,6 +589,21 @@ fn an_afternoon_of_the_shared_todo_list_is_three_scenarios() {
                 &about("An afternoon of a shared to-do list", who),
                 &record,
                 TODO_PUBLISHED,
+            ),
+        );
+        // The same afternoon is what a copy of the standard shared record list does,
+        // which is this list without its schedule (docs/adr/0042): every backend
+        // replays it on the standard part as it replays the to-do list, so the two
+        // copies of the protocol are held to one run until the to-do list is built on
+        // the standard part.
+        hold(
+            &format!("record_list_{who}"),
+            &record_list_scenario(
+                &format!(
+                    "{} The steps of the schedule and of the host's time zones are left out, which change nothing the standard shared record list (sce:std/shared/record_list.scxml) holds, and every event is named as that list names it.",
+                    about("An afternoon of a shared to-do list", who)
+                ),
+                &record,
             ),
         );
     }

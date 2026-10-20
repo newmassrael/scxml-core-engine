@@ -2923,6 +2923,34 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         STAGE_ALSO presence_join.scxml presence_beat.scxml presence_alive.scxml
                    presence_seen.scxml presence_left.scxml presence_expire.scxml
     )
+    # The standard shared record list (sce:std/shared/record_list.scxml), as the fixture
+    # that stands for it and as the child `record_list_parent` invokes by its library
+    # name, which the parent's generation writes beside it. Its schemas and rules are the
+    # library's, named by the generator, so nothing is staged beside it; the merge rules
+    # it shares with todo_peer are generated above, and its own here: the member record
+    # its roster rule takes, the roster, the hash a settle compares, and a register's
+    # values in the order of their dots.
+    set(_STATIC_SHARED_HEADERS "")
+    foreach(_SHARED_HEADER record_member record_roster record_settled register_values)
+        set(_HEADER "${SCE_C_INTEGRATION_GENERATED_DIR}/${_SHARED_HEADER}.h")
+        add_custom_command(
+            OUTPUT "${_HEADER}"
+            COMMAND "${SCE_CODEGEN}" generate "sce:std/shared/${_SHARED_HEADER}.scxml"
+                    -l c11 -o "${SCE_C_INTEGRATION_GENERATED_DIR}"
+                    --write-deps "${_HEADER}.d"
+            DEPENDS "${SCE_CODEGEN}"
+            DEPFILE "${_HEADER}.d"
+            COMMENT "Generating C11 header: ${_SHARED_HEADER}.h"
+            VERBATIM
+        )
+        list(APPEND _STATIC_SHARED_HEADERS "${_HEADER}")
+    endforeach()
+    foreach(_STATIC_SHARED_MACHINE record_list record_list_parent)
+        sce_generate_static_integration_c_test(${_STATIC_SHARED_MACHINE}
+            "${SCE_C_INTEGRATION_GENERATED_DIR}"
+            SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_STATIC_SHARED_MACHINE}.scxml"
+        )
+    endforeach()
 
     # The delayed-send machine of `static_timers` is generated once and used by two
     # executables: the scenarios below, and its own save-and-restore cases further
@@ -3056,6 +3084,9 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_todo_peer_SOURCES}
         ${INTEGRATION_C_TEST_sheet_peer_SOURCES}
         ${INTEGRATION_C_TEST_presence_peer_SOURCES}
+        ${INTEGRATION_C_TEST_record_list_SOURCES}
+        ${INTEGRATION_C_TEST_record_list_parent_SOURCES}
+        ${_STATIC_SHARED_HEADERS}
         ${_STATIC_MERGE_HEADERS}
         ${_STATIC_EVENT_HEADERS}
         ${INTEGRATION_C_TEST_static_text_record_SOURCES}

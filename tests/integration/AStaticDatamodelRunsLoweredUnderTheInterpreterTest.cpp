@@ -680,6 +680,17 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheInterpreterDoesWha
             << copy << " was not replayed: a copy that merges with the standard rules has no lowering for the "
             << "Interpreter";
     }
+    // ... and the standard shared record list (sce:std/shared/record_list.scxml), through
+    // the same afternoon and started by a host, when it tells no parent anything. The
+    // statechart that invokes it by its library name is not among them: the lowering
+    // rewrites a child where its text stands in its parent, and a standard child has
+    // none there, so it is refused as an invoke by `src`.
+    for (const char *copy : {"record_list_alice", "record_list_bob", "record_list_server", "record_list_alone"}) {
+        EXPECT_NE(std::find(replayed.begin(), replayed.end(), copy), replayed.end())
+            << copy << " was not replayed: the standard shared record list has no lowering for the Interpreter";
+    }
+    EXPECT_NE(std::find(notYetLowered.begin(), notYetLowered.end(), "record_list_parent"), notYetLowered.end())
+        << "record_list_parent was lowered: its child has no text in it to lower, so the refusal by `src` is gone";
     // ... and the copies of the list of who is online, whose entries are let go by the
     // machine's own delayed send, which the Interpreter's scheduler releases as the
     // scenario moves its logical clock on.

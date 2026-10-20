@@ -1,0 +1,67 @@
+{
+  "machine": "record_list_parent",
+  "about": "A statechart that invokes the standard shared record list (sce:std/shared/record_list.scxml) by its library name and hands it `announce`, passes it the host's writes and supersedes, and publishes what the list told it: `shown`, the last register (its count and its first live value in the order of the dots), `others`, the further values told after it, and `told`, every event told. One register is written once, then twice at once by two people who had not seen each other's write (the later dot arriving first), then written over value by value until it holds none, then written again; a second register is written, and a write already held is given again. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "note": "started: the list runs as the parent's child, and has told nothing",
+      "expect": { "state": "holding",
+                  "variables": { "told": 0,
+                                 "shown": { "id": 0, "field": 0, "count": 0, "value": "0", "text": "", "wallTime": "0", "counter": 0, "nodeId": "0" },
+                                 "others": [] } } },
+
+    { "note": "a register written once is told with its one value",
+      "event": "record_list.write",
+      "data": { "id": 7, "field": 1, "value": "0", "text": "buy oat milk", "wallTime": "100", "counter": 0, "nodeId": "3" },
+      "expect": { "state": "holding",
+                  "variables": { "told": 1,
+                                 "shown": { "id": 7, "field": 1, "count": 1, "value": "0", "text": "buy oat milk", "wallTime": "100", "counter": 0, "nodeId": "3" },
+                                 "others": [] } } },
+
+    { "note": "a write made at once by someone who had not seen the first: the register holds two values, told as a count of 2 with the earlier dot first (node 2 before node 3, whichever arrived first) and the other after it, with its place",
+      "event": "record_list.write",
+      "data": { "id": 7, "field": 1, "value": "0", "text": "buy milk", "wallTime": "100", "counter": 0, "nodeId": "2" },
+      "expect": { "state": "holding",
+                  "variables": { "told": 3,
+                                 "shown": { "id": 7, "field": 1, "count": 2, "value": "0", "text": "buy milk", "wallTime": "100", "counter": 0, "nodeId": "2" },
+                                 "others": [ { "id": 7, "field": 1, "ordinal": 1, "value": "0", "text": "buy oat milk", "wallTime": "100", "counter": 0, "nodeId": "3" } ] } } },
+
+    { "note": "one of the two is written over: the register is told again, with the one left",
+      "event": "record_list.supersede",
+      "data": { "id": 7, "field": 1, "wallTime": "100", "counter": 0, "nodeId": "2", "by": "4" },
+      "expect": { "state": "holding",
+                  "variables": { "told": 4,
+                                 "shown": { "id": 7, "field": 1, "count": 1, "value": "0", "text": "buy oat milk", "wallTime": "100", "counter": 0, "nodeId": "3" },
+                                 "others": [] } } },
+
+    { "note": "the other is written over too: the register holds no value, told as a count of 0 with an empty value and dot",
+      "event": "record_list.supersede",
+      "data": { "id": 7, "field": 1, "wallTime": "100", "counter": 0, "nodeId": "3", "by": "4" },
+      "expect": { "state": "holding",
+                  "variables": { "told": 5,
+                                 "shown": { "id": 7, "field": 1, "count": 0, "value": "0", "text": "", "wallTime": "0", "counter": 0, "nodeId": "0" },
+                                 "others": [] } } },
+
+    { "note": "the write that wrote them over arrives: the register holds it alone",
+      "event": "record_list.write",
+      "data": { "id": 7, "field": 1, "value": "0", "text": "call the clinic", "wallTime": "200", "counter": 0, "nodeId": "4" },
+      "expect": { "state": "holding",
+                  "variables": { "told": 6,
+                                 "shown": { "id": 7, "field": 1, "count": 1, "value": "0", "text": "call the clinic", "wallTime": "200", "counter": 0, "nodeId": "4" },
+                                 "others": [] } } },
+
+    { "note": "another field of the row is another register, told on its own",
+      "event": "record_list.write",
+      "data": { "id": 7, "field": 2, "value": "1", "text": "", "wallTime": "200", "counter": 1, "nodeId": "4" },
+      "expect": { "state": "holding",
+                  "variables": { "told": 7,
+                                 "shown": { "id": 7, "field": 2, "count": 1, "value": "1", "text": "", "wallTime": "200", "counter": 1, "nodeId": "4" },
+                                 "others": [] } } },
+
+    { "note": "the same write given again is held already: nothing moves, and nothing is told",
+      "event": "record_list.write",
+      "data": { "id": 7, "field": 2, "value": "1", "text": "", "wallTime": "200", "counter": 1, "nodeId": "4" },
+      "expect": { "state": "holding",
+                  "variables": { "told": 7,
+                                 "shown": { "id": 7, "field": 2, "count": 1, "value": "1", "text": "", "wallTime": "200", "counter": 1, "nodeId": "4" },
+                                 "others": [] } } }
+  ]
+}

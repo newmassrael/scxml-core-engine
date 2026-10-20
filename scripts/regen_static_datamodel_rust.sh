@@ -108,6 +108,10 @@ STD_ALGORITHMS+=(merge/merkle_node merge/merkle_insert merge/merkle_change_hash)
 STD_ALGORITHMS+=(time/utc_from_local)
 # What the sheet shows of its cells: the formulas settled and the values sorted.
 STD_ALGORITHMS+=(merge/sheet_value merge/sheet_shown merge/sheet_apply merge/sheet_settle merge/sheet_show)
+# The standard shared record list's own rules (record_list, and the child
+# record_list_parent invokes by its library name): the roster and the member record it
+# keeps, the hash a settle compares, and a register's values in the order of their dots.
+STD_ALGORITHMS+=(shared/record_member shared/record_roster shared/record_settled shared/register_values)
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT

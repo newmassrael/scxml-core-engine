@@ -20,6 +20,9 @@
 
 use sce_rust_runtime::{Engine, SceClock};
 use sce_rust_scenarios::{hosts, replay, replay_with_host, replay_with_hosts, Hosts};
+use sce_rust_tests::integration::static_datamodel::record_list_parent_sm::{
+    RecordListParentPersist, RecordListParentPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_block_ends_list_sm::{
     StaticBlockEndsListPersist, StaticBlockEndsListPolicy,
 };
@@ -692,6 +695,21 @@ fn static_invoke_string_holds_a_handed_string_to_the_childs_bound() {
     );
 }
 
+// A statechart that invokes the standard shared record list by its library name is
+// told, after each change the list takes in, what the register it moved holds: its
+// count and its values in the order of their dots, a count of 0 when every value was
+// written over, and nothing for a write the list already held.
+#[test]
+fn record_list_parent_is_told_what_each_register_holds() {
+    replay(
+        Engine::new(RecordListParentPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/record_list_parent.json"
+        ),
+    );
+}
+
 // Leaving the state that holds an <invoke> cancels the child, which then ends
 // nothing and counts nothing.
 #[test]
@@ -1090,4 +1108,8 @@ a_copy_does_what_it_did_in_the_world! {
     sheet_peer_does_what_alice_did: sheet_peer_sm::{SheetPeerPolicy, SheetPeerPersist} => "static_datamodel/scenarios/sheet_peer_alice.json";
     sheet_peer_does_what_bob_did: sheet_peer_sm::{SheetPeerPolicy, SheetPeerPersist} => "static_datamodel/scenarios/sheet_peer_bob.json";
     sheet_peer_does_what_the_hub_did: sheet_peer_sm::{SheetPeerPolicy, SheetPeerPersist} => "static_datamodel/scenarios/sheet_peer_server.json";
+    record_list_does_what_alice_did: record_list_sm::{RecordListPolicy, RecordListPersist} => "static_datamodel/scenarios/record_list_alice.json";
+    record_list_does_what_bob_did: record_list_sm::{RecordListPolicy, RecordListPersist} => "static_datamodel/scenarios/record_list_bob.json";
+    record_list_does_what_the_hub_did: record_list_sm::{RecordListPolicy, RecordListPersist} => "static_datamodel/scenarios/record_list_server.json";
+    record_list_started_by_a_host_tells_no_parent: record_list_sm::{RecordListPolicy, RecordListPersist} => "static_datamodel/scenarios/record_list_alone.json";
 }

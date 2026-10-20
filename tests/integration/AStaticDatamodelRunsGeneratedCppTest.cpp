@@ -30,6 +30,8 @@
 
 #include "common/SceClock.h"
 #include "presence_peer_sm.h"
+#include "record_list_parent_sm.h"
+#include "record_list_sm.h"
 #include "sheet_peer_sm.h"
 #include "static_block_ends_list_sm.h"
 #include "static_block_ends_sm.h"
@@ -698,6 +700,27 @@ template <typename Occurrences> json occurrencesJson(const Occurrences &occurren
                     {"end", wideText(occurrence.end)},
                     {"nth", occurrence.nth},
                     {"conflict", occurrence.conflict}};
+    });
+}
+
+/// A `record:Register` (sce:std/shared/record_register): what a shared record list told
+/// the statechart that invoked it of one register, its count and its first live value
+/// with the dot of its write.
+template <typename Register> json registerJson(const Register &told) {
+    return json{{"id", told.id},           {"field", told.field},
+                {"count", told.count},     {"value", wideText(told.value)},
+                {"text", told.text},       {"wallTime", wideText(told.wallTime)},
+                {"counter", told.counter}, {"nodeId", wideText(told.nodeId)}};
+}
+
+/// A list of `record:RegisterValue` (sce:std/shared/record_value), in order: the
+/// further live values of a register, each with its place in the order of the dots.
+template <typename Values> json registerValuesJson(const Values &values) {
+    return listedJson(values, [](const auto &told) {
+        return json{{"id", told.id},           {"field", told.field},
+                    {"ordinal", told.ordinal}, {"value", wideText(told.value)},
+                    {"text", told.text},       {"wallTime", wideText(told.wallTime)},
+                    {"counter", told.counter}, {"nodeId", wideText(told.nodeId)}};
     });
 }
 
@@ -1977,6 +2000,68 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, ACopyOfASharedListHoldsAndSendsWhatBo
 TEST(AStaticDatamodelRunsGeneratedCppTest, TheHubOfASharedListPassesEachWriteOn) {
     auto driver = todoPeerDriver();
     replay("todo_peer_server", driver);
+}
+
+/// One copy of the standard shared record list (sce:std/shared/record_list.scxml) as a
+/// host reads it: what the to-do list publishes but its schedule, and what it told the
+/// statechart that invoked it.
+Driver<ClockPeeking<G::record_list::record_list>> recordListDriver() {
+    using Machine = ClockPeeking<G::record_list::record_list>;
+    return Driver<Machine>({
+        {"node", [](const Machine &m) { return wideText(m.node()); }},
+        {"hub", [](const Machine &m) { return json(m.hub()); }},
+        {"clock", [](const Machine &m) { return hlcJson(m.publishedClock()); }},
+        {"adds", [](const Machine &m) { return orsetEntriesJson(m.adds()); }},
+        {"tombstones", [](const Machine &m) { return orsetEntriesJson(m.tombstones()); }},
+        {"values", [](const Machine &m) { return todoValuesJson(m.values()); }},
+        {"digest", [](const Machine &m) { return merkleNodesJson(m.digest()); }},
+        {"refusals", [](const Machine &m) { return json(m.refusals()); }},
+        {"floor", [](const Machine &m) { return wideText(m.floor()); }},
+        {"stale", [](const Machine &m) { return json(m.stale()); }},
+        {"late", [](const Machine &m) { return json(m.late()); }},
+        {"full", [](const Machine &m) { return json(m.full()); }},
+        {"denied", [](const Machine &m) { return json(m.denied()); }},
+        {"announced", [](const Machine &m) { return json(m.announced()); }},
+    });
+}
+
+// The standard shared record list through the same afternoon, as each of the three
+// took part in it: the to-do list without its schedule, its events named as the
+// standard part names them...
+TEST(AStaticDatamodelRunsGeneratedCppTest, TheStandardRecordListHoldsAndSendsWhatAliceDid) {
+    auto driver = recordListDriver();
+    replay("record_list_alice", driver);
+}
+
+TEST(AStaticDatamodelRunsGeneratedCppTest, TheStandardRecordListHoldsAndSendsWhatBobDid) {
+    auto driver = recordListDriver();
+    replay("record_list_bob", driver);
+}
+
+TEST(AStaticDatamodelRunsGeneratedCppTest, TheHubOfTheStandardRecordListPassesEachWriteOn) {
+    auto driver = recordListDriver();
+    replay("record_list_server", driver);
+}
+
+// ...and a list a host started, which tells no parent of the registers its changes
+// move, and fails at nothing.
+TEST(AStaticDatamodelRunsGeneratedCppTest, AStandardRecordListStartedByAHostTellsNoParent) {
+    auto driver = recordListDriver();
+    replay("record_list_alone", driver);
+}
+
+// A statechart that invokes the standard record list by its library name is told what
+// each register a change moved holds: its count and its values in the order of their
+// dots, a count of 0 when every value was written over, and nothing for a write the
+// list already held.
+TEST(AStaticDatamodelRunsGeneratedCppTest, AParentIsToldWhatEachRegisterOfItsListHolds) {
+    using Machine = G::record_list_parent::record_list_parent;
+    Driver<Machine> driver({
+        {"told", [](const Machine &m) { return json(m.told()); }},
+        {"shown", [](const Machine &m) { return registerJson(m.shown()); }},
+        {"others", [](const Machine &m) { return registerValuesJson(m.others()); }},
+    });
+    replay("record_list_parent", driver);
 }
 
 /// One copy of the shared sheet as a host reads it. One machine, three

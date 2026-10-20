@@ -1,0 +1,37 @@
+{
+  "machine": "record_list",
+  "about": "The standard shared record list (sce:std/shared/record_list.scxml) started by a host and not by a statechart: no <invoke> handed it `announce`, so it keeps the false its <data> gives it, and it tells no parent of the registers its changes move, `#_parent` naming no session at the top level. A write and a supersede are taken in as they are in a parent's child, a host's own `record_list.announce` is not answered either, and nothing fails: `announced` stays 0, `refusals` stays 0 and nothing goes to a peer. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "note": "started: nothing held, nothing told",
+      "expect": { "state": "open", "sent": [],
+                  "variables": { "node": "0", "values": [], "announced": 0, "refusals": 0 } } },
+
+    { "note": "the host names the copy; a person's copy is no hub",
+      "event": "record_list.join",
+      "data": { "node": "1", "hub": false },
+      "expect": { "state": "open", "sent": [],
+                  "variables": { "node": "1", "values": [], "announced": 0, "refusals": 0 } } },
+
+    { "note": "a peer's write gives a register its first value, which no parent is told of",
+      "event": "record_list.write",
+      "data": { "id": 7, "field": 1, "value": "0", "text": "buy milk", "wallTime": "100", "counter": 0, "nodeId": "2" },
+      "expect": { "state": "open", "sent": [],
+                  "variables": { "node": "1",
+                                 "values": [ { "id": "7", "field": "1", "value": "0", "text": "buy milk", "wallTime": "100", "counter": 0, "nodeId": "2" } ],
+                                 "announced": 0, "refusals": 0 } } },
+
+    { "note": "the host asks for the register to be told: the list was started by no parent, and sends nothing to one",
+      "event": "record_list.announce",
+      "data": { "id": 7, "field": 1 },
+      "expect": { "state": "open", "sent": [],
+                  "variables": { "node": "1",
+                                 "values": [ { "id": "7", "field": "1", "value": "0", "text": "buy milk", "wallTime": "100", "counter": 0, "nodeId": "2" } ],
+                                 "announced": 0, "refusals": 0 } } },
+
+    { "note": "a peer writes the value over: the register holds nothing, and still no parent is told",
+      "event": "record_list.supersede",
+      "data": { "id": 7, "field": 1, "wallTime": "100", "counter": 0, "nodeId": "2", "by": "3" },
+      "expect": { "state": "open", "sent": [],
+                  "variables": { "node": "1", "values": [], "announced": 0, "refusals": 0 } } }
+  ]
+}
