@@ -1,0 +1,320 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/newmassrael/scxml-core-engine/blob/main/schemas/sce-saved-state.v2.schema.json",
+  "x-sce-schema-status": "pre-release",
+  "title": "SCE saved state (wire schema v2: a tree of sessions)",
+  "description": "A datamodel=\"sce-static\" machine's whole state, saved at a macrostep boundary of the root and restored into a new process in place of initialize, with every child session an <invoke type=\"scxml\"> is running saved inside its parent, to any depth, and resumed where it stood rather than started again (docs/SCE_ACCEPTED_SUBSET.md §2.15, \"Saving and restoring\"; docs/adr/0045). The same document on every backend: what one backend saved, another restores. Format 1 (sce-saved-state.v1.schema.json) is still read, and a child it lists is started again from its beginning, which is all a format-1 text promises. Producers and readers are the runtimes — sce_rust_runtime::saved_state (Rust) and com.sce.runtime.SavedState (Kotlin), then the Go, Python, C++ and C11 runtimes as ADR 0045 brings them in — and the generated save/restore of each machine. The stability status of this surface lives in this header alone — see SCE_WIRE_CONTRACTS.md.",
+  "type": "object",
+  "required": ["format", "shape", "sessionid", "configuration", "current", "variables", "history", "pending", "invokes", "invokestarts", "hostinvokes", "hostinvoketoken", "sendseq", "external"],
+  "additionalProperties": false,
+  "properties": {
+    "format": {
+      "description": "The format version. 2 for this revision. A reader refuses a format it does not read; one that reads this revision reads format 1 as well.",
+      "const": 2
+    },
+    "shape": { "$ref": "#/definitions/shape" },
+    "revisions": { "$ref": "#/definitions/revisions" },
+    "sessionid": { "$ref": "#/definitions/sessionid" },
+    "configuration": { "$ref": "#/definitions/configuration" },
+    "current": { "$ref": "#/definitions/current" },
+    "variables": { "$ref": "#/definitions/variables" },
+    "history": { "$ref": "#/definitions/history" },
+    "pending": { "$ref": "#/definitions/pending" },
+    "invokes": { "$ref": "#/definitions/invokes" },
+    "invokestarts": { "$ref": "#/definitions/invokestarts" },
+    "hostinvokes": { "$ref": "#/definitions/hostinvokes" },
+    "hostinvoketoken": { "$ref": "#/definitions/hostinvoketoken" },
+    "sendseq": { "$ref": "#/definitions/sendseq" },
+    "external": { "$ref": "#/definitions/external" }
+  },
+  "definitions": {
+    "session": {
+      "description": "One session of the tree: what the root holds, without `format`, which the document states once. A child's session is judged against the document its parent's <invoke> names there, by that document's own shape and revisions.",
+      "type": "object",
+      "required": ["shape", "sessionid", "configuration", "current", "variables", "history", "pending", "invokes", "invokestarts", "hostinvokes", "hostinvoketoken", "sendseq", "external"],
+      "additionalProperties": false,
+      "properties": {
+        "shape": { "$ref": "#/definitions/shape" },
+        "revisions": { "$ref": "#/definitions/revisions" },
+        "sessionid": { "$ref": "#/definitions/sessionid" },
+        "configuration": { "$ref": "#/definitions/configuration" },
+        "current": { "$ref": "#/definitions/current" },
+        "variables": { "$ref": "#/definitions/variables" },
+        "history": { "$ref": "#/definitions/history" },
+        "pending": { "$ref": "#/definitions/pending" },
+        "invokes": { "$ref": "#/definitions/invokes" },
+        "invokestarts": { "$ref": "#/definitions/invokestarts" },
+        "hostinvokes": { "$ref": "#/definitions/hostinvokes" },
+        "hostinvoketoken": { "$ref": "#/definitions/hostinvoketoken" },
+        "sendseq": { "$ref": "#/definitions/sendseq" },
+        "external": { "$ref": "#/definitions/external" }
+      }
+    },
+    "shape": {
+      "description": "The SHA-256, as lowercase hex, of this session's document's shape as the generator computes it, as in format 1: every state with its kind and parent in document order, every <history> with its id, kind and parent, every <invoke type=\"scxml\"> with its id and the state that holds it, every <invoke> a declared host invoker serves with its type, its id and the state that holds it, every variable with its type and bound, a record's fields with their types. A parent's shape names each <invoke> and not its child's shape, so each session is judged by its own. A restore refuses the whole tree when any session is of another shape, and names that session's path.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "revisions": {
+      "description": "The revision each record schema past its first was saved at, keyed by the event the schema declares, for this session's document (docs/adr/0044, applied to each session). Absent when every record schema the session holds is in its first revision; never empty.",
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "required": ["revision", "fields"],
+        "additionalProperties": false,
+        "properties": {
+          "revision": {
+            "description": "The schema's sce:revision where the session was saved: 2 or later.",
+            "type": "integer",
+            "minimum": 2
+          },
+          "fields": {
+            "description": "The SHA-256, as lowercase hex, of what that revision declares.",
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      }
+    },
+    "sessionid": {
+      "description": "The session's own id, kept by a restore: the events held in the tree name sessions by it (the `origin` of a child's event queued in its parent, of a parent's event queued in its child). A child's is derived from the tree alone (its parent's id, the state, the <invoke>'s id and the start), the same on every backend. Empty for a session that has none, as a sce-static root with no script engine.",
+      "type": "string"
+    },
+    "configuration": {
+      "description": "The active configuration as state ids, in document order. A restore refuses one that is not a configuration of the document.",
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1
+    },
+    "current": {
+      "description": "The current leaf as a state id — which of a <parallel>'s regions the session last stood in, which the configuration alone cannot say.",
+      "type": "string"
+    },
+    "variables": {
+      "description": "Every variable, the machine's own included, keyed by its document id in declaration order.",
+      "type": "object",
+      "additionalProperties": { "$ref": "#/definitions/value" }
+    },
+    "history": {
+      "description": "What each <history> recorded when its parent was last exited (W3C SCXML 3.10), as in format 1: keyed by the history's id, in order of id; each value is state ids in document order. A history that has recorded nothing is absent, and a document with no <history> has {}.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": { "type": "string" },
+        "minItems": 1
+      }
+    },
+    "pending": {
+      "description": "The delayed <send>s of this session still waiting (W3C SCXML 6.2), in the order they would be delivered, each written as the moment it comes due on the wall clock of the host that saved it. Every session of the tree is armed against the one wall clock the restore is given. Beside format 1's three acts, a send to this session's parent (`parent`) or to a child it is running (`child`) is held, since that session is in the tree. A document that makes a delayed send to any other session has no saved state.",
+      "type": "array",
+      "items": {
+        "oneOf": [
+          { "$ref": "#/definitions/pendingRaise" },
+          { "$ref": "#/definitions/pendingInternal" },
+          { "$ref": "#/definitions/pendingHost" },
+          { "$ref": "#/definitions/pendingParent" },
+          { "$ref": "#/definitions/pendingChild" }
+        ]
+      }
+    },
+    "invokes": {
+      "description": "The <invoke type=\"scxml\">s whose child session is running (W3C SCXML 6.4), in document order, each with the child's whole state. A restore builds each child as starting it would (its link to this session, the clock, its host, its router) and then restores it instead of initializing it: no <onentry> runs, no <data> or <param> is evaluated, no idlocation is written and nothing is sent, so the child carries on where it stood and `done.invoke.<id>` is raised once, when it ends. One whose child has ended is absent, because its done.invoke is in `external` or already taken. A restore refuses an id the document does not invoke, one whose state the configuration does not stand in, one named twice, a `start` that is not the count `invokestarts` holds for it, a `document` the <invoke> cannot start, and a session that is not of that document's shape. A document with an <invoke> whose child runs on another device has no saved state. A mesh-rpc call and every other <invoke> a host runs are in `hostinvokes`.",
+      "type": "array",
+      "items": { "$ref": "#/definitions/child" }
+    },
+    "child": {
+      "description": "A running child session, under the invoke that started it and the number of that start.",
+      "type": "object",
+      "required": ["id", "start", "invokeid", "document", "session"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "description": "The id the document gives the <invoke>.", "type": "string", "minLength": 1 },
+        "start": {
+          "description": "Which start of that <invoke> this is within this session, counted from 1: the count `invokestarts` holds for it, since a state re-entered cancels the earlier child before it starts the next one.",
+          "$ref": "#/definitions/count"
+        },
+        "invokeid": {
+          "description": "The id the child was started under, as the parent handed it to the child and as _event.invokeid and an idlocation variable hold it. Carried, not computed again.",
+          "type": "string",
+          "minLength": 1
+        },
+        "document": {
+          "description": "The document the child runs: the child's name for a static <invoke>, the candidate's for a hybrid one. A resumed hybrid child keeps its candidate whatever srcexpr reads now.",
+          "type": "string",
+          "minLength": 1
+        },
+        "session": {
+          "description": "The child's state, of the same grammar as the root's without `format`, its own running children included.",
+          "$ref": "#/definitions/session"
+        }
+      }
+    },
+    "invokestarts": {
+      "description": "For every <invoke type=\"scxml\"> of the document started at least once in this session, how many times it has been started, keyed by the <invoke>'s id in document order. A restore carries on from it, so a start after a restore is never given the number of one a host or a peer already saw.",
+      "type": "object",
+      "additionalProperties": { "$ref": "#/definitions/count" }
+    },
+    "hostinvokes": {
+      "description": "The <invoke>s a declared host invoker is running in this session (W3C SCXML 6.4.1), as in format 1, ordered by type and then id. A restore starts each again from the request it was started with, at the top of the session's first macrostep, with `restarted` set; a mesh-rpc call is not started again and the document is told it was interrupted.",
+      "type": "array",
+      "items": { "$ref": "#/definitions/hostInvoke" }
+    },
+    "hostinvoketoken": {
+      "description": "The token this session's next host-run start receives, a text of digits within a signed 64-bit count.",
+      "$ref": "#/definitions/token"
+    },
+    "sendseq": {
+      "description": "How many ids this session has generated for a <send idlocation>, a text of digits within a signed 64-bit count.",
+      "$ref": "#/definitions/token"
+    },
+    "external": {
+      "description": "This session's external queue, front first. An event a child sent this session and it has not taken is here, with its invokeid and origin; an event this session sent a child that the child has not taken is in that child's queue. Nothing is in transit between two sessions when the tree is saved.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "data", "type", "sendid", "origin", "origintype", "invokeid", "hostinvoketoken"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "description": "The event name, as the document spells it.", "type": "string", "minLength": 1 },
+          "data": { "description": "_event.data, as the wire carries it.", "type": "string" },
+          "type": { "description": "_event.type.", "enum": ["internal", "external", "platform"] },
+          "sendid": { "description": "_event.sendid.", "type": "string" },
+          "origin": { "description": "_event.origin.", "type": "string" },
+          "origintype": { "description": "_event.origintype.", "type": "string" },
+          "invokeid": { "description": "_event.invokeid.", "type": "string" },
+          "hostinvoketoken": {
+            "description": "The token a host-run invocation's completion or failure was stamped with when the engine accepted it, null for any other event.",
+            "oneOf": [{ "type": "null" }, { "$ref": "#/definitions/token" }]
+          }
+        }
+      }
+    },
+    "count": {
+      "description": "A count of starts: a text holding a positive decimal whole number no larger than 9223372036854775807 (every 64-bit integer in this format is a text).",
+      "type": "string",
+      "pattern": "^[1-9][0-9]{0,18}$"
+    },
+    "token": {
+      "description": "A text holding a non-negative decimal whole number no larger than 9223372036854775807. A reader refuses one outside that range, which a pattern cannot say.",
+      "type": "string",
+      "pattern": "^[0-9]{1,19}$"
+    },
+    "hostInvoke": {
+      "description": "An <invoke> a declared host invoker is running, as it is started again: every field is what the request the host was handed carried.",
+      "type": "object",
+      "required": ["type", "id", "src", "params", "data", "content", "due"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "description": "The `type` the <invoke> named.", "type": "string", "minLength": 1 },
+        "id": { "description": "The invoke's id, which done.invoke.<id> names.", "type": "string", "minLength": 1 },
+        "src": { "description": "<invoke src>, empty when the document named none.", "type": "string" },
+        "params": {
+          "description": "<param> values by name, ordered by name; a repeated name keeps every value in document order. Without the engine's own deadline parameter, which `due` holds.",
+          "type": "object",
+          "additionalProperties": { "type": "array", "items": { "type": "string" } }
+        },
+        "data": { "description": "The namelist and <param> pairs as JSON, as the request carried them.", "type": "string" },
+        "content": { "description": "Inline <content>, empty when the document carried none.", "type": "string" },
+        "due": {
+          "description": "When its deadline comes due, as `pending`'s `due` is written; null for an invocation that has none.",
+          "oneOf": [{ "type": "null" }, { "$ref": "#/definitions/due" }]
+        }
+      }
+    },
+    "due": {
+      "description": "Milliseconds since the Unix epoch on the saving host's wall clock, a text holding a non-negative decimal whole number no larger than 9223372036854775807.",
+      "type": "string",
+      "pattern": "^[0-9]{1,19}$"
+    },
+    "pendingRaise": {
+      "description": "A delayed send of an event to this session's external queue.",
+      "type": "object",
+      "required": ["due", "act", "event", "data", "sendid", "origin"],
+      "additionalProperties": false,
+      "properties": {
+        "due": { "$ref": "#/definitions/due" },
+        "act": { "const": "raise" },
+        "event": { "description": "The event name, as the document spells it.", "type": "string", "minLength": 1 },
+        "data": { "description": "_event.data, as the wire carries it.", "type": "string" },
+        "sendid": { "description": "The send's id: _event.sendid on delivery, and what a <cancel> names.", "type": "string" },
+        "origin": { "description": "_event.origin: the session that sent it.", "type": "string" }
+      }
+    },
+    "pendingInternal": {
+      "description": "A delayed send of an event to this session's internal queue (target #_internal).",
+      "type": "object",
+      "required": ["due", "act", "event", "data", "sendid", "origin"],
+      "additionalProperties": false,
+      "properties": {
+        "due": { "$ref": "#/definitions/due" },
+        "act": { "const": "internal" },
+        "event": { "description": "The event name, as the document spells it.", "type": "string", "minLength": 1 },
+        "data": { "description": "_event.data, as the wire carries it.", "type": "string" },
+        "sendid": { "description": "The send's id, which a <cancel> names.", "type": "string" },
+        "origin": { "description": "_event.origin; empty on a backend whose internal events carry none.", "type": "string" }
+      }
+    },
+    "pendingHost": {
+      "description": "A delayed send a host-served processor performs when it comes due (W3C SCXML 6.2.5). Every field is what the document wrote.",
+      "type": "object",
+      "required": ["due", "act", "type", "event", "target", "content", "params", "sendid", "data", "invokeid"],
+      "additionalProperties": false,
+      "properties": {
+        "due": { "$ref": "#/definitions/due" },
+        "act": { "const": "host" },
+        "type": { "description": "The processor type the send named.", "type": "string" },
+        "event": { "description": "<send event>.", "type": "string" },
+        "target": { "description": "<send target>, empty when the document named none.", "type": "string" },
+        "content": { "description": "Inline <content>, empty when the document carried none.", "type": "string" },
+        "params": {
+          "description": "<param> values by name, in order of name; a repeated name keeps every value in document order.",
+          "type": "object",
+          "additionalProperties": { "type": "array", "items": { "type": "string" } }
+        },
+        "sendid": { "description": "The send's id.", "type": "string" },
+        "data": { "description": "_event.data as a local delivery of the send would carry it.", "type": "string" },
+        "invokeid": { "description": "_event.invokeid of the event being processed when the send executed.", "type": "string" }
+      }
+    },
+    "pendingParent": {
+      "description": "A delayed send from this session to its parent (target #_parent), delivered when due to the parent the restored tree holds.",
+      "type": "object",
+      "required": ["due", "act", "event", "data", "sendid", "origin"],
+      "additionalProperties": false,
+      "properties": {
+        "due": { "$ref": "#/definitions/due" },
+        "act": { "const": "parent" },
+        "event": { "description": "The event name, as the document spells it.", "type": "string", "minLength": 1 },
+        "data": { "description": "_event.data, as the wire carries it.", "type": "string" },
+        "sendid": { "description": "The send's id, which a <cancel> names.", "type": "string" },
+        "origin": { "description": "_event.origin: this session's id.", "type": "string" }
+      }
+    },
+    "pendingChild": {
+      "description": "A delayed send from this session to a child it runs (target #_<invokeid>), delivered when due to the child the restored tree holds under that id; a child that is not running then is answered as for a send that was never saved.",
+      "type": "object",
+      "required": ["due", "act", "invokeid", "event", "data", "sendid", "origin"],
+      "additionalProperties": false,
+      "properties": {
+        "due": { "$ref": "#/definitions/due" },
+        "act": { "const": "child" },
+        "invokeid": { "description": "The invokeid of the child the send is for, as the target names it.", "type": "string", "minLength": 1 },
+        "event": { "description": "The event name, as the document spells it.", "type": "string", "minLength": 1 },
+        "data": { "description": "_event.data, as the wire carries it.", "type": "string" },
+        "sendid": { "description": "The send's id, which a <cancel> names.", "type": "string" },
+        "origin": { "description": "_event.origin: this session's id.", "type": "string" }
+      }
+    },
+    "value": {
+      "description": "A value as its sce:type writes it, as in format 1. A whole number up to 32 bits is a JSON number; a 64-bit one is a text holding its decimal digits. A real is a number, or one of the texts NaN, Infinity, -Infinity. A bool is a JSON boolean, a string a text, bytes an array of numbers 0 to 255, a list an array of its elements, a record an object keyed by its schema's field ids.",
+      "oneOf": [
+        { "type": "number" },
+        { "type": "string" },
+        { "type": "boolean" },
+        { "type": "array", "items": { "$ref": "#/definitions/value" } },
+        { "type": "object", "additionalProperties": { "$ref": "#/definitions/value" } }
+      ]
+    }
+  }
+}

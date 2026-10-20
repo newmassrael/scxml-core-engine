@@ -625,14 +625,17 @@ class StaticDatamodelTest {
 
     @Test
     fun theSavedStateSchemaFileDeclaresTheStatusThisRuntimeDoes() {
-        val schema = com.sce.runtime.Json.parse(
-            File(repoRoot(), "schemas/sce-saved-state.v1.schema.json").readText()
-        ) as Map<*, *>
-        assertEquals(
-            SavedState.SCHEMA_STATUS,
-            schema["x-sce-schema-status"],
-            "SCHEMA_STATUS and the schema header move together (SCE_WIRE_CONTRACTS.md)"
-        )
+        for (file in listOf(
+            "schemas/sce-saved-state.v1.schema.json",
+            "schemas/sce-saved-state.v2.schema.json"
+        )) {
+            val schema = com.sce.runtime.Json.parse(File(repoRoot(), file).readText()) as Map<*, *>
+            assertEquals(
+                SavedState.SCHEMA_STATUS,
+                schema["x-sce-schema-status"],
+                "SCHEMA_STATUS and every format's schema header move together ($file, SCE_WIRE_CONTRACTS.md)"
+            )
+        }
     }
 
     @Test

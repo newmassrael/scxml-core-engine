@@ -150,8 +150,10 @@ class SavedState(
         /**
          * The stability status of the saved-state wire surface, held in
          * lockstep with `x-sce-schema-status` in
-         * `schemas/sce-saved-state.v1.schema.json` (`SCE_WIRE_CONTRACTS.md`).
-         * A flip to `"stable"` changes both in one commit.
+         * `schemas/sce-saved-state.v1.schema.json` and
+         * `schemas/sce-saved-state.v2.schema.json`, the surface's two formats
+         * (`SCE_WIRE_CONTRACTS.md`). A flip to `"stable"` changes all three in
+         * one commit.
          */
         const val SCHEMA_STATUS: String = "pre-release"
 

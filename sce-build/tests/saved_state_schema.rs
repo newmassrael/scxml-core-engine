@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// The saved-state wire surface (`schemas/sce-saved-state.v1.schema.json`,
-// SCE Accepted Subset §2.15) held to its instances.
+// The saved-state wire surface (`schemas/sce-saved-state.v1.schema.json` and
+// `schemas/sce-saved-state.v2.schema.json`, SCE Accepted Subset §2.15) held to
+// its instances.
 //
 // The shared fixtures under `tests/fixtures/static_datamodel/saved/` are the
 // text every backend must save after the same run and must restore from —
@@ -10,6 +11,11 @@
 // surface's instances, and each one must be what the schema says a saved
 // state is. The directory is swept rather than listed, so a fixture added
 // for a new backend or machine is held to the schema without an edit here.
+//
+// Format 2 (docs/adr/0045) is a tree of sessions. No backend writes it yet,
+// so its instance is written here by hand, as the observation trace's was
+// before any driver existed; the shared fixtures take format-2 texts when the
+// first backend writes them.
 
 use std::path::{Path, PathBuf};
 
@@ -20,14 +26,21 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
-fn validator() -> jsonschema::JSONSchema {
+fn compile(text: &str) -> jsonschema::JSONSchema {
     let schema: serde_json::Value =
-        serde_json::from_str(include_str!("../../schemas/sce-saved-state.v1.schema.json"))
-            .expect("the saved-state schema is JSON");
+        serde_json::from_str(text).expect("the saved-state schema is JSON");
     jsonschema::JSONSchema::options()
         .with_draft(jsonschema::Draft::Draft7)
         .compile(&schema)
         .expect("the saved-state schema compiles as draft-07")
+}
+
+fn validator() -> jsonschema::JSONSchema {
+    compile(include_str!("../../schemas/sce-saved-state.v1.schema.json"))
+}
+
+fn validator_v2() -> jsonschema::JSONSchema {
+    compile(include_str!("../../schemas/sce-saved-state.v2.schema.json"))
 }
 
 fn errors(validator: &jsonschema::JSONSchema, instance: &serde_json::Value) -> Vec<String> {
@@ -369,4 +382,168 @@ fn the_schema_refuses_what_no_backend_writes() {
         "{:?}",
         errors(&validator, &first_revision)
     );
+}
+
+/// One session of a tree, with the running children it is given. Every
+/// field a session must state is stated, with the values a session that
+/// waits on nothing has.
+fn session(shape: char, sessionid: &str, invokes: serde_json::Value) -> serde_json::Value {
+    serde_json::json!({
+        "shape": shape.to_string().repeat(64),
+        "sessionid": sessionid,
+        "configuration": ["working"],
+        "current": "working",
+        "variables": {"completed": 0},
+        "history": {},
+        "pending": [],
+        "invokes": invokes,
+        "invokestarts": {},
+        "hostinvokes": [],
+        "hostinvoketoken": "0",
+        "sendseq": "0",
+        "external": []
+    })
+}
+
+/// A format-2 saved state that uses every member the format adds: a parent
+/// running a child that has taken an event and runs a grandchild, a send
+/// waiting for each direction of the link, a child's event queued in its
+/// parent, an invoke started twice and one whose id was generated.
+fn a_tree() -> serde_json::Value {
+    let grandchild = session('c', "", serde_json::json!([]));
+    let mut child = session(
+        'b',
+        "s.working.worker.2",
+        serde_json::json!([{
+            "id": "helper", "start": "1", "invokeid": "s.working.worker.2.busy.helper.1",
+            "document": "static_hybrid_holder", "session": grandchild
+        }]),
+    );
+    child["variables"] = serde_json::json!({"completed": 1});
+    child["invokestarts"] = serde_json::json!({"helper": "1"});
+    child["pending"] = serde_json::json!([{
+        "due": "1700000005000", "act": "parent", "event": "progress",
+        "data": "{\"n\":1}", "sendid": "report", "origin": "s.working.worker.2"
+    }]);
+    child["external"] = serde_json::json!([{
+        "name": "go", "data": "", "type": "external", "sendid": "",
+        "origin": "", "origintype": "", "invokeid": "", "hostinvoketoken": null
+    }]);
+    let mut root = session(
+        'a',
+        "",
+        serde_json::json!([{
+            "id": "worker", "start": "2", "invokeid": "worker",
+            "document": "static_invoke_child", "session": child
+        }]),
+    );
+    root["format"] = serde_json::json!(2);
+    root["invokestarts"] = serde_json::json!({"worker": "2"});
+    root["revisions"] = serde_json::json!({
+        "todo.write": {"revision": 2, "fields": "d".repeat(64)}
+    });
+    root["pending"] = serde_json::json!([{
+        "due": "1700000006000", "act": "child", "invokeid": "worker", "event": "nudge",
+        "data": "", "sendid": "poke", "origin": ""
+    }]);
+    root["external"] = serde_json::json!([{
+        "name": "done.step", "data": "", "type": "external", "sendid": "",
+        "origin": "s.working.worker.2", "origintype": "http://www.w3.org/TR/scxml/#SCXMLEventProcessor",
+        "invokeid": "worker", "hostinvoketoken": null
+    }]);
+    root
+}
+
+#[test]
+fn a_tree_of_sessions_is_a_format_2_saved_state() {
+    let tree = a_tree();
+    let found = errors(&validator_v2(), &tree);
+    assert!(found.is_empty(), "{}", found.join("\n"));
+    // The two formats are told apart by `format` before anything else, so a
+    // reader of one never reads the other's text as its own.
+    assert!(
+        !errors(&validator(), &tree).is_empty(),
+        "the format-1 schema admitted a tree"
+    );
+}
+
+#[test]
+fn the_format_2_schema_refuses_what_no_backend_writes() {
+    // The control: the tree is a saved state, so each refusal below is the
+    // one change it makes.
+    let validator = validator_v2();
+    let good = a_tree();
+    assert!(
+        errors(&validator, &good).is_empty(),
+        "{:?}",
+        errors(&validator, &good)
+    );
+
+    type Change = fn(&mut serde_json::Value);
+    let broken: [(&str, Change); 16] = [
+        ("format 1", |t| t["format"] = serde_json::json!(1)),
+        (
+            "a running child named by its id alone, as format 1 does",
+            |t| t["invokes"] = serde_json::json!(["worker"]),
+        ),
+        ("a child with no state", |t| {
+            t["invokes"][0]
+                .as_object_mut()
+                .expect("a child")
+                .remove("session");
+        }),
+        ("a child whose state states the format again", |t| {
+            t["invokes"][0]["session"]["format"] = serde_json::json!(2)
+        }),
+        ("a start counted from 0", |t| {
+            t["invokes"][0]["start"] = serde_json::json!("0")
+        }),
+        ("a start written as a number", |t| {
+            t["invokes"][0]["start"] = serde_json::json!(2)
+        }),
+        ("a child of no document", |t| {
+            t["invokes"][0]["document"] = serde_json::json!("")
+        }),
+        ("a child with no invoke id", |t| {
+            t["invokes"][0]["invokeid"] = serde_json::json!("")
+        }),
+        ("a grandchild whose shape is not a digest", |t| {
+            t["invokes"][0]["session"]["invokes"][0]["session"]["shape"] = serde_json::json!("abc")
+        }),
+        ("a grandchild with no start count member", |t| {
+            t["invokes"][0]["session"]["invokes"][0]["session"]
+                .as_object_mut()
+                .expect("a session")
+                .remove("invokestarts");
+        }),
+        ("a tree with no session id", |t| {
+            t.as_object_mut().expect("a tree").remove("sessionid");
+        }),
+        ("a start count of 0", |t| {
+            t["invokestarts"] = serde_json::json!({"worker": "0"})
+        }),
+        ("a send to a child that names no child", |t| {
+            t["pending"][0]
+                .as_object_mut()
+                .expect("a send")
+                .remove("invokeid");
+        }),
+        ("a send to the parent that names a child", |t| {
+            t["invokes"][0]["session"]["pending"][0]["invokeid"] = serde_json::json!("worker")
+        }),
+        ("a waiting send of an act no session makes", |t| {
+            t["pending"][0]["act"] = serde_json::json!("sideways")
+        }),
+        ("revisions that name none", |t| {
+            t["revisions"] = serde_json::json!({})
+        }),
+    ];
+    for (what, change) in broken {
+        let mut instance = good.clone();
+        change(&mut instance);
+        assert!(
+            !errors(&validator, &instance).is_empty(),
+            "the format-2 schema admitted {what}"
+        );
+    }
 }

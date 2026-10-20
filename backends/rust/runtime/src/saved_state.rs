@@ -66,7 +66,9 @@ pub const FORMAT: u32 = 1;
 
 /// The stability status of the saved-state wire surface, held in lockstep
 /// with `x-sce-schema-status` in `schemas/sce-saved-state.v1.schema.json`
-/// (`SCE_WIRE_CONTRACTS.md`). A flip to `"stable"` changes both in one commit.
+/// and `schemas/sce-saved-state.v2.schema.json`, the surface's two formats
+/// (`SCE_WIRE_CONTRACTS.md`). A flip to `"stable"` changes all three in one
+/// commit.
 pub const SCHEMA_STATUS: &str = "pre-release";
 
 /// Why a saved state cannot be restored, or a machine cannot be saved.
@@ -2578,15 +2580,18 @@ mod tests {
 
     #[test]
     fn schema_file_declares_status() {
-        let schema = json::parse(include_str!(
-            "../../../../schemas/sce-saved-state.v1.schema.json"
-        ))
-        .expect("the schema is JSON");
-        assert_eq!(
-            schema.member("x-sce-schema-status"),
-            Some(&Value::Text(SCHEMA_STATUS.to_string())),
-            "SCHEMA_STATUS and the schema header move together (SCE_WIRE_CONTRACTS.md)"
-        );
+        for text in [
+            include_str!("../../../../schemas/sce-saved-state.v1.schema.json"),
+            include_str!("../../../../schemas/sce-saved-state.v2.schema.json"),
+        ] {
+            let schema = json::parse(text).expect("the schema is JSON");
+            assert_eq!(
+                schema.member("x-sce-schema-status"),
+                Some(&Value::Text(SCHEMA_STATUS.to_string())),
+                "SCHEMA_STATUS and every format's schema header move together \
+                 (SCE_WIRE_CONTRACTS.md)"
+            );
+        }
     }
 
     #[test]

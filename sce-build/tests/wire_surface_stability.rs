@@ -46,6 +46,7 @@ const JSON_SURFACES: &[&str] = &[
     "schemas/sce-manifest.v1.schema.json",
     "schemas/sce-symbol-lookup.v1.schema.json",
     "schemas/sce-saved-state.v1.schema.json",
+    "schemas/sce-saved-state.v2.schema.json",
     "schemas/sce-kind-catalog.v1.schema.json",
     "schemas/sce-authoring-profile.v1.schema.json",
     "schemas/sce-scenario-set.v1.schema.json",
@@ -213,6 +214,11 @@ const INSTANCE_VALIDATION: &[(&str, &str, &str)] = &[
         "sce-build/tests/saved_state_schema.rs",
     ),
     (
+        "schemas/sce-saved-state.v2.schema.json",
+        "a_tree_of_sessions_is_a_format_2_saved_state",
+        "sce-build/tests/saved_state_schema.rs",
+    ),
+    (
         "schemas/sce-kind-catalog.v1.schema.json",
         "the_catalog_validates_against_the_wire_schema",
         "sce-build/src/forge/kind_catalog.rs",
@@ -293,6 +299,11 @@ const NEGATIVE_VALIDATION: &[(&str, &str, &str)] = &[
         "sce-build/tests/saved_state_schema.rs",
     ),
     (
+        "schemas/sce-saved-state.v2.schema.json",
+        "the_format_2_schema_refuses_what_no_backend_writes",
+        "sce-build/tests/saved_state_schema.rs",
+    ),
+    (
         "schemas/sce-kind-catalog.v1.schema.json",
         "the_catalog_schema_rejects_a_kind_the_product_does_not_have",
         "sce-build/src/forge/kind_catalog.rs",
@@ -363,6 +374,14 @@ const ATTRIBUTION_EXEMPT: &[(&str, &str, &str)] = &[
          restores into, and its `shape` does that; the commit that built \
          the machine is the build's to record.",
         "saved state deliberately does",
+    ),
+    (
+        "schemas/sce-saved-state.v2.schema.json",
+        "format 2 is written by the same generated code as format 1, for the \
+         same reason: every committed machine and every shared fixture would \
+         change on every commit. Each session of the tree carries the `shape` \
+         of its own document, which is what it restores into.",
+        "Format 2 of the saved state deliberately does",
     ),
     (
         "schemas/sce-authoring-profile.v1.schema.json",
