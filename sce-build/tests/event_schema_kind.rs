@@ -657,20 +657,47 @@ type Built = Result<Vec<(String, sce_build::generator::GeneratedOutput)>, Locate
 /// event, so a field one schema lacks is judged by the cross-machine check
 /// and not first by the receive-side one.
 fn build_two_machines(sender_schema: &str, receiver_schema: &str) -> Built {
+    build_two_machines_holding(sender_schema, receiver_schema, None)
+}
+
+/// [`build_two_machines`], where each side also holds an enum document of its
+/// own — `enum_sender.scxml` beside alpha and its schema, `enum_receiver.scxml`
+/// beside beta and its — imported by its machine as `Mode`, the alias the
+/// schemas name it by.
+fn build_two_machines_holding(
+    sender_schema: &str,
+    receiver_schema: &str,
+    enums: Option<(&str, &str)>,
+) -> Built {
     let dir = tempdir().expect("tempdir");
     let write = |name: &str, text: &str| {
         let path = dir.path().join(name);
         fs::write(&path, text).unwrap_or_else(|e| panic!("write {name}: {e}"));
         path
     };
-    let sender_schema = write("schema_sender.scxml", sender_schema);
-    let receiver_schema = write("schema_receiver.scxml", receiver_schema);
+    let mut forge = vec![
+        write("schema_sender.scxml", sender_schema),
+        write("schema_receiver.scxml", receiver_schema),
+    ];
+    let (sender_enum_import, receiver_enum_import) = match enums {
+        Some((sender_enum, receiver_enum)) => {
+            forge.push(write("enum_sender.scxml", sender_enum));
+            forge.push(write("enum_receiver.scxml", receiver_enum));
+            (
+                r#"<sce:import src="enum_sender.scxml" kind="enum" as="Mode"/>"#,
+                r#"<sce:import src="enum_receiver.scxml" kind="enum" as="Mode"/>"#,
+            )
+        }
+        None => ("", ""),
+    };
     let alpha = write(
         "alpha.scxml",
-        r##"<?xml version="1.0" encoding="UTF-8"?>
+        &format!(
+            r##"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="working" datamodel="sce-static" name="alpha">
   <sce:import src="schema_sender.scxml" kind="event-schema" as="Reading"/>
+  {sender_enum_import}
   <state id="working">
     <transition event="report" type="internal">
       <send target="#beta" event="reading.taken">
@@ -679,14 +706,17 @@ fn build_two_machines(sender_schema: &str, receiver_schema: &str) -> Built {
     </transition>
   </state>
 </scxml>
-"##,
+"##
+        ),
     );
     let beta = write(
         "beta.scxml",
-        r#"<?xml version="1.0" encoding="UTF-8"?>
+        &format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="waiting" datamodel="sce-static" name="beta">
   <sce:import src="schema_receiver.scxml" kind="event-schema" as="Reading"/>
+  {receiver_enum_import}
   <datamodel>
     <data id="heard" sce:type="uint32" expr="0"/>
   </datamodel>
@@ -696,7 +726,8 @@ fn build_two_machines(sender_schema: &str, receiver_schema: &str) -> Built {
     </transition>
   </state>
 </scxml>
-"#,
+"#
+        ),
     );
     let deploy = write(
         "two_builds_deploy.yaml",
@@ -704,11 +735,8 @@ fn build_two_machines(sender_schema: &str, receiver_schema: &str) -> Built {
          source: alpha.scxml\n      beta:\n        source: beta.scxml\n",
     );
     let deploy = sce_build::mesh::deploy::parse_deploy(&deploy).expect("parse deploy yaml");
-    run_with_deploy(
-        &[alpha.as_path(), beta.as_path()],
-        &[sender_schema.as_path(), receiver_schema.as_path()],
-        &deploy,
-    )
+    let forge: Vec<&Path> = forge.iter().map(|p| p.as_path()).collect();
+    run_with_deploy(&[alpha.as_path(), beta.as_path()], &forge, &deploy)
 }
 
 /// The reason a build of two machines was refused as
@@ -807,6 +835,120 @@ fn two_schemas_that_are_not_revisions_of_one_are_refused_with_the_field_they_par
                 field: "urgent".into(),
                 since: 2,
                 from: Party::Second,
+            },
+        }
+    );
+}
+
+/// A schema of `reading.taken` whose `mode` field is of the enum each side
+/// imports as `Mode` from `enum_file`, one revision, beside the level.
+fn reading_schema_with_mode(name: &str, enum_file: &str) -> String {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="{name}"
+       sce:event-name="reading.taken">
+  <sce:import src="{enum_file}" kind="enum" as="Mode"/>
+  <datamodel>
+    {LEVEL}
+    <data id="mode" sce:type="enum:Mode" sce:direction="in"/>
+  </datamodel>
+</scxml>
+"#
+    )
+}
+
+/// The enum `mode` at `revision` (written only past the first), declaring the
+/// `<sce:variant>` rows `variants`.
+fn mode_enum(revision: u32, variants: &[&str]) -> String {
+    let revision = if revision > 1 {
+        format!(r#" sce:revision="{revision}""#)
+    } else {
+        String::new()
+    };
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="enum" name="mode" sce:underlying-type="uint8"{revision}>
+  <datamodel>
+    <data id="variants">
+      {}
+    </data>
+  </datamodel>
+</scxml>
+"#,
+        variants.join("\n      ")
+    )
+}
+
+const SLOW: &str = r#"<sce:variant name="slow" value="0"/>"#;
+const FAST: &str = r#"<sce:variant name="fast" value="1"/>"#;
+const TURBO: &str = r#"<sce:variant name="turbo" value="2" sce:since="2"/>"#;
+
+#[test]
+fn two_revisions_of_one_enum_under_one_field_build_as_one_deployment() {
+    let sender_schema = reading_schema_with_mode("schema_sender", "enum_sender.scxml");
+    let receiver_schema = reading_schema_with_mode("schema_receiver", "enum_receiver.scxml");
+    let first = mode_enum(1, &[SLOW, FAST]);
+    let second = mode_enum(2, &[SLOW, FAST, TURBO]);
+    // An older sender's enum and a newer receiver's, and the other way round.
+    build_two_machines_holding(&sender_schema, &receiver_schema, Some((&first, &second)))
+        .expect("an enum that grew is one enum with its earlier revision");
+    build_two_machines_holding(&sender_schema, &receiver_schema, Some((&second, &first)))
+        .expect("an enum that grew is one enum with its earlier revision, either way");
+}
+
+#[test]
+fn two_enums_under_one_field_are_refused_with_the_variant_they_part_on() {
+    use sce_build::forge::schema_revision::{Divergence, EnumDivergence, Party};
+    use sce_build::mesh::error::EventSchemaMismatchReason;
+
+    let sender_schema = reading_schema_with_mode("schema_sender", "enum_sender.scxml");
+    let receiver_schema = reading_schema_with_mode("schema_receiver", "enum_receiver.scxml");
+    let first = mode_enum(1, &[SLOW, FAST]);
+
+    // A variant of the first revision re-valued.
+    let revalued = mode_enum(2, &[SLOW, r#"<sce:variant name="fast" value="5"/>"#, TURBO]);
+    assert_eq!(
+        mismatch_reason(build_two_machines_holding(
+            &sender_schema,
+            &receiver_schema,
+            Some((&first, &revalued)),
+        )),
+        EventSchemaMismatchReason::NotOneSchema {
+            sender_revision: 1,
+            receiver_revision: 1,
+            divergence: Divergence::Enum {
+                field: "mode".into(),
+                first_revision: 1,
+                second_revision: 2,
+                divergence: EnumDivergence::Redeclared {
+                    variant: "fast".into()
+                },
+            },
+        }
+    );
+
+    // A variant of the first revision removed (or renamed).
+    let without_fast = mode_enum(2, &[SLOW, TURBO]);
+    assert_eq!(
+        mismatch_reason(build_two_machines_holding(
+            &sender_schema,
+            &receiver_schema,
+            Some((&first, &without_fast)),
+        )),
+        EventSchemaMismatchReason::NotOneSchema {
+            sender_revision: 1,
+            receiver_revision: 1,
+            divergence: Divergence::Enum {
+                field: "mode".into(),
+                first_revision: 1,
+                second_revision: 2,
+                divergence: EnumDivergence::Missing {
+                    variant: "fast".into(),
+                    since: 1,
+                    from: Party::Second,
+                },
             },
         }
     );

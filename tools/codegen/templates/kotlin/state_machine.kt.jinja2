@@ -342,6 +342,25 @@ SavedValues.{{ type }}({{ value }}, {{ what }})
             ),
 {% endfor %}
         ),
+        enums = listOf(
+{% for lineage in static_saved_shape.enums %}
+            EnumLineage(
+                key = "{{ lineage.key | escape_kotlin }}",
+                revision = {{ lineage.revision }},
+                revisions = listOf({% for fields in lineage.revisions %}"{{ fields }}"{{ ", " if not loop.last }}{% endfor %}),
+                added = listOf(
+{% for variant in lineage.added %}
+                    AddedVariant("{{ variant.name | escape_kotlin }}", {{ variant.since }}),
+{% endfor %}
+                ),
+                holders = listOf(
+{% for holder in lineage.holders %}
+                    EnumHolder("{{ holder.variable | escape_kotlin }}", {% if holder.field is not none %}"{{ holder.field | escape_kotlin }}"{% else %}null{% endif %}, {{ "true" if holder.list else "false" }}),
+{% endfor %}
+                ),
+            ),
+{% endfor %}
+        ),
     )
 
     /**

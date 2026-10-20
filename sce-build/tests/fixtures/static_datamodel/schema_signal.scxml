@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A raised signal, a schema that grew (docs/adr/0044): the first revision
+  carried the level and the count, the second added the urgency, which a
+  delivery written before it existed reads as `true`. The level is of
+  `enum_signal_level.scxml`, an enum that grew too; the machine that holds a
+  record of this schema imports it under the alias this schema writes
+  (`SignalLevel`).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="schema_signal"
+       sce:event-name="signal.raised"
+       sce:revision="2">
+  <sce:import src="enum_signal_level.scxml" kind="enum" as="SignalLevel"/>
+  <datamodel>
+    <data id="level" sce:type="enum:SignalLevel" sce:direction="in"/>
+    <data id="count" sce:type="uint16" sce:direction="in"/>
+    <data id="urgent" sce:type="bool" sce:direction="in" sce:since="2" sce:default="true"/>
+  </datamodel>
+</scxml>

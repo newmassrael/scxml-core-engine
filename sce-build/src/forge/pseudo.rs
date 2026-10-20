@@ -1696,6 +1696,12 @@ fn render_enum(m: &EnumModel) -> Vec<Node> {
     }
     out.line_of(head);
     out.nested(|out| {
+        // Which revision of the enum this is, when the document says: the
+        // variants a later revision added carry `since` against it
+        // (docs/adr/0044).
+        if let Some(revision) = m.revision {
+            out.line(&format!("revision {revision}"));
+        }
         for v in &m.variants {
             // `source_line` is printed for the reason the algorithm's
             // test vector prints its own: it is a position that does NOT
@@ -1712,10 +1718,15 @@ fn render_enum(m: &EnumModel) -> Vec<Node> {
                 .as_deref()
                 .map(|t| format!(" text {}", text(t)))
                 .unwrap_or_default();
+            // The revision that added the variant follows its text.
+            let since = v
+                .since
+                .map(|since| format!(" since {since}"))
+                .unwrap_or_default();
             let mut parts = vec![
                 Part::Word(Word::Variant),
                 Part::Text(format!(
-                    "{} = {}{own_text}",
+                    "{} = {}{own_text}{since}",
                     text(&v.name),
                     text(&crate::source_literal::as_written(&v.value_text, v.value))
                 )),

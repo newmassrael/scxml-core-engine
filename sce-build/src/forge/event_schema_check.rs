@@ -2080,9 +2080,11 @@ mod tests {
                 // authored spelling to keep.
                 value_text: String::new(),
                 text: None,
+                since: None,
                 source_line: None,
             }],
             strict_variants: false,
+            revision: None,
             source_location: None,
         }
     }
@@ -2620,10 +2622,12 @@ mod tests {
                     // Built here, not read from a document.
                     value_text: String::new(),
                     text: None,
+                    since: None,
                     source_line: None,
                 })
                 .collect(),
             strict_variants: true,
+            revision: None,
             source_location: None,
         }
     }

@@ -865,10 +865,26 @@ fn parse_enum(head: &Line<'_>, body: &[&Line<'_>]) -> Result<EnumModel, ParseErr
         underlying_type,
         variants: Vec::new(),
         strict_variants: w.get(3) == Some(&"strict"),
+        revision: None,
         source_location: None,
     };
 
-    for l in body {
+    for (index, l) in body.iter().enumerate() {
+        // `revision <n>`, the first line under the head when the enum
+        // declares one (docs/adr/0044), and nowhere else.
+        if let Some(rest) = l.text.strip_prefix("revision ") {
+            if index != 0 {
+                return Err(ParseError {
+                    line: l.number,
+                    why: "a `revision` line is written once, first".to_string(),
+                });
+            }
+            m.revision = Some(rest.trim().parse().map_err(|_| ParseError {
+                line: l.number,
+                why: format!("`{rest}` is not a revision this renderer could have written"),
+            })?);
+            continue;
+        }
         let w: Vec<&str> = l.text.split_whitespace().collect();
         if w.first() != Some(&"variant") {
             return Err(ParseError {
@@ -897,6 +913,18 @@ fn parse_enum(head: &Line<'_>, body: &[&Line<'_>]) -> Result<EnumModel, ParseErr
             (Some(&"text"), Some(t)) => (Some(undo(t, l.number)?), 6),
             _ => (None, 4),
         };
+        // `since <n>` follows the text, when a later revision added the
+        // variant (docs/adr/0044).
+        let (since, at) = match (w.get(at), w.get(at + 1)) {
+            (Some(&"since"), Some(n)) => (
+                Some(n.parse().map_err(|_| ParseError {
+                    line: l.number,
+                    why: format!("`{n}` is not a revision this renderer could have written"),
+                })?),
+                at + 2,
+            ),
+            _ => (None, at),
+        };
         let source_line = match (w.get(at), w.get(at + 1)) {
             (Some(&"@line"), Some(n)) => n.parse().ok(),
             _ => None,
@@ -906,6 +934,7 @@ fn parse_enum(head: &Line<'_>, body: &[&Line<'_>]) -> Result<EnumModel, ParseErr
             value,
             value_text: spelling.to_string(),
             text,
+            since,
             source_line,
         });
     }

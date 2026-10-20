@@ -465,6 +465,36 @@ impl{{ policy_generics_decl }} {{ machine_name }}Persist for Engine<{{ machine_n
             },
 {% endfor %}
         ],
+        enums: &[
+{% for lineage in static_saved_shape.enums %}
+            ::sce_rust_runtime::saved_state::EnumLineage {
+                key: "{{ lineage.key | escape_rust }}",
+                revision: {{ lineage.revision }},
+                revisions: &[
+{% for fields in lineage.revisions %}
+                    "{{ fields }}",
+{% endfor %}
+                ],
+                added: &[
+{% for variant in lineage.added %}
+                    ::sce_rust_runtime::saved_state::AddedVariant {
+                        name: "{{ variant.name | escape_rust }}",
+                        since: {{ variant.since }},
+                    },
+{% endfor %}
+                ],
+                holders: &[
+{% for holder in lineage.holders %}
+                    ::sce_rust_runtime::saved_state::EnumHolder {
+                        variable: "{{ holder.variable | escape_rust }}",
+                        field: {% if holder.field is not none %}Some("{{ holder.field | escape_rust }}"){% else %}None{% endif %},
+                        list: {{ "true" if holder.list else "false" }},
+                    },
+{% endfor %}
+                ],
+            },
+{% endfor %}
+        ],
     };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<{{ history_type }}>] = &[

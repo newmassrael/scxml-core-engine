@@ -197,6 +197,48 @@ pub struct SavedShape {
     /// Each record schema a variable is of, by the event it declares, ordered
     /// by it.
     pub records: Vec<SavedRecordLineage>,
+    /// Each enum a value of the state is of — a variable's, or a record
+    /// field's — by its key (`enum:<alias>`), ordered by it.
+    pub enums: Vec<SavedEnumLineage>,
+}
+
+/// An enum a value of a machine's state is of, as a saved state names it.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SavedEnumLineage {
+    /// `enum:` and the alias the machine imports the enum as, which names it
+    /// in `revisions`.
+    pub key: String,
+    /// The enum's `sce:revision` (1 when it declares none).
+    pub revision: u32,
+    /// The digest of what each revision from the second to [`Self::revision`]
+    /// declares, in order ([`enum_revision_digest`]); empty for an enum of one
+    /// revision.
+    pub revisions: Vec<String>,
+    /// Each variant a revision past the first added, in the enum's order.
+    pub added: Vec<SavedAddedVariant>,
+    /// Where a value of it is held, in declaration order.
+    pub holders: Vec<SavedEnumHolder>,
+}
+
+/// A variant a revision past the first added to an enum.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SavedAddedVariant {
+    /// The variant's declared name, which a saved state holds it by.
+    pub name: String,
+    /// The revision that added it.
+    pub since: u32,
+}
+
+/// Where a value of a [`SavedEnumLineage`] is held.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SavedEnumHolder {
+    /// The variable's document id.
+    pub variable: String,
+    /// The field of the record the variable holds, for a value held in a
+    /// record; `None` for a variable of the enum.
+    pub field: Option<String>,
+    /// Whether the variable holds a list of such records rather than one.
+    pub list: bool,
 }
 
 /// A record schema a machine's variables are of, as a saved state names it.
@@ -3743,6 +3785,9 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<SavedShape> {
     // Each record schema a variable is of, by the event it declares: ordered, so
     // the same document names them in the same order on every backend.
     let mut records: BTreeMap<String, SavedRecordLineage> = BTreeMap::new();
+    // Where each value of an enum is held — a variable, or a field of a record a
+    // variable holds — by the alias the enum is imported as.
+    let mut enum_holders: Vec<(String, SavedEnumHolder)> = Vec::new();
     for var in &scope.variables {
         let ty = var
             .value_type
@@ -3769,6 +3814,20 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<SavedShape> {
                     variable: var.id.clone(),
                     list: own_record.is_none(),
                 });
+            // Every enum field holds a value of its enum, whichever revision of
+            // the schema added the field.
+            for field in &schema.fields {
+                if let SceType::Enum(reference) = &field.sce_type {
+                    enum_holders.push((
+                        reference.alias.clone(),
+                        SavedEnumHolder {
+                            variable: var.id.clone(),
+                            field: Some(field.id.clone()),
+                            list: own_record.is_none(),
+                        },
+                    ));
+                }
+            }
             // The first revision's fields: a later one's are the saved state's
             // `revisions` to name.
             for field in schema.fields.iter().filter(|f| f.since.is_none()) {
@@ -3791,7 +3850,28 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<SavedShape> {
         }
         if let Some(SceType::Enum(reference)) = var.value_type.as_ref().and_then(|t| t.scalar()) {
             write_variants(&mut text, model, &reference.alias, &var.id);
+            enum_holders.push((
+                reference.alias.clone(),
+                SavedEnumHolder {
+                    variable: var.id.clone(),
+                    field: None,
+                    list: false,
+                },
+            ));
         }
+    }
+    // Each enum a value of the state is of, by its key: ordered, so the same
+    // document names them in the same order on every backend.
+    let mut enums: BTreeMap<String, SavedEnumLineage> = BTreeMap::new();
+    for (alias, holder) in enum_holders {
+        let Some(lineage) = enum_lineage(model, &alias) else {
+            continue;
+        };
+        enums
+            .entry(lineage.key.clone())
+            .or_insert(lineage)
+            .holders
+            .push(holder);
     }
     let first = format!("{:x}", Sha256::digest(text.as_bytes()));
     // One line more, the same for every document: what makes a reader that
@@ -3803,6 +3883,7 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<SavedShape> {
         first,
         revised,
         records: records.into_values().collect(),
+        enums: enums.into_values().collect(),
     })
 }
 
@@ -3860,18 +3941,83 @@ fn revision_digest(model: &SCXMLModel, schema: &EventSchemaModel, at: u32) -> St
     format!("{:x}", Sha256::digest(text.as_bytes()))
 }
 
+/// The key a saved state's `revisions` names the enum imported as `alias` by:
+/// `enum:` and the alias, the spelling the shape's variable and field types
+/// already carry, so it is stable exactly as long as the shape is.
+fn enum_key(alias: &str) -> String {
+    format!("enum:{alias}")
+}
+
+/// What a saved state names of the enum imported as `alias`: its revision, the
+/// digest of each revision past the first, and the variants those revisions
+/// added. Its holders are the caller's to add. `None` for an alias the model
+/// imports no enum under.
+fn enum_lineage(model: &SCXMLModel, alias: &str) -> Option<SavedEnumLineage> {
+    let enum_model = model.imported_enums.get(alias)?;
+    let revision = enum_model.revision();
+    Some(SavedEnumLineage {
+        key: enum_key(alias),
+        revision,
+        revisions: (2..=revision)
+            .map(|at| enum_revision_digest(alias, enum_model, at))
+            .collect(),
+        added: enum_model
+            .variants
+            .iter()
+            .filter_map(|variant| {
+                Some(SavedAddedVariant {
+                    name: variant.name.clone(),
+                    since: variant.since?,
+                })
+            })
+            .collect(),
+        holders: Vec::new(),
+    })
+}
+
+/// The SHA-256, as lowercase hex, of what revision `at` of the enum imported as
+/// `alias` declares, as a saved state names it (docs/adr/0044): the name of
+/// each variant the revision has (its `sce:since` at most `at`, or none),
+/// sorted. Not a variant's value: a saved state holds an enum by its declared
+/// name.
+fn enum_revision_digest(alias: &str, enum_model: &EnumModel, at: u32) -> String {
+    use sha2::{Digest, Sha256};
+    use std::fmt::Write as _;
+
+    let mut text = String::from("sce-saved-enum 1\n");
+    let _ = writeln!(text, "enum {alias}");
+    let mut names: Vec<&str> = enum_model
+        .variants
+        .iter()
+        .filter(|v| v.added_at() <= at)
+        .map(|v| v.name.as_str())
+        .collect();
+    names.sort_unstable();
+    for name in names {
+        let _ = writeln!(text, "variant {name}");
+    }
+    format!("{:x}", Sha256::digest(text.as_bytes()))
+}
+
 /// The variants of the enum imported as `alias`, one line each under `holder` —
 /// a variable, or a record's field. An enum's variants are its type: one
 /// renamed or removed leaves a saved value no variant of it, so the shape
 /// refuses before a value is read. By name and sorted, so reordering them
 /// leaves a saved state restorable — it holds the declared name, not a
 /// position.
+///
+/// The variants of the enum's FIRST revision only (docs/adr/0044): a variant a
+/// later revision added is named by the saved state's `revisions`, through the
+/// digest of each revision of the enum ([`enum_revision_digest`]), so a state
+/// saved at an earlier revision of the enum still has the shape. An enum of
+/// one revision declares every variant in its first.
 fn write_variants(text: &mut String, model: &SCXMLModel, alias: &str, holder: &str) {
     use std::fmt::Write as _;
     if let Some(enum_model) = model.imported_enums.get(alias) {
         let mut names: Vec<&str> = enum_model
             .variants
             .iter()
+            .filter(|v| v.since.is_none())
             .map(|v| v.name.as_str())
             .collect();
         names.sort_unstable();

@@ -2103,6 +2103,15 @@
         "name": {
           "type": "string"
         },
+        "since": {
+          "description": "`sce:since` — the revision of the enum that added this variant, from 2 up to the enum's own revision. `None` for a variant of the first revision.\n\nAn enum grows as an event schema does (docs/adr/0044): a variant added after the first revision says which revision added it, so two builds that hold two revisions of one enum are told apart from two enums, and a state saved at an earlier revision still restores.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "text": {
           "description": "`sce:text`: the text a codec of text lines writes and reads for this variant (docs/adr/0015). Absent, the declared [`Self::name`] is the text ([`Self::wire_text`]). It is the ASCII letters, digits and `-` of an RFC 5545 `iana-token`, and unique in its enum under ASCII case folding, so a text read off the wire names at most one variant.\n\nIt is the enum's, and not a codec's, because it says what a variant is called outside a program, which a second codec reads the same way. Nothing in an enum's generated type carries it.",
           "type": [
@@ -3853,6 +3862,15 @@
             },
             "name": {
               "type": "string"
+            },
+            "revision": {
+              "description": "`sce:revision` on the root: which revision of the enum this document is, a positive integer. `None` when the document declares none, which makes it the first.\n\nA variant added after the first revision says which revision added it (`EnumVariant::since`), so a variant may be added without making two builds that hold two revisions of the enum two enums (docs/adr/0044).",
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
             },
             "source_location": {
               "anyOf": [

@@ -1288,6 +1288,16 @@ pub struct EnumVariant {
     /// Nothing in an enum's generated type carries it.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub text: Option<String>,
+    /// `sce:since` — the revision of the enum that added this variant, from 2
+    /// up to the enum's own revision. `None` for a variant of the first
+    /// revision.
+    ///
+    /// An enum grows as an event schema does (docs/adr/0044): a variant added
+    /// after the first revision says which revision added it, so two builds
+    /// that hold two revisions of one enum are told apart from two enums, and a
+    /// state saved at an earlier revision still restores.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub since: Option<u32>,
     /// Source line of the `<sce:variant>` element, captured for
     /// duplicate-value / duplicate-name / overflow diagnostics that
     /// anchor on the specific variant. `#[serde(skip)]` keeps the
@@ -1301,6 +1311,20 @@ impl EnumVariant {
     /// declared name (docs/adr/0015).
     pub fn wire_text(&self) -> &str {
         self.text.as_deref().unwrap_or(&self.name)
+    }
+
+    /// The revision of its enum this variant belongs to: the one its
+    /// `sce:since` names, and the first for a variant that declares none.
+    pub fn added_at(&self) -> u32 {
+        self.since.unwrap_or(1)
+    }
+}
+
+impl EnumModel {
+    /// The revision of the enum this document is: what `sce:revision`
+    /// declares, and the first when it declares none.
+    pub fn revision(&self) -> u32 {
+        self.revision.unwrap_or(1)
     }
 }
 
@@ -1356,6 +1380,15 @@ pub struct EnumModel {
     /// is why Rust and Kotlin, whose enums cannot hold an undeclared
     /// value, emit a value-carrying type for an open set.
     pub strict_variants: bool,
+    /// `sce:revision` on the root: which revision of the enum this document
+    /// is, a positive integer. `None` when the document declares none, which
+    /// makes it the first.
+    ///
+    /// A variant added after the first revision says which revision added it
+    /// (`EnumVariant::since`), so a variant may be added without making two
+    /// builds that hold two revisions of the enum two enums (docs/adr/0044).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revision: Option<u32>,
     /// SCE Protocol-Synthesis RFC §synth-5-O: post-preprocessor source
     /// position of the `<scxml sce:kind="enum">` root element.
     /// Drives the per-kind body function's SCE-MAP marker.

@@ -7283,10 +7283,26 @@ pub fn validate_event_schemas_cross_machine(
                 (None, Some(_)) => {
                     Some(crate::mesh::error::EventSchemaMismatchReason::ReceiverOnly)
                 }
-                // Two revisions of one schema pass; anything else is
-                // refused with the field the two part on.
+                // Two revisions of one schema pass, an enum field of each
+                // holding two revisions of one enum (each machine's import
+                // of it); anything else is refused with the field the two
+                // part on.
                 (Some(s), Some(r)) => {
-                    crate::forge::schema_revision::divergence(s, r).map(|divergence| {
+                    let receiver_enums = machine_to_scxml
+                        .get(target_name)
+                        .map(|receiver| &receiver.imported_enums);
+                    let parted = match receiver_enums {
+                        Some(receiver_enums) => {
+                            crate::forge::schema_revision::divergence_with_enums(
+                                s,
+                                &scxml.imported_enums,
+                                r,
+                                receiver_enums,
+                            )
+                        }
+                        None => crate::forge::schema_revision::divergence(s, r),
+                    };
+                    parted.map(|divergence| {
                         crate::mesh::error::EventSchemaMismatchReason::NotOneSchema {
                             sender_revision: s.revision(),
                             receiver_revision: r.revision(),

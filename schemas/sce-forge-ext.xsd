@@ -338,12 +338,18 @@
        written before the field existed takes in its place. A field of the
        first revision declares neither and stays required.
 
+       An enum grows the same way (docs/adr/0044): `sce:revision` on a
+       `sce:kind="enum"` root says which revision of the enum the document
+       is, and `sce:since` on one of its `<sce:variant>`s names the revision
+       that added the variant, from 2 up to the root's revision. A variant
+       of the first revision declares none.
+
        Strings at the XSD layer, as `sce:event-name` is: the parser owns
-       every refusal (`parse_event_schema`), a revision that is not a
-       positive integer, a `since` outside its range, a default with no
-       `since` or a `since` with no default, and a default that is no value
-       of its field, so that each is answered in the words written for it
-       rather than in libxml2's. -->
+       every refusal (`parse_event_schema`, `parse_enum`), a revision that
+       is not a positive integer, a `since` outside its range, a default
+       with no `since` or a `since` with no default, and a default that is
+       no value of its field, so that each is answered in the words written
+       for it rather than in libxml2's. -->
   <xs:attribute name="revision" type="xs:string"/>
   <xs:attribute name="since" type="xs:string"/>
   <!-- `sce:default-covers` on an enum-typed INPUT `<data>` of a
@@ -940,6 +946,8 @@
       <xs:attribute name="value" type="xs:string" use="optional"/>
       <!-- The text of an enum variant on a text line (docs/adr/0015). -->
       <xs:attribute ref="sce:text" use="optional"/>
+      <!-- The revision of its enum that added the variant (docs/adr/0044). -->
+      <xs:attribute ref="sce:since" use="optional"/>
     </xs:complexType>
   </xs:element>
 

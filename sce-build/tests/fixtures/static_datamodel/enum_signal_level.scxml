@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The level of a signal, an enum that grew (docs/adr/0044): the first revision
+  declared `low` and `high`, the second added `critical`. A variant a later
+  revision added says which revision added it, so a build of the first revision
+  and a build of the second hold two revisions of one enum, and a state saved by
+  the first restores in the second. Held by `schema_signal.scxml`'s `level` and
+  by `static_schema_pending.scxml`, which holds a record of that schema.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="enum"
+       name="signal_level"
+       sce:underlying-type="uint8"
+       sce:revision="2">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="low" value="0"/>
+      <sce:variant name="high" value="1"/>
+      <sce:variant name="critical" value="2" sce:since="2"/>
+    </data>
+  </datamodel>
+</scxml>

@@ -13,12 +13,12 @@
       "const": 1
     },
     "shape": {
-      "description": "The SHA-256, as lowercase hex, of the document's shape as the generator computes it: every state with its kind and parent in document order, every <history> with its id, kind and parent, every <invoke type=\"scxml\"> with its id and the state that holds it, every <invoke> a declared host invoker serves with its type, its id and the state that holds it, every variable with its type and bound, a record's fields of its schema's first revision with their types. A machine refuses a saved state of another shape. Not the document's source hash: a guard, an action, an initial value or a comment changed leaves the shape as it was, and so does a field a later revision of a record schema added (docs/adr/0044). A state that names `revisions` carries the revised shape instead: the digest of the same text with one line more, which a reader that predates revisions does not know and refuses.",
+      "description": "The SHA-256, as lowercase hex, of the document's shape as the generator computes it: every state with its kind and parent in document order, every <history> with its id, kind and parent, every <invoke type=\"scxml\"> with its id and the state that holds it, every <invoke> a declared host invoker serves with its type, its id and the state that holds it, every variable with its type and bound, a record's fields of its schema's first revision with their types, an enum's variants of its first revision. A machine refuses a saved state of another shape. Not the document's source hash: a guard, an action, an initial value or a comment changed leaves the shape as it was, and so does a field a later revision of a record schema added, or a variant a later revision of an enum added (docs/adr/0044). A state that names `revisions` carries the revised shape instead: the digest of the same text with one line more, which a reader that predates revisions does not know and refuses.",
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
     },
     "revisions": {
-      "description": "The revision each record schema past its first was saved at, keyed by the event the schema declares and ordered by it (docs/adr/0044). Absent when every record schema the machine holds is in its first revision, which is every state saved before schemas had revisions; never empty. A restore refuses a revision of a schema no record variable of the machine is of, one later than the machine's own, and one whose `fields` is not the machine's digest of that revision; it then gives each record saved at an earlier revision (a record variable, each element of a list of records) the default of every field a later revision added, and refuses a record that already holds such a field.",
+      "description": "The revision each record schema and each enum past its first was saved at (docs/adr/0044): the record schemas keyed by the event each declares, then the enums keyed by `enum:` and the alias the machine imports each as, each run ordered by its key. Absent when every record schema and enum the state holds is in its first revision, which is every state saved before schemas had revisions; never empty. A restore refuses a revision of a schema or an enum the machine holds no value of, one later than the machine's own, and one whose `fields` is not the machine's digest of that revision; it refuses an enum value that names a variant a later revision added than the one it was saved at; and it then gives each record saved at an earlier revision (a record variable, each element of a list of records) the default of every field a later revision added, and refuses a record that already holds such a field.",
       "type": "object",
       "minProperties": 1,
       "additionalProperties": {
@@ -27,12 +27,12 @@
         "additionalProperties": false,
         "properties": {
           "revision": {
-            "description": "The schema's sce:revision where the state was saved: 2 or later, since a schema in its first revision is left out.",
+            "description": "The schema's or the enum's sce:revision where the state was saved: 2 or later, since one in its first revision is left out.",
             "type": "integer",
             "minimum": 2
           },
           "fields": {
-            "description": "The SHA-256, as lowercase hex, of what that revision declares: each field it has (its sce:since at most the revision, or none), in the schema's order, with its type and its enum's variant names. Not a default or a since, which a saved state does not name.",
+            "description": "The SHA-256, as lowercase hex, of what that revision declares: for a record schema, each field it has (its sce:since at most the revision, or none), in the schema's order, with its type and the first-revision variant names of its enum; for an enum, the names of the variants it has, sorted. Not a default, a since or a variant's value, which a saved state does not name.",
             "type": "string",
             "pattern": "^[0-9a-f]{64}$"
           }

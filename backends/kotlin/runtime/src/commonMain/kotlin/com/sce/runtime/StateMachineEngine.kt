@@ -2465,12 +2465,18 @@ abstract class StateMachineEngine<S : State, E : Event>(
         // Read before anything is built, so a delayed send this state cannot
         // carry refuses the save instead of being left out of it.
         val pending = pendingSends(wallNowMs)
-        // The revision of each record schema past its first, whose digest list is
-        // empty exactly when the schema is in its first revision.
+        // The revision of each record schema and each enum past its first, whose
+        // digest list is empty exactly when it is in its first revision: the
+        // record schemas first, then the enums, each in the order the generator
+        // gave them, so the same machine writes the same text on every backend.
         val revisions = LinkedHashMap<String, SavedRevision>()
         for (record in shape.records) {
             val fields = record.revisions.lastOrNull() ?: continue
             revisions[record.event] = SavedRevision(record.revision, fields)
+        }
+        for (lineage in shape.enums) {
+            val fields = lineage.revisions.lastOrNull() ?: continue
+            revisions[lineage.key] = SavedRevision(lineage.revision, fields)
         }
         return SavedState(
             shape = if (revisions.isEmpty()) shape.first else shape.revised,

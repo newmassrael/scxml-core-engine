@@ -302,6 +302,48 @@ impl std::fmt::Display for EventSchemaMismatchReason {
                      does not declare it; a later revision keeps every field of an earlier one"
                 )
             }
+            Self::NotOneSchema {
+                divergence:
+                    Divergence::Enum {
+                        field,
+                        first_revision,
+                        second_revision,
+                        divergence,
+                    },
+                ..
+            } => {
+                use crate::forge::schema_revision::EnumDivergence;
+                let how = match divergence {
+                    EnumDivergence::Carrier => "they declare another sce:underlying-type or \
+                                                sce:strict-variants"
+                        .to_string(),
+                    EnumDivergence::Redeclared { variant } => format!(
+                        "both declare variant '{variant}' and declare it differently (its value \
+                         or sce:since)"
+                    ),
+                    EnumDivergence::Missing {
+                        variant,
+                        since,
+                        from,
+                    } => {
+                        let (declares, lacks) = match from {
+                            Party::Second => ("sender's", "receiver's"),
+                            Party::First => ("receiver's", "sender's"),
+                        };
+                        format!(
+                            "the {declares} enum declares variant '{variant}' as of revision \
+                             {since}, and the {lacks}, at a revision that includes it, does not \
+                             declare it; a later revision keeps every variant of an earlier one"
+                        )
+                    }
+                };
+                write!(
+                    f,
+                    "the two are not revisions of one schema: field '{field}' is of an enum the \
+                     two hold as two enums, not two revisions of one (sender enum revision \
+                     {first_revision}, receiver enum revision {second_revision}): {how}"
+                )
+            }
             Self::SenderOnly => write!(
                 f,
                 "sender declares an EventSchema but receiver does not (partial coverage)"
@@ -4660,12 +4702,25 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             match reason {
                 EventSchemaMismatchReason::NotOneSchema { divergence, .. } => {
                     use crate::forge::schema_revision::Divergence;
-                    let (tag, field) = match divergence {
-                        Divergence::Redeclared { field } => ("field-redeclared", field),
-                        Divergence::Missing { field, .. } => ("field-missing", field),
+                    use crate::forge::schema_revision::EnumDivergence;
+                    let (tag, field, variant) = match divergence {
+                        Divergence::Redeclared { field } => ("field-redeclared", field, None),
+                        Divergence::Missing { field, .. } => ("field-missing", field, None),
+                        Divergence::Enum {
+                            field, divergence, ..
+                        } => match divergence {
+                            EnumDivergence::Carrier => ("enum-carrier", field, None),
+                            EnumDivergence::Redeclared { variant } => {
+                                ("variant-redeclared", field, Some(variant))
+                            }
+                            EnumDivergence::Missing { variant, .. } => {
+                                ("variant-missing", field, Some(variant))
+                            }
+                        },
                     };
                     key_fragments.push(tag.to_string());
                     key_fragments.push(field.clone());
+                    key_fragments.extend(variant.cloned());
                 }
                 EventSchemaMismatchReason::SenderOnly => {
                     key_fragments.push("sender-only".to_string());

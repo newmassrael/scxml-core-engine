@@ -1345,6 +1345,14 @@ fn parse_enum(
     // of every variant, for the uniqueness rule of `sce:text` (docs/adr/0015).
     let mut texts_seen: std::collections::BTreeMap<String, String> =
         std::collections::BTreeMap::new();
+    // Which revision of the enum this document is (docs/adr/0044): read
+    // before the variants, whose `sce:since` is held to it.
+    let revision = read_revision(
+        root,
+        "<scxml sce:kind=\"enum\">",
+        "enum",
+        label.diagnostic_label,
+    )?;
     let declared_names: Vec<String> = data_children(&datamodel)
         .flat_map(|data| sce_children(&data, "variant").collect::<Vec<_>>())
         .filter_map(|child| child.attribute("name").map(|n| n.trim().to_string()))
@@ -1498,6 +1506,11 @@ fn parse_enum(
                 }
             };
 
+            // `sce:since`: the revision of the enum that added the variant
+            // (docs/adr/0044), from 2 up to the root's `sce:revision`. A
+            // variant of the first revision declares none.
+            let since = read_variant_since(&child, &name, revision, label.diagnostic_label)?;
+
             let source_line = Some(row_of(&child));
             first_value_seen.insert(value, name.clone());
             variants.push(EnumVariant {
@@ -1505,6 +1518,7 @@ fn parse_enum(
                 value,
                 value_text: value_str,
                 text,
+                since,
                 source_line,
             });
         }
@@ -1548,8 +1562,51 @@ fn parse_enum(
         underlying_type,
         variants,
         strict_variants,
+        revision,
         source_location: forge_source_location_of(root, label.diagnostic_label),
     })
+}
+
+/// `sce:since` on one `<sce:variant>` of an enum whose root declares
+/// `revision`: the revision that added the variant, `2..=` the enum's own, or
+/// `None` for a variant of the first revision (docs/adr/0044). Anything else
+/// is refused, in the words the same rule on an event schema's field uses.
+fn read_variant_since(
+    variant: &roxmltree::Node,
+    name: &str,
+    revision: Option<u32>,
+    doc_name: &str,
+) -> Result<Option<u32>, Located<ForgeError>> {
+    let latest = revision.unwrap_or(1);
+    let Some(text) = crate::sce_attr::read(variant, "since") else {
+        return Ok(None);
+    };
+    match text.trim().parse::<u32>() {
+        Ok(n) if (2..=latest).contains(&n) => Ok(Some(n)),
+        _ => {
+            let rule = if latest < 2 {
+                "the revision that added the variant, from 2 up to the enum's sce:revision — \
+                 this enum declares no revision past the first, so none of its variants was \
+                 added later"
+                    .to_string()
+            } else {
+                format!(
+                    "the revision that added the variant, an integer from 2 up to the enum's \
+                     sce:revision ({latest}); a variant of the first revision declares none"
+                )
+            };
+            Err(located(
+                variant,
+                doc_name,
+                ValidationError::AttributeRuleViolated {
+                    element: format!("<sce:variant name=\"{name}\">"),
+                    attr: "sce:since".into(),
+                    value: text.to_string(),
+                    rule,
+                },
+            ))
+        }
+    }
 }
 
 // ── Condition parsing ──────────────────────────────────────────
@@ -10853,7 +10910,12 @@ fn parse_event_schema(
         )
     })?;
 
-    let revision = read_schema_revision(root, label.diagnostic_label)?;
+    let revision = read_revision(
+        root,
+        "EventSchema <scxml>",
+        "schema",
+        label.diagnostic_label,
+    )?;
 
     let mut fields: Vec<ForgeField> = Vec::new();
     let mut seen_ids: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
@@ -10994,10 +11056,14 @@ fn parse_event_schema(
     })
 }
 
-/// `sce:revision` on an event schema's root: a positive integer, `None` when
-/// the document declares none (its first revision).
-fn read_schema_revision(
+/// `sce:revision` on the root of a kind that grows by revisions — an event
+/// schema, an enum (docs/adr/0044): a positive integer, `None` when the
+/// document declares none (its first revision). `element` names the root in a
+/// refusal and `what` the kind (`schema`, `enum`).
+fn read_revision(
     root: &roxmltree::Node,
+    element: &str,
+    what: &str,
     doc_name: &str,
 ) -> Result<Option<u32>, Located<ForgeError>> {
     let Some(text) = sce_attr(root, "revision") else {
@@ -11009,12 +11075,13 @@ fn read_schema_revision(
             root,
             doc_name,
             ValidationError::AttributeRuleViolated {
-                element: "EventSchema <scxml>".into(),
+                element: element.into(),
                 attr: "sce:revision".into(),
                 value: text.clone(),
-                rule: "a positive integer: the revision of the schema this document is (a \
-                       document that declares none is its first)"
-                    .into(),
+                rule: format!(
+                    "a positive integer: the revision of the {what} this document is (a \
+                     document that declares none is its first)"
+                ),
             },
         )),
     }
@@ -11757,10 +11824,12 @@ const KNOWN_SCE_ATTRS: &[&str] = &[
     // tool. See the Retention section of `forge::model`.
     "retain",
     "returns-max-size",
-    // Which revision of an event schema a document is (its root), and which
-    // revision added a field (its `<data>`); with `default`, what lets a
-    // schema grow without refusing an older delivery (`parse_event_schema`,
-    // `forge::schema_revision`).
+    // Which revision of an event schema or an enum a document is (its root),
+    // and which revision added a field (an event schema's `<data>`) or a
+    // variant (an enum's `<sce:variant>`); with `default`, what lets a schema
+    // grow without refusing an older delivery, and an enum grow without
+    // parting two builds (`parse_event_schema`, `parse_enum`,
+    // `forge::schema_revision`, docs/adr/0044).
     "revision",
     "sample-interval",
     "scale",

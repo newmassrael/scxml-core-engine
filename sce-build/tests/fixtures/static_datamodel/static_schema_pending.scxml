@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A record schema
+  that grew"; docs/adr/0044): a machine that holds a record of a schema that
+  grew, whose level is of an enum that grew, and that waits on a delayed send of
+  the schema's event. `arm` sends `signal.raised` to this session one second
+  later, with id `later`; the delivery is taken whole into `last`.
+
+  `saved/static_schema_pending_first.json` is this machine saved, armed, by a
+  build of the first revision of both the schema and the enum: the record lacks
+  the urgency, and the waiting send's data was written before the urgency
+  existed. Restored by a build of the second revisions, the record takes the
+  urgency's default, and so does the delivery when the send comes due. The
+  fixture is the shared saved-state text, so a backend that comes to save and
+  restore holds itself to it as the Rust and Kotlin ones do.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="waiting" datamodel="sce-static" name="static_schema_pending">
+  <sce:import kind="event-schema" src="schema_signal.scxml" as="Signal"/>
+  <sce:import kind="enum" src="enum_signal_level.scxml" as="SignalLevel"/>
+  <datamodel>
+    <data id="last" sce:type="record:Signal" sce:direction="out">
+      <sce:set name="level" expr="SignalLevel.low"/>
+      <sce:set name="count" expr="0"/>
+      <sce:set name="urgent" expr="false"/>
+    </data>
+    <data id="taken" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="waiting">
+    <transition event="arm" type="internal">
+      <send id="later" event="signal.raised" delay="1s">
+        <param name="level" expr="SignalLevel.high"/>
+        <param name="count" expr="7"/>
+      </send>
+    </transition>
+    <transition event="signal.raised" type="internal">
+      <assign location="last" expr="_event.data"/>
+      <assign location="taken" expr="taken + 1"/>
+    </transition>
+    <transition event="error.execution" type="internal">
+      <assign location="refusals" expr="refusals + 1"/>
+    </transition>
+  </state>
+</scxml>

@@ -33,11 +33,13 @@
 //! field ([`wire_of`]). Whether an enum default names a variant needs the enum
 //! document, so [`check`] asks it where the schema's imports are read.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use crate::forge::error::{ForgeError, Located, ValidationError};
 use crate::forge::model::{
-    EventSchemaModel, ForgeDocument, ForgeField, NumericLiteral, ParsedForge, SceType,
+    EnumModel, EnumVariant, EventSchemaModel, ForgeDocument, ForgeField, NumericLiteral,
+    ParsedForge, SceType,
 };
 
 /// Why a default is no value of its field.
@@ -203,7 +205,8 @@ pub fn check(
     )
 }
 
-/// One of the two schemas [`divergence`] is handed, by its place in the call.
+/// One of the two schemas or enums [`divergence`] and [`enum_divergence`] are
+/// handed, by its place in the call.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Party {
     /// The first argument.
@@ -213,7 +216,7 @@ pub enum Party {
 }
 
 /// Where two schemas of one event part, so that they are not revisions of one
-/// schema ([`divergence`]).
+/// schema ([`divergence`], [`divergence_with_enums`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Divergence {
     /// Both declare `field`, and declare it differently: another type, bound,
@@ -234,12 +237,110 @@ pub enum Divergence {
         /// The schema that does not declare it.
         from: Party,
     },
+    /// Both declare `field` alike, of an enum the two hold under one alias, and
+    /// the two enums are not revisions of one enum ([`enum_divergence`]).
+    Enum {
+        /// The field's id.
+        field: String,
+        /// The first schema's enum's `sce:revision` (1 when it declares none).
+        first_revision: u32,
+        /// The second schema's enum's `sce:revision` (1 when it declares none).
+        second_revision: u32,
+        /// Where the two enums part.
+        divergence: EnumDivergence,
+    },
+}
+
+/// Where two enums part, so that they are not revisions of one enum
+/// ([`enum_divergence`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EnumDivergence {
+    /// The two declare another carrier (`sce:underlying-type`) or another
+    /// openness (`sce:strict-variants`): a re-typed enum, not a revision.
+    Carrier,
+    /// Both declare `variant`, and declare it differently: another value or
+    /// another `sce:since`.
+    Redeclared {
+        /// The variant's name.
+        variant: String,
+    },
+    /// One enum declares `variant` as of revision `since` (1 for a variant of
+    /// the first revision), and `from`, whose revision is `since` or later, does
+    /// not declare it: the variant was removed or renamed, or the two disagree
+    /// about which revision added it.
+    Missing {
+        /// The variant's name.
+        variant: String,
+        /// The revision the enum that declares it says added it.
+        since: u32,
+        /// The enum that does not declare it.
+        from: Party,
+    },
 }
 
 /// The revision a field belongs to: the one its `sce:since` names, and the first
 /// for a field that declares none.
 pub fn added_at(field: &ForgeField) -> u32 {
     field.since.unwrap_or(1)
+}
+
+/// Where two members of one kind that grows by revisions part — the fields
+/// of two event schemas, the variants of two enums (docs/adr/0044).
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Parting {
+    /// Both declare the member, and declare it differently.
+    Redeclared(String),
+    /// One declares it as of revision `since`, and `from`, whose revision has
+    /// it, does not.
+    Missing {
+        name: String,
+        since: u32,
+        from: Party,
+    },
+}
+
+/// The one rule every kind that grows by revisions is held to (docs/adr/0044):
+/// two documents are revisions of one when every member both declare is
+/// declared alike, and every member only one declares was added after the
+/// other's revision. `members` are each document's members with its revision,
+/// first then second; `name` keys a member, `added_at` is the revision that
+/// added it and `alike` whether two of one name are declared alike.
+///
+/// `None` when they are revisions of one; otherwise the first parting, the
+/// first document's members judged before the second's, each in declaration
+/// order, so the same pair always answers the same.
+fn parting<T>(
+    first: (&[T], u32),
+    second: (&[T], u32),
+    name: impl Fn(&T) -> &str,
+    added_at: impl Fn(&T) -> u32,
+    alike: impl Fn(&T, &T) -> bool,
+) -> Option<Parting> {
+    for ((one, _), (other, other_revision), from) in [
+        (first, second, Party::Second),
+        (second, first, Party::First),
+    ] {
+        for member in one {
+            match other.iter().find(|theirs| name(theirs) == name(member)) {
+                Some(theirs) if !alike(member, theirs) => {
+                    return Some(Parting::Redeclared(name(member).to_string()));
+                }
+                Some(_) => {}
+                None if added_at(member) <= other_revision => {
+                    return Some(Parting::Missing {
+                        name: name(member).to_string(),
+                        since: added_at(member),
+                        from,
+                    });
+                }
+                // Added after the other's revision: the other is an earlier
+                // revision, which a reader of the later one reads through what
+                // the later one says of the member.
+                None => {}
+            }
+        }
+    }
+    None
 }
 
 /// Whether `first` and `second`, two schemas of one event, are revisions of one
@@ -254,37 +355,95 @@ pub fn added_at(field: &ForgeField) -> u32 {
 /// revision added a field all part. The rule is symmetric: which of the two is the
 /// older does not matter, and neither does the order the fields are declared in.
 ///
+/// An enum field is compared by the alias it names; whether the two enums under
+/// that alias are revisions of one enum needs the enum documents
+/// ([`divergence_with_enums`]).
+///
 /// `None` when they are revisions of one schema; otherwise the first divergence,
 /// the first schema's fields judged before the second's, each in declaration order,
 /// so the same pair always answers the same.
 pub fn divergence(first: &EventSchemaModel, second: &EventSchemaModel) -> Option<Divergence> {
-    for (one, other, from) in [
-        (first, second, Party::Second),
-        (second, first, Party::First),
-    ] {
-        for field in &one.fields {
-            match other.fields.iter().find(|theirs| theirs.id == field.id) {
-                Some(theirs) if !declared_alike(field, theirs) => {
-                    return Some(Divergence::Redeclared {
-                        field: field.id.clone(),
-                    });
-                }
-                Some(_) => {}
-                None if added_at(field) <= other.revision() => {
-                    return Some(Divergence::Missing {
-                        field: field.id.clone(),
-                        since: added_at(field),
-                        from,
-                    });
-                }
-                // Added after the other's revision: the other is an earlier
-                // revision, which a delivery or a reader of the later one reads
-                // through the default.
-                None => {}
-            }
-        }
+    parting(
+        (first.fields.as_slice(), first.revision()),
+        (second.fields.as_slice(), second.revision()),
+        |f: &ForgeField| f.id.as_str(),
+        added_at,
+        declared_alike,
+    )
+    .map(|parted| match parted {
+        Parting::Redeclared(field) => Divergence::Redeclared { field },
+        Parting::Missing { name, since, from } => Divergence::Missing {
+            field: name,
+            since,
+            from,
+        },
+    })
+}
+
+/// [`divergence`], and then, for each enum field both schemas declare, whether
+/// the enum each side holds under its alias (`first_enums`, `second_enums`, by
+/// alias — what each side's machine imports) is a revision of the other's
+/// ([`enum_divergence`]). An alias one side does not hold is not judged here:
+/// the import pass reports it.
+pub fn divergence_with_enums(
+    first: &EventSchemaModel,
+    first_enums: &BTreeMap<String, EnumModel>,
+    second: &EventSchemaModel,
+    second_enums: &BTreeMap<String, EnumModel>,
+) -> Option<Divergence> {
+    divergence(first, second).or_else(|| {
+        first.fields.iter().find_map(|field| {
+            let SceType::Enum(reference) = &field.sce_type else {
+                return None;
+            };
+            second.fields.iter().find(|theirs| theirs.id == field.id)?;
+            let one = first_enums.get(&reference.alias)?;
+            let other = second_enums.get(&reference.alias)?;
+            enum_divergence(one, other).map(|divergence| Divergence::Enum {
+                field: field.id.clone(),
+                first_revision: one.revision(),
+                second_revision: other.revision(),
+                divergence,
+            })
+        })
+    })
+}
+
+/// Whether `first` and `second` are revisions of one enum, and where they part
+/// when they are not (docs/adr/0044) — the rule an event schema's fields are
+/// held to ([`divergence`]), over variants.
+///
+/// They are when they declare one carrier and one openness, every variant both
+/// declare has one value and one `sce:since`, and every variant only one
+/// declares was added after the other's revision. So a later revision keeps
+/// every variant of an earlier one, with its value, and adds variants only past
+/// the earlier revision; a variant removed, renamed or re-valued, two enums of
+/// one revision that declare different variants, and two that disagree about
+/// which revision added a variant all part. Declaration order is not part of an
+/// enum: a variant is told by its name and carries its value.
+pub fn enum_divergence(first: &EnumModel, second: &EnumModel) -> Option<EnumDivergence> {
+    if first.underlying_type != second.underlying_type
+        || first.strict_variants != second.strict_variants
+    {
+        return Some(EnumDivergence::Carrier);
     }
-    None
+    parting(
+        (first.variants.as_slice(), first.revision()),
+        (second.variants.as_slice(), second.revision()),
+        |v: &EnumVariant| v.name.as_str(),
+        EnumVariant::added_at,
+        |one: &EnumVariant, other: &EnumVariant| {
+            one.value == other.value && one.since == other.since
+        },
+    )
+    .map(|parted| match parted {
+        Parting::Redeclared(variant) => EnumDivergence::Redeclared { variant },
+        Parting::Missing { name, since, from } => EnumDivergence::Missing {
+            variant: name,
+            since,
+            from,
+        },
+    })
 }
 
 /// Whether two fields of one id are declared alike: the whole field, as the forge
@@ -642,6 +801,219 @@ mod tests {
         );
     }
 
+    // ── An enum that grows (docs/adr/0044) ──
+
+    fn variant(name: &str, value: i128, since: Option<u32>) -> EnumVariant {
+        EnumVariant {
+            name: name.to_string(),
+            value,
+            value_text: value.to_string(),
+            text: None,
+            since,
+            source_line: None,
+        }
+    }
+
+    /// `view_mode` at `revision`, declaring `variants`.
+    fn view_mode_at(revision: u32, variants: Vec<EnumVariant>) -> EnumModel {
+        EnumModel {
+            name: "view_mode".to_string(),
+            underlying_type: SceType::Uint8,
+            variants,
+            strict_variants: true,
+            revision: Some(revision),
+            source_location: None,
+        }
+    }
+
+    fn month() -> EnumVariant {
+        variant("month", 0, None)
+    }
+
+    fn week() -> EnumVariant {
+        variant("week", 1, None)
+    }
+
+    fn agenda() -> EnumVariant {
+        variant("agenda", 2, Some(2))
+    }
+
+    #[test]
+    fn every_revision_of_an_enum_is_one_enum_with_every_other() {
+        let first = view_mode_at(1, vec![month(), week()]);
+        let second = view_mode_at(2, vec![month(), week(), agenda()]);
+        assert_eq!(enum_divergence(&first, &second), None);
+        assert_eq!(enum_divergence(&second, &first), None);
+        assert_eq!(enum_divergence(&second, &second), None);
+        // The order variants are declared in is not part of an enum.
+        let reordered = view_mode_at(2, vec![agenda(), week(), month()]);
+        assert_eq!(enum_divergence(&second, &reordered), None);
+    }
+
+    #[test]
+    fn a_variant_removed_renamed_or_revalued_parts_two_enums() {
+        let first = view_mode_at(1, vec![month(), week()]);
+        let second = view_mode_at(2, vec![month(), week(), agenda()]);
+        // Re-valued.
+        let revalued = view_mode_at(2, vec![month(), variant("week", 7, None), agenda()]);
+        assert_eq!(
+            enum_divergence(&second, &revalued),
+            Some(EnumDivergence::Redeclared {
+                variant: "week".into()
+            })
+        );
+        // Removed (or renamed: the old name is missing, the new one is too).
+        let without_week = view_mode_at(2, vec![month(), agenda()]);
+        assert_eq!(
+            enum_divergence(&first, &without_week),
+            Some(EnumDivergence::Missing {
+                variant: "week".into(),
+                since: 1,
+                from: Party::Second,
+            })
+        );
+        // Two enums that say they are the second revision and disagree on it.
+        let second_without_agenda = view_mode_at(2, vec![month(), week()]);
+        assert_eq!(
+            enum_divergence(&second_without_agenda, &second),
+            Some(EnumDivergence::Missing {
+                variant: "agenda".into(),
+                since: 2,
+                from: Party::First,
+            })
+        );
+        // Another carrier, or another openness, is another enum.
+        let wider = EnumModel {
+            underlying_type: SceType::Uint16,
+            ..second.clone()
+        };
+        assert_eq!(
+            enum_divergence(&second, &wider),
+            Some(EnumDivergence::Carrier)
+        );
+        let open = EnumModel {
+            strict_variants: false,
+            ..second.clone()
+        };
+        assert_eq!(
+            enum_divergence(&second, &open),
+            Some(EnumDivergence::Carrier)
+        );
+    }
+
+    #[test]
+    fn an_enum_field_of_two_schemas_is_held_to_the_enum_rule() {
+        let layout = field("layout", view_mode(), None, None);
+        let sender = at_revision(1, vec![level(), layout.clone()]);
+        let receiver = at_revision(1, vec![level(), layout]);
+        let enums_at = |model: EnumModel| -> BTreeMap<String, EnumModel> {
+            std::iter::once(("ViewMode".to_string(), model)).collect()
+        };
+        let first = enums_at(view_mode_at(1, vec![month(), week()]));
+        let second = enums_at(view_mode_at(2, vec![month(), week(), agenda()]));
+        let without_week = enums_at(view_mode_at(2, vec![month(), agenda()]));
+        // Two revisions of one enum under the field: one schema.
+        assert_eq!(
+            divergence_with_enums(&sender, &first, &receiver, &second),
+            None
+        );
+        // Two enums under the field: the field and how they part.
+        assert_eq!(
+            divergence_with_enums(&sender, &first, &receiver, &without_week),
+            Some(Divergence::Enum {
+                field: "layout".into(),
+                first_revision: 1,
+                second_revision: 2,
+                divergence: EnumDivergence::Missing {
+                    variant: "week".into(),
+                    since: 1,
+                    from: Party::Second,
+                },
+            })
+        );
+        // An alias one side does not hold is the import pass's to report.
+        assert_eq!(
+            divergence_with_enums(&sender, &first, &receiver, &BTreeMap::new()),
+            None
+        );
+    }
+
+    /// An enum document whose root carries `root` and whose variants are
+    /// `month` and `week` of the first revision and then `added`, read as the
+    /// forge parser reads it: the enum, or the refusal's validation error.
+    fn parse_enum_doc(root: &str, added: &str) -> Result<EnumModel, ValidationError> {
+        let xml = format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="enum" name="view_mode" sce:underlying-type="uint8"{root}>
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="month" value="0"/>
+      <sce:variant name="week" value="1"/>
+      {added}
+    </data>
+  </datamodel>
+</scxml>"#
+        );
+        let label = crate::DocumentLabel {
+            identifier: "view_mode",
+            diagnostic_label: "view_mode.scxml",
+        };
+        match crate::forge::parser::parse_forge_with_imports(&xml, label) {
+            Ok(Some(parsed)) => match parsed.document {
+                ForgeDocument::Enum(model) => Ok(model),
+                other => panic!("read as another kind: {other:?}"),
+            },
+            Ok(None) => panic!("not read as a forge document"),
+            Err(located) => match located.error {
+                ForgeError::Validation(validation) => Err(*validation),
+                other => panic!("refused, but not by validation: {other:?}"),
+            },
+        }
+    }
+
+    #[test]
+    fn an_enum_reads_its_revision_and_the_variants_a_later_one_added() {
+        let grown = parse_enum_doc(
+            r#" sce:revision="2""#,
+            r#"<sce:variant name="agenda" value="2" sce:since="2"/>"#,
+        )
+        .expect("an enum that grew reads");
+        assert_eq!(grown.revision, Some(2));
+        let since: Vec<(&str, Option<u32>)> = grown
+            .variants
+            .iter()
+            .map(|v| (v.name.as_str(), v.since))
+            .collect();
+        assert_eq!(
+            since,
+            vec![("month", None), ("week", None), ("agenda", Some(2))]
+        );
+        let first = parse_enum_doc("", "").expect("an enum of one revision reads");
+        assert_eq!(first.revision, None);
+        assert_eq!(first.revision(), 1);
+    }
+
+    #[test]
+    fn a_variant_since_outside_the_revisions_the_enum_has_is_refused() {
+        for (root, since) in [
+            (r#" sce:revision="2""#, "3"),
+            (r#" sce:revision="2""#, "1"),
+            (r#" sce:revision="2""#, "later"),
+            ("", "2"),
+        ] {
+            let added = format!(r#"<sce:variant name="agenda" value="2" sce:since="{since}"/>"#);
+            let error = parse_enum_doc(root, &added).expect_err("no such revision added it");
+            assert_eq!(
+                refused(error),
+                ("rule", "sce:since".to_string()),
+                "{root} {since}"
+            );
+        }
+        let error = parse_enum_doc(r#" sce:revision="zero""#, "").expect_err("no such revision");
+        assert_eq!(refused(error), ("rule", "sce:revision".to_string()));
+    }
+
     #[test]
     fn an_enum_default_must_name_a_variant_of_its_enum() {
         let variants = |alias: &str| {
@@ -816,22 +1188,23 @@ mod tests {
 
     #[test]
     fn a_revision_on_another_kind_is_read_by_nothing_and_refused() {
+        // An event schema and an enum grow by revisions (docs/adr/0044); a
+        // filter does not, and nothing of its reads `sce:revision`.
         let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       version="1.0" sce:kind="enum" name="view_mode" sce:underlying-type="uint8"
-       sce:revision="2">
+       version="1.0" sce:kind="filter" sce:revision="2">
   <datamodel>
-    <data id="variants">
-      <sce:variant name="month" value="0"/>
-    </data>
+    <data id="rawButton" sce:type="bool" sce:direction="in"/>
+    <data id="stable" sce:type="bool" sce:direction="out"
+          sce:filter="debounce" sce:window="3"/>
   </datamodel>
 </scxml>"#;
         let label = crate::DocumentLabel {
-            identifier: "view_mode",
-            diagnostic_label: "view_mode.scxml",
+            identifier: "debounce",
+            diagnostic_label: "debounce.scxml",
         };
         let refusal = crate::forge::parser::parse_forge_with_imports(xml, label)
-            .expect_err("an enum has no revision");
+            .expect_err("a filter has no revision");
         assert!(
             matches!(
                 &refusal.error,
@@ -1051,5 +1424,129 @@ mod tests {
         ] {
             assert!(expressions.contains(read), "no `{read}` in:\n{expressions}");
         }
+    }
+
+    // ── An enum that grew, through the entry points the generator uses ──
+    //
+    // `sce:revision` on an enum's root and `sce:since` on its `<sce:variant>`
+    // pass four gates before a reader sees them: the grammar
+    // (`schemas/sce-forge-ext.xsd`), the forge roster of known `sce:` names, the
+    // ledger of what a parse read, and the reader itself. A case that builds its
+    // own document can pass while one of the first three refuses every real one,
+    // which is how the roster refused `sce:revision` on another branch while its
+    // cases passed. These read the committed fixtures the regeneration scripts
+    // read, through the calls `sce-codegen check` and `generate` make.
+
+    #[test]
+    fn the_committed_enum_that_grew_is_valid_where_the_grammar_is_checked() {
+        let path = fixtures().join("enum_signal_level.scxml");
+        let content = std::fs::read_to_string(&path).expect("the enum");
+        // The grammar on its own, so a skipped validation cannot pass as one.
+        #[cfg(feature = "xsd")]
+        assert!(
+            matches!(
+                crate::forge::xsd_validator::validate_or_skip(&content, "enum_signal_level.scxml"),
+                Ok(crate::forge::xsd_validator::XsdOutcome::Validated)
+            ),
+            "the grammar refused, or did not check, the enum that grew"
+        );
+        let label = crate::DocumentLabel {
+            identifier: "enum_signal_level",
+            diagnostic_label: "enum_signal_level.scxml",
+        };
+        let parsed = crate::forge::parser::parse_forge_with_imports(&content, label)
+            .unwrap_or_else(|e| panic!("the enum parses as a forge document: {e:?}"))
+            .expect("the enum is a forge document");
+        let ForgeDocument::Enum(model) = &parsed.document else {
+            panic!("read as another kind: {:?}", parsed.document);
+        };
+        assert_eq!(model.revision, Some(2));
+        let since: Vec<(&str, Option<u32>)> = model
+            .variants
+            .iter()
+            .map(|v| (v.name.as_str(), v.since))
+            .collect();
+        assert_eq!(
+            since,
+            vec![("low", None), ("high", None), ("critical", Some(2))]
+        );
+        crate::compile_forge_from_parsed(
+            &parsed,
+            label,
+            crate::generator::Language::Rust,
+            &fixtures(),
+            &crate::ForgeCompileOptions::default(),
+        )
+        .unwrap_or_else(|e| panic!("the enum compiles as a document of its own: {e:?}"));
+    }
+
+    #[test]
+    fn the_committed_machine_of_an_enum_that_grew_is_generated_on_every_backend_that_lowers_it() {
+        use crate::generator::Language;
+        let statechart = fixtures().join("static_schema_pending.scxml");
+        // The statechart parse, which reads the imported schema and enum as
+        // siblings, as `check` does.
+        let model = crate::parser::SCXMLParser::new()
+            .parse_file(statechart.to_str().expect("a UTF-8 path"))
+            .unwrap_or_else(|e| panic!("the statechart parses: {e:?}"));
+        let level = model
+            .imported_enums
+            .get("SignalLevel")
+            .expect("the statechart resolves the enum it imports");
+        assert_eq!(level.revision(), 2);
+        let mut generated = 0;
+        for &language in Language::ALL {
+            if !crate::generator::lowers_static_datamodel(language) {
+                continue;
+            }
+            crate::compile_scxml_with_imports(
+                &[statechart.as_path()],
+                &[
+                    fixtures().join("schema_signal.scxml").as_path(),
+                    fixtures().join("enum_signal_level.scxml").as_path(),
+                ],
+                &crate::find_template_dir_for(language),
+                language,
+                &crate::ForgeCompileOptions::default(),
+                None,
+            )
+            .unwrap_or_else(|e| panic!("{language:?}: the machine generates: {e:?}"));
+            generated += 1;
+        }
+        assert!(
+            generated >= 6,
+            "only {generated} backends generated the machine"
+        );
+        // What a saved state of it names: the first revisions in the shape, the
+        // later ones by the schema's event and the enum's key.
+        let mut model = model;
+        crate::analyzer::analyze(&mut model, "static_schema_pending.scxml");
+        let shape = crate::forge::static_lowering::lower_rust(&mut model, "StaticSchemaPending")
+            .expect("lowers")
+            .saved_shape
+            .expect("the machine saves");
+        assert_eq!(
+            shape.first, "f7e359f42783c9931d2c1dbf44f80fee16a403f0e56b70bbc26ff6874c901834",
+            "the first shape the shared fixture `saved/static_schema_pending_first.json` names"
+        );
+        let records: Vec<(&str, u32, usize)> = shape
+            .records
+            .iter()
+            .map(|r| (r.event.as_str(), r.revision, r.revisions.len()))
+            .collect();
+        assert_eq!(records, [("signal.raised", 2, 1)]);
+        let enums: Vec<(&str, u32, usize, Vec<&str>)> = shape
+            .enums
+            .iter()
+            .map(|e| {
+                (
+                    e.key.as_str(),
+                    e.revision,
+                    e.revisions.len(),
+                    e.added.iter().map(|v| v.name.as_str()).collect(),
+                )
+            })
+            .collect();
+        assert_eq!(enums, [("enum:SignalLevel", 2, 1, vec!["critical"])]);
     }
 }

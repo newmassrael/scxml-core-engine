@@ -754,9 +754,11 @@ fn each_declarative_kind_renders_every_field_it_can_carry() {
             // must not reach the page as `16`.
             value_text: "0x10".to_string(),
             text: None,
+            since: None,
             source_line: Some(29),
         }],
         strict_variants: true,
+        revision: None,
         source_location: None,
     };
     assert_eq!(
@@ -765,11 +767,22 @@ fn each_declarative_kind_renders_every_field_it_can_carry() {
     );
     // A text of the variant's own follows the value and comes before the line
     // (docs/adr/0015).
-    let mut texted = en;
+    let mut texted = en.clone();
     texted.variants[0].text = Some("REJECT-ALL".to_string());
     assert_eq!(
         render(&ForgeDocument::Enum(texted)).unwrap(),
         "enum nrc: uint8 strict\n  variant reject = 0x10 text REJECT-ALL @line 29\n"
+    );
+    // An enum that grew (docs/adr/0044): its revision is the first line under
+    // the head, and a variant a later revision added says which, after its
+    // text and before its line.
+    let mut grown = en;
+    grown.revision = Some(2);
+    grown.variants[0].text = Some("REJECT-ALL".to_string());
+    grown.variants[0].since = Some(2);
+    assert_eq!(
+        render(&ForgeDocument::Enum(grown)).unwrap(),
+        "enum nrc: uint8 strict\n  revision 2\n  variant reject = 0x10 text REJECT-ALL since 2 @line 29\n"
     );
 
     let ti = TimerModel {

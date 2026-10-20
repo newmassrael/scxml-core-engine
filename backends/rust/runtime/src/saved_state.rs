@@ -215,6 +215,48 @@ pub struct SavedShape {
     /// Each record schema a variable is of, by the event it declares, ordered by
     /// it.
     pub records: &'static [RecordLineage],
+    /// Each enum a value of the state is of, by its key (`enum:<alias>`),
+    /// ordered by it.
+    pub enums: &'static [EnumLineage],
+}
+
+/// An enum a value of a machine's state is of, as a saved state names it
+/// (docs/adr/0044).
+#[derive(Clone, Copy, Debug)]
+pub struct EnumLineage {
+    /// `enum:` and the alias the machine imports the enum as, which names it in
+    /// `revisions`.
+    pub key: &'static str,
+    /// The enum's revision in this machine.
+    pub revision: u32,
+    /// The digest of what each revision from the second to [`Self::revision`]
+    /// declares, in order ([`SavedRevision::fields`]).
+    pub revisions: &'static [&'static str],
+    /// Each variant a revision past the first added.
+    pub added: &'static [AddedVariant],
+    /// Where a value of it is held.
+    pub holders: &'static [EnumHolder],
+}
+
+/// A variant a revision past the first added to an enum.
+#[derive(Clone, Copy, Debug)]
+pub struct AddedVariant {
+    /// The variant's declared name, which a saved state holds it by.
+    pub name: &'static str,
+    /// The revision that added it.
+    pub since: u32,
+}
+
+/// Where a value of an [`EnumLineage`] is held.
+#[derive(Clone, Copy, Debug)]
+pub struct EnumHolder {
+    /// The variable's document id.
+    pub variable: &'static str,
+    /// The field of the record the variable holds, for a value held in a
+    /// record; `None` for a variable of the enum.
+    pub field: Option<&'static str>,
+    /// Whether the variable holds a list of such records rather than one.
+    pub list: bool,
 }
 
 /// A record schema a machine's variables are of, as a saved state names it.
@@ -1224,15 +1266,24 @@ pub fn save<P: StatePolicy>(
     active.sort_by_key(|s| P::get_document_order(*s));
     // The revision of each record schema past its first, whose digest list is
     // empty exactly when the schema is in its first revision.
-    let revisions: Vec<(String, SavedRevision)> = shape
+    // The record schemas first, then the enums, each in the order the generator
+    // gave them, so the same machine writes the same text on every backend.
+    let records = shape
         .records
         .iter()
-        .filter_map(|record| {
-            let fields = record.revisions.last()?;
+        .map(|record| (record.event, record.revision, record.revisions));
+    let enums = shape
+        .enums
+        .iter()
+        .map(|lineage| (lineage.key, lineage.revision, lineage.revisions));
+    let revisions: Vec<(String, SavedRevision)> = records
+        .chain(enums)
+        .filter_map(|(key, revision, digests)| {
+            let fields = digests.last()?;
             Some((
-                record.event.to_string(),
+                key.to_string(),
                 SavedRevision {
-                    revision: record.revision,
+                    revision,
                     fields: (*fields).to_string(),
                 },
             ))
@@ -1588,35 +1639,61 @@ pub fn upgrade(saved: &SavedState, shape: &SavedShape) -> Result<SavedState, Sta
     } else {
         check_shape(saved, shape.revised)?;
     }
-    for (event, named) in &saved.revisions {
-        let record = shape
+    for (key, named) in &saved.revisions {
+        // A record schema by the event it declares, an enum by its key.
+        let (revision, digests) = shape
             .records
             .iter()
-            .find(|record| record.event == event.as_str())
+            .find(|record| record.event == key.as_str())
+            .map(|record| (record.revision, record.revisions))
+            .or_else(|| {
+                shape
+                    .enums
+                    .iter()
+                    .find(|lineage| lineage.key == key.as_str())
+                    .map(|lineage| (lineage.revision, lineage.revisions))
+            })
             .ok_or_else(|| {
                 StateRefusal::new(format!(
-                    "'revisions' names '{event}', which no record of this machine is of"
+                    "'revisions' names '{key}', which no record or enum of this machine is"
                 ))
             })?;
-        if named.revision > record.revision {
+        if named.revision > revision {
             return Err(StateRefusal::new(format!(
-                "the saved state was saved at revision {} of '{event}', later than this \
-                 machine's {}: a machine does not restore fields it does not know",
-                named.revision, record.revision
+                "the saved state was saved at revision {} of '{key}', later than this \
+                 machine's {revision}: a machine does not restore what it does not know",
+                named.revision
             )));
         }
         // The digest of revision r is the (r - 2)th: the first has none.
         let digest = named
             .revision
             .checked_sub(2)
-            .and_then(|index| record.revisions.get(index as usize))
+            .and_then(|index| digests.get(index as usize))
             .copied();
         if digest != Some(named.fields.as_str()) {
             return Err(StateRefusal::new(format!(
-                "revision {} of '{event}' declared other fields where the state was saved than \
+                "revision {} of '{key}' declared other members where the state was saved than \
                  it does in this machine",
                 named.revision
             )));
+        }
+    }
+    // An enum value saved at an earlier revision of its enum is one of that
+    // revision's variants. Judged on the values as saved, before a record is
+    // grown by defaults, which are this machine's.
+    for lineage in shape.enums {
+        let at = saved
+            .revisions
+            .iter()
+            .find(|(key, _)| key.as_str() == lineage.key)
+            .map_or(1, |(_, named)| named.revision);
+        let later: Vec<&AddedVariant> = lineage.added.iter().filter(|v| v.since > at).collect();
+        if later.is_empty() {
+            continue;
+        }
+        for holder in lineage.holders {
+            check_enum_holder(saved, lineage, holder, at, &later)?;
         }
     }
     let mut grown = saved.clone();
@@ -1656,6 +1733,53 @@ pub fn upgrade(saved: &SavedState, shape: &SavedShape) -> Result<SavedState, Sta
         }
     }
     Ok(grown)
+}
+
+/// Refuse a value `holder` holds, in `saved`, that names one of `later`, the
+/// variants of `lineage` added after `at`, the revision it was saved at. What is
+/// not a text where one is held is left for the variable's own read to refuse.
+fn check_enum_holder(
+    saved: &SavedState,
+    lineage: &EnumLineage,
+    holder: &EnumHolder,
+    at: u32,
+    later: &[&AddedVariant],
+) -> Result<(), StateRefusal> {
+    let Ok(value) = saved.variable(holder.variable) else {
+        return Ok(());
+    };
+    // Each value the holder holds, with what names it in a refusal.
+    let held: Vec<(String, &Value)> = match (holder.field, holder.list, value) {
+        (None, _, value) => vec![(holder.variable.to_string(), value)],
+        (Some(field), false, record) => record
+            .member(field)
+            .map(|v| (format!("{}.{field}", holder.variable), v))
+            .into_iter()
+            .collect(),
+        (Some(field), true, Value::Array(items)) => items
+            .iter()
+            .enumerate()
+            .filter_map(|(i, record)| {
+                record
+                    .member(field)
+                    .map(|v| (format!("{}[{i}].{field}", holder.variable), v))
+            })
+            .collect(),
+        (Some(_), true, _) => Vec::new(),
+    };
+    for (what, value) in held {
+        let Value::Text(name) = value else {
+            continue;
+        };
+        if let Some(variant) = later.iter().find(|v| v.name == name.as_str()) {
+            return Err(StateRefusal::new(format!(
+                "'{what}' holds '{name}', which revision {at} of '{}' does not declare: \
+                 revision {} added it",
+                lineage.key, variant.since
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// Give the saved record `value`, of `record` saved at revision `at`, the
@@ -2208,7 +2332,91 @@ mod tests {
                 },
             ],
         }],
+        enums: &[],
     };
+
+    /// A machine holding a variable `layout` of the enum `ViewMode` and a list
+    /// `seen` of records whose field `layout` is of it, at the enum's second
+    /// revision, which added `agenda`.
+    const LAYOUT_SHAPE: SavedShape = SavedShape {
+        first: FIRST_SHAPE,
+        revised: REVISED_SHAPE,
+        records: &[],
+        enums: &[EnumLineage {
+            key: "enum:ViewMode",
+            revision: 2,
+            revisions: &[SECOND],
+            added: &[AddedVariant {
+                name: "agenda",
+                since: 2,
+            }],
+            holders: &[
+                EnumHolder {
+                    variable: "layout",
+                    field: None,
+                    list: false,
+                },
+                EnumHolder {
+                    variable: "seen",
+                    field: Some("layout"),
+                    list: true,
+                },
+            ],
+        }],
+    };
+
+    /// A saved state of shape `shape` holding `layout` and `seen`, with the
+    /// `revisions` member `revisions` (empty for none).
+    fn layout_state(shape: &str, layout: &str, seen: &str, revisions: &str) -> SavedState {
+        let text = format!(
+            r#"{{"format":1,"shape":"{shape}","configuration":["s"],"current":"s","variables":{{"layout":"{layout}","seen":{seen}}},"history":{{}},"pending":[],"invokes":[],"hostinvokes":[],"hostinvoketoken":"0","sendseq":"0","external":[]{revisions}}}"#
+        );
+        SavedState::from_json(&text).expect("reads")
+    }
+
+    #[test]
+    fn a_state_saved_at_an_earlier_revision_of_an_enum_restores_as_it_was() {
+        let saved = layout_state(FIRST_SHAPE, "week", r#"[{"layout":"day"}]"#, "");
+        assert_eq!(upgrade(&saved, &LAYOUT_SHAPE), Ok(saved));
+        // At the enum's own revision, the variant it added is a value like any.
+        let saved = layout_state(
+            REVISED_SHAPE,
+            "agenda",
+            r#"[{"layout":"agenda"}]"#,
+            &format!(r#","revisions":{{"enum:ViewMode":{{"revision":2,"fields":"{SECOND}"}}}}"#),
+        );
+        assert_eq!(upgrade(&saved, &LAYOUT_SHAPE), Ok(saved));
+    }
+
+    #[test]
+    fn a_value_an_enum_had_not_yet_declared_when_saved_is_refused() {
+        let reason = |saved: SavedState| {
+            upgrade(&saved, &LAYOUT_SHAPE)
+                .expect_err("refused")
+                .reason()
+                .to_string()
+        };
+        let variable = reason(layout_state(FIRST_SHAPE, "agenda", "[]", ""));
+        assert!(variable.contains("'layout' holds 'agenda'"), "{variable}");
+        let element = reason(layout_state(
+            FIRST_SHAPE,
+            "week",
+            r#"[{"layout":"day"},{"layout":"agenda"}]"#,
+            "",
+        ));
+        assert!(
+            element.contains("'seen[1].layout' holds 'agenda'"),
+            "{element}"
+        );
+        // Saved by a build whose enum is past this one's.
+        let later = reason(layout_state(
+            REVISED_SHAPE,
+            "week",
+            "[]",
+            &format!(r#","revisions":{{"enum:ViewMode":{{"revision":3,"fields":"{THIRD}"}}}}"#),
+        ));
+        assert!(later.contains("later than"), "{later}");
+    }
 
     /// A saved state of shape `shape` holding `last` and `seen`, with the
     /// `revisions` member `revisions` written after the others (empty for none).
@@ -2286,7 +2494,7 @@ mod tests {
         assert!(reason(later).contains("later than"));
         // The two builds disagree about what the second revision declares.
         let other = reading_state(REVISED_SHAPE, r#"{"level":4}"#, "[]", &named(2, THIRD));
-        assert!(reason(other).contains("declared other fields"));
+        assert!(reason(other).contains("declared other members"));
         // A record that holds a field its revision does not declare.
         let early = reading_state(FIRST_SHAPE, r#"{"level":4,"urgent":true}"#, "[]", "");
         let refusal = reason(early);

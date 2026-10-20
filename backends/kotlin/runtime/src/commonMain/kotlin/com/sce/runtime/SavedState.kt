@@ -284,20 +284,32 @@ class SavedState(
                         "that names none")
                 else -> checkShape(saved, shape.revised)
             }
-            for ((event, named) in saved.revisions) {
-                val record = shape.records.firstOrNull { it.event == event }
-                    ?: throw StateRefusal("'revisions' names '$event', which no record of this machine is of")
-                if (named.revision > record.revision) {
+            for ((key, named) in saved.revisions) {
+                // A record schema by the event it declares, an enum by its key.
+                val (revision, digests) = shape.records.firstOrNull { it.event == key }
+                    ?.let { it.revision to it.revisions }
+                    ?: shape.enums.firstOrNull { it.key == key }?.let { it.revision to it.revisions }
+                    ?: throw StateRefusal("'revisions' names '$key', which no record or enum of this machine is")
+                if (named.revision > revision) {
                     throw StateRefusal(
-                        "the saved state was saved at revision ${named.revision} of '$event', later than this " +
-                            "machine's ${record.revision}: a machine does not restore fields it does not know")
+                        "the saved state was saved at revision ${named.revision} of '$key', later than this " +
+                            "machine's $revision: a machine does not restore what it does not know")
                 }
                 // The digest of revision r is the (r - 2)th: the first has none.
-                if (record.revisions.getOrNull(named.revision - 2) != named.fields) {
+                if (digests.getOrNull(named.revision - 2) != named.fields) {
                     throw StateRefusal(
-                        "revision ${named.revision} of '$event' declared other fields where the state was " +
+                        "revision ${named.revision} of '$key' declared other members where the state was " +
                             "saved than it does in this machine")
                 }
+            }
+            // An enum value saved at an earlier revision of its enum is one of that
+            // revision's variants. Judged on the values as saved, before a record is
+            // grown by defaults, which are this machine's.
+            for (lineage in shape.enums) {
+                val at = saved.revisions[lineage.key]?.revision ?: 1
+                val later = lineage.added.filter { it.since > at }
+                if (later.isEmpty()) continue
+                for (holder in lineage.holders) checkEnumHolder(saved, lineage, holder, at, later)
             }
             val variables = LinkedHashMap(saved.variables)
             for (record in shape.records) {
@@ -330,6 +342,42 @@ class SavedState(
                 external = saved.external,
                 revisions = saved.revisions,
             )
+        }
+
+        /**
+         * Refuse a value [holder] holds, in [saved], that names one of [later], the
+         * variants of [lineage] added after [at], the revision it was saved at. What
+         * is not a text where one is held is left for the variable's own read to
+         * refuse.
+         */
+        private fun checkEnumHolder(
+            saved: SavedState,
+            lineage: EnumLineage,
+            holder: EnumHolder,
+            at: Int,
+            later: List<AddedVariant>,
+        ) {
+            if (!saved.variables.containsKey(holder.variable)) return
+            val value = saved.variables[holder.variable]
+            val field = holder.field
+            // Each value the holder holds, with what names it in a refusal.
+            val held: List<Pair<String, Any?>> = when {
+                field == null -> listOf(holder.variable to value)
+                !holder.list -> (value as? Map<*, *>)
+                    ?.takeIf { it.containsKey(field) }
+                    ?.let { listOf("${holder.variable}.$field" to it[field]) }
+                    ?: emptyList()
+                else -> (value as? List<*>).orEmpty().mapIndexedNotNull { i, record ->
+                    (record as? Map<*, *>)?.takeIf { it.containsKey(field) }
+                        ?.let { "${holder.variable}[$i].$field" to it[field] }
+                }
+            }
+            for ((what, name) in held) {
+                val variant = later.firstOrNull { it.name == name } ?: continue
+                throw StateRefusal(
+                    "'$what' holds '$name', which revision $at of '${lineage.key}' does not declare: " +
+                        "revision ${variant.since} added it")
+            }
         }
 
         /**
@@ -414,8 +462,54 @@ data class SavedRevision(val revision: Int, val fields: String) {
  *   does not know.
  * @property records each record schema a variable is of, by the event it
  *   declares, ordered by it.
+ * @property enums each enum a value of the state is of, by its key
+ *   (`enum:<alias>`), ordered by it.
  */
-class SavedShape(val first: String, val revised: String, val records: List<RecordLineage>)
+class SavedShape(
+    val first: String,
+    val revised: String,
+    val records: List<RecordLineage>,
+    val enums: List<EnumLineage> = emptyList(),
+)
+
+/**
+ * An enum a value of a machine's state is of, as a saved state names it
+ * (docs/adr/0044).
+ *
+ * @property key `enum:` and the alias the machine imports the enum as, which
+ *   names it in `revisions`.
+ * @property revision the enum's revision in this machine.
+ * @property revisions the digest of what each revision from the second to
+ *   [revision] declares, in order ([SavedRevision.fields]).
+ * @property added each variant a revision past the first added.
+ * @property holders where a value of it is held.
+ */
+class EnumLineage(
+    val key: String,
+    val revision: Int,
+    val revisions: List<String>,
+    val added: List<AddedVariant>,
+    val holders: List<EnumHolder>,
+)
+
+/**
+ * A variant a revision past the first added to an enum.
+ *
+ * @property name the variant's declared name, which a saved state holds it by.
+ * @property since the revision that added it.
+ */
+class AddedVariant(val name: String, val since: Int)
+
+/**
+ * Where a value of an [EnumLineage] is held.
+ *
+ * @property variable the variable's document id.
+ * @property field the field of the record the variable holds, for a value held
+ *   in a record; `null` for a variable of the enum.
+ * @property list whether the variable holds a list of such records rather than
+ *   one.
+ */
+class EnumHolder(val variable: String, val field: String?, val list: Boolean)
 
 /**
  * A record schema a machine's variables are of, as a saved state names it.
