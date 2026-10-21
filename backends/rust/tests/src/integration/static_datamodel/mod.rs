@@ -161,6 +161,7 @@ pub mod static_send_params_sm;
 pub mod static_send_target_sm;
 pub mod static_send_type_sm;
 pub mod static_state_algorithm_enum_sm;
+pub mod static_state_algorithm_optional_sm;
 pub mod static_state_algorithm_sm;
 pub mod static_string_capacity_sm;
 pub mod static_text_record_sm;
