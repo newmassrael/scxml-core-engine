@@ -5184,6 +5184,15 @@ the format and the restore every backend moves to.
   starts of each `<invoke>` so a start after a restore is numbered on, as `sendseq`
   is. A child's session id and a generated invoke id are derived from the tree
   alone, the same on every backend, so a saved tree is one text whatever wrote it.
+  A root's id is bound when the machine is created and is never empty: the host
+  gives one, held to the XML `Nmtoken` production and refused with a reason when it
+  is not one, or the runtime draws a UUID version 4 in lowercase hexadecimal with
+  hyphens, the one spelling on every backend. A target with no source of randomness
+  (a `no_std` build, `wasm32-unknown-unknown`) takes it from the host. A restore binds
+  the saved id, so the session carries on under the address its peers know
+  (docs/adr/0045, "Questions the owner answered" 2). Each backend moves to this with
+  its format-2 step; until then a `sce-static` root on Rust and Kotlin has the empty
+  id.
 - **The shape of a tree.** Each session carries the shape of its own document,
   computed as today, and is judged against the document its parent's `<invoke>`
   names there, with its own `revisions` (docs/adr/0044). A session of another shape

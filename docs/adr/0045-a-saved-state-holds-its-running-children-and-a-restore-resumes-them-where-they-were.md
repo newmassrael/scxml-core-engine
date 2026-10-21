@@ -120,8 +120,9 @@ A session also carries:
 - **`sessionid`**: the session's own id. Events held in the tree name sessions by it (the `origin`
   of a child's event queued in its parent, the `origin` a parent's event carries in its child's
   queue), so every session of a restored tree keeps the id it had. A session id is generated once
-  per session and never by a restore; a root keeps what it has today (a `sce-static` root with no
-  script engine has none, and its events' `origin` is the empty text, as in every shared instance).
+  per session and never by a restore. A child's is `<parent>.<invokeid>` (below). A root's is bound
+  when the machine is created, as §scxml-5.10 binds `_sessionid` at load, and is never empty: the
+  host gives it, or the runtime draws one (the owner's answer, "Questions the owner answered" 2).
 
 **The ids inside a tree are the same on every backend.** A saved state is one text whatever backend
 wrote it (docs/SCE_ACCEPTED_SUBSET.md:4960-4964), and a tree holds ids that today are not: Rust
@@ -130,7 +131,9 @@ generates an invoke id from the address of the parent's policy
 process-wide counter (backends/rust/runtime/src/helpers/unique_id_generator.rs:115-127). Every
 backend therefore derives a child's session id and a generated invoke id from the tree alone: the
 parent's session id, the state, the `<invoke>`'s id and the start, in one spelling the format fixes.
-Ids are unique within a tree by construction, and a tree is one process's.
+Ids are unique within a tree by construction, and a tree is one process's. The one id a tree does
+not derive is its root's, which is drawn or given once when the root is created and then saved and
+restored with the tree like every other id, so the derivation always starts from the same text.
 
 **Running** keeps its meaning: started and not ended. A child that has ended is absent from its
 parent's list, its `done.invoke` in the parent's external queue or already taken, exactly as today
@@ -230,7 +233,9 @@ A restore is one act over the tree, in this order:
 2. **The root, as today.** The host's clock installed, the configuration entered without
    `<onentry>` and without `<data>`, the variables, the history, the external queue in order, the
    waiting sends armed against the wall clock, the host-run invocations re-armed, the counters
-   (`hostinvoketoken`, `sendseq`, `invokestarts`) carried on.
+   (`hostinvoketoken`, `sendseq`, `invokestarts`) carried on, and the saved `sessionid` bound as
+   the root's id in place of one drawn or given: the session continues, so a peer's
+   `#_scxml_<id>` address and every child's `<root>.<invokeid>` stay what they were.
 3. **Each running child, in document order, depth first.** The parent builds the child's engine as
    it does when the invocation starts (the parent's link for `#_parent`, the same clock, the child's
    host obtained from the parent's host as ADR 0005 decision 6 obtains it, and under ADR 0043 the
@@ -537,8 +542,10 @@ the ones it cannot run, and never passes it.
   a delayed send to the child and an event from the child in its queue; the child's queue holds an
   event from the parent; the grandchild runs under a hybrid candidate whose `srcexpr` variable was
   changed after it started; one invoke has no literal id and stores its generated id in an
-  `idlocation`; one invoke has been started twice. Every backend saves that text byte for byte and
-  restores from it, and every backend's restored tree then runs the same scenario steps.
+  `idlocation`; one invoke has been started twice. The root's id is given to the machine when it
+  is created, as a host may give it, so that the text is one on every backend and no test reads a
+  drawn id's value. Every backend saves that text byte for byte and restores from it, and every
+  backend's restored tree then runs the same scenario steps.
 - **The old format.** Today's shared instances move to `saved/format1/` unchanged and every backend
   restores them; the format-1 `static_invoke_working.json` restores with its child started from the
   beginning, and that is the only test in which a child restarts.
@@ -627,6 +634,10 @@ the ones it cannot run, and never passes it.
 - A child holds its progress across a restore: a list with one member keeps its records, and an
   offline write survives the process that made it.
 - Every session of a restored tree keeps its session id, its starts and its children's invoke ids.
+- Every root has a session id that is an address (answer 2): a `sce-static` root no longer has the
+  empty id, and the four backends that draw one today draw it in the one spelling. A host that
+  restores one saved state twice at once has two live sessions of one id, and owns that duplicate:
+  a restore binds the saved id because the session continues, and SCE cannot see a second copy.
 - §2.15's sentences on lost progress, on a hybrid candidate read again and on the child's host asked
   because the child starts again are replaced; the host of a child is still asked on a restore,
   since the one it answered is gone with the process, and now answers a child that resumes.
@@ -692,16 +703,19 @@ Each step lands with a test that fails without it.
    backends, child session ids `<parent>.<invokeid>` on Rust, C++, Go, Python and Kotlin, and a
    test that pins the shape of every standard statechart that saves. Open: the format-2 shape,
    which needs ADR 0044's `document_key` and `SavedShape` on the branch it is built on; the C11
-   child session id, whose buffer sizes are decided with C11's saved state (step 5); a Kotlin
+   child session id, whose buffer sizes are decided with C11's saved state (step 5); and a Kotlin
    child that opened a script session to take an argument before its start keeps that session's
-   id; and the id of a `sce-static` root, which today is empty on Rust and Kotlin and drawn by the
-   process on Go, Python, C++ and C11, and must be one text before those four save (step 5).
+   id. The id of a `sce-static` root, empty today on Rust and Kotlin and drawn by the process in
+   another spelling on Go, Python, C++ and C11, is decided ("Questions the owner answered" 2) and
+   lands with each backend's save: Rust in step 3, Kotlin in step 4, the other four in step 5.
 3. **Rust.** `SavedState` as a session tree, format 2 written, formats 1 and 2 read, the restore of
-   section 3, the transit check, the tree fixture. *Exit:* the Rust tests of section 8.
-4. **Kotlin.** The same over `SavedState.kt` and `StateMachineEngine`. *Exit:* Kotlin saves the tree
-   fixture byte for byte as Rust does, Kotlin restores the text Rust saved, and Rust the text Kotlin
-   saved.
-5. **Go, Python, C++, C11**, one backend per step, each reading and writing the whole format and held
+   section 3, the transit check, the tree fixture, and the root's session id (drawn or given at
+   creation, saved, bound again by a restore). *Exit:* the Rust tests of section 8.
+4. **Kotlin.** The same over `SavedState.kt` and `StateMachineEngine`, the root's id included.
+   *Exit:* Kotlin saves the tree fixture byte for byte as Rust does, Kotlin restores the text Rust
+   saved, and Rust the text Kotlin saved.
+5. **Go, Python, C++, C11**, one backend per step, each reading and writing the whole format, the
+   root's id in the one spelling of answer 2 in place of the one its process draws today, and held
    to every shared instance. *Exit:* per backend, every instance restored, the tree fixture saved byte
    for byte, the scenario `restore` steps run by its driver.
 6. **The host cores** (after ADR 0043 steps 3 and 5): the checkpoint document, its schema and its
@@ -724,5 +738,30 @@ save templates are in the template hash of every language) and are regenerated i
    admitted after the last durable checkpoint, which the principles allowed either to report or to
    keep. Answered 2026-10-20: both, chosen per binding in deploy.yaml, the reported loss by default
    and durable receipt by opt-in (section 5, with the owner's reasons).
+2. **What is the id of a root session?** Left open by step 2: a `sce-static` root had the empty id
+   on Rust and Kotlin and an id its process drew, in a spelling of its own, on Go, Python, C++ and
+   C11, so a tree's ids could not start from one text. Answered 2026-10-21 ("the most long-term
+   correct way, cost ignored"):
+   - **Drawn by default, never empty.** Every backend binds a system-generated, unique id when the
+     machine is created, as §scxml-5.10 binds `_sessionid` at load and keeps it until the session
+     ends. The empty text is not allowed: it is not an XML NMTOKEN, which §scxml-5.10 makes the
+     id, and it is no address (`#_scxml_<id>`). One spelling on every backend, a UUID version 4 in
+     lowercase hexadecimal with hyphens (36 characters), so that no reader can tell which backend
+     drew it.
+   - **Or given by the host.** A host may give the root's id when it creates the machine (its Mesh
+     machine or device identity, say). The id given is held to the XML 1.0 `Nmtoken` production
+     (name characters only: letters, digits, `.`, `-`, `_`, `:` and the other characters
+     `NameChar` admits, at least one); one that is not is refused when the machine is created,
+     with the reason, and never replaced by another. A target with no source of randomness the
+     runtime can read (a `no_std` build, `wasm32-unknown-unknown`) has no drawn default: its
+     constructor takes the id from the host, as a required argument its API states, as such a
+     target already takes the wall clock from the host (§2.15).
+   - **Saved and restored.** The root's id is the `sessionid` of the format-2 root, and a restore
+     binds the saved id in place of drawing or taking one (section 3, step 2). A host that restores
+     one saved state twice at once owns the duplicate it made (Consequences).
+   - **Tests do not read a drawn id.** The shared cross-backend fixtures (the tree fixture, the
+     byte-for-byte save tests, the scenarios) give the root's id explicitly, so their saved text is
+     one on every backend; a test may hold a drawn id to the spelling, never to a value.
+   - **Children** keep `<parent>.<invokeid>`, derived from the tree as section 1 states.
 
 No question is open.
