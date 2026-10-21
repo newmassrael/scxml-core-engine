@@ -3941,16 +3941,41 @@ declares its `sce:max-size`, the bound of the value it holds when present): the
 field's type is the value type restricted to a scalar or an optional scalar, so a
 record of the schema holds the field as optional and the payload carries it as one.
 An optional field declares no `sce:quantity` (`validation/attribute-rule-violated`),
-and what may stand inside is refused as a variable's is, naming the set. Every other
-position — an algorithm's slot, a codec's entry — refuses `optional<…>` by name as
-`validation/attribute-rule-violated` until the step of the ADR that admits it there.
-The model carries the type (`{"optional": "int64"}` in the forge AST, on a variable
-and a schema's field alike), and no backend lowers it yet: each of the six and the
-Interpreter's lowering refuses, by name, as `generate/unsupported-feature` ("an
-optional value has no <language> lowering yet"), a statechart that declares one or
-imports a schema that does, the schema's own unit, and an algorithm whose record holds
-one; a host-run `<invoke>` whose `sce:request` or `sce:result` names such a schema is
-refused where it is checked. `null` stands only where an optional value is declared:
+and what may stand inside is refused as a variable's is, naming the set. An
+algorithm's parameter, return and local may be optional over a fixed-width number
+or a `bool` ("An algorithm's optional value", below), and refuse an optional text,
+byte string, value of an enum or record by name as `validation/attribute-rule-violated`;
+every other position — a transform's, condition's, lookup's, interpolation's or
+validator's slot, a codec's entry — refuses `optional<…>` by name as
+`validation/attribute-rule-violated`. The model carries the type (`{"optional":
+"int64"}` in the forge AST, on a variable, a schema's field and an algorithm's slot
+alike). Each of the six generated backends and the Interpreter's lowering lowers a
+statechart that declares one or imports a schema that does; the unit of a schema
+with an optional text or enum field, and an algorithm whose record holds one, are
+refused by name as `generate/unsupported-feature` ("an optional value has no
+<language> lowering yet"), and a host-run `<invoke>` whose `sce:request` or
+`sce:result` names such a schema is refused where it is checked.
+
+**An algorithm's optional value** (docs/adr/0055, step 8). An algorithm's
+`<sce:param>`, `<sce:return>` and `<sce:var>` take `optional<T>` over a
+fixed-width number or a `bool`, and a record it reads or returns may have a field
+of one. A local declares its initial value, `null` for absent. The body reads one
+as a statechart does ("Reading an optional value", below): a test, `??`, and
+`.value` where the narrowing proves it present, the statements after an early
+return and an `<sce:require>` among them; an optional value is assigned whole, so
+`<sce:assign target="x.value">` is `expression/unsupported-construct`. A proven
+read is a value of its element to the integer arithmetic contract (SCE_FORGE.md
+§3.4.1). Each backend holds the value in the type a statechart's variable of the
+same element is held in — `Option<T>`, `T?`, `std::optional<T>`,
+`optional.Of[T]`, `Optional[T]`, `sce_optional_<elem>_t`, and `null` or the value
+on the Interpreter — so a statechart hands one to the algorithm and takes one back
+as it holds it: an optional variable, `null`, or a value of `T`, lifted, where the
+parameter is optional, and an optional variable assigned what an optional return
+answers; a record's optional field crosses the adapter as it is. An optional value
+where a parameter of `T` is declared is `expression/type-mismatch`, naming `??`
+and a test. Another algorithm's body calls one with optional slots through the
+same signature. `sce-build/tests/an_algorithm_holds_an_optional_value.rs` and
+`scenarios/static_state_algorithm_optional.json` hold this. `null` stands only where an optional value is declared:
 `<data sce:type="int64" expr="null"/>` and an `<assign>` of `null` to an `int64` are
 `expression/type-mismatch`, where until 2026-10-21 they were judged fit.
 `sce-build/tests/an_optional_value_is_declared_by_its_type.rs` holds this.

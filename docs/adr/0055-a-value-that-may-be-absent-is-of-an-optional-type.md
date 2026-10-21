@@ -702,11 +702,28 @@ documents, not observed from a backend.
    revision-2 build and one holding `null` at revision 1 refused; the Mesh check over two machines
    built from the two revisions. Docs: ADR 0044's amendments in docs/SCE_ACCEPTED_SUBSET.md "An event
    schema that grows" and "What a revision does not make safe".
-8. **Algorithms.** Optional parameters, returns and locals (the algorithm reader stops refusing
+8. **Algorithms** (implemented). Optional parameters, returns and locals (the algorithm reader stops refusing
    them); the adapters' copy of an optional field and of an optional enum crossing by name; section
    3 in a body. Tests: `scenarios/static_state_algorithm_optional.json` (an algorithm that answers
    the earliest due day of a list of records, absent for an empty list or one with none due, using
    a guard and an early return) on every engine.
+   As built, an algorithm holds an optional value of a fixed-width number or a `bool`
+   (`AlgorithmValueType::algorithm_optional_admitted`, the one reading the reader, the renderers,
+   a call's crossing and the event schema's unit share): its slots, its locals and a field of a
+   record it reads or returns. An optional text, byte string, value of an enum or record in an
+   algorithm's slot is refused by name where the type is read, and an algorithm whose record has an
+   optional text or enum field, and the unit of such a schema, are refused by name where each
+   backend renders them; the optional enum crossing an adapter would map is left to the step that
+   holds those elements in an algorithm. Each backend spells the value in its statechart's type
+   (`algorithm_optional_type`), the walk of a body threads the narrowing into each expression it
+   lowers (`lower_algorithm_block`, the Interpreter's `statements`), and the integer analysis
+   (`forge::int_ranges`) types a body where the same facts hold, so a proven read is judged by the
+   arithmetic contract rather than passed over. A statechart's call names an optional slot
+   `StaticSlot::Optional`, the same type on both sides, which crosses an adapter as it is and is
+   called directly where the call has no record or list; another algorithm's body calls one through
+   `CalleeSlot::Optional`. Tests: `sce-build/tests/an_algorithm_holds_an_optional_value.rs`, and the
+   algorithm cases of `sce-build/tests/a_value_is_proven_present_only_where_tested.rs`, now
+   generated.
 9. **`optional<record:X>`.** A variable and an algorithm slot of an optional record: started at
    `null`, taken whole from a record, a payload, a list's element; `r.value.f` where proven; a field
    write to `r.value.f` where proven, and refused elsewhere. Tests:
