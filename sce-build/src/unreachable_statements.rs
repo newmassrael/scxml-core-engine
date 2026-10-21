@@ -377,10 +377,16 @@ pub(crate) fn unreachable_python_statements(source: &str) -> Vec<(usize, String)
 
         // A clause of the compound statement the suite has open.
         match suite.open.as_mut() {
-            Some(Compound::If { has_else, .. })
-                if line.starts_with("elif ") || line.starts_with("else:") =>
-            {
+            Some(Compound::If {
+                every_branch_ends,
+                has_else,
+            }) if line.starts_with("elif ") || line.starts_with("else:") => {
                 *has_else |= line.starts_with("else:");
+                // A branch written on its clause's own line is not read; it
+                // is taken to go on.
+                if !line.ends_with(':') {
+                    *every_branch_ends = false;
+                }
                 pending = Some(Body::Branch);
                 continue;
             }
@@ -585,7 +591,8 @@ return
 
     /// Python: a `raise` ends its suite, an `if`/`elif`/`else` whose every
     /// branch ends ends the suite it stands in, and a `try` whose body ends
-    /// does not — its `except` is reached, and so is what follows it.
+    /// does not — its `except` is reached, and so is what follows it. A
+    /// branch written on its clause's line is taken to go on.
     #[test]
     fn the_reader_finds_what_python_never_reaches() {
         let python = r#"def f(a, b):
@@ -608,6 +615,10 @@ return
     if a:
         raise _ActionAbort
     kept()
+    if b:
+        raise _ActionAbort
+    else: reached()
+    reached()
 "#;
         assert_eq!(lines(python, Syntax::Python), vec![5, 17], "{python}");
     }
