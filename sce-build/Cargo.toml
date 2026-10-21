@@ -918,6 +918,11 @@ path = "tests/a_send_is_held_to_the_schema_its_receiver_reads.rs"
 required-features = ["cli"]
 
 [[test]]
+name = "an_enum_is_read_as_its_number_and_back"
+path = "tests/an_enum_is_read_as_its_number_and_back.rs"
+required-features = ["cli"]
+
+[[test]]
 name = "every_replay_scenario_keeps_to_its_vocabulary"
 path = "tests/every_replay_scenario_keeps_to_its_vocabulary.rs"
 required-features = ["cli"]

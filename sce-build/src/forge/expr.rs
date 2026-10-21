@@ -613,8 +613,10 @@ pub(crate) fn transpile_typed_with_import_lowering(
 ///    empty everywhere else), once the calls are judged: the lowered call
 ///    is a `Raw` symbol that `ctx` holds under no spelling, so no check
 ///    could judge it afterwards.
-/// 4. Enum variants lowered to this backend's spelling once the names are
-///    known good; rename leaves the resulting `Raw` alone.
+/// 4. An enum's conversions (`<alias>.toNumber`, `<alias>.fromNumber`) lowered
+///    to the functions the context spells them with, and then the enum
+///    variants to this backend's spelling, once the names are known good;
+///    rename leaves the resulting `Raw` alone.
 /// 5. Rename.
 ///
 /// ⚠ Step 3 ran first, before inference, until 2026-09-24. Every check then
@@ -634,6 +636,7 @@ fn resolve_then_rename(
     if !lowerings.is_empty() {
         lower_stateful_import_calls(ast, lowerings);
     }
+    lower_enum_conversions(ast, ctx, target);
     lower_enum_variant_refs(ast, ctx, target)?;
     // A C string is a bounded buffer: a join of strings the data model sizes is
     // written into one the lowering sizes, and one it cannot size is refused at
@@ -1312,12 +1315,11 @@ fn reject_call_argument_mismatches(
         // The same two spellings `infer_types` resolves a signature by: a
         // bare name, and `obj.method` registered as `"{obj}.{method}"`.
         let registered = match &callee.kind {
-            ExprKind::Ident(name) => ctx.lookup_func(name).map(|sig| (name.clone(), sig)),
+            ExprKind::Ident(name) => ctx.lookup_func(name).map(|sig| (name.clone(), sig.clone())),
             ExprKind::Member { object, property } => match &object.kind {
-                ExprKind::Ident(object) => {
-                    let name = format!("{object}.{property}");
-                    ctx.lookup_func(&name).map(|sig| (name, sig))
-                }
+                ExprKind::Ident(object) => ctx
+                    .lookup_member_func(object, property)
+                    .map(|sig| (format!("{object}.{property}"), sig)),
                 _ => None,
             },
             _ => None,
@@ -4133,15 +4135,17 @@ pub(crate) fn infer_types(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
             // `insert_stateful_imports`). Capture `(ret, params, may_fail)`
             // by value so the argument-projection pass below can borrow
             // `args` mutably after the immutable `ctx` lookup ends.
+            // A member call is a stateful import's method or a conversion of an
+            // imported enum (`<alias>.toNumber`, `<alias>.fromNumber`), both
+            // answered by `lookup_member_func`.
             let resolved: Option<(InferredType, Vec<InferredType>, bool)> = match &callee.kind {
                 ExprKind::Ident(name) => ctx
                     .lookup_func(name.as_str())
                     .map(|s| (s.ret, s.params.clone(), s.may_fail)),
                 ExprKind::Member { object, property } => {
                     if let ExprKind::Ident(obj_name) = &object.kind {
-                        let qualified = format!("{}.{}", obj_name, property);
-                        ctx.lookup_func(&qualified)
-                            .map(|s| (s.ret, s.params.clone(), s.may_fail))
+                        ctx.lookup_member_func(obj_name, property)
+                            .map(|s| (s.ret, s.params, s.may_fail))
                     } else {
                         None
                     }
@@ -4700,7 +4704,10 @@ fn reject_unknown_callees(expr: &TypedExpr, ctx: &TypeCtx<'_>) -> Result<(), Ref
             _ => None,
         };
         if let Some(name) = name {
-            let known = ctx.lookup_func(&name).is_some()
+            // A conversion of an imported enum is a member every enum carries
+            // without registering it.
+            let known = is_enum_conversion(callee, ctx)
+                || ctx.lookup_func(&name).is_some()
                 || EXPR_BUILTINS.contains(&name.as_str())
                 || is_len_builtin(callee, args);
             if !known {
@@ -4782,7 +4789,9 @@ fn reject_unknown_names(expr: &TypedExpr, ctx: &TypeCtx<'_>) -> Result<(), Refus
                     .map_err(|refusal| refusal.at(expr.span.clone()))?;
             }
         }
-        ExprKind::Call { callee, args, .. } if matches!(callee.kind, ExprKind::Ident(_)) => {
+        ExprKind::Call { callee, args, .. }
+            if matches!(callee.kind, ExprKind::Ident(_)) || is_enum_conversion(callee, ctx) =>
+        {
             for arg in args {
                 reject_unknown_names(arg, ctx)?;
             }
@@ -4854,6 +4863,109 @@ fn reject_undeclared_member(
         member: member.to_string(),
         ty: base_ty.declared_spelling(),
     })
+}
+
+/// Whether `callee` is a conversion of an imported enum: `<alias>.toNumber` or
+/// `<alias>.fromNumber` ([`crate::forge::types::EnumScope::conversion`]), a member
+/// every imported enum carries and no document declares. A variant of the same
+/// name stays a variant where it is read and not called.
+pub(crate) fn is_enum_conversion(callee: &TypedExpr, ctx: &TypeCtx<'_>) -> bool {
+    let ExprKind::Member { object, property } = &callee.kind else {
+        return false;
+    };
+    let ExprKind::Ident(alias) = &object.kind else {
+        return false;
+    };
+    ctx.lookup_enum(alias)
+        .is_some_and(|scope| scope.conversion(property).is_some())
+}
+
+/// What turns the answer of an enum's `fromNumber` function — the variant a
+/// number declares, or that none does, in the backend's own optional shape — into
+/// the shape a call that may fail answers on `target` ([`pass_failure_on`]), when
+/// the two differ: a `Result` in Rust, an `AlgorithmResult` in Kotlin and C++, an
+/// `Outcome` in Go, a value or a raised failure in Python. `None` for C, whose
+/// `<prefix>_from_number` answers the result its own `_take` reads
+/// ([`crate::forge::generator::c11_enum_from_number`]), and for the Interpreter,
+/// whose library throws the failure itself.
+pub(crate) fn enum_from_number_wrapper(target: ExprTarget) -> Option<&'static str> {
+    match target {
+        ExprTarget::Rust => Some("sce_forge_runtime::algorithm::declared"),
+        ExprTarget::Kotlin => Some("com.sce.forge.runtime.SceChecked.declared"),
+        ExprTarget::Cpp => Some("SCE::Forge::Checked::declared"),
+        ExprTarget::Go => Some(GO_DECLARED),
+        ExprTarget::Python => Some("sce_algorithm.declared"),
+        ExprTarget::C | ExprTarget::Js => None,
+    }
+}
+
+/// The Go runtime's reading of a variant a number declares, or that none does,
+/// as the `Outcome` a call that may fail answers ([`enum_from_number_wrapper`]).
+const GO_DECLARED: &str = "scealgorithm.Declared";
+
+/// Lower each conversion of an imported enum (`<alias>.toNumber(value)`,
+/// `<alias>.fromNumber(number)`) to the functions the context spells the enum's
+/// conversions with ([`crate::forge::types::EnumScope::to_number`],
+/// [`crate::forge::types::EnumScope::from_number`]): a statechart's own type for
+/// the enum, an algorithm's import of the enum document. A `fromNumber` that may
+/// fail is wrapped where the backend's optional answer is not the shape a failing
+/// call answers ([`enum_from_number_wrapper`]): the call becomes the wrapper's
+/// call of the conversion, which the failure channel then receives as any call
+/// that may fail ([`pass_failure_on`]), and the number is still held to the
+/// enum's carrier where it is handed over.
+///
+/// Runs before [`lower_enum_variant_refs`], which would otherwise read the callee
+/// as a reference to a variant named `toNumber`.
+fn lower_enum_conversions(expr: &mut TypedExpr, ctx: &TypeCtx<'_>, target: ExprTarget) {
+    for child in expr.children_mut() {
+        lower_enum_conversions(child, ctx, target);
+    }
+    let span = expr.span.clone();
+    let ExprKind::Call {
+        callee,
+        args,
+        params,
+        fails,
+    } = &mut expr.kind
+    else {
+        return;
+    };
+    let (alias, method) = match &callee.kind {
+        ExprKind::Member { object, property } => match &object.kind {
+            ExprKind::Ident(alias) => (alias.clone(), property.clone()),
+            _ => return,
+        },
+        _ => return,
+    };
+    let Some(scope) = ctx.lookup_enum(&alias) else {
+        return;
+    };
+    match method.as_str() {
+        crate::forge::types::ENUM_TO_NUMBER => {
+            callee.kind = ExprKind::Raw(scope.to_number.to_string());
+        }
+        crate::forge::types::ENUM_FROM_NUMBER => match enum_from_number_wrapper(target) {
+            Some(wrapper) if *fails => {
+                let conversion = TypedExpr {
+                    kind: ExprKind::Call {
+                        callee: Box::new(TypedExpr::new(ExprKind::Raw(
+                            scope.from_number.to_string(),
+                        ))),
+                        args: std::mem::take(args),
+                        params: std::mem::take(params),
+                        fails: false,
+                    },
+                    ty: InferredType::Unknown,
+                    span,
+                };
+                callee.kind = ExprKind::Raw(wrapper.to_string());
+                *args = vec![conversion];
+                *params = vec![InferredType::Unknown];
+            }
+            _ => callee.kind = ExprKind::Raw(scope.from_number.to_string()),
+        },
+        _ => {}
+    }
 }
 
 /// Replace every `<alias>.<variant>` on an imported enum with this backend's
@@ -7751,7 +7863,10 @@ pub(crate) fn pass_failure_on(
         // returns a record or a list answers in the statechart's own types, which
         // this layer cannot spell (the lattice does not carry which record a list
         // holds): it answers an `Outcome`, whose type `TakeOutcome` infers.
-        ExprTarget::Go if symbol.starts_with(STATE_ADAPTER_PREFIX) => {
+        // ... and so does the runtime's reading of the variant a number declares
+        // ([`enum_from_number_wrapper`]), whose type is the enum's, which the
+        // lattice does not carry either.
+        ExprTarget::Go if symbol.starts_with(STATE_ADAPTER_PREFIX) || symbol == GO_DECLARED => {
             format!("scealgorithm.TakeOutcome(&sceFailure, {call})")
         }
         ExprTarget::Go => {
@@ -11681,6 +11796,13 @@ mod tests {
                 variants: &variants,
                 qualified_type: "Mode",
                 source_name: "Mode",
+                carrier: InferredType::Int {
+                    signed: false,
+                    bits: 8,
+                },
+                to_number: "Mode.toNumber",
+                from_number: "Mode.fromNumber",
+                open: false,
             },
         );
         let lowered = transpile_typed(
@@ -11692,6 +11814,98 @@ mod tests {
         )
         .expect("an enum variant lowers for the Interpreter");
         assert_eq!(lowered, "'Idle'");
+    }
+
+    /// A context whose enum `Mode` is carried as a `uint8` and spells its two
+    /// conversions `mode_to` and `mode_from` (docs/adr/0046), `open` saying whether
+    /// every number is a value of it, with a value `m` of it and a `uint8` `n`.
+    fn conversion_ctx<'a>(variants: &'a [String], open: bool) -> TypeCtx<'a> {
+        let mut ctx = TypeCtx::new();
+        ctx.insert_enum(
+            "Mode",
+            crate::forge::types::EnumScope {
+                variants,
+                qualified_type: "Mode",
+                source_name: "Mode",
+                carrier: int(false, 8),
+                to_number: "mode_to",
+                from_number: "mode_from",
+                open,
+            },
+        );
+        ctx.insert_var("m", InferredType::Unknown);
+        ctx.insert_var("n", int(false, 8));
+        ctx
+    }
+
+    /// `<alias>.toNumber` is the function the context spells it with, and
+    /// `<alias>.fromNumber` of a closed enum the backend's wrapper of the function,
+    /// which turns a number no variant declares into the failure every failing call
+    /// hands its statement.
+    #[test]
+    fn an_enum_conversion_lowers_to_the_functions_its_context_spells() {
+        let variants = ["Idle".to_string(), "Run".to_string()];
+        let mut ctx = conversion_ctx(&variants, false);
+        ctx.receives_failures = true;
+        let lowered = |expr: &str, target: ExprTarget| {
+            transpile_typed(expr, target, &ctx, &empty_renames(), InferredType::Unknown)
+                .unwrap_or_else(|e| panic!("{expr} lowers for {target:?}: {e:?}"))
+        };
+        assert_eq!(lowered("Mode.toNumber(m)", ExprTarget::Rust), "mode_to(m)");
+        for (target, fragment) in [
+            (
+                ExprTarget::Rust,
+                "sce_forge_runtime::algorithm::declared(mode_from(n))?",
+            ),
+            (
+                ExprTarget::Kotlin,
+                "com.sce.forge.runtime.SceChecked.take(com.sce.forge.runtime.SceChecked.declared(mode_from(",
+            ),
+            (
+                ExprTarget::Cpp,
+                "SCE::Forge::Checked::take(sce_failure_, SCE::Forge::Checked::declared(mode_from(",
+            ),
+            (
+                ExprTarget::Go,
+                "scealgorithm.TakeOutcome(&sceFailure, scealgorithm.Declared(mode_from(",
+            ),
+            (ExprTarget::Python, "sce_algorithm.declared(mode_from("),
+            (ExprTarget::C, "mode_from_take(&sce_failure_, mode_from("),
+        ] {
+            let out = lowered("Mode.fromNumber(n)", target);
+            assert!(out.contains(fragment), "{target:?}: {out}");
+        }
+    }
+
+    /// A number no variant of a closed enum declares is a failure, received only
+    /// where failures are; an open enum holds every number of its carrier, so its
+    /// reading cannot fail and is the function itself.
+    #[test]
+    fn from_number_may_fail_only_for_a_closed_enum() {
+        let variants = ["Idle".to_string(), "Run".to_string()];
+        let closed = conversion_ctx(&variants, false);
+        let refusal = transpile_typed(
+            "Mode.fromNumber(n)",
+            ExprTarget::Rust,
+            &closed,
+            &empty_renames(),
+            InferredType::Unknown,
+        )
+        .expect_err("a reading that may fail is refused where no failure is received");
+        assert!(
+            format!("{:?}", refusal.error).contains("may-fail"),
+            "{refusal:?}"
+        );
+        let open = conversion_ctx(&variants, true);
+        let lowered = transpile_typed(
+            "Mode.fromNumber(n)",
+            ExprTarget::Rust,
+            &open,
+            &empty_renames(),
+            InferredType::Unknown,
+        )
+        .expect("an open enum's reading cannot fail");
+        assert_eq!(lowered, "mode_from(n)");
     }
 
     /// A field of the event's data reaches the Interpreter as untyped JSON, so

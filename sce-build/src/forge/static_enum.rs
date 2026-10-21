@@ -13,13 +13,14 @@
 // the author never sees the document.
 //
 // So this pass says it where the document is read. An enum value is one of
-// four things — an `<alias>.<variant>`, a variable declared `enum:<alias>`, a
-// conditional whose two branches are values of one enum, or the call of an
-// imported algorithm that returns one — and what it may be used for is
-// deliberately small: stored in a variable of its own enum, logged, compared
-// with `==` or `!=` to a value of that same enum, and handed to an imported
-// algorithm whose parameter takes that same enum. No ordering, no arithmetic,
-// no argument to any other call.
+// five things — an `<alias>.<variant>`, a variable declared `enum:<alias>`, a
+// conditional whose two branches are values of one enum, the call of an
+// imported algorithm that returns one, or `<alias>.fromNumber(n)` — and what it
+// may be used for is deliberately small: stored in a variable of its own enum,
+// logged, compared with `==` or `!=` to a value of that same enum, handed to an
+// imported algorithm whose parameter takes that same enum, and handed to
+// `<alias>.toNumber`, which reads the number its variant declares (docs/adr/0046).
+// No ordering, no arithmetic, no argument to any other call.
 //
 // An algorithm's body is held to the same rule ([`check_algorithm`]): its
 // parameters, locals, loop items and record fields are typed by the enum they
@@ -82,8 +83,9 @@ fn refuse(node: &TypedExpr, what: &str) -> Refusal {
 
 /// What an enum value used where none may stand is refused as.
 const NOT_AN_OPERAND: &str = "an enum value used as an operand or an argument (an enum value is \
-     compared with === and !== to one of its own enum, stored in a variable of it, logged, or \
-     handed to an imported algorithm whose parameter takes that enum)";
+     compared with === and !== to one of its own enum, stored in a variable of it, logged, \
+     handed to an imported algorithm whose parameter takes that enum, or read as the number its \
+     variant declares by `<alias>.toNumber(value)`)";
 
 fn class_of(
     node: &TypedExpr,
@@ -161,6 +163,45 @@ fn class_of(
                     "a comparison of an enum value with anything but a value of the same enum",
                 )),
             }
+        }
+        // A conversion of an imported enum: `toNumber` takes a value of the enum
+        // and is the number its variant declares, and `fromNumber` takes a number
+        // and is a value of the enum (docs/adr/0046).
+        ExprKind::Call { callee, args, .. }
+            if crate::forge::expr::is_enum_conversion(callee, ctx) =>
+        {
+            let ExprKind::Member { object, property } = &callee.kind else {
+                return nothing_but(node, ctx, reading);
+            };
+            let ExprKind::Ident(alias) = &object.kind else {
+                return nothing_but(node, ctx, reading);
+            };
+            let to_number = property == crate::forge::types::ENUM_TO_NUMBER;
+            for arg in args {
+                let held = class_of(arg, ctx, reading)?;
+                let wrong = match (to_number, held) {
+                    (true, Some(held)) if held == *alias => None,
+                    (true, Some(held)) => Some(format!(
+                        "a value of the enum `{held}` handed to `{alias}.{property}`, which takes \
+                         a value of the enum `{alias}`"
+                    )),
+                    (true, None) => Some(format!(
+                        "a value that is not of the enum `{alias}` handed to `{alias}.{property}`, \
+                         which takes a value of that enum (write `{alias}.<variant>`, or a \
+                         variable or a field of the enum)"
+                    )),
+                    (false, None) => None,
+                    (false, Some(held)) => Some(format!(
+                        "a value of the enum `{held}` handed to `{alias}.{property}`, which takes \
+                         a number (`{held}.{}(value)` reads the number its variant declares)",
+                        crate::forge::types::ENUM_TO_NUMBER
+                    )),
+                };
+                if let Some(wrong) = wrong {
+                    return Err(refuse(arg, &wrong));
+                }
+            }
+            Ok((!to_number).then(|| alias.clone()))
         }
         // The call of an imported algorithm: each argument is held to the enum its
         // parameter takes, which the statechart and the algorithm import from one
@@ -449,9 +490,10 @@ impl AlgorithmWalk<'_, '_> {
         let construct = match (slot, held) {
             (Slot::Named, _) | (Slot::Scalar, None) => return Ok(()),
             (Slot::Enum(wanted), Some(held)) if *wanted == held => return Ok(()),
-            (Slot::Scalar, Some(held)) => {
-                format!("a value of the enum `{held}` where a number or a bool is expected")
-            }
+            (Slot::Scalar, Some(held)) => format!(
+                "a value of the enum `{held}` where a number or a bool is expected \
+                 (`{held}.toNumber(value)` is the number its variant declares)"
+            ),
             (Slot::Enum(wanted), Some(held)) => format!(
                 "a value of the enum `{held}` where a value of the enum `{wanted}` is declared"
             ),

@@ -172,6 +172,18 @@ type Outcome[T any] struct {
 	Err   error
 }
 
+// Declared is the variant an enum's FromUnderlying found for a number, as an
+// Outcome, or an OutOfRange failure when ok says no variant declares it: what
+// `<alias>.fromNumber(n)` answers (SCE_FORGE.md 4.12), the number outside the
+// enum failing as a number outside a collection does. Its arguments are the two
+// results of FromUnderlying, handed on as they are.
+func Declared[T any](variant T, ok bool) Outcome[T] {
+	if !ok {
+		return Outcome[T]{Value: variant, Err: OutOfRange}
+	}
+	return Outcome[T]{Value: variant}
+}
+
 // TakeOutcome is Take for an Outcome: the value, or its zero with the failure
 // recorded in f, which the statement around it returns.
 func TakeOutcome[T any](f *Failure, o Outcome[T]) T {

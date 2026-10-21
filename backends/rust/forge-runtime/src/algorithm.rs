@@ -165,6 +165,14 @@ pub fn within<T>(items: &[T], capacity: u32) -> Result<&[T], AlgorithmError> {
     Ok(items)
 }
 
+/// The variant an enum's `from_underlying` found for a number, or an
+/// out-of-range failure when no variant declares it: what `<alias>.fromNumber(n)`
+/// answers (SCE_FORGE.md §4.12, "An enum value in a body"), the number outside
+/// the enum failing as a number outside a collection does.
+pub fn declared<T>(variant: Option<T>) -> Result<T, AlgorithmError> {
+    variant.ok_or(AlgorithmError::OutOfRange)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -183,6 +191,8 @@ mod tests {
         assert_eq!(rem::<i8>(i8::MIN, -1), Err(AlgorithmError::Overflow));
         assert_eq!(neg::<i32>(i32::MIN), Err(AlgorithmError::Overflow));
         assert_eq!(neg::<i32>(5), Ok(-5));
+        assert_eq!(declared(Some(7u8)), Ok(7u8));
+        assert_eq!(declared::<u8>(None), Err(AlgorithmError::OutOfRange));
         assert_eq!(narrow::<i32, i64>(i64::from(i32::MAX)), Ok(i32::MAX));
         assert_eq!(
             narrow::<i32, i64>(i64::from(i32::MAX) + 1),

@@ -109,7 +109,7 @@ use crate::forge::error::{ForgeError, GenerateError, Located};
 use crate::forge::expr::ExprTarget;
 use crate::forge::import_source::ImportSource;
 use crate::forge::model::{
-    ForgeDocument, ForgeField, ForgeImport, ForgeKind, ParsedForge, SceType,
+    EnumModel, ForgeDocument, ForgeField, ForgeImport, ForgeKind, ParsedForge, SceType,
 };
 use crate::forge::static_js_algorithm;
 use crate::forge::static_lowering::{lower, Callee, LoweredElement, LoweredSite, StaticTarget};
@@ -247,6 +247,43 @@ impl JsTarget {
 fn variant_list(variants: &[&str]) -> String {
     let names: Vec<String> = variants.iter().map(|name| format!("'{name}'")).collect();
     format!("[{}]", names.join(", "))
+}
+
+/// The functions the Interpreter lowers `<alias>.toNumber` and `<alias>.fromNumber`
+/// to, as `(to_number, from_number)`, for the enum whose `variants` are each a
+/// declared name and the number it declares: the library's `number` and
+/// `variant`, bound to the enum's table. A value of an enum is its declared name
+/// here, so the two read the table one way and the other, and `variant` throws
+/// `out-of-range` for a number no variant declares, which the Interpreter answers
+/// as any failed operation. A number beyond what a Number holds exactly is a
+/// BigInt, which a variable of the machine refuses as `unrepresentable`.
+pub(crate) fn enum_number_symbols(variants: &[(String, i128)]) -> (String, String) {
+    const SAFE: i128 = 9_007_199_254_740_991;
+    let number = |value: i128| {
+        if (-SAFE..=SAFE).contains(&value) {
+            value.to_string()
+        } else {
+            format!("{value}n")
+        }
+    };
+    let numbers: Vec<String> = variants
+        .iter()
+        .map(|(name, value)| format!("'{name}': {}", number(*value)))
+        .collect();
+    let names: Vec<String> = variants
+        .iter()
+        .map(|(name, value)| format!("'{value}': '{name}'"))
+        .collect();
+    (
+        format!(
+            "{RUNTIME_GLOBAL}.number.bind(null, {{{}}})",
+            numbers.join(", ")
+        ),
+        format!(
+            "{RUNTIME_GLOBAL}.variant.bind(null, {{{}}})",
+            names.join(", ")
+        ),
+    )
 }
 
 impl StaticTarget for JsTarget {
@@ -420,6 +457,16 @@ impl StaticTarget for JsTarget {
     // declared.
     fn enum_type(&self, _machine: &str, alias: &str) -> Option<String> {
         Some(format!("enum:{alias}"))
+    }
+    // The library's two readings of the enum's table ([`enum_number_symbols`]):
+    // nothing is declared, since a value is its declared name.
+    fn enum_number_symbols(&self, _ty: &str, model: &EnumModel) -> (String, String) {
+        let variants: Vec<(String, i128)> = model
+            .variants
+            .iter()
+            .map(|v| (v.name.clone(), v.value))
+            .collect();
+        enum_number_symbols(&variants)
     }
     fn list_type(&self, elem: &SceType) -> String {
         format!("list<{}>", elem.as_attr())

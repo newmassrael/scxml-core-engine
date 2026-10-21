@@ -395,6 +395,17 @@ pub struct ImportContext {
     /// with outside the table).
     #[serde(skip)]
     pub enum_is_open: bool,
+    /// For an imported enum: the function `<alias>.toNumber(value)` is lowered to
+    /// in this language, the enum document's own reading of the number a value's
+    /// variant declares ([`enum_number_symbols`]). Empty for every other import.
+    #[serde(skip)]
+    pub enum_to_number: String,
+    /// For an imported enum: the function `<alias>.fromNumber(number)` is lowered
+    /// to in this language, the enum document's own reading of the variant a
+    /// number declares, or that none does ([`enum_number_symbols`]). Empty for
+    /// every other import.
+    #[serde(skip)]
+    pub enum_from_number: String,
     /// For an imported transform that reads a field through `previous()`,
     /// its first such read. A stateless import stands for a pure function
     /// the importer calls with its own values, and this transform's
@@ -896,6 +907,8 @@ fn resolve_single_import(
         enum_source_name: String::new(),
         enum_underlying: None,
         enum_is_open: false,
+        enum_to_number: String::new(),
+        enum_from_number: String::new(),
         transform_state_read: None,
         record: None,
         enum_slots: None,
@@ -1142,7 +1155,7 @@ fn go_literal(text: &str, ty: &SceType) -> String {
     }
 }
 
-fn kotlin_literal(text: &str, ty: &SceType) -> String {
+pub(crate) fn kotlin_literal(text: &str, ty: &SceType) -> String {
     match ty {
         SceType::Uint8 | SceType::Uint16 | SceType::Uint32 | SceType::Uint64 => {
             // `100u.toUByte()` etc. — `u` suffix marks the literal as unsigned,
@@ -2416,6 +2429,114 @@ pub(crate) fn enum_qualified_type(enum_name: &str, lang: crate::generator::Langu
         // cross-document reference resolves through the typedef alone.
         Language::C11 => format!("{pascal}_t"),
     }
+}
+
+/// The functions a document that imports the enum `enum_name` lowers
+/// `<alias>.toNumber(value)` and `<alias>.fromNumber(number)` to in `lang`, as
+/// `(to_number, from_number)`: the enum document's own accessors, which every
+/// backend's enum kind emits — the carrier a value holds, and the variant a number
+/// declares or that none does — spelled so each is called with the one argument
+/// (a Kotlin member and a Go method by reference). C has no optional value to
+/// answer with, so its reading of a closed enum is the `<prefix>_from_number`
+/// family a document that may fail declares beside the enum
+/// ([`c11_enum_from_number`]); an `open` enum's reading answers the value itself on
+/// every backend, C's included, since every number of its carrier is one.
+pub(crate) fn enum_number_symbols(
+    enum_name: &str,
+    open: bool,
+    lang: crate::generator::Language,
+) -> (String, String) {
+    use crate::generator::Language;
+    let qualified = enum_qualified_type(enum_name, lang);
+    match lang {
+        Language::Rust => (
+            format!("{qualified}::to_underlying"),
+            format!("{qualified}::from_underlying"),
+        ),
+        Language::Kotlin => (
+            format!("({qualified}::toUnderlying)"),
+            format!("{qualified}.fromUnderlying"),
+        ),
+        Language::Cpp => {
+            let namespace = format!(
+                "SCE::Generated::{}",
+                filters::to_pascal_case(enum_name.to_string())
+            );
+            (
+                format!("{namespace}::to_underlying"),
+                format!("{namespace}::from_underlying"),
+            )
+        }
+        Language::Go => (
+            format!("{qualified}.ToUnderlying"),
+            format!("{qualified}FromUnderlying"),
+        ),
+        Language::Python => (
+            format!("{qualified}.to_underlying"),
+            format!("{qualified}.from_underlying"),
+        ),
+        Language::C11 => {
+            let prefix = crate::forge::enum_naming::c11_function_prefix(enum_name);
+            let from = if open {
+                "from_underlying"
+            } else {
+                "from_number"
+            };
+            (
+                format!("{prefix}_to_underlying"),
+                format!("{prefix}_{from}"),
+            )
+        }
+        Language::Swift => no_swift_emitter("enum_number_symbols"),
+    }
+}
+
+/// The C11 reading of the variant a number declares, for the enum document
+/// `enum_name` carried as `carrier` (a C integer type) with `variants` (each
+/// variant's name and declared value): `<prefix>_from_number(raw)`, which answers
+/// the variant or that none declares `raw` (`out-of-range`, the failure a number
+/// outside the enum is on every backend), and `<prefix>_from_number_take`, which
+/// hands a failure to the `sce_forge_algorithm_failure_t` of the statement that
+/// asked, as every call that may fail does in C. Written as one text under a guard
+/// of the document's name, by a machine that holds a value of the enum and by an
+/// algorithm that may fail, so a program that includes both declares it once. It
+/// includes `sce/forge/algorithm.h`, whose failure it records: a machine's header,
+/// where the text stands, includes no runtime header of its own.
+pub(crate) fn c11_enum_from_number(
+    enum_name: &str,
+    carrier: &SceType,
+    variants: &[(String, i128)],
+) -> String {
+    use crate::generator::Language;
+    let prefix = crate::forge::enum_naming::c11_function_prefix(enum_name);
+    let guard = format!("SCE_ENUM_{}_FROM_NUMBER", prefix.to_uppercase());
+    let ty = enum_qualified_type(enum_name, Language::C11);
+    let carrier = c_type(carrier);
+    let cases: String = variants
+        .iter()
+        .map(|(name, value)| {
+            format!(
+                "    case {value}:\n        result.ok = true;\n        result.value = {};\n        break;\n",
+                crate::forge::enum_naming::variant_ident(Language::C11, enum_name, name)
+            )
+        })
+        .collect();
+    format!(
+        "#ifndef {guard}\n#define {guard}\n\
+         #include \"sce/forge/algorithm.h\"\n\n\
+         /* The variant `raw` declares, or why there is none: a number no variant\n \
+         * declares is outside the enum. */\n\
+         typedef struct {{\n    bool ok;\n    sce_forge_algorithm_error_t why;\n    {ty} value;\n}} {prefix}_from_number_result_t;\n\n\
+         static inline {prefix}_from_number_result_t {prefix}_from_number({carrier} raw) {{\n    \
+         {prefix}_from_number_result_t result = {{false, SCE_FORGE_ALGORITHM_OUT_OF_RANGE, ({ty})0}};\n    \
+         switch (raw) {{\n{cases}    default:\n        break;\n    }}\n    return result;\n}}\n\n\
+         /* The variant a conversion found, or its failure recorded in `f` and a value\n \
+         * the statement around it never uses. */\n\
+         static inline {ty} {prefix}_from_number_take(sce_forge_algorithm_failure_t *f,\n    \
+         {prefix}_from_number_result_t result) {{\n    \
+         if (!result.ok) {{\n        sce_forge_algorithm_fail(f, result.why);\n    }}\n    \
+         return result.value;\n}}\n#endif  /* {guard} */"
+    )
 }
 
 fn render_event_schema(
@@ -30234,7 +30355,36 @@ fn render_algorithm(
             }
         }
     }
-    let consts_prelude = format!("{record_views}{buffer_build_preamble}{consts_prelude}");
+    // C11's reading of the variant a number declares, for each closed enum a body
+    // that may fail imports: what `<alias>.fromNumber` is lowered to there, which
+    // the enum's own header cannot answer without a failure to record
+    // ([`c11_enum_from_number`], [`enum_number_symbols`]). One text under one guard,
+    // as a machine that holds the enum writes it.
+    let mut enum_conversions = String::new();
+    if matches!(lang, Language::C11) && m.signature.may_fail {
+        for imp in imports
+            .iter()
+            .filter(|i| i.kind == "enum" && !i.enum_is_open)
+        {
+            let Some(carrier) = imp.enum_underlying.as_ref() else {
+                continue;
+            };
+            let variants: Vec<(String, i128)> = imp
+                .enum_variants
+                .iter()
+                .cloned()
+                .zip(imp.enum_texts.iter().map(|text| text.value))
+                .collect();
+            enum_conversions.push_str(&c11_enum_from_number(
+                &imp.enum_source_name,
+                carrier,
+                &variants,
+            ));
+            enum_conversions.push_str("\n\n");
+        }
+    }
+    let consts_prelude =
+        format!("{enum_conversions}{record_views}{buffer_build_preamble}{consts_prelude}");
 
     // RFC §synth-5-F: const names are emitted at SCREAMING_SNAKE_CASE in
     // every backend; without a rename here, the per-language
@@ -31720,6 +31870,8 @@ mod tests {
             enum_source_name: String::new(),
             enum_underlying: None,
             enum_is_open: false,
+            enum_to_number: String::new(),
+            enum_from_number: String::new(),
             transform_state_read: None,
             record: None,
             enum_slots: None,
@@ -32590,6 +32742,8 @@ mod tests {
                 enum_source_name: String::new(),
                 enum_underlying: None,
                 enum_is_open: false,
+                enum_to_number: String::new(),
+                enum_from_number: String::new(),
                 transform_state_read: None,
                 record: None,
                 enum_slots: None,
@@ -32635,6 +32789,8 @@ mod tests {
                 enum_source_name: String::new(),
                 enum_underlying: None,
                 enum_is_open: false,
+                enum_to_number: String::new(),
+                enum_from_number: String::new(),
                 transform_state_read: None,
                 record: None,
                 enum_slots: None,

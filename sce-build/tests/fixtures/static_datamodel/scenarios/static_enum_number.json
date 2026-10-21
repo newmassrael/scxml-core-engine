@@ -1,0 +1,48 @@
+{
+  "machine": "static_enum_number",
+  "about": "A value of an enum read as the number its variant declares (Status.toNumber), kept in an int64, and a number read back as the variant that declares it (Status.fromNumber), held in a variable of the enum (docs/adr/0046). The enum declares open = 2, in_progress = 5 and done = 7, not the variants' positions. A number no variant declares (3), and one the enum's uint8 carrier cannot hold (300, -1), is no value of the enum: the assignment fails, the variable keeps what it held, and error.execution is counted in refusals. check is guarded by the number of the variant the machine holds. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "note": "nothing yet",
+      "expect": { "state": "board", "variables": {
+        "number": 0, "status": "open", "checks": 0, "refusals": 0 } } },
+
+    { "note": "the payload's value of the enum is kept as the number its variant declares",
+      "event": "item.moved", "data": { "id": 1, "status": "in_progress" },
+      "expect": { "variables": { "number": 5 } } },
+
+    { "note": "open declares 2, so the guard on the number is false",
+      "event": "check",
+      "expect": { "variables": { "checks": 0 } } },
+
+    { "note": "5 is the number in_progress declares",
+      "event": "status.number", "data": { "number": 5 },
+      "expect": { "variables": { "status": "in_progress", "refusals": 0 } } },
+
+    { "event": "check",
+      "expect": { "variables": { "checks": 1 } } },
+
+    { "event": "status.number", "data": { "number": 7 },
+      "expect": { "variables": { "status": "done", "refusals": 0 } } },
+
+    { "event": "item.moved", "data": { "id": 2, "status": "done" },
+      "expect": { "variables": { "number": 7 } } },
+
+    { "note": "no variant declares 3: nothing is written, and error.execution says so",
+      "event": "status.number", "data": { "number": 3 },
+      "expect": { "variables": { "status": "done", "refusals": 1 } } },
+
+    { "note": "the uint8 carrier holds no 300, so no variant can declare it",
+      "event": "status.number", "data": { "number": 300 },
+      "expect": { "variables": { "status": "done", "refusals": 2 } } },
+
+    { "event": "status.number", "data": { "number": -1 },
+      "expect": { "variables": { "status": "done", "refusals": 3 } } },
+
+    { "note": "a number a variant declares is taken again after the refusals",
+      "event": "status.number", "data": { "number": 2 },
+      "expect": { "variables": { "status": "open", "refusals": 3 } } },
+
+    { "event": "item.moved", "data": { "id": 3, "status": "open" },
+      "expect": { "variables": { "number": 2 } } }
+  ]
+}

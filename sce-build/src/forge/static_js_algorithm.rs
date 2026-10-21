@@ -314,6 +314,18 @@ impl Imports {
                     symbol(&context.document_name)
                 );
             }
+            // A value of an enum is its declared name here, so the enum's two
+            // conversions read the library's table of its names and numbers.
+            if context.kind == "enum" {
+                let variants: Vec<(String, i128)> = context
+                    .enum_variants
+                    .iter()
+                    .cloned()
+                    .zip(context.enum_texts.iter().map(|text| text.value))
+                    .collect();
+                (context.enum_to_number, context.enum_from_number) =
+                    crate::forge::static_js::enum_number_symbols(&variants);
+            }
         }
         Ok(Self { contexts })
     }

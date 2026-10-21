@@ -903,6 +903,18 @@ pub trait StaticTarget {
     fn enum_def(&self, _ty: &str, _alias: &str, _model: &EnumModel) -> String {
         String::new()
     }
+    /// The functions `<alias>.toNumber(value)` and `<alias>.fromNumber(number)`
+    /// are lowered to, as `(to_number, from_number)`, for the enum `model` the
+    /// machine holds in its own type `ty` ([`Self::enum_type`]): each called with
+    /// its one argument. `to_number` answers the number the value's variant
+    /// declares, in the enum's carrier; `from_number` answers the variant a number
+    /// declares, or that none does, in the shape [`crate::forge::expr`] hands the
+    /// statement's failure channel — the same shape the enum document's own
+    /// accessor answers in on this backend ([`crate::forge::generator::enum_number_symbols`]),
+    /// so a statechart and an algorithm lower the two calls alike. What they call
+    /// is declared by [`Self::enum_def`]. Required of every target, so one that
+    /// declares an enum cannot leave the two calls undefined.
+    fn enum_number_symbols(&self, ty: &str, model: &EnumModel) -> (String, String);
     /// The identifier a variant of the enum document `enum_name` has on `ty`,
     /// the [`Self::enum_type`] the machine holds it in — the declared name itself
     /// for a target whose data model holds no types, where the variant is that
@@ -1740,22 +1752,53 @@ impl StaticTarget for KotlinTarget {
                 )
             })
             .collect();
+        // `toUnderlying` and `fromUnderlying` are the enum document's own
+        // accessors, by the same names and shapes (`forge/kotlin/enum.kt.jinja2`):
+        // what `<alias>.toNumber` and `<alias>.fromNumber` are lowered to
+        // ([`StaticTarget::enum_number_symbols`]).
+        let carrier = crate::forge::generator::kotlin_type(&model.underlying_type);
+        let numbers: String = model
+            .variants
+            .iter()
+            .map(|v| {
+                format!(
+                    "\x20       {} -> {}\n",
+                    self.enum_variant(ty, &model.name, &v.name),
+                    crate::forge::generator::kotlin_literal(
+                        &v.value.to_string(),
+                        &model.underlying_type
+                    )
+                )
+            })
+            .collect();
         format!(
             "/** SCE Accepted Subset §2.15: an `enum:{alias}` datamodel value. */\n\
              enum class {ty}(val declaredName: String) {{\n\
              \x20   {variants};\n\n\
              \x20   /** This value as a saved state writes it. */\n\
              \x20   fun toSaved(): Any = declaredName\n\n\
+             \x20   /** The number the enum document declares for this value. */\n\
+             \x20   fun toUnderlying(): {carrier} = when (this) {{\n\
+             {numbers}\
+             \x20   }}\n\n\
              \x20   companion object {{\n\
              \x20       /** The value a saved state holds, refused unless it is one. */\n\
              \x20       fun fromSaved(value: Any?, what: String): {ty} {{\n\
              \x20           val declared = SavedValues.string(value, what)\n\
              \x20           return entries.firstOrNull {{ it.declaredName == declared }}\n\
              \x20               ?: throw StateRefusal(\"'$what' ($declared) is not a variant of {alias}\")\n\
-             \x20       }}\n\
+             \x20       }}\n\n\
+             \x20       /** The variant that declares [raw], or null for a number no variant declares. */\n\
+             \x20       fun fromUnderlying(raw: {carrier}): {ty}? = entries.firstOrNull {{ it.toUnderlying() == raw }}\n\
              \x20   }}\n\
              }}",
             variants = variants.join(",\n    ")
+        )
+    }
+    fn enum_number_symbols(&self, ty: &str, _model: &EnumModel) -> (String, String) {
+        (
+            format!("({ty}::toUnderlying)"),
+            format!("{ty}.fromUnderlying"),
         )
     }
     fn list_type(&self, elem: &SceType) -> String {
@@ -2396,14 +2439,55 @@ impl StaticTarget for RustTarget {
                 )
             })
             .collect();
+        // `to_underlying` and `from_underlying` are the enum document's own
+        // accessors, by the same names and shapes (`forge/rust/enum.rs.jinja2`):
+        // what `<alias>.toNumber` and `<alias>.fromNumber` are lowered to
+        // ([`StaticTarget::enum_number_symbols`]), read or not.
+        let carrier = crate::forge::generator::rust_type(&model.underlying_type);
+        let numbers: String = model
+            .variants
+            .iter()
+            .map(|v| {
+                format!(
+                    "            Self::{} => {},\n",
+                    self.enum_variant(ty, &model.name, &v.name),
+                    v.value
+                )
+            })
+            .collect();
+        let variants_of: String = model
+            .variants
+            .iter()
+            .map(|v| {
+                format!(
+                    "            {} => Some(Self::{}),\n",
+                    v.value,
+                    self.enum_variant(ty, &model.name, &v.name)
+                )
+            })
+            .collect();
         format!(
             "/// SCE Accepted Subset §2.15: an `enum:{alias}` datamodel value.\n{}\npub enum {ty} {{\n{variants}}}\n\n\
              impl {ty} {{\n    \
              /// The name the enum document declares for this value.\n    \
              #[allow(dead_code)]\n    \
              pub fn sce_name(self) -> &'static str {{\n        \
-             match self {{\n{names}        }}\n    }}\n}}",
+             match self {{\n{names}        }}\n    }}\n\n    \
+             /// The number the enum document declares for this value.\n    \
+             #[allow(dead_code)]\n    \
+             pub fn to_underlying(self) -> {carrier} {{\n        \
+             match self {{\n{numbers}        }}\n    }}\n\n    \
+             /// The variant that declares `raw`, or `None` for a number no variant declares.\n    \
+             #[allow(dead_code)]\n    \
+             pub fn from_underlying(raw: {carrier}) -> Option<Self> {{\n        \
+             match raw {{\n{variants_of}            _ => None,\n        }}\n    }}\n}}",
             crate::rust_derive_policy::RustDeriveCategory::ForgeEnum.derives_attr()
+        )
+    }
+    fn enum_number_symbols(&self, ty: &str, _model: &EnumModel) -> (String, String) {
+        (
+            format!("{ty}::to_underlying"),
+            format!("{ty}::from_underlying"),
         )
     }
     fn list_type(&self, elem: &SceType) -> String {
@@ -2783,10 +2867,20 @@ pub fn lower(
     // as. A target with none spells the alias, which a reference to a variant
     // then refuses by name ([`crate::forge::expr`]).
     let imported_enums = model.imported_enums.clone();
-    let enums = StaticEnum::from_imports(&imported_enums, |alias, _| {
-        target
-            .enum_type(machine, alias)
-            .unwrap_or_else(|| alias.to_string())
+    let enums = StaticEnum::from_imports(&imported_enums, |alias, model| {
+        let unlowered = crate::forge::type_ctx::StaticEnumSpelling::unlowered(alias);
+        let Some(ty) = target.enum_type(machine, alias) else {
+            return unlowered;
+        };
+        // The conversions between a value of the enum and the number its variant
+        // declares, as the machine's own type for the enum answers them
+        // ([`StaticTarget::enum_number_symbols`]).
+        let (to_number, from_number) = target.enum_number_symbols(&ty, model);
+        crate::forge::type_ctx::StaticEnumSpelling {
+            qualified_type: ty,
+            to_number,
+            from_number,
+        }
     });
     // A call the target cannot spell would be an undefined name where the
     // machine runs; it is refused here, where the document is read.
@@ -5004,13 +5098,35 @@ impl StaticTarget for CppTarget {
                 )
             })
             .collect();
+        // The enum document's own accessors (`forge/cpp/enum.h.jinja2`), named for
+        // the machine's type, since a machine's enums share its namespace and a
+        // function cannot be overloaded on what it returns: what `<alias>.toNumber`
+        // and `<alias>.fromNumber` are lowered to ([`StaticTarget::enum_number_symbols`]).
+        let carrier = crate::forge::generator::cpp_type(&model.underlying_type);
+        let variants_of: String = model
+            .variants
+            .iter()
+            .map(|v| {
+                format!(
+                    "    case {}:\n        return {ty}::{};\n",
+                    v.value,
+                    self.enum_variant(ty, &model.name, &v.name)
+                )
+            })
+            .collect();
         format!(
             "/// SCE Accepted Subset §2.15: an `enum:{alias}` datamodel value.\n\
-             enum class {ty} : {} {{\n{variants}}};\n\n\
+             enum class {ty} : {carrier} {{\n{variants}}};\n\n\
              /// The name the enum document declares for `value`.\n\
-             inline const char *sceLogName({ty} value) {{\n    switch (value) {{\n{names}    }}\n    return \"\";\n}}",
-            crate::forge::generator::cpp_type(&model.underlying_type)
+             inline const char *sceLogName({ty} value) {{\n    switch (value) {{\n{names}    }}\n    return \"\";\n}}\n\n\
+             /// The number the enum document declares for `value`.\n\
+             inline {carrier} {ty}ToUnderlying({ty} value) {{\n    return static_cast<{carrier}>(value);\n}}\n\n\
+             /// The variant that declares `raw`, or `std::nullopt` for a number no variant declares.\n\
+             inline std::optional<{ty}> {ty}FromUnderlying({carrier} raw) {{\n    switch (raw) {{\n{variants_of}    default:\n        return std::nullopt;\n    }}\n}}"
         )
+    }
+    fn enum_number_symbols(&self, ty: &str, _model: &EnumModel) -> (String, String) {
+        (format!("{ty}ToUnderlying"), format!("{ty}FromUnderlying"))
     }
     fn list_type(&self, elem: &SceType) -> String {
         format!("std::vector<{}>", crate::forge::generator::cpp_type(elem))
@@ -5855,14 +5971,27 @@ impl StaticTarget for GoTarget<'_> {
                 )
             })
             .collect();
+        // The enum document's own accessors, by the same names and shapes
+        // (`forge/go/enum.go.jinja2`): what `<alias>.toNumber` and
+        // `<alias>.fromNumber` are lowered to ([`StaticTarget::enum_number_symbols`]).
+        let carrier = crate::forge::generator::go_type(&model.underlying_type);
+        let declared: Vec<String> = model.variants.iter().map(|v| v.value.to_string()).collect();
         format!(
             "// SCE Accepted Subset §2.15: an `enum:{alias}` datamodel value.\n\
-             type {ty} {}\n\n\
+             type {ty} {carrier}\n\n\
              const (\n{constants})\n\n\
              // String is the name the enum document declares for the value.\n\
-             func (v {ty}) String() string {{\n\tswitch v {{\n{names}\t}}\n\treturn \"\"\n}}",
-            crate::forge::generator::go_type(&model.underlying_type)
+             func (v {ty}) String() string {{\n\tswitch v {{\n{names}\t}}\n\treturn \"\"\n}}\n\n\
+             // ToUnderlying is the number the enum document declares for the value.\n\
+             func (v {ty}) ToUnderlying() {carrier} {{\n\treturn {carrier}(v)\n}}\n\n\
+             // {ty}FromUnderlying returns the variant that declares raw, and false for a\n\
+             // number no variant declares.\n\
+             func {ty}FromUnderlying(raw {carrier}) ({ty}, bool) {{\n\tswitch raw {{\n\tcase {}:\n\t\treturn {ty}(raw), true\n\t}}\n\treturn 0, false\n}}",
+            declared.join(", ")
         )
+    }
+    fn enum_number_symbols(&self, ty: &str, _model: &EnumModel) -> (String, String) {
+        (format!("{ty}.ToUnderlying"), format!("{ty}FromUnderlying"))
     }
     fn list_type(&self, elem: &SceType) -> String {
         format!("[]{}", crate::forge::generator::go_type(elem))
@@ -6499,13 +6628,33 @@ impl StaticTarget for PythonTarget {
                 )
             })
             .collect();
+        // `to_underlying` and `from_underlying` are the enum document's own
+        // accessors, by the same names and shapes (`forge/python/enum.py.jinja2`):
+        // what `<alias>.toNumber` and `<alias>.fromNumber` are lowered to
+        // ([`StaticTarget::enum_number_symbols`]).
         format!(
             "class {ty}(IntEnum):\n    \
              \"\"\"SCE Accepted Subset §2.15: an `enum:{alias}` datamodel value.\"\"\"\n\n\
              {variants}\n    @property\n    def sce_name(self) -> str:\n        \
              \"\"\"The name the enum document declares for this value.\"\"\"\n        \
-             return {{{}}}[int(self)]\n",
+             return {{{}}}[int(self)]\n\n    \
+             def to_underlying(self) -> int:\n        \
+             \"\"\"The number the enum document declares for this value.\"\"\"\n        \
+             return int(self)\n\n    \
+             @classmethod\n    \
+             def from_underlying(cls, raw: int) -> Optional[\"{ty}\"]:\n        \
+             \"\"\"The variant that declares ``raw``, or None for a number no variant declares.\"\"\"\n        \
+             try:\n            \
+             return cls(raw)\n        \
+             except ValueError:\n            \
+             return None\n",
             names.join(", ")
+        )
+    }
+    fn enum_number_symbols(&self, ty: &str, _model: &EnumModel) -> (String, String) {
+        (
+            format!("{ty}.to_underlying"),
+            format!("{ty}.from_underlying"),
         )
     }
     fn list_type(&self, elem: &SceType) -> String {
@@ -7423,16 +7572,41 @@ impl StaticTarget for CTarget {
     // import the same enum declares it once. `<prefix>_declared_name` answers the
     // name the document declares for a value — what a saved or observed value is —
     // and NULL for one no variant names.
+    //
+    // `<prefix>_number` answers the number the document declares for a value — the
+    // value itself, since the type's constants carry the declared numbers — and the
+    // `<prefix>_from_number` family the variant a number declares, or that none
+    // does: what `<alias>.toNumber` and `<alias>.fromNumber` are lowered to
+    // ([`StaticTarget::enum_number_symbols`]). The family is the one text an
+    // algorithm that may fail declares beside the same enum, under the same guard
+    // ([`crate::forge::generator::c11_enum_from_number`]).
     fn enum_def(&self, ty: &str, alias: &str, model: &EnumModel) -> String {
         let prefix = crate::forge::enum_naming::c11_function_prefix(&model.name);
         let guard = format!("SCE_STATIC_ENUM_{}", prefix.to_uppercase());
+        let carrier = crate::forge::generator::c_type(&model.underlying_type);
+        let variants: Vec<(String, i128)> = model
+            .variants
+            .iter()
+            .map(|v| (v.name.clone(), v.value))
+            .collect();
         format!(
             "{}\n\n#ifndef {guard}\n#define {guard}\n\
              /* SCE Accepted Subset §2.15: an `enum:{alias}` datamodel value. */\n\
-             typedef {} {ty};\n#endif",
+             typedef {} {ty};\n\n\
+             /* The number the enum document declares for `value`. */\n\
+             static inline {carrier} {prefix}_number({ty} value) {{\n    return ({carrier})value;\n}}\n#endif\n\n{}",
             crate::forge::generator::c11_enum_declaration(model),
-            crate::forge::generator::enum_qualified_type(&model.name, Language::C11)
+            crate::forge::generator::enum_qualified_type(&model.name, Language::C11),
+            crate::forge::generator::c11_enum_from_number(
+                &model.name,
+                &model.underlying_type,
+                &variants
+            )
         )
+    }
+    fn enum_number_symbols(&self, _ty: &str, model: &EnumModel) -> (String, String) {
+        let prefix = crate::forge::enum_naming::c11_function_prefix(&model.name);
+        (format!("{prefix}_number"), format!("{prefix}_from_number"))
     }
     // The machine holds the value in the type the algorithm holds it in
     // ([`Self::enum_def`]), so it crosses as it is.

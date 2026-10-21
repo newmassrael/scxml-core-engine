@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <iterator>
 #include <limits>
+#include <optional>
 #include <type_traits>
 
 namespace SCE::Forge {
@@ -147,6 +148,17 @@ template <typename T> T take(AlgorithmFailure &f, const AlgorithmResult<T> &resu
         return T{};
     }
     return result.value();
+}
+
+/// The variant an enum's `from_underlying` found for a number, or an
+/// out-of-range failure when no variant declares it: what `<alias>.fromNumber(n)`
+/// answers (SCE_FORGE.md §4.12), the number outside the enum failing as a number
+/// outside a collection does.
+template <typename T> AlgorithmResult<T> declared(const std::optional<T> &variant) {
+    if (!variant.has_value()) {
+        return AlgorithmResult<T>::failure(AlgorithmError::OutOfRange);
+    }
+    return AlgorithmResult<T>::success(*variant);
 }
 
 /// `value` when it holds no more than `capacity` bytes — the bound a string

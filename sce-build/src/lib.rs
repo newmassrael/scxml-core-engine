@@ -5232,6 +5232,10 @@ fn validate_and_enrich_imports(
                 // decision, not the codec's.
                 ctx.enum_underlying = Some(em.underlying_type.clone());
                 ctx.enum_is_open = !em.strict_variants;
+                // What `<alias>.toNumber` and `<alias>.fromNumber` are lowered to
+                // in this language: the enum document's own accessors.
+                (ctx.enum_to_number, ctx.enum_from_number) =
+                    forge::generator::enum_number_symbols(&em.name, !em.strict_variants, *language);
             }
             // An imported event-schema is the record type an algorithm's
             // `record:<alias>` names (SCE_FORGE.md §4.12). Its struct name

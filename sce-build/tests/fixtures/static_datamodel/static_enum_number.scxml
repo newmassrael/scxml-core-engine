@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Enum variables";
+  docs/adr/0046): a value of an enum read as the number its variant declares, and a
+  number read back as the variant that declares it.
+
+  `item.moved` carries where an item stands as a value of the enum, and the machine
+  keeps the number its variant declares in an `int64` (`Status.toNumber`), the way an
+  application keeps an enum in a numeric field of a shared list. `status.number`
+  carries a number, and the machine keeps the variant that declares it
+  (`Status.fromNumber`). The enum declares 2, 5 and 7, not the variants' positions, so
+  a conversion that read a position would not hold the numbers written here.
+
+  A number no variant declares (3), and one the enum's `uint8` carrier cannot hold
+  (300, -1), is no value of the enum: the assignment fails, nothing is written, and
+  error.execution says so (W3C SCXML 4.9), counted in `refusals`. `check` is guarded by
+  the number of the variant the machine holds.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="board" datamodel="sce-static" name="static_enum_number">
+  <sce:import kind="event-schema" src="schema_item_move.scxml" as="Move"/>
+  <sce:import kind="event-schema" src="schema_status_number.scxml" as="Number"/>
+  <sce:import kind="enum" src="enum_item_status.scxml" as="Status"/>
+  <datamodel>
+    <data id="number" sce:type="int64" expr="0" sce:direction="out"/>
+    <data id="status" sce:type="enum:Status" expr="Status.open" sce:direction="out"/>
+    <data id="checks" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="board">
+    <transition event="item.moved" type="internal">
+      <assign location="number" expr="Status.toNumber(_event.data.status)"/>
+    </transition>
+    <transition event="status.number" type="internal">
+      <assign location="status" expr="Status.fromNumber(_event.data.number)"/>
+    </transition>
+    <transition event="check" cond="Status.toNumber(status) === 5" type="internal">
+      <assign location="checks" expr="checks + 1"/>
+    </transition>
+    <transition event="error.execution" type="internal">
+      <assign location="refusals" expr="refusals + 1"/>
+    </transition>
+  </state>
+</scxml>

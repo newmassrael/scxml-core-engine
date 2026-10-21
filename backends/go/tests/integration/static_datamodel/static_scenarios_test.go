@@ -50,6 +50,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_donedata_content"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_donedata_record"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_enum"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_enum_number"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_event_arrival"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_event_wildcard"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_foreach"
@@ -1052,6 +1053,20 @@ func TestAnEnumVariableHoldsAVariantOfItsEnum(t *testing.T) {
 			return static_enum.StaticEnumViewModeEnum(unexportedUint(&policy, "vPrevious")).String()
 		},
 		"changes": func() any { return policy.Changes() },
+	}))
+}
+
+// docs/adr/0046: a value of an enum is read as the number its variant declares and
+// a number back as the variant that declares it; a number no variant declares is
+// error.execution, and the variable keeps what it held.
+func TestAnEnumIsReadAsItsNumberAndBack(t *testing.T) {
+	policy := static_enum_number.NewStaticEnumNumberPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_enum_number", drive[static_enum_number.StaticEnumNumberState, static_enum_number.StaticEnumNumberEvent](&policy, map[string]func() any{
+		"number":   func() any { return policy.Number() },
+		"status":   func() any { return policy.Status().String() },
+		"checks":   func() any { return policy.Checks() },
+		"refusals": func() any { return policy.Refusals() },
 	}))
 }
 

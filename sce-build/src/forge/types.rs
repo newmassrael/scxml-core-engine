@@ -884,6 +884,51 @@ pub struct EnumScope<'a> {
     /// The enum document's own name; `enum_naming` derives each variant's
     /// backend identifier from it.
     pub source_name: &'a str,
+    /// The integer the enum is carried as (`sce:underlying-type`): what
+    /// `<alias>.toNumber(value)` answers and `<alias>.fromNumber(number)` takes
+    /// ([`ENUM_TO_NUMBER`], [`ENUM_FROM_NUMBER`]). `Unknown` where the context
+    /// was built without it.
+    pub carrier: InferredType,
+    /// The function `<alias>.toNumber(value)` is lowered to on this backend,
+    /// called with the value: it answers the number the value's variant declares.
+    pub to_number: &'a str,
+    /// The function `<alias>.fromNumber(number)` is lowered to on this backend,
+    /// called with the number: it answers the variant that declares the number,
+    /// or that none does, in the shape the backend's wrapper turns into a
+    /// failure ([`crate::forge::expr`]'s conversion lowering).
+    pub from_number: &'a str,
+    /// The enum declares `sce:strict-variants="false"`: every number of its
+    /// carrier is a value of it, so `fromNumber` cannot fail and answers the
+    /// value itself.
+    pub open: bool,
+}
+
+/// The conversion every imported enum carries from a value to the number its
+/// variant declares: `<alias>.toNumber(value)`, a value of the enum's carrier.
+pub const ENUM_TO_NUMBER: &str = "toNumber";
+
+/// The conversion every imported enum carries from a number to the variant that
+/// declares it: `<alias>.fromNumber(number)`. A number no variant of a closed enum
+/// declares fails `out-of-range`, as a delivery that names no variant is refused,
+/// so the call is `may-fail` (SCE_FORGE.md §3.4.1); an open enum holds every
+/// number of its carrier, and its call cannot fail.
+pub const ENUM_FROM_NUMBER: &str = "fromNumber";
+
+impl EnumScope<'_> {
+    /// The signature of the conversion `method` of this enum, when it is one
+    /// ([`ENUM_TO_NUMBER`], [`ENUM_FROM_NUMBER`]). A value of an enum is typed
+    /// `Unknown` (its kind is held by [`crate::forge::static_enum`]), so the one
+    /// parameter of `toNumber` and the return of `fromNumber` are.
+    pub fn conversion(&self, method: &str) -> Option<FuncSig> {
+        match method {
+            ENUM_TO_NUMBER => Some(FuncSig::new(vec![InferredType::Unknown], self.carrier)),
+            ENUM_FROM_NUMBER => Some(FuncSig {
+                may_fail: !self.open,
+                ..FuncSig::new(vec![self.carrier], InferredType::Unknown)
+            }),
+            _ => None,
+        }
+    }
 }
 
 /// Signature of a function that may appear in a SCXML expression as
@@ -1199,6 +1244,16 @@ impl<'a> TypeCtx<'a> {
     /// The imported enum an alias names, if it names one.
     pub fn lookup_enum(&self, alias: &str) -> Option<&EnumScope<'a>> {
         self.enums.get(alias)
+    }
+
+    /// The signature `<object>.<method>(…)` is called by: a member function
+    /// registered under `"<object>.<method>"` (a stateful import's), or a
+    /// conversion of the imported enum `object` names ([`EnumScope::conversion`]).
+    pub fn lookup_member_func(&self, object: &str, method: &str) -> Option<FuncSig> {
+        if let Some(sig) = self.funcs.get(format!("{object}.{method}").as_str()) {
+            return Some(sig.clone());
+        }
+        self.lookup_enum(object)?.conversion(method)
     }
 
     /// Register a member path's C11 length sibling (W-project §8 Smell A).

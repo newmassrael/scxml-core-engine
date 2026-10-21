@@ -84,6 +84,9 @@
 //   * `static_enum`: an enum variable starts at a variant, is compared with `===`
 //     and `!==`, takes a conditional of two variants, and is observed as the name
 //     its document declares, not as the constant C spells for it.
+//   * `static_enum_number`: a value of an enum is read as the number its variant
+//     declares and a number back as its variant, and a number no variant declares
+//     is error.execution (docs/adr/0046).
 //   * `presence_peer`: a machine whose entries expire by its own delayed send, so
 //     it runs on a manual clock the scenario moves on, and sends its Mesh peers
 //     through the same router.
@@ -127,6 +130,7 @@
 #include "static_donedata_content_sm.h"
 #include "static_donedata_record_sm.h"
 #include "static_donedata_sm.h"
+#include "static_enum_number_sm.h"
 #include "static_enum_sm.h"
 #include "static_event_arrival_sm.h"
 #include "static_event_wildcard_sm.h"
@@ -918,6 +922,39 @@ static const variable_t enum_variables[] = {
     {"previous", static_enum_read_previous},
 };
 STATIC_SCENARIO(static_enum, enum_states, enum_variables, static_enum_text, no_lists, no_records)
+
+// static_enum_number (docs/adr/0046): a value of an enum is read as the number its
+// variant declares and a number back as the variant that declares it; a number no
+// variant declares is error.execution, and the variable keeps what it held. A value
+// is stated as the name its document declares.
+VARIABLE_READER(static_enum_number, checks)
+VARIABLE_READER(static_enum_number, number)
+VARIABLE_READER(static_enum_number, refusals)
+
+static int64_t static_enum_number_read_status(const void *sm) {
+    return (int64_t)static_enum_number_get_status((const static_enum_number_t *)sm);
+}
+
+static const char *static_enum_number_text(void *sm, const char *name) {
+    const static_enum_number_t *machine = (const static_enum_number_t *)sm;
+    // The function is named for the enum document's own name: `enum_item_status.scxml`.
+    if (strcmp(name, "status") == 0) {
+        return enum_item_status_declared_name(static_enum_number_get_status(machine));
+    }
+    return NULL;
+}
+
+static const name_value_t enum_number_states[] = {
+    {"board", STATIC_ENUM_NUMBER_STATE_BOARD},
+};
+static const variable_t enum_number_variables[] = {
+    {"checks", static_enum_number_read_checks},
+    {"number", static_enum_number_read_number},
+    {"refusals", static_enum_number_read_refusals},
+    {"status", static_enum_number_read_status},
+};
+STATIC_SCENARIO(static_enum_number, enum_number_states, enum_number_variables, static_enum_number_text, no_lists,
+                no_records)
 
 // static_payload_enum: an event's payload carries an enum field, the variant's
 // declared name, held in the machine's own enum and lifted from the data it
@@ -2937,6 +2974,7 @@ int main(void) {
     bad |= static_wire_enum_scenario("static_wire_enum", 7);
     bad |= static_payload_scenario("static_payload", 5);
     bad |= static_enum_scenario("static_enum", 11);
+    bad |= static_enum_number_scenario("static_enum_number", 12);
     bad |= static_payload_enum_scenario("static_payload_enum", 8);
     bad |= static_payload_relay_scenario("static_payload_relay", 5);
     bad |= static_string_capacity_scenario("static_string_capacity", 11);

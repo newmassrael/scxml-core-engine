@@ -1430,6 +1430,20 @@ with the attribute to add as the fix). A read through `previous()` is not
 a dependency, so it cannot close an output cycle: `x = previous(x) + 1`
 is legal where `x = x + 1` is `validation/transform-output-cycle`.
 
+**And, on every enum a document imports, its two conversions** (docs/adr/0046):
+`<alias>.toNumber(value)` is the number the variant of `value` declares, a value
+of the enum's carrier (`sce:underlying-type`), and `<alias>.fromNumber(number)` is
+the variant that declares `number`. `toNumber` takes a value of that same enum
+and `fromNumber` an integer; anything else is `expression/unsupported-construct`.
+A number no variant of a closed enum declares — one the carrier cannot hold
+included — is the failure `out-of-range`, not a value, so `fromNumber` of a closed
+enum is `may-fail` (SCE_FORGE.md §3.4.1): a `sce-static` statechart
+receives it as `error.execution` with nothing written, an algorithm only where it
+declares `may-fail` itself, and a variable's initial value never. An open enum
+(`sce:strict-variants="false"`) holds every number of its carrier, and its
+`fromNumber` cannot fail. A variant named `toNumber` is still that variant where it
+is read and not called.
+
 **How every backend lowers it.** Each output stays a pure function. A
 field read through `previous()` adds one parameter, `previous_<x>`, to
 every output function, after the inputs and in the order inputs then
@@ -3948,17 +3962,41 @@ starts at one of the variants, written as the expression `<alias>.<variant>`
 </datamodel>
 ```
 
-An enum value is one of four things: `<alias>.<variant>`, a variable
+An enum value is one of five things: `<alias>.<variant>`, a variable
 declared `enum:<alias>`, a conditional whose two branches are values of one
-enum, or the call of an imported algorithm that returns a value of one (State an
-algorithm takes and gives back, below). What it may be used for is deliberately
-small: stored (`<assign>`) in a variable of its own enum, logged, compared with
-`===` or `!==` to a value of that same enum, and handed to an imported algorithm
-whose parameter takes that same enum. Anything else is
+enum, the call of an imported algorithm that returns a value of one (State an
+algorithm takes and gives back, below), or `<alias>.fromNumber(number)`. What it
+may be used for is deliberately small: stored (`<assign>`) in a variable of its own
+enum, logged, compared with `===` or `!==` to a value of that same enum, handed to
+an imported algorithm whose parameter takes that same enum, and read as the number
+its variant declares by `<alias>.toNumber(value)`. Anything else is
 `expression/unsupported-construct` on the expression: ordering, arithmetic, an
 argument of any other call or of a parameter that is not of its enum, a
 comparison with a number or with another enum, a value of one enum stored in a
-variable of another or in a number. An enum value is also carried as a `<param>`, as the name its
+variable of another or in a number.
+
+**The number a variant declares** (docs/adr/0046). `Status.toNumber(value)` is the
+number the variant of `value` declares, of the enum's carrier, which then stands
+wherever an integer does: kept in an `int64`, compared, sent; it is how an
+application keeps an enum in a numeric field of the standard shared list
+(docs/adr/0042). `Status.fromNumber(number)` is the variant that declares `number`.
+A number no variant declares, one the carrier cannot hold included, is no value of
+the enum: the statement fails as an overflow does — nothing is written,
+`error.execution` is raised and the block ends (§scxml-4.9) — and a `<data expr>`
+refuses the call at build time, since a machine that is being built has no error to
+raise. Every machine that holds an enum declares the two accessors on its own type
+for it, by the names and shapes of the enum document's own (`to_underlying` /
+`from_underlying` on Rust, Python and, as `<T>ToUnderlying` / `<T>FromUnderlying`,
+C++; `toUnderlying` / `fromUnderlying` on Kotlin; `ToUnderlying` / `<T>FromUnderlying`
+on Go; `<doc>_number` and the `<doc>_from_number` family on C11), so a statechart and
+an algorithm lower the two calls alike, and a reading that answers no variant is
+turned into the failure by the runtime's `declared`; the Interpreter reads the
+library's table of the enum's names and numbers (`SceStatic.number`,
+`SceStatic.variant`). `scenarios/static_enum_number.json` holds this on every engine
+that runs the model, and `sce-build/tests/an_enum_is_read_as_its_number_and_back.rs`
+holds the rule and each backend's lowering. Measured 2026-10-21, before the two
+existed: no document could read the number, and a statechart that needed it had no
+form to write. An enum value is also carried as a `<param>`, as the name its
 enum document declares for it (**Params** above); a value of a loop's record
 item is not, and is refused as `scxml/static-datamodel-rule` like a list or a
 record. The expression typer

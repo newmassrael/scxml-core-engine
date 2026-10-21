@@ -79,6 +79,19 @@ public object SceChecked {
         }
 
     /**
+     * The variant an enum's `fromUnderlying` found for a number, or an
+     * out-of-range failure when no variant declares it: what
+     * `<alias>.fromNumber(n)` answers (SCE_FORGE.md Section 4.12), the number
+     * outside the enum failing as a number outside a collection does.
+     */
+    public fun <T : Any> declared(variant: T?): AlgorithmResult<T> =
+        if (variant == null) {
+            AlgorithmResult.Failed(AlgorithmError.OutOfRange)
+        } else {
+            AlgorithmResult.Ok(variant)
+        }
+
+    /**
      * [value] when it holds no more than [capacity] UTF-8 bytes — the bound a
      * string variable of a `sce-static` machine declares — and a capacity
      * failure otherwise. Counted in bytes, as every backend counts them, and not

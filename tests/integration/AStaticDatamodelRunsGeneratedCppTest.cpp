@@ -45,6 +45,7 @@
 #include "static_donedata_content_sm.h"
 #include "static_donedata_record_sm.h"
 #include "static_donedata_sm.h"
+#include "static_enum_number_sm.h"
 #include "static_enum_sm.h"
 #include "static_event_arrival_sm.h"
 #include "static_event_wildcard_sm.h"
@@ -958,6 +959,22 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, AnEnumVariableHoldsAVariantOfItsEnum)
         {"changes", [](const Probe &m) { return json(m.changes()); }},
     });
     replay("static_enum", driver);
+}
+
+// docs/adr/0046: a value of an enum is read as the number its variant declares and
+// a number back as the variant that declares it; a number no variant declares is
+// error.execution, and the variable keeps what it held. The scenario names a value
+// as the enum document does, so the host's enum is read back by `sceLogName`.
+TEST(AStaticDatamodelRunsGeneratedCppTest, AnEnumIsReadAsItsNumberAndBack) {
+    namespace E = G::static_enum_number;
+    using Machine = E::static_enum_number;
+    Driver<Machine> driver({
+        {"number", [](const Machine &m) { return json(m.number()); }},
+        {"status", [](const Machine &m) { return json(std::string(E::sceLogName(m.status()))); }},
+        {"checks", [](const Machine &m) { return json(m.checks()); }},
+        {"refusals", [](const Machine &m) { return json(m.refusals()); }},
+    });
+    replay("static_enum_number", driver);
 }
 
 // An event's payload carries an enum field, the variant's declared name: a guard

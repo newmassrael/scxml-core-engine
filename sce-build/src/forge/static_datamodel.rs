@@ -683,7 +683,8 @@ impl SentValue<'_> {
             }
             (SentValue::Enum { alias, .. }, _) => Some(format!(
                 "the value is of the enum `{alias}`, which crosses as the name its variant \
-                 declares, and the field is {declared}"
+                 declares, and the field is {declared} (`{alias}.toNumber(value)` is the number \
+                 its variant declares)"
             )),
             (SentValue::Typed(ty), _) => {
                 let want = InferredType::from_sce_type(&field.sce_type);
@@ -841,7 +842,10 @@ impl<'a> Judge<'a> {
                 if !matches!(slot, InferredType::Unknown) {
                     return Err(place(
                         crate::forge::error::ExprError::UnsupportedConstruct {
-                            construct: format!("a value of the enum `{alias}` where a number or a bool is expected"),
+                            construct: format!(
+                                "a value of the enum `{alias}` where a number or a bool is expected \
+                                 (`{alias}.toNumber(value)` is the number its variant declares)"
+                            ),
                             observed: Some(expr.trim().to_string()),
                         }
                         .at(None),

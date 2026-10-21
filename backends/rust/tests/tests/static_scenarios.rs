@@ -50,6 +50,9 @@ use sce_rust_tests::integration::static_datamodel::static_donedata_record_sm::{
 use sce_rust_tests::integration::static_datamodel::static_donedata_sm::{
     StaticDonedataPersist, StaticDonedataPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_enum_number_sm::{
+    StaticEnumNumberPersist, StaticEnumNumberPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_enum_sm::{
     StaticEnumPersist, StaticEnumPolicy,
 };
@@ -825,6 +828,20 @@ fn static_enum_holds_a_layout_and_the_one_it_came_from() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_enum.json"
+        ),
+    );
+}
+
+// docs/adr/0046: a value of an enum read as the number its variant declares and a
+// number read back as the variant that declares it; a number no variant declares
+// is error.execution.
+#[test]
+fn static_enum_number_reads_an_enum_as_its_number_and_back() {
+    replay(
+        Engine::new(StaticEnumNumberPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_enum_number.json"
         ),
     );
 }

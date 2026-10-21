@@ -60,6 +60,12 @@
      A value that names no declared document throws, so the srcexpr cannot be
      evaluated: error.execution, and nothing starts.
 
+     A value of an enum is the name its variant declares. number() answers the
+     number the variant of a value declares, from the table of the enum's names
+     and numbers it is handed, and variant() the name of the variant a number
+     declares, failing out-of-range for a number no variant declares: what
+     Alias.toNumber and Alias.fromNumber are lowered to.
+
      The library is embedded in one attribute and its newlines collapse, so it
      holds no line comment and no statement that relies on a line break. */
   var SAFE = BigInt(Number.MAX_SAFE_INTEGER);
@@ -400,6 +406,19 @@
         fail('the index ' + String(index) + ' is outside the collection', 'out-of-range');
       }
       return collection[index];
+    },
+    number: function (numbers, value) {
+      if (typeof value !== 'string' || !Object.prototype.hasOwnProperty.call(numbers, value)) {
+        fail('expected a variant of the enum, read ' + String(value));
+      }
+      return numbers[value];
+    },
+    variant: function (names, number) {
+      var key = String(number);
+      if (!Object.prototype.hasOwnProperty.call(names, key)) {
+        fail('no variant of the enum declares the number ' + key, 'out-of-range');
+      }
+      return names[key];
     },
     fromReal: fromReal,
     round: function (value) {

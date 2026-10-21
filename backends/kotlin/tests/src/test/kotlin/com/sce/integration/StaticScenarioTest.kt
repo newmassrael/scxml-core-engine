@@ -41,6 +41,7 @@ import com.sce.integration.static_donedata.StaticDonedataStateMachine
 import com.sce.integration.static_donedata_content.StaticDonedataContentStateMachine
 import com.sce.integration.static_donedata_record.StaticDonedataRecordStateMachine
 import com.sce.integration.static_enum.StaticEnumStateMachine
+import com.sce.integration.static_enum_number.StaticEnumNumberStateMachine
 import com.sce.integration.static_event_arrival.StaticEventArrivalStateMachine
 import com.sce.integration.static_event_wildcard.StaticEventWildcardStateMachine
 import com.sce.integration.static_foreach.StaticForeachStateMachine
@@ -964,6 +965,26 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_enum"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // docs/adr/0046: a value of an enum read as the number its variant declares and
+    // a number read back as the variant that declares it; a number no variant
+    // declares is error.execution.
+    @Test
+    fun staticEnumNumberReadsAnEnumAsItsNumberAndBack() {
+        val sm = StaticEnumNumberStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_enum_number"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },

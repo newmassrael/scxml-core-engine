@@ -553,6 +553,13 @@ def test_an_enum_variable_holds_a_variant_of_its_enum() -> None:
     replay("static_enum")
 
 
+# docs/adr/0046: a value of an enum read as the number its variant declares and a
+# number read back as the variant that declares it; a number no variant declares
+# is error.execution.
+def test_an_enum_is_read_as_its_number_and_back() -> None:
+    replay("static_enum_number")
+
+
 # A list is filled to its bound and emptied.
 def test_a_list_is_filled_to_its_bound_and_emptied() -> None:
     replay("static_list")

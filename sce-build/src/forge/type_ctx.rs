@@ -301,6 +301,13 @@ pub(crate) fn insert_enum_imports<'a>(ctx: &mut TypeCtx<'a>, imports: &'a [Impor
                 variants: &imp.enum_variants,
                 qualified_type: imp.enum_qualified_type.as_str(),
                 source_name: imp.enum_source_name.as_str(),
+                carrier: imp
+                    .enum_underlying
+                    .as_ref()
+                    .map_or(InferredType::Unknown, InferredType::from_sce_type),
+                to_number: imp.enum_to_number.as_str(),
+                from_number: imp.enum_from_number.as_str(),
+                open: imp.enum_is_open,
             },
         );
     }
@@ -513,23 +520,57 @@ pub struct StaticEnum {
     pub variants: Vec<String>,
     pub source_name: String,
     pub qualified_type: String,
+    /// The integer the enum is carried as ([`EnumScope::carrier`]).
+    pub carrier: SceType,
+    /// What `<alias>.toNumber` and `<alias>.fromNumber` are lowered to
+    /// ([`EnumScope::to_number`], [`EnumScope::from_number`]).
+    pub to_number: String,
+    pub from_number: String,
+}
+
+/// How a backend spells an enum a statechart imports: the type it holds a value
+/// in, and the functions its two conversions are lowered to
+/// ([`StaticEnum::from_imports`]).
+#[derive(Debug, Clone)]
+pub struct StaticEnumSpelling {
+    pub qualified_type: String,
+    pub to_number: String,
+    pub from_number: String,
+}
+
+impl StaticEnumSpelling {
+    /// The spelling of a check that lowers nothing: the alias, and its two
+    /// conversions as the document writes them.
+    pub fn unlowered(alias: &str) -> Self {
+        Self {
+            qualified_type: alias.to_string(),
+            to_number: format!("{alias}.{}", crate::forge::types::ENUM_TO_NUMBER),
+            from_number: format!("{alias}.{}", crate::forge::types::ENUM_FROM_NUMBER),
+        }
+    }
 }
 
 impl StaticEnum {
-    /// One per imported enum, keyed by alias, with `qualified_type` as the
-    /// backend spells it — the alias itself for a check that lowers
-    /// nothing.
+    /// One per imported enum, keyed by alias, spelled as the backend spells it
+    /// ([`StaticEnumSpelling`]) — [`StaticEnumSpelling::unlowered`] for a check
+    /// that lowers nothing.
     pub fn from_imports(
         enums: &std::collections::BTreeMap<String, EnumModel>,
-        qualified_type: impl Fn(&str, &EnumModel) -> String,
+        spelling: impl Fn(&str, &EnumModel) -> StaticEnumSpelling,
     ) -> Vec<Self> {
         enums
             .iter()
-            .map(|(alias, model)| StaticEnum {
-                alias: alias.clone(),
-                variants: model.variants.iter().map(|v| v.name.clone()).collect(),
-                source_name: model.name.clone(),
-                qualified_type: qualified_type(alias, model),
+            .map(|(alias, model)| {
+                let spelled = spelling(alias, model);
+                StaticEnum {
+                    alias: alias.clone(),
+                    variants: model.variants.iter().map(|v| v.name.clone()).collect(),
+                    source_name: model.name.clone(),
+                    qualified_type: spelled.qualified_type,
+                    carrier: model.underlying_type.clone(),
+                    to_number: spelled.to_number,
+                    from_number: spelled.from_number,
+                }
             })
             .collect()
     }
@@ -1407,6 +1448,12 @@ fn static_statechart<'a>(
                 variants: &e.variants,
                 qualified_type: e.qualified_type.as_str(),
                 source_name: e.source_name.as_str(),
+                carrier: InferredType::from_sce_type(&e.carrier),
+                to_number: e.to_number.as_str(),
+                from_number: e.from_number.as_str(),
+                // A statechart holds a closed enum only: an open one is refused
+                // where a variable or a field declares it.
+                open: false,
             },
         );
     }

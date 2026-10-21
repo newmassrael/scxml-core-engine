@@ -204,6 +204,7 @@ scenarios! {
     "static_donedata_content_value" => static_donedata_content_sm::{StaticDonedataContentPolicy, StaticDonedataContentPersist};
     "static_donedata_record" => static_donedata_record_sm::{StaticDonedataRecordPolicy, StaticDonedataRecordPersist};
     "static_enum" => static_enum_sm::{StaticEnumPolicy, StaticEnumPersist};
+    "static_enum_number" => static_enum_number_sm::{StaticEnumNumberPolicy, StaticEnumNumberPersist};
     "static_event_arrival" => static_event_arrival_sm::{StaticEventArrivalPolicy, StaticEventArrivalPersist};
     "static_event_wildcard" => static_event_wildcard_sm::{StaticEventWildcardPolicy, StaticEventWildcardPersist};
     "static_foreach" => static_foreach_sm::{StaticForeachPolicy, StaticForeachPersist};

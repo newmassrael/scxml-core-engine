@@ -116,6 +116,16 @@ def at(xs, i: int):
     return xs[i]
 
 
+def declared(variant):
+    """The variant an enum's ``from_underlying`` found for a number, or an
+    out-of-range failure when no variant declares it (``None``): what
+    ``<alias>.fromNumber(n)`` answers (SCE_FORGE.md §4.12), the number outside
+    the enum failing as a number outside a collection does."""
+    if variant is None:
+        raise AlgorithmFailure(AlgorithmError.OUT_OF_RANGE)
+    return variant
+
+
 def to_f32(value: float) -> float:
     """``value`` rounded to the nearest binary32, as the double that holds it
     exactly — what a 32-bit real is on the backends that have one. Python's

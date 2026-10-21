@@ -2787,6 +2787,13 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_enum.scxml"
         STAGE_ALSO enum_view_mode.scxml
     )
+    # A value of an enum read as the number its variant declares, and a number read
+    # back as the variant that declares it (docs/adr/0046).
+    sce_generate_static_integration_c_test(static_enum_number
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_enum_number.scxml"
+        STAGE_ALSO schema_item_move.scxml schema_status_number.scxml enum_item_status.scxml
+    )
     # A machine that calls imported algorithms includes their headers, and does
     # not generate them: an algorithm is a document of its own kind, generated
     # once however many machines call it. The four sync rules `sync_client`
@@ -3093,6 +3100,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_payload_enum_SOURCES}
         ${INTEGRATION_C_TEST_static_payload_relay_SOURCES}
         ${INTEGRATION_C_TEST_static_enum_SOURCES}
+        ${INTEGRATION_C_TEST_static_enum_number_SOURCES}
         ${INTEGRATION_C_TEST_sync_client_SOURCES}
         ${_STATIC_SYNC_ALGORITHM_HEADERS}
         ${INTEGRATION_C_TEST_todo_peer_SOURCES}

@@ -3118,7 +3118,7 @@ impl SCXMLParser {
         crate::forge::static_datamodel::check(
             &model,
             &crate::forge::type_ctx::StaticEnum::from_imports(&imported_enums, |alias, _| {
-                alias.to_string()
+                crate::forge::type_ctx::StaticEnumSpelling::unlowered(alias)
             }),
             diag_label,
         )?;
