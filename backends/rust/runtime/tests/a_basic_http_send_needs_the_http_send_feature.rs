@@ -170,7 +170,10 @@ fn running_engine() -> Engine<HttpPolicy> {
     engine
 }
 
-const TARGET: &str = "http://localhost:8080/sce";
+/// The send's target. No server is contacted: the transport is the test's own
+/// callback, so the host is one RFC 2606 reserves as never resolving, not the
+/// W3C fixture endpoint.
+const TARGET: &str = "http://transport.invalid/sce";
 
 #[cfg(feature = "http-send")]
 mod with_the_processor {
