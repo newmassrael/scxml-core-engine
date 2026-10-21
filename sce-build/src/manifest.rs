@@ -99,7 +99,10 @@ pub const MANIFEST_SCHEMA_STATUS: &str = "pre-release";
 /// pins it to the schema file's `kind.enum`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ManifestKind {
-    /// `sce-codegen generate` — artifacts were written.
+    /// `sce-codegen generate` — artifacts were written: for one document, or,
+    /// with `--with-imports`, for every document a set reaches, each generated
+    /// as one document is. The second is a set, and says so as a set does:
+    /// no `document_kind`, and the facts a set answers as a union.
     Generate,
     /// `sce-codegen check` — the same verdict, nothing written.
     Check,

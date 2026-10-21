@@ -1296,5 +1296,13 @@ name = "a_host_duty_is_refused_where_the_machine_is_built"
 path = "tests/a_host_duty_is_refused_where_the_machine_is_built.rs"
 required-features = ["cli"]
 
+# `generate --with-imports`: a design and every document it imports generated
+# in one run at the directories their packages require. It runs
+# `sce-codegen generate` and `orchestrate`, so it carries the `cli` gate.
+[[test]]
+name = "generate_with_imports"
+path = "tests/generate_with_imports.rs"
+required-features = ["cli"]
+
 [lints]
 workspace = true

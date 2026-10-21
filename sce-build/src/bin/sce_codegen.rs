@@ -655,6 +655,77 @@ fn current_error_format() -> ErrorFormat {
     ERROR_FORMAT.get().copied().unwrap_or(ErrorFormat::Human)
 }
 
+/// The references through which a `generate --with-imports` run reached the
+/// document it is generating now, the document named on the command line
+/// first (`sce_build::import_closure::Unit::reached_from`); empty outside such
+/// a run and while it generates a document the caller named.
+///
+/// Process-wide, like [`ERROR_FORMAT`], because every refusal leaves through
+/// the emitters on [`ErrorFormat`] from wherever in the generation it is
+/// raised, and every one of them has to carry the chain: threading it through
+/// every helper signature that can end the run is the alternative, and one
+/// helper that forgot it would refuse a document three imports down in a file
+/// the caller never named, with nothing saying why it was read.
+static REACHED_FROM: Mutex<Vec<sce_build::forge::error::RelatedSite>> = Mutex::new(Vec::new());
+
+/// Install the chain every refusal from here on carries.
+fn set_reached_from(sites: Vec<sce_build::forge::error::RelatedSite>) {
+    *REACHED_FROM.lock().unwrap_or_else(PoisonError::into_inner) = sites;
+}
+
+/// The chain every refusal carries now.
+fn reached_from() -> Vec<sce_build::forge::error::RelatedSite> {
+    REACHED_FROM
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone()
+}
+
+/// Write the chain under a refusal already written in `human` form, one
+/// `reached from` line per reference, the outermost first.
+fn report_reached_from_human() {
+    for site in reached_from() {
+        match site.location.line {
+            Some(line) => eprintln!("  reached from {}:{line}", site.location.file),
+            None => eprintln!("  reached from {}", site.location.file),
+        }
+    }
+}
+
+/// Emit one NDJSON record per diagnostic of `err`, each carrying the chain as
+/// its `reached-from` related sites (SCE_ERROR_CONTRACT §2.4).
+fn emit_ndjson_with_reached_from<E: ToDiagnostics>(err: &E) {
+    let chain = reached_from();
+    for mut diag in err.to_diagnostics() {
+        diag.related.extend(
+            chain
+                .iter()
+                .map(sce_build::forge::diagnostic::Related::from),
+        );
+        emit_ndjson(&diag);
+    }
+}
+
+/// The text of the document `path` names, read as `generate` reads its
+/// input: an `sce:std/...` name from the standard library this generator
+/// embeds, the name a consumer imports it by being the name it generates it
+/// by, and any other path from disk. Every command that reads a document a
+/// caller named before handing it to its pipeline reads it here, so one that
+/// `generate` takes is one each of them takes.
+fn read_named_document(path: &str) -> std::io::Result<String> {
+    if sce_build::forge::stdlib::names_standard(Path::new(path)) {
+        return sce_build::forge::stdlib::lookup(Path::new(path))
+            .map(str::to_string)
+            .ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "no such document in the SCE standard library built into this sce-codegen",
+                )
+            });
+    }
+    fs::read_to_string(path)
+}
+
 /// Globally-resolved `--workspace-root` override. Mirrors
 /// [`ERROR_FORMAT`]: installed once at the top of `main` so every
 /// site that needs the SCE workspace location (`verify-generator`)
@@ -716,18 +787,7 @@ impl ErrorFormat {
     /// a subcommand cannot accidentally render JSON on stdout or
     /// swallow an exit code without failing compilation.
     fn emit_and_exit<E: ToDiagnostics + std::fmt::Display>(self, err: &E, human_prefix: &str) -> ! {
-        match self {
-            ErrorFormat::Human => {
-                eprintln!("{human_prefix}{err}");
-            }
-            ErrorFormat::Json => {
-                // One NDJSON line per diagnostic. Most errors produce
-                // exactly one; XSD validation can produce many.
-                for diag in err.to_diagnostics() {
-                    emit_ndjson(&diag);
-                }
-            }
-        }
+        self.report(err, human_prefix);
         std::process::exit(err.exit_code());
     }
 
@@ -748,15 +808,21 @@ impl ErrorFormat {
     /// reported refusal (records, exit `0`, manifest on stdout) from a
     /// fatal one (records, non-zero exit, empty stdout) with what the
     /// contract already gives it.
+    ///
+    /// Every record, fatal or not, carries the references a
+    /// `generate --with-imports` run reached its document through
+    /// ([`REACHED_FROM`]); outside such a run there are none, and the record
+    /// is the one it always was.
     fn report<E: ToDiagnostics + std::fmt::Display>(self, err: &E, human_prefix: &str) {
         match self {
             ErrorFormat::Human => {
                 eprintln!("{human_prefix}{err}");
+                report_reached_from_human();
             }
             ErrorFormat::Json => {
-                for diag in err.to_diagnostics() {
-                    emit_ndjson(&diag);
-                }
+                // One NDJSON line per diagnostic. Most errors produce
+                // exactly one; XSD validation can produce many.
+                emit_ndjson_with_reached_from(err);
             }
         }
     }
@@ -1055,6 +1121,57 @@ impl GenerateReport {
     ) {
         if let Some(profile) = profile {
             profile.cite_house_rules(&mut self.unresolved);
+        }
+    }
+
+    /// Take in what the run of one member of a set found, as a set reports
+    /// it: every file it wrote, the yes-or-no facts as a union, the causes
+    /// and the aliases once each, and the records of every member, each
+    /// naming the file it is about. What only one document can answer —
+    /// `document_kind`, the parent sends, the routes, the surface, a holder, a
+    /// rejection, the deploy — is left as the set leaves it, unanswered.
+    fn absorb(&mut self, member: GenerateReport) {
+        fn either(set: Option<bool>, member: Option<bool>) -> Option<bool> {
+            Some(set.unwrap_or(false) || member.unwrap_or(false))
+        }
+        fn once_each<T: PartialEq>(set: &mut Vec<T>, member: Vec<T>) {
+            for item in member {
+                if !set.contains(&item) {
+                    set.push(item);
+                }
+            }
+        }
+        self.artifacts.extend(member.artifacts);
+        self.needs_script_engine = either(self.needs_script_engine, member.needs_script_engine);
+        self.needs_event_scheduler =
+            either(self.needs_event_scheduler, member.needs_event_scheduler);
+        self.needs_host_processor = either(self.needs_host_processor, member.needs_host_processor);
+        self.talks_to_a_mesh_peer |= member.talks_to_a_mesh_peer;
+        once_each(&mut self.script_engine_causes, member.script_engine_causes);
+        once_each(
+            &mut self.host_processor_causes,
+            member.host_processor_causes,
+        );
+        once_each(&mut self.open_interface, member.open_interface);
+        once_each(&mut self.self_delivered, member.self_delivered);
+        self.child_mesh_routers.extend(member.child_mesh_routers);
+        self.host_duties.extend(member.host_duties);
+        self.unreadable_variables
+            .extend(member.unreadable_variables);
+        self.unresolved.extend(member.unresolved);
+        // One profile judged every member: the set says it once, with every
+        // document it judged counted.
+        if let Some(theirs) = member.profile {
+            match self.profile.as_mut() {
+                Some(ours) => ours.judged = ours.judged.saturating_add(theirs.judged),
+                None => self.profile = Some(theirs),
+            }
+        }
+        if self.script_engine_target.is_none() {
+            self.script_engine_target = member.script_engine_target;
+        }
+        if self.formatter.is_none() {
+            self.formatter = member.formatter;
         }
     }
 }
@@ -1447,10 +1564,17 @@ SCE_ERROR_CONTRACT.md §10) rides there regardless of this flag.
 /// the wide `Generate` surface does not dwarf the other `Commands`
 /// variants; the enum holds it boxed, keeping every variant pointer-sized
 /// and the `Subcommand` derive free of a `large_enum_variant` allow.
-#[derive(clap::Args)]
+///
+/// `Clone` because a `--with-imports` run generates each document it reaches
+/// as this subcommand generates one, from a copy of the arguments it was given
+/// with the document and its directory filled in.
+#[derive(clap::Args, Clone)]
 struct GenerateArgs {
-    /// Input SCXML file path
-    scxml: String,
+    /// Input SCXML file path, or the `sce:std/...` name of a standard
+    /// document. One document; several only with `--with-imports`, which
+    /// generates them together.
+    #[arg(required = true, value_name = "SCXML")]
+    scxml: Vec<String>,
     #[arg(
         short,
         long,
@@ -1759,6 +1883,40 @@ struct GenerateArgs {
     /// `<sce:import>` resolution is unaffected.
     #[arg(short = 'I', long = "include-dir", value_name = "DIR")]
     include_dir: Vec<String>,
+    /// Generate the documents named AND every document they reach, each once,
+    /// in one run: every `<sce:import>` transitively (a local `src` beside the
+    /// document that imports it, an `sce:std/...` name from the standard
+    /// library built into this generator), and every document a hybrid
+    /// `<invoke>` declares in `sce:candidates`.
+    ///
+    /// Each document is generated exactly as `generate` generates it alone,
+    /// with the same flags, and written below `--output-dir`, which becomes the
+    /// root of the tree, at the directory its package requires: for Kotlin a
+    /// forge kind under `com/sce/generated/<snake>/`, the package a machine's
+    /// import line names, and a statechart under its
+    /// `--kotlin-package-prefix` package; for Go each unit in a package
+    /// directory of its own, imported as `<--go-module-prefix>/<snake>`; for
+    /// Rust, Python, C++ and C11 every unit beside the others, as their
+    /// `super::` / `from .` / `#include` lines name them. A candidate is
+    /// generated as its statechart's child, into that statechart's package
+    /// (`--as-child --parent-stem`); in-line children are generated with their
+    /// parent, as always.
+    ///
+    /// A reference that names no document is refused where it is written, and
+    /// every refusal raised while generating a document the run reached
+    /// carries, as `reached-from` related sites, the references that brought
+    /// it in. `--assert-unchanged` and `--plan` apply to the whole tree.
+    /// `--input-root` roots the source hash of the caller's documents; a
+    /// standard document keeps the library's.
+    ///
+    /// Not with `--as-child`, `--parent-stem`, `--emit-ast` or `--write-deps`,
+    /// which describe one document's output, nor with `--deploy`: a deployment
+    /// is a set's question, which `orchestrate --deploy` answers.
+    #[arg(
+        long,
+        conflicts_with_all = ["as_child", "parent_stem", "write_deps", "emit_ast", "deploy"]
+    )]
+    with_imports: bool,
 }
 
 /// `--registry`'s long help, formatted from the constant the loader
@@ -2222,7 +2380,8 @@ struct CheckArgs {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Generate code from a single SCXML file
+    /// Generate code from a single SCXML file, or, with `--with-imports`,
+    /// from a set of documents and every document they import
     Generate(Box<GenerateArgs>),
     /// Validate a document without writing anything.
     ///
@@ -3230,7 +3389,10 @@ enum Commands {
 /// validation. Both lists may be empty (no-op).
 #[derive(clap::Args)]
 struct OrchestrateArgs {
-    /// Input SCXML file path (repeat for multiple files).
+    /// Input SCXML file path (repeat for multiple files). Each of the three
+    /// document flags also takes the `sce:std/...` name of a standard
+    /// document, read from the library this generator embeds as `generate`
+    /// reads one.
     #[arg(long = "scxml")]
     scxml: Vec<String>,
     /// Input forge file path (repeat for multiple files).
@@ -3493,7 +3655,7 @@ fn main() {
         let _ = OUTPUT_MODE.set(OutputMode::Plan);
     }
     match cli.command {
-        Commands::Generate(args) => cmd_generate(*args, error_format),
+        Commands::Generate(args) => run_generate(*args, error_format),
         Commands::Check(args) => cmd_check(*args, error_format),
         Commands::Orchestrate(args) => cmd_orchestrate(*args, error_format),
         Commands::GenerateW3c(args) => cmd_generate_w3c(*args),
@@ -4035,7 +4197,7 @@ fn emit_orchestrate_asts(
 
     for forge_path_str in forge_paths {
         let forge_path = std::path::Path::new(forge_path_str);
-        let content = fs::read_to_string(forge_path).unwrap_or_else(|e| {
+        let content = read_named_document(forge_path_str).unwrap_or_else(|e| {
             error_format.emit_and_exit(
                 &CliError::ReadInput {
                     path: forge_path_str.to_string(),
@@ -4289,8 +4451,8 @@ fn scxml_host_requirement_facts(path: &str) -> Option<HostRequirements> {
 /// read: silent on failure for the reason [`scxml_host_requirement_facts`]
 /// is, the compile pass that follows reads the same file and reports it.
 fn forge_document_positions(path: &Path) -> Option<sce_build::model::AuthoredPositions> {
-    let content = fs::read_to_string(path).ok()?;
     let label = path.to_string_lossy();
+    let content = read_named_document(&label).ok()?;
     let base_dir = path.parent().unwrap_or_else(|| Path::new("."));
     let (expanded, map, _deps) =
         sce_build::parser::expand_preprocessors(&content, &label, Some(base_dir), &[]).ok()?;
@@ -5316,7 +5478,141 @@ fn rewrite_child_package(
     }
 }
 
-fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
+/// `generate`: one document, through [`cmd_generate`], or, with
+/// `--with-imports`, every document a set reaches.
+fn run_generate(args: GenerateArgs, error_format: ErrorFormat) {
+    if args.with_imports {
+        cmd_generate_with_imports(args, error_format);
+        return;
+    }
+    if args.scxml.len() > 1 {
+        cli_exit(CliError::Usage {
+            detail: format!(
+                "generate takes one document and was given {}; several are generated \
+                 together, with every document they import, by `generate --with-imports`",
+                args.scxml.len()
+            ),
+        });
+    }
+    let report = cmd_generate(args, error_format);
+    emit_generate_manifest(&report);
+}
+
+/// `generate --with-imports`: every document the named ones reach
+/// ([`sce_build::import_closure::walk`]), each generated by
+/// [`cmd_generate`] exactly as `generate` generates it alone, below one
+/// output root at the directory its package requires.
+///
+/// One manifest for the run, as for a document set: every file written, the
+/// facts that are a union over the set (`needs_script_engine` and its
+/// siblings, the causes, the markers) merged, and the facts that belong to one
+/// statechart alone (`needs_parent`, `surface`) left out, since the run is not
+/// one document.
+fn cmd_generate_with_imports(args: GenerateArgs, error_format: ErrorFormat) {
+    let lang: Language = args.language.parse().unwrap_or_else(|_| {
+        error_format.emit_and_exit(
+            &CliError::UnknownLanguage {
+                lang: args.language.clone(),
+                route: LanguageRoute::Generate,
+            },
+            "",
+        )
+    });
+    // A named document that cannot be read is refused as `generate` refuses
+    // it, before any walk: the run's first word about it is the one a run of
+    // that document alone would say.
+    for named in &args.scxml {
+        if let Err(source) = read_named_document(named) {
+            cli_exit(CliError::ReadInput {
+                path: named.clone(),
+                source,
+            });
+        }
+    }
+    let include_dirs: Vec<PathBuf> = args.include_dir.iter().map(PathBuf::from).collect();
+    let units = sce_build::import_closure::walk(
+        &args.scxml,
+        sce_build::import_closure::WalkOptions {
+            include_dirs: &include_dirs,
+            input_root: args.input_root.as_deref().map(Path::new),
+        },
+    )
+    .unwrap_or_else(|refusal| {
+        set_reached_from(refusal.reached_from);
+        error_format.emit_forge_and_exit(&refusal.error)
+    });
+
+    let root = PathBuf::from(&args.output_dir);
+    let mut set = GenerateReport {
+        target_language: Some(lang),
+        host_processor_types: args.host_processor.clone(),
+        host_invoker_types: args.host_invoker.clone(),
+        ..GenerateReport::default()
+    };
+    // Which document wrote each file, so a second writer of one path is
+    // refused rather than left to overwrite the first.
+    let mut writers: BTreeMap<PathBuf, String> = BTreeMap::new();
+    // A child started by two statecharts whose packages are one directory —
+    // every language but Kotlin and Go — is the same file twice; it is
+    // generated once.
+    let mut generated: BTreeSet<(String, PathBuf)> = BTreeSet::new();
+    for unit in &units {
+        let directory = root.join(unit.directory(lang, args.kotlin_package_prefix.as_deref()));
+        if !generated.insert((unit.identity.clone(), directory.clone())) {
+            continue;
+        }
+        let mut one = args.clone();
+        one.with_imports = false;
+        one.scxml = vec![unit.document.clone()];
+        one.output_dir = directory.display().to_string();
+        // The caller's root describes the caller's documents; a standard
+        // document's source set is the library's, as when it is generated
+        // by its own name.
+        if unit.is_standard() {
+            one.input_root = None;
+        }
+        if let sce_build::import_closure::Role::Candidate { parent } = &unit.role {
+            one.as_child = true;
+            one.parent_stem = Some(parent.clone());
+        }
+        set_reached_from(unit.reached_from.clone());
+        let report = cmd_generate(one, error_format);
+        for artifact in &report.artifacts {
+            if let Some(first) = writers.insert(tree_key(artifact), unit.document.clone()) {
+                let refusal = Located::new(
+                    ForgeError::from(
+                        sce_build::forge::error::ManifestError::ArtifactPathCollision {
+                            artifact: artifact.display().to_string(),
+                            first: first.clone(),
+                        },
+                    ),
+                    unit.document.clone(),
+                    None,
+                    None,
+                )
+                .related_to(sce_build::forge::error::RelatedSite {
+                    role: sce_build::forge::error::RelatedRole::ConflictingUse,
+                    location: sce_build::forge::error::SourceLocation {
+                        file: first,
+                        line: None,
+                        col: None,
+                    },
+                    actual: None,
+                });
+                error_format.emit_forge_and_exit(&refusal);
+            }
+        }
+        set_reached_from(Vec::new());
+        set.absorb(report);
+    }
+    emit_generate_manifest(&set);
+}
+
+/// Generate one document as `generate` does, and hand back what the run
+/// found for the manifest rather than printing it: `generate` prints it for
+/// its one document, and `--with-imports` merges the reports of every
+/// document it reaches into one.
+fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport {
     // Unpack the CLI args struct into the internal borrowed names the
     // body uses. `args` owns the data for the whole function, so the
     // `&` / `as_deref()` borrows below stay valid for every use.
@@ -5349,11 +5645,15 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
         lint,
         profile: profile_path,
         include_dir,
+        // Decided by `run_generate`, which calls this once per document.
+        with_imports: _,
     } = args;
     // Before anything else is read: an unusable profile is the first thing
     // said about the run.
     let profile = load_profile(profile_path.as_deref());
-    let scxml_path: &str = &scxml;
+    // One document: `run_generate` refuses more without `--with-imports`, and
+    // that run hands this function one at a time.
+    let scxml_path: &str = scxml.first().map(String::as_str).unwrap_or_default();
     let language: &str = &language;
     let output_dir: &str = &output_dir;
     let parent_stem = parent_stem.as_deref();
@@ -5405,19 +5705,8 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
     // SCE Forge: detect non-statechart kind and route to forge pipeline.
     // Read the file once; the same content is reused for both detection and compilation.
     // A standard document (`sce:std/...`) is read from the library this
-    // generator embeds — the name a consumer imports it by is the name it
-    // generates it by.
-    let standard = sce_build::forge::stdlib::names_standard(Path::new(scxml_path))
-        .then(|| sce_build::forge::stdlib::lookup(Path::new(scxml_path)));
-    let scxml_content = match standard {
-        Some(Some(content)) => Ok(content.to_string()),
-        Some(None) => Err(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            "no such document in the SCE standard library built into this sce-codegen",
-        )),
-        None => fs::read_to_string(scxml_path),
-    }
-    .unwrap_or_else(|e| {
+    // generator embeds (`read_named_document`).
+    let scxml_content = read_named_document(scxml_path).unwrap_or_else(|e| {
         error_format.emit_and_exit(
             &CliError::ReadInput {
                 path: scxml_path.to_string(),
@@ -5665,8 +5954,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
                     report.needs_script_engine = Some(false);
                     report.needs_event_scheduler = Some(false);
                     report.formatter = cpp_formatter.used();
-                    emit_generate_manifest(&report);
-                    return;
+                    return report;
                 }
                 Err(e) => error_format.emit_forge_and_exit(&positions.authored(e)),
             }
@@ -5969,8 +6257,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
         // Stubs are written as they are, so this reads `None`: nothing was
         // handed to the formatter.
         report.formatter = cpp_formatter.used();
-        emit_generate_manifest(&report);
-        return;
+        return report;
     }
 
     if let Err(located) = analyzer::can_generate_static(&model, scxml_path) {
@@ -6527,7 +6814,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
     }
 
     report.formatter = cpp_formatter.used();
-    emit_generate_manifest(&report);
+    report
 }
 
 /// Collect child SCXML names from model's static/hybrid invokes.
@@ -10438,7 +10725,9 @@ fn file_documents(
     error_format: ErrorFormat,
 ) {
     for path in documents {
-        let content = fs::read_to_string(&path).unwrap_or_else(|e| {
+        // An `sce:std/...` name is filed as `generate` reads it, from the
+        // library this generator embeds.
+        let content = read_named_document(&path).unwrap_or_else(|e| {
             error_format.emit_and_exit(
                 &CliError::ReadInput {
                     path: path.clone(),

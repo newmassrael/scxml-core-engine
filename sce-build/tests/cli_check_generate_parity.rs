@@ -467,6 +467,17 @@ const GENERATE_FLAGS: &[FlagFacts] = &[
         "emits a deploy topology's transport layer without its machine",
     ),
     f(
+        "--with-imports",
+        Reach::Emission,
+        Some(&["--with-imports"]),
+        "rust",
+        "generates, beside the document, every document it reaches through its \
+         imports and candidates, each as `generate` generates it alone and so \
+         with the verdict `check` gives that document; the named document's \
+         own verdict does not move, and a document with no reference is \
+         generated alone",
+    ),
+    f(
         "--workspace-root",
         Reach::Emission,
         Some(&["--workspace-root", "."]),
