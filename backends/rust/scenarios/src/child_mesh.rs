@@ -30,6 +30,10 @@ const HELD: &str = "a replay's record of its children is never left mid-update";
 struct Book {
     starts: BTreeMap<String, u64>,
     running: BTreeMap<String, Inbox>,
+    /// The factory is being asked for the routers of sessions a restore
+    /// resumed ([`Children::resuming`]): a path that is running is the same
+    /// session, given a router again, and not a new start of it.
+    resuming: bool,
 }
 
 /// The children a replay gave routers to, and the list every send is written
@@ -58,14 +62,30 @@ impl Children {
         move |invoke_id: &str, _document: &str| Some(children.start(invoke_id.to_string()))
     }
 
-    /// A router for a new start of `path`, which is now the session the path
-    /// is running.
+    /// Run `register`, the registration of this factory on a machine a restore
+    /// handed the replay, as the asks for the routers of the sessions that
+    /// restore resumed (docs/adr/0045): each is the session its path was
+    /// running when the machine was saved, so its sends keep the start they
+    /// were told by, and what a step delivers to the path reaches it.
+    pub fn resuming<R>(&self, register: impl FnOnce() -> R) -> R {
+        self.book.lock().expect(HELD).resuming = true;
+        let registered = register();
+        self.book.lock().expect(HELD).resuming = false;
+        registered
+    }
+
+    /// A router for `path`: a new start of it, or, while
+    /// [`resuming`](Self::resuming), the session it is running given a router
+    /// again. Either way it is now the session the path is running.
     fn start(&self, path: String) -> Box<dyn ChildMeshRouter> {
         let inbox = Inbox::default();
         let start = {
             let mut book = self.book.lock().expect(HELD);
+            let resumed = book.resuming && book.running.contains_key(&path);
             let starts = book.starts.entry(path.clone()).or_insert(0);
-            *starts += 1;
+            if !resumed {
+                *starts += 1;
+            }
             let start = *starts;
             book.running.insert(path.clone(), Arc::clone(&inbox));
             start
@@ -159,5 +179,59 @@ impl ChildMeshRouter for Recording {
         _document: &str,
     ) -> Option<Box<dyn ChildMeshRouter>> {
         Some(self.children.start(format!("{}/{invoke_id}", self.path)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    type Sent = Arc<Mutex<Vec<Value>>>;
+
+    fn greet(router: &mut dyn ChildMeshRouter) {
+        router.send(HostSendRequest {
+            target: "#server".to_string(),
+            event_name: "list.hello".to_string(),
+            ..HostSendRequest::default()
+        });
+    }
+
+    fn starts(sent: &Sent) -> Vec<u64> {
+        sent.lock()
+            .expect(HELD)
+            .iter()
+            .map(|send| send["start"].as_u64().expect("a start"))
+            .collect()
+    }
+
+    #[test]
+    fn a_resumed_child_keeps_its_start_and_a_later_start_counts_on() {
+        let sent: Sent = Arc::default();
+        let children = Children::new(Arc::clone(&sent));
+        let mut factory = children.factory();
+        let mut first = factory("list", "").expect("a router");
+        greet(first.as_mut());
+
+        // A restore registers the factory again, and it is asked for the child
+        // that was running: the same session, told by the same start.
+        let mut registered = children.factory();
+        let mut resumed = children
+            .resuming(|| registered("list", ""))
+            .expect("a router");
+        greet(resumed.as_mut());
+        assert!(
+            children.deliver("list", "list.ping", ""),
+            "the resumed child is the one the path runs"
+        );
+        assert_eq!(
+            resumed.take_calls().len(),
+            1,
+            "a step's event reaches the resumed child's router"
+        );
+
+        // A start after the restore is the path's second.
+        let mut again = registered("list", "").expect("a router");
+        greet(again.as_mut());
+        assert_eq!(starts(&sent), [1, 1, 2]);
     }
 }

@@ -225,7 +225,9 @@ fn replay_recording<P: StatePolicy>(
             let saved = SavedState::from_json(&text)
                 .unwrap_or_else(|refusal| panic!("step {n}: the saved text reads back: {refusal}"));
             engine = restore(&saved);
-            register(&mut engine, &sent, &children);
+            // The factory is asked for the resumed children's routers as it is
+            // registered: those are the sessions that were running, not starts.
+            children.resuming(|| register(&mut engine, &sent, &children));
         }
         // A step that moves the machine's time on, for a scenario of a delayed
         // send: the engine is handed a manual clock by its caller, so the wait
