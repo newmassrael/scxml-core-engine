@@ -134,6 +134,10 @@ fn each_rule_of_the_vocabulary_refuses_what_it_is_for() {
             "`expect` carries `hostcalls`",
         ),
         (step(json!({"advance": 5})), "the step carries `advance`"),
+        (
+            step(json!({"restore": false})),
+            "`restore` is `true`, or left out",
+        ),
         (step(json!({"event": "go", "advance_ms": 5})), "not both"),
         (
             step(json!({"dropped": true})),

@@ -1,0 +1,36 @@
+{
+  "machine": "static_invoke_tree",
+  "about": "`working` invokes `worker`, a child written in place that the parent forwards what it is sent (autoforward), and that answers `question` at once; `ask` sends it one, and the parent counts each answer in `answers`. `go` moves the child on to `second`, where it runs a grandchild under a hybrid candidate. A step marked `restore` saves the machine, discards it, and restores it from the text before its event (docs/adr/0045): the restored tree carries on where the saved one stood, the child resumed in the state it had reached and not started again, so every expected value is the one a run without the restores holds. The clock the child asks its host for is served by no host here, which the child does not read. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "note": "the child answers the parent's question within the step that asked",
+      "event": "ask",
+      "expect": { "state": "working", "variables": { "answers": 1, "reports": 0 } } },
+
+    { "note": "`go`, forwarded, moves the child on to `second`",
+      "event": "go",
+      "expect": { "state": "working", "variables": { "answers": 1 } } },
+
+    { "note": "restored, the child still answers from `second`: it was resumed, not started again",
+      "restore": true,
+      "event": "ask",
+      "expect": { "state": "working", "variables": { "answers": 2 } } },
+
+    { "note": "restored again, `swap` reaches the resumed child through the parent",
+      "restore": true,
+      "event": "swap",
+      "expect": { "state": "working", "variables": { "answers": 2 } } },
+
+    { "note": "`rest` leaves `working`, which ends the child",
+      "event": "rest",
+      "expect": { "state": "resting", "variables": { "answers": 2 } } },
+
+    { "note": "restored with no child running, `back` starts the child again",
+      "restore": true,
+      "event": "back",
+      "expect": { "state": "working", "variables": { "answers": 2 } } },
+
+    { "note": "the child started again answers as the first did",
+      "event": "ask",
+      "expect": { "state": "working", "variables": { "answers": 3 } } }
+  ]
+}

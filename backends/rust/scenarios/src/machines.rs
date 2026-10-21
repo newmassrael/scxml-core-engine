@@ -5,7 +5,8 @@
 //! which scenario.
 
 use crate::hosts::ChildHosts;
-use crate::{hosts, replay, replay_with_host, replay_with_hosts, Hosts};
+use crate::{hosts, replay_with_hosts, Hosts};
+use sce_rust_runtime::saved_state::SavedState;
 use sce_rust_runtime::{Engine, SceClock};
 
 /// The session id every replayed machine is given (docs/adr/0045, "Questions the
@@ -41,28 +42,50 @@ macro_rules! policy {
     };
 }
 
-/// A row's replay: with the reader of what its host recorded, or of what its
-/// children's hosts did, or without.
-macro_rules! replay_row {
-    ($engine:ident, $text:expr) => {
-        replay($engine, |engine| engine.save_at(0).expect("saves"), $text)
+/// The clock a row's machine is restored on: the manual one at zero for a row
+/// marked `@ Manual`, which the saved state's waiting sends are measured from as
+/// they were saved at it, and the engine's own default for every other.
+macro_rules! restore_clock {
+    () => {
+        SceClock::default()
     };
-    ($engine:ident, $text:expr, calls $calls:ident) => {{
-        let mut seen = 0usize;
-        replay_with_host(
+    ($manual:ident) => {
+        SceClock::$manual(0)
+    };
+}
+
+/// A row's replay: with the reader of what its host recorded, or of what its
+/// children's hosts did, or without; and with `$restore`, which builds the
+/// machine again from a saved state for a step that restores (docs/adr/0045).
+macro_rules! replay_row {
+    ($engine:ident, $restore:expr, $text:expr) => {
+        replay_with_hosts(
             $engine,
             |engine| engine.save_at(0).expect("saves"),
-            |engine| hosts::$calls(engine, &mut seen),
+            Hosts::none().restorer($restore),
+            $text,
+        )
+    };
+    ($engine:ident, $restore:expr, $text:expr, calls $calls:ident) => {{
+        let mut seen = 0usize;
+        replay_with_hosts(
+            $engine,
+            |engine| engine.save_at(0).expect("saves"),
+            Hosts::none()
+                .host_calls(|engine| hosts::$calls(engine, &mut seen))
+                .restorer($restore),
             $text,
         )
     }};
     // The builder is named by the row so that the repetition that carries the book
     // is the one that carries it; the policy was built with it already.
-    ($engine:ident, $text:expr, children $book:ident $builder:ident) => {
+    ($engine:ident, $restore:expr, $text:expr, children $book:ident $builder:ident) => {
         replay_with_hosts(
             $engine,
             |engine| engine.save_at(0).expect("saves"),
-            Hosts::none().child_hosts(|| $book.take()),
+            Hosts::none()
+                .child_hosts(|| $book.take())
+                .restorer($restore),
             $text,
         )
     };
@@ -124,8 +147,20 @@ macro_rules! scenarios {
                     #[allow(unused_mut)]
                     let mut engine = Engine::new(policy!($policy $(, host $host)? $(, simulated $shost)? $(, children $builder, book)?));
                     $(engine.set_clock(SceClock::$manual(0));)?
+                    // docs/adr/0045: the machine a step that restores takes in
+                    // place of the one it saved, built as this one was.
+                    let restore = |saved: &SavedState| {
+                        <Engine<_> as $persist>::restore_with(
+                            policy!($policy $(, host $host)? $(, simulated $shost)? $(, children $builder, book)?),
+                            saved,
+                            restore_clock!($($manual)?),
+                            0,
+                        )
+                        .expect("the saved machine restores")
+                    };
                     replay_row!(
                         engine,
+                        restore,
                         scenario_text($name).expect("the table names its own scenario")
                         $(, calls $calls)?
                         $(, calls $scalls)?
@@ -176,6 +211,7 @@ scenarios! {
     "static_invoke_abort" => static_invoke_sm::{StaticInvokePolicy, StaticInvokePersist};
     "static_invoke_params" => static_invoke_params_sm::{StaticInvokeParamsPolicy, StaticInvokeParamsPersist};
     "static_invoke_string" => static_invoke_string_sm::{StaticInvokeStringPolicy, StaticInvokeStringPersist};
+    "static_invoke_tree" => static_invoke_tree_sm::{StaticInvokeTreePolicy, StaticInvokeTreePersist} @ Manual;
     "static_list" => static_list_sm::{StaticListPolicy, StaticListPersist};
     "static_list_assign" => static_list_assign_sm::{StaticListAssignPolicy, StaticListAssignPersist};
     "static_list_index" => static_list_index_sm::{StaticListIndexPolicy, StaticListIndexPersist};

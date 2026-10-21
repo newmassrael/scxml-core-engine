@@ -754,6 +754,7 @@ protected:
 TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheInterpreterDoesWhatTheGeneratedBackendsDo) {
     std::vector<std::string> replayed;
     std::vector<std::string> notYetLowered;
+    std::vector<std::string> restoring;
     for (const auto &entry : std::filesystem::directory_iterator(kFixtures / "scenarios")) {
         if (entry.path().extension() != ".json") {
             continue;
@@ -763,6 +764,16 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheInterpreterDoesWha
         const auto scenario = nlohmann::json::parse(slurp(entry.path()), nullptr, false);
         ASSERT_FALSE(scenario.is_discarded()) << "a scenario is JSON";
         const std::string machine = scenario.at("machine").get<std::string>();
+
+        // A step that restores the machine from a saved state (`restore`,
+        // docs/adr/0045) needs an engine that saves, and the Interpreter does
+        // not: such a scenario is skipped and counted, never passed.
+        const auto &steps = scenario.at("steps");
+        if (std::any_of(steps.begin(), steps.end(),
+                        [](const nlohmann::json &step) { return step.contains("restore"); })) {
+            restoring.push_back(name);
+            continue;
+        }
 
         // The lowering is asked for as a set, a directory: a machine with a hybrid
         // `<invoke>` is refused as one document, since the candidates it may start
@@ -798,7 +809,8 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheInterpreterDoesWha
     // construct the lowering covers today, and the floor rises as the lowering
     // grows.
     EXPECT_GE(replayed.size(), 14u) << "replayed " << replayed.size()
-                                    << " scenarios, not yet lowered: " << notYetLowered.size();
+                                    << " scenarios, not yet lowered: " << notYetLowered.size()
+                                    << ", skipped for a restore: " << restoring.size();
     // A byte string is the text of its bytes in the Interpreter's data model, one
     // character to a byte (docs/adr/0005, decision 2), so the scenario that holds one
     // is replayed and not left to a refusal the scan above would let pass.

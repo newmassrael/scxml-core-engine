@@ -19,8 +19,11 @@ pub const TOP: &[&str] = &["machine", "about", "steps"];
 /// The members of a step. `invoke` sends the step's `event` to the running
 /// child session of that invoke, through the Mesh router the child was given,
 /// as a peer's event: a path of invoke ids joined by `/` for a child's child.
+/// `restore` saves the machine and restores it from the text before the step's
+/// event or time (docs/adr/0045).
 pub const STEP: &[&str] = &[
     "note",
+    "restore",
     "event",
     "data",
     "dropped",
@@ -97,6 +100,15 @@ fn check_step(step: &Value) -> Result<(), String> {
         if step.contains_key(key) && !step.contains_key("event") {
             return Err(format!("`{key}` belongs to a step that sends an event"));
         }
+    }
+    // A step that does not restore leaves the member out: `false` would read as a
+    // choice a driver has to make, and a driver that skipped the member would
+    // make it by accident.
+    if step
+        .get("restore")
+        .is_some_and(|restore| restore != &Value::Bool(true))
+    {
+        return Err("`restore` is `true`, or left out".into());
     }
     if let Some(path) = step.get("invoke") {
         check_invoke_path(path, "the step's `invoke`")?;

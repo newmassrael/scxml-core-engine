@@ -95,12 +95,15 @@ pub fn replay_with_hosts<P: StatePolicy>(
     replay_recording(engine, save, hosts, scenario);
 }
 
-/// What a driver offers to read of the hosts a machine acts through. A step that
-/// states what a host was asked needs the driver to have a reader for it, and a
-/// driver with none FAILS that step: a step that judged nothing would pass.
+/// What a driver offers to read of the hosts a machine acts through, and how it
+/// builds the machine again from a saved state. A step that states what a host
+/// was asked needs the driver to have a reader for it, and one that restores the
+/// machine needs it to restore; a driver with none FAILS that step: a step that
+/// judged nothing would pass.
 pub struct Hosts<'a, P: StatePolicy> {
     host_calls: Option<HostCallsReader<'a, P>>,
     child_hosts: Option<ChildHostsReader<'a>>,
+    restore: Option<Restorer<'a, P>>,
 }
 
 /// Reads what the machine asked of its own host since it was last asked.
@@ -109,13 +112,25 @@ type HostCallsReader<'a, P> = Box<dyn FnMut(&Engine<P>) -> Vec<Value> + 'a>;
 /// Reads the child hosts the machine's host was asked for since it was last asked.
 type ChildHostsReader<'a> = Box<dyn FnMut() -> Vec<Value> + 'a>;
 
+/// Builds the machine again from a saved state, as its driver built it first.
+type Restorer<'a, P> = Box<dyn FnMut(&SavedState) -> Engine<P> + 'a>;
+
 impl<'a, P: StatePolicy> Hosts<'a, P> {
     /// A machine whose hosts record nothing.
     pub fn none() -> Self {
         Self {
             host_calls: None,
             child_hosts: None,
+            restore: None,
         }
+    }
+
+    /// The machine a saved state restores (docs/adr/0045): built as the driver
+    /// built it first, its host included, and restored from the state. What a
+    /// step that `restore`s takes in place of the machine it saved.
+    pub fn restorer(mut self, restore: impl FnMut(&SavedState) -> Engine<P> + 'a) -> Self {
+        self.restore = Some(Box::new(restore));
+        self
     }
 
     /// What the machine asked of its own host since it was last asked, oldest
@@ -135,22 +150,19 @@ impl<'a, P: StatePolicy> Hosts<'a, P> {
     }
 }
 
-fn replay_recording<P: StatePolicy>(
-    mut engine: Engine<P>,
-    save: impl Fn(&Engine<P>) -> SavedState,
-    mut hosts: Hosts<'_, P>,
-    scenario: &str,
-) {
-    let scenario: Value = serde_json::from_str(scenario).expect("a scenario is JSON");
-    let steps = scenario["steps"].as_array().expect("steps");
-    assert!(!steps.is_empty(), "a scenario with no steps judges nothing");
+/// What the machine and its children sent their Mesh peers, oldest first.
+type Sent = std::sync::Arc<std::sync::Mutex<Vec<Value>>>;
+
+/// The registrations a replay makes on the machine it drives, as a host makes
+/// them on a machine it starts: on the first machine, and again on one a step
+/// restored, which a host is handed without them.
+fn register<P: StatePolicy>(engine: &mut Engine<P>, sent: &Sent, children: &child_mesh::Children) {
     // What the machine sends a Mesh peer (`<send target="#name">`) reaches its host
     // through the router the host registers, and a machine with no router has the
     // send refused as error.execution. A replay is every machine's host, so it
     // registers one that only writes the send down: the peer is not there, and what
     // a scenario holds a step to is that the machine asked for the send.
-    let sent = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-    let log = std::sync::Arc::clone(&sent);
+    let log = std::sync::Arc::clone(sent);
     engine.register_mesh_router(move |request| {
         let mut send = serde_json::Map::new();
         send.insert("target".into(), Value::String(request.target));
@@ -171,8 +183,21 @@ fn replay_recording<P: StatePolicy>(
     // the machine's: what a child sends is written into the same list, told by
     // the invoke that started it and the start, and a step's `invoke` hands its
     // event to the child through it.
-    let children = child_mesh::Children::new(std::sync::Arc::clone(&sent));
     engine.register_child_mesh_routers(children.factory());
+}
+
+fn replay_recording<P: StatePolicy>(
+    mut engine: Engine<P>,
+    save: impl Fn(&Engine<P>) -> SavedState,
+    mut hosts: Hosts<'_, P>,
+    scenario: &str,
+) {
+    let scenario: Value = serde_json::from_str(scenario).expect("a scenario is JSON");
+    let steps = scenario["steps"].as_array().expect("steps");
+    assert!(!steps.is_empty(), "a scenario with no steps judges nothing");
+    let sent: Sent = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let children = child_mesh::Children::new(std::sync::Arc::clone(&sent));
+    register(&mut engine, &sent, &children);
     engine.initialize();
     // A machine that starts a child session in its first state has that child
     // running, and maybe ended, before any event arrives; it is read as the
@@ -181,6 +206,27 @@ fn replay_recording<P: StatePolicy>(
         settle(&mut engine);
     }
     for (n, step) in steps.iter().enumerate() {
+        // A step that restores (docs/adr/0045): the machine is saved, discarded and
+        // restored from the text before the step's event or time, and the step
+        // drives the restored one, made the registrations a host makes.
+        if step.get("restore").and_then(Value::as_bool) == Some(true) {
+            // What a host recorded is the host's own, and a restored machine is
+            // built with a host of its own, which records from nothing: a reader
+            // of the first host's record would read the wrong one, so a machine
+            // read through its hosts is not restored here, and says so.
+            assert!(
+                hosts.host_calls.is_none() && hosts.child_hosts.is_none(),
+                "step {n}: a machine whose hosts' records a step reads is not restored by this driver"
+            );
+            let restore = hosts.restore.as_mut().unwrap_or_else(|| {
+                panic!("step {n}: this driver cannot restore its machine, so it cannot replay a step that restores")
+            });
+            let text = save(&engine).to_json();
+            let saved = SavedState::from_json(&text)
+                .unwrap_or_else(|refusal| panic!("step {n}: the saved text reads back: {refusal}"));
+            engine = restore(&saved);
+            register(&mut engine, &sent, &children);
+        }
         // A step that moves the machine's time on, for a scenario of a delayed
         // send: the engine is handed a manual clock by its caller, so the wait
         // is the one the step names and not the one the test happened to take.

@@ -74,6 +74,9 @@ use sce_rust_tests::integration::static_datamodel::static_invoke_sm::{
 use sce_rust_tests::integration::static_datamodel::static_invoke_string_sm::{
     StaticInvokeStringPersist, StaticInvokeStringPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_invoke_tree_sm::{
+    StaticInvokeTreePersist, StaticInvokeTreePolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_list_assign_sm::{
     StaticListAssignPersist, StaticListAssignPolicy,
 };
@@ -710,6 +713,31 @@ fn static_invoke_string_holds_a_handed_string_to_the_childs_bound() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_invoke_string.json"
+        ),
+    );
+}
+
+// A tree of sessions saved and restored between steps (docs/adr/0045): the
+// restored tree carries on where the saved one stood, the child resumed and not
+// started again, so every step holds what a run without the restores holds.
+#[test]
+fn static_invoke_tree_carries_on_across_a_restore() {
+    let mut engine = Engine::new(StaticInvokeTreePolicy::new());
+    engine.set_clock(SceClock::Manual(0));
+    replay_with_hosts(
+        engine,
+        |engine| engine.save_at(0).expect("saves"),
+        Hosts::none().restorer(|saved| {
+            Engine::<StaticInvokeTreePolicy>::restore_with(
+                StaticInvokeTreePolicy::new(),
+                saved,
+                SceClock::Manual(0),
+                0,
+            )
+            .expect("the saved tree restores")
+        }),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_invoke_tree.json"
         ),
     );
 }
