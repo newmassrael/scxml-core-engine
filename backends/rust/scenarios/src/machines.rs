@@ -173,6 +173,16 @@ macro_rules! scenarios {
     };
 }
 
+/// The scenarios of the directory this table has no row for yet, each with why:
+/// the generator refuses their machine for Rust by name
+/// (`generate/unsupported-feature`), so there is no module a row could build it
+/// from. The step that lowers the construct on Rust generates the machine, takes
+/// the entry off and adds the row.
+pub const NOT_YET_LOWERED: &[(&str, &str)] = &[(
+    "static_optional",
+    "an optional value has no Rust lowering yet (docs/adr/0055, step 5)",
+)];
+
 scenarios! {
     "presence_peer_alice" => presence_peer_sm::{PresencePeerPolicy, PresencePeerPersist} @ Manual;
     "presence_peer_bob" => presence_peer_sm::{PresencePeerPolicy, PresencePeerPersist} @ Manual;

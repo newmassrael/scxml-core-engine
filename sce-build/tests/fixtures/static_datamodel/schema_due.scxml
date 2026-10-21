@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  An item whose day, title and standing may each be absent (docs/adr/0055): the
+  record `static_optional.scxml` holds in a variable and in a list, and the
+  payload of the event that sets one. `id` is carried by every delivery. The
+  other three are optional: a delivery carries each as a value or as `null`,
+  and one that lacks the key is refused, since this first revision declares
+  every field it has. `status` is an optional value of an enum, so a machine
+  that holds the record imports the same enum under the alias written here.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="schema_due"
+       sce:event-name="due.set">
+  <sce:import src="enum_item_status.scxml" kind="enum" as="Status"/>
+  <datamodel>
+    <data id="id" sce:type="uint32" sce:direction="in"/>
+    <data id="due" sce:type="optional&lt;int64&gt;" sce:direction="in"/>
+    <data id="title" sce:type="optional&lt;string&gt;" sce:max-size="16" sce:direction="in"/>
+    <data id="status" sce:type="optional&lt;enum:Status&gt;" sce:direction="in"/>
+  </datamodel>
+</scxml>

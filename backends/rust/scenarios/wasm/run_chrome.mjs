@@ -147,7 +147,7 @@ if (result.error) {
   console.log(`the page failed before it could report: ${result.error}`);
   process.exit(2);
 }
-const mismatch = heldMismatch(result.names);
+const mismatch = heldMismatch(result.names, result.notYetLowered);
 if (mismatch) {
   console.log(mismatch);
   process.exit(2);

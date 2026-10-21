@@ -27,7 +27,9 @@
 
   let result;
   try {
-    const names = (await instance("names")).scenario_names().split(",").filter(Boolean);
+    const table = await instance("names");
+    const names = table.scenario_names().split(",").filter(Boolean);
+    const notYetLowered = table.scenarios_not_yet_lowered().split(",").filter(Boolean);
     const selected = names.filter((name) => !only || only.test(name));
     const failures = [];
     let pass = 0;
@@ -54,6 +56,7 @@
     }
     result = {
       names,
+      notYetLowered,
       selected: selected.length,
       pass,
       failures,

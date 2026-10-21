@@ -28,6 +28,18 @@ pub fn scenario_names() -> String {
     machines::NAMES.join(",")
 }
 
+/// The scenarios of the directory the table has no row for yet
+/// ([`machines::NOT_YET_LOWERED`]), separated by commas: a host holds the module
+/// to every scenario of the directory, and these are accounted for without it.
+#[wasm_bindgen]
+pub fn scenarios_not_yet_lowered() -> String {
+    machines::NOT_YET_LOWERED
+        .iter()
+        .map(|(name, _)| *name)
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
 /// Replay the scenario `name`. Panics, with the step and what differed, where the
 /// machine does not do what the scenario holds it to.
 #[wasm_bindgen]

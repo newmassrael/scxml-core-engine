@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Optional variables"
+  and "Reading an optional value"; docs/adr/0055): values that may be absent.
+  `due` (an optional day), `title` (an optional text) and `status` (an optional
+  value of `Status`) are held in variables, in the record `item` and in the list
+  `items`, all of `schema_due.scxml`, whose payload carries the same three fields.
+  `due` starts absent and `other` and `status` present.
+
+  `due.set` writes the payload into the variables, the record (taken whole) and
+  the list. Its first statement reads `due`, so a delivery that lacks the key is
+  refused alike everywhere: nothing is written and error.execution is raised.
+  `due.clear` assigns `null`. `due.read` reads each value only where a test
+  proves it present: the right operand of `&&` and of `||`, the branches of a
+  conditional (one under `!`), an `<if>`, its `<elseif>` and its `<else>`, a
+  field of the record, and a field of the list's record item in a `<foreach>`;
+  it compares two optional values and an optional value with `null` and with a
+  variant, and logs two of them. `due.fallback` reads `title ?? 'none'`, and
+  `due ?? (huge * huge)`, whose default overflows an int64: it is evaluated only
+  when `due` is absent, so only then does the statement fail and end the block.
+  `relay` sends the three optional variables to the machine itself as
+  `due.sent`, whose transition reads the day where its `cond` proves it present.
+  The `<final>`'s `<donedata>` carries optional values, absent ones as `null`.
+
+  No engine lowers an optional value yet: each lists the scenario as not yet
+  lowered until the step of the ADR that lowers the type on it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="tracking" datamodel="sce-static" name="static_optional">
+  <sce:import kind="enum" src="enum_item_status.scxml" as="Status"/>
+  <sce:import kind="event-schema" src="schema_due.scxml" as="Due"/>
+  <sce:import kind="event-schema" src="schema_due_sent.scxml" as="Sent"/>
+  <datamodel>
+    <data id="due" sce:type="optional&lt;int64&gt;" expr="null" sce:direction="out"/>
+    <data id="other" sce:type="optional&lt;int64&gt;" expr="7" sce:direction="out"/>
+    <data id="title" sce:type="optional&lt;string&gt;" sce:capacity="16" expr="null" sce:direction="out"/>
+    <data id="status" sce:type="optional&lt;enum:Status&gt;" expr="Status.open" sce:direction="out"/>
+    <data id="item" sce:type="record:Due" sce:direction="out">
+      <sce:set name="id" expr="0"/>
+      <sce:set name="due" expr="null"/>
+      <sce:set name="title" expr="'first'"/>
+      <sce:set name="status" expr="null"/>
+    </data>
+    <data id="items" sce:type="list&lt;record:Due&gt;" sce:capacity="3" sce:direction="out"/>
+    <data id="days" sce:type="int64" expr="0" sce:direction="out"/>
+    <data id="following" sce:type="int64" expr="0" sce:direction="out"/>
+    <data id="late" sce:type="bool" expr="false" sce:direction="out"/>
+    <data id="early" sce:type="bool" expr="false" sce:direction="out"/>
+    <data id="label" sce:type="string" sce:capacity="16" expr="''" sce:direction="out"/>
+    <data id="plain" sce:type="enum:Status" expr="Status.open" sce:direction="out"/>
+    <data id="kept" sce:type="int64" expr="0" sce:direction="out"/>
+    <data id="listed" sce:type="int64" expr="0" sce:direction="out"/>
+    <data id="missing" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="same" sce:type="bool" expr="false" sce:direction="out"/>
+    <data id="absent" sce:type="bool" expr="false" sce:direction="out"/>
+    <data id="statusDone" sce:type="bool" expr="false" sce:direction="out"/>
+    <data id="echoed" sce:type="int64" expr="0" sce:direction="out"/>
+    <data id="echoTitle" sce:type="optional&lt;string&gt;" sce:capacity="16" expr="null" sce:direction="out"/>
+    <data id="echoStatus" sce:type="optional&lt;enum:Status&gt;" expr="null" sce:direction="out"/>
+    <data id="fallbacks" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="errors" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="huge" sce:type="int64" expr="4294967296"/>
+  </datamodel>
+  <state id="tracking">
+    <!-- A delivery with a value or with `null` for each optional field; the
+         first statement reads `due`, so one that lacks it writes nothing. -->
+    <transition event="due.set" type="internal">
+      <assign location="due" expr="_event.data.due"/>
+      <assign location="title" expr="_event.data.title"/>
+      <assign location="status" expr="_event.data.status"/>
+      <assign location="item" expr="_event.data"/>
+      <sce:append target="items" expr="item"/>
+    </transition>
+    <!-- `null` assigned: to variables and to a field of the record. -->
+    <transition event="due.clear" type="internal">
+      <assign location="due" expr="null"/>
+      <assign location="other" expr="null"/>
+      <assign location="status" expr="null"/>
+      <assign location="item.due" expr="null"/>
+    </transition>
+    <!-- Each read of a value where a test proves it present. -->
+    <transition event="due.read" type="internal">
+      <assign location="days" expr="due !== null ? due.value : 0"/>
+      <assign location="late" expr="due !== null &amp;&amp; due.value &gt; 10"/>
+      <assign location="early" expr="due === null || due.value &lt; 3"/>
+      <assign location="following" expr="!(due === null) ? due.value + 1 : 0"/>
+      <if cond="title === null">
+        <assign location="label" expr="'untitled'"/>
+      <elseif cond="title.value === 'soon'"/>
+        <assign location="label" expr="'due soon'"/>
+      <else/>
+        <assign location="label" expr="title.value"/>
+      </if>
+      <if cond="status !== null">
+        <assign location="plain" expr="status.value"/>
+      </if>
+      <if cond="item.due !== null">
+        <assign location="kept" expr="item.due.value"/>
+      </if>
+      <assign location="listed" expr="0"/>
+      <assign location="missing" expr="0"/>
+      <foreach array="items" item="it">
+        <if cond="it.due !== null">
+          <assign location="listed" expr="listed + it.due.value"/>
+        <else/>
+          <assign location="missing" expr="missing + 1"/>
+        </if>
+      </foreach>
+      <assign location="same" expr="due === other"/>
+      <assign location="absent" expr="null === due"/>
+      <assign location="statusDone" expr="status === Status.done"/>
+      <log label="due" expr="due"/>
+      <log label="status" expr="status"/>
+    </transition>
+    <!-- A read with a default: the default is evaluated only when the value
+         is absent, so `huge * huge` overflows only then. -->
+    <transition event="due.fallback" type="internal">
+      <assign location="label" expr="title ?? 'none'"/>
+      <assign location="days" expr="due ?? (huge * huge)"/>
+      <assign location="fallbacks" expr="fallbacks + 1"/>
+    </transition>
+    <!-- The optional variables sent as the params of a send, each a value or
+         `null` on the wire. -->
+    <transition event="relay" type="internal">
+      <send event="due.sent">
+        <param name="due" expr="due"/>
+        <param name="title" expr="title"/>
+        <param name="status" expr="status"/>
+      </send>
+    </transition>
+    <!-- A test of a field of the payload in the `cond` proves it in the
+         transition's content. -->
+    <transition event="due.sent" cond="_event.data.due !== null" type="internal">
+      <assign location="echoed" expr="_event.data.due.value"/>
+      <assign location="echoTitle" expr="_event.data.title"/>
+      <assign location="echoStatus" expr="_event.data.status"/>
+    </transition>
+    <transition event="due.sent" type="internal">
+      <assign location="echoed" expr="-1"/>
+      <assign location="echoTitle" expr="_event.data.title"/>
+      <assign location="echoStatus" expr="_event.data.status"/>
+    </transition>
+    <transition event="error.execution" type="internal">
+      <assign location="errors" expr="errors + 1"/>
+    </transition>
+    <transition event="finish" target="done"/>
+  </state>
+  <final id="done">
+    <donedata>
+      <param name="due" expr="due"/>
+      <param name="title" location="title"/>
+      <param name="status" expr="status"/>
+      <param name="kept" expr="item.due"/>
+      <param name="days" expr="due ?? 0"/>
+    </donedata>
+  </final>
+</scxml>

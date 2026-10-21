@@ -1,0 +1,104 @@
+{
+  "machine": "static_optional",
+  "about": "Values that may be absent (docs/adr/0055): an optional int64 `due`, an optional text `title` and an optional value of `Status` `status`, held in variables, in the record `item` and in the list of records `items`, and carried by the payload of `due.set`. An absent value is `null` in a payload, in a variable, in a record's field and in the done data, and `null` stands only where the machine declares an optional value. `due` starts absent and `other` and `status` present. `due.read` reads each value only where a test proves it present: `days` is `due !== null ? due.value : 0`, `late` is `due !== null && due.value > 10`, `early` is `due === null || due.value < 3`, `following` is `!(due === null) ? due.value + 1 : 0`, `label` is 'untitled' for no title, 'due soon' for 'soon' (an <elseif>) and the title otherwise (the <else>), `plain` takes `status.value` where `status` is present, `kept` takes `item.due.value` where the record's field is present, and the <foreach> adds the present days of the list into `listed` and counts the absent ones in `missing`; `same` is `due === other`, `absent` is `null === due` and `statusDone` is `status === Status.done`, so two absent values are equal and an absent value equals no present one. `due.fallback` writes `title ?? 'none'` into `label` and then `due ?? (huge * huge)` into `days`: the default is evaluated only when `due` is absent, and then it overflows an int64, so the statement fails, error.execution is raised and `fallbacks` is not counted; with `due` present the default is never evaluated. A delivery of `due.set` that lacks the key `due` is refused: nothing is written and error.execution is raised. `relay` sends the three optional variables to the machine as `due.sent`, each a value or `null`; the transition whose `cond` proves the day present reads it, and the other writes -1. `due.clear` assigns `null` to `due`, `other`, `status` and the record's `due`. The final's done data carries `due`, `title`, `status` and `item.due` as optional values and `due ?? 0` as a number. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "note": "each variable starts at the value its expr names: `due` absent, `other` and `status` present, and the record's `due` and `status` absent",
+      "expect": { "state": "tracking", "variables": {
+        "due": null, "other": 7, "title": null, "status": "open",
+        "item": { "id": 0, "due": null, "title": "first", "status": null }, "items": [],
+        "days": 0, "following": 0, "late": false, "early": false, "label": "", "plain": "open",
+        "kept": 0, "listed": 0, "missing": 0, "same": false, "absent": false, "statusDone": false,
+        "echoed": 0, "echoTitle": null, "echoStatus": null, "fallbacks": 0, "errors": 0 } } },
+
+    { "note": "every read finds `due` and `title` absent: the tests pick the branch that does not read them, `status` is read where it is present, and an absent `due` equals no present `other`",
+      "event": "due.read",
+      "expect": { "variables": {
+        "days": 0, "late": false, "early": true, "following": 0, "label": "untitled", "plain": "open",
+        "kept": 0, "listed": 0, "missing": 0, "same": false, "absent": true, "statusDone": false, "errors": 0 } } },
+
+    { "note": "`title` is absent, so its default is written; `due` is absent, so its default is evaluated, overflows, and the statement fails with the block: `days` and `fallbacks` keep their values",
+      "event": "due.fallback",
+      "expect": { "variables": { "label": "none", "days": 0, "fallbacks": 0, "errors": 1 } } },
+
+    { "note": "a delivery whose optional fields each carry a value: the variables, the record taken whole and the list hold them",
+      "event": "due.set", "data": { "id": 1, "due": 12, "title": "soon", "status": "done" },
+      "expect": { "variables": {
+        "due": 12, "title": "soon", "status": "done",
+        "item": { "id": 1, "due": 12, "title": "soon", "status": "done" },
+        "items": [ { "id": 1, "due": 12, "title": "soon", "status": "done" } ], "errors": 1 } } },
+
+    { "note": "every read finds the values present: 12 > 10, not 12 < 3, 12 + 1, the <elseif> for 'soon', the variant, the record's day, and the list's one present day",
+      "event": "due.read",
+      "expect": { "variables": {
+        "days": 12, "late": true, "early": false, "following": 13, "label": "due soon", "plain": "done",
+        "kept": 12, "listed": 12, "missing": 0, "same": false, "absent": false, "statusDone": true, "errors": 1 } } },
+
+    { "note": "both values are present, so neither default is evaluated: nothing fails and the block runs to its end",
+      "event": "due.fallback",
+      "expect": { "variables": { "label": "soon", "days": 12, "fallbacks": 1, "errors": 1 } } },
+
+    { "note": "a delivery that carries `null` for a field makes it absent: in the variables, in the record and in the list's second record",
+      "event": "due.set", "data": { "id": 2, "due": null, "title": "later", "status": null },
+      "expect": { "variables": {
+        "due": null, "title": "later", "status": null,
+        "item": { "id": 2, "due": null, "title": "later", "status": null },
+        "items": [
+          { "id": 1, "due": 12, "title": "soon", "status": "done" },
+          { "id": 2, "due": null, "title": "later", "status": null } ], "errors": 1 } } },
+
+    { "note": "`due` is absent again; the title is neither absent nor 'soon', so the <else> reads it; `status` and the record's day are absent, so `plain` and `kept` keep their values; the list holds one present day and one absent",
+      "event": "due.read",
+      "expect": { "variables": {
+        "days": 0, "late": false, "early": true, "following": 0, "label": "later", "plain": "done",
+        "kept": 12, "listed": 12, "missing": 1, "same": false, "absent": true, "statusDone": false, "errors": 1 } } },
+
+    { "note": "a delivery that lacks the key `due` is no absent value: the first revision declares the field, so the delivery is refused, error.execution is raised and nothing is written",
+      "event": "due.set", "data": { "id": 3, "title": "gone", "status": "open" },
+      "expect": { "variables": {
+        "due": null, "title": "later", "status": null,
+        "item": { "id": 2, "due": null, "title": "later", "status": null },
+        "items": [
+          { "id": 1, "due": 12, "title": "soon", "status": "done" },
+          { "id": 2, "due": null, "title": "later", "status": null } ], "errors": 2 } } },
+
+    { "note": "the absent day and status cross a send as `null` and the title as its text: the transition that proves the day present is not taken, the other writes -1",
+      "event": "relay",
+      "expect": { "variables": { "echoed": -1, "echoTitle": "later", "echoStatus": null, "errors": 2 } } },
+
+    { "note": "a third record fills the list to its capacity of three",
+      "event": "due.set", "data": { "id": 4, "due": 7, "title": "next", "status": "in_progress" },
+      "expect": { "variables": {
+        "due": 7, "title": "next", "status": "in_progress",
+        "item": { "id": 4, "due": 7, "title": "next", "status": "in_progress" },
+        "items": [
+          { "id": 1, "due": 12, "title": "soon", "status": "done" },
+          { "id": 2, "due": null, "title": "later", "status": null },
+          { "id": 4, "due": 7, "title": "next", "status": "in_progress" } ], "errors": 2 } } },
+
+    { "note": "7 is neither > 10 nor < 3; the <else> reads 'next'; the list's present days are 12 and 7; `due` equals the present `other` it holds the value of",
+      "event": "due.read",
+      "expect": { "variables": {
+        "days": 7, "late": false, "early": false, "following": 8, "label": "next", "plain": "in_progress",
+        "kept": 7, "listed": 19, "missing": 1, "same": true, "absent": false, "statusDone": false, "errors": 2 } } },
+
+    { "note": "the present day crosses the send as its number and is read where the `cond` proves it present",
+      "event": "relay",
+      "expect": { "variables": { "echoed": 7, "echoTitle": "next", "echoStatus": "in_progress", "errors": 2 } } },
+
+    { "note": "`null` assigned to three variables and to the record's day; the title and the record's other fields keep their values",
+      "event": "due.clear",
+      "expect": { "variables": {
+        "due": null, "other": null, "title": "next", "status": null,
+        "item": { "id": 4, "due": null, "title": "next", "status": "in_progress" }, "errors": 2 } } },
+
+    { "note": "two absent values are equal; `status` and the record's day are absent, so `plain` and `kept` keep their values; the list is as it was",
+      "event": "due.read",
+      "expect": { "variables": {
+        "days": 0, "late": false, "early": true, "following": 0, "label": "next", "plain": "in_progress",
+        "kept": 7, "listed": 19, "missing": 1, "same": true, "absent": true, "statusDone": false, "errors": 2 } } },
+
+    { "note": "the final's done data carries the absent values as `null`, the title as its text, and `due ?? 0` as 0",
+      "event": "finish",
+      "expect": { "ended": true, "donedata": { "due": null, "title": "next", "status": null, "kept": null, "days": 0 } } }
+  ]
+}

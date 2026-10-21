@@ -25,9 +25,11 @@ const only = process.argv[3] ? new RegExp(process.argv[3]) : null;
 const glue = path.join(outDir, "sce_rust_scenarios.js");
 const require = createRequire(import.meta.url);
 
-const names = require(glue).scenario_names().split(",").filter(Boolean);
+const table = require(glue);
+const names = table.scenario_names().split(",").filter(Boolean);
+const notYetLowered = table.scenarios_not_yet_lowered().split(",").filter(Boolean);
 
-const mismatch = heldMismatch(names);
+const mismatch = heldMismatch(names, notYetLowered);
 if (mismatch) {
   console.log(mismatch);
   process.exit(2);

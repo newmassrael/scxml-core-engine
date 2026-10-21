@@ -6007,6 +6007,31 @@ const SCENARIO_DRIVERS: &[(&str, &str, &str)] = &[
     ),
 ];
 
+/// The engine a scenario is replayed on beside the six of [`SCENARIO_DRIVERS`]:
+/// the Interpreter, which runs the machine `sce-codegen lower` makes of it and
+/// finds the scenarios by scanning their directory.
+const INTERPRETER: &str = "interpreter";
+
+/// The scenarios an engine does not replay yet because it does not lower their
+/// machine yet, an engine to a line, with why: the machine is refused there by
+/// name (`generate/unsupported-feature`). The step that lowers the construct on
+/// an engine takes that engine's line off and replays the scenario in its driver;
+/// the test below fails for a line whose engine lowers the machine, and for a
+/// machine no engine lowers that does not name every engine here.
+const NOT_YET_LOWERED: &[(&str, &str, &str)] = &[
+    ("static_optional", "rust", OPTIONAL_NOT_LOWERED),
+    ("static_optional", "kotlin", OPTIONAL_NOT_LOWERED),
+    ("static_optional", "cpp", OPTIONAL_NOT_LOWERED),
+    ("static_optional", "go", OPTIONAL_NOT_LOWERED),
+    ("static_optional", "python", OPTIONAL_NOT_LOWERED),
+    ("static_optional", "c11", OPTIONAL_NOT_LOWERED),
+    ("static_optional", INTERPRETER, OPTIONAL_NOT_LOWERED),
+];
+
+/// Why the scenario of an optional value is not replayed on an engine yet.
+const OPTIONAL_NOT_LOWERED: &str =
+    "an optional value has no lowering on it yet (docs/adr/0055, step 5)";
+
 /// Where each backend's regen script commits a machine: the file that exists
 /// only if it did.
 const COMMITTED_MACHINES: &[(&str, &str)] = &[
@@ -6197,9 +6222,37 @@ fn every_scenario_is_replayed_on_every_backend_that_lowers_its_machine() {
         // lands in one engine first, and the others are refused by name until their
         // turn (docs/adr/0005).
         let interpreter_lowers = run_beside(&["lower"], &document, &siblings).0;
+        // An engine listed as not lowering the machine yet does not: a line its
+        // step forgot to take off would excuse a driver from a scenario it can run.
+        let listed: Vec<(&str, &str)> = NOT_YET_LOWERED
+            .iter()
+            .filter(|(s, _, _)| *s == stem)
+            .map(|(_, engine, why)| (*engine, *why))
+            .collect();
+        for (engine, why) in &listed {
+            let lowers = if *engine == INTERPRETER {
+                interpreter_lowers
+            } else {
+                lowering.contains(engine)
+            };
+            assert!(
+                !lowers,
+                "{stem}: {engine} lowers {machine} now, and NOT_YET_LOWERED still says \
+                 \"{why}\": replay the scenario in its driver and take the line off"
+            );
+        }
+        // A machine no engine lowers yet is a scenario nothing runs, which is
+        // admitted only while every engine says why it does not.
+        let unlisted: Vec<&str> = SCENARIO_DRIVERS
+            .iter()
+            .map(|(lang, _, _)| *lang)
+            .chain([INTERPRETER])
+            .filter(|engine| !listed.iter().any(|(named, _)| named == engine))
+            .collect();
         assert!(
-            !lowering.is_empty() || interpreter_lowers,
-            "{machine}: no backend lowers it, so no scenario runs it"
+            !lowering.is_empty() || interpreter_lowers || unlisted.is_empty(),
+            "{machine}: no backend lowers it, so no scenario runs it, and NOT_YET_LOWERED \
+             does not say why for {unlisted:?}"
         );
         // A backend that lowers the machine commits it where its driver builds
         // it from; one that refuses it has nothing to commit.

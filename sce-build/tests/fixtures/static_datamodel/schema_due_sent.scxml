@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  What `static_optional.scxml` sends itself of the item it holds (docs/adr/0055):
+  a day, a title and a standing, each of which may be absent. The machine sends
+  its optional variables as the `<param>`s of a `<send>`, so each crosses as a
+  value or as `null`, and reads them back through this schema.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="schema_due_sent"
+       sce:event-name="due.sent">
+  <sce:import src="enum_item_status.scxml" kind="enum" as="Status"/>
+  <datamodel>
+    <data id="due" sce:type="optional&lt;int64&gt;" sce:direction="in"/>
+    <data id="title" sce:type="optional&lt;string&gt;" sce:max-size="16" sce:direction="in"/>
+    <data id="status" sce:type="optional&lt;enum:Status&gt;" sce:direction="in"/>
+  </datamodel>
+</scxml>

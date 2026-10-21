@@ -30,19 +30,25 @@ export function scenariosOnDisk() {
  * Why the module's scenarios are not the directory's, or null when they are.
  *
  * The module must hold every scenario of the directory, and only those: a scenario
- * the module does not hold is one this target never replays. The floor on the
- * directory is there because a directory that read as empty would be held by an
- * empty module.
+ * the module does not hold is one this target never replays. A scenario whose
+ * machine the module's table does not lower yet (`notYetLowered`, which the module
+ * names with why) is accounted for without it, and is never held as well. The
+ * floor on the directory is there because a directory that read as empty would be
+ * held by an empty module.
  */
-export function heldMismatch(names) {
+export function heldMismatch(names, notYetLowered = []) {
   const onDisk = scenariosOnDisk();
   const held = [...names].sort();
-  const missing = onDisk.filter((name) => !held.includes(name));
-  const extra = held.filter((name) => !onDisk.includes(name));
-  if (onDisk.length < 40 || missing.length || extra.length) {
+  const pending = [...notYetLowered].sort();
+  const accounted = [...held, ...pending];
+  const missing = onDisk.filter((name) => !accounted.includes(name));
+  const extra = accounted.filter((name) => !onDisk.includes(name));
+  const both = held.filter((name) => pending.includes(name));
+  if (onDisk.length < 40 || missing.length || extra.length || both.length) {
     return (
-      `the module's scenarios are not the directory's (directory ${onDisk.length}, module ${held.length}): ` +
-      `not in the module: ${missing.join(",") || "-"}; not in the directory: ${extra.join(",") || "-"}`
+      `the module's scenarios are not the directory's (directory ${onDisk.length}, module ${held.length}, ` +
+      `not yet lowered ${pending.length}): not in the module: ${missing.join(",") || "-"}; ` +
+      `not in the directory: ${extra.join(",") || "-"}; held and not yet lowered: ${both.join(",") || "-"}`
     );
   }
   return null;
