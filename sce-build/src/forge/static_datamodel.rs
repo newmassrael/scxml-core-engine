@@ -166,9 +166,11 @@ pub fn check(
     let Some(scope) = StaticScope::of(model) else {
         return Ok(());
     };
+    let held_enums = model.held_enums();
     let judge = Judge {
         scope: &scope,
         enums,
+        held_enums: &held_enums,
         schemas: &model.imported_records,
         loop_records: Default::default(),
         loop_names: Default::default(),
@@ -179,7 +181,7 @@ pub fn check(
         diag_label,
         read: Default::default(),
         whole_state_call_ok: Default::default(),
-        receivers: Receivers::of(model),
+        receivers: Receivers::of(model, &held_enums),
     };
     // Every record variable's fields, readable everywhere; a transition adds
     // its payload to these.
@@ -206,8 +208,10 @@ pub fn check(
             .and_then(crate::forge::model::ListElemType::record_alias)
         {
             // A list starts empty, so it names no variant of an enum field of its
-            // records, and holds one the document does not import (docs/adr/0054).
+            // records, and holds one the document does not import (docs/adr/0054);
+            // the enum it holds is closed all the same.
             if let Some(schema) = model.imported_records.get(alias) {
+                judge.schema_enums_closed(var, alias, schema)?;
                 judge.schema_strings_bounded(var, alias, schema)?;
             }
         }
@@ -552,6 +556,11 @@ impl<'a> StringHolder<'a> {
 struct Judge<'a> {
     scope: &'a StaticScope,
     enums: &'a [StaticEnum],
+    /// Every enum the document holds a value of, by the name it holds each by
+    /// ([`SCXMLModel::held_enums`]): the ones it imports, which `enums` holds as
+    /// its text names them, and the ones a field of its schemas holds that it
+    /// does not import (docs/adr/0054).
+    held_enums: &'a std::collections::BTreeMap<String, crate::forge::model::EnumModel>,
     /// The schemas the document imports, by alias — the fields of a record a
     /// loop walks are read from them.
     schemas: &'a std::collections::BTreeMap<String, crate::forge::model::EventSchemaModel>,
@@ -596,14 +605,17 @@ struct Receivers<'a> {
     /// The enums this document holds values of, by the name it holds each by
     /// ([`SCXMLModel::held_enums`]): what an enum field of one of its own schemas
     /// holds, and what an enum value of it is.
-    own_enums: std::collections::BTreeMap<String, crate::forge::model::EnumModel>,
+    own_enums: &'a std::collections::BTreeMap<String, crate::forge::model::EnumModel>,
     /// Each child session's id, with each document it may be (one, or a hybrid
     /// invoke's candidates) by name and what that document reads.
     children: std::collections::BTreeMap<String, Vec<(&'a str, &'a crate::model::ChildReceives)>>,
 }
 
 impl<'a> Receivers<'a> {
-    fn of(model: &'a SCXMLModel) -> Self {
+    fn of(
+        model: &'a SCXMLModel,
+        held_enums: &'a std::collections::BTreeMap<String, crate::forge::model::EnumModel>,
+    ) -> Self {
         let mut children: std::collections::BTreeMap<String, Vec<_>> = Default::default();
         for invoke in model.states.values().flat_map(|s| s.invokes.iter()) {
             match invoke {
@@ -630,7 +642,7 @@ impl<'a> Receivers<'a> {
         }
         Self {
             own_schemas: &model.imported_event_schemas,
-            own_enums: model.held_enums(),
+            own_enums: held_enums,
             children,
         }
     }
@@ -1424,6 +1436,7 @@ impl<'a> Judge<'a> {
             var.value_type_spelling.as_ref(),
         )
         .map_err(|error| Located::in_file(error, self.diag_label))?;
+        self.schema_enums_closed(var, alias, schema)?;
         self.schema_enums_named(var, alias, schema)?;
         self.schema_strings_bounded(var, alias, schema)?;
         for (field, init) in schema.fields.iter().zip(ordered) {
@@ -1459,6 +1472,47 @@ impl<'a> Judge<'a> {
                     holder,
                 )?;
             }
+        }
+        Ok(())
+    }
+
+    /// A record of `schema` — a variable, or the element of a list — holds each enum
+    /// field in the machine's own type for the enum document the schema imports,
+    /// whether or not the document imports it (docs/adr/0054), and that type is a
+    /// closed set: an enum that declares `sce:strict-variants="false"` admits values
+    /// no variant names, which it has no member for and which no declared name
+    /// crosses to an algorithm by. Refused where the record is declared, as a
+    /// variable of such an enum is ([`Self::enum_variable`]).
+    fn schema_enums_closed(
+        &self,
+        var: &Variable,
+        alias: &str,
+        schema: &crate::forge::model::EventSchemaModel,
+    ) -> Result<(), Located<ForgeError>> {
+        for field in &schema.fields {
+            let crate::forge::model::SceType::Enum(reference) = &field.sce_type else {
+                continue;
+            };
+            let Some(held) = self.held_enums.get(&reference.alias) else {
+                continue;
+            };
+            if held.strict_variants {
+                continue;
+            }
+            let spelling = var.value_type_spelling.as_ref();
+            return Err(self.rule_at(
+                format!("<data id=\"{}\"> of record:{alias}", var.id),
+                &format!(
+                    "the field `{}` of record:{alias} holds the enum `{}`, which declares \
+                     sce:strict-variants=\"false\": a statechart holds a closed enum, and a \
+                     value no variant names has no type to be held in",
+                    field.id, held.name
+                ),
+                spelling.map(|s| s.row()),
+                spelling.map(|s| s.col()),
+                "",
+                &reference.alias,
+            ));
         }
         Ok(())
     }

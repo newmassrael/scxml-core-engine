@@ -26,7 +26,7 @@
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-build --features cli --test a_static_machine_hands_algorithms_the_state_it_holds --test the_grammar_accepts_what_the_parser_accepts
-mutation_targets sce-build/src/forge/static_imports.rs sce-build/src/forge/static_enum.rs sce-build/src/forge/static_js_algorithm.rs sce-build/src/forge/parser.rs sce-build/src/forge/event_schema_check.rs
+mutation_targets sce-build/src/forge/static_imports.rs sce-build/src/forge/static_enum.rs sce-build/src/forge/static_js_algorithm.rs sce-build/src/forge/parser.rs sce-build/src/forge/event_schema_check.rs sce-build/src/forge/static_datamodel.rs
 mutation_oracles sce-build/tests/a_static_machine_hands_algorithms_the_state_it_holds.rs sce-build/tests/the_grammar_accepts_what_the_parser_accepts.rs
 
 mutation_case "an enum field of another document is held as the statechart's" <<'PY'
@@ -47,10 +47,12 @@ edit("sce-build/src/forge/static_enum.rs",
      "                let wanted = slots.params.get(index).cloned().flatten().filter(|_| held.is_some());\n")
 PY
 
+# The list that would hand the open enum over is refused where it is declared, before
+# any call (docs/adr/0054): the mutant lets a record of an open enum be declared.
 mutation_case "an open enum crosses" <<'PY'
-edit("sce-build/src/forge/static_imports.rs",
-     "    if !held.strict {\n",
-     "    if !held.strict && held.identity.is_empty() {\n")
+edit("sce-build/src/forge/static_datamodel.rs",
+     "            if held.strict_variants {\n",
+     "            if held.strict_variants || !held.strict_variants {\n")
 PY
 
 mutation_case "the Interpreter's algorithm has no value form for an enum" <<'PY'

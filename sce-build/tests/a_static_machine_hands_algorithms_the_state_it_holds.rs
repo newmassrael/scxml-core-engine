@@ -598,10 +598,45 @@ fn a_value_of_the_enum_an_algorithm_returns_is_no_number() {
     );
 }
 
+/// Assert `machine_text`, beside the enum siblings with `enum_item_status.scxml` made
+/// open, is refused for Rust where its list of `Item` records is declared: the list
+/// holds the records' `status` in the machine's type for an enum that admits values
+/// no variant names.
+fn assert_open_enum_list_refused(machine_text: &str) {
+    let (ok, out) = run_beside(
+        &ENUM_SIBLINGS,
+        &["check", "-l", "rust"],
+        machine_text,
+        &[(
+            "enum_item_status.scxml",
+            &item_status_like("enum_item_status", true),
+        )],
+    );
+    assert!(
+        !ok,
+        "a list of records of an open enum must be refused:\n{out}"
+    );
+    assert!(
+        out.contains("\"code\":\"scxml/static-datamodel-rule\""),
+        "expected scxml/static-datamodel-rule:\n{out}"
+    );
+    assert!(
+        out.contains("the field `status` of record:Item holds the enum `enum_item_status`"),
+        "the refusal names the field the list's records hold:\n{out}"
+    );
+    assert!(
+        out.contains(
+            "declares sce:strict-variants=\\\"false\\\": a statechart holds a closed enum"
+        ),
+        "the refusal names the rule:\n{out}"
+    );
+}
+
 #[test]
 fn an_open_enum_does_not_cross_to_an_algorithm() {
-    // A value of an open enum that no variant names has no declared name to cross by.
-    // The machine holds no variable of the enum, so the call is what is judged.
+    // A value of an open enum that no variant names has no declared name to cross by,
+    // and no type in the machine to be held in: the list whose records hold one is
+    // refused where it is declared, before the call that would hand it over.
     let text = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="board" datamodel="sce-static" name="open_enum_probe">
@@ -619,12 +654,28 @@ fn an_open_enum_does_not_cross_to_an_algorithm() {
   </state>
 </scxml>
 "#;
-    assert_enum_refused(
-        text,
-        &[(
-            "enum_item_status.scxml",
-            &item_status_like("enum_item_status", true),
-        )],
-        "declares sce:strict-variants=\\\"false\\\": a statechart holds a closed enum",
-    );
+    assert_open_enum_list_refused(text);
+}
+
+#[test]
+fn a_list_of_records_of_an_open_enum_the_statechart_does_not_import_is_refused() {
+    // The statechart imports no enum: the list holds the records' `status` all the
+    // same, in its type for the enum document the schema imports (docs/adr/0054),
+    // and that enum is open, so the list is refused where it is declared.
+    let text = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="board" datamodel="sce-static" name="open_enum_unimported_probe">
+  <sce:import kind="event-schema" src="schema_item.scxml" as="Item"/>
+  <datamodel>
+    <data id="items" sce:type="list&lt;record:Item&gt;" sce:capacity="4"/>
+    <data id="n" sce:type="uint32" expr="0"/>
+  </datamodel>
+  <state id="board">
+    <transition event="count" type="internal">
+      <assign location="n" expr="len(items)"/>
+    </transition>
+  </state>
+</scxml>
+"#;
+    assert_open_enum_list_refused(text);
 }

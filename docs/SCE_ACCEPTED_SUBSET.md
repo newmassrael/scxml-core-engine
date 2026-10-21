@@ -4050,7 +4050,10 @@ in a record as the machine's own enum type for the enum document the schema impo
 identified by its document, as a record is (SCE_FORGE.md §4.12): the statechart's
 own import of that document, under any alias and by any path, names the field's enum,
 and one with the same variants in another file is another enum, whatever alias it is
-imported under. A list of records starts empty and names no variant, so it needs no
+imported under. The enum is closed, whether imported or not: a record variable or a
+list of records whose field holds an enum that declares `sce:strict-variants="false"`
+is refused where it is declared (`scxml/static-datamodel-rule`, "a statechart holds a
+closed enum"). A list of records starts empty and names no variant, so it needs no
 import of the enum; a record variable starts the field at a variant at its
 `<sce:set>`, which names the enum, so a document that does not import the enum
 document is refused there (`scxml/static-datamodel-rule` on the `sce:type`, "which
