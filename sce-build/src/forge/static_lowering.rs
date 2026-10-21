@@ -1526,8 +1526,15 @@ pub trait StaticTarget {
     }
 }
 
+/// The name a Kotlin `let` binds the present value of an optional value to
+/// ([`StaticTarget::optional_map`], [`StaticTarget::wire_optional`]): a name no
+/// document's variable or local is spelled as, since a variable is a property
+/// named `v<PascalCase>` and a local keeps the author's spelling.
+const KOTLIN_PRESENT: &str = "scePresent";
+
 /// Kotlin: a variable is a property of the machine class, a record an
-/// immutable data class replaced field by field, a list an immutable `List`.
+/// immutable data class replaced field by field, a list an immutable `List`,
+/// and an optional value (docs/adr/0055) a `T?`.
 pub struct KotlinTarget;
 
 impl KotlinTarget {
@@ -1574,7 +1581,13 @@ impl KotlinTarget {
             .filter(|field| is_bytes(field))
             .map(|field| {
                 let member = self.record_field(&field.id);
-                format!("{member} = {member}.copyOf()")
+                // An optional byte string is copied where it is present
+                // (docs/adr/0055); `contentEquals` and `contentHashCode` take an
+                // absent one as they are.
+                match field.sce_type {
+                    FieldType::Optional { .. } => format!("{member} = {member}?.copyOf()"),
+                    FieldType::Scalar(_) => format!("{member} = {member}.copyOf()"),
+                }
             })
             .collect();
         format!(
@@ -1608,6 +1621,39 @@ impl StaticTarget for KotlinTarget {
     }
     fn lowers_state_calls(&self) -> bool {
         true
+    }
+    // `T?` (docs/adr/0055, section 5): the type is the default spelling
+    // ([`crate::forge::generator::optional_of`]), absent is `null` and a present
+    // value is the `T` itself.
+    fn optional_none(&self, _present: &str) -> Option<String> {
+        Some("null".to_string())
+    }
+    fn optional_some(&self, _present: &str, value: &str) -> Option<String> {
+        Some(value.to_string())
+    }
+    // The present value is bound by a `let` the safe call runs only where the
+    // value is present; what `map` throws is the statement's, received where
+    // the statement stands.
+    fn optional_map(
+        &self,
+        value: &str,
+        _present: &str,
+        map: &dyn Fn(&str) -> String,
+    ) -> Option<String> {
+        Some(format!(
+            "({value})?.let {{ {KOTLIN_PRESENT} -> {} }}",
+            map(KOTLIN_PRESENT)
+        ))
+    }
+    // `null`, which `valueToJson` writes as JSON `null`, where the value is
+    // absent.
+    fn wire_optional(
+        &self,
+        value: &str,
+        present: &str,
+        wire: &dyn Fn(&str) -> String,
+    ) -> Option<String> {
+        self.optional_map(value, present, wire)
     }
     fn state_argument(&self, _machine: &str, _arg: &StateArg, held: &str) -> String {
         held.to_string()
@@ -1868,13 +1914,37 @@ impl StaticTarget for KotlinTarget {
             .fields
             .iter()
             .map(|field| {
-                let field_ty = match field.sce_type.present_type() {
+                let present = match field.sce_type.present_type() {
                     SceType::Enum(reference) => enum_types[&reference.alias].clone(),
                     other => crate::forge::generator::kotlin_type(other).to_string(),
+                };
+                // An optional field is the optional type over its present
+                // value's (docs/adr/0055).
+                let field_ty = match &field.sce_type {
+                    FieldType::Optional { .. } => self
+                        .optional_type(&present)
+                        .expect("Kotlin spells an optional value"),
+                    FieldType::Scalar(_) => present,
                 };
                 format!("val {}: {field_ty}", self.record_field(&field.id))
             })
             .collect();
+        let bytes_members = self.record_bytes_members(ty, schema);
+        // A record with an optional field is held only by a machine that has no
+        // saved state before step 6 of docs/adr/0055 (`holds_an_optional_value`),
+        // so it has no saved form to write or read.
+        if schema.first_optional_field().is_some() {
+            return format!(
+                "/** SCE Accepted Subset §2.15: a `record:{alias}` datamodel value. */\n\
+                 data class {ty}({params}){body}",
+                params = params.join(", "),
+                body = if bytes_members.is_empty() {
+                    String::new()
+                } else {
+                    format!(" {{{bytes_members}}}")
+                }
+            );
+        }
         // Its saved form (`com.sce.runtime.SavedValues`) lives on the type: an
         // object of the schema's fields keyed by their ids. Fixed member names
         // rather than per-type functions on the machine, whose name pattern
@@ -1934,7 +2004,6 @@ impl StaticTarget for KotlinTarget {
             params = params.join(", "),
             writes = writes.join(", "),
             reads = reads.join(", "),
-            bytes_members = self.record_bytes_members(ty, schema)
         )
     }
     fn record_field(&self, id: &str) -> String {
@@ -11305,6 +11374,145 @@ mod tests {
             "(lambda sce_present: _ScriptValue.null() if sce_present is None else \
              _ScriptValue.of(str(sce_present)))(self.v_due)"
         );
+    }
+
+    /// Kotlin holds an optional value in `T?` and writes the whole value of an
+    /// optional place by the walk's one rule (docs/adr/0055): `null` its absent
+    /// value, a value of `T` lowered into `T` (a text held to its bound) and
+    /// lifted as it is, an optional value as it is; a read under an `<if>` whose
+    /// condition proves the value present is the runtime's proven read.
+    #[test]
+    fn kotlin_writes_an_optional_place_whole_by_the_walks_one_rule() {
+        const OPTIONAL: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="sce-static" name="m">
+  <datamodel>
+    <data id="due" sce:type="optional&lt;int64&gt;" expr="null"/>
+    <data id="other" sce:type="optional&lt;int64&gt;" expr="7"/>
+    <data id="title" sce:type="optional&lt;string&gt;" sce:capacity="4" expr="null"/>
+    <data id="days" sce:type="int64" expr="0"/>
+  </datamodel>
+  <state id="s">
+    <transition event="read" type="internal">
+      <if cond="due !== null">
+        <assign location="days" expr="due.value"/>
+      </if>
+    </transition>
+    <transition event="write" type="internal">
+      <assign location="due" expr="null"/>
+      <assign location="title" expr="'abc'"/>
+      <assign location="other" expr="due"/>
+    </transition>
+  </state>
+</scxml>"#;
+        let mut model = SCXMLParser::new()
+            .parse_string(OPTIONAL, "m")
+            .expect("parses");
+        crate::analyzer::analyze(&mut model, "m.scxml");
+        let lowered = lower_kotlin(&mut model, "M").expect("Kotlin lowers an optional value");
+        let field = |id: &str| {
+            lowered
+                .fields
+                .iter()
+                .find(|f| f.id == id)
+                .unwrap_or_else(|| panic!("a field `{id}`"))
+        };
+        assert_eq!(field("due").ty, "Long?");
+        assert_eq!(field("due").init, "null");
+        assert_eq!(field("other").init, "7");
+        assert_eq!(field("title").ty, "String?");
+        assert_eq!(field("title").saved_kind, "optional");
+        assert!(
+            lowered.saved_shape.is_none(),
+            "no saved shape before step 6"
+        );
+        let state = model.states.get("s").expect("the state");
+        let read = &state.transitions[0].actions[0];
+        assert_eq!(read.native_cond, "vDue != null");
+        // Read through the model's one definition of what lies inside an action.
+        let blocks = read.nested_blocks();
+        let then = blocks
+            .iter()
+            .find(|block| block.role == crate::model::BlockRole::Then)
+            .expect("the <if> has a then block");
+        assert_eq!(
+            then.actions[0].native_code,
+            "vDays = com.sce.forge.runtime.SceOptional.proven(vDue)"
+        );
+        let write = &state.transitions[1].actions;
+        assert_eq!(write[0].native_code, "vDue = null");
+        assert!(
+            write[1]
+                .native_code
+                .contains("vTitle = com.sce.forge.runtime.SceChecked.bounded(\"abc\", 4)"),
+            "{}",
+            write[1].native_code
+        );
+        assert_eq!(write[2].native_code, "vOther = vDue");
+    }
+
+    /// A record whose schema has an optional field holds it as `T?`, and has no
+    /// saved form: a machine that holds one has no saved state before step 6 of
+    /// docs/adr/0055.
+    #[test]
+    fn a_kotlin_record_with_an_optional_field_holds_it_nullable_and_saves_nothing() {
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        std::fs::write(
+            dir.path().join("schema_due.scxml"),
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="schema_due" sce:event-name="due.set">
+  <datamodel>
+    <data id="id" sce:type="uint32" sce:direction="in"/>
+    <data id="due" sce:type="optional&lt;int64&gt;" sce:direction="in"/>
+  </datamodel>
+</scxml>"#,
+        )
+        .expect("the schema");
+        let path = dir.path().join("m.scxml");
+        std::fs::write(
+            &path,
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="sce-static" name="m">
+  <sce:import kind="event-schema" src="schema_due.scxml" as="Due"/>
+  <datamodel>
+    <data id="item" sce:type="record:Due">
+      <sce:set name="id" expr="0"/>
+      <sce:set name="due" expr="null"/>
+    </data>
+  </datamodel>
+  <state id="s">
+    <transition event="clear" type="internal">
+      <assign location="item.due" expr="null"/>
+    </transition>
+  </state>
+</scxml>"#,
+        )
+        .expect("the statechart");
+        let mut model = SCXMLParser::new()
+            .parse_file(path.to_str().expect("a UTF-8 path"))
+            .expect("parses");
+        crate::analyzer::analyze(&mut model, "m.scxml");
+        let lowered = lower_kotlin(&mut model, "M").expect("Kotlin lowers an optional field");
+        let def = lowered
+            .type_defs
+            .iter()
+            .find(|def| def.contains("data class MDueRecord("))
+            .unwrap_or_else(|| panic!("the record's class in {:?}", lowered.type_defs));
+        assert!(
+            def.contains("data class MDueRecord(val id: UInt, val due: Long?)"),
+            "{def}"
+        );
+        assert!(!def.contains("toSaved"), "{def}");
+        assert!(!def.contains("fromSaved"), "{def}");
+        let item = lowered
+            .fields
+            .iter()
+            .find(|f| f.id == "item")
+            .expect("the record variable");
+        assert_eq!(item.init, "MDueRecord(id = 0.toUInt(), due = null)");
+        let clear = &model.states.get("s").expect("the state").transitions[0].actions[0];
+        assert_eq!(clear.native_code, "vItem = vItem.copy(due = null)");
     }
 
     fn shape(document: &str) -> Option<String> {

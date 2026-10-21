@@ -4764,9 +4764,22 @@ pub struct KotlinEventPayload {
 /// widened in its schema cannot keep being read at the old width — the
 /// generated call stops compiling instead.
 fn kotlin_payload_reader(f: &SchemaField, l: &LangCtx) -> String {
+    let present = kotlin_payload_present_reader(f, l);
+    match &f.sce_type {
+        FieldType::Scalar(_) => present,
+        // An optional field (docs/adr/0055, section 4) is absent where the
+        // delivery carries `null`, refused where it lacks the key, and otherwise
+        // read as a field of `T` is (`EventPayload.Fields.optional`).
+        FieldType::Optional { .. } => {
+            format!("fields.optional(\"{}\") {{ _ -> {present} }}", f.id)
+        }
+    }
+}
+
+/// [`kotlin_payload_reader`] of the present value of `f`: the call that reads it
+/// at the width its schema declares.
+fn kotlin_payload_present_reader(f: &SchemaField, l: &LangCtx) -> String {
     let id = &f.id;
-    // A schema with an optional field was refused where the machine was
-    // lowered (docs/adr/0055), so the field is read as a present value.
     let present = f.sce_type.present_type();
     // An enum is the machine's own, lifted from the variant's declared name; a
     // name the enum does not declare is a payload that does not fit its schema,
@@ -4900,9 +4913,15 @@ pub fn build_kotlin_event_payload(
         let mut lift_args = String::new();
         let mut data_items = String::new();
         for f in &schema.fields {
-            // A schema with an optional field was refused where the machine was
-            // lowered (docs/adr/0055), so each field holds a present value.
-            let ty = l.type_name(f.sce_type.present_type()).into_owned();
+            // An optional field is held in the one optional type over its
+            // present value's (docs/adr/0055).
+            let present = l.type_name(f.sce_type.present_type()).into_owned();
+            let ty = match &f.sce_type {
+                FieldType::Scalar(_) => present,
+                FieldType::Optional { .. } => l
+                    .optional_of(&present)
+                    .expect("Kotlin spells an optional value"),
+            };
             if !ctor_params.is_empty() {
                 ctor_params.push_str(", ");
             }
@@ -4918,11 +4937,14 @@ pub fn build_kotlin_event_payload(
             }
             call_args.push_str(&f.id);
             lift_args.push_str(&kotlin_payload_reader(f, &l));
-            // An enum rides as the name its document declares for the value.
-            let written = if matches!(f.sce_type.present_type(), SceType::Enum(_)) {
-                format!("{}.declaredName", f.id)
-            } else {
-                f.id.clone()
+            // An enum rides as the name its document declares for the value; an
+            // absent value as `null`, its key always written (docs/adr/0055).
+            let written = match (&f.sce_type, f.sce_type.present_type()) {
+                (FieldType::Optional { .. }, SceType::Enum(_)) => {
+                    format!("{}?.declaredName", f.id)
+                }
+                (_, SceType::Enum(_)) => format!("{}.declaredName", f.id),
+                _ => f.id.clone(),
             };
             data_items.push_str(&format!("\"{}\" to {written}", f.id));
         }

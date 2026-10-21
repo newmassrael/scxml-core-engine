@@ -40,8 +40,8 @@ PY
 
 mutation_case "a published byte string is handed out as the machine's own array" <<'PY'
 edit("tools/codegen/templates/kotlin/state_machine.kt.jinja2",
-     '{% if field.saved_type == "bytes" %}{{ field.name }}.copyOf()',
-     '{% if field.saved_type == "bytes" %}{{ field.name }}')
+     '{% elif field.saved_type == "bytes" %}{{ field.name }}.copyOf()',
+     '{% elif field.saved_type == "bytes" %}{{ field.name }}')
 PY
 
 mutation_case "a byte string is saved as an array of numbers" <<'PY'
