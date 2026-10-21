@@ -32806,11 +32806,11 @@ mod tests {
 
     #[test]
     fn c11_payload_field_decl_bytes_uses_bounded_buffer() {
-        use crate::forge::model::{Direction, ForgeField};
+        use crate::forge::model::{Direction, FieldType, ForgeField};
         let l = LangCtx::primitive(crate::generator::Language::C11);
         let mk = |sce_type, max_size| ForgeField {
             id: "raw".to_string(),
-            sce_type,
+            sce_type: FieldType::Scalar(sce_type),
             direction: Direction::In,
             expr: None,
             expr_spelling: None,
