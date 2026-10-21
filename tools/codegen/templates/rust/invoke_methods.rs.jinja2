@@ -354,7 +354,7 @@
     initialized — no `<onentry>`, no `<data>`, no argument read, no
     `idlocation` written, nothing sent.
 #}
-{% macro resume_child_arm(invoke_info, child, stem, host_type, slot, finalize, keyed_by_started_id, mesh_document) %}
+{% macro resume_child_arm(invoke_info, child, stem, host_type, slot, finalize, keyed_by_started_id) %}
             ("{{ invoke_info.invoke_id | escape_rust }}", "{{ stem | escape_rust }}") => {
 {{ build_child_policy(child, stem ~ "_sm", stem | to_machine_name, "child.invoke_id") }}
 {{ track_child(invoke_info, "child.invoke_id", finalize, keyed_by_started_id) }}
@@ -365,10 +365,13 @@
                     wall_now_ms,
                 )?;
                 child_engine.set_completion_callback(|| {});
-                // Child sessions in Mesh (SCE_MESH.md): the router of the
-                // resumed child, asked of this machine's factory as a start
-                // asks it.
-                engine.start_child_mesh(&mut child_engine, "{{ invoke_info.invoke_id }}", "{{ mesh_document }}");
+                // Child sessions in Mesh (SCE_MESH.md; docs/adr/0043): the
+                // router of the resumed child is owed, not asked here. This
+                // machine is being restored, and its host registers the
+                // factory of its children's routers only once the restore has
+                // returned it; the factory is asked for this child then
+                // (`start_owed_child_meshes`), before anything drives it.
+                child_engine.owe_child_mesh();
                 self.{{ slot }} = Some(Box::new(child_engine));
                 Ok(())
             }
@@ -1021,13 +1024,12 @@
 {% for invoke_info in model.invokes | scxml_family %}
 {% if invoke_info.candidates %}
 {% for candidate in invoke_info.candidates %}
-{{ resume_child_arm(invoke_info, candidate, candidate.stem, candidate.child_host_type, "child_" ~ invoke_info.field_suffix ~ "_" ~ candidate.stem, "String::new()", false, candidate.stem) }}
+{{ resume_child_arm(invoke_info, candidate, candidate.stem, candidate.child_host_type, "child_" ~ invoke_info.field_suffix ~ "_" ~ candidate.stem, "String::new()", false) }}
 {% endfor %}
 {% elif invoke_info.kind == "Hybrid" %}
-{{ resume_child_arm(invoke_info, invoke_info, invoke_info.child_name, invoke_info.child_host_type, "child_" ~ invoke_info.field_suffix, "String::new()", false, "") }}
+{{ resume_child_arm(invoke_info, invoke_info, invoke_info.child_name, invoke_info.child_host_type, "child_" ~ invoke_info.field_suffix, "String::new()", false) }}
 {% else %}
-{% set mesh_document = invoke_info.child_name if not invoke_info.src.startswith('#') else "" %}
-{{ resume_child_arm(invoke_info, invoke_info, invoke_info.child_name, invoke_info.child_host_type, "child_" ~ invoke_info.field_suffix, static_finalize(invoke_info), invoke_info.idlocation, mesh_document) }}
+{{ resume_child_arm(invoke_info, invoke_info, invoke_info.child_name, invoke_info.child_host_type, "child_" ~ invoke_info.field_suffix, static_finalize(invoke_info), invoke_info.idlocation) }}
 {% endif %}
 {% endfor %}
             (id, document) => Err(::sce_rust_runtime::saved_state::StateRefusal::new(format!(

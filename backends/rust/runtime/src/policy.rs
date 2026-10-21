@@ -608,6 +608,17 @@ pub trait StatePolicy: Sized + 'static {
         )))
     }
 
+    /// Ask `engine`'s factory of children's routers for the router of each
+    /// running child a restore resumed and no factory has been asked for yet
+    /// ([`Engine::start_owed_child_mesh`]; docs/adr/0043, docs/adr/0045). The
+    /// engine calls it when that factory is registered or installed.
+    ///
+    /// Generated only when the document has an `<invoke type="scxml">` and
+    /// saves. A policy with no children to resume has none to ask for, which
+    /// is what the default says.
+    #[cfg(not(feature = "no_std"))]
+    fn start_owed_child_meshes(&mut self, _engine: &mut Engine<Self>) {}
+
     /// Execute `<finalize>` handlers for child events (§scxml-6.5).
     ///
     /// Generated only when `HAS_FINALIZE` is `true`. Called from the engine's

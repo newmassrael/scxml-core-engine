@@ -1629,6 +1629,37 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
     ) -> Result<(), ::sce_rust_runtime::saved_state::StateRefusal> {
         self.do_resume_child(child, engine, wall_now_ms)
     }
+
+    // docs/adr/0043 + docs/adr/0045: the router of each running child a
+    // restore resumed, asked of the factory now that there is one, with the
+    // invoke id and the document stem a start asks it with. A child that has
+    // ended is not asked for.
+    fn start_owed_child_meshes(&mut self, engine: &mut Engine<Self>) {
+{% for invoke_info in model.invokes | scxml_family %}
+{% if invoke_info.candidates %}
+{% for candidate in invoke_info.candidates %}
+        if !self.pending_done_invoke_{{ invoke_info.field_suffix }} {
+            if let Some(child) = self.child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}.as_mut() {
+                engine.start_owed_child_mesh(&mut **child, "{{ invoke_info.invoke_id }}", "{{ candidate.stem }}");
+            }
+        }
+{% endfor %}
+{% else %}
+{% if invoke_info.kind == "Hybrid" %}
+{% set owed_document = "" %}
+{% elif invoke_info.src.startswith('#') %}
+{% set owed_document = "" %}
+{% else %}
+{% set owed_document = invoke_info.child_name %}
+{% endif %}
+        if !self.pending_done_invoke_{{ invoke_info.field_suffix }} {
+            if let Some(child) = self.child_{{ invoke_info.field_suffix }}.as_mut() {
+                engine.start_owed_child_mesh(&mut **child, "{{ invoke_info.invoke_id }}", "{{ owed_document }}");
+            }
+        }
+{% endif %}
+{% endfor %}
+    }
 {% endif %}
 {% if static_saved_shape and not no_std and model.invokes | host_invoker %}
 

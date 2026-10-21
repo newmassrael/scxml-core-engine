@@ -248,6 +248,15 @@ A restore is one act over the tree, in this order:
    evaluated, no `idlocation` written, nothing sent. The child is registered in the parent under its
    `invokeid` and `start`. The waiting sends of every session are armed against the one wall clock
    the restore was given, so a child's delayed send comes due when it would have.
+   The router is the one thing the restore cannot ask for as it builds the child: the factory is a
+   registration on the parent's engine, which the restore is what hands to the host, so no factory
+   exists yet. A resumed child is therefore owed its router, and the factory is asked for it when the
+   host registers the factory, before the host drives the root (Rust: `owe_child_mesh`,
+   `StatePolicy::start_owed_child_meshes`). That keeps ADR 0043's order, the router installed
+   before the child does anything, since a resumed child runs nothing until its parent drives it; a
+   grandchild is asked of the router its parent is given, in turn, and a factory registered again
+   asks for none a second time. A host that drives the root before it registers a factory runs the
+   resumed children with no router, as a start with no factory does, until it registers one.
 4. **Nothing runs.** The restore takes no step. The first drive of the root is the drive the saved
    tree would have made next: each session's host-run invocations start again at the top of that
    session's first macrostep (`restarted`, as today), the parent drives its children where it always
@@ -761,15 +770,16 @@ Each step lands with a test that fails without it.
    with format 1 kept as the one case a child restarts. A child's replies to a drive of it, a
    delivery included, reach its parent within the drive (section 3), and
    `nothing_is_in_transit_when_a_tree_is_saved.rs` holds that a save after any host call never
-   meets the transit refusal. Open: the tree fixture
+   meets the transit refusal. A resumed child's Mesh router is asked of the factory when the host
+   registers it (step 3 of section 3), held by
+   `a_child_session_is_given_its_mesh_router_by_its_parent.rs`. Open: the tree fixture
    (`static_invoke_tree.scxml` with a grandchild, the sends and queued events both ways, a
    candidate whose `srcexpr` changed, a start counted twice) and its byte-for-byte text, which
    the refusal tests of a grandchild of another shape and of a child of a later schema revision
    read; two of its items are not yet expressible, an `idlocation` on an `<invoke>` of a
    `sce-static` document (the Rust template reaches a script engine for it) and a host-run
-   invocation in a child (the child has no host invoker of its own); the scenario step `restore`;
-   and the Mesh router of a resumed child, which a restore asks of a parent that has no factory
-   yet.
+   invocation in a child (the child has no host invoker of its own); and the scenario step
+   `restore`.
 4. **Kotlin.** The same over `SavedState.kt` and `StateMachineEngine`, the root's id included.
    *Exit:* Kotlin saves the tree fixture byte for byte as Rust does, Kotlin restores the text Rust
    saved, and Rust the text Kotlin saved.

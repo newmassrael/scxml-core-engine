@@ -5224,7 +5224,10 @@ restore every backend moves to.
   is built as starting it would build it (its link to its parent, the clock, the
   host its parent's host answers for it) and restored in place of being
   initialized: no `<onentry>`, no `<data>`, no `<param>`, no `idlocation` write,
-  nothing sent. The restore takes no step. An event a child sent its parent and the
+  nothing sent. Its Mesh router is asked of the parent's factory when the host
+  registers that factory on the restored machine, before it drives it, and a
+  grandchild's of the router its parent is given (docs/adr/0045, section 3). The
+  restore takes no step. An event a child sent its parent and the
   parent had not taken is in the parent's `external`, and one the parent sent the
   child is in the child's; nothing is in transit between two sessions when a tree
   is saved. A child that had ended is absent, as in format 1, and a resumed child

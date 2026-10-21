@@ -1021,6 +1021,12 @@ pub struct Engine<P: StatePolicy> {
     /// started, and for a child given none.
     #[cfg(not(feature = "no_std"))]
     pub(crate) installed_mesh: Option<crate::host_processor::SharedChildMeshRouter>,
+    /// This machine is a child a restore resumed, and its parent's factory has
+    /// not been asked for its router yet (docs/adr/0045; docs/adr/0043): the
+    /// restore built it before the host could register that factory, so it is
+    /// asked when the factory is there ([`Engine::start_owed_child_mesh`]).
+    #[cfg(not(feature = "no_std"))]
+    pub(crate) child_mesh_owed: bool,
     #[cfg(not(feature = "no_std"))]
     pub(crate) on_http_send:
         Option<Box<dyn FnMut(HttpSendRequest) -> Option<HttpSendResponse> + Send>>,
@@ -1195,6 +1201,8 @@ impl<P: StatePolicy> Engine<P> {
             child_mesh_routers: None,
             #[cfg(not(feature = "no_std"))]
             installed_mesh: None,
+            #[cfg(not(feature = "no_std"))]
+            child_mesh_owed: false,
             #[cfg(not(feature = "no_std"))]
             on_http_send: None,
             scheduler: PullScheduler::new(),
@@ -3592,6 +3600,15 @@ impl<P: StatePolicy> Engine<P> {
     /// answers `None`, or none registered, leaves the child with no router:
     /// its peer send raises `error.execution` in the child, and nothing falls
     /// back to this machine's router.
+    ///
+    /// A restore builds the machine, and resumes the children its saved state
+    /// holds, before the host can register anything on it (docs/adr/0045). So
+    /// the restore asks no factory, and each resumed child that is still
+    /// running is asked for here, as the factory is registered, before the
+    /// host drives the machine: a resumed child does nothing until its parent
+    /// drives it, which is what "before the child initializes" asks of a
+    /// start. Each of the child's own resumed children is asked of the router
+    /// the child is given, in turn.
     #[cfg(not(feature = "no_std"))]
     pub fn register_child_mesh_routers<F>(&mut self, factory: F)
     where
@@ -3600,6 +3617,43 @@ impl<P: StatePolicy> Engine<P> {
             + 'static,
     {
         self.child_mesh_routers = Some(Box::new(factory));
+        self.start_owed_child_meshes();
+    }
+
+    /// Mark this machine as a child a restore resumed, whose router its
+    /// parent's factory has not been asked for yet (docs/adr/0045). Called by
+    /// the generated parent as it resumes the child, in place of
+    /// [`Engine::start_child_mesh`].
+    #[cfg(not(feature = "no_std"))]
+    pub fn owe_child_mesh(&mut self) {
+        self.child_mesh_owed = true;
+    }
+
+    /// Ask this machine's factory for the router of `child` if `child` is a
+    /// resumed child whose router has not been asked for yet
+    /// ([`Engine::owe_child_mesh`]), as [`Engine::start_child_mesh`] asks for
+    /// a child that starts; leave it as it is otherwise. With no factory
+    /// registered the child stays owed, so the factory registered later is
+    /// asked for it.
+    #[cfg(not(feature = "no_std"))]
+    pub fn start_owed_child_mesh<Q: StatePolicy>(
+        &mut self,
+        child: &mut Engine<Q>,
+        invoke_id: &str,
+        document: &str,
+    ) {
+        if !child.child_mesh_owed || self.child_mesh_routers.is_none() {
+            return;
+        }
+        child.child_mesh_owed = false;
+        self.start_child_mesh(child, invoke_id, document);
+    }
+
+    /// Ask for the router of each resumed child this machine holds that is
+    /// owed one, now that a factory of them is there.
+    #[cfg(not(feature = "no_std"))]
+    fn start_owed_child_meshes(&mut self) {
+        self.with_policy(|policy, engine| policy.start_owed_child_meshes(engine));
     }
 
     /// Ask this machine's factory of children's routers for the router of
@@ -3653,6 +3707,9 @@ impl<P: StatePolicy> Engine<P> {
                 .child_router(invoke_id, document)
         }));
         self.installed_mesh = Some(shared);
+        // A child resumed by a restore holds children of its own resumed with
+        // it, whose routers are asked of the router it is given now.
+        self.start_owed_child_meshes();
     }
 
     /// Apply what arrived for this machine on the router its parent gave it,
