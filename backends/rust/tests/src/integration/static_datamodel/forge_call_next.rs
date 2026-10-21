@@ -9,6 +9,7 @@
 
 use super::forge_call_status;
 
+#[allow(clippy::comparison_to_empty)]
 pub fn compute_after(
     status: forge_call_status::ForgeCallStatus,
 ) -> forge_call_status::ForgeCallStatus {

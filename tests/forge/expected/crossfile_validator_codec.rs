@@ -38,7 +38,8 @@ impl CrossfileValidatorCodec {
     #[allow(
         clippy::manual_range_contains,
         clippy::nonminimal_bool,
-        clippy::neg_cmp_op_on_partial_ord
+        clippy::neg_cmp_op_on_partial_ord,
+        clippy::comparison_to_empty
     )]
     pub fn validate(&mut self, msg_id: u8, payload: u16) -> ValidationResult {
         if payload > 4095 {

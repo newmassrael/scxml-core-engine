@@ -5,6 +5,7 @@
 // Runtime: none
 // Do not edit — regenerate from the source SCXML file.
 
+#[allow(clippy::comparison_to_empty)]
 pub fn condition_programming(engine_stop: bool, ignition: bool) -> bool {
     engine_stop == true && ignition == true
 }

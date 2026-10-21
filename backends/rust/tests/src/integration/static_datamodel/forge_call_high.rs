@@ -7,6 +7,7 @@
 // Runtime: none
 // Do not edit — regenerate from the source SCXML file.
 
+#[allow(clippy::comparison_to_empty)]
 pub fn forge_call_high(level: i32) -> bool {
     level > 20
 }

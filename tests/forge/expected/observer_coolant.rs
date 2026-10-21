@@ -41,6 +41,7 @@ impl ObserverCoolant {
         }
     }
 
+    #[allow(clippy::comparison_to_empty)]
     pub fn update(&mut self, coolant_temp: f64) -> EventQueue<ForgeDomain> {
         let mut sce_events: EventQueue<ForgeDomain> = EventQueue::new();
         if self.warning.enter_if(coolant_temp > 110.0) {

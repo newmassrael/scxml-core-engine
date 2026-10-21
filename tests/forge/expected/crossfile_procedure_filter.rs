@@ -97,6 +97,7 @@ impl CrossfileProcedureFilter {
     }
 }
 
+#[allow(clippy::comparison_to_empty)]
 impl ProcedurePolicy for CrossfileProcedureFilter {
     type State = State;
     type Event = Event;

@@ -35,7 +35,8 @@ impl ValidatorRpmCheck {
     #[allow(
         clippy::manual_range_contains,
         clippy::nonminimal_bool,
-        clippy::neg_cmp_op_on_partial_ord
+        clippy::neg_cmp_op_on_partial_ord,
+        clippy::comparison_to_empty
     )]
     pub fn validate(&mut self, rpm: u16, engine_state: &str) -> ValidationResult {
         if rpm > 8000 {

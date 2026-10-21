@@ -7,6 +7,7 @@
 // Runtime: none
 // Do not edit — regenerate from the source SCXML file.
 
+#[allow(clippy::comparison_to_empty)]
 pub fn compute_offset(level: i32) -> i32 {
     level - 10
 }

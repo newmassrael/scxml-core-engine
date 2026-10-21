@@ -92,6 +92,7 @@ impl ProcedureLinear {
     }
 }
 
+#[allow(clippy::comparison_to_empty)]
 impl ProcedurePolicy for ProcedureLinear {
     type State = State;
     type Event = Event;

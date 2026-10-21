@@ -36,7 +36,8 @@ impl CrossfileValidatorCondition {
     #[allow(
         clippy::manual_range_contains,
         clippy::nonminimal_bool,
-        clippy::neg_cmp_op_on_partial_ord
+        clippy::neg_cmp_op_on_partial_ord,
+        clippy::comparison_to_empty
     )]
     pub fn validate(&mut self, coolant_temp: f64, oil_temp: f64, max_temp: f64) -> ValidationResult {
         if !(!condition_threshold::condition_threshold(coolant_temp, oil_temp, max_temp)) {

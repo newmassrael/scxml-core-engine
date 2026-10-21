@@ -38,7 +38,8 @@ impl CrossfileValidatorFilter {
     #[allow(
         clippy::manual_range_contains,
         clippy::nonminimal_bool,
-        clippy::neg_cmp_op_on_partial_ord
+        clippy::neg_cmp_op_on_partial_ord,
+        clippy::comparison_to_empty
     )]
     pub fn validate(&mut self, raw_sample: f64, threshold: f64) -> ValidationResult {
         if !(self.smoother.update(raw_sample) < threshold) {

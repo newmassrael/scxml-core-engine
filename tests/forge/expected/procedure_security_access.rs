@@ -109,6 +109,7 @@ impl ProcedureSecurityAccess {
     }
 }
 
+#[allow(clippy::comparison_to_empty)]
 impl ProcedurePolicy for ProcedureSecurityAccess {
     type State = State;
     type Event = Event;

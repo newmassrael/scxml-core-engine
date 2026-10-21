@@ -99,6 +99,7 @@ impl ProcedureStartupCheck {
     }
 }
 
+#[allow(clippy::comparison_to_empty)]
 impl ProcedurePolicy for ProcedureStartupCheck {
     type State = State;
     type Event = Event;

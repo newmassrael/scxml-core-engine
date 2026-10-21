@@ -102,6 +102,7 @@ impl CrossfileProcedureCodec {
     }
 }
 
+#[allow(clippy::comparison_to_empty)]
 impl ProcedurePolicy for CrossfileProcedureCodec {
     type State = State;
     type Event = Event;

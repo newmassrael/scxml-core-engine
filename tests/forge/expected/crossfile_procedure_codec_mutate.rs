@@ -100,6 +100,7 @@ impl CrossfileProcedureCodecMutate {
     }
 }
 
+#[allow(clippy::comparison_to_empty)]
 impl ProcedurePolicy for CrossfileProcedureCodecMutate {
     type State = State;
     type Event = Event;

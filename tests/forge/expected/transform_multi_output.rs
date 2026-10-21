@@ -5,10 +5,12 @@
 // Runtime: none
 // Do not edit — regenerate from the source SCXML file.
 
+#[allow(clippy::comparison_to_empty)]
 pub fn compute_fahrenheit(celsius: f64) -> f64 {
     celsius * 9.0 / 5.0 + 32.0
 }
 
+#[allow(clippy::comparison_to_empty)]
 pub fn compute_kelvin(celsius: f64) -> f64 {
     celsius + 273.15
 }

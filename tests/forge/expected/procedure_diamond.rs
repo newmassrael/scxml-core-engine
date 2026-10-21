@@ -100,6 +100,7 @@ impl ProcedureDiamond {
     }
 }
 
+#[allow(clippy::comparison_to_empty)]
 impl ProcedurePolicy for ProcedureDiamond {
     type State = State;
     type Event = Event;
