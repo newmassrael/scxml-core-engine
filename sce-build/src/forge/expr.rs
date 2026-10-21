@@ -14663,17 +14663,6 @@ mod tests {
         assert_eq!(text, "SceStatic.field(_event.data, 'raw', 'bytes')");
     }
 
-    /// An optional `int64` (docs/adr/0055), the element of `due`, `other` and
-    /// the payload's `due` below.
-    fn optional_int64() -> InferredType {
-        InferredType::Optional(crate::forge::types::OptionalElem::Number(
-            crate::forge::quantity::NumericBaseType::Int {
-                signed: true,
-                bits: 64,
-            },
-        ))
-    }
-
     /// The context of the optional values the Interpreter's emitter is held to:
     /// two optional `int64`s, an optional text, a plain `int64`, and the
     /// payload's optional `due`.
