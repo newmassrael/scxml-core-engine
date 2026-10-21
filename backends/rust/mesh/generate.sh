@@ -17,6 +17,14 @@
 
 set -euo pipefail
 
+# The module list takes its order from the glob below, and a glob sorts by the
+# locale's collation. In en_US.UTF-8 punctuation is ignored, so
+# `envelope_id.scxml` sorts before `envelope.scxml`; in C it is the other way
+# round. A host with a locale set regenerated a different `generated.rs` than
+# the one committed, and the regen gate named the procedure as not
+# reproducing it.
+export LC_COLLATE=C
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 source "$REPO_ROOT/scripts/lib/sce_codegen.sh"
