@@ -771,21 +771,21 @@ fn a_string_stands_for_bytes_only_as_a_printable_ascii_literal() {
 }
 
 #[test]
-fn a_payload_enum_field_the_document_does_not_import_is_refused_by_name_in_every_language() {
+fn a_payload_enum_field_the_document_does_not_import_is_held_by_its_document_in_every_language() {
     // Measured 2026-10-04: Rust, Go, Kotlin, Python and C++ stopped with a panic
     // (exit 101, "SceType::Enum(alias='ViewMode') reached a context built by
     // LangCtx::primitive") on a transition that reads `_event.data.zoom` of an
     // event whose schema also declares `layout`, an enum. The typed channel
     // holds every field its schema declares, in the machine's own type for the
-    // enum, so the document imports the enum under the alias the schema writes,
-    // as it does for a record's field; one that does not is refused naming the
-    // alias where it is lowered, and not left to stop the generator.
+    // enum; the document was then made to import the enum under the alias the
+    // schema writes, and refused by name where it did not. Measured 2026-10-21,
+    // that refusal stopped a document that names no variant of the enum, for an
+    // alias it never wrote.
     //
-    // C11 held the same panic's place with its own refusal of every transition
-    // on such an event, until it held the field in the machine's enum too.
-    //
-    // A transition on the event that reads nothing from it still generates, so
-    // the refusal is of the READ.
+    // The field holds the enum document the schema imports (docs/adr/0054), so
+    // the machine declares its type for that document whether or not the
+    // document imports it, named from the document's own name (`view_mode`):
+    // every language generates the machine, and holds the field in that type.
     let fixtures = repo_root().join("sce-build/tests/fixtures/static_datamodel");
     let siblings: Vec<(String, String)> = ["schema_view.scxml", "enum_view_mode.scxml"]
         .iter()
@@ -812,13 +812,14 @@ fn a_payload_enum_field_the_document_does_not_import_is_refused_by_name_in_every
   </state>
 </scxml>
 "##;
-    for language in emitting(ForgeKind::Statechart).map(|language| language.canonical_name()) {
+    for language in emitting(ForgeKind::Statechart) {
+        let name = language.canonical_name();
         let out_dir = tempdir().expect("tempdir");
         let (ok, out) = run_beside(
             &[
                 "generate",
                 "-l",
-                language,
+                name,
                 "--go-module-prefix",
                 "x/y",
                 "-o",
@@ -827,20 +828,27 @@ fn a_payload_enum_field_the_document_does_not_import_is_refused_by_name_in_every
             document,
             &siblings,
         );
-        assert!(!ok, "{language}: the machine is refused:\n{out}");
+        assert!(ok, "{name}: the machine generates:\n{out}");
         assert!(
             !out.contains("panicked"),
-            "{language}: a refusal, not a panic:\n{out}"
+            "{name}: the field reached a builder with its type:\n{out}"
         );
+        // The machine's own type for the enum document: C's is the document's,
+        // every other backend's the machine's, named from the document.
+        let held = match language {
+            Language::C11 => "view_mode_enum_t",
+            _ => "ViewModeEnum",
+        };
+        let mut generated = String::new();
+        for entry in std::fs::read_dir(out_dir.path()).expect("the output directory") {
+            let path = entry.expect("an entry").path();
+            if let Ok(text) = std::fs::read_to_string(&path) {
+                generated.push_str(&text);
+            }
+        }
         assert!(
-            out.contains("generate/unsupported-feature"),
-            "{language}: an unsupported feature:\n{out}"
-        );
-        assert!(
-            out.contains("`layout`")
-                && out.contains("the enum `ViewMode`")
-                && out.contains("<sce:import kind=\\\"enum\\\" as=\\\"ViewMode\\\">"),
-            "{language}: it names the field and the import the document lacks:\n{out}"
+            generated.contains(held),
+            "{name}: the field is held in `{held}`:\n{generated}"
         );
     }
 }

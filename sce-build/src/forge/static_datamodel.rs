@@ -205,8 +205,9 @@ pub fn check(
             .and_then(crate::forge::model::AlgorithmValueType::list_elem)
             .and_then(crate::forge::model::ListElemType::record_alias)
         {
+            // A list starts empty, so it names no variant of an enum field of its
+            // records, and holds one the document does not import (docs/adr/0054).
             if let Some(schema) = model.imported_records.get(alias) {
-                judge.schema_enums_imported(var, alias, schema)?;
                 judge.schema_strings_bounded(var, alias, schema)?;
             }
         }
@@ -592,9 +593,10 @@ struct Judge<'a> {
 struct Receivers<'a> {
     /// The schemas this document imports, by the event each declares.
     own_schemas: &'a std::collections::BTreeMap<String, crate::forge::model::EventSchemaModel>,
-    /// The enums this document imports, by alias: what an enum field of one of
-    /// its own schemas holds, and what an enum value of it is.
-    own_enums: &'a std::collections::BTreeMap<String, crate::forge::model::EnumModel>,
+    /// The enums this document holds values of, by the name it holds each by
+    /// ([`SCXMLModel::held_enums`]): what an enum field of one of its own schemas
+    /// holds, and what an enum value of it is.
+    own_enums: std::collections::BTreeMap<String, crate::forge::model::EnumModel>,
     /// Each child session's id, with each document it may be (one, or a hybrid
     /// invoke's candidates) by name and what that document reads.
     children: std::collections::BTreeMap<String, Vec<(&'a str, &'a crate::model::ChildReceives)>>,
@@ -628,7 +630,7 @@ impl<'a> Receivers<'a> {
         }
         Self {
             own_schemas: &model.imported_event_schemas,
-            own_enums: &model.imported_enums,
+            own_enums: model.held_enums(),
             children,
         }
     }
@@ -942,9 +944,9 @@ impl<'a> Judge<'a> {
     /// Opens the walk of a transition, whose event's payload `schema` is
     /// declared, to the payload: the enum fields it holds, each a value of the
     /// enum the schema names, and the schema itself, which `_event.data` taken
-    /// whole is a record of. Whether the document imports that enum under the
-    /// alias the schema writes is asked where the payload is read, which is
-    /// where the lowering knows it is.
+    /// whole is a record of. Each field names its enum as this document holds
+    /// the enum document the schema imports (docs/adr/0054), so a value of it is
+    /// compared and assigned with a value of that same document's enum alone.
     fn open_payload(&self, schema: Option<&crate::forge::model::EventSchemaModel>) {
         *self.payload_enum_paths.borrow_mut() = schema
             .map(|schema| enum_fields(crate::forge::event_schema_check::EVENT_DATA_PATH, schema))
@@ -1422,7 +1424,7 @@ impl<'a> Judge<'a> {
             var.value_type_spelling.as_ref(),
         )
         .map_err(|error| Located::in_file(error, self.diag_label))?;
-        self.schema_enums_imported(var, alias, schema)?;
+        self.schema_enums_named(var, alias, schema)?;
         self.schema_strings_bounded(var, alias, schema)?;
         for (field, init) in schema.fields.iter().zip(ordered) {
             // A field of an enum starts at one of its variants, as a variable
@@ -1461,12 +1463,15 @@ impl<'a> Judge<'a> {
         Ok(())
     }
 
-    /// A record whose schema has an enum field holds it in the machine's own
-    /// type for that enum, so the document imports the enum under the alias the
-    /// schema writes. Judged where the record is declared, in a variable or in
-    /// the elements of a list, and only when the imports were read: without
-    /// sibling files there is no schema either.
-    fn schema_enums_imported(
+    /// A record variable starts each field at the value its `<sce:set>` writes,
+    /// which for an enum field is a variant, and a variant is named through an
+    /// enum the document imports. The field holds the enum document its schema
+    /// imports whether or not the document imports it too (docs/adr/0054), so a
+    /// list of the records, or the payload, needs no import; a record variable
+    /// does, and is refused here, before its `<sce:set>` is read as a value of an
+    /// enum no name of the document's text stands for. Judged only when the
+    /// imports were read: without sibling files there is no schema either.
+    fn schema_enums_named(
         &self,
         var: &Variable,
         alias: &str,
@@ -1483,9 +1488,13 @@ impl<'a> Judge<'a> {
             return Err(self.rule_at(
                 format!("<data id=\"{}\"> of record:{alias}", var.id),
                 &format!(
-                    "the field `{}` of record:{alias} holds the enum `{}`: the document \
-                     imports it under that alias, <sce:import kind=\"enum\" as=\"{}\">",
-                    field.id, reference.alias, reference.alias
+                    "the field `{}` of record:{alias} holds the enum `{}`, which this document \
+                     does not import: a record variable starts the field at a variant, and a \
+                     variant is named through the document's own import of the enum document \
+                     the schema imports (<sce:import kind=\"enum\">, under any alias). An enum \
+                     is the document it is declared in, not the alias another document imports \
+                     it under",
+                    field.id, reference.alias
                 ),
                 spelling.map(|s| s.row()),
                 spelling.map(|s| s.col()),

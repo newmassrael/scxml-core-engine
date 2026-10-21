@@ -35,8 +35,8 @@ PY
 
 mutation_case "a list of records is not asked for the bound" <<'PY'
 edit("sce-build/src/forge/static_datamodel.rs",
-     "                judge.schema_enums_imported(var, alias, schema)?;\n                judge.schema_strings_bounded(var, alias, schema)?;",
-     "                judge.schema_enums_imported(var, alias, schema)?;")
+     "                judge.schema_strings_bounded(var, alias, schema)?;\n",
+     "                let _ = (&judge, var, alias, schema);\n")
 PY
 
 mutation_case "a literal one byte past the bound is let through" <<'PY'

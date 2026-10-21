@@ -163,77 +163,6 @@ fn own_enum_documents(model: &SCXMLModel, base_dir: &Path) -> BTreeMap<String, E
         .collect()
 }
 
-/// Each event-schema a `sce-static` `model` imports, held to the enums it imports
-/// (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A record's enum field"). A record's enum
-/// field is held in the machine's own type for the enum the document imports under
-/// the alias the schema writes, so where the document imports an enum under that
-/// alias it is the enum document the schema's field holds a value of — the same
-/// identity a record and an algorithm's enum are named by (SCE_FORGE.md §4.12). One
-/// rule for every place a record or its payload is read — a variable, a list, a
-/// payload taken whole, a saved state, a value handed to an algorithm — and so held
-/// once, where the schema is imported. An alias the document does not import is
-/// refused where a record of the schema is declared or its payload read.
-pub(crate) fn check_record_enum_documents(
-    model: &SCXMLModel,
-    base_dir: &Path,
-    diag_label: &str,
-) -> Result<(), Located<ForgeError>> {
-    if model.datamodel != Datamodel::SceStatic {
-        return Ok(());
-    }
-    let own_enums = own_enum_documents(model, base_dir);
-    for import in model
-        .forge_imports
-        .iter()
-        .filter(|i| i.kind == ForgeKind::EventSchema)
-    {
-        let Some((_, fields)) = record_schema(&model.forge_imports, base_dir, &import.alias) else {
-            continue;
-        };
-        for field in &fields {
-            let SceType::Enum(reference) = &field.ty else {
-                continue;
-            };
-            let (Some(held), Some(own)) = (
-                field.enum_document.as_ref(),
-                own_enums.get(&reference.alias),
-            ) else {
-                continue;
-            };
-            if held.identity != own.identity {
-                return Err(Located::new(
-                    ScxmlSemanticError::StaticDatamodelRule {
-                        construct: format!(
-                            "<sce:import kind=\"event-schema\" as=\"{}\">",
-                            import.alias
-                        ),
-                        datamodel: model.datamodel.as_str().to_string(),
-                        rule: format!(
-                            "the field `{}` of record:{} holds the enum `{}` of {}, and the \
-                             document imports `{}` from {}: a record's enum field is held in the \
-                             type of the enum the document imports under the alias the schema \
-                             writes, which is the schema's own enum document",
-                            field.id,
-                            import.alias,
-                            reference.alias,
-                            held.identity,
-                            reference.alias,
-                            own.identity
-                        ),
-                        state: String::new(),
-                        observed: Some(reference.alias.clone()),
-                    }
-                    .into(),
-                    diag_label,
-                    import.line,
-                    None,
-                ));
-            }
-        }
-    }
-    Ok(())
-}
-
 /// What the statechart is told an algorithm's enum is, when it is not one it can
 /// hand over or take back by its declared name. `what` says where the algorithm
 /// holds it; `held` is the document, `None` when it cannot be read.
@@ -265,9 +194,10 @@ fn crossable_enum<'d>(
 /// the statechart does not import has no variable of that type to be passed, and is
 /// refused naming the schema. An enum crosses the same way, by document: an enum
 /// slot is the statechart's own import of the enum document the algorithm imports,
-/// and an enum field of a record is held by the statechart under the alias the
-/// schema writes, which must name that same document — the value crosses by the
-/// variant's declared name, which only one document gives both sides. A list
+/// and an enum field of a record is held by the statechart in its type for the
+/// enum document the schema imports (docs/adr/0054), which is the record's own and
+/// so the algorithm's — the value crosses by the variant's declared name, which
+/// only one document gives both sides. A list
 /// returned is held to `may-fail` and `returns-max-size`, the two things that let a
 /// statechart receive a list that could not be built and know how much room it needs
 /// (the rule a list of numbers is already held to).
@@ -303,21 +233,11 @@ fn value_signature(
             if crate::forge::static_lowering::record_field_copies(&field.ty, field.max_size) {
                 if let SceType::Enum(reference) = &field.ty {
                     let what = format!("the field `{}` of its record `{alias}`", field.id);
-                    let held =
-                        crossable_enum(&what, &reference.alias, field.enum_document.as_ref())?;
-                    // The machine holds the field in its own type for the enum it
-                    // imports under the alias the schema writes, so that is the
-                    // document the value crosses from and back to. That the alias
-                    // names the schema's own enum document is held where the schema
-                    // is imported ([`check_record_enum_documents`]), once for every
-                    // place a record is read, and not again here.
-                    if !own_enums.contains_key(&reference.alias) {
-                        return Err(format!(
-                            "{what} holds the enum `{}` of {}, and the statechart imports no \
-                             enum under that alias, which its record holds the field in",
-                            reference.alias, held.identity
-                        ));
-                    }
+                    // The machine holds the field in its own type for the enum
+                    // document the schema imports, whether or not the statechart
+                    // imports it too (docs/adr/0054), so that is the document the
+                    // value crosses from and back to, and it needs no import here.
+                    crossable_enum(&what, &reference.alias, field.enum_document.as_ref())?;
                 }
                 continue;
             }

@@ -9,10 +9,11 @@
 # The judge is `a_static_machine_hands_algorithms_the_state_it_holds`: the machine over
 # the item-status documents lowers on every backend, the Interpreter's lowering hands the
 # algorithm a variant as its declared name, a value of another enum, a number and an
-# open enum are refused at the call, and a field of another enum document is refused
-# where its schema is imported. The mutants take one decision away each:
+# open enum are refused at the call, and a field of another enum document takes no
+# variant of the statechart's enum of the same alias (docs/adr/0054). The mutants take
+# one decision away each:
 #
-#   an enum field whose document is not the statechart's crosses;
+#   an enum field whose document is not the statechart's is held as the statechart's;
 #   a value of another enum is handed to an enum parameter;
 #   a number is handed to an enum parameter;
 #   an open enum crosses;
@@ -25,13 +26,13 @@
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-build --features cli --test a_static_machine_hands_algorithms_the_state_it_holds --test the_grammar_accepts_what_the_parser_accepts
-mutation_targets sce-build/src/forge/static_imports.rs sce-build/src/forge/static_enum.rs sce-build/src/forge/static_js_algorithm.rs sce-build/src/forge/parser.rs
+mutation_targets sce-build/src/forge/static_imports.rs sce-build/src/forge/static_enum.rs sce-build/src/forge/static_js_algorithm.rs sce-build/src/forge/parser.rs sce-build/src/forge/event_schema_check.rs
 mutation_oracles sce-build/tests/a_static_machine_hands_algorithms_the_state_it_holds.rs sce-build/tests/the_grammar_accepts_what_the_parser_accepts.rs
 
-mutation_case "an enum field of another document crosses" <<'PY'
-edit("sce-build/src/forge/static_imports.rs",
-     "            if held.identity != own.identity {\n",
-     "            if held.identity != own.identity && own.identity.is_empty() {\n")
+mutation_case "an enum field of another document is held as the statechart's" <<'PY'
+edit("sce-build/src/forge/event_schema_check.rs",
+     "                    .is_some_and(|document| document.key == held.key)\n",
+     "                    .is_some()\n")
 PY
 
 mutation_case "a value of another enum is handed to an enum parameter" <<'PY'

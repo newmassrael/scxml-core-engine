@@ -3715,6 +3715,17 @@ pub struct SCXMLModel {
     /// parsed; empty without sibling files and not serialized.
     #[serde(skip)]
     pub imported_enums: std::collections::BTreeMap<String, crate::forge::model::EnumModel>,
+    /// The enums a field of an imported schema holds that the document does not
+    /// import itself, each under the name the document holds it by, which its
+    /// text cannot write (docs/adr/0054). A schema's enum field names the enum
+    /// document its own import resolves to; where the reading document imports
+    /// that document too, the field is renamed to the alias of that import, and
+    /// where it does not, to a name made from the enum document's own, kept
+    /// here. Resolved where the document is parsed
+    /// ([`crate::forge::event_schema_check::name_schema_enums`]); empty without
+    /// sibling files and not serialized.
+    #[serde(skip)]
+    pub schema_enums: std::collections::BTreeMap<String, crate::forge::model::EnumModel>,
     /// The enum documents the document holds values of — its own enum imports
     /// by alias, and each imported schema's enum fields by the document the
     /// schema names — each by the document it is, as a saved state and the
@@ -4671,6 +4682,21 @@ impl State {
 }
 
 impl SCXMLModel {
+    /// The enum a value the document holds is of, by the name a variable, a
+    /// record's field or the payload's field names it by: the document's own
+    /// import under that alias, or an enum a schema's field holds that the
+    /// document does not import ([`Self::schema_enums`], docs/adr/0054).
+    pub fn held_enum(&self, name: &str) -> Option<&crate::forge::model::EnumModel> {
+        self.imported_enums
+            .get(name)
+            .or_else(|| self.schema_enums.get(name))
+    }
+
+    /// Every enum [`Self::held_enum`] answers, by the name it answers it for.
+    pub fn held_enums(&self) -> std::collections::BTreeMap<String, crate::forge::model::EnumModel> {
+        crate::forge::event_schema_check::held_enums(&self.imported_enums, &self.schema_enums)
+    }
+
     /// Every `<send>` written in the document, each with the state whose
     /// executable content carries it — wherever that content sits, nested in
     /// an `<if>` or a `<foreach>` included, and in a `<history>`'s default

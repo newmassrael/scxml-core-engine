@@ -3033,7 +3033,7 @@ impl SCXMLParser {
         // Every reader below takes the one directory `import_dir` chooses, so
         // they cannot disagree about where a relative `src` points.
         let import_dir = base_dir.map(|dir| self.import_dir(&model, dir));
-        let imported_enums = if let Some(dir) = import_dir.as_deref() {
+        if let Some(dir) = import_dir.as_deref() {
             let (schemas_by_stem, enums_by_stem) =
                 Self::parse_imported_forge_siblings(&model, dir, diag_label)?;
             model.imported_event_schemas =
@@ -3067,24 +3067,34 @@ impl SCXMLParser {
             // the typed-path validators are: every entry point that parses
             // a document from a file reaches this seam.
             crate::scxml_interface::validate(&model, dir, diag_label)?;
-            // A record's enum field is held in the type of the enum the document
-            // imports under the alias the schema writes, which must be the schema's
-            // own enum document: judged once, where the schema is imported.
-            crate::forge::static_imports::check_record_enum_documents(&model, dir, diag_label)?;
             model.imported_callees =
                 crate::forge::static_imports::resolve(&model, dir, diag_label)?;
-            let imported_enums =
+            // The enums the document imports, kept on the model: an `enum:<alias>`
+            // variable is declared from one, and a backend that lowers the document
+            // declares its type from the same model.
+            model.imported_enums =
                 crate::forge::event_schema_check::resolve_imported_enums(&model, &enums_by_stem);
+            // Each enum the document holds values of, by the document it is:
+            // what a saved state and the Mesh check name an enum by
+            // (docs/adr/0044), and what a schema's enum field is named by in this
+            // document (docs/adr/0054).
+            model.enum_documents = crate::forge::schema_revision::enum_documents(&model, dir);
+            // A schema's enum field holds the enum document the schema imports,
+            // whatever this document imports under the alias the schema writes:
+            // renamed here to this document's name for that enum, once, before
+            // anything reads the field's enum by name.
+            crate::forge::event_schema_check::name_schema_enums(&mut model);
+            let held_enums = model.held_enums();
             crate::forge::event_schema_check::check(
                 &model,
                 &model.imported_event_schemas,
-                &imported_enums,
+                &held_enums,
                 diag_label,
             )?;
             crate::forge::event_schema_check::check_send_side(
                 &model,
                 &model.imported_event_schemas,
-                &imported_enums,
+                &held_enums,
                 diag_label,
             )?;
             // §scxml-G-7 — `<sce:action>` native host dispatch is
@@ -3096,28 +3106,18 @@ impl SCXMLParser {
                 &model.imported_event_schemas,
                 diag_label,
             )?;
-            // Each enum the document holds values of, by the document it is:
-            // what a saved state and the Mesh check name an enum by
-            // (docs/adr/0044).
-            model.enum_documents = crate::forge::schema_revision::enum_documents(&model, dir);
-            imported_enums
-        } else {
-            Default::default()
-        };
-
-        // The enums the document imports, kept on the model: an `enum:<alias>`
-        // variable is declared from one, and a backend that lowers the document
-        // declares its type from the same model.
-        model.imported_enums = imported_enums.clone();
+        }
 
         // SCE Accepted Subset §2.15 — under `datamodel="sce-static"` every
         // expression is judged against the typed scope here, after the
         // imported schemas are resolved (a transition's payload is part of
         // its scope). The scope names each enum by its alias: nothing is
-        // lowered here, so no backend's spelling is needed.
+        // lowered here, so no backend's spelling is needed. It holds the enums
+        // the document imports and no other, since they are the names its text
+        // writes (docs/adr/0054).
         crate::forge::static_datamodel::check(
             &model,
-            &crate::forge::type_ctx::StaticEnum::from_imports(&imported_enums, |alias, _| {
+            &crate::forge::type_ctx::StaticEnum::from_imports(&model.imported_enums, |alias, _| {
                 crate::forge::type_ctx::StaticEnumSpelling::unlowered(alias)
             }),
             diag_label,

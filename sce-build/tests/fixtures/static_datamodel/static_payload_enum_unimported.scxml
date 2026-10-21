@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/adr/0054): an event whose schema holds enums the
+  document does not import under the aliases the schema writes. `record_list.refused`
+  carries sce:std/shared/record_refused.scxml, whose `kind` is the enum
+  record_command (the schema's `Command`) and whose `reason` is the enum
+  record_refusal (the schema's `Refusal`).
+
+  The document names a variant of record_refusal, so it imports that enum, under an
+  alias of its own, `Why`: `_event.data.reason` is a value of `Why`, since an enum is
+  the document it is declared in and not the alias another document imports it
+  under. It names no variant of record_command, so it does not import that enum at
+  all: `kind` is held all the same, in the machine's type for the enum document the
+  schema imports, when the payload is kept whole in `kept`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="listening" datamodel="sce-static" name="static_payload_enum_unimported">
+  <sce:import kind="event-schema" src="sce:std/shared/record_refused.scxml" as="Refused"/>
+  <sce:import kind="enum" src="sce:std/shared/record_refusal.scxml" as="Why"/>
+  <datamodel>
+    <data id="last" sce:type="enum:Why" expr="Why.none" sce:direction="out"/>
+    <data id="kept" sce:type="list&lt;record:Refused&gt;" sce:capacity="2" sce:direction="out"/>
+    <data id="row" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="listening">
+    <transition event="record_list.refused" type="internal">
+      <assign location="last" expr="_event.data.reason"/>
+      <assign location="row" expr="_event.data.id"/>
+      <sce:append target="kept" expr="_event.data"/>
+      <assign location="refusals" expr="refusals + 1"/>
+    </transition>
+  </state>
+</scxml>

@@ -586,11 +586,32 @@ pub fn enum_divergence(first: &EnumModel, second: &EnumModel) -> Option<EnumDive
 
 /// Whether two fields of one id are declared alike: the whole field, as the forge
 /// model serialises it (positions are not serialised, so where it is written does
-/// not count).
+/// not count), but for the alias of the enum it holds ([`unaliased`]).
 fn declared_alike(one: &ForgeField, other: &ForgeField) -> bool {
-    match (serde_json::to_value(one), serde_json::to_value(other)) {
+    match (
+        serde_json::to_value(unaliased(one)),
+        serde_json::to_value(unaliased(other)),
+    ) {
         (Ok(one), Ok(other)) => one == other,
         _ => false,
+    }
+}
+
+/// `field` with the alias of the enum it holds, if it holds one, left out: an
+/// alias is the name one document gives an enum, and two schemas — or one
+/// schema as two statecharts read it, each naming the field's enum as it holds
+/// it (docs/adr/0054) — may name one enum two ways. Which enum a field holds is
+/// its document, which [`divergence_with_enums`] compares.
+fn unaliased(field: &ForgeField) -> std::borrow::Cow<'_, ForgeField> {
+    match &field.sce_type {
+        SceType::Enum(_) => {
+            let mut field = field.clone();
+            field.sce_type = SceType::Enum(crate::forge::model::EnumRef {
+                alias: String::new(),
+            });
+            std::borrow::Cow::Owned(field)
+        }
+        _ => std::borrow::Cow::Borrowed(field),
     }
 }
 
@@ -830,6 +851,41 @@ mod tests {
         // The order fields are declared in is not part of the schema.
         let reordered = at_revision(3, vec![urgent(), level(), layout()]);
         assert_eq!(divergence(&third, &reordered), None);
+    }
+
+    #[test]
+    fn the_alias_an_enum_field_is_named_by_is_not_part_of_the_schema() {
+        // One schema as two statecharts read it, each naming the field's enum as
+        // it holds it (docs/adr/0054): the enum is the document, which
+        // `divergence_with_enums` compares, and the name is the reader's.
+        let second = at_revision(2, vec![level(), layout()]);
+        let renamed = at_revision(
+            2,
+            vec![
+                level(),
+                field(
+                    "layout",
+                    SceType::Enum(EnumRef {
+                        alias: "view_mode".to_string(),
+                    }),
+                    Some(2),
+                    Some("week"),
+                ),
+            ],
+        );
+        assert_eq!(divergence(&second, &renamed), None);
+        assert_eq!(divergence(&renamed, &second), None);
+        // A field that holds no enum where the other holds one still parts them.
+        let untyped = at_revision(
+            2,
+            vec![level(), field("layout", SceType::Uint8, Some(2), Some("1"))],
+        );
+        assert_eq!(
+            divergence(&second, &untyped),
+            Some(Divergence::Redeclared {
+                field: "layout".into()
+            })
+        );
     }
 
     #[test]

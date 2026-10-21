@@ -3277,11 +3277,19 @@ of it, taking no number and no arithmetic. It travels as the variant's declared
 name, a JSON string, as a saved state holds it, and a name the enum does not
 declare — or a value that is no text — does not fit the schema: the delivery is
 refused as any payload that does not is, and writes nothing. The typed channel holds
-the field in the machine's own type for the enum, so the document imports the enum
-under the alias the schema writes, as it does for a record's field, and that alias
-names the schema's own enum document (A record's enum field, below); one that does not
-import it is refused naming the alias (`generate/unsupported-feature`, "this document does not
-import it under that alias"). Rust, Go, Kotlin, Python, C++ and C11 lift the field
+the field in the machine's own type for the enum document the schema imports
+(docs/adr/0054): an alias is the name one document gives an enum, so the schema's
+`enum:ViewMode` names the document the schema's own import resolves to, and says
+nothing about what `ViewMode` names in the statechart. Where the statechart imports
+that document, under any alias, the field is a value of that import's enum; where it
+does not, the machine declares its type for the enum all the same, named from the
+enum document's own name (`<Machine><Document>Enum`, C's `<document>_enum_t` as
+ever), and the statechart's text cannot name it. A statechart imports the enum only
+to name it — a variant, a variable of it, a conversion — and a document that reads
+only another field of the payload, or keeps the payload whole, imports nothing
+(`static_payload_enum_unimported`). A statechart that imports another document under
+the alias the schema writes has two enums, and a variant of its own is no value of the
+field. Rust, Go, Kotlin, Python, C++ and C11 lift the field
 into that type and write it back as the variant's declared name (Rust's `match`, Go's
 function literal over the name, Kotlin's `declaredName`, Python's `sce_name`, C++'s
 `sceLogName` and C11's `strcmp` chain over a buffer as long as the longest name, with
@@ -4037,19 +4045,19 @@ program that includes a machine and an algorithm that holds a value of the same
 enum declares the constants once.
 
 **A record's enum field.** An event-schema field declared `enum:<alias>` is held
-in a record as the machine's own enum type for it, so a record variable (or a
-list of records) of such a schema needs the document to import the enum under
-the alias the schema writes — the convention the typed payload's width check
-already keeps; one that does not is `scxml/static-datamodel-rule` on the
-`sce:type`, naming the alias. The enum is identified by its document, as a record
-is (SCE_FORGE.md §4.12), so the enum the document imports under that alias must be
-the one document the schema imports, by whatever path: one with the same variants
-in another file is another enum, and the machine would hold the field in its type.
-A document that imports the schema and another enum under the alias is refused
-where it imports the schema (`scxml/static-datamodel-rule` on the
-`<sce:import kind="event-schema">`, naming both documents), whether the record is
-then a variable, a list, a payload taken whole, a saved state or a value handed to
-an algorithm: one rule, held once. The field is judged as a variable of the enum is:
+in a record as the machine's own enum type for the enum document the schema imports
+(docs/adr/0054), the rule a payload's enum field keeps (above). The enum is
+identified by its document, as a record is (SCE_FORGE.md §4.12): the statechart's
+own import of that document, under any alias and by any path, names the field's enum,
+and one with the same variants in another file is another enum, whatever alias it is
+imported under. A list of records starts empty and names no variant, so it needs no
+import of the enum; a record variable starts the field at a variant at its
+`<sce:set>`, which names the enum, so a document that does not import the enum
+document is refused there (`scxml/static-datamodel-rule` on the `sce:type`, "which
+this document does not import"), and so is one whose only enum of that alias is
+another document. The same holds for a payload taken whole, a saved state and a
+record handed to an algorithm, which hold the field in the one type the machine
+declares for the document. The field is judged as a variable of the enum is:
 its `<sce:set>` and an `<assign location="shown.layout">` take a variant (or
 another value of the enum), it is compared with `===` and `!==` to its own
 enum, and it takes no number. It reads the same through a `<foreach>`'s record
@@ -4625,9 +4633,9 @@ state as it was, and a multi-byte text counted in bytes.
 and a record's field may hold one. The enum is identified as a record is, by its
 document (SCE_FORGE.md §4.12): a slot takes a value of the enum document the statechart
 imports, under whatever alias, and an enum field is held by the statechart in its own
-type for the enum it imports under the alias the schema writes, which names the same
-document — held where the schema is imported, for every record and not only one an
-algorithm is handed (A record's enum field, above). A value of another enum or a number
+type for the enum document the schema imports, whether or not the statechart imports
+it too — for every record and not only one an algorithm is handed (A record's enum
+field, above; docs/adr/0054). A value of another enum or a number
 is refused where the call is written (`expression/unsupported-construct`, naming both
 enums); an enum
 that declares `sce:strict-variants="false"` does not cross either, since a value no

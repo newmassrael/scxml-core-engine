@@ -239,15 +239,13 @@ pub fn resolve_imported_event_schemas(
 /// returned map by the import's authored `alias` so the validators can
 /// look up by `SceType::Enum(EnumRef { alias }).alias` directly.
 ///
-/// Schema-of-record for the alias: each statechart's own imports table
-/// is the alias surface for that statechart's enum-typed field
-/// comparisons. A statechart whose schema's field declares
-/// `sce:type="enum:Result"` must independently declare an
-/// `<sce:import kind="enum" as="Result"/>` for the narrowing to fire;
-/// otherwise the alias is opaque from the statechart's view and the
-/// narrowing silent-skips (the underlying width was already opaque to
-/// the field check, so silent-skip preserves the conservative-accept
-/// default).
+/// These are the names the statechart's own text writes. A field of an
+/// imported schema names its enum by the alias the schema imports it
+/// under, which is the schema's and not the statechart's: the field is
+/// renamed to the statechart's name for the same enum document where the
+/// schema is imported ([`name_schema_enums`], docs/adr/0054), and the
+/// validators read it through [`held_enums`], which adds the enums a
+/// schema holds that the statechart does not import.
 ///
 /// Returns empty when the statechart declares no Enum imports — the
 /// non-narrowing baseline path remains zero-cost.
@@ -275,6 +273,115 @@ pub fn resolve_imported_enums(
             .or_insert_with(|| em.clone());
     }
     resolved
+}
+
+/// Every enum a statechart holds a value of, by the name its variables and the
+/// fields of its schemas name it by: the enums it imports (`imported`, by alias)
+/// and the enums a field of one of its schemas holds that it does not
+/// (`schema_enums`, [`name_schema_enums`]). The two never share a name.
+pub fn held_enums(
+    imported: &BTreeMap<String, EnumModel>,
+    schema_enums: &BTreeMap<String, EnumModel>,
+) -> BTreeMap<String, EnumModel> {
+    imported
+        .iter()
+        .chain(schema_enums)
+        .map(|(name, model)| (name.clone(), model.clone()))
+        .collect()
+}
+
+/// Name each enum field of the schemas `model` imports by `model`'s own name for
+/// the enum document the field holds (docs/adr/0054), in
+/// [`SCXMLModel::imported_event_schemas`] and [`SCXMLModel::imported_records`]
+/// alike.
+///
+/// An alias is local to the document that declares it: a schema's
+/// `enum:Command` names the enum document the schema's own
+/// `<sce:import kind="enum" as="Command">` resolves to, and says nothing about
+/// what `Command` names in a statechart that imports the schema. The document
+/// is what the field holds ([`crate::forge::schema_revision::EnumDocuments::by_field`],
+/// read from the schema's own imports), so the field is renamed to:
+///
+/// - the alias the statechart imports that document under, the schema's own
+///   alias first when the statechart imports the document under it too, so a
+///   field and a variable of one enum are one type, and a statechart that names
+///   the enum in its text names the same value the field holds;
+/// - or, where the statechart does not import the document, a name made from
+///   the enum document's own name, kept in [`SCXMLModel::schema_enums`] with the
+///   enum. The statechart's text cannot write it: its expressions name the
+///   enums it imports, and this is none of them. Its spelling in each backend
+///   cannot be the spelling of an import's alias either, so it never stands for
+///   a type another enum is held in.
+///
+/// A field whose enum document could not be read keeps the schema's alias: the
+/// import pass reports the document.
+///
+/// Requires [`SCXMLModel::enum_documents`] to have been read.
+pub fn name_schema_enums(model: &mut SCXMLModel) {
+    let documents = &model.enum_documents;
+    // The spelling a name is declared under in every backend's machine
+    // (`<Machine><Name>Enum`): two names one spelling would be two enums in
+    // one type.
+    let spelled = |name: &str| crate::filters::to_pascal_case(name.to_string());
+    let imported: Vec<String> = model
+        .imported_enums
+        .keys()
+        .chain(documents.by_alias.keys())
+        .map(|name| spelled(name.as_str()))
+        .collect();
+    // The name made for each enum document the statechart does not import, by
+    // the document's key.
+    let mut made: BTreeMap<String, String> = BTreeMap::new();
+    let mut schema_enums: BTreeMap<String, EnumModel> = BTreeMap::new();
+    let schemas = model
+        .imported_event_schemas
+        .values_mut()
+        .chain(model.imported_records.values_mut());
+    for schema in schemas {
+        let Some(held_by_field) = documents.by_field.get(&schema.event_name) else {
+            continue;
+        };
+        for field in &mut schema.fields {
+            let SceType::Enum(reference) = &mut field.sce_type else {
+                continue;
+            };
+            let Some(held) = held_by_field.get(&field.id) else {
+                continue;
+            };
+            let own = |alias: &str| {
+                documents
+                    .by_alias
+                    .get(alias)
+                    .is_some_and(|document| document.key == held.key)
+            };
+            let name = if own(reference.alias.as_str()) {
+                reference.alias.clone()
+            } else if let Some(alias) = documents.by_alias.keys().find(|alias| own(alias.as_str()))
+            {
+                alias.clone()
+            } else if let Some(name) = made.get(&held.key) {
+                name.clone()
+            } else {
+                let taken = |candidate: &str| {
+                    let candidate = spelled(candidate);
+                    imported.contains(&candidate)
+                        || made
+                            .values()
+                            .any(|name| spelled(name.as_str()) == candidate)
+                };
+                let base = held.model.name.as_str();
+                let name = std::iter::once(base.to_string())
+                    .chain((2u32..).map(|n| format!("{base}_{n}")))
+                    .find(|candidate| !taken(candidate.as_str()))
+                    .expect("an endless run of names holds one a finite set does not take");
+                made.insert(held.key.clone(), name.clone());
+                schema_enums.insert(name.clone(), held.model.clone());
+                name
+            };
+            reference.alias = name;
+        }
+    }
+    model.schema_enums = schema_enums;
 }
 
 /// EventSchema MCU native lowering — the

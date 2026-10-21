@@ -553,11 +553,12 @@ fn a_number_is_no_value_of_the_enum_an_algorithm_takes() {
 }
 
 #[test]
-fn an_enum_field_of_another_document_is_refused_where_the_schema_is_imported() {
+fn an_enum_field_of_another_document_takes_no_variant_of_the_statecharts_enum() {
     // The statechart's `Status` is a document with the same variants as the one the
-    // schema's field holds, and so another enum: the record is refused where its
-    // schema is imported, before any call, as it is for a record no algorithm is
-    // handed (`a_record_holds_an_enum_field`).
+    // schema's field holds, and so another enum: the field holds the schema's own,
+    // which the statechart does not import (docs/adr/0054), so the record variable
+    // that starts it at `Status.open` is refused before any call, as it is for a
+    // record no algorithm is handed (`a_record_holds_an_enum_field`).
     let text = enum_machine(&[(
         r#"<sce:import kind="enum" src="enum_item_status.scxml" as="Status"/>"#,
         r#"<sce:import kind="enum" src="enum_item_status_copy.scxml" as="Status"/>"#,
@@ -580,7 +581,7 @@ fn an_enum_field_of_another_document_is_refused_where_the_schema_is_imported() {
         "expected scxml/static-datamodel-rule:\n{out}"
     );
     assert!(
-        out.contains("which is the schema's own enum document"),
+        out.contains("which this document does not import"),
         "the refusal names the rule:\n{out}"
     );
 }

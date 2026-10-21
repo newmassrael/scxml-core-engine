@@ -8,8 +8,8 @@
 # `gear.speed + 1`, `gear.speed === 0` and `gear.speed = 3` out of generated
 # code that does not compile is the judge's knowledge of which paths hold an
 # enum: the record variable's fields, a loop's record item's fields, and the
-# import the machine's own type for the enum rests on. Each case takes one
-# away and has to turn the suite red on its own.
+# import a record variable names a variant of the field's enum through. Each case
+# takes one away and has to turn the suite red on its own.
 
 mutation_tests -p sce-build --features cli --test a_record_holds_an_enum_field
 # The rules live in `sce-codegen`, which the tests run as a subprocess — the
@@ -43,8 +43,9 @@ edit("sce-build/src/forge/static_datamodel.rs",
      "        drop(enum_paths);\n")
 PY
 
-# The enum a field holds is not required to be imported: the machine has no
-# type to hold it in, and the lowering refuses where the author cannot see.
+# A record variable that starts an enum field at a variant need not import the
+# enum it names: the variant is then read as a name the document does not declare,
+# and the refusal does not say which import the document lacks (docs/adr/0054).
 mutation_case "the enum a field holds need not be imported" <<'PY'
 edit("sce-build/src/forge/static_datamodel.rs",
      "            if self.enums.iter().any(|e| e.alias == reference.alias) {\n",

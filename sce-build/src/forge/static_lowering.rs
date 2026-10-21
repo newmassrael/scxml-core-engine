@@ -525,8 +525,9 @@ pub struct AdapterSpec<'a> {
     /// The largest bound any list of records of the schema `alias` has in the
     /// machine, for a target that copies such a list into a buffer of a bound.
     pub record_list_bounds: &'a std::collections::BTreeMap<String, u32>,
-    /// Every enum the document imports, by the alias it imports it under: the
-    /// variants a value of one crosses by ([`StaticTarget::enum_crossing`]).
+    /// Every enum the machine holds a value of, by the name it holds it by
+    /// ([`SCXMLModel::held_enums`]): the variants a value of one crosses by
+    /// ([`StaticTarget::enum_crossing`]).
     pub enums: &'a std::collections::BTreeMap<String, EnumModel>,
 }
 
@@ -944,7 +945,8 @@ pub trait StaticTarget {
     /// the schema's order.
     ///
     /// `enum_types` is the type each enum a field holds is declared as
-    /// ([`Self::enum_type`]), by the enum alias the schema writes.
+    /// ([`Self::enum_type`]), by the name the field's enum is held by
+    /// ([`SCXMLModel::held_enums`]).
     fn record_def(
         &self,
         ty: &str,
@@ -2998,11 +3000,14 @@ pub fn lower(
     let variables = &scope.variables;
     let schemas = model.imported_event_schemas.clone();
     let records = model.imported_records.clone();
-    // The enums the document imports, each as the type the target declares it
-    // as. A target with none spells the alias, which a reference to a variant
-    // then refuses by name ([`crate::forge::expr`]).
-    let imported_enums = model.imported_enums.clone();
-    let enums = StaticEnum::from_imports(&imported_enums, |alias, model| {
+    // The enums the machine holds values of — the ones the document imports, and
+    // the ones a field of its schemas holds that it does not (docs/adr/0054) —
+    // each as the type the target declares it as. A target with none spells the
+    // alias, which a reference to a variant then refuses by name
+    // ([`crate::forge::expr`]). The document's text names only the enums it
+    // imports, which the judge held it to before anything is lowered.
+    let held_enums = model.held_enums();
+    let enums = StaticEnum::from_imports(&held_enums, |alias, model| {
         let unlowered = crate::forge::type_ctx::StaticEnumSpelling::unlowered(alias);
         let Some(ty) = target.enum_type(machine, alias) else {
             return unlowered;
@@ -3138,7 +3143,7 @@ pub fn lower(
     // how each backend holds them while the machine is being built.
     let no_payload = scope.paths(None);
     let mut fields = Vec::new();
-    let mut declarations = TypeDeclarations::new(target, machine, &imported_enums);
+    let mut declarations = TypeDeclarations::new(target, machine, &held_enums);
     // Taken before any expression is rewritten: the shape is the document's,
     // and the same for every backend.
     let saved_shape = saved_shape(model, &scope);
@@ -3484,7 +3489,7 @@ pub fn lower(
             let paths = scope.paths(schema);
             let ctx = scope.ctx(&paths, &enums);
             let accessor = target.payload_accessor(&transition.event);
-            let payload_reads = payload_enum_reads(target, schema, &accessor, &imported_enums);
+            let payload_reads = payload_enum_reads(target, schema, &accessor, &held_enums);
             let mut renames = renames(&names, schema.map(|_| accessor.as_str()), target);
             renames.extend(
                 payload_reads
@@ -3569,10 +3574,11 @@ pub fn lower(
     }
     // A payload that is read rides the typed channel, whose struct holds every
     // field its schema declares. An enum field is held there in the machine's
-    // own type for the enum, so the document imports the enum under the alias
-    // the schema writes, as it does for a record's field; a target that has not
-    // written that spelling yet is refused here, by name, because a generator
-    // that reached the field would stop on it. Under any other data model the
+    // own type for the enum document the schema imports, under the name the
+    // document holds that enum by, whether or not it imports it
+    // (docs/adr/0054), as a record's field is; a target that has not written
+    // that spelling yet is refused here, by name, because a generator that
+    // reached the field would stop on it. Under any other data model the
     // guard keeps the script engine instead, and this one has none.
     // [`crate::forge::event_schema_check::schema_is_native_payload_eligible`] is
     // the one rule for what the channel holds without it.
@@ -3603,9 +3609,8 @@ pub fn lower(
             declarations.enum_type(alias).map_err(|enum_alias| {
                 GenerateError::unsupported(format!(
                     "a transition that reads the payload of `{event}`, whose field `{}` holds \
-                     the enum `{enum_alias}`: this document does not import it under that alias \
-                     (<sce:import kind=\"enum\" as=\"{enum_alias}\">) or {lang} has no enum type \
-                     for it",
+                     the enum `{enum_alias}`: {lang} has no enum type for it, or the enum \
+                     document the schema imports could not be read",
                     field.id
                 ))
             })?;
@@ -3713,7 +3718,7 @@ pub fn lower(
             schemas: &records,
             payload_events: &payload_events_by_alias,
             record_list_bounds: &record_list_bounds,
-            enums: &imported_enums,
+            enums: &held_enums,
         };
         // A target that passes an algorithm's list by value on the stack is refused a list
         // a stack cannot hold, here where the bound is built in and not at the call.
@@ -3792,7 +3797,7 @@ pub fn lower(
         // or a field of a record the call hands over or takes back — which the
         // adapter names the algorithm's variants through.
         for alias in crossing_enums(value, &records) {
-            if let Some(line) = imported_enums
+            if let Some(line) = held_enums
                 .get(&alias)
                 .and_then(|model| target.enum_import(&model.name))
             {
@@ -3817,7 +3822,7 @@ pub fn lower(
         })
         .collect();
     for alias in crossed {
-        let (Some(model), Some(ty)) = (imported_enums.get(alias), target.enum_type(machine, alias))
+        let (Some(model), Some(ty)) = (held_enums.get(alias), target.enum_type(machine, alias))
         else {
             continue;
         };
@@ -3851,7 +3856,9 @@ pub fn lower(
 struct TypeDeclarations<'t> {
     target: &'t dyn StaticTarget,
     machine: &'t str,
-    imported_enums: &'t std::collections::BTreeMap<String, EnumModel>,
+    /// Every enum the machine holds a value of, by the name it holds it by
+    /// ([`SCXMLModel::held_enums`]).
+    held_enums: &'t std::collections::BTreeMap<String, EnumModel>,
     declared: BTreeSet<String>,
     type_defs: Vec<String>,
     records: Vec<StaticRecord>,
@@ -3862,12 +3869,12 @@ impl<'t> TypeDeclarations<'t> {
     fn new(
         target: &'t dyn StaticTarget,
         machine: &'t str,
-        imported_enums: &'t std::collections::BTreeMap<String, EnumModel>,
+        held_enums: &'t std::collections::BTreeMap<String, EnumModel>,
     ) -> Self {
         Self {
             target,
             machine,
-            imported_enums,
+            held_enums,
             declared: BTreeSet::new(),
             type_defs: Vec::new(),
             records: Vec::new(),
@@ -3875,13 +3882,13 @@ impl<'t> TypeDeclarations<'t> {
         }
     }
 
-    /// The type a value of the enum imported as `alias` is held in, declared
-    /// the first time it is asked for. `Err` carries what the target cannot do:
-    /// it has no enum type, or the document imports no such enum.
+    /// The type a value of the enum the machine holds as `alias` is held in,
+    /// declared the first time it is asked for. `Err` carries what the target
+    /// cannot do: it has no enum type, or the machine holds no such enum.
     fn enum_type(&mut self, alias: &str) -> Result<String, String> {
         let (Some(ty), Some(model)) = (
             self.target.enum_type(self.machine, alias),
-            self.imported_enums.get(alias),
+            self.held_enums.get(alias),
         ) else {
             return Err(alias.to_string());
         };
@@ -3906,10 +3913,10 @@ impl<'t> TypeDeclarations<'t> {
     /// The type a `record:<alias>` value is held in — of a record variable or
     /// of a list's elements.
     ///
-    /// A field of an enum is held in the machine's own type for that enum, so
-    /// the statechart imports it under the alias the schema writes — the
-    /// convention the typed payload's width check already keeps — and is
-    /// refused naming the alias when it does not.
+    /// A field of an enum is held in the machine's own type for the enum
+    /// document the schema imports, named as the machine holds that enum
+    /// (docs/adr/0054), and is refused naming the field when the target has no
+    /// type for it.
     fn record(&mut self, alias: &str, schema: &EventSchemaModel) -> Result<String, GenerateError> {
         let mut enum_types = std::collections::BTreeMap::new();
         for field in &schema.fields {
@@ -3917,8 +3924,8 @@ impl<'t> TypeDeclarations<'t> {
                 let ty = self.enum_type(&reference.alias).map_err(|enum_alias| {
                     GenerateError::unsupported(format!(
                         "record:{alias} has the enum-typed field `{}`, whose enum `{enum_alias}` \
-                         this document does not import under that alias (<sce:import \
-                         kind=\"enum\" as=\"{enum_alias}\">) or {} has no enum type for",
+                         {} has no enum type for, or whose document the schema imports could \
+                         not be read",
                         field.id,
                         self.target.name()
                     ))
@@ -4412,8 +4419,9 @@ fn enum_revision_digest(document_key: &str, enum_model: &EnumModel, at: u32) -> 
     format!("{:x}", Sha256::digest(text.as_bytes()))
 }
 
-/// The variants of the enum imported as `alias`, one line each under `holder` —
-/// a variable, or a record's field. An enum's variants are its type: one
+/// The variants of the enum the machine holds as `alias` ([`SCXMLModel::held_enum`]),
+/// one line each under `holder` — a variable, or a record's field. An enum's
+/// variants are its type: one
 /// renamed or removed leaves a saved value no variant of it, so the shape
 /// refuses before a value is read. By name and sorted, so reordering them
 /// leaves a saved state restorable — it holds the declared name, not a
@@ -4426,7 +4434,7 @@ fn enum_revision_digest(document_key: &str, enum_model: &EnumModel, at: u32) -> 
 /// one revision declares every variant in its first.
 fn write_variants(text: &mut String, model: &SCXMLModel, alias: &str, holder: &str) {
     use std::fmt::Write as _;
-    if let Some(enum_model) = model.imported_enums.get(alias) {
+    if let Some(enum_model) = model.held_enum(alias) {
         let mut names: Vec<&str> = enum_model
             .variants
             .iter()
@@ -7249,11 +7257,11 @@ pub struct CTarget {
     /// a local of its own and counts with another, named by this, so that a loop
     /// in the body of another does not meet its names.
     loops: std::sync::atomic::AtomicU32,
-    /// The name each imported enum's document declares, by the alias the
-    /// machine imports it as. The type and its constants are spelled from the
-    /// document's name, not the alias, so that two machines importing one enum —
-    /// whatever they call it — share one declaration in a program that includes
-    /// both.
+    /// The name each held enum's document declares, by the name the machine
+    /// holds it by ([`SCXMLModel::held_enums`]). The type and its constants are
+    /// spelled from the document's name, not the alias, so that two machines
+    /// holding one enum — whatever they call it — share one declaration in a
+    /// program that includes both.
     enums: std::collections::BTreeMap<String, String>,
 }
 
@@ -7264,12 +7272,12 @@ pub struct CTarget {
 static C_ARGUMENTS: CTarget = CTarget::arguments();
 
 impl CTarget {
-    fn new(stem: &str, imported_enums: &std::collections::BTreeMap<String, EnumModel>) -> Self {
+    fn new(stem: &str, held_enums: &std::collections::BTreeMap<String, EnumModel>) -> Self {
         Self {
             stem: stem.to_string(),
             conditions: std::sync::atomic::AtomicU32::new(0),
             loops: std::sync::atomic::AtomicU32::new(0),
-            enums: imported_enums
+            enums: held_enums
                 .iter()
                 .map(|(alias, model)| (alias.clone(), model.name.clone()))
                 .collect(),
@@ -7736,8 +7744,8 @@ impl StaticTarget for CTarget {
         }
         // A record is a struct of the fields its schema declares: the numbers
         // and bools a list holds, reals of either width, a string or a byte string
-        // of the bound the schema declares (a buffer, as a variable's is), and an enum the
-        // machine imports under the alias the schema writes. A field is named as
+        // of the bound the schema declares (a buffer, as a variable's is), and an enum of
+        // the document the schema imports (docs/adr/0054). A field is named as
         // the author wrote it; a
         // name C reserves is refused where the schema is read, for every
         // backend at once.
@@ -8530,7 +8538,7 @@ pub fn lower_c11(
     csym_prefix: &str,
 ) -> Result<StaticLowering, GenerateError> {
     let stem = model.name.clone();
-    let target = CTarget::new(&stem, &model.imported_enums);
+    let target = CTarget::new(&stem, &model.held_enums());
     lower(model, &format!("{csym_prefix}{stem}"), &target)
 }
 

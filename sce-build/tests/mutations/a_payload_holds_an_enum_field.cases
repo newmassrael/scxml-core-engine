@@ -7,16 +7,17 @@
 # An enum field is typed `Unknown` by the expression typer, so what keeps
 # `_event.data.speed + 1`, `_event.data.speed === 0` and `unit = _event.data.speed`
 # out of generated code that does not compile is the judge's knowledge of which
-# paths hold an enum: here the payload's, a path of three names, and the import
-# the machine's own type for the enum rests on. Each case takes one away and has
-# to turn the suite red on its own.
+# paths hold an enum: here the payload's, a path of three names, and the name the
+# machine holds the field's enum by, which is its own for the enum document the
+# schema imports (docs/adr/0054). Each case takes one away and has to turn the
+# suite red on its own.
 
 mutation_tests -p sce-build --features cli --test a_payload_holds_an_enum_field
 # The rules live in `sce-codegen`, which the tests run as a subprocess — the
 # evidence a mutation reached what ran is the file differing on disk while
 # the tests ran.
 mutation_targets sce-build/tests/a_payload_holds_an_enum_field.rs
-mutation_runtime_targets sce-build/src/forge/static_datamodel.rs sce-build/src/forge/static_enum.rs sce-build/src/forge/static_lowering.rs
+mutation_runtime_targets sce-build/src/forge/static_datamodel.rs sce-build/src/forge/static_enum.rs sce-build/src/forge/static_lowering.rs sce-build/src/forge/event_schema_check.rs
 
 # A `_event.data.<field>` path is no enum value: the comparison of the field with
 # a number, and the field in arithmetic, pass the judge.
@@ -41,12 +42,29 @@ edit("sce-build/src/forge/static_datamodel.rs",
      "        let _ = schema;\n")
 PY
 
-# The enum a payload field holds is not required to be imported: the machine has
-# no type to hold it in, and the generator stops on the field with a panic where
-# the author cannot see. The mutant reads `alias` still: a tree built under
-# `-D warnings` would not compile with it left unused.
-mutation_case "the enum a payload field holds need not be imported" <<'PY'
+# The enum a payload field holds is not declared: the machine has no type to hold
+# it in, and the generator stops on the field with a panic where the author cannot
+# see. The mutant reads `alias` still: a tree built under `-D warnings` would not
+# compile with it left unused.
+mutation_case "the enum a payload field holds is not declared" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
      "            declarations.enum_type(alias).map_err(|enum_alias| {\n",
      "            Ok::<String, String>(alias.to_string()).map_err(|enum_alias| {\n")
+PY
+
+# A schema's enum field keeps the alias the schema writes: a document that imports
+# no enum under it holds no type for the field, and one that imports the enum
+# under an alias of its own reads the field as no value of it.
+mutation_case "a payload field keeps the schema's alias" <<'PY'
+edit("sce-build/src/forge/event_schema_check.rs",
+     "            reference.alias = name;\n",
+     "            let _ = name;\n")
+PY
+
+# An alias the reader imports is taken for the field's enum whatever document it
+# names: a variant of another enum with the same variants compares with the field.
+mutation_case "the reader's alias is taken for any document" <<'PY'
+edit("sce-build/src/forge/event_schema_check.rs",
+     "                    .is_some_and(|document| document.key == held.key)\n",
+     "                    .is_some()\n")
 PY

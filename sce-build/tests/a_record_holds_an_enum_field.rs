@@ -4,17 +4,20 @@
 // `datamodel="sce-static"`: a record whose event-schema has an enum field
 // (docs/SCE_ACCEPTED_SUBSET.md §2.15).
 //
-// The field is held in the machine's own type for the enum, so the machine
-// imports the enum under the alias the schema writes, from the one document the
-// schema imports it from, and the field is judged
-// as a variable of the enum is: it starts at a variant, is compared to and
-// assigned values of its own enum, and takes no number. The same holds through
-// a loop's record item. Each refusal here is one an enum value would
-// otherwise have walked past into generated code that does not compile.
+// The field is held in the machine's own type for the enum document the schema
+// imports (docs/adr/0054), and the field is judged as a variable of the enum is:
+// it starts at a variant, is compared to and assigned values of its own enum, and
+// takes no number. A record variable starts it at a variant, which the machine
+// names through its own import of that document; a list of the records names
+// none, and needs no import. The same holds through a loop's record item. Each
+// refusal here is one an enum value would otherwise have walked past into
+// generated code that does not compile.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use sce_build::forge::codegen_matrix::emitting;
+use sce_build::forge::model::ForgeKind;
 use tempfile::tempdir;
 
 fn sce_codegen_bin() -> PathBuf {
@@ -159,19 +162,23 @@ fn an_enum_field_is_compared_assigned_appended_and_read_through_a_loop_item() {
 }
 
 #[test]
-fn the_enum_a_field_holds_is_imported_under_the_alias_the_schema_writes() {
+fn a_record_variable_imports_the_enum_its_field_starts_at_a_variant_of() {
+    // `gear` starts `speed` at a variant, which names the enum: a document that
+    // does not import the enum document the schema imports is refused naming the
+    // field, before `Mode.fast` is read as a name it does not declare.
     refused(
         &machine(false, "Mode.fast", ""),
-        "the document imports it under that alias",
+        "which this document does not import",
     );
 }
 
 #[test]
 fn the_enum_a_field_holds_is_the_document_the_schema_imports() {
     // `Mode` is imported under the alias the schema writes, but from another
-    // document with the same variants: the machine would hold the field in the type
-    // of another enum. Refused where the schema is imported, whether or not an
-    // algorithm is ever handed the record, and by every backend alike.
+    // document with the same variants: another enum, which the field does not hold.
+    // The field holds the schema's own enum document, which this document does not
+    // import, so the record variable that starts it at `Mode.fast` is refused, by
+    // every backend alike, whether or not an algorithm is ever handed the record.
     let doc = machine(true, "Mode.fast", "").replacen(
         r#"src="mode.scxml" as="Mode""#,
         r#"src="mode_copy.scxml" as="Mode""#,
@@ -193,7 +200,7 @@ fn the_enum_a_field_holds_is_the_document_the_schema_imports() {
             "{args:?}: expected scxml/static-datamodel-rule:\n{out}"
         );
         assert!(
-            out.contains("which is the schema's own enum document"),
+            out.contains("which this document does not import"),
             "{args:?}: the refusal names the rule:\n{out}"
         );
     }
@@ -289,8 +296,10 @@ fn an_enum_field_of_a_loop_item_is_no_param_yet() {
 }
 
 #[test]
-fn a_list_of_records_with_an_enum_field_needs_the_enum_too() {
-    // No record variable of the schema: only the list, whose elements hold it.
+fn a_list_of_records_holds_an_enum_field_the_document_does_not_import() {
+    // No record variable of the schema: only the list, whose elements hold it. A
+    // list starts empty and names no variant, so the field is held in the
+    // machine's type for the enum document the schema imports, by every backend.
     let doc = r##"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="s" datamodel="sce-static">
@@ -301,5 +310,13 @@ fn a_list_of_records_with_an_enum_field_needs_the_enum_too() {
   <state id="s"/>
 </scxml>
 "##;
-    refused(doc, "the document imports it under that alias");
+    let (ok, out) = run(&["check"], doc);
+    assert!(ok, "a list of records whose enum is not imported:\n{out}");
+    for language in emitting(ForgeKind::Statechart).map(|language| language.canonical_name()) {
+        let (ok, out) = run(&["check", "-l", language], doc);
+        assert!(
+            ok,
+            "{language}: a list of records whose enum is not imported:\n{out}"
+        );
+    }
 }
