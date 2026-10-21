@@ -18,12 +18,23 @@ pub struct ValidationResult {
 pub struct ValidatorRangeOnly {
 }
 
+impl Default for ValidatorRangeOnly {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ValidatorRangeOnly {
     pub fn new() -> Self {
         Self {
         }
     }
 
+    #[allow(
+        clippy::manual_range_contains,
+        clippy::nonminimal_bool,
+        clippy::neg_cmp_op_on_partial_ord
+    )]
     pub fn validate(&mut self, temperature: f64) -> ValidationResult {
         if temperature < -40.0 || temperature > 150.0 {
             return ValidationResult { valid: false, reason: "temperature_out_of_range".to_string() };

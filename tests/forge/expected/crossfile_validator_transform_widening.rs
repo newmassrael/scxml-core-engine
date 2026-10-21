@@ -21,12 +21,23 @@ pub struct CrossfileValidatorTransformWidening {
     // Imported kinds (cross-file composition)
 }
 
+impl Default for CrossfileValidatorTransformWidening {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CrossfileValidatorTransformWidening {
     pub fn new() -> Self {
         Self {
         }
     }
 
+    #[allow(
+        clippy::manual_range_contains,
+        clippy::nonminimal_bool,
+        clippy::neg_cmp_op_on_partial_ord
+    )]
     pub fn validate(&mut self, raw_byte: u8) -> ValidationResult {
         if raw_byte > 200 {
             return ValidationResult { valid: false, reason: "raw_byte_out_of_range".to_string() };

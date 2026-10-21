@@ -22,6 +22,12 @@ pub struct CrossfileValidatorCodec {
     pub frame: CodecSimpleFrame,
 }
 
+impl Default for CrossfileValidatorCodec {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CrossfileValidatorCodec {
     pub fn new() -> Self {
         Self {
@@ -29,6 +35,11 @@ impl CrossfileValidatorCodec {
         }
     }
 
+    #[allow(
+        clippy::manual_range_contains,
+        clippy::nonminimal_bool,
+        clippy::neg_cmp_op_on_partial_ord
+    )]
     pub fn validate(&mut self, msg_id: u8, payload: u16) -> ValidationResult {
         if payload > 4095 {
             return ValidationResult { valid: false, reason: "payload_out_of_range".to_string() };

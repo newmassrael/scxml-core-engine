@@ -21,12 +21,23 @@ pub struct CrossfileValidatorLookup {
     // Imported kinds (cross-file composition)
 }
 
+impl Default for CrossfileValidatorLookup {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CrossfileValidatorLookup {
     pub fn new() -> Self {
         Self {
         }
     }
 
+    #[allow(
+        clippy::manual_range_contains,
+        clippy::nonminimal_bool,
+        clippy::neg_cmp_op_on_partial_ord
+    )]
     pub fn validate(&mut self, code: i32) -> ValidationResult {
         if code < 0 || code > 1000 {
             return ValidationResult { valid: false, reason: "code_out_of_range".to_string() };

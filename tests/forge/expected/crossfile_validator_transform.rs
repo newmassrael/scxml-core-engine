@@ -21,12 +21,23 @@ pub struct CrossfileValidatorTransform {
     // Imported kinds (cross-file composition)
 }
 
+impl Default for CrossfileValidatorTransform {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CrossfileValidatorTransform {
     pub fn new() -> Self {
         Self {
         }
     }
 
+    #[allow(
+        clippy::manual_range_contains,
+        clippy::nonminimal_bool,
+        clippy::neg_cmp_op_on_partial_ord
+    )]
     pub fn validate(&mut self, raw_temp: u16) -> ValidationResult {
         if raw_temp > 4095 {
             return ValidationResult { valid: false, reason: "raw_temp_out_of_range".to_string() };

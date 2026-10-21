@@ -20,6 +20,12 @@ pub struct ValidatorSignedRoc {
     prev_altitude: f64,
 }
 
+impl Default for ValidatorSignedRoc {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ValidatorSignedRoc {
     pub fn new() -> Self {
         Self {
@@ -28,6 +34,11 @@ impl ValidatorSignedRoc {
         }
     }
 
+    #[allow(
+        clippy::manual_range_contains,
+        clippy::nonminimal_bool,
+        clippy::neg_cmp_op_on_partial_ord
+    )]
     pub fn validate(&mut self, speed: i32, altitude: f64) -> ValidationResult {
         if speed < -100 || speed > 500 {
             return ValidationResult { valid: false, reason: "speed_out_of_range".to_string() };

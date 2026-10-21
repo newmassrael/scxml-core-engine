@@ -22,6 +22,12 @@ pub struct CrossfileValidatorFilter {
     pub smoother: FilterLowPass,
 }
 
+impl Default for CrossfileValidatorFilter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CrossfileValidatorFilter {
     pub fn new() -> Self {
         Self {
@@ -29,6 +35,11 @@ impl CrossfileValidatorFilter {
         }
     }
 
+    #[allow(
+        clippy::manual_range_contains,
+        clippy::nonminimal_bool,
+        clippy::neg_cmp_op_on_partial_ord
+    )]
     pub fn validate(&mut self, raw_sample: f64, threshold: f64) -> ValidationResult {
         if !(self.smoother.update(raw_sample) < threshold) {
             return ValidationResult { valid: false, reason: "plausibility_failed".to_string() };

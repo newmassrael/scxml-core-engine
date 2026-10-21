@@ -36,6 +36,16 @@ pub struct {{ struct_name }} {
 {% endif %}
 }
 
+{# A validator is built with `new`, and `Default` is the same value: a public type
+   with a `new()` and no `Default` is refused by clippy under `-D warnings`, the
+   build a crate that holds a validator a statechart calls is checked with
+   (docs/adr/0048). #}
+impl Default for {{ struct_name }} {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl {{ struct_name }} {
     pub fn new() -> Self {
         Self {
@@ -50,6 +60,15 @@ impl {{ struct_name }} {
         }
     }
 
+{# A range is checked as the two comparisons every backend writes, and a
+   plausibility rule as the negation of the expression the document wrote: the
+   same reading of a NaN, and of the document, on all six. Clippy would rewrite
+   each into a form the other five do not share. #}
+    #[allow(
+        clippy::manual_range_contains,
+        clippy::nonminimal_bool,
+        clippy::neg_cmp_op_on_partial_ord
+    )]
     pub fn validate(&mut self, {{ params }}) -> ValidationResult {
 {% for name in unread_params %}
         let _ = {{ name }}; // no check reads it: every value it can hold is accepted

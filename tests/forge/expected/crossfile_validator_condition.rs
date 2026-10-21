@@ -21,12 +21,23 @@ pub struct CrossfileValidatorCondition {
     // Imported kinds (cross-file composition)
 }
 
+impl Default for CrossfileValidatorCondition {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CrossfileValidatorCondition {
     pub fn new() -> Self {
         Self {
         }
     }
 
+    #[allow(
+        clippy::manual_range_contains,
+        clippy::nonminimal_bool,
+        clippy::neg_cmp_op_on_partial_ord
+    )]
     pub fn validate(&mut self, coolant_temp: f64, oil_temp: f64, max_temp: f64) -> ValidationResult {
         if !(!condition_threshold::condition_threshold(coolant_temp, oil_temp, max_temp)) {
             return ValidationResult { valid: false, reason: "plausibility_failed".to_string() };
