@@ -6,14 +6,12 @@
 //!
 //! The type itself needs nothing of this module. What is here is the few
 //! operations generated code spells through one function each, so that every
-//! machine and algorithm reads, bounds and logs an optional value the same way:
+//! machine and algorithm reads and logs an optional value the same way:
 //!
 //! - [`proven`]: the value of an optional the build has proven present
 //!   (`x.value` under a `x !== null` test). The build refuses every read it
 //!   has not proven, so the absent arm is one no run reaches, written once
 //!   here rather than at every read.
-//! - [`bounded`]: an optional text or byte string held to the bound of the
-//!   place it is written to; an absent value has no bytes and always fits.
 //! - [`logged`]: the form a `<log>` prints, an absent value as `null`, as
 //!   every engine logs one.
 //!
@@ -21,8 +19,6 @@
 //! holds an optional value as the standard profile does.
 
 use core::fmt;
-
-use crate::algorithm::AlgorithmError;
 
 /// The value `value` holds, where the build has proven it present.
 ///
@@ -39,20 +35,6 @@ pub fn proven<T>(value: Option<T>) -> T {
             "an optional value read where the build proved it present was absent \
              (docs/adr/0055, section 3)"
         ),
-    }
-}
-
-/// `value` handed back when it is absent, or present and no longer than
-/// `capacity` bytes — the bound of the variable or the field it is written
-/// to — and a capacity failure otherwise, as
-/// [`crate::algorithm::bounded`] answers for a value that is always present.
-pub fn bounded<S: AsRef<[u8]>>(
-    value: Option<S>,
-    capacity: u32,
-) -> Result<Option<S>, AlgorithmError> {
-    match value {
-        Some(present) => crate::algorithm::bounded(present, capacity).map(Some),
-        None => Ok(None),
     }
 }
 
@@ -78,8 +60,7 @@ impl<T: fmt::Debug> fmt::Debug for Logged<'_, T> {
 mod tests {
     extern crate std;
 
-    use super::{bounded, logged, proven};
-    use crate::algorithm::AlgorithmError;
+    use super::{logged, proven};
     use std::format;
 
     #[test]
@@ -92,16 +73,6 @@ mod tests {
     #[should_panic(expected = "proved it present was absent")]
     fn a_proven_read_of_an_absent_value_is_unreachable() {
         proven::<i64>(None);
-    }
-
-    #[test]
-    fn an_absent_text_fits_every_bound_and_a_present_one_is_held_to_it() {
-        assert_eq!(bounded::<&str>(None, 0), Ok(None));
-        assert_eq!(bounded(Some("soon"), 4), Ok(Some("soon")));
-        assert_eq!(
-            bounded(Some("later"), 4),
-            Err(AlgorithmError::CapacityExceeded)
-        );
     }
 
     #[test]

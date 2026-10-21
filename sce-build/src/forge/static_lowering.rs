@@ -2346,6 +2346,35 @@ impl StaticTarget for RustTarget {
     fn lowers_state_calls(&self) -> bool {
         true
     }
+    // `core`'s `Option<T>` (docs/adr/0055, section 5): the type is the default
+    // spelling ([`crate::forge::generator::optional_of`]), and each value and
+    // construct one of [`crate::forge::rust_optional`]'s, which the expression
+    // emitter spells the same way.
+    fn optional_none(&self, _present: &str) -> Option<String> {
+        Some(crate::forge::rust_optional::ABSENT.to_string())
+    }
+    fn optional_some(&self, _present: &str, value: &str) -> Option<String> {
+        Some(crate::forge::rust_optional::present(value))
+    }
+    // A `match`, so a failure `map` answers through `?` is the statement's.
+    fn optional_map(
+        &self,
+        value: &str,
+        _present: &str,
+        map: &dyn Fn(&str) -> String,
+    ) -> Option<String> {
+        Some(crate::forge::rust_optional::mapped(value, map))
+    }
+    // The runtime's `ScriptValue::Null`, which its JSON writer spells `null`, where
+    // the value is absent.
+    fn wire_optional(
+        &self,
+        value: &str,
+        _present: &str,
+        wire: &dyn Fn(&str) -> String,
+    ) -> Option<String> {
+        Some(crate::forge::rust_optional::wire(value, wire))
+    }
     // Lent to the adapter, which converts what the algorithm's types differ in and
     // gives nothing back of it.
     fn state_argument(&self, _machine: &str, _arg: &StateArg, held: &str) -> String {
@@ -2659,9 +2688,17 @@ impl StaticTarget for RustTarget {
             .fields
             .iter()
             .map(|field| {
-                let field_ty = match field.sce_type.present_type() {
+                let present = match field.sce_type.present_type() {
                     SceType::Enum(reference) => enum_types[&reference.alias].clone(),
                     other => crate::forge::generator::rust_type(other).to_string(),
+                };
+                // An optional field is held in the optional type over its present
+                // value's (docs/adr/0055).
+                let field_ty = match field.sce_type {
+                    FieldType::Optional { .. } => self
+                        .optional_type(&present)
+                        .expect("Rust spells an optional value"),
+                    FieldType::Scalar(_) => present,
                 };
                 format!("    pub {}: {field_ty},\n", self.record_field(&field.id))
             })
@@ -2869,8 +2906,15 @@ impl StaticTarget for RustTarget {
         "engine.next_auto_send_id().to_string()".to_string()
     }
     // Debug formatting, as the script-engine arm of the same template logs a
-    // value: a record has no `Display`, and one spelling serves every type.
-    fn log(&self, label: &str, value: &str, _ty: InferredType) -> String {
+    // value: a record has no `Display`, and one spelling serves every type. An
+    // optional value logs its present value so, and `null` where it is absent
+    // (docs/adr/0055), as every engine logs one.
+    fn log(&self, label: &str, value: &str, ty: InferredType) -> String {
+        let value = if ty.is_optional() {
+            crate::forge::rust_optional::logged(value)
+        } else {
+            value.to_string()
+        };
         if label.is_empty() {
             format!("::sce_rust_runtime::sce_log_info!(\"{{:?}}\", {value});")
         } else {
@@ -11513,6 +11557,87 @@ mod tests {
         assert_eq!(item.init, "MDueRecord(id = 0.toUInt(), due = null)");
         let clear = &model.states.get("s").expect("the state").transitions[0].actions[0];
         assert_eq!(clear.native_code, "vItem = vItem.copy(due = null)");
+    }
+
+    /// Rust holds an optional value in `Option<T>` and writes the whole value of
+    /// an optional place by the walk's one rule (docs/adr/0055): `null` its
+    /// absent value, a value of `T` lowered into `T` (a text held to its bound)
+    /// and lifted, an optional value as it is; a read under an `<if>` whose
+    /// condition proves the value present is a proven read, and a `<log>` prints
+    /// an absent value as `null`.
+    #[test]
+    fn rust_writes_an_optional_place_whole_by_the_walks_one_rule() {
+        const OPTIONAL: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="sce-static" name="m">
+  <datamodel>
+    <data id="due" sce:type="optional&lt;int64&gt;" expr="null"/>
+    <data id="other" sce:type="optional&lt;int64&gt;" expr="7"/>
+    <data id="title" sce:type="optional&lt;string&gt;" sce:capacity="4" expr="null"/>
+    <data id="days" sce:type="int64" expr="0"/>
+  </datamodel>
+  <state id="s">
+    <transition event="read" type="internal">
+      <if cond="due !== null">
+        <assign location="days" expr="due.value"/>
+      </if>
+    </transition>
+    <transition event="write" type="internal">
+      <assign location="due" expr="null"/>
+      <assign location="title" expr="'abc'"/>
+      <assign location="other" expr="due"/>
+      <log expr="title"/>
+    </transition>
+  </state>
+</scxml>"#;
+        let mut model = SCXMLParser::new()
+            .parse_string(OPTIONAL, "m")
+            .expect("parses");
+        crate::analyzer::analyze(&mut model, "m.scxml");
+        let lowered = lower_rust(&mut model, "M").expect("Rust lowers an optional value");
+        let field = |id: &str| {
+            lowered
+                .fields
+                .iter()
+                .find(|f| f.id == id)
+                .unwrap_or_else(|| panic!("a field `{id}`"))
+        };
+        assert_eq!(field("due").ty, "Option<i64>");
+        assert_eq!(field("due").init, "None");
+        assert_eq!(field("other").init, "Some(7)");
+        assert_eq!(field("title").ty, "Option<String>");
+        assert_eq!(field("title").saved_kind, "optional");
+        assert!(
+            lowered.saved_shape.is_none(),
+            "no saved shape before step 6"
+        );
+        let state = model.states.get("s").expect("the state");
+        let read = &state.transitions[0].actions[0];
+        assert_eq!(read.native_cond, "self.due.is_some()");
+        // Read through the model's one definition of what lies inside an action.
+        let blocks = read.nested_blocks();
+        let then = blocks
+            .iter()
+            .find(|block| block.role == crate::model::BlockRole::Then)
+            .expect("the <if> has a then block");
+        assert_eq!(
+            then.actions[0].native_code,
+            "self.days = sce_forge_runtime::optional::proven(self.due);"
+        );
+        let write = &state.transitions[1].actions;
+        assert_eq!(write[0].native_code, "self.due = None;");
+        assert!(
+            write[1].native_code.contains(
+                "self.title = Some(sce_forge_runtime::algorithm::bounded(\"abc\".to_string(), 4)?);"
+            ),
+            "{}",
+            write[1].native_code
+        );
+        assert_eq!(write[2].native_code, "self.other = self.due;");
+        assert_eq!(
+            write[3].native_code,
+            "::sce_rust_runtime::sce_log_info!(\"{:?}\", \
+             sce_forge_runtime::optional::logged(&self.title.as_deref()));"
+        );
     }
 
     fn shape(document: &str) -> Option<String> {

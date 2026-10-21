@@ -4,11 +4,13 @@
 //! How the Rust backend spells a value that may be absent (docs/adr/0055,
 //! section 5): one function per construct, which the Rust expression emitter,
 //! the Rust static lowering and the Rust payload builder all call, so that an
-//! optional value is written one way wherever generated Rust holds one.
+//! optional value is written one way wherever generated Rust holds one. The
+//! type itself is the backend's one spelling of it, the generator's
+//! `optional_of`.
 //!
 //! The type is `core`'s `Option<T>`: absent is `None`, present is `Some(v)`. It
 //! needs no allocator, so the bare-metal profile holds one as the standard
-//! profile does (an `Option<heapless::String<N>>` is a bounded text).
+//! profile does.
 //!
 //! **Held and read.** A place that holds an optional value (a variable, a
 //! record's field, a payload's field) holds it as `Option<T>`. Where an
@@ -29,28 +31,17 @@ use crate::forge::types::OptionalElem;
 /// The runtime module the spellings below call.
 const RUNTIME: &str = "sce_forge_runtime::optional";
 
-/// The name the present value is bound to inside a `match` this module
-/// writes. Prefixed, as the other bindings generated Rust introduces are
-/// (`sce_value`), so that it never names a value the document declares.
+/// The name the present value is bound to inside a `match` or a closure this
+/// module writes. Prefixed, as the other bindings generated Rust introduces
+/// are (`sce_value`), so that it never names a value the document declares.
 pub const PRESENT: &str = "sce_present";
 
 /// The absent value.
 pub const ABSENT: &str = "None";
 
-/// The type of an optional value whose present value is of type `present`.
-pub fn optional_of(present: &str) -> String {
-    format!("Option<{present}>")
-}
-
 /// A value of `T` where an optional value is expected, which is present.
 pub fn present(value: &str) -> String {
     format!("Some({value})")
-}
-
-/// Whether an element is owned by the place that holds it and borrowed by an
-/// expression that reads it: a text or a byte string.
-fn borrowed(elem: OptionalElem) -> bool {
-    matches!(elem, OptionalElem::Str | OptionalElem::Bytes)
 }
 
 /// The optional value `held` holds, as an expression reads it: `held` itself
@@ -58,17 +49,15 @@ fn borrowed(elem: OptionalElem) -> bool {
 /// `Option<&[u8]>`) for a text or a byte string. `held` is a place or a
 /// postfix expression (`self.title`, `ev.title`).
 pub fn view(held: &str, elem: OptionalElem) -> String {
-    if borrowed(elem) {
-        format!("{held}.as_deref()")
-    } else {
-        held.to_string()
+    match elem {
+        OptionalElem::Str | OptionalElem::Bytes => format!("{held}.as_deref()"),
+        _ => held.to_string(),
     }
 }
 
 /// The value a place of `optional<T>` is written from, given the [`view`] of
 /// another optional value: the view itself for an element that is `Copy`, and
-/// an owned copy of the borrowed text or bytes otherwise. Bounded by the
-/// place's bound where it has one ([`bounded`]).
+/// an owned copy of the borrowed text or bytes otherwise.
 pub fn owned(view: &str, elem: OptionalElem) -> String {
     match elem {
         OptionalElem::Str => format!("{view}.map(str::to_string)"),
@@ -77,12 +66,16 @@ pub fn owned(view: &str, elem: OptionalElem) -> String {
     }
 }
 
-/// `value`, an optional text or byte string, held to the `capacity` of the
-/// place it is written to: an absent value fits, and a present one past the
-/// bound fails through `?` as a present text does
-/// (`sce_forge_runtime::algorithm::bounded`).
-pub fn bounded(value: &str, capacity: u32) -> String {
-    format!("{RUNTIME}::bounded({value}, {capacity})?")
+/// `value`, an optional value, with `map` applied to its present value — `map`
+/// spells it for the bound present value, [`PRESENT`] — and absent where it is
+/// absent: how a present text is held to the bound of the place it is written
+/// to. A `match` rather than a closure, so that a `?` in `map` returns from the
+/// statement it is written in.
+pub fn mapped(value: &str, map: &dyn Fn(&str) -> String) -> String {
+    format!(
+        "match {value} {{ Some({PRESENT}) => Some({}), None => None }}",
+        map(PRESENT)
+    )
 }
 
 /// `x !== null`, of the [`view`] of `x`.
@@ -124,21 +117,22 @@ pub fn equality(left: &str, right: &str, equal: bool) -> String {
     format!("{left} {op} {right}")
 }
 
-/// The value of a `<param>`, a `<donedata>` pair or a `<send>`'s namelist that
-/// carries an optional value, given its [`view`]: the runtime's `null` for an
-/// absent value, and `present_wire` of the bound present value ([`PRESENT`])
-/// for a present one, as a value of `T` crosses there.
-pub fn wire(view: &str, present_wire: impl FnOnce(&str) -> String) -> String {
+/// The value of a `<param>` of a `<send>` or a `<donedata>` that carries the
+/// optional value `value` (owned, as [`owned`] gives it): the runtime's `null`
+/// for an absent value, and `present_wire` of the bound present value
+/// ([`PRESENT`]) for a present one, as a value of `T` crosses there.
+pub fn wire(value: &str, present_wire: &dyn Fn(&str) -> String) -> String {
     format!(
-        "match {view} {{ Some({PRESENT}) => {}, None => ::sce_rust_runtime::ScriptValue::Null }}",
+        "match {value} {{ Some({PRESENT}) => {}, None => ::sce_rust_runtime::ScriptValue::Null }}",
         present_wire(PRESENT)
     )
 }
 
-/// What a `<log>` prints for the optional value `held` (a place, not a view):
-/// its present value as a value of `T` prints, and `null` for an absent one.
-pub fn logged(held: &str) -> String {
-    format!("{RUNTIME}::logged(&{held})")
+/// What a `<log>` prints for the optional value `value` (a place or a
+/// [`view`]): its present value as a value of `T` prints, and `null` for an
+/// absent one.
+pub fn logged(value: &str) -> String {
+    format!("{RUNTIME}::logged(&{value})")
 }
 
 /// The lift of the payload field `field` of `optional<T>` out of the
@@ -156,7 +150,7 @@ pub fn payload_read(field: &str, present_read: &str) -> String {
 /// always written. The placeholder this fills is a bare `{}`: a 64-bit
 /// integer's quotes are `present_json`'s to write, since an absent one has
 /// none.
-pub fn payload_written(held: &str, present_json: impl FnOnce(&str) -> String) -> String {
+pub fn payload_written(held: &str, present_json: &dyn Fn(&str) -> String) -> String {
     format!(
         "::sce_rust_runtime::event_payload::optional_json({held}.as_ref(), |{PRESENT}| {})",
         present_json(PRESENT)
@@ -182,10 +176,7 @@ mod tests {
     }
 
     #[test]
-    fn the_type_is_option_and_its_two_values_are_none_and_some() {
-        assert_eq!(optional_of("i64"), "Option<i64>");
-        syn::parse_str::<syn::Type>(&optional_of("::sce_rust_runtime::SceString"))
-            .expect("a Rust type");
+    fn the_two_values_are_none_and_some() {
         assert_eq!(expression(ABSENT), "None");
         assert_eq!(expression(&present("7")), "Some(7)");
     }
@@ -218,9 +209,16 @@ mod tests {
             "ev.tag.as_deref().map(<[u8]>::to_vec)"
         );
         assert_eq!(expression(&owned("ev.due", INT64)), "ev.due");
+    }
+
+    #[test]
+    fn a_present_value_is_mapped_and_an_absent_one_stays_absent() {
         assert_eq!(
-            expression(&bounded("ev.title.as_deref().map(str::to_string)", 16)),
-            "sce_forge_runtime::optional::bounded(ev.title.as_deref().map(str::to_string), 16)?"
+            expression(&mapped("ev.title.as_deref().map(str::to_string)", &|v| {
+                format!("sce_forge_runtime::algorithm::bounded({v}, 16)?")
+            })),
+            "match ev.title.as_deref().map(str::to_string) { Some(sce_present) => \
+             Some(sce_forge_runtime::algorithm::bounded(sce_present, 16)?), None => None }"
         );
     }
 
@@ -238,10 +236,6 @@ mod tests {
         assert_eq!(
             expression(&proven("self.due")),
             "sce_forge_runtime::optional::proven(self.due)"
-        );
-        assert_eq!(
-            expression(&proven("ev.due")),
-            "sce_forge_runtime::optional::proven(ev.due)"
         );
     }
 
@@ -282,7 +276,7 @@ mod tests {
     #[test]
     fn a_carrier_writes_an_absent_value_as_the_runtimes_null() {
         assert_eq!(
-            expression(&wire("self.due", |v| format!(
+            expression(&wire("self.due", &|v| format!(
                 "::sce_rust_runtime::ScriptValue::String(({v}).to_string())"
             ))),
             "match self.due { Some(sce_present) => \
@@ -302,7 +296,7 @@ mod tests {
             "fields.optional(\"due\", |fields| Ok(fields.signed64(\"due\")?))?"
         );
         assert_eq!(
-            expression(&payload_written("payload.due", |v| format!(
+            expression(&payload_written("payload.due", &|v| format!(
                 "format!(\"\\\"{{}}\\\"\", {v})"
             ))),
             "::sce_rust_runtime::event_payload::optional_json(payload.due.as_ref(), \

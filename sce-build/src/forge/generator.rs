@@ -3108,16 +3108,20 @@ pub fn build_rust_event_payload(
         let mut field_lines = String::new();
         let mut lift_fields = String::new();
         for f in &schema.fields {
-            let ty = rust_record_field_type(&l, f);
-            field_lines.push_str(&format!("    pub {}: {ty},\n", f.id));
+            field_lines.push_str(&format!(
+                "    pub {}: {},\n",
+                f.id,
+                rust_record_field_type(&l, f)
+            ));
             // What the lift reads back out of `data`, and what the inject seam
             // writes into it beside the typed payload: the same fields, named
             // once. The reader's width comes from the field's own declared
             // type, so a field widened in its schema cannot keep being read at
-            // the old width — the generated call stops compiling instead. A
-            // schema with an optional field was refused where the machine was
-            // lowered (docs/adr/0055), so each field holds a present value.
-            let reader = match f.sce_type.present_type() {
+            // the old width — the generated call stops compiling instead. An
+            // optional field (docs/adr/0055) is read by the reader of its
+            // present value where the delivery carries one.
+            let ty = rust_record_present_type(&l, f);
+            let present_reader = match f.sce_type.present_type() {
                 // A 64-bit integer is read from its digits as a text, or from a number
                 // exact in a double (`PayloadFields::wide`).
                 SceType::Uint64 => format!("fields.unsigned64(\"{}\")?", f.id),
@@ -3134,6 +3138,14 @@ pub fn build_rust_event_payload(
                 SceType::String => format!("fields.text(\"{}\")?", f.id),
                 SceType::Bytes => format!("fields.bytes(\"{}\")?", f.id),
                 SceType::Enum(r) => rust_enum_lift(static_enums, &r.alias, &f.id),
+            };
+            // `null` is an absent value, and a delivery that lacks the key is
+            // refused, as it is for a field of `T` (docs/adr/0055, section 4).
+            let reader = match f.sce_type {
+                FieldType::Optional { .. } => {
+                    crate::forge::rust_optional::payload_read(&f.id, &present_reader)
+                }
+                FieldType::Scalar(_) => present_reader,
             };
             lift_fields.push_str(&format!("                    {}: {reader},\n", f.id));
         }
@@ -3273,10 +3285,25 @@ match event {{\n{lift_arms}            _ => {{}}\n        }}\n        Ok(())\n  
 /// Both deref to `[u8]` / `str`, so `&ev.<field>` coerces to the
 /// `&[u8]` / `&str` an `Actions` trait method takes. Every other
 /// primitive resolves through `LangCtx::type_name`; the callers admit
-/// primitive fields only, so no enum-alias arm is hit. A record with an
-/// optional field (docs/adr/0055) is refused before one is generated, so the
-/// field is spelled as the value it holds when present.
+/// primitive fields only, so no enum-alias arm is hit. An optional field
+/// (docs/adr/0055) is the backend's optional type over the type its present
+/// value is ([`rust_record_present_type`]).
 fn rust_record_field_type(l: &LangCtx, f: &SchemaField) -> String {
+    let present = rust_record_present_type(l, f);
+    match f.sce_type {
+        // An optional field is held in the backend's one optional type over its
+        // present value's (docs/adr/0055).
+        FieldType::Optional { .. } => l
+            .optional_of(&present)
+            .expect("Rust spells an optional value"),
+        FieldType::Scalar(_) => present,
+    }
+}
+
+/// The Rust type a present value of one field of a typed record is generated as
+/// ([`rust_record_field_type`]): the field's own type, or the type an optional
+/// field holds when it is present.
+fn rust_record_present_type(l: &LangCtx, f: &SchemaField) -> String {
     match f.sce_type.present_type() {
         SceType::Bytes => {
             let cap = crate::forge::limits::resolve_bytes_max(f.max_size);
@@ -3361,18 +3388,14 @@ fn rust_record_wire_of(
     let mut items = String::new();
     let mut args = String::new();
     for f in fields {
-        // A record with an optional field (docs/adr/0055) is refused before its
-        // wire is written, so each field is written as a present value.
-        let wire = match f.sce_type.present_type() {
+        // How a present value `held` of the field is written: a place, or a
+        // reference to one.
+        let present = |held: &str| match f.sce_type.present_type() {
             SceType::Bytes => format!(
                 "::sce_rust_runtime::event_payload::quote(\
-&::sce_rust_runtime::event_payload::bytes_as_payload_text(&{receiver}.{}))",
-                f.id
+&::sce_rust_runtime::event_payload::bytes_as_payload_text(&{held}))"
             ),
-            SceType::String => format!(
-                "::sce_rust_runtime::event_payload::quote(&{receiver}.{})",
-                f.id
-            ),
+            SceType::String => format!("::sce_rust_runtime::event_payload::quote(&{held})"),
             SceType::Enum(r) => {
                 let e = static_enum_of(static_enums, &r.alias);
                 let arms: String = e
@@ -3387,22 +3410,34 @@ fn rust_record_wire_of(
                         )
                     })
                     .collect();
-                format!(
-                    "::sce_rust_runtime::event_payload::quote(match {receiver}.{} {{ {arms}}})",
-                    f.id
-                )
+                format!("::sce_rust_runtime::event_payload::quote(match {held} {{ {arms}}})")
             }
-            _ => format!("{receiver}.{}", f.id),
+            _ => held.to_string(),
+        };
+        // A 64-bit integer crosses as the text of its digits.
+        let wide = matches!(f.sce_type.present_type(), SceType::Uint64 | SceType::Int64);
+        let held = format!("{receiver}.{}", f.id);
+        let (value, wire) = match f.sce_type {
+            // An optional value is `null` where it is absent, its key written
+            // all the same (docs/adr/0055, section 4), so the quotes of a 64-bit
+            // integer are the present value's own.
+            FieldType::Optional { .. } => {
+                let written = crate::forge::rust_optional::payload_written(&held, &|v| {
+                    let text = present(v);
+                    match f.sce_type.present_type() {
+                        SceType::Bytes | SceType::String | SceType::Enum(_) => text,
+                        _ if wide => format!("format!(\"\\\"{{}}\\\"\", {text})"),
+                        _ => format!("{text}.to_string()"),
+                    }
+                });
+                ("{}", written)
+            }
+            FieldType::Scalar(_) if wide => ("\\\"{}\\\"", present(&held)),
+            FieldType::Scalar(_) => ("{}", present(&held)),
         };
         if !items.is_empty() {
             items.push_str(", ");
         }
-        // A 64-bit integer crosses as the text of its digits.
-        let value = if matches!(f.sce_type.present_type(), SceType::Uint64 | SceType::Int64) {
-            "\\\"{}\\\""
-        } else {
-            "{}"
-        };
         items.push_str(&format!("\\\"{}\\\":{value}", f.id));
         args.push_str(&format!(", {wire}"));
     }

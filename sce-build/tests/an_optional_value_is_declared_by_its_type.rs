@@ -131,7 +131,7 @@ const NOT_LOWERED: &str = "an optional value has no";
 /// The backends whose step of docs/adr/0055 lowers a statechart's optional value,
 /// by the language `generate -l` names: each generates what the others refuse.
 /// A backend joins in the step that lowers the type on it.
-const LOWERS_OPTIONAL: &[&str] = &["go", "python", "cpp", "kotlin"];
+const LOWERS_OPTIONAL: &[&str] = &["go", "python", "cpp", "kotlin", "rust"];
 
 /// Whether the backend `args` (one of [`every_backend`]) lowers a statechart's
 /// optional value.
@@ -201,13 +201,14 @@ fn the_forge_ast_spells_the_type_by_its_constructor() {
     );
 }
 
-// ── A statechart's variable holds one, and no backend lowers it yet ──────
+// ── A statechart's variable holds one, lowered by the backends whose step landed ──
 
-/// Each element a statechart's variable may hold reaches the backend, which
-/// refuses it by name: the type was read, and the refusal is the lowering's,
-/// not the parser's.
+/// Each scalar element a statechart's variable may hold reaches the backend and
+/// is lowered there, on Rust, whose step of docs/adr/0055 has landed: the type
+/// was read, and nothing but the lowering decides what it becomes. An optional
+/// record is refused by name until its own step (9).
 #[test]
-fn a_variable_holds_each_element_and_is_refused_where_it_is_lowered() {
+fn a_variable_holds_each_element_and_is_lowered_where_its_step_landed() {
     for (data, spelled) in [
         (
             r#"<data id="due" sce:type="optional&lt;int64&gt;" expr="null"/>"#,
@@ -233,10 +234,6 @@ fn a_variable_holds_each_element_and_is_refused_where_it_is_lowered() {
             r#"<data id="status" sce:type="optional&lt;enum:Status&gt;" expr="null"/>"#,
             "optional<enum:Status>",
         ),
-        (
-            r#"<data id="pick" sce:type="optional&lt;record:Move&gt;" expr="null"/>"#,
-            "optional<record:Move>",
-        ),
     ] {
         let text = statechart(data, "");
         let (ok, out) = run(
@@ -244,19 +241,28 @@ fn a_variable_holds_each_element_and_is_refused_where_it_is_lowered() {
             &[("probe.scxml", &text)],
             "probe.scxml",
         );
-        assert!(
-            !ok,
-            "{spelled}: no backend lowers an optional value yet:\n{out}"
-        );
-        assert!(
-            out.contains(NOT_LOWERED) && out.contains(spelled),
-            "{spelled}: refused where it is lowered, naming the type:\n{out}"
-        );
-        assert!(
-            out.contains("generate/unsupported-feature"),
-            "{spelled}: refused as a feature this backend does not lower:\n{out}"
-        );
+        assert!(ok, "{spelled}: Rust lowers an optional value:\n{out}");
     }
+    let text = statechart(
+        r#"<data id="pick" sce:type="optional&lt;record:Move&gt;" expr="null"/>"#,
+        "",
+    );
+    let (ok, out) = run(
+        &["generate", "-l", "rust"],
+        &[("probe.scxml", &text)],
+        "probe.scxml",
+    );
+    assert!(!ok, "no backend lowers an optional record yet:\n{out}");
+    assert!(
+        out.contains("an optional record has no")
+            && out.contains("lowering yet")
+            && out.contains("optional<record:Move>"),
+        "refused where it is lowered, naming the type:\n{out}"
+    );
+    assert!(
+        out.contains("generate/unsupported-feature"),
+        "refused as a feature this backend does not lower:\n{out}"
+    );
 }
 
 #[test]

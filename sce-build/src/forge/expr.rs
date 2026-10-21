@@ -59,6 +59,7 @@
 //   use explicit masking. Kotlin has `ushr` and Python promotes to big-int.
 
 use crate::forge::error::{ExprError, Spanned};
+use crate::forge::rust_optional;
 use crate::forge::types::{join_arith, join_int, CallReading, InferredType, OptionalElem, TypeCtx};
 use std::collections::HashMap;
 use std::fmt;
@@ -140,7 +141,8 @@ impl ExprTarget {
             ExprTarget::Cpp => true,
             // Kotlin: `T?` ([`kotlin_optional_form`]).
             ExprTarget::Kotlin => true,
-            ExprTarget::Rust => false,
+            // Rust: `core`'s `Option<T>` ([`rust_optional`]).
+            ExprTarget::Rust => true,
             ExprTarget::C => false,
         }
     }
@@ -487,6 +489,9 @@ fn lower_at(
         }
         ExprTarget::Rust if position == Position::Owned && expected == InferredType::Bytes => {
             emit_rust_owned_bytes(&ast)?
+        }
+        ExprTarget::Rust if position == Position::Owned && expected.is_optional() => {
+            emit_rust_owned_optional(&ast, expected)?
         }
         ExprTarget::Rust => emit_rust(&ast, expected)?,
         ExprTarget::Go => emit_go(&ast, expected)?,
@@ -8123,7 +8128,110 @@ fn emit_rust_owned_bytes(expr: &TypedExpr) -> Result<String, Refusal> {
     }
 }
 
+/// An optional value made owned for a place that holds an `Option<T>`
+/// ([`Position::Owned`]), as [`emit_rust_owned_str`] does a present text: an
+/// expression reads an optional text or byte string borrowed
+/// ([`rust_optional::view`]), so its present value is copied into the place's
+/// own; any other element is `Copy`, and the value is taken as it is.
+fn emit_rust_owned_optional(expr: &TypedExpr, expected: InferredType) -> Result<String, Refusal> {
+    let view = emit_rust(expr, expected)?;
+    Ok(match expected {
+        InferredType::Optional(elem @ (OptionalElem::Str | OptionalElem::Bytes)) => {
+            rust_optional::owned(&wrap_postfix(expr, view), elem)
+        }
+        _ => view,
+    })
+}
+
+/// A Rust expression node. A construct of an optional value (docs/adr/0055)
+/// is its own form ([`rust_optional_form`]), and a place that holds an optional
+/// text or byte string is read borrowed ([`rust_optional::view`]), as a place
+/// that holds a present one is.
 fn rust_emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
+    if let Some(form) = optional_form(expr) {
+        return rust_optional_form(form, expr);
+    }
+    let text = rust_emit_value(expr)?;
+    let place = matches!(
+        expr.kind,
+        ExprKind::Ident(_) | ExprKind::Raw(_) | ExprKind::Member { .. }
+    );
+    Ok(match expr.ty {
+        InferredType::Optional(elem) if place => rust_optional::view(&text, elem),
+        _ => text,
+    })
+}
+
+/// The Rust spelling of each construct of an optional value (docs/adr/0055,
+/// section 5) over `core`'s `Option<T>` ([`rust_optional`]): a test is
+/// `is_some()` or `is_none()`, a proven read goes through the runtime's
+/// `proven`, `x ?? d` is a `match` whose absent arm alone evaluates `d`, and
+/// equality is `Option`'s own, a side of `T` lifted into the optional value of
+/// the other ([`InferredType::lifted_into`], [`rust_coerce`]).
+fn rust_optional_form(form: OptionalForm<'_>, whole: &TypedExpr) -> Result<String, Refusal> {
+    let read = |node: &TypedExpr| emit_rust(node, InferredType::Unknown);
+    Ok(match form {
+        OptionalForm::Test { subject, present } => {
+            let view = wrap_postfix(subject, read(subject)?);
+            if present {
+                rust_optional::is_present(&view)
+            } else {
+                rust_optional::is_absent(&view)
+            }
+        }
+        OptionalForm::Proven { subject } => rust_optional::proven(&read(subject)?),
+        OptionalForm::Otherwise { value, fallback } => {
+            // Both arms of the `match` are one type: a present text is read
+            // borrowed, so a default of text is borrowed too.
+            let default = emit_rust(fallback, whole.ty)?;
+            let default = match whole.ty {
+                InferredType::Optional(_) => default,
+                ty => match OptionalElem::lifting(ty) {
+                    Some(elem) => rust_borrowed(fallback, default, elem),
+                    None => default,
+                },
+            };
+            rust_optional::coalesce(&read(value)?, &default, whole.ty.is_optional())
+        }
+        OptionalForm::Equality { left, right, equal } => {
+            let optional = [left.ty, right.ty]
+                .into_iter()
+                .find(|ty| ty.is_optional())
+                .unwrap_or(InferredType::Unknown);
+            let op = if equal {
+                BinOp::StrictEq
+            } else {
+                BinOp::StrictNeq
+            };
+            let l = rust_left_operand(left, op, emit_rust(left, optional)?);
+            let r = emit_rust(right, optional)?;
+            let r = if child_needs_parens(right, op, false, rust_precedence) {
+                format!("({r})")
+            } else {
+                r
+            };
+            rust_optional::equality(&l, &r, equal)
+        }
+        OptionalForm::Constant(answer) => answer.to_string(),
+    })
+}
+
+/// `text`, the Rust value of `node`, borrowed as an expression reads the
+/// present value of an optional text or byte string of the element `elem`
+/// (`&str`, `&[u8]`): a string literal is one already, and any other text — an
+/// owned `String` or `Vec<u8>`, a byte-string literal's array — is sliced whole.
+/// A value of any other element is `Copy`, and is `text` itself.
+fn rust_borrowed(node: &TypedExpr, text: String, elem: OptionalElem) -> String {
+    match (elem, &node.kind) {
+        (OptionalElem::Str, ExprKind::StringLit { .. }) => text,
+        (OptionalElem::Str | OptionalElem::Bytes, _) => {
+            format!("&{}[..]", wrap_postfix(node, text))
+        }
+        _ => text,
+    }
+}
+
+fn rust_emit_value(expr: &TypedExpr) -> Result<String, Refusal> {
     Ok(match &expr.kind {
         ExprKind::NumberLit(n) => portable_number_literal(n),
         ExprKind::StringLit { value, .. } => format!("\"{value}\""),
@@ -8378,6 +8486,15 @@ fn rust_coerce(
     node: &TypedExpr,
 ) -> Result<String, Refusal> {
     use InferredType::*;
+    // A value of `T` where an optional value of `T` is expected is a present one
+    // (docs/adr/0055, section 2): converted to the element's type, borrowed as an
+    // expression reads an optional text ([`rust_borrowed`]), and lifted. Asked
+    // before the early return below: an enum's variant is a value this layer
+    // does not type.
+    if let Some(elem) = from.lifted_into(to) {
+        let value = rust_coerce(raw, from, elem.present(), node)?;
+        return Ok(rust_optional::present(&rust_borrowed(node, value, elem)));
+    }
     // A quantity is emitted as its numeric base: the unit is a check the
     // document passed, not a type Rust has. Left on, `raw_temp * 0.5` with
     // `raw_temp: i8` carrying `sce:quantity` fell through to the final arm and
@@ -13890,6 +14007,67 @@ mod tests {
             "func() optional.Of[int64] { if count == 1 { return optional.None[int64]() }; \
              return optional.Some[int64](5) }()"
         );
+    }
+
+    /// Rust spells each construct of an optional value over `Option<T>`
+    /// (docs/adr/0055, section 5): a test, a proven read through the runtime, a
+    /// read with a default whose default is evaluated in the absent arm alone,
+    /// total equality with a value of `T` lifted, `null` and a lifted value where
+    /// an optional value is expected, and a conditional of the two. A text is
+    /// read borrowed, and made owned where a place holds it.
+    #[test]
+    fn rust_spells_each_construct_of_an_optional_value() {
+        let mut ctx = optional_ctx();
+        ctx.insert_var("title", InferredType::Optional(OptionalElem::Str));
+        let int64 = OptionalElem::Number(crate::forge::quantity::NumericBaseType::Int {
+            signed: true,
+            bits: 64,
+        });
+        let optional = InferredType::Optional(int64);
+        let text = InferredType::Optional(OptionalElem::Str);
+        let rust = |expr: &str, expected: InferredType| {
+            transpile_into(expr, ExprTarget::Rust, &ctx, &empty_renames(), expected)
+                .unwrap_or_else(|e| panic!("{expr} lowers for Rust: {e:?}"))
+        };
+        assert_eq!(rust("due !== null", InferredType::Bool), "due.is_some()");
+        assert_eq!(rust("null === due", InferredType::Bool), "due.is_none()");
+        assert_eq!(
+            rust("due.value", int(true, 64)),
+            "sce_forge_runtime::optional::proven(due)"
+        );
+        assert_eq!(
+            rust("due ?? 0", int(true, 64)),
+            "match due { Some(sce_present) => sce_present, None => 0 }"
+        );
+        assert_eq!(rust("due === other", InferredType::Bool), "due == other");
+        assert_eq!(rust("due !== 3", InferredType::Bool), "due != Some(3)");
+        assert_eq!(rust("null === null", InferredType::Bool), "true");
+        assert_eq!(rust("null", optional), "None");
+        assert_eq!(rust("3", optional), "Some(3)");
+        assert_eq!(rust("other", optional), "other");
+        assert_eq!(
+            rust("count === 1 ? null : 5", optional),
+            "if count == 1 { None } else { Some(5) }"
+        );
+        assert_eq!(
+            rust("title !== null", InferredType::Bool),
+            "title.as_deref().is_some()"
+        );
+        assert_eq!(
+            rust("title === 'soon'", InferredType::Bool),
+            "title.as_deref() == Some(\"soon\")"
+        );
+        assert_eq!(
+            rust("title ?? 'none'", InferredType::Str),
+            "match title.as_deref() { Some(sce_present) => sce_present, None => \"none\" }"
+        );
+        let owned = |expr: &str, expected: InferredType| {
+            transpile_into_owned(expr, ExprTarget::Rust, &ctx, &empty_renames(), expected)
+                .unwrap_or_else(|e| panic!("{expr} lowers owned for Rust: {e:?}"))
+                .text
+        };
+        assert_eq!(owned("title", text), "title.as_deref().map(str::to_string)");
+        assert_eq!(owned("due", optional), "due");
     }
 
     /// Go names the type of a `null` and of a read with a default; where the

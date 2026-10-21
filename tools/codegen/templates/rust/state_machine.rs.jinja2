@@ -280,7 +280,7 @@ impl{{ policy_generics_decl }} {{ machine_name }}Observe for Engine<{{ machine_n
 {% if static_published %}
             data: {{ machine_name }}Data {
 {% for field in static_published %}
-                {{ field.name }}: policy.{{ field.name }}{% if field.view %}.clone(){% endif %},
+                {{ field.name }}: policy.{{ field.name }}{% if field.view or (field.saved_kind == "optional" and field.saved_type in ["string", "bytes"]) %}.clone(){% endif %},
 {% endfor %}
             },
 {% endif %}
@@ -1117,9 +1117,16 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
 
     /// W3C SCXML 5.2: what the published `{{ field.id }}` datamodel variable
     /// holds now. Only the machine writes it.
+{% if field.saved_kind == "optional" and field.saved_type in ["string", "bytes"] %}
+{# docs/adr/0055: an optional text or byte string is lent as a present one is, or absent. #}
+    pub fn {{ field.name }}(&self) -> Option<&{{ "str" if field.saved_type == "string" else "[u8]" }}> {
+        self.{{ field.name }}.as_deref()
+    }
+{% else %}
     pub fn {{ field.name }}(&self) -> {% if field.view %}&{{ field.view }}{% else %}{{ field.ty }}{% endif %} {
         {% if field.view %}&{% endif %}self.{{ field.name }}
     }
+{% endif %}
 {% endfor %}
 
 {% include 'utility_methods.rs.jinja2' %}

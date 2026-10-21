@@ -160,19 +160,28 @@ const NOT_LOWERED: &str = "an optional value has no";
 /// The code of a read the build has not proven present.
 const UNPROVEN: &str = "expression/optional-read-unproven";
 
-/// `text`, written as `file`, is judged fit: generated for Rust it is refused
-/// only where the backend lowers it, and no read in it is unproven.
+/// `text`, written as `file`, is judged fit, and no read in it is unproven: a
+/// statechart is generated for Rust, whose step of docs/adr/0055 lowers it, and
+/// an algorithm is refused only where the backend renders it, by name, until the
+/// step that lowers an algorithm's optional value (8).
 fn proven(text: &str, file: &str) {
     let (ok, out) = run(&["generate", "-l", "rust"], text, file);
-    assert!(!ok, "no backend lowers an optional value yet:\n{out}");
     assert!(
         !out.contains("\"code\":\"expression/") && !out.contains("scxml/static-datamodel-rule"),
         "every read is proven:\n{out}"
     );
-    assert!(
-        out.contains(NOT_LOWERED),
-        "refused only where it is lowered:\n{out}"
-    );
+    if file == ALGORITHM {
+        assert!(
+            !ok,
+            "no backend renders an algorithm's optional value yet:\n{out}"
+        );
+        assert!(
+            out.contains(NOT_LOWERED),
+            "refused only where it is rendered:\n{out}"
+        );
+    } else {
+        assert!(ok, "Rust lowers the statechart:\n{out}");
+    }
 }
 
 /// `text`, written as `file`, is refused at a read of `read` the build has not

@@ -3,9 +3,9 @@
 //
 //! An optional value is written, tested, read with a default, read where it is
 //! proven present and compared (docs/adr/0055, section 2 and step 3): one case
-//! per row of the section's table, each judged fit and then refused only where
-//! a backend lowers it (no backend lowers an optional value yet), and one case
-//! per refusal, each refused where the document is checked, by its code.
+//! per row of the section's table, each judged fit and generated for Rust, whose
+//! step of docs/adr/0055 lowers every row, and one case per refusal, each
+//! refused where the document is checked, by its code.
 //!
 //! # What was wrong
 //!
@@ -122,26 +122,18 @@ fn run(args: &[&str], documents: &[(&str, &str)], file: &str) -> (bool, String) 
     )
 }
 
-/// The refusal a backend gives a document that holds an optional value, before
-/// the step that lowers one there (`StaticTarget::lowers_optional`).
-const NOT_LOWERED: &str = "an optional value has no";
-
-/// `text` (with `extra` documents beside it) is judged fit: generated for Rust,
-/// it is refused only where the backend lowers it, by name, and by no rule of
-/// an expression or of the data model.
+/// `text` (with `extra` documents beside it) is judged fit, and generated for
+/// Rust, whose step of docs/adr/0055 lowers every row of the table: refused by
+/// no rule of an expression or of the data model, and by no lowering.
 fn judged_fit(text: &str, extra: &[(&str, &str)]) {
     let mut documents = vec![("probe.scxml", text)];
     documents.extend_from_slice(extra);
     let (ok, out) = run(&["generate", "-l", "rust"], &documents, "probe.scxml");
-    assert!(!ok, "no backend lowers an optional value yet:\n{out}");
     assert!(
         !out.contains("\"code\":\"expression/") && !out.contains("scxml/static-datamodel-rule"),
         "the document is judged fit:\n{out}"
     );
-    assert!(
-        out.contains(NOT_LOWERED),
-        "refused only where it is lowered:\n{out}"
-    );
+    assert!(ok, "Rust lowers the document:\n{out}");
 }
 
 /// `text` (with `extra` documents beside it) is refused where it is checked,
