@@ -117,9 +117,22 @@ function siblingFromFixtures(name) {
     return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null;
 }
 
+/**
+ * The text of the document a scenario is of. A scenario names its machine by a file of the
+ * fixture directory, or, when the machine is a standard document, by the name the library
+ * gives it (`sce:std/shared/record_list`), which is the file of that path under `stdlib`.
+ */
+function documentOf(scenario) {
+    const standard = 'sce:std/';
+    const file = scenario.machine.startsWith(standard)
+        ? path.join(REPO, 'stdlib', `${scenario.machine.slice(standard.length)}.scxml`)
+        : path.join(FIXTURES, `${scenario.machine}.scxml`);
+    return fs.readFileSync(file, 'utf8');
+}
+
 /** The failures of one scenario, as sentences; empty when it holds. */
 async function replay(Module, SceBuildWasm, scenario) {
-    const document = fs.readFileSync(path.join(FIXTURES, `${scenario.machine}.scxml`), 'utf8');
+    const document = documentOf(scenario);
     const lowered = await SceBuildWasm.lowerForInterpreter(
         document, scenario.machine, async (name) => siblingFromFixtures(name));
     const runner = new Module.InteractiveTestRunner();
@@ -175,7 +188,7 @@ async function main(files) {
     const skipped = [];
     for (const file of files) {
         const scenario = JSON.parse(fs.readFileSync(file, 'utf8'));
-        const document = fs.readFileSync(path.join(FIXTURES, `${scenario.machine}.scxml`), 'utf8');
+        const document = documentOf(scenario);
         const why = whyNot(scenario, document);
         if (why) {
             skipped.push(`${scenario.machine}: ${why}`);
