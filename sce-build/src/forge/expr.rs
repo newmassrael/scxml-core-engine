@@ -4309,7 +4309,11 @@ fn rename_identifiers(ast: &mut TypedExpr, renames: &HashMap<&str, &str>) {
 fn export_go_member_properties(ast: &mut TypedExpr) {
     match &mut ast.kind {
         ExprKind::Member { object, property } => {
-            *property = crate::filters::to_pascal_case(property.clone());
+            // The `.value` of an optional value (docs/adr/0055) is no field of
+            // a struct but the proven read the emitter spells; it keeps its name.
+            if !(property == OPTIONAL_VALUE && object.ty.is_optional()) {
+                *property = crate::filters::to_pascal_case(property.clone());
+            }
             export_go_member_properties(object);
         }
         ExprKind::Binary { left, right, .. } => {
