@@ -64,6 +64,7 @@
 #include "static_list_assign_sm.h"
 #include "static_list_index_sm.h"
 #include "static_list_sm.h"
+#include "static_optional_sm.h"
 #include "static_overflow_sm.h"
 #include "static_payload_bytes_sm.h"
 #include "static_payload_enum_sm.h"
@@ -2590,6 +2591,60 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, AnOptionalValueIsReadWithADefaultOnly
     EXPECT_EQ(G::static_block_ends::sceLogName(std::optional<bool>(true)), "true");
     EXPECT_EQ(G::static_block_ends::sceLogName(std::optional<double>(1.5)), "1.5");
     EXPECT_EQ(G::static_block_ends::sceLogName(std::optional<std::string>("soon")), "soon");
+}
+
+/// An optional value as a scenario states it (docs/adr/0055): `null` when it is
+/// absent, and its present value as `present` writes it.
+template <typename T, typename Present> json optionalJson(const std::optional<T> &value, Present present) {
+    return value.has_value() ? present(*value) : json();
+}
+
+// docs/adr/0055: values that may be absent are held in variables, in a record's
+// fields and in a list of records, tested, read where a test proves them present,
+// read with a default that is evaluated only when they are absent, compared, and
+// carried by a payload, a send and the done data, an absent one as `null`.
+TEST(AStaticDatamodelRunsGeneratedCppTest, AValueThatMayBeAbsentIsHeldTestedAndCarried) {
+    namespace E = G::static_optional;
+    using Machine = E::static_optional;
+    const auto day = [](const auto &value) { return optionalJson(value, [](std::int64_t d) { return json(d); }); };
+    const auto text = [](const auto &value) {
+        return optionalJson(value, [](const std::string &t) { return json(t); });
+    };
+    const auto standing = [](const auto &value) {
+        return optionalJson(value, [](auto s) { return json(std::string(E::sceLogName(s))); });
+    };
+    const auto item = [=](const auto &record) {
+        return json{{"id", record.id},
+                    {"due", day(record.due)},
+                    {"title", text(record.title)},
+                    {"status", standing(record.status)}};
+    };
+    Driver<Machine> driver({
+        {"due", [=](const Machine &m) { return day(m.due()); }},
+        {"other", [=](const Machine &m) { return day(m.other()); }},
+        {"title", [=](const Machine &m) { return text(m.title()); }},
+        {"status", [=](const Machine &m) { return standing(m.status()); }},
+        {"item", [=](const Machine &m) { return item(m.item()); }},
+        {"items", [=](const Machine &m) { return listedJson(m.items(), item); }},
+        {"days", [](const Machine &m) { return json(m.days()); }},
+        {"following", [](const Machine &m) { return json(m.following()); }},
+        {"late", [](const Machine &m) { return json(m.late()); }},
+        {"early", [](const Machine &m) { return json(m.early()); }},
+        {"label", [](const Machine &m) { return json(m.label()); }},
+        {"plain", [](const Machine &m) { return json(std::string(E::sceLogName(m.plain()))); }},
+        {"kept", [](const Machine &m) { return json(m.kept()); }},
+        {"listed", [](const Machine &m) { return json(m.listed()); }},
+        {"missing", [](const Machine &m) { return json(m.missing()); }},
+        {"same", [](const Machine &m) { return json(m.same()); }},
+        {"absent", [](const Machine &m) { return json(m.absent()); }},
+        {"statusDone", [](const Machine &m) { return json(m.statusDone()); }},
+        {"echoed", [](const Machine &m) { return json(m.echoed()); }},
+        {"echoTitle", [=](const Machine &m) { return text(m.echoTitle()); }},
+        {"echoStatus", [=](const Machine &m) { return standing(m.echoStatus()); }},
+        {"fallbacks", [](const Machine &m) { return json(m.fallbacks()); }},
+        {"errors", [](const Machine &m) { return json(m.errors()); }},
+    });
+    replay("static_optional", driver);
 }
 
 namespace {
