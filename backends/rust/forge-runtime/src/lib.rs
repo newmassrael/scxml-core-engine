@@ -28,6 +28,7 @@ pub mod filter;
 pub mod interpolation;
 pub mod lookup;
 pub mod observer;
+pub mod optional;
 pub mod queue;
 pub mod storage;
 pub mod timer;

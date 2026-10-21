@@ -127,6 +127,27 @@ impl PayloadFields {
         Ok(decoded)
     }
 
+    /// A field of `optional<T>` (docs/adr/0055, section 4): absent where the
+    /// delivery carries `null`, and otherwise the value `read` reads of it, held
+    /// to `T` as a field of `T` is. A delivery that lacks the key is refused as
+    /// it is for any field: `null` is the one spelling of absence, and a missing
+    /// key means a sender whose revision does not have the field, which
+    /// [`Self::decode_with_defaults`] has already filled where a later revision
+    /// added it.
+    ///
+    /// `read` is the reader of a present value, handed these fields:
+    /// `fields.optional("due", |fields| fields.signed64("due"))`.
+    pub fn optional<T>(
+        &self,
+        name: &str,
+        read: impl FnOnce(&Self) -> Result<T, PayloadRefusal>,
+    ) -> Result<Option<T>, PayloadRefusal> {
+        match self.find(name)? {
+            Value::Null => Ok(None),
+            _ => read(self).map(Some),
+        }
+    }
+
     fn find(&self, name: &str) -> Result<&Value, PayloadRefusal> {
         self.fields
             .iter()
@@ -354,9 +375,18 @@ pub fn quote(text: &str) -> String {
     crate::json::quote(text)
 }
 
+/// The JSON spelling of one optional value, for the inject seam's `data`
+/// (docs/adr/0055, section 4): an absent value is `null` and a present one is
+/// what `write` spells it as. The key is always written, so a reader never
+/// takes a sender that knows the field for one that does not
+/// ([`PayloadFields::optional`]).
+pub fn optional_json<T>(value: Option<T>, write: impl FnOnce(T) -> String) -> String {
+    value.map_or_else(|| "null".to_string(), write)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::PayloadFields;
+    use super::{optional_json, quote, PayloadFields};
 
     const DEFAULTS: &str = r#"{"layout":"week","count":"7","urgent":true}"#;
 
@@ -405,5 +435,42 @@ mod tests {
         assert_eq!(fields.truth("urgent"), Ok(true));
         // A bare value is still no object of named fields.
         assert!(PayloadFields::decode_with_defaults("5", DEFAULTS).is_err());
+    }
+
+    #[test]
+    fn an_optional_field_reads_null_as_absent_and_a_value_as_present() {
+        let fields = PayloadFields::decode(r#"{"id": 1, "due": null, "title": "soon"}"#)
+            .expect("the object reads");
+        assert_eq!(fields.optional("due", |f| f.signed64("due")), Ok(None));
+        assert_eq!(
+            fields
+                .optional("title", |f| f.text("title"))
+                .map(|t| t.map(|s| s.to_string())),
+            Ok(Some("soon".to_string()))
+        );
+        // A present value is held to the field's type, as a field of `T` is.
+        assert!(fields.optional("title", |f| f.signed64("title")).is_err());
+    }
+
+    #[test]
+    fn an_optional_field_whose_key_the_delivery_lacks_is_refused() {
+        let fields =
+            PayloadFields::decode(r#"{"id": 3, "title": "gone"}"#).expect("the object reads");
+        let refusal = fields
+            .optional("due", |f| f.signed64("due"))
+            .expect_err("a missing key is no absent value");
+        assert!(refusal.reason().contains("'due'"), "{refusal}");
+        // A later revision's default of `null` is an absent value.
+        let fields = PayloadFields::decode_with_defaults(r#"{"id": 3}"#, r#"{"due":null}"#)
+            .expect("the object reads");
+        assert_eq!(fields.optional("due", |f| f.signed64("due")), Ok(None));
+    }
+
+    #[test]
+    fn an_absent_value_is_written_as_null_and_a_present_one_as_its_writer_spells_it() {
+        let digits = |v: i64| format!("\"{v}\"");
+        assert_eq!(optional_json(None, digits), "null");
+        assert_eq!(optional_json(Some(12_i64), digits), "\"12\"");
+        assert_eq!(optional_json(Some("soon"), quote), "\"soon\"");
     }
 }
