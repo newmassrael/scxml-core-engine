@@ -51,7 +51,7 @@
       }
     },
     "shape": {
-      "description": "The SHA-256, as lowercase hex, of this session's document's shape as the generator computes it: every state with its kind and parent in document order, every <history> with its id, kind and parent, every <invoke type=\"scxml\"> with its id and the state that holds it, every <invoke> a declared host invoker serves with its type, its id and the state that holds it, every variable with its type and bound, a record's fields with their types. Unlike format 1, an enum-typed variable or field is named by its enum's document (`enum:` and the path of the enum's file relative to the directory of the machine's document, or the folded sce:std/... name; docs/adr/0044), not by the import's alias, so renaming an alias leaves the shape as it was; the generator computes that text once and every backend hashes it as written. A parent's shape names each <invoke> and not its child's shape, so each session is judged by its own. A restore refuses the whole tree when any session is of another shape, and names that session's path.",
+      "description": "The SHA-256, as lowercase hex, of this session's document's shape as the generator computes it: every state with its kind and parent in document order, every <history> with its id, kind and parent, every <invoke type=\"scxml\"> with its id and the state that holds it, every <invoke> a declared host invoker serves with its type, its id and the state that holds it, every variable with its type and bound, a record's fields with their types, a value of optional<T> named by T, the type its present value is, as in format 1 (docs/adr/0055). Unlike format 1, an enum-typed variable or field is named by its enum's document (`enum:` and the path of the enum's file relative to the directory of the machine's document, or the folded sce:std/... name; docs/adr/0044), not by the import's alias, so renaming an alias leaves the shape as it was; the generator computes that text once and every backend hashes it as written. A parent's shape names each <invoke> and not its child's shape, so each session is judged by its own. A restore refuses the whole tree when any session is of another shape, and names that session's path.",
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
     },
@@ -308,8 +308,9 @@
       }
     },
     "value": {
-      "description": "A value as its sce:type writes it, as in format 1. A whole number up to 32 bits is a JSON number; a 64-bit one is a text holding its decimal digits. A real is a number, or one of the texts NaN, Infinity, -Infinity. A bool is a JSON boolean, a string a text, bytes an array of numbers 0 to 255, a list an array of its elements, a record an object keyed by its schema's field ids.",
+      "description": "A value as its sce:type writes it, as in format 1. A whole number up to 32 bits is a JSON number; a 64-bit one is a text holding its decimal digits. A real is a number, or one of the texts NaN, Infinity, -Infinity. A bool is a JSON boolean, a string a text, bytes an array of numbers 0 to 255, a list an array of its elements, a record an object keyed by its schema's field ids. A value of an optional type (optional<T>, docs/adr/0055) is null where it is absent and written as a value of T otherwise, as in format 1.",
       "oneOf": [
+        { "type": "null" },
         { "type": "number" },
         { "type": "string" },
         { "type": "boolean" },

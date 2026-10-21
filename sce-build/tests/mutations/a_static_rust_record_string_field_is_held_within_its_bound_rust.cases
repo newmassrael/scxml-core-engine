@@ -49,6 +49,6 @@ PY
 
 mutation_case "a saved string past the bound is read back" <<'PY'
 edit("backends/rust/runtime/src/saved_state.rs",
-     "    bounded_string(\n        member_of(value, record, name)?,",
-     "    String::from_saved(\n        member_of(value, record, name)?,")
+     "    bounded_string(\n        record_member(value, record, name)?,",
+     "    String::from_saved(\n        record_member(value, record, name)?,")
 PY

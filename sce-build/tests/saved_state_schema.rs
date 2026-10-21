@@ -194,9 +194,9 @@ fn the_schema_refuses_what_no_backend_writes() {
             serde_json::json!([]),
         ),
         (
-            "a variable that is null",
+            "variables that are not an object keyed by their ids",
             "variables",
-            serde_json::json!({"count": null}),
+            serde_json::json!([null]),
         ),
         (
             "a history whose value is not a list of state ids",
@@ -406,6 +406,49 @@ fn the_schema_refuses_what_no_backend_writes() {
         "{:?}",
         errors(&validator, &first_revision)
     );
+}
+
+/// The variables of a machine that holds values that may be absent
+/// (docs/adr/0055, section 4): absent ones as `null` and present ones as their
+/// type writes them, in a variable, a record's field and a field of a record of
+/// a list.
+fn optional_variables() -> serde_json::Value {
+    serde_json::json!({
+        "due": null,
+        "other": "7",
+        "title": null,
+        "status": "open",
+        "item": {"id": 0, "due": null, "title": "first", "status": null},
+        "items": [{"id": 1, "due": "12", "title": null, "status": "done"}]
+    })
+}
+
+#[test]
+fn an_absent_value_is_null_in_both_formats() {
+    // The format-1 control the refusals above start from, holding them.
+    let mut flat = serde_json::json!({
+        "format": 1,
+        "shape": "0".repeat(64),
+        "configuration": ["s"],
+        "current": "s",
+        "variables": {},
+        "history": {},
+        "pending": [],
+        "invokes": [],
+        "hostinvokes": [],
+        "hostinvoketoken": "0",
+        "sendseq": "0",
+        "external": []
+    });
+    flat["variables"] = optional_variables();
+    let found = errors(&validator(), &flat);
+    assert!(found.is_empty(), "{}", found.join("\n"));
+    // ... and a format-2 tree, in the root and in a child it runs.
+    let mut tree = a_tree();
+    tree["variables"] = optional_variables();
+    tree["invokes"][0]["session"]["variables"] = optional_variables();
+    let found = errors(&validator_v2(), &tree);
+    assert!(found.is_empty(), "{}", found.join("\n"));
 }
 
 /// One session of a tree, with the running children it is given. Every

@@ -1295,10 +1295,24 @@ pub trait SavedValue: Sized {
     fn from_saved(value: &Value, what: &str) -> Result<Self, StateRefusal>;
 }
 
+/// The refusal of `value`, saved for `what`, which is not `kind` (`a number`,
+/// `a text`, …). A `null` is named apart: it is an absent value
+/// (docs/adr/0055), which only a place the restoring build declares optional
+/// reads, so a state saved after a widening is refused at its first `null` by a
+/// build from before it.
+fn not_a(value: &Value, what: &str, kind: &str) -> StateRefusal {
+    match value {
+        Value::Null => StateRefusal::new(format!(
+            "'{what}' is absent (null), and its type is not optional"
+        )),
+        _ => StateRefusal::new(format!("'{what}' is not {kind}")),
+    }
+}
+
 fn number<'v>(value: &'v Value, what: &str) -> Result<&'v str, StateRefusal> {
     match value {
         Value::Number(n) => Ok(n),
-        _ => Err(StateRefusal::new(format!("'{what}' is not a number"))),
+        _ => Err(not_a(value, what, "a number")),
     }
 }
 
@@ -1337,9 +1351,7 @@ macro_rules! saved_wide_int {
                             "'{what}' ({n}) is not a whole number its type can hold"
                         ))
                     }),
-                    _ => Err(StateRefusal::new(format!(
-                        "'{what}' is not a 64-bit whole number written as a text"
-                    ))),
+                    _ => Err(not_a(value, what, "a 64-bit whole number written as a text")),
                 }
             }
         }
@@ -1392,7 +1404,7 @@ impl SavedValue for bool {
     fn from_saved(value: &Value, what: &str) -> Result<Self, StateRefusal> {
         match value {
             Value::Bool(b) => Ok(*b),
-            _ => Err(StateRefusal::new(format!("'{what}' is not a truth value"))),
+            _ => Err(not_a(value, what, "a truth value")),
         }
     }
 }
@@ -1404,7 +1416,7 @@ impl SavedValue for String {
     fn from_saved(value: &Value, what: &str) -> Result<Self, StateRefusal> {
         match value {
             Value::Text(s) => Ok(s.clone()),
-            _ => Err(StateRefusal::new(format!("'{what}' is not a text"))),
+            _ => Err(not_a(value, what, "a text")),
         }
     }
 }
@@ -1420,9 +1432,44 @@ impl<T: SavedValue> SavedValue for Vec<T> {
                 .enumerate()
                 .map(|(i, item)| T::from_saved(item, &format!("{what}[{i}]")))
                 .collect(),
-            _ => Err(StateRefusal::new(format!("'{what}' is not an array"))),
+            _ => Err(not_a(value, what, "an array")),
         }
     }
+}
+
+/// A value that may be absent (docs/adr/0055, section 4): written as `null`
+/// where it is absent and as its present value writes itself otherwise, and
+/// read back absent from `null` and otherwise as a present value is, held to its
+/// type. The one place a saved `null` is read: a value of every other type
+/// refuses it, naming what holds it.
+impl<T: SavedValue> SavedValue for Option<T> {
+    fn to_saved(&self) -> Value {
+        self.as_ref().map_or(Value::Null, SavedValue::to_saved)
+    }
+    fn from_saved(value: &Value, what: &str) -> Result<Self, StateRefusal> {
+        optional(value, |present| T::from_saved(present, what))
+    }
+}
+
+/// A saved value that may be absent, read back: absent from `null`, and
+/// otherwise the value `present` reads — what a value held to a bound, which
+/// [`SavedValue`] cannot carry, is read with when it is optional
+/// (`optional(value, |v| bounded_string(v, what, 16))`).
+pub fn optional<T>(
+    value: &Value,
+    present: impl FnOnce(&Value) -> Result<T, StateRefusal>,
+) -> Result<Option<T>, StateRefusal> {
+    match value {
+        Value::Null => Ok(None),
+        value => present(value).map(Some),
+    }
+}
+
+/// A value that may be absent, written: `null` where it is absent, and the value
+/// `present` writes otherwise — what a value written by a function of its own
+/// (a byte string, [`bytes_to_saved`]) is written with when it is optional.
+pub fn optional_to_saved<T: ?Sized>(value: Option<&T>, present: impl FnOnce(&T) -> Value) -> Value {
+    value.map_or(Value::Null, present)
 }
 
 /// The field `name` of a saved record `value`, read as `T` — what a
@@ -1432,7 +1479,10 @@ pub fn record_field<T: SavedValue>(
     record: &str,
     name: &str,
 ) -> Result<T, StateRefusal> {
-    T::from_saved(member_of(value, record, name)?, &format!("{record}.{name}"))
+    T::from_saved(
+        record_member(value, record, name)?,
+        &format!("{record}.{name}"),
+    )
 }
 
 /// The string field `name` of a saved record `value`, read back only if it holds
@@ -1446,7 +1496,7 @@ pub fn record_bounded_string(
     capacity: usize,
 ) -> Result<String, StateRefusal> {
     bounded_string(
-        member_of(value, record, name)?,
+        record_member(value, record, name)?,
         &format!("{record}.{name}"),
         capacity,
     )
@@ -1463,15 +1513,20 @@ pub fn record_bounded_bytes(
     capacity: usize,
 ) -> Result<Vec<u8>, StateRefusal> {
     bounded_bytes(
-        member_of(value, record, name)?,
+        record_member(value, record, name)?,
         &format!("{record}.{name}"),
         capacity,
     )
 }
 
 /// The field `name` of the saved record `value`, which a record that lacks it is
-/// refused for naming.
-fn member_of<'v>(value: &'v Value, record: &str, name: &str) -> Result<&'v Value, StateRefusal> {
+/// refused for naming — what a generated record reads a field held to a bound
+/// with when the field is optional ([`optional`]).
+pub fn record_member<'v>(
+    value: &'v Value,
+    record: &str,
+    name: &str,
+) -> Result<&'v Value, StateRefusal> {
     value
         .member(name)
         .ok_or_else(|| StateRefusal::new(format!("'{record}' has no field '{name}'")))
@@ -3312,6 +3367,95 @@ mod tests {
         assert!(u8::from_saved(&Value::Number("256".to_string()), "level").is_err());
         assert!(u32::from_saved(&Value::Text("5".to_string()), "count").is_err());
         assert!(u64::from_saved(&Value::Number("5".to_string()), "big").is_err());
+    }
+
+    /// docs/adr/0055, section 4: a value that may be absent is written as `null`
+    /// or as its present value writes itself, and read back as it was written.
+    #[test]
+    fn a_value_that_may_be_absent_is_saved_as_null_or_its_present_value() {
+        assert_eq!(None::<i64>.to_saved(), Value::Null);
+        assert_eq!(Some(-5i64).to_saved(), Value::Text("-5".to_string()));
+        assert_eq!(Some(7u32).to_saved(), Value::Number("7".to_string()));
+        assert_eq!(
+            Some("due".to_string()).to_saved(),
+            Value::Text("due".to_string())
+        );
+        for value in [None, Some(i64::MIN), Some(0), Some(i64::MAX)] {
+            assert_eq!(
+                Option::<i64>::from_saved(&value.to_saved(), "due").expect("reads back"),
+                value
+            );
+        }
+        assert_eq!(
+            Option::<bool>::from_saved(&Value::Null, "late").expect("reads back"),
+            None
+        );
+        // A present value is held to its type as any value is.
+        assert!(Option::<u8>::from_saved(&Value::Number("256".to_string()), "level").is_err());
+        assert!(Option::<i64>::from_saved(&Value::Number("5".to_string()), "due").is_err());
+        // A value read by a function of its own: a text held to its bound.
+        let read = |value: &Value| optional(value, |v| bounded_string(v, "title", 4));
+        assert_eq!(read(&Value::Null).expect("absent"), None);
+        assert_eq!(
+            read(&Value::Text("abcd".to_string())).expect("fits"),
+            Some("abcd".to_string())
+        );
+        let past = read(&Value::Text("abcde".to_string())).expect_err("past the bound");
+        assert!(past.reason().contains("past the 4"), "{past}");
+        // ... and a byte string written by its own function.
+        assert_eq!(
+            optional_to_saved(None::<&[u8]>, bytes_to_saved),
+            Value::Null
+        );
+        assert_eq!(
+            optional_to_saved(Some(&b"\xffa"[..]), bytes_to_saved),
+            bytes_to_saved(b"\xffa")
+        );
+    }
+
+    /// docs/adr/0055, section 6: `null` is read only where the restoring build's
+    /// type is optional. A value of every other type refuses it, naming what
+    /// holds it, so a state saved after a widening is refused by a build from
+    /// before it at its first absent value.
+    #[test]
+    fn a_saved_null_is_refused_where_the_type_is_not_optional() {
+        let refusals = [
+            i64::from_saved(&Value::Null, "due").expect_err("int64"),
+            u32::from_saved(&Value::Null, "count").expect_err("uint32"),
+            f64::from_saved(&Value::Null, "ratio").expect_err("float64"),
+            bool::from_saved(&Value::Null, "late").expect_err("bool"),
+            String::from_saved(&Value::Null, "title").expect_err("string"),
+            bounded_string(&Value::Null, "label", 8).expect_err("a bounded string"),
+            bounded_bytes(&Value::Null, "frame", 8).expect_err("a byte string"),
+            Vec::<u8>::from_saved(&Value::Null, "levels").expect_err("a list"),
+            record_field::<i64>(
+                &json::parse(r#"{"due":null}"#).expect("JSON"),
+                "item",
+                "due",
+            )
+            .expect_err("a record's field"),
+        ];
+        for (refusal, what) in refusals.iter().zip([
+            "'due'",
+            "'count'",
+            "'ratio'",
+            "'late'",
+            "'title'",
+            "'label'",
+            "'frame'",
+            "'levels'",
+            "'item.due'",
+        ]) {
+            assert!(
+                refusal
+                    .reason()
+                    .contains(&format!("{what} is absent (null)")),
+                "{refusal}"
+            );
+        }
+        // A value of another kind keeps its own refusal.
+        let text = i64::from_saved(&Value::Bool(true), "due").expect_err("a bool");
+        assert!(text.reason().contains("is not a 64-bit"), "{text}");
     }
 
     #[test]

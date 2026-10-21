@@ -934,13 +934,27 @@ object SavedValues {
      * `null`, and otherwise the value [present] reads, held to its type as any
      * value is. Only a place the machine declares optional reads through this, so
      * a `null` saved where the machine holds a value of `T` is refused by the
-     * reader of `T`.
+     * reader of `T`, naming what holds it ([notA]).
      */
     fun <T : Any> optional(value: Any?, what: String, present: (Any?, String) -> T): T? =
         if (value == null) null else present(value, what)
 
+    /**
+     * The refusal of [value], saved for [what], which is not [kind] (`a number`,
+     * `a text`, ...). A `null` is named apart: it is an absent value
+     * (docs/adr/0055), which only a place the restoring build declares optional
+     * reads, so a state saved after a widening is refused at its first `null` by
+     * a build from before it.
+     */
+    private fun notA(value: Any?, what: String, kind: String): StateRefusal =
+        if (value == null) {
+            StateRefusal("'$what' is absent (null), and its type is not optional")
+        } else {
+            StateRefusal("'$what' is not $kind")
+        }
+
     private fun number(value: Any?, what: String): String =
-        (value as? Json.Number)?.text ?: throw StateRefusal("'$what' is not a number")
+        (value as? Json.Number)?.text ?: throw notA(value, what, "a number")
 
     private fun whole(value: Any?, what: String, min: Long, max: Long): Long {
         val text = number(value, what)
@@ -962,7 +976,7 @@ object SavedValues {
         whole(value, what, Int.MIN_VALUE.toLong(), Int.MAX_VALUE.toLong()).toInt()
 
     private fun wideText(value: Any?, what: String): String =
-        value as? String ?: throw StateRefusal("'$what' is not a 64-bit whole number written as a text")
+        value as? String ?: throw notA(value, what, "a 64-bit whole number written as a text")
 
     fun uint64(value: Any?, what: String): ULong {
         val text = wideText(value, what)
@@ -979,9 +993,9 @@ object SavedValues {
     fun float64(value: Any?, what: String): Double = real(value, what)
 
     fun bool(value: Any?, what: String): Boolean =
-        value as? Boolean ?: throw StateRefusal("'$what' is not a truth value")
+        value as? Boolean ?: throw notA(value, what, "a truth value")
 
-    fun string(value: Any?, what: String): String = value as? String ?: throw StateRefusal("'$what' is not a text")
+    fun string(value: Any?, what: String): String = value as? String ?: throw notA(value, what, "a text")
 
     /**
      * A text read back only if it holds no more than the [capacity] UTF-8 bytes
@@ -1003,7 +1017,7 @@ object SavedValues {
      * restored one must not be the first to.
      */
     fun <T> list(value: Any?, what: String, capacity: Int, element: (Any?, String) -> T): List<T> {
-        val items = value as? List<*> ?: throw StateRefusal("'$what' is not an array")
+        val items = value as? List<*> ?: throw notA(value, what, "an array")
         if (items.size > capacity) {
             throw StateRefusal("'$what' holds ${items.size} elements, past the $capacity it is bounded by")
         }
