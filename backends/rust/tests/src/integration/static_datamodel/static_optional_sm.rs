@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9eefb6dd8cbce9cedf75b07dbf863e3e812c459c1ce7686309e1f4c36da06a10
+// source-hash: 602cf8b2e076ca5de83736526fa544c7671ce4b8406bed6ee323cbe2df13499b
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -374,6 +374,577 @@ impl StaticOptionalObserve for Engine<StaticOptionalPolicy> {
             },
             truncated: self.last_macrostep_truncated(),
         }
+    }
+}
+
+// ── SCE Accepted Subset §2.15: saving a sce-static machine and restoring it ──
+
+impl ::sce_rust_runtime::saved_state::SavedValue for StaticOptionalStatusEnum {
+    fn to_saved(&self) -> ::sce_rust_runtime::json::Value {
+        ::sce_rust_runtime::json::Value::Text(
+            match self {
+                Self::Open => "open",
+                Self::InProgress => "in_progress",
+                Self::Done => "done",
+            }
+            .to_string(),
+        )
+    }
+
+    fn from_saved(
+        value: &::sce_rust_runtime::json::Value,
+        what: &str,
+    ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
+        match value {
+            ::sce_rust_runtime::json::Value::Text(declared) => match declared.as_str() {
+                "open" => Ok(Self::Open),
+                "in_progress" => Ok(Self::InProgress),
+                "done" => Ok(Self::Done),
+                other => Err(::sce_rust_runtime::saved_state::StateRefusal::new(format!(
+                    "'{what}' ({other}) is not a variant of Status"
+                ))),
+            },
+            _ => Err(::sce_rust_runtime::saved_state::StateRefusal::new(format!(
+                "'{what}' is not a text"
+            ))),
+        }
+    }
+}
+
+impl ::sce_rust_runtime::saved_state::SavedValue for StaticOptionalDueRecord {
+    fn to_saved(&self) -> ::sce_rust_runtime::json::Value {
+        ::sce_rust_runtime::json::Value::Object(vec![
+            (
+                "id".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.id),
+            ),
+            (
+                "due".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.due),
+            ),
+            (
+                "title".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.title),
+            ),
+            (
+                "status".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.status),
+            ),
+        ])
+    }
+
+    fn from_saved(
+        value: &::sce_rust_runtime::json::Value,
+        what: &str,
+    ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
+        Ok(Self {
+            id: ::sce_rust_runtime::saved_state::record_field(value, what, "id")?,
+            due: ::sce_rust_runtime::saved_state::record_field(value, what, "due")?,
+            title: ::sce_rust_runtime::saved_state::optional(
+                ::sce_rust_runtime::saved_state::record_member(value, what, "title")?,
+                |present| {
+                    ::sce_rust_runtime::saved_state::bounded_string(
+                        present,
+                        &format!("{what}.title"),
+                        16,
+                    )
+                },
+            )?,
+            status: ::sce_rust_runtime::saved_state::record_field(value, what, "status")?,
+        })
+    }
+}
+
+/// A running machine saved at a macrostep boundary, and restored into a new
+/// process in place of `initialize` — every variable, the machine's own
+/// included, and where the machine stands. The saved state is JSON
+/// (`SavedState::to_json`), the same on every backend.
+pub trait StaticOptionalPersist: Sized {
+    /// The policy a restored machine is built around, constructed by the host
+    /// as it would be for `initialize`.
+    type Policy;
+
+    /// What a saved state of this document is bound to: a state saved from a
+    /// document that renamed, re-typed or moved a state or a variable is
+    /// refused, one saved before a guard or an action changed is not, and one
+    /// saved at an earlier revision of a record schema is read with each field
+    /// a later revision added at its default.
+    const SHAPE: ::sce_rust_runtime::saved_state::SavedShape;
+
+    /// The document's `<history>` pseudo-states, by the id a saved state keys
+    /// them by — what a saved state records of each, and what a restore reads
+    /// back. Empty for a document that declares none.
+    const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<
+        ::sce_rust_runtime::NoHistory,
+    >];
+
+    /// The machine's whole state, each delayed `<send>` still waiting written
+    /// as the moment it comes due on the wall clock whose reading now is
+    /// `wall_now_ms`, in milliseconds since the Unix epoch, and each running
+    /// child saved inside it with its own whole state (docs/adr/0045). Refused
+    /// for a machine that is not running, and for one whose last macrostep, or
+    /// a child's, stopped at the microstep ceiling. The session id it writes is
+    /// the one the machine was built under, or the one a restore bound.
+    fn save_at(
+        &self,
+        wall_now_ms: u64,
+    ) -> Result<
+        ::sce_rust_runtime::saved_state::SavedState,
+        ::sce_rust_runtime::saved_state::StateRefusal,
+    >;
+
+    /// [`save_at`](Self::save_at) at the host's wall clock now.
+    ///
+    /// Absent on `wasm32-unknown-unknown`, which provides no wall clock to read:
+    /// a host there says what time it is, through [`save_at`](Self::save_at).
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+    fn save(
+        &self,
+    ) -> Result<
+        ::sce_rust_runtime::saved_state::SavedState,
+        ::sce_rust_runtime::saved_state::StateRefusal,
+    > {
+        self.save_at(::sce_rust_runtime::saved_state::wall_clock_ms())
+    }
+
+    /// Refuse `saved` unless a machine of this document could restore it —
+    /// its shape and revisions, its history, every variable, its
+    /// configuration, queues and invocations, and each running child by the
+    /// document that child runs, to any depth — building nothing
+    /// (docs/adr/0045, section 3, step 1). What a parent's restore asks of
+    /// each child it holds before it builds any of them.
+    fn judge(
+        saved: &::sce_rust_runtime::saved_state::SavedState,
+    ) -> Result<(), ::sce_rust_runtime::saved_state::StateRefusal>;
+
+    /// A machine of `policy` standing where `saved` left one, measuring time
+    /// by `clock` and told by `wall_now_ms` what time it is on the wall clock
+    /// the saved `due`s were written against: a waiting send comes due when
+    /// its saved moment does, and one already due comes due now. No
+    /// `<onentry>` runs and no `<data>` is evaluated: the saved run already
+    /// did both. The session carries on under its saved id, and each running
+    /// child a format-2 state holds is resumed where it stood; a format-1
+    /// state's children start again from their beginning.
+    fn restore_with(
+        policy: Self::Policy,
+        saved: &::sce_rust_runtime::saved_state::SavedState,
+        clock: ::sce_rust_runtime::SceClock,
+        wall_now_ms: u64,
+    ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal>;
+
+    /// [`restore_with`](Self::restore_with) on the engine's own clock, at the
+    /// host's wall clock now.
+    ///
+    /// Absent on `wasm32-unknown-unknown`, for the reason [`save`](Self::save)
+    /// is: a host there gives the clock and the wall time to
+    /// [`restore_with`](Self::restore_with).
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+    fn restore(
+        policy: Self::Policy,
+        saved: &::sce_rust_runtime::saved_state::SavedState,
+    ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
+        Self::restore_with(
+            policy,
+            saved,
+            ::sce_rust_runtime::SceClock::default(),
+            ::sce_rust_runtime::saved_state::wall_clock_ms(),
+        )
+    }
+}
+
+impl StaticOptionalPersist for Engine<StaticOptionalPolicy> {
+    type Policy = StaticOptionalPolicy;
+
+    const SHAPE: ::sce_rust_runtime::saved_state::SavedShape =
+        ::sce_rust_runtime::saved_state::SavedShape {
+            first: "107ff83fbd2c38a87a0f71adfa81fcc3c27bf980240687ee0f9999ecfbc460e2",
+            revised: "446e9f68a2de213abce540de0df591de51badabf09d45a8b571910ae823c15fc",
+            format2_first: "97c67c3845141fbd65d751eef23b71ca25329452523e524d81ed9621ca5b8d74",
+            format2_revised: "51b560ebab5c70ad2a607bce4b26e572a1110fc5f8cd00d8a79692205886638b",
+            records: &[::sce_rust_runtime::saved_state::RecordLineage {
+                event: "due.set",
+                revision: 1,
+                revisions: &[],
+                added: &[],
+                holders: &[
+                    ::sce_rust_runtime::saved_state::RecordHolder {
+                        variable: "item",
+                        list: false,
+                    },
+                    ::sce_rust_runtime::saved_state::RecordHolder {
+                        variable: "items",
+                        list: true,
+                    },
+                ],
+            }],
+            enums: &[::sce_rust_runtime::saved_state::EnumLineage {
+                key: "enum:enum_item_status.scxml",
+                revision: 1,
+                revisions: &[],
+                added: &[],
+                holders: &[
+                    ::sce_rust_runtime::saved_state::EnumHolder {
+                        variable: "status",
+                        field: None,
+                        list: false,
+                    },
+                    ::sce_rust_runtime::saved_state::EnumHolder {
+                        variable: "item",
+                        field: Some("status"),
+                        list: false,
+                    },
+                    ::sce_rust_runtime::saved_state::EnumHolder {
+                        variable: "items",
+                        field: Some("status"),
+                        list: true,
+                    },
+                    ::sce_rust_runtime::saved_state::EnumHolder {
+                        variable: "plain",
+                        field: None,
+                        list: false,
+                    },
+                    ::sce_rust_runtime::saved_state::EnumHolder {
+                        variable: "echoStatus",
+                        field: None,
+                        list: false,
+                    },
+                ],
+            }],
+        };
+
+    const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<
+        ::sce_rust_runtime::NoHistory,
+    >] = &[];
+
+    fn save_at(
+        &self,
+        wall_now_ms: u64,
+    ) -> Result<
+        ::sce_rust_runtime::saved_state::SavedState,
+        ::sce_rust_runtime::saved_state::StateRefusal,
+    > {
+        let policy = self.policy();
+        ::sce_rust_runtime::saved_state::save(
+            self,
+            &Self::SHAPE,
+            vec![
+                (
+                    "due".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.due),
+                ),
+                (
+                    "other".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.other),
+                ),
+                (
+                    "title".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.title),
+                ),
+                (
+                    "status".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.status),
+                ),
+                (
+                    "item".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.item),
+                ),
+                (
+                    "items".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.items),
+                ),
+                (
+                    "days".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.days),
+                ),
+                (
+                    "following".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.following),
+                ),
+                (
+                    "late".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.late),
+                ),
+                (
+                    "early".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.early),
+                ),
+                (
+                    "label".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.label),
+                ),
+                (
+                    "plain".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.plain),
+                ),
+                (
+                    "kept".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.kept),
+                ),
+                (
+                    "listed".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.listed),
+                ),
+                (
+                    "missing".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.missing),
+                ),
+                (
+                    "same".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.same),
+                ),
+                (
+                    "absent".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.absent),
+                ),
+                (
+                    "statusDone".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.status_done),
+                ),
+                (
+                    "echoed".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.echoed),
+                ),
+                (
+                    "echoTitle".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.echo_title),
+                ),
+                (
+                    "echoStatus".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.echo_status),
+                ),
+                (
+                    "fallbacks".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.fallbacks),
+                ),
+                (
+                    "errors".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.errors),
+                ),
+                (
+                    "huge".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.huge),
+                ),
+            ],
+            ::sce_rust_runtime::saved_state::save_history(self.policy(), Self::HISTORIES),
+            Vec::new(),
+            wall_now_ms,
+        )
+    }
+
+    fn judge(
+        saved: &::sce_rust_runtime::saved_state::SavedState,
+    ) -> Result<(), ::sce_rust_runtime::saved_state::StateRefusal> {
+        // What a restore reads, read and let go: the shape and the revisions,
+        // the history, every variable, and then the configuration, the queues,
+        // the invocations and each running child by its own document.
+        let saved = &::sce_rust_runtime::saved_state::upgrade(saved, &Self::SHAPE)?;
+        ::sce_rust_runtime::saved_state::restore_history::<StaticOptionalPolicy>(
+            saved,
+            Self::HISTORIES,
+        )?;
+        let _: Option<i64> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("due")?, "due")?;
+        let _: Option<i64> = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("other")?,
+            "other",
+        )?;
+        let _: Option<String> =
+            ::sce_rust_runtime::saved_state::optional(saved.variable("title")?, |present| {
+                ::sce_rust_runtime::saved_state::bounded_string(present, "title", 16)
+            })?;
+        let _: Option<StaticOptionalStatusEnum> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("status")?,
+                "status",
+            )?;
+        let _: StaticOptionalDueRecord = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("item")?,
+            "item",
+        )?;
+        let _: Vec<StaticOptionalDueRecord> =
+            ::sce_rust_runtime::saved_state::bounded(saved.variable("items")?, "items", 3)?;
+        let _: i64 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("days")?,
+            "days",
+        )?;
+        let _: i64 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("following")?,
+            "following",
+        )?;
+        let _: bool = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("late")?,
+            "late",
+        )?;
+        let _: bool = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("early")?,
+            "early",
+        )?;
+        let _: String =
+            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("label")?, "label", 16)?;
+        let _: StaticOptionalStatusEnum = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("plain")?,
+            "plain",
+        )?;
+        let _: i64 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("kept")?,
+            "kept",
+        )?;
+        let _: i64 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("listed")?,
+            "listed",
+        )?;
+        let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("missing")?,
+            "missing",
+        )?;
+        let _: bool = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("same")?,
+            "same",
+        )?;
+        let _: bool = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("absent")?,
+            "absent",
+        )?;
+        let _: bool = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("statusDone")?,
+            "statusDone",
+        )?;
+        let _: i64 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("echoed")?,
+            "echoed",
+        )?;
+        let _: Option<String> =
+            ::sce_rust_runtime::saved_state::optional(saved.variable("echoTitle")?, |present| {
+                ::sce_rust_runtime::saved_state::bounded_string(present, "echoTitle", 16)
+            })?;
+        let _: Option<StaticOptionalStatusEnum> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("echoStatus")?,
+                "echoStatus",
+            )?;
+        let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("fallbacks")?,
+            "fallbacks",
+        )?;
+        let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("errors")?,
+            "errors",
+        )?;
+        let _: i64 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("huge")?,
+            "huge",
+        )?;
+        ::sce_rust_runtime::saved_state::judge::<StaticOptionalPolicy>(saved)
+    }
+
+    fn restore_with(
+        mut policy: StaticOptionalPolicy,
+        saved: &::sce_rust_runtime::saved_state::SavedState,
+        clock: ::sce_rust_runtime::SceClock,
+        wall_now_ms: u64,
+    ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
+        // The shape, the revision of each record schema, and each record of an
+        // earlier revision grown by the defaults of the fields added since, so
+        // what is read below is a state of this machine.
+        let saved = &::sce_rust_runtime::saved_state::upgrade(saved, &Self::SHAPE)?;
+        // Judged with the configuration and before any value is written, so a
+        // refused restore holds no half of a state. A document with no
+        // `<history>` refuses any a saved state records.
+        ::sce_rust_runtime::saved_state::restore_history::<StaticOptionalPolicy>(
+            saved,
+            Self::HISTORIES,
+        )?;
+        policy.due =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("due")?, "due")?;
+        policy.other = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("other")?,
+            "other",
+        )?;
+        policy.title =
+            ::sce_rust_runtime::saved_state::optional(saved.variable("title")?, |present| {
+                ::sce_rust_runtime::saved_state::bounded_string(present, "title", 16)
+            })?;
+        policy.status = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("status")?,
+            "status",
+        )?;
+        policy.item = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("item")?,
+            "item",
+        )?;
+        policy.items =
+            ::sce_rust_runtime::saved_state::bounded(saved.variable("items")?, "items", 3)?;
+        policy.days = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("days")?,
+            "days",
+        )?;
+        policy.following = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("following")?,
+            "following",
+        )?;
+        policy.late = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("late")?,
+            "late",
+        )?;
+        policy.early = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("early")?,
+            "early",
+        )?;
+        policy.label =
+            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("label")?, "label", 16)?;
+        policy.plain = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("plain")?,
+            "plain",
+        )?;
+        policy.kept = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("kept")?,
+            "kept",
+        )?;
+        policy.listed = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("listed")?,
+            "listed",
+        )?;
+        policy.missing = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("missing")?,
+            "missing",
+        )?;
+        policy.same = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("same")?,
+            "same",
+        )?;
+        policy.absent = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("absent")?,
+            "absent",
+        )?;
+        policy.status_done = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("statusDone")?,
+            "statusDone",
+        )?;
+        policy.echoed = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("echoed")?,
+            "echoed",
+        )?;
+        policy.echo_title =
+            ::sce_rust_runtime::saved_state::optional(saved.variable("echoTitle")?, |present| {
+                ::sce_rust_runtime::saved_state::bounded_string(present, "echoTitle", 16)
+            })?;
+        policy.echo_status = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("echoStatus")?,
+            "echoStatus",
+        )?;
+        policy.fallbacks = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("fallbacks")?,
+            "fallbacks",
+        )?;
+        policy.errors = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("errors")?,
+            "errors",
+        )?;
+        policy.huge = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("huge")?,
+            "huge",
+        )?;
+        ::sce_rust_runtime::saved_state::enter(policy, saved, clock, wall_now_ms)
     }
 }
 

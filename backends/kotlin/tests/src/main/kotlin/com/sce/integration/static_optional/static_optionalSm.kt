@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9eefb6dd8cbce9cedf75b07dbf863e3e812c459c1ce7686309e1f4c36da06a10
+// source-hash: 602cf8b2e076ca5de83736526fa544c7671ce4b8406bed6ee323cbe2df13499b
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_optional.scxml
@@ -82,7 +82,15 @@ enum class StaticOptionalStatusEnum(val declaredName: String) {
     }
 }
 /** SCE Accepted Subset §2.15: a `record:Due` datamodel value. */
-data class StaticOptionalDueRecord(val id: UInt, val due: Long?, val title: String?, val status: StaticOptionalStatusEnum?)
+data class StaticOptionalDueRecord(val id: UInt, val due: Long?, val title: String?, val status: StaticOptionalStatusEnum?) {
+    /** This value as a saved state writes it. */
+    fun toSaved(): Any = linkedMapOf("id" to SavedValues.of(id), "due" to SavedValues.optional(due) { SavedValues.of(it) }, "title" to SavedValues.optional(title) { SavedValues.of(it) }, "status" to SavedValues.optional(status) { it.toSaved() })
+
+    companion object {
+        /** The value a saved state holds, refused unless it is one. */
+        fun fromSaved(value: Any?, what: String): StaticOptionalDueRecord = StaticOptionalDueRecord(id = SavedValues.uint32(SavedValues.field(value, what, "id"), "$what.id"), due = SavedValues.optional(SavedValues.field(value, what, "due"), "$what.due") { e, w -> SavedValues.int64(e, w) }, title = SavedValues.optional(SavedValues.field(value, what, "title"), "$what.title") { e, w -> SavedValues.string(e, w, 16) }, status = SavedValues.optional(SavedValues.field(value, what, "status"), "$what.status") { e, w -> StaticOptionalStatusEnum.fromSaved(e, w) })
+    }
+}
 // --- State Machine (W3C SCXML) ---
 
 class StaticOptionalStateMachine(
@@ -331,6 +339,170 @@ class StaticOptionalStateMachine(
     override fun onMacrostepComplete(truncated: Boolean) {
         _snapshot.value = Snapshot(activeConfiguration, currentData(), truncated)
     }
+
+    // ── SCE Accepted Subset §2.15: saving this machine, restoring it ─────────
+
+    /**
+     * What a saved state of this document is bound to: a state saved from a
+     * document that renamed, re-typed or moved a state or a variable is
+     * refused, one saved before a guard or an action changed is not, and one
+     * saved at an earlier revision of a record schema is read with each field a
+     * later revision added at its default.
+     */
+    val savedShape: SavedShape = SavedShape(
+        first = "107ff83fbd2c38a87a0f71adfa81fcc3c27bf980240687ee0f9999ecfbc460e2",
+        revised = "446e9f68a2de213abce540de0df591de51badabf09d45a8b571910ae823c15fc",
+        format2First = "97c67c3845141fbd65d751eef23b71ca25329452523e524d81ed9621ca5b8d74",
+        format2Revised = "51b560ebab5c70ad2a607bce4b26e572a1110fc5f8cd00d8a79692205886638b",
+        records = listOf(
+            RecordLineage(
+                event = "due.set",
+                revision = 1,
+                revisions = listOf(),
+                added = listOf(
+                ),
+                holders = listOf(
+                    RecordHolder("item", false),
+                    RecordHolder("items", true),
+                ),
+            ),
+        ),
+        enums = listOf(
+            EnumLineage(
+                key = "enum:enum_item_status.scxml",
+                revision = 1,
+                revisions = listOf(),
+                added = listOf(
+                ),
+                holders = listOf(
+                    EnumHolder("status", null, false),
+                    EnumHolder("item", "status", false),
+                    EnumHolder("items", "status", true),
+                    EnumHolder("plain", null, false),
+                    EnumHolder("echoStatus", null, false),
+                ),
+            ),
+        ),
+    )
+
+    /**
+     * This machine's whole state at the macrostep boundary it stands at —
+     * every variable, the machine's own included, and where it stands — as
+     * the `sce-saved-state` document every backend reads ([SavedState.toJson]).
+     * Each delayed `<send>` still waiting is written as the moment it comes due
+     * on the wall clock whose reading now is [wallNowMs], in milliseconds since
+     * the Unix epoch.
+     *
+     * @throws StateRefusal for a machine that is not running, or whose last
+     *   macrostep stopped at the microstep ceiling.
+     */
+    fun save(wallNowMs: Long): SavedState = savedState(
+        savedShape,
+        linkedMapOf(
+            "due" to SavedValues.optional(vDue) { SavedValues.of(it) },
+            "other" to SavedValues.optional(vOther) { SavedValues.of(it) },
+            "title" to SavedValues.optional(vTitle) { SavedValues.of(it) },
+            "status" to SavedValues.optional(vStatus) { it.toSaved() },
+            "item" to vItem.toSaved(),
+            "items" to SavedValues.list(vItems) { it.toSaved() },
+            "days" to SavedValues.of(vDays),
+            "following" to SavedValues.of(vFollowing),
+            "late" to SavedValues.of(vLate),
+            "early" to SavedValues.of(vEarly),
+            "label" to SavedValues.of(vLabel),
+            "plain" to vPlain.toSaved(),
+            "kept" to SavedValues.of(vKept),
+            "listed" to SavedValues.of(vListed),
+            "missing" to SavedValues.of(vMissing),
+            "same" to SavedValues.of(vSame),
+            "absent" to SavedValues.of(vAbsent),
+            "statusDone" to SavedValues.of(vStatusDone),
+            "echoed" to SavedValues.of(vEchoed),
+            "echoTitle" to SavedValues.optional(vEchoTitle) { SavedValues.of(it) },
+            "echoStatus" to SavedValues.optional(vEchoStatus) { it.toSaved() },
+            "fallbacks" to SavedValues.of(vFallbacks),
+            "errors" to SavedValues.of(vErrors),
+            "huge" to SavedValues.of(vHuge),
+        ),
+        wallNowMs,
+    )
+
+    /** [save] at the host's wall clock now. */
+    fun save(): SavedState = save(SavedState.wallClockMs())
+
+    /**
+     * Stand this machine where [saved] left one, in place of [initialize]: no
+     * `<onentry>` runs and no `<data>` is evaluated, since the saved run
+     * already did both. Every value is read before any is written, so a
+     * refused restore leaves the machine as it was.
+     *
+     * The delayed sends [saved] holds are armed against this machine's `clock`,
+     * which is installed before a restore as before [initialize]; [wallNowMs]
+     * is what time it is on the wall clock the saved `due`s were written
+     * against. A send comes due when its saved moment does, and one already due
+     * comes due now.
+     *
+     * @throws StateRefusal for a machine that has already started, a state
+     *   saved from a document of another shape, a configuration that is not
+     *   one of this document, or a value its variable's type cannot hold.
+     */
+    fun restore(saved: SavedState, wallNowMs: Long) {
+        // The state as one of this machine: each record saved at an earlier
+        // revision of its schema holds the defaults of the fields added since.
+        val savedGrown = beginRestore(saved, savedShape)
+        val saved1 = SavedValues.optional(savedGrown.variable("due"), "due") { e, w -> SavedValues.int64(e, w) }
+        val saved2 = SavedValues.optional(savedGrown.variable("other"), "other") { e, w -> SavedValues.int64(e, w) }
+        val saved3 = SavedValues.optional(savedGrown.variable("title"), "title") { e, w -> SavedValues.string(e, w, 16) }
+        val saved4 = SavedValues.optional(savedGrown.variable("status"), "status") { e, w -> StaticOptionalStatusEnum.fromSaved(e, w) }
+        val saved5 = StaticOptionalDueRecord.fromSaved(savedGrown.variable("item"), "item")
+        val saved6 = SavedValues.list(savedGrown.variable("items"), "items", 3) { e, w -> StaticOptionalDueRecord.fromSaved(e, w) }
+        val saved7 = SavedValues.int64(savedGrown.variable("days"), "days")
+        val saved8 = SavedValues.int64(savedGrown.variable("following"), "following")
+        val saved9 = SavedValues.bool(savedGrown.variable("late"), "late")
+        val saved10 = SavedValues.bool(savedGrown.variable("early"), "early")
+        val saved11 = SavedValues.string(savedGrown.variable("label"), "label", 16)
+        val saved12 = StaticOptionalStatusEnum.fromSaved(savedGrown.variable("plain"), "plain")
+        val saved13 = SavedValues.int64(savedGrown.variable("kept"), "kept")
+        val saved14 = SavedValues.int64(savedGrown.variable("listed"), "listed")
+        val saved15 = SavedValues.uint32(savedGrown.variable("missing"), "missing")
+        val saved16 = SavedValues.bool(savedGrown.variable("same"), "same")
+        val saved17 = SavedValues.bool(savedGrown.variable("absent"), "absent")
+        val saved18 = SavedValues.bool(savedGrown.variable("statusDone"), "statusDone")
+        val saved19 = SavedValues.int64(savedGrown.variable("echoed"), "echoed")
+        val saved20 = SavedValues.optional(savedGrown.variable("echoTitle"), "echoTitle") { e, w -> SavedValues.string(e, w, 16) }
+        val saved21 = SavedValues.optional(savedGrown.variable("echoStatus"), "echoStatus") { e, w -> StaticOptionalStatusEnum.fromSaved(e, w) }
+        val saved22 = SavedValues.uint32(savedGrown.variable("fallbacks"), "fallbacks")
+        val saved23 = SavedValues.uint32(savedGrown.variable("errors"), "errors")
+        val saved24 = SavedValues.int64(savedGrown.variable("huge"), "huge")
+        vDue = saved1
+        vOther = saved2
+        vTitle = saved3
+        vStatus = saved4
+        vItem = saved5
+        vItems = saved6
+        vDays = saved7
+        vFollowing = saved8
+        vLate = saved9
+        vEarly = saved10
+        vLabel = saved11
+        vPlain = saved12
+        vKept = saved13
+        vListed = saved14
+        vMissing = saved15
+        vSame = saved16
+        vAbsent = saved17
+        vStatusDone = saved18
+        vEchoed = saved19
+        vEchoTitle = saved20
+        vEchoStatus = saved21
+        vFallbacks = saved22
+        vErrors = saved23
+        vHuge = saved24
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    /** [restore] at the host's wall clock now. */
+    fun restore(saved: SavedState) = restore(saved, SavedState.wallClockMs())
 
     // NL→IR Item C1 Path A: the current event's typed `_event.data` payload(s),
     // lifted from the dequeued event by populateTypedPayload and read by the
