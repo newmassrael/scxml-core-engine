@@ -104,6 +104,18 @@
         }
       ]
     },
+    "mesh-10.11": {
+      "title": "Checkpoint and durable receipt",
+      "parent_doc": "mesh",
+      "parent_section": "mesh-10",
+      "decision_status": "active",
+      "rationale_bullets": [
+        "Specified, not yet built: ADR 0045 step 6, after host cores carry child endpoints.",
+        "No host core checkpoints and no envelope carries pattern 22.",
+        "The deploy parser refuses persistence: and receipt: as unknown keys."
+      ],
+      "coverage_expectation": "out_of_scope_here"
+    },
     "mesh-10.2": {
       "title": "Backpressure and Flow Control",
       "parent_doc": "mesh",
@@ -3262,6 +3274,127 @@
           "kind": "verifies"
         }
       ]
+    },
+    "mesh-21": {
+      "title": "Child Sessions in Mesh",
+      "parent_doc": "mesh",
+      "decision_status": "active",
+      "coverage_expectation": "informational"
+    },
+    "mesh-21.1": {
+      "title": "Identity",
+      "parent_doc": "mesh",
+      "parent_section": "mesh-21",
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "kind": "implements"
+        }
+      ]
+    },
+    "mesh-21.2": {
+      "title": "What the Build Refuses",
+      "parent_doc": "mesh",
+      "parent_section": "mesh-21",
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/topology.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/error.rs",
+          "kind": "references"
+        }
+      ]
+    },
+    "mesh-21.3": {
+      "title": "The Router Factory",
+      "parent_doc": "mesh",
+      "parent_section": "mesh-21",
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "backends/rust/runtime/src/host_processor.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/child_mesh.go",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/child_mesh.py",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/ChildMeshRouter.kt",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/host_processor.h",
+          "kind": "implements"
+        }
+      ]
+    },
+    "mesh-21.4": {
+      "title": "What Arrives for a Child",
+      "parent_doc": "mesh",
+      "parent_section": "mesh-21",
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "backends/rust/runtime/src/host_processor.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/child_mesh.go",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/child_mesh.py",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/ChildMeshRouter.kt",
+          "kind": "implements"
+        }
+      ]
+    },
+    "mesh-21.5": {
+      "title": "Lifetime",
+      "parent_doc": "mesh",
+      "parent_section": "mesh-21",
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "backends/rust/runtime/src/host_processor.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/child_mesh.go",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/child_mesh.py",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/ChildMeshRouter.kt",
+          "kind": "implements"
+        }
+      ]
+    },
+    "mesh-21.6": {
+      "title": "Implementations",
+      "parent_doc": "mesh",
+      "parent_section": "mesh-21",
+      "decision_status": "active",
+      "coverage_expectation": "informational"
     },
     "mesh-3": {
       "title": "Three Abstraction Axes",
