@@ -39,6 +39,7 @@ from .conversion_by_model import (
 )
 from .errors import AuthoringError, IngestError
 from .extraction import Extraction, NotCarried
+from .notes import DEFAULT_LANGUAGE
 from .notes import LANGUAGES as notes_languages
 from .extractors import DEFAULT as DEFAULT_EXTRACTORS
 from .extractors import Unreadable
@@ -232,12 +233,17 @@ def cmd_outline(args) -> int:
 
 def cmd_render_notes(args) -> int:
     """Say what could not be carried in a language: a list of entries in, the same list out with the sentences
-    of `--lexicon` written from each entry's code and facts.
+    of `--lexicon` written from each entry's code and facts, or with every language's under `said` (`--all`).
 
     The sentences are written in `notes.py` and nowhere else, so a host that shows them to a reader asks here
     and writes none (ADR 0026). An entry the language has no sentence for (no code, a code this version does not
-    know) comes out as it went in, in the English its extractor kept.
+    know) comes out as it went in, in the English its extractor kept. `--all` leaves each entry as it is and adds
+    `said`, the sentences of every language that is not English (the entry's own are English), so that a host
+    that lets its reader change language picks one without asking again, and a language added here reaches it
+    with no change of its own.
     """
+    if (args.lexicon is None) == (not args.all):
+        raise IngestError("render-notes says the entries in one language (--lexicon) or in all of them (--all)")
     path = pathlib.Path(args.notes)
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
@@ -245,9 +251,28 @@ def cmd_render_notes(args) -> int:
         raise IngestError(f"{path}: not readable as a list of what was not carried ({exc})") from exc
     if not isinstance(raw, list):
         raise IngestError(f"{path}: is not a list of what was not carried")
-    said = [NotCarried.from_dict(entry).in_language(args.lexicon).to_dict() for entry in raw]
+    entries = [NotCarried.from_dict(entry) for entry in raw]
+    if args.all:
+        said = [_with_every_language(entry) for entry in entries]
+    else:
+        said = [entry.in_language(args.lexicon).to_dict() for entry in entries]
     print(json.dumps(said, sort_keys=True, ensure_ascii=False))
     return 0
+
+
+def _with_every_language(entry: NotCarried) -> dict:
+    """The entry as stored, and the sentences of each other language when its code has them."""
+    out = entry.to_dict()
+    said = {}
+    for language in notes_languages:
+        if language == DEFAULT_LANGUAGE:
+            continue
+        written = entry.in_language(language)
+        if written is not entry:
+            said[language] = {"what": written.what, **({"why": written.why} if written.why else {})}
+    if said:
+        out["said"] = said
+    return out
 
 
 def cmd_make_scope(args) -> int:
@@ -1230,8 +1255,10 @@ def main(argv=None) -> int:
         help="say what could not be carried in a language, from each entry's code and facts (no pack, no model)")
     rn.add_argument("--notes", required=True,
                     help="a JSON list of entries (an extraction's or a report's `not_carried`)")
-    rn.add_argument("--lexicon", required=True, choices=notes_languages,
+    rn.add_argument("--lexicon", choices=notes_languages,
                     help="the language the sentences are written in")
+    rn.add_argument("--all", action="store_true",
+                    help="keep each entry as it is and add `said`: the sentences of every other language")
     rn.set_defaults(fn=cmd_render_notes)
 
     mks = sub.add_parser(

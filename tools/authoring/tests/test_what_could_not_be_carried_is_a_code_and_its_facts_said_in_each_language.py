@@ -360,6 +360,42 @@ class TheCommandSaysAListInALanguage(unittest.TestCase):
         self.assertIn("쪽의 배치", out)
         self.assertNotIn("\\u", out)
 
+    def test_every_language_at_once_keeps_the_entry_and_adds_the_sentences_of_each_other_language(self):
+        typed = NotCarried.of("pdf-pages-without-text", count=2, blank=[2, 3], pages=3)
+        old = {"what": "an old sentence"}
+        future = {"what": "from a newer tool", "code": "not-yet-known", "facts": {"n": 1}}
+
+        code, out, _ = self.run_main(
+            "render-notes", "--notes", self.listed([typed.to_dict(), old, future]), "--all"
+        )
+
+        said = json.loads(out)
+        korean = typed.in_language("ko")
+        self.assertEqual(code, 0)
+        # The entry is as it was stored, in English, and the other language is beside it with its reason.
+        self.assertEqual({k: v for k, v in said[0].items() if k != "said"}, typed.to_dict())
+        self.assertEqual(said[0]["said"], {"ko": {"what": korean.what, "why": korean.why}})
+        # What has no sentence in another language has nothing under `said`.
+        self.assertEqual(said[1:], [old, future])
+
+    def test_a_reason_a_code_does_not_give_is_not_said(self):
+        typed = NotCarried.of("pdf-layout").to_dict()
+        short = NotCarried.of("pdf-pictures-unidentified", count=1, pictures=1).to_dict()
+
+        _, out, _ = self.run_main("render-notes", "--notes", self.listed([typed, short]), "--all")
+
+        said = json.loads(out)
+        self.assertIn("why", said[1]["said"]["ko"])
+        self.assertNotIn("en", said[0]["said"])
+
+    def test_one_language_or_all_of_them_and_not_neither_or_both(self):
+        for label, extra in {"neither": [], "both": ["--lexicon", "ko", "--all"]}.items():
+            with self.subTest(label):
+                code, _, err = self.run_main("render-notes", "--notes", self.listed([]), *extra)
+
+                self.assertNotEqual(code, 0)
+                self.assertIn("one language (--lexicon) or in all of them (--all)", err)
+
     def test_a_language_nobody_wrote_is_refused_by_the_command_line(self):
         code, _, err = self.run_main("render-notes", "--notes", self.listed([]), "--lexicon", "fr")
 

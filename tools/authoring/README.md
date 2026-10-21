@@ -2091,7 +2091,9 @@ sentence kept beside them: `{"code": "pdf-pictures-unplaced", "facts": {"picture
 that has one in a language and not in the other does not load. **render-notes** (`--notes FILE --lexicon ko`)
 reads a list of entries (an extraction's or a report's `not_carried`) and prints it with the sentences written
 in that language from each entry's code and facts; an entry with no code (an older tool's), or a code this
-version does not know, comes out as it was stored. A host that shows these to a reader asks for the language
+version does not know, comes out as it was stored. With `--all` in place of `--lexicon` each entry stays as
+stored and gains `said`, the sentences of every other language, so a host whose reader can change language
+asks once and a language added here reaches it with no change of its own. A host that shows these to a reader asks for the language
 and writes none of its own: translating them there would be a second author. To add a kind of note, declare its
 code and facts in `notes.py` with a sentence in each language, and give the extractor `NotCarried.of(code,
 ...)` (or `Note(code, ...)` in a reader of `ingest.py`).
