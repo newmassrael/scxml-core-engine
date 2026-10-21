@@ -757,11 +757,17 @@ pub trait StatePolicy: Sized + 'static {
     /// has reached its final state has ended, and the engine reports the send
     /// it could not deliver (§scxml-C-1). A policy with no invocations has
     /// none, which is what the default says.
+    ///
+    /// The child takes the event at once, and what it sends its parent while it
+    /// does, and its ending, reach this session within the delivery, on
+    /// `engine` (docs/adr/0045): nothing a delivery produced waits in the
+    /// child's buffer for a later drive.
     fn deliver_to_invocation(
         &mut self,
         _invoke_id: &str,
         _event_name: &str,
         _event_data: &str,
+        _engine: &mut Engine<Self>,
     ) -> bool {
         false
     }
@@ -806,12 +812,15 @@ pub trait StatePolicy: Sized + 'static {
     /// by the session id its published location names.
     ///
     /// Answers whether that child was there to take it. A policy with no
-    /// children has none, which is what the default says.
+    /// children has none, which is what the default says. What the child sends
+    /// its parent as it takes the event reaches this session on `engine` within
+    /// the delivery, as for [`deliver_to_invocation`](Self::deliver_to_invocation).
     fn deliver_to_child_session(
         &mut self,
         _child_session_id: &str,
         _event_name: &str,
         _event_data: &str,
+        _engine: &mut Engine<Self>,
     ) -> bool {
         false
     }

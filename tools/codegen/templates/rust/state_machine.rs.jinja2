@@ -1590,17 +1590,18 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
     // W3C SCXML 6.2 + 6.4: a delayed `<send target="#_<invokeid>">` whose wait
     // is over, delivered by name. A child whose session has reached its final
     // state has ended, and is not there to take it (W3C SCXML C.1).
-    fn deliver_to_invocation(&mut self, invoke_id: &str, event_name: &str, event_data: &str) -> bool {
+    // What the child sent its parent as it took the event, and its ending,
+    // reach this session within the delivery (docs/adr/0045).
+    fn deliver_to_invocation(&mut self, invoke_id: &str, event_name: &str, event_data: &str, engine: &mut Engine<Self>) -> bool {
 {% for invoke_info in model.invokes | scxml_family %}
 {% set child_targets = invoke_info.candidates if invoke_info.candidates else [{'stem': none}] %}
         if invoke_id == "{{ invoke_info.invoke_id }}" {
 {% for target in child_targets %}
-{% set slot = ('self.child_' ~ (invoke_info.field_suffix | candidate_identifier(target.stem))) if invoke_info.candidates else ('self.child_' ~ invoke_info.field_suffix) %}
-            if let Some(ref mut child) = {{ slot }} {
-                if !child.is_in_final_state() {
-                    child.deliver_by_name(event_name, event_data);
-                    return true;
-                }
+{% set slot = ('child_' ~ (invoke_info.field_suffix | candidate_identifier(target.stem))) if invoke_info.candidates else ('child_' ~ invoke_info.field_suffix) %}
+            if let Some(child) = self.{{ slot }}.as_mut().filter(|child| !child.is_in_final_state()) {
+                child.deliver_by_name(event_name, event_data);
+                self.settle_{{ slot }}(engine);
+                return true;
             }
 {% endfor %}
             return false;
@@ -1637,7 +1638,7 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
     // decodes to one of them is addressed to that child rather than to this
     // machine — the routing half of C.1, which makes the published location a
     // usable target rather than a string that merely compares equal.
-    fn deliver_to_child_session(&mut self, child_session_id: &str, event_name: &str, event_data: &str) -> bool {
+    fn deliver_to_child_session(&mut self, child_session_id: &str, event_name: &str, event_data: &str, engine: &mut Engine<Self>) -> bool {
         if !self.is_child_session_running(child_session_id) {
             return false;
         }
@@ -1648,6 +1649,8 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
         {
             if let Some(ref mut child) = self.child_{{ invoke_info.field_suffix }} {
                 child.deliver_by_name(event_name, event_data);
+                // docs/adr/0045: its replies and its ending, within the delivery.
+                self.settle_child_{{ invoke_info.field_suffix }}(engine);
                 return true;
             }
         }

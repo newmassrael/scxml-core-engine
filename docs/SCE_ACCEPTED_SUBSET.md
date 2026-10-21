@@ -5224,6 +5224,18 @@ restore every backend moves to.
   child is in the child's; nothing is in transit between two sessions when a tree
   is saved. A child that had ended is absent, as in format 1, and a resumed child
   raises its `done.invoke` once, when it ends.
+- **A reply reaches the parent within the delivery.** What a child sends
+  `#_parent` while its parent drives it (its start, the parent's tick of it, and
+  each event the parent delivers to it, a `<send>` made at once to
+  `#_<invokeid>` or to the child's `_ioprocessors` location, or a delayed one
+  coming due) is on the parent's external queue when that drive returns, and so is
+  the child's `done.invoke` if the drive ended it, behind those replies. A
+  `<send>` to a child that answers at once therefore has its answer taken in the
+  same macrostep, ahead of anything the parent sends itself later in that block,
+  and a host that drives with `step` alone sees it; before format 2 the answer
+  waited for the parent's next `tick`. The standard leaves the order of events
+  from two sessions open, so either is conforming (docs/adr/0045, section 3). On
+  Rust today; each backend takes it with its format-2 step.
 - **Sends between the sessions of a tree.** `pending` gains `parent` (a delayed
   `<send>` to `#_parent`) and `child` (one to `#_<invokeid>` of a running child), so
   a document that makes either keeps its save API. On a backend that still writes

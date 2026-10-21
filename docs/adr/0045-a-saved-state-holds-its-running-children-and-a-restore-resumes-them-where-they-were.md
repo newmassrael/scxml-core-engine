@@ -265,12 +265,29 @@ What this means for the events between sessions:
   child's start-up sends behind the saved queues (backends/rust/runtime/src/saved_state.rs:1501-1504);
   a resumed child sends nothing as it is restored, so there is no such ordering to keep. What a save
   must exclude instead is an event in transit: Rust carries a child's `#_parent` sends through a
-  buffer the parent drains before and after it drives the child
-  (tools/codegen/templates/rust/invoke_methods.rs.jinja2:6-21). The tree is saved only at a boundary
-  of its root at which every such buffer is empty, which the generated parent establishes by
-  draining after every drive of a child; a save that finds one not empty is refused with that reason,
-  a defect of the generator and never a timing the host can meet, and a test holds that it is never
-  reached.
+  buffer the parent drains after it drives the child (the `settle_<slot>` each generated Rust
+  parent has per child slot, tools/codegen/templates/rust/invoke_methods.rs.jinja2). The tree is
+  saved only at a boundary of its root at which every such buffer is empty, which the generated
+  parent establishes by draining within every drive of a child: its start, its tick, and each
+  delivery the parent makes to it (a `<send>` to `#_<invokeid>` made at once, a delayed one coming
+  due, one to the child's `#_scxml_<sessionid>`). A save that finds one not empty is refused with
+  that reason, a defect of the generator and never a timing the host can meet, and a test holds
+  that it is never reached
+  (backends/rust/tests/tests/nothing_is_in_transit_when_a_tree_is_saved.rs).
+- **What that moves: a child's reply to a delivery reaches its parent within the delivery.** Before
+  this decision a child that answered an event its parent sent it at once left the answer in its
+  buffer until the parent's next `tick` of its children, so a host that drove the parent by `step`
+  alone never saw it, and one that ticked saw it a tick later, behind what the host had raised in
+  between. Now the answer, and the child's `done.invoke` if the event ended it, are on the parent's
+  external queue when the `<send>` returns, ahead of any event the parent sends itself later in the
+  same block, and the macrostep that sent takes them before it ends. The standard leaves open the
+  order in which events of two sessions reach a queue, so both orders are its; the W3C tests whose
+  parent addresses a child by its invoke id and waits for what follows (test192 and test253 for
+  an answer, test347 for the child's ending) are the ones a change in that order reaches, and each
+  holds either way: it waits in a state that takes only that event, and a `done.invoke` is raised
+  behind every answer the child sent before it ended. A host that drove with
+  `step` and `tick` sees the same events, earlier; one that drove with `step` alone now sees
+  answers it did not see before.
 - **`done.invoke` is not raised again.** A child that had ended is absent and its completion is in
   the parent's queue or already taken; a child that is resumed did not end, and raises its
   `done.invoke` once, when it ends after the restore. Nothing a child did at its start (its

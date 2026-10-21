@@ -3,41 +3,56 @@
 {% from 'param_macros.rs.jinja2' import collect_params_into, collect_typed_param_into %}
 {% from 'invoke_macros.rs.jinja2' import defer_scxml_invoke_fn, child_engine_type, child_persist_trait %}
 
-{% macro hybrid_child_tick(invoke_info, slot) %}
-        if !self.pending_done_invoke_{{ invoke_info.field_suffix }} {
-            if let Some(mut child) = self.{{ slot }}.take() {
-                sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
-                    &child.policy().parent_external_queue,
-                    &self.active_invokes,
-                    "{{ invoke_info.invoke_id }}",
-                    engine,
-                );
+{# W3C SCXML 6.4: the parent's tick of the child in `slot`: what an earlier
+   drive left settled, the child ticked, and what this tick produced settled. #}
+{% macro child_tick(invoke_info, slot) %}
+        if !self.pending_done_invoke_{{ invoke_info.field_suffix }} && self.{{ slot }}.is_some() {
+            self.settle_{{ slot }}(engine);
+            if let Some(child) = self.{{ slot }}.as_mut() {
                 // Child sessions in Mesh (SCE_MESH.md): what arrived for the
                 // child on the router it was given, before its macrostep.
                 child.apply_mesh_calls();
                 child.tick();
-                sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
-                    &child.policy().parent_external_queue,
-                    &self.active_invokes,
-                    "{{ invoke_info.invoke_id }}",
-                    engine,
-                );
-                if child.is_in_final_state() && !self.pending_done_invoke_{{ invoke_info.field_suffix }} {
-                    self.pending_done_invoke_{{ invoke_info.field_suffix }} = true;
-                    // The session ended: its Mesh router is told so.
-                    child.detach_mesh();
-                    // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
-                    // done.invoke.<id>._event.data.
-                    let donedata = child.donedata_at_final().to_string();
-                    sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
-                        "{{ invoke_info.invoke_id }}",
-                        donedata,
-                        engine,
-                    );
-                }
-                self.{{ slot }} = Some(child);
             }
+            self.settle_{{ slot }}(engine);
         }
+{% endmacro %}
+{#
+    W3C SCXML 6.4 + docs/adr/0045: what follows every drive of the child in
+    `slot` — its start, its tick, and every delivery this session makes to it —
+    so that nothing is between the two sessions when the drive returns: the
+    events the child sent `#_parent` while it ran are raised on this session,
+    and a child that reached its final state raises `done.invoke` once. One body
+    for every drive, so a save at any boundary of this session finds the
+    child's buffer empty.
+#}
+{% macro settle_child_fn(invoke_info, slot) %}
+    fn settle_{{ slot }}(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
+        let Some(child) = self.{{ slot }}.as_mut() else {
+            return;
+        };
+        sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
+            &child.policy().parent_external_queue,
+            &self.active_invokes,
+            "{{ invoke_info.invoke_id }}",
+            engine,
+        );
+        if child.is_in_final_state() && !self.pending_done_invoke_{{ invoke_info.field_suffix }} {
+            self.pending_done_invoke_{{ invoke_info.field_suffix }} = true;
+            // The session ended: its Mesh router is told so.
+            child.detach_mesh();
+            // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
+            // done.invoke.<id>._event.data. Mirrors the C++ AOT contract in
+            // tools/codegen/templates/invoke_methods.jinja2 (child->donedataAtFinal()
+            // + EventMetadataHelper::createDoneInvokeEvent).
+            let donedata = child.donedata_at_final().to_string();
+            sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
+                "{{ invoke_info.invoke_id }}",
+                donedata,
+                engine,
+            );
+        }
+    }
 {% endmacro %}
 {# W3C SCXML 6.4: a running child's nearest timer. A child that has ended
    (`pending_done_invoke`) is skipped — the policy keeps it until its state
@@ -419,33 +434,9 @@
 
                 self.{{ slot }} = Some(Box::new(child_engine));
 
-                // W3C SCXML 6.4: Drain child-to-parent events raised during initialize
-                sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
-                    &self.{{ slot }}.as_ref().unwrap().policy().parent_external_queue,
-                    &self.active_invokes,
-                    "{{ invoke_info.invoke_id }}",
-                    engine,
-                );
-
-                // W3C SCXML 6.4: Check if child completed during initialize
-                if self.{{ slot }}.as_ref().map_or(false, |c| c.is_in_final_state()) {
-                    self.pending_done_invoke_{{ invoke_info.field_suffix }} = true;
-                    // The session ended: its Mesh router is told so.
-                    if let Some(child) = self.{{ slot }}.as_mut() {
-                        child.detach_mesh();
-                    }
-                    // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
-                    // done.invoke.<id>._event.data.
-                    let donedata = self.{{ slot }}
-                        .as_ref()
-                        .map(|c| c.donedata_at_final().to_string())
-                        .unwrap_or_default();
-                    sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
-                        "{{ invoke_info.invoke_id }}",
-                        donedata,
-                        engine,
-                    );
-                }
+                // W3C SCXML 6.4: what the child sent as it initialized, and an
+                // ending during initialize, settled as after any drive.
+                self.settle_{{ slot }}(engine);
 {% endmacro %}
 {#
     Invoke Methods Template (Rust Jinja2)
@@ -521,35 +512,9 @@
                 // W3C SCXML 6.4: Store child BEFORE draining events so autoforward can find it
                 self.child_{{ invoke_info.field_suffix }} = Some(Box::new(child_engine));
 
-                // W3C SCXML 6.4: Drain child-to-parent events raised during initialize
-                sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
-                    &self.child_{{ invoke_info.field_suffix }}.as_ref().unwrap().policy().parent_external_queue,
-                    &self.active_invokes,
-                    "{{ invoke_info.invoke_id }}",
-                    engine,
-                );
-
-                // W3C SCXML 6.4: Check if child completed during initialize (test 236)
-                if self.child_{{ invoke_info.field_suffix }}.as_ref().map_or(false, |c| c.is_in_final_state()) {
-                    self.pending_done_invoke_{{ invoke_info.field_suffix }} = true;
-                    // The session ended: its Mesh router is told so.
-                    if let Some(child) = self.child_{{ invoke_info.field_suffix }}.as_mut() {
-                        child.detach_mesh();
-                    }
-                    // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
-                    // done.invoke.<id>._event.data. Mirrors the C++ AOT contract in
-                    // tools/codegen/templates/invoke_methods.jinja2 (child->donedataAtFinal()
-                    // + EventMetadataHelper::createDoneInvokeEvent).
-                    let donedata = self.child_{{ invoke_info.field_suffix }}
-                        .as_ref()
-                        .map(|c| c.donedata_at_final().to_string())
-                        .unwrap_or_default();
-                    sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
-                        "{{ invoke_info.invoke_id }}",
-                        donedata,
-                        engine,
-                    );
-                }
+                // W3C SCXML 6.4: what the child sent as it initialized, and an
+                // ending during initialize (test 236), settled as after any drive.
+                self.settle_child_{{ invoke_info.field_suffix }}(engine);
                 continue;
             }
 {% endfor %}
@@ -883,62 +848,31 @@
     // W3C SCXML 6.4: Tick child state machines (propagate scheduler ticks)
     fn do_tick_children(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
 {% for invoke_info in model.invokes | scxml %}
-        if !self.pending_done_invoke_{{ invoke_info.field_suffix }} {
-            // W3C SCXML 6.4: Take child out temporarily to avoid split-borrow
-            if let Some(mut child) = self.child_{{ invoke_info.field_suffix }}.take() {
-                // W3C SCXML 6.4: Drain parent events sent by child via #_parent BEFORE tick
-                sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
-                    &child.policy().parent_external_queue,
-                    &self.active_invokes,
-                    "{{ invoke_info.invoke_id }}",
-                    engine,
-                );
-
-                // Child sessions in Mesh (SCE_MESH.md): what arrived for the
-                // child on the router it was given, before its macrostep.
-                child.apply_mesh_calls();
-                child.tick();
-
-                // W3C SCXML 6.4: Drain parent events sent by child AFTER tick
-                sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
-                    &child.policy().parent_external_queue,
-                    &self.active_invokes,
-                    "{{ invoke_info.invoke_id }}",
-                    engine,
-                );
-
-                // W3C SCXML 6.4: Check if child reached final state after tick
-                if child.is_in_final_state() && !self.pending_done_invoke_{{ invoke_info.field_suffix }} {
-                    self.pending_done_invoke_{{ invoke_info.field_suffix }} = true;
-                    // The session ended: its Mesh router is told so.
-                    child.detach_mesh();
-                    // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
-                    // done.invoke.<id>._event.data.
-                    let donedata = child.donedata_at_final().to_string();
-                    sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
-                        "{{ invoke_info.invoke_id }}",
-                        donedata,
-                        engine,
-                    );
-                }
-
-                // Put child back
-                self.child_{{ invoke_info.field_suffix }} = Some(child);
-            }
-        }
+{{ child_tick(invoke_info, "child_" ~ invoke_info.field_suffix) }}
 {% endfor %}
 {% for invoke_info in model.invokes | hybrid %}
 {% if invoke_info.candidates %}
-{# §scxml-6.4: at most one candidate slot holds a child, so each is taken,
-   ticked and put back under the same guard the single-slot shape used. #}
+{# §scxml-6.4: at most one candidate slot holds a child, so each is ticked
+   under the same guard the single-slot shape uses. #}
 {% for candidate in invoke_info.candidates %}
-{{ hybrid_child_tick(invoke_info, "child_" ~ (invoke_info.field_suffix | candidate_identifier(candidate.stem))) }}
+{{ child_tick(invoke_info, "child_" ~ (invoke_info.field_suffix | candidate_identifier(candidate.stem))) }}
 {% endfor %}
 {% else %}
-{{ hybrid_child_tick(invoke_info, "child_" ~ invoke_info.field_suffix) }}
+{{ child_tick(invoke_info, "child_" ~ invoke_info.field_suffix) }}
 {% endif %}
 {% endfor %}
     }
+{% for invoke_info in model.invokes | scxml_family %}
+{% if invoke_info.candidates %}
+{% for candidate in invoke_info.candidates %}
+
+{{ settle_child_fn(invoke_info, "child_" ~ invoke_info.field_suffix ~ "_" ~ candidate.stem) }}
+{% endfor %}
+{% else %}
+
+{{ settle_child_fn(invoke_info, "child_" ~ invoke_info.field_suffix) }}
+{% endif %}
+{% endfor %}
 
     // W3C SCXML 6.4: the nearest deadline among the running children, so a host
     // that walks time by `time_until_next_scheduled_ms` does not step over a

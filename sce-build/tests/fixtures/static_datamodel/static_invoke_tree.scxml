@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Saving and
+  restoring"; docs/adr/0045, section 8): a tree of sessions, saved whole and
+  resumed where each session stood.
+
+  `working` invokes `worker`, written in place, and forwards it what it is sent
+  (autoforward). `worker` takes `go` once: it counts a step, arms a delayed
+  `report` to its parent and enters `second`, whose hybrid invoke `helper`
+  starts the candidate `pick` names (`static_hybrid_watcher`, handed `base` 7,
+  which waits for an 8 it is not handed). `swap`, forwarded, makes `pick` name
+  the other candidate after `helper` started; `arm` arms a delayed
+  `nudge` to the child; `ask` sends `question` to the child at once, which
+  answers its parent at once. `rest` and `back` leave `working` and enter it
+  again, so `worker` is started twice. The parent counts each `answer` and each
+  `report` its child sends it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="working" datamodel="sce-static" name="static_invoke_tree">
+  <datamodel>
+    <data id="answers" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="reports" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="working">
+    <invoke type="scxml" id="worker" autoforward="true">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+               version="1.0" initial="first" datamodel="sce-static">
+          <datamodel>
+            <data id="pick" sce:type="string" sce:capacity="48" expr="'static_hybrid_watcher.scxml'"/>
+            <data id="base" sce:type="uint32" expr="7"/>
+            <data id="steps" sce:type="uint32" expr="0"/>
+          </datamodel>
+          <state id="first">
+            <transition event="go" target="second">
+              <assign location="steps" expr="steps + 1"/>
+              <send id="report" event="report" target="#_parent" delay="5s"/>
+            </transition>
+            <transition event="question" type="internal">
+              <send event="answer" target="#_parent"/>
+            </transition>
+          </state>
+          <state id="second">
+            <invoke type="scxml" id="helper" srcexpr="pick"
+                    sce:candidates="static_hybrid_watcher.scxml static_hybrid_holder.scxml">
+              <param name="start" expr="base"/>
+            </invoke>
+            <transition event="swap" type="internal">
+              <assign location="pick" expr="'static_hybrid_holder.scxml'"/>
+            </transition>
+            <transition event="nudge" type="internal">
+              <assign location="steps" expr="steps + 10"/>
+            </transition>
+            <transition event="question" type="internal">
+              <send event="answer" target="#_parent"/>
+            </transition>
+          </state>
+        </scxml>
+      </content>
+    </invoke>
+    <!-- Named so the parent takes them and forwards them (autoforward). -->
+    <transition event="go"/>
+    <transition event="swap"/>
+    <transition event="ask" type="internal">
+      <send event="question" target="#_worker"/>
+    </transition>
+    <transition event="arm" type="internal">
+      <send id="poke" event="nudge" target="#_worker" delay="5s"/>
+    </transition>
+    <transition event="answer" type="internal">
+      <assign location="answers" expr="answers + 1"/>
+    </transition>
+    <transition event="report" type="internal">
+      <assign location="reports" expr="reports + 1"/>
+    </transition>
+    <transition event="rest" target="resting"/>
+  </state>
+  <state id="resting">
+    <transition event="back" target="working"/>
+  </state>
+</scxml>

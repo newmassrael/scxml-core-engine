@@ -969,6 +969,9 @@
         if let Some(ref mut child) = {{ slot }} {
             child.deliver_by_name({% if dyn_event %}&_send_event_name{% else %}"{{ action.event }}"{% endif %}, &event_data);
         }
+        // docs/adr/0045: what the child sent its parent as it took the event,
+        // and its ending, reach this session within the delivery.
+        self.settle_{{ slot[5:] }}(engine);
 {% endif %}
 {% endif %}
 {% endfor %}

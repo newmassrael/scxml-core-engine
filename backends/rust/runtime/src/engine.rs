@@ -2691,8 +2691,10 @@ impl<P: StatePolicy> Engine<P> {
     ///
     /// Not [`step`](Self::step): that is the host's door, and its note about a
     /// host that never ticks would fire for a parent's delivery. What the child
-    /// sends its parent here still waits on its own queue for the parent's
-    /// `tick_children` to drain, so the parent sees it where it did.
+    /// sends its parent here waits on its own buffer only until the delivery
+    /// returns: the generated parent drains it, and raises the child's
+    /// `done.invoke` if it ended, right after this call (docs/adr/0045), so no
+    /// event is between the two sessions when the parent's macrostep ends.
     pub fn deliver_by_name(&mut self, event_name: &str, event_data: &str) {
         self.raise_external_by_name(event_name, event_data);
         let opened = self.begin_turn();
@@ -3023,11 +3025,11 @@ impl<P: StatePolicy> Engine<P> {
             ScheduledRoute::Invocation {
                 invoke_id,
                 event_name,
-            } => policy.deliver_to_invocation(invoke_id, event_name, event_data),
+            } => policy.deliver_to_invocation(invoke_id, event_name, event_data, engine),
             ScheduledRoute::Session {
                 session_id,
                 event_name,
-            } => policy.deliver_to_child_session(session_id, event_name, event_data),
+            } => policy.deliver_to_child_session(session_id, event_name, event_data, engine),
         };
         if delivered {
             TargetSendOutcome::Sent
@@ -3071,18 +3073,18 @@ impl<P: StatePolicy> Engine<P> {
             ScheduledRoute::Invocation {
                 invoke_id,
                 event_name,
-            } => self
-                .policy
-                .deliver_to_invocation(invoke_id, event_name, event_data),
+            } => self.with_policy(|policy, engine| {
+                policy.deliver_to_invocation(invoke_id, event_name, event_data, engine)
+            }),
             ScheduledRoute::Parent { event_name } => {
                 self.policy.deliver_to_parent(event_name, event_data)
             }
             ScheduledRoute::Session {
                 session_id,
                 event_name,
-            } => self
-                .policy
-                .deliver_to_child_session(session_id, event_name, event_data),
+            } => self.with_policy(|policy, engine| {
+                policy.deliver_to_child_session(session_id, event_name, event_data, engine)
+            }),
         };
         if delivered {
             return;
