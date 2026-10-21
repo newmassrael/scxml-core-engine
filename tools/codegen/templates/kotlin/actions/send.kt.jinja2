@@ -186,6 +186,10 @@
             // the argument error, as it does on every engine.
             raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> delay is not a CSS2 time", {{ send_id_kt }})
             true
+{# The lambda answers `true` on every path, so the block exit after it always
+   runs: the action list emits nothing after this element (`block_flow`,
+   kotlin/entry_exit_actions.kt.jinja2). #}
+{% set block_flow.ended = true %}
 {% else %}
 {% if param_ns.can_fail %}
             var paramFailed = false
@@ -383,6 +387,12 @@
             // "{{ action.target[2:] }}", so the target reaches nobody.
             raisePlatformError({{ machine_name }}Event.Error.Communication, "<send target='{{ action.target | escape_kotlin }}'> names no invocation of this session", {{ send_id_kt }})
             true  // W3C SCXML 4.9: the error ends the block
+{% endif %}
+{% if static_refused %}
+{# Each refusal arm answers `true` wherever the lambda returns, so the block
+   exit after it always runs: the action list emits nothing after this
+   element (`block_flow`, kotlin/entry_exit_actions.kt.jinja2). #}
+{% set block_flow.ended = true %}
 {% endif %}
 {% if not static_refused %}
 {# ── The payload ──

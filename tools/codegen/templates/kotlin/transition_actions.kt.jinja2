@@ -75,12 +75,18 @@
                     return
                 }
 {% endif %}
+{# `block_flow`: an element that ends the block unconditionally sets it, and
+   nothing after that element is emitted (kotlin/entry_exit_actions.kt.jinja2). #}
+{% with block_flow = namespace(ended=false) %}
 {% for action in trans.actions %}
+{% if not block_flow.ended %}
 {%- if action.req or action.unresolved %}
 {{ annot.annotation_block(action, "kotlin", "                ") -}}
 {%- endif %}
 {% include 'actions/_render.kt.jinja2' with context %}
+{% endif %}
 {% endfor %}
+{% endwith %}
             }
 {% endif %}
 {% endfor %}

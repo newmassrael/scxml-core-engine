@@ -25,10 +25,17 @@
 {% if action.native_loop_prologue %}
                 {{ action.native_loop_prologue }}
 {% endif %}
+{# Each body is a list of its own (`block_flow`, kotlin/entry_exit_actions.kt.jinja2):
+   an element in it that ends the block unconditionally ends what the body
+   emits, and not the list the <foreach> is in — the loop may run no times. #}
+{% with block_flow = namespace(ended=false) %}
 {% for body_action in action.actions %}
+{% if not block_flow.ended %}
 {% set action = body_action %}
 {% include 'actions/_render.kt.jinja2' with context %}
+{% endif %}
 {% endfor %}
+{% endwith %}
             }
 {% elif model.needs_script_engine %}
 {% if not action.array or not action.item %}
@@ -41,11 +48,15 @@
                 val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 try {
                     engine.executeForeach(sid, {{ action.array | to_script_source_expr }}, "{{ action.item }}", "{{ action.index }}") {
+{% with block_flow = namespace(ended=false) %}
 {% for body_action in action.actions %}
+{% if not block_flow.ended %}
 {% set action = body_action %}
 {% set _in_foreach_body = True %}
 {% include 'actions/_render.kt.jinja2' with context %}
+{% endif %}
 {% endfor %}
+{% endwith %}
                     }
                     false
                 } catch (e: com.sce.runtime.ActionBlockAbort) {
@@ -63,9 +74,13 @@
 {% endif %}
 {% else %}
             {{ action.array }}.forEach { {{ action.item }} ->
+{% with block_flow = namespace(ended=false) %}
 {% for body_action in action.actions %}
+{% if not block_flow.ended %}
 {% set action = body_action %}
 {% include 'actions/_render.kt.jinja2' with context %}
+{% endif %}
 {% endfor %}
+{% endwith %}
             }
 {% endif %}

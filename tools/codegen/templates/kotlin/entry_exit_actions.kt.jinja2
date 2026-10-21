@@ -295,12 +295,27 @@
                 // W3C SCXML 3.8: Onentry block {{ loop.index }}/{{ state.on_entry_blocks | length }}
                 run {
 {% set in_run_block = true %}
+{# `block_flow` is what one list of executable content knows about its own
+   end. An element the build has already decided will raise — a `<send>`
+   whose type, target or delay is refused, an `<assign>` with no location —
+   ends the block on every path it can take, and sets `block_flow.ended`
+   where it decides so. Nothing after it can run (W3C SCXML 4.9: the error
+   ends the block), so the list writes none: the elements after it are not
+   emitted. Every list an action is rendered into binds its own
+   `block_flow` — each block here, each branch of an <if>
+   (actions/if.kt.jinja2), each <foreach> body — and an action template that
+   ends its block unconditionally sets the flag of the list it was rendered
+   into. The Go templates follow the same rule (go/entry_exit_actions.go.jinja2). #}
+{% with block_flow = namespace(ended=false) %}
 {% for action in block %}
+{% if not block_flow.ended %}
 {%- if action.req or action.unresolved %}
 {{ annot.annotation_block(action, "kotlin", "                    ") -}}
 {%- endif %}
     {% include 'actions/_render.kt.jinja2' with context %}
+{% endif %}
 {% endfor %}
+{% endwith %}
                 }
 {% endfor %}
 {% if has_invokes %}
@@ -624,9 +639,13 @@
                     // W3C SCXML 4.9: its own block, ended by `return@run`.
                     run {
 {% set in_run_block = true %}
+{% with block_flow = namespace(ended=false) %}
 {% for action in state.initial_transition_actions %}
+{% if not block_flow.ended %}
     {% include 'actions/_render.kt.jinja2' with context %}
+{% endif %}
 {% endfor %}
+{% endwith %}
                     }
                 }
 {% endif %}
@@ -723,9 +742,13 @@
 {% if history_info.default_actions %}
             history{{ history_id | to_state_class_name }} -> {
 {% set in_run_block = false %}
+{% with block_flow = namespace(ended=false) %}
 {% for action in history_info.default_actions %}
+{% if not block_flow.ended %}
     {% include 'actions/_render.kt.jinja2' with context %}
+{% endif %}
 {% endfor %}
+{% endwith %}
             }
 {% endif %}
 {% endfor %}
@@ -754,12 +777,16 @@
                 // W3C SCXML 3.9: Onexit block {{ loop.index }}/{{ state.on_exit_blocks | length }}
                 run {
 {% set in_run_block = true %}
+{% with block_flow = namespace(ended=false) %}
 {% for action in block %}
+{% if not block_flow.ended %}
 {%- if action.req or action.unresolved %}
 {{ annot.annotation_block(action, "kotlin", "                    ") -}}
 {%- endif %}
     {% include 'actions/_render.kt.jinja2' with context %}
+{% endif %}
 {% endfor %}
+{% endwith %}
                 }
 {% endfor %}
 {% if exit_has_invokes %}

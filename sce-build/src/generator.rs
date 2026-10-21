@@ -5248,6 +5248,187 @@ mod tests {
         assert_eq!(raises("Event::First)"), 1, "an element before it\n{rust}");
     }
 
+    /// Every list of executable content a statechart template renders, each
+    /// with a `<send>` the build has already refused — the refusals every
+    /// backend decides at build time, where an `<assign>` to a read-only
+    /// location is refused by some at build time and by others at run time —
+    /// and elements after it. The elements raising `never` can never run;
+    /// `first`, `kept` and `looped` stand where the block still reaches them.
+    const ENDED_BY_A_SEND_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="ecmascript" name="send_refusals" initial="s0">
+  <datamodel>
+    <data id="n" expr="0"/>
+    <data id="items" expr="[1, 2]"/>
+  </datamodel>
+  <state id="s0">
+    <initial>
+      <transition target="s1">
+        <raise event="first"/>
+        <send event="x" target="!invalid"/>
+        <raise event="never"/>
+      </transition>
+    </initial>
+    <history id="h">
+      <transition target="s1">
+        <send event="x" target="!invalid"/>
+        <raise event="never"/>
+      </transition>
+    </history>
+    <state id="s1">
+      <onentry>
+        <send event="x" delay="5"/>
+        <raise event="never"/>
+      </onentry>
+      <onentry>
+        <send event="x" type="urn:sce:test:no-such-processor"/>
+        <raise event="never"/>
+      </onentry>
+      <onentry>
+        <send event="x" target="#_nobody"/>
+        <raise event="never"/>
+      </onentry>
+      <onentry>
+        <send event="x" type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"/>
+        <raise event="never"/>
+      </onentry>
+      <onentry>
+        <if cond="n == 1">
+          <send event="x" target="!invalid"/>
+          <raise event="never"/>
+        <elseif cond="n == 2"/>
+          <send event="x" delay="5"/>
+          <raise event="never"/>
+        <else/>
+          <send event="x" type="urn:sce:test:no-such-processor"/>
+          <raise event="never"/>
+        </if>
+        <raise event="never"/>
+      </onentry>
+      <onentry>
+        <if cond="n == 3">
+          <send event="x" target="!invalid"/>
+          <raise event="never"/>
+        </if>
+        <raise event="kept"/>
+      </onentry>
+      <onentry>
+        <foreach array="items" item="item">
+          <send event="x" target="!invalid"/>
+          <raise event="never"/>
+        </foreach>
+        <raise event="looped"/>
+      </onentry>
+      <onexit>
+        <send event="x" target="!invalid"/>
+        <raise event="never"/>
+      </onexit>
+      <transition event="go" target="s0">
+        <send event="x" target="!invalid"/>
+        <raise event="never"/>
+      </transition>
+    </state>
+  </state>
+</scxml>"##;
+
+    /// An `<assign>` with no location, in a block and in a `<foreach>` body:
+    /// the refusal the Kotlin templates decide at build time.
+    const ASSIGN_WITH_NO_LOCATION_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="ecmascript" name="no_location" initial="s0">
+  <datamodel>
+    <data id="items" expr="[1, 2]"/>
+  </datamodel>
+  <state id="s0">
+    <onentry>
+      <assign location="" expr="1"/>
+      <raise event="never"/>
+    </onentry>
+    <onentry>
+      <foreach array="items" item="item">
+        <assign location="" expr="1"/>
+        <raise event="never"/>
+      </foreach>
+      <raise event="looped"/>
+    </onentry>
+  </state>
+</scxml>"##;
+
+    /// The Kotlin list a refusal is rendered into emits nothing after it. A
+    /// Kotlin refusal ends its block through `if (run send@{ ...; true })`,
+    /// which kotlinc does not read as unconditional, so it reported nothing:
+    /// the elements written after it were code that could never run. The
+    /// `<if>` whose branches all end is the end of its block too, and keeps
+    /// the check of its failure flag, which is what reads the flag. What runs
+    /// is unchanged.
+    #[test]
+    fn kotlin_emits_nothing_after_an_element_that_always_ends_its_block() {
+        let template_dir = crate::find_template_base().join("kotlin");
+        let mut model = parse(ENDED_BY_A_SEND_SCXML);
+        crate::analyzer::analyze(&mut model, "");
+        let kotlin = generate_kotlin(&model, &template_dir, None).expect("kotlin");
+
+        let unreachable = crate::unreachable_statements::unreachable_statements(
+            &kotlin,
+            crate::template_lexing::Syntax::Kotlin,
+        );
+        assert!(
+            unreachable.is_empty(),
+            "statements after a terminating statement: {unreachable:?}\n{kotlin}"
+        );
+        let raises = |spelled: &str| raises_of(&kotlin, "raiseInternal(", spelled);
+        assert_eq!(
+            raises("Event.Never)"),
+            0,
+            "an element after a refusal\n{kotlin}"
+        );
+        assert_eq!(raises("Event.First)"), 1, "an element before one\n{kotlin}");
+        assert_eq!(
+            raises("Event.Kept)"),
+            1,
+            "after an <if> without <else>\n{kotlin}"
+        );
+        assert_eq!(raises("Event.Looped)"), 1, "after a <foreach>\n{kotlin}");
+        // Thirteen refusals, each still rendered.
+        assert_eq!(
+            kotlin.matches("if (run send@{").count(),
+            13,
+            "each refused <send> still ends its block\n{kotlin}"
+        );
+        assert_eq!(
+            kotlin
+                .lines()
+                .filter(|line| line.trim_start().starts_with("if (ifCondFailed"))
+                .count(),
+            2,
+            "both <if>s check their failure flag\n{kotlin}"
+        );
+
+        let mut model = parse(ASSIGN_WITH_NO_LOCATION_SCXML);
+        crate::analyzer::analyze(&mut model, "");
+        let kotlin = generate_kotlin(&model, &template_dir, None).expect("kotlin");
+        let unreachable = crate::unreachable_statements::unreachable_statements(
+            &kotlin,
+            crate::template_lexing::Syntax::Kotlin,
+        );
+        assert!(
+            unreachable.is_empty(),
+            "statements after a terminating statement: {unreachable:?}\n{kotlin}"
+        );
+        let raises = |spelled: &str| raises_of(&kotlin, "raiseInternal(", spelled);
+        assert_eq!(
+            raises("Event.Never)"),
+            0,
+            "an element after a refusal\n{kotlin}"
+        );
+        assert_eq!(raises("Event.Looped)"), 1, "after a <foreach>\n{kotlin}");
+        assert!(
+            kotlin.contains("<assign> has an invalid or read-only location")
+                && kotlin.contains("Empty assign location"),
+            "both refusals still raise\n{kotlin}"
+        );
+    }
+
     /// `docs/SCE_ACCEPTED_SUBSET.md` §2.12 is the surface a consumer reads to
     /// learn which engines honour the §6.4.1 raise, and nothing was reading
     /// it. The table shipped claiming five AOT backends refuse the document

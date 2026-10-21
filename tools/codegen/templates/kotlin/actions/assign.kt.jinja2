@@ -9,6 +9,9 @@
 {# W3C SCXML 4.6: Inside foreach body, throw on error to stop iteration (C++ in_foreach pattern) #}
 {% if not action.location %}
             throw com.sce.runtime.ScriptEngineException("W3C SCXML 5.3: Empty assign location")
+{# The `throw` is unconditional: the <foreach> body emits nothing after it
+   (`block_flow`, kotlin/entry_exit_actions.kt.jinja2). #}
+{% set block_flow.ended = true %}
 {% elif action.content %}
 {# W3C SCXML 5.4.2: the children specify the same legal data value `expr`
    would, read once by `to_author_assign_content` so this backend and the
@@ -31,6 +34,9 @@
             }) {
                 {{ assign_exit }}
             }
+{# The lambda answers `true`, so the block exit always runs: the action list
+   emits nothing after this element (`block_flow`). #}
+{% set block_flow.ended = true %}
 {% elif action.content %}
 {# W3C SCXML 5.4.2: the children specify the same legal data value `expr`
    would, read once by `to_author_assign_content` so this backend and the

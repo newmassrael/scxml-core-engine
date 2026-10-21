@@ -25,6 +25,19 @@
 {% set if_native_can_fail = outer_if_action.native_cond_fails or (outer_if_action.elseif_branches | selectattr("native_cond_fails") | list | length > 0) %}
 {% set if_can_fail = if_script_can_fail or if_native_can_fail %}
 {% set if_failed_var = 'ifCondFailed' ~ outer_if_action.if_ordinal %}
+{# Each branch is a list of its own (`block_flow`, kotlin/entry_exit_actions.kt.jinja2).
+   When the <if> has an <else> and every branch ends the block unconditionally,
+   whichever branch the selection reaches ends it — a cond that failed only
+   moves the selection on — so the elements after the <if> can never run and
+   are not emitted: `if_flow.ends` records it, and the list the <if> is in
+   ends with it. The check of the failure flag stays. Kotlin reads none of
+   these exits as unconditional — each sits under an `if (run ...)` — so the
+   check is reachable to it, and it is what reads the flag the conds write,
+   which Kotlin requires of a `var`. #}
+{% set if_flow = namespace(ends=true) %}
+{% if not outer_if_action.else_actions %}
+{% set if_flow.ends = false %}
+{% endif %}
 {% if if_can_fail %}
             var {{ if_failed_var }} = false
 {% endif %}
@@ -40,10 +53,17 @@
             // W3C SCXML 4.3: cond="{{ outer_if_action.cond }}" decided at build time
             if ({{ 'true' if outer_if_action.cond_constant else 'false' }}) {
 {% endif %}
+{% with block_flow = namespace(ended=false) %}
 {% for then_action in outer_if_action.then_actions %}
+{% if not block_flow.ended %}
 {% set action = then_action %}
 {% include 'actions/_render.kt.jinja2' with context %}
+{% endif %}
 {% endfor %}
+{% if not block_flow.ended %}
+{% set if_flow.ends = false %}
+{% endif %}
+{% endwith %}
 {% for elseif in outer_if_action.elseif_branches %}
 {% if elseif.native_cond %}
             } else if ({{ elseif.native_cond }}) {
@@ -56,17 +76,31 @@
 {% else %}
             } else if ({{ 'true' if elseif.cond_constant else 'false' }}) {
 {% endif %}
+{% with block_flow = namespace(ended=false) %}
 {% for elif_action in elseif.actions %}
+{% if not block_flow.ended %}
 {% set action = elif_action %}
 {% include 'actions/_render.kt.jinja2' with context %}
+{% endif %}
 {% endfor %}
+{% if not block_flow.ended %}
+{% set if_flow.ends = false %}
+{% endif %}
+{% endwith %}
 {% endfor %}
 {% if outer_if_action.else_actions %}
             } else {
+{% with block_flow = namespace(ended=false) %}
 {% for else_action in outer_if_action.else_actions %}
+{% if not block_flow.ended %}
 {% set action = else_action %}
 {% include 'actions/_render.kt.jinja2' with context %}
+{% endif %}
 {% endfor %}
+{% if not block_flow.ended %}
+{% set if_flow.ends = false %}
+{% endif %}
+{% endwith %}
             }
 {% else %}
             }
@@ -75,4 +109,7 @@
             if ({{ if_failed_var }}) {
                 {{ block_exit.stmt(_in_foreach_body is defined and _in_foreach_body, in_run_block is defined and in_run_block) }}
             }
+{% endif %}
+{% if if_flow.ends %}
+{% set block_flow.ended = true %}
 {% endif %}
