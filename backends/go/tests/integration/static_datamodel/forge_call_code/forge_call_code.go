@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9fab540da93829eaa9159cbc7132fde0b98312062867e02e6e631d43aef759bc
+// source-hash: 0fafd5dc7cb78db436777a56fff2cdefea18c3275c9e740c945e368e87cb13ce
 // SCE-MAP: forge_call_code.scxml:7 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="lookup")
@@ -8,7 +8,9 @@
 
 package forge_call_code
 
-import "github.com/newmassrael/sce-forge-runtime/lookup"
+import (
+	"github.com/newmassrael/sce-forge-runtime/lookup"
+)
 
 var sceKeys = [2]uint8{ 1, 2 }
 var sceValues = [2]int32{ 100, 200 }

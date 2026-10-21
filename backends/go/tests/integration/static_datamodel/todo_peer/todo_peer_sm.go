@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9fab540da93829eaa9159cbc7132fde0b98312062867e02e6e631d43aef759bc
+// source-hash: 0fafd5dc7cb78db436777a56fff2cdefea18c3275c9e740c945e368e87cb13ce
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -1225,6 +1225,23 @@ func (r TodoPeerMemberRecord) Role() uint8 {
 	return r.role
 }
 
+
+// The bounds this machine is built with, each by the name `sce:limit` gives it (docs/adr/0050).
+
+// TodoPeerLimitMergeDigest is the bound `sce:limit="merge_digest"` names, as this build resolved it.
+const TodoPeerLimitMergeDigest uint32 = 2048
+
+// TodoPeerLimitMergeEntries is the bound `sce:limit="merge_entries"` names, as this build resolved it.
+const TodoPeerLimitMergeEntries uint32 = 1024
+
+// TodoPeerLimitMergeText is the bound `sce:limit="merge_text"` names, as this build resolved it.
+const TodoPeerLimitMergeText uint32 = 96
+
+// TodoPeerLimitMergeValues is the bound `sce:limit="merge_values"` names, as this build resolved it.
+const TodoPeerLimitMergeValues uint32 = 512
+
+// TodoPeerLimitTodoRoster is the bound `sce:limit="todo_roster"` names, as this build resolved it.
+const TodoPeerLimitTodoRoster uint32 = 64
 
 // ── SCE Accepted Subset §2.15: what a format-2 saved state of it is bound to ──
 

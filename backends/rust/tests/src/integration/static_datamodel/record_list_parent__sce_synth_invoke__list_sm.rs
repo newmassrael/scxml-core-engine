@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9fab540da93829eaa9159cbc7132fde0b98312062867e02e6e631d43aef759bc
+// source-hash: 0fafd5dc7cb78db436777a56fff2cdefea18c3275c9e740c945e368e87cb13ce
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -72,8 +72,8 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-#![doc = "SCE-MAP: record_list.scxml:208 :: _machine"]
-// SCE-MAP: record_list.scxml:208 :: _machine
+#![doc = "SCE-MAP: record_list.scxml:209 :: _machine"]
+// SCE-MAP: record_list.scxml:209 :: _machine
 
 use super::hlc_receive;
 use super::hlc_send;
@@ -802,6 +802,7 @@ pub struct RecordListParentSceSynthInvokeListPartRecord {
 /// SCE Accepted Subset §2.15: an `enum:Refusal` datamodel value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RecordListParentSceSynthInvokeListRefusalEnum {
+    None,
     NotWriter,
     NoRoomForValue,
     NoRoomForHistory,
@@ -817,6 +818,7 @@ impl RecordListParentSceSynthInvokeListRefusalEnum {
     #[allow(dead_code)]
     pub fn sce_name(self) -> &'static str {
         match self {
+            Self::None => "none",
             Self::NotWriter => "notWriter",
             Self::NoRoomForValue => "noRoomForValue",
             Self::NoRoomForHistory => "noRoomForHistory",
@@ -832,6 +834,7 @@ impl RecordListParentSceSynthInvokeListRefusalEnum {
     #[allow(dead_code)]
     pub fn to_underlying(self) -> u8 {
         match self {
+            Self::None => 0,
             Self::NotWriter => 1,
             Self::NoRoomForValue => 2,
             Self::NoRoomForHistory => 3,
@@ -847,6 +850,7 @@ impl RecordListParentSceSynthInvokeListRefusalEnum {
     #[allow(dead_code)]
     pub fn from_underlying(raw: u8) -> Option<Self> {
         match raw {
+            0 => Some(Self::None),
             1 => Some(Self::NotWriter),
             2 => Some(Self::NoRoomForValue),
             3 => Some(Self::NoRoomForHistory),
@@ -858,6 +862,75 @@ impl RecordListParentSceSynthInvokeListRefusalEnum {
             _ => None,
         }
     }
+}
+
+/// SCE Accepted Subset §2.15: an `enum:Command` datamodel value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RecordListParentSceSynthInvokeListCommandEnum {
+    Edit,
+    Clear,
+    Retire,
+}
+
+impl RecordListParentSceSynthInvokeListCommandEnum {
+    /// The name the enum document declares for this value.
+    #[allow(dead_code)]
+    pub fn sce_name(self) -> &'static str {
+        match self {
+            Self::Edit => "edit",
+            Self::Clear => "clear",
+            Self::Retire => "retire",
+        }
+    }
+
+    /// The number the enum document declares for this value.
+    #[allow(dead_code)]
+    pub fn to_underlying(self) -> u8 {
+        match self {
+            Self::Edit => 0,
+            Self::Clear => 1,
+            Self::Retire => 2,
+        }
+    }
+
+    /// The variant that declares `raw`, or `None` for a number no variant declares.
+    #[allow(dead_code)]
+    pub fn from_underlying(raw: u8) -> Option<Self> {
+        match raw {
+            0 => Some(Self::Edit),
+            1 => Some(Self::Clear),
+            2 => Some(Self::Retire),
+            _ => None,
+        }
+    }
+}
+
+/// The bounds this machine is built with, each by the name `sce:limit` gives it (docs/adr/0050).
+#[allow(dead_code)]
+pub struct RecordListParentSceSynthInvokeListLimits;
+
+#[allow(dead_code)]
+impl RecordListParentSceSynthInvokeListLimits {
+    /// The bound `sce:limit="merge_digest"` names, as this build resolved it.
+    pub const MERGE_DIGEST: u32 = 2048;
+    /// The bound `sce:limit="merge_entries"` names, as this build resolved it.
+    pub const MERGE_ENTRIES: u32 = 1024;
+    /// The bound `sce:limit="merge_text"` names, as this build resolved it.
+    pub const MERGE_TEXT: u32 = 96;
+    /// The bound `sce:limit="merge_values"` names, as this build resolved it.
+    pub const MERGE_VALUES: u32 = 512;
+    /// The bound `sce:limit="shared_answers"` names, as this build resolved it.
+    pub const SHARED_ANSWERS: u32 = 512;
+    /// The bound `sce:limit="shared_moved"` names, as this build resolved it.
+    pub const SHARED_MOVED: u32 = 64;
+    /// The bound `sce:limit="shared_parts"` names, as this build resolved it.
+    pub const SHARED_PARTS: u32 = 64;
+    /// The bound `sce:limit="shared_roster"` names, as this build resolved it.
+    pub const SHARED_ROSTER: u32 = 64;
+    /// The bound `sce:limit="shared_staged"` names, as this build resolved it.
+    pub const SHARED_STAGED: u32 = 32;
+    /// The bound `sce:limit="shared_typed_text"` names, as this build resolved it.
+    pub const SHARED_TYPED_TEXT: u32 = 32;
 }
 
 // ── SCE Accepted Subset §2.15: calls of an algorithm that takes or returns state ──
@@ -1337,6 +1410,7 @@ impl ::sce_rust_runtime::saved_state::SavedValue for RecordListParentSceSynthInv
     fn to_saved(&self) -> ::sce_rust_runtime::json::Value {
         ::sce_rust_runtime::json::Value::Text(
             match self {
+                Self::None => "none",
                 Self::NotWriter => "notWriter",
                 Self::NoRoomForValue => "noRoomForValue",
                 Self::NoRoomForHistory => "noRoomForHistory",
@@ -1356,6 +1430,7 @@ impl ::sce_rust_runtime::saved_state::SavedValue for RecordListParentSceSynthInv
     ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
         match value {
             ::sce_rust_runtime::json::Value::Text(declared) => match declared.as_str() {
+                "none" => Ok(Self::None),
                 "notWriter" => Ok(Self::NotWriter),
                 "noRoomForValue" => Ok(Self::NoRoomForValue),
                 "noRoomForHistory" => Ok(Self::NoRoomForHistory),
@@ -1366,6 +1441,38 @@ impl ::sce_rust_runtime::saved_state::SavedValue for RecordListParentSceSynthInv
                 "clockExhausted" => Ok(Self::ClockExhausted),
                 other => Err(::sce_rust_runtime::saved_state::StateRefusal::new(format!(
                     "'{what}' ({other}) is not a variant of Refusal"
+                ))),
+            },
+            _ => Err(::sce_rust_runtime::saved_state::StateRefusal::new(format!(
+                "'{what}' is not a text"
+            ))),
+        }
+    }
+}
+
+impl ::sce_rust_runtime::saved_state::SavedValue for RecordListParentSceSynthInvokeListCommandEnum {
+    fn to_saved(&self) -> ::sce_rust_runtime::json::Value {
+        ::sce_rust_runtime::json::Value::Text(
+            match self {
+                Self::Edit => "edit",
+                Self::Clear => "clear",
+                Self::Retire => "retire",
+            }
+            .to_string(),
+        )
+    }
+
+    fn from_saved(
+        value: &::sce_rust_runtime::json::Value,
+        what: &str,
+    ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
+        match value {
+            ::sce_rust_runtime::json::Value::Text(declared) => match declared.as_str() {
+                "edit" => Ok(Self::Edit),
+                "clear" => Ok(Self::Clear),
+                "retire" => Ok(Self::Retire),
+                other => Err(::sce_rust_runtime::saved_state::StateRefusal::new(format!(
+                    "'{what}' ({other}) is not a variant of Command"
                 ))),
             },
             _ => Err(::sce_rust_runtime::saved_state::StateRefusal::new(format!(
@@ -1753,10 +1860,10 @@ impl RecordListParentSceSynthInvokeListPersist
 
     const SHAPE: ::sce_rust_runtime::saved_state::SavedShape =
         ::sce_rust_runtime::saved_state::SavedShape {
-            first: "f733c5c2690cb4ca1dbf3607bb081a3c032a1f1b93633700a40598fc659576de",
-            revised: "7e56b8a9182869160387a323048e611f5ad8395205cf7f6c8f044b2e76695d4b",
-            format2_first: "9319a4cd33521f9a673ae2ed8973dcc03d9d5433db676f5bca4f1819a67ca7c0",
-            format2_revised: "66b8be46e87750d5eb4aa82addfe01f4de33de51b83417d2c14314e5c3064967",
+            first: "340859b0a721fd543a2cd19a56c731fc7deccc79c4a0e1238a11b13b109af194",
+            revised: "c9dd599d8c983201c9142c8b856ba4bd71dac00d28a5903fbfc6af1649dcee5d",
+            format2_first: "5cc454c365171a28f062aae53cb34fa6b9bd33e46775c22fa8b23dd6b87d271a",
+            format2_revised: "3ab46f231c112905dd81548ea9ffa1858522c5b71c84747d9223883798a347b4",
             records: &[
                 ::sce_rust_runtime::saved_state::RecordLineage {
                     event: "merge.hlc_timestamp",
@@ -1899,24 +2006,37 @@ impl RecordListParentSceSynthInvokeListPersist
                     ],
                 },
             ],
-            enums: &[::sce_rust_runtime::saved_state::EnumLineage {
-                key: "enum:sce:std/shared/record_refusal.scxml",
-                revision: 1,
-                revisions: &[],
-                added: &[],
-                holders: &[
-                    ::sce_rust_runtime::saved_state::EnumHolder {
-                        variable: "probe",
+            enums: &[
+                ::sce_rust_runtime::saved_state::EnumLineage {
+                    key: "enum:sce:std/shared/record_command.scxml",
+                    revision: 1,
+                    revisions: &[],
+                    added: &[],
+                    holders: &[::sce_rust_runtime::saved_state::EnumHolder {
+                        variable: "namedKind",
                         field: None,
                         list: false,
-                    },
-                    ::sce_rust_runtime::saved_state::EnumHolder {
-                        variable: "spoiledFor",
-                        field: None,
-                        list: false,
-                    },
-                ],
-            }],
+                    }],
+                },
+                ::sce_rust_runtime::saved_state::EnumLineage {
+                    key: "enum:sce:std/shared/record_refusal.scxml",
+                    revision: 1,
+                    revisions: &[],
+                    added: &[],
+                    holders: &[
+                        ::sce_rust_runtime::saved_state::EnumHolder {
+                            variable: "probe",
+                            field: None,
+                            list: false,
+                        },
+                        ::sce_rust_runtime::saved_state::EnumHolder {
+                            variable: "spoiledFor",
+                            field: None,
+                            list: false,
+                        },
+                    ],
+                },
+            ],
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<
@@ -2455,10 +2575,11 @@ impl RecordListParentSceSynthInvokeListPersist
             saved.variable("namedField")?,
             "namedField",
         )?;
-        let _: u8 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
-            saved.variable("namedKind")?,
-            "namedKind",
-        )?;
+        let _: RecordListParentSceSynthInvokeListCommandEnum =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("namedKind")?,
+                "namedKind",
+            )?;
         let _: Vec<RecordListParentSceSynthInvokeListPartRecord> =
             ::sce_rust_runtime::saved_state::bounded(saved.variable("taking")?, "taking", 64)?;
         let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
@@ -2805,7 +2926,6 @@ pub struct RecordListParentSceSynthInvokeListInvokeParams {
     pub covered: Option<bool>,
     pub named_id: Option<u32>,
     pub named_field: Option<u16>,
-    pub named_kind: Option<u8>,
     pub took: Option<u32>,
     pub passed: Option<u32>,
     pub already: Option<bool>,
@@ -2942,7 +3062,7 @@ pub struct RecordListParentSceSynthInvokeListPolicy {
     /// W3C SCXML 5.2: the `namedField` datamodel variable.
     named_field: u16,
     /// W3C SCXML 5.2: the `namedKind` datamodel variable.
-    named_kind: u8,
+    named_kind: RecordListParentSceSynthInvokeListCommandEnum,
     /// W3C SCXML 5.2: the `taking` datamodel variable.
     taking: Vec<RecordListParentSceSynthInvokeListPartRecord>,
     /// W3C SCXML 5.2: the `took` datamodel variable.
@@ -3080,7 +3200,8 @@ impl RecordListParentSceSynthInvokeListPolicy {
             RecordListParentSceSynthInvokeListRefusalEnum::ChangeTooLarge;
         let named_id: u32 = 0;
         let named_field: u16 = 0;
-        let named_kind: u8 = 0;
+        let named_kind: RecordListParentSceSynthInvokeListCommandEnum =
+            RecordListParentSceSynthInvokeListCommandEnum::Edit;
         let taking: Vec<RecordListParentSceSynthInvokeListPartRecord> = Vec::new();
         let took: u32 = 0;
         let passing: Vec<RecordListParentSceSynthInvokeListPartRecord> = Vec::new();
@@ -3359,9 +3480,6 @@ impl RecordListParentSceSynthInvokeListPolicy {
         }
         if let Some(value) = params.named_field {
             self.named_field = value;
-        }
-        if let Some(value) = params.named_kind {
-            self.named_kind = value;
         }
         if let Some(value) = params.took {
             self.took = value;
@@ -3962,8 +4080,8 @@ impl StatePolicy for RecordListParentSceSynthInvokeListPolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: record_list.scxml:208 :: _machine"]
-    // SCE-MAP: record_list.scxml:208 :: _machine
+    #[doc = "SCE-MAP: record_list.scxml:209 :: _machine"]
+    // SCE-MAP: record_list.scxml:209 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -3979,8 +4097,8 @@ impl StatePolicy for RecordListParentSceSynthInvokeListPolicy {
     // recorded runs nothing.
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: record_list.scxml:208 :: _machine"]
-    // SCE-MAP: record_list.scxml:208 :: _machine
+    #[doc = "SCE-MAP: record_list.scxml:209 :: _machine"]
+    // SCE-MAP: record_list.scxml:209 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -3996,8 +4114,8 @@ impl StatePolicy for RecordListParentSceSynthInvokeListPolicy {
     // the first of `state`'s own transitions, in document order, that `event`
     // enables. The engine walks the atomic states and their ancestors and
     // keeps the ordered set. `Event::Null` asks for eventless transitions.
-    #[doc = "SCE-MAP: record_list.scxml:208 :: _machine"]
-    // SCE-MAP: record_list.scxml:208 :: _machine
+    #[doc = "SCE-MAP: record_list.scxml:209 :: _machine"]
+    // SCE-MAP: record_list.scxml:209 :: _machine
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
@@ -4313,8 +4431,8 @@ impl StatePolicy for RecordListParentSceSynthInvokeListPolicy {
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries.
-    #[doc = "SCE-MAP: record_list.scxml:208 :: _machine"]
-    // SCE-MAP: record_list.scxml:208 :: _machine
+    #[doc = "SCE-MAP: record_list.scxml:209 :: _machine"]
+    // SCE-MAP: record_list.scxml:209 :: _machine
     fn execute_transition_content(
         &mut self,
         source: Self::State,
@@ -4325,7 +4443,7 @@ impl StatePolicy for RecordListParentSceSynthInvokeListPolicy {
             RecordListParentSceSynthInvokeListState::Open => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: record_list.scxml:431 :: open :: _transition_0
+                        // SCE-MAP: record_list.scxml:433 :: open :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         let ev = match &self.pending_payload {
                             RecordListParentSceSynthInvokeListPayload::RecordListJoin(ev) => {
@@ -4343,7 +4461,7 @@ impl StatePolicy for RecordListParentSceSynthInvokeListPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: record_list.scxml:438 :: open :: _transition_1
+                        // SCE-MAP: record_list.scxml:440 :: open :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
                         let ev = match &self.pending_payload {
                             RecordListParentSceSynthInvokeListPayload::RecordListRoom(ev) => {
@@ -4364,7 +4482,7 @@ impl StatePolicy for RecordListParentSceSynthInvokeListPolicy {
                         }
                     }
                     2 => {
-                        // SCE-MAP: record_list.scxml:449 :: open :: _transition_2
+                        // SCE-MAP: record_list.scxml:451 :: open :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
                         let ev = match &self.pending_payload {
                             RecordListParentSceSynthInvokeListPayload::RecordListRole(ev) => {
@@ -4391,7 +4509,7 @@ impl StatePolicy for RecordListParentSceSynthInvokeListPolicy {
                         }
                     }
                     3 => {
-                        // SCE-MAP: record_list.scxml:460 :: open :: _transition_3
+                        // SCE-MAP: record_list.scxml:462 :: open :: _transition_3
                         // W3C SCXML 3.13: Transition 3 actions
                         let ev = match &self.pending_payload {
                             RecordListParentSceSynthInvokeListPayload::RecordListEdit(ev) => {
@@ -4413,7 +4531,8 @@ impl StatePolicy for RecordListParentSceSynthInvokeListPolicy {
                                 self.named_field = ev.field;
 
                                 // W3C SCXML 5.3: <assign location="namedKind">
-                                self.named_kind = 0;
+                                self.named_kind =
+                                    RecordListParentSceSynthInvokeListCommandEnum::Edit;
 
                                 // W3C SCXML 5.3: <assign location="probing">
                                 self.probing = true;
@@ -4510,7 +4629,7 @@ impl StatePolicy for RecordListParentSceSynthInvokeListPolicy {
                         }
                     }
                     4 => {
-                        // SCE-MAP: record_list.scxml:487 :: open :: _transition_4
+                        // SCE-MAP: record_list.scxml:489 :: open :: _transition_4
                         // W3C SCXML 3.13: Transition 4 actions
                         let ev = match &self.pending_payload {
                             RecordListParentSceSynthInvokeListPayload::RecordListClear(ev) => {
@@ -4532,7 +4651,8 @@ impl StatePolicy for RecordListParentSceSynthInvokeListPolicy {
                                 self.named_field = ev.field;
 
                                 // W3C SCXML 5.3: <assign location="namedKind">
-                                self.named_kind = 1;
+                                self.named_kind =
+                                    RecordListParentSceSynthInvokeListCommandEnum::Clear;
 
                                 // W3C SCXML 5.3: <assign location="probing">
                                 self.probing = true;
@@ -4610,7 +4730,7 @@ impl StatePolicy for RecordListParentSceSynthInvokeListPolicy {
                         }
                     }
                     5 => {
-                        // SCE-MAP: record_list.scxml:512 :: open :: _transition_5
+                        // SCE-MAP: record_list.scxml:514 :: open :: _transition_5
                         // W3C SCXML 3.13: Transition 5 actions
                         let ev = match &self.pending_payload {
                             RecordListParentSceSynthInvokeListPayload::RecordListRetire(ev) => {
@@ -4632,7 +4752,8 @@ impl StatePolicy for RecordListParentSceSynthInvokeListPolicy {
                                 self.named_field = 0;
 
                                 // W3C SCXML 5.3: <assign location="namedKind">
-                                self.named_kind = 2;
+                                self.named_kind =
+                                    RecordListParentSceSynthInvokeListCommandEnum::Retire;
 
                                 // W3C SCXML 5.3: <assign location="probing">
                                 self.probing = true;
@@ -4710,7 +4831,7 @@ impl StatePolicy for RecordListParentSceSynthInvokeListPolicy {
                         }
                     }
                     6 => {
-                        // SCE-MAP: record_list.scxml:554 :: open :: _transition_6
+                        // SCE-MAP: record_list.scxml:556 :: open :: _transition_6
                         // W3C SCXML 3.13: Transition 6 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -4789,8 +4910,14 @@ impl StatePolicy for RecordListParentSceSynthInvokeListPolicy {
                                             // W3C SCXML 5.3: <assign location="namedField">
                                             self.named_field = later.field;
 
-                                            // W3C SCXML 5.3: <assign location="namedKind">
-                                            self.named_kind = later.kind;
+                                            // W3C SCXML 5.9: cond="later.kind === 1"
+                                            if later.kind == 1 {
+                                                // W3C SCXML 5.3: <assign location="namedKind">
+                                                self.named_kind = RecordListParentSceSynthInvokeListCommandEnum::Clear;
+                                            } else {
+                                                // W3C SCXML 5.3: <assign location="namedKind">
+                                                self.named_kind = RecordListParentSceSynthInvokeListCommandEnum::Edit;
+                                            }
                                         }
                                     }
                                 }
@@ -5484,8 +5611,10 @@ self.staged.clear();}
                                                         .entry("kind".to_string())
                                                         .or_default()
                                                         .push(
-                                                            ::sce_rust_runtime::ScriptValue::Int(
-                                                                i64::from(self.named_kind),
+                                                            ::sce_rust_runtime::ScriptValue::String(
+                                                                (self.named_kind)
+                                                                    .sce_name()
+                                                                    .to_string(),
                                                             ),
                                                         );
                                                     // The value is read from the machine's field as it stands now.
@@ -5544,7 +5673,7 @@ None,
                         }
                     }
                     7 => {
-                        // SCE-MAP: record_list.scxml:701 :: open :: _transition_7
+                        // SCE-MAP: record_list.scxml:708 :: open :: _transition_7
                         // W3C SCXML 3.13: Transition 7 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -6326,7 +6455,7 @@ None,
                         }
                     }
                     8 => {
-                        // SCE-MAP: record_list.scxml:837 :: open :: _transition_8
+                        // SCE-MAP: record_list.scxml:844 :: open :: _transition_8
                         // W3C SCXML 3.13: Transition 8 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -7337,7 +7466,7 @@ None,
                         }
                     }
                     9 => {
-                        // SCE-MAP: record_list.scxml:940 :: open :: _transition_9
+                        // SCE-MAP: record_list.scxml:947 :: open :: _transition_9
                         // W3C SCXML 3.13: Transition 9 actions
                         let ev = match &self.pending_payload {
                             RecordListParentSceSynthInvokeListPayload::RecordListWrite(ev) => {
@@ -7385,7 +7514,7 @@ None,
                         }
                     }
                     10 => {
-                        // SCE-MAP: record_list.scxml:963 :: open :: _transition_10
+                        // SCE-MAP: record_list.scxml:970 :: open :: _transition_10
                         // W3C SCXML 3.13: Transition 10 actions
                         let ev = match &self.pending_payload {
                             RecordListParentSceSynthInvokeListPayload::RecordListWrite(ev) => {
@@ -7503,7 +7632,7 @@ None,
                         }
                     }
                     11 => {
-                        // SCE-MAP: record_list.scxml:998 :: open :: _transition_11
+                        // SCE-MAP: record_list.scxml:1005 :: open :: _transition_11
                         // W3C SCXML 3.13: Transition 11 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -7524,7 +7653,7 @@ None,
                         }
                     }
                     12 => {
-                        // SCE-MAP: record_list.scxml:1005 :: open :: _transition_12
+                        // SCE-MAP: record_list.scxml:1012 :: open :: _transition_12
                         // W3C SCXML 3.13: Transition 12 actions
                         let ev = match &self.pending_payload {
                             RecordListParentSceSynthInvokeListPayload::RecordListSupersede(ev) => {
@@ -7642,7 +7771,7 @@ None,
                         }
                     }
                     13 => {
-                        // SCE-MAP: record_list.scxml:1045 :: open :: _transition_13
+                        // SCE-MAP: record_list.scxml:1052 :: open :: _transition_13
                         // W3C SCXML 3.13: Transition 13 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -7955,7 +8084,7 @@ None,
                         }
                     }
                     14 => {
-                        // SCE-MAP: record_list.scxml:1124 :: open :: _transition_14
+                        // SCE-MAP: record_list.scxml:1131 :: open :: _transition_14
                         // W3C SCXML 3.13: Transition 14 actions
                         let ev = match &self.pending_payload {
                             RecordListParentSceSynthInvokeListPayload::RecordListAnnounce(ev) => {
@@ -8036,7 +8165,7 @@ None,
                         }
                     }
                     15 => {
-                        // SCE-MAP: record_list.scxml:1147 :: open :: _transition_15
+                        // SCE-MAP: record_list.scxml:1154 :: open :: _transition_15
                         // W3C SCXML 3.13: Transition 15 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -8546,7 +8675,7 @@ None,
                         }
                     }
                     16 => {
-                        // SCE-MAP: record_list.scxml:1202 :: open :: _transition_16
+                        // SCE-MAP: record_list.scxml:1209 :: open :: _transition_16
                         // W3C SCXML 3.13: Transition 16 actions
                         let ev = match &self.pending_payload {
                             RecordListParentSceSynthInvokeListPayload::RecordListKeep(ev) => {
@@ -8600,7 +8729,7 @@ None,
                         }
                     }
                     17 => {
-                        // SCE-MAP: record_list.scxml:1219 :: open :: _transition_17
+                        // SCE-MAP: record_list.scxml:1226 :: open :: _transition_17
                         // W3C SCXML 3.13: Transition 17 actions
                         let ev = match &self.pending_payload {
                             RecordListParentSceSynthInvokeListPayload::RecordListCompact(ev) => {
@@ -8729,7 +8858,7 @@ None,
                         }
                     }
                     18 => {
-                        // SCE-MAP: record_list.scxml:1253 :: open :: _transition_18
+                        // SCE-MAP: record_list.scxml:1260 :: open :: _transition_18
                         // W3C SCXML 3.13: Transition 18 actions
                         let ev = match &self.pending_payload {
                             RecordListParentSceSynthInvokeListPayload::RecordListSettle(ev) => {
@@ -8839,7 +8968,7 @@ None,
                         }
                     }
                     19 => {
-                        // SCE-MAP: record_list.scxml:1274 :: open :: _transition_19
+                        // SCE-MAP: record_list.scxml:1281 :: open :: _transition_19
                         // W3C SCXML 3.13: Transition 19 actions
                         let ev = match &self.pending_payload {
                             RecordListParentSceSynthInvokeListPayload::RecordListPropose(ev) => {
@@ -8992,7 +9121,7 @@ None,
                         }
                     }
                     20 => {
-                        // SCE-MAP: record_list.scxml:1304 :: open :: _transition_20
+                        // SCE-MAP: record_list.scxml:1311 :: open :: _transition_20
                         // W3C SCXML 3.13: Transition 20 actions
                         let ev = match &self.pending_payload {
                             RecordListParentSceSynthInvokeListPayload::RecordListAck(ev) => {
@@ -9316,7 +9445,7 @@ None,
                         }
                     }
                     21 => {
-                        // SCE-MAP: record_list.scxml:1368 :: open :: _transition_21
+                        // SCE-MAP: record_list.scxml:1375 :: open :: _transition_21
                         // W3C SCXML 3.13: Transition 21 actions
                         let ev = match &self.pending_payload {
                             RecordListParentSceSynthInvokeListPayload::RecordListFloor(ev) => {
@@ -9503,7 +9632,7 @@ None,
                         }
                     }
                     22 => {
-                        // SCE-MAP: record_list.scxml:1418 :: open :: _transition_22
+                        // SCE-MAP: record_list.scxml:1425 :: open :: _transition_22
                         // W3C SCXML 3.13: Transition 22 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -9615,7 +9744,7 @@ None,
                         }
                     }
                     23 => {
-                        // SCE-MAP: record_list.scxml:1438 :: open :: _transition_23
+                        // SCE-MAP: record_list.scxml:1445 :: open :: _transition_23
                         // W3C SCXML 3.13: Transition 23 actions
                         let ev = match &self.pending_payload {
                             RecordListParentSceSynthInvokeListPayload::RecordListVisit(ev) => {
@@ -9834,7 +9963,7 @@ None,
                         }
                     }
                     24 => {
-                        // SCE-MAP: record_list.scxml:1475 :: open :: _transition_24
+                        // SCE-MAP: record_list.scxml:1482 :: open :: _transition_24
                         // W3C SCXML 3.13: Transition 24 actions
                         let ev = match &self.pending_payload {
                             RecordListParentSceSynthInvokeListPayload::RecordListNode(ev) => {
@@ -10236,7 +10365,7 @@ None,
                         }
                     }
                     25 => {
-                        // SCE-MAP: record_list.scxml:1524 :: open :: _transition_25
+                        // SCE-MAP: record_list.scxml:1531 :: open :: _transition_25
                         // W3C SCXML 3.13: Transition 25 actions
                         let ev = match &self.pending_payload {
                             RecordListParentSceSynthInvokeListPayload::RecordListShare(ev) => {
@@ -10654,7 +10783,7 @@ if self.hub {
                         }
                     }
                     26 => {
-                        // SCE-MAP: record_list.scxml:1586 :: open :: _transition_26
+                        // SCE-MAP: record_list.scxml:1593 :: open :: _transition_26
                         // W3C SCXML 3.13: Transition 26 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {

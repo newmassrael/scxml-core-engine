@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9fab540da93829eaa9159cbc7132fde0b98312062867e02e6e631d43aef759bc
+// source-hash: 0fafd5dc7cb78db436777a56fff2cdefea18c3275c9e740c945e368e87cb13ce
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -72,8 +72,8 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-#![doc = "SCE-MAP: static_string_capacity.scxml:17 :: _machine"]
-// SCE-MAP: static_string_capacity.scxml:17 :: _machine
+#![doc = "SCE-MAP: static_string_capacity.scxml:21 :: _machine"]
+// SCE-MAP: static_string_capacity.scxml:21 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -101,6 +101,7 @@ pub enum StaticStringCapacityEvent {
     Copy,
     ErrorExecution,
     Fill,
+    Measure,
     Reset,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
@@ -128,6 +129,7 @@ impl StaticStringCapacityEvent {
         StaticStringCapacityEvent::BodyWide,
         StaticStringCapacityEvent::Copy,
         StaticStringCapacityEvent::Fill,
+        StaticStringCapacityEvent::Measure,
         StaticStringCapacityEvent::Reset,
     ];
 }
@@ -142,6 +144,7 @@ pub struct StaticStringCapacityData {
     pub title: String,
     pub body: String,
     pub copied: u32,
+    pub measured: u32,
     pub refusals: u32,
 }
 
@@ -176,6 +179,7 @@ impl StaticStringCapacityObserve for Engine<StaticStringCapacityPolicy> {
                 title: policy.title.clone(),
                 body: policy.body.clone(),
                 copied: policy.copied,
+                measured: policy.measured,
                 refusals: policy.refusals,
             },
             truncated: self.last_macrostep_truncated(),
@@ -287,10 +291,10 @@ impl StaticStringCapacityPersist for Engine<StaticStringCapacityPolicy> {
 
     const SHAPE: ::sce_rust_runtime::saved_state::SavedShape =
         ::sce_rust_runtime::saved_state::SavedShape {
-            first: "135ad12b6f68018262518e29d4184121311cd30e7c5a354debfd73c4d828b891",
-            revised: "c32875621b2dfd2a7a1704592c176705b7a13d6fff45be9abc55e412dc45ed9d",
-            format2_first: "135ad12b6f68018262518e29d4184121311cd30e7c5a354debfd73c4d828b891",
-            format2_revised: "c32875621b2dfd2a7a1704592c176705b7a13d6fff45be9abc55e412dc45ed9d",
+            first: "bf28eb6941359e6d96db8e70149c9d5f5993007a44f59f0fece396194843e797",
+            revised: "06ea3b52e7f0c03f52dff181172d4a8fcf030087bbb6fab407c92563f04554a2",
+            format2_first: "bf28eb6941359e6d96db8e70149c9d5f5993007a44f59f0fece396194843e797",
+            format2_revised: "06ea3b52e7f0c03f52dff181172d4a8fcf030087bbb6fab407c92563f04554a2",
             records: &[],
             enums: &[],
         };
@@ -324,6 +328,10 @@ impl StaticStringCapacityPersist for Engine<StaticStringCapacityPolicy> {
                     ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.copied),
                 ),
                 (
+                    "measured".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.measured),
+                ),
+                (
                     "refusals".to_string(),
                     ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.refusals),
                 ),
@@ -352,6 +360,10 @@ impl StaticStringCapacityPersist for Engine<StaticStringCapacityPolicy> {
         let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("copied")?,
             "copied",
+        )?;
+        let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("measured")?,
+            "measured",
         )?;
         let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("refusals")?,
@@ -385,6 +397,10 @@ impl StaticStringCapacityPersist for Engine<StaticStringCapacityPolicy> {
             saved.variable("copied")?,
             "copied",
         )?;
+        policy.measured = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("measured")?,
+            "measured",
+        )?;
         policy.refusals = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("refusals")?,
             "refusals",
@@ -401,6 +417,7 @@ pub struct StaticStringCapacityInvokeParams {
     pub title: Option<String>,
     pub body: Option<String>,
     pub copied: Option<u32>,
+    pub measured: Option<u32>,
     pub refusals: Option<u32>,
 }
 
@@ -415,6 +432,8 @@ pub struct StaticStringCapacityPolicy {
     body: String,
     /// W3C SCXML 5.2: the `copied` datamodel variable, published (`sce:direction="out"`).
     copied: u32,
+    /// W3C SCXML 5.2: the `measured` datamodel variable, published (`sce:direction="out"`).
+    measured: u32,
     /// W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`).
     refusals: u32,
     // W3C SCXML 5.10: the session's id (script engine, invoke tracking, the
@@ -441,11 +460,13 @@ impl StaticStringCapacityPolicy {
         let title: String = "ab".to_string();
         let body: String = "hello".to_string();
         let copied: u32 = 0;
+        let measured: u32 = 0;
         let refusals: u32 = 0;
         Self {
             title,
             body,
             copied,
+            measured,
             refusals,
             session_id: Some(session_id),
             parent_external_queue: None,
@@ -504,6 +525,9 @@ impl StaticStringCapacityPolicy {
         if let Some(value) = params.copied {
             self.copied = value;
         }
+        if let Some(value) = params.measured {
+            self.measured = value;
+        }
         if let Some(value) = params.refusals {
             self.refusals = value;
         }
@@ -525,6 +549,12 @@ impl StaticStringCapacityPolicy {
     /// holds now. Only the machine writes it.
     pub fn copied(&self) -> u32 {
         self.copied
+    }
+
+    /// W3C SCXML 5.2: what the published `measured` datamodel variable
+    /// holds now. Only the machine writes it.
+    pub fn measured(&self) -> u32 {
+        self.measured
     }
 
     /// W3C SCXML 5.2: what the published `refusals` datamodel variable
@@ -676,6 +706,7 @@ impl StatePolicy for StaticStringCapacityPolicy {
             StaticStringCapacityEvent::Copy => "copy",
             StaticStringCapacityEvent::ErrorExecution => "error.execution",
             StaticStringCapacityEvent::Fill => "fill",
+            StaticStringCapacityEvent::Measure => "measure",
             StaticStringCapacityEvent::Reset => "reset",
             StaticStringCapacityEvent::Null => "",
         }
@@ -689,6 +720,7 @@ impl StatePolicy for StaticStringCapacityPolicy {
             "copy" => Some(StaticStringCapacityEvent::Copy),
             "error.execution" => Some(StaticStringCapacityEvent::ErrorExecution),
             "fill" => Some(StaticStringCapacityEvent::Fill),
+            "measure" => Some(StaticStringCapacityEvent::Measure),
             "reset" => Some(StaticStringCapacityEvent::Reset),
             _ => None,
         }
@@ -729,8 +761,8 @@ impl StatePolicy for StaticStringCapacityPolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: static_string_capacity.scxml:17 :: _machine"]
-    // SCE-MAP: static_string_capacity.scxml:17 :: _machine
+    #[doc = "SCE-MAP: static_string_capacity.scxml:21 :: _machine"]
+    // SCE-MAP: static_string_capacity.scxml:21 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -746,8 +778,8 @@ impl StatePolicy for StaticStringCapacityPolicy {
     // recorded runs nothing.
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: static_string_capacity.scxml:17 :: _machine"]
-    // SCE-MAP: static_string_capacity.scxml:17 :: _machine
+    #[doc = "SCE-MAP: static_string_capacity.scxml:21 :: _machine"]
+    // SCE-MAP: static_string_capacity.scxml:21 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -763,8 +795,8 @@ impl StatePolicy for StaticStringCapacityPolicy {
     // the first of `state`'s own transitions, in document order, that `event`
     // enables. The engine walks the atomic states and their ancestors and
     // keeps the ordered set. `Event::Null` asks for eventless transitions.
-    #[doc = "SCE-MAP: static_string_capacity.scxml:17 :: _machine"]
-    // SCE-MAP: static_string_capacity.scxml:17 :: _machine
+    #[doc = "SCE-MAP: static_string_capacity.scxml:21 :: _machine"]
+    // SCE-MAP: static_string_capacity.scxml:21 :: _machine
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
@@ -839,12 +871,23 @@ impl StatePolicy for StaticStringCapacityPolicy {
                         });
                     }
                 }
-                if event == StaticStringCapacityEvent::ErrorExecution {
+                if event == StaticStringCapacityEvent::Measure {
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
                             targets: &[],
                             transition_index: 6,
+                            has_actions: true,
+                            is_internal: true,
+                        });
+                    }
+                }
+                if event == StaticStringCapacityEvent::ErrorExecution {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[],
+                            transition_index: 7,
                             has_actions: true,
                             is_internal: true,
                         });
@@ -858,8 +901,8 @@ impl StatePolicy for StaticStringCapacityPolicy {
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries.
-    #[doc = "SCE-MAP: static_string_capacity.scxml:17 :: _machine"]
-    // SCE-MAP: static_string_capacity.scxml:17 :: _machine
+    #[doc = "SCE-MAP: static_string_capacity.scxml:21 :: _machine"]
+    // SCE-MAP: static_string_capacity.scxml:21 :: _machine
     fn execute_transition_content(
         &mut self,
         source: Self::State,
@@ -870,7 +913,7 @@ impl StatePolicy for StaticStringCapacityPolicy {
             StaticStringCapacityState::Idle => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: static_string_capacity.scxml:27 :: idle :: _transition_0
+                        // SCE-MAP: static_string_capacity.scxml:32 :: idle :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -891,7 +934,7 @@ impl StatePolicy for StaticStringCapacityPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: static_string_capacity.scxml:30 :: idle :: _transition_1
+                        // SCE-MAP: static_string_capacity.scxml:35 :: idle :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -912,7 +955,7 @@ impl StatePolicy for StaticStringCapacityPolicy {
                         }
                     }
                     2 => {
-                        // SCE-MAP: static_string_capacity.scxml:33 :: idle :: _transition_2
+                        // SCE-MAP: static_string_capacity.scxml:38 :: idle :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -933,7 +976,7 @@ impl StatePolicy for StaticStringCapacityPolicy {
                         }
                     }
                     3 => {
-                        // SCE-MAP: static_string_capacity.scxml:37 :: idle :: _transition_3
+                        // SCE-MAP: static_string_capacity.scxml:42 :: idle :: _transition_3
                         // W3C SCXML 3.13: Transition 3 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -954,7 +997,7 @@ impl StatePolicy for StaticStringCapacityPolicy {
                         }
                     }
                     4 => {
-                        // SCE-MAP: static_string_capacity.scxml:41 :: idle :: _transition_4
+                        // SCE-MAP: static_string_capacity.scxml:46 :: idle :: _transition_4
                         // W3C SCXML 3.13: Transition 4 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -975,7 +1018,7 @@ impl StatePolicy for StaticStringCapacityPolicy {
                         }
                     }
                     5 => {
-                        // SCE-MAP: static_string_capacity.scxml:44 :: idle :: _transition_5
+                        // SCE-MAP: static_string_capacity.scxml:49 :: idle :: _transition_5
                         // W3C SCXML 3.13: Transition 5 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1011,8 +1054,17 @@ impl StatePolicy for StaticStringCapacityPolicy {
                         }
                     }
                     6 => {
-                        // SCE-MAP: static_string_capacity.scxml:48 :: idle :: _transition_6
+                        // SCE-MAP: static_string_capacity.scxml:53 :: idle :: _transition_6
                         // W3C SCXML 3.13: Transition 6 actions
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 5.3: <assign location="measured">
+                            self.measured = (self.body).len() as u32;
+                        }
+                    }
+                    7 => {
+                        // SCE-MAP: static_string_capacity.scxml:56 :: idle :: _transition_7
+                        // W3C SCXML 3.13: Transition 7 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             // W3C SCXML 5.3: <assign location="refusals">

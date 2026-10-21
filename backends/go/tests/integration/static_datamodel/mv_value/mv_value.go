@@ -9,6 +9,15 @@
 
 package mv_value
 
+// EventName is the event this schema types (`sce:event-name`), as a host names it.
+const EventName string = "merge.mv_value"
+
+// Revision is the revision of the schema (`sce:revision`, 1 when the document declares none).
+const Revision uint32 = 1
+
+// TextMaxSize is the most UTF-8 bytes `text` holds (`sce:max-size`, the bound `sce:limit="merge_text"` names), as this build resolved it.
+const TextMaxSize uint32 = 96
+
 type MvValuePayload struct {
 	Id uint64
 	Field uint64

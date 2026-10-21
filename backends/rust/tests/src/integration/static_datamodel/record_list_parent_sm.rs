@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9fab540da93829eaa9159cbc7132fde0b98312062867e02e6e631d43aef759bc
+// source-hash: 0fafd5dc7cb78db436777a56fff2cdefea18c3275c9e740c945e368e87cb13ce
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -72,8 +72,8 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-#![doc = "SCE-MAP: record_list_parent.scxml:36 :: _machine"]
-// SCE-MAP: record_list_parent.scxml:36 :: _machine
+#![doc = "SCE-MAP: record_list_parent.scxml:37 :: _machine"]
+// SCE-MAP: record_list_parent.scxml:37 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -173,7 +173,7 @@ pub struct RecordListParentRecordListJoinPayload {
 pub struct RecordListParentRecordListRefusedPayload {
     pub id: u32,
     pub field: u16,
-    pub kind: u8,
+    pub kind: RecordListParentCommandEnum,
     pub reason: RecordListParentRefusalEnum,
 }
 
@@ -353,8 +353,13 @@ impl RecordListParentInject for ::sce_rust_runtime::Engine<RecordListParentPolic
             "{{\"id\":{}, \"field\":{}, \"kind\":{}, \"reason\":{}}}",
             payload.id,
             payload.field,
-            payload.kind,
+            ::sce_rust_runtime::event_payload::quote(match payload.kind {
+                RecordListParentCommandEnum::Edit => "edit",
+                RecordListParentCommandEnum::Clear => "clear",
+                RecordListParentCommandEnum::Retire => "retire",
+            }),
             ::sce_rust_runtime::event_payload::quote(match payload.reason {
+                RecordListParentRefusalEnum::None => "none",
                 RecordListParentRefusalEnum::NotWriter => "notWriter",
                 RecordListParentRefusalEnum::NoRoomForValue => "noRoomForValue",
                 RecordListParentRefusalEnum::NoRoomForHistory => "noRoomForHistory",
@@ -475,9 +480,51 @@ pub struct RecordListParentToldValueRecord {
     pub nodeId: u64,
 }
 
+/// SCE Accepted Subset §2.15: an `enum:Command` datamodel value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RecordListParentCommandEnum {
+    Edit,
+    Clear,
+    Retire,
+}
+
+impl RecordListParentCommandEnum {
+    /// The name the enum document declares for this value.
+    #[allow(dead_code)]
+    pub fn sce_name(self) -> &'static str {
+        match self {
+            Self::Edit => "edit",
+            Self::Clear => "clear",
+            Self::Retire => "retire",
+        }
+    }
+
+    /// The number the enum document declares for this value.
+    #[allow(dead_code)]
+    pub fn to_underlying(self) -> u8 {
+        match self {
+            Self::Edit => 0,
+            Self::Clear => 1,
+            Self::Retire => 2,
+        }
+    }
+
+    /// The variant that declares `raw`, or `None` for a number no variant declares.
+    #[allow(dead_code)]
+    pub fn from_underlying(raw: u8) -> Option<Self> {
+        match raw {
+            0 => Some(Self::Edit),
+            1 => Some(Self::Clear),
+            2 => Some(Self::Retire),
+            _ => None,
+        }
+    }
+}
+
 /// SCE Accepted Subset §2.15: an `enum:Refusal` datamodel value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RecordListParentRefusalEnum {
+    None,
     NotWriter,
     NoRoomForValue,
     NoRoomForHistory,
@@ -493,6 +540,7 @@ impl RecordListParentRefusalEnum {
     #[allow(dead_code)]
     pub fn sce_name(self) -> &'static str {
         match self {
+            Self::None => "none",
             Self::NotWriter => "notWriter",
             Self::NoRoomForValue => "noRoomForValue",
             Self::NoRoomForHistory => "noRoomForHistory",
@@ -508,6 +556,7 @@ impl RecordListParentRefusalEnum {
     #[allow(dead_code)]
     pub fn to_underlying(self) -> u8 {
         match self {
+            Self::None => 0,
             Self::NotWriter => 1,
             Self::NoRoomForValue => 2,
             Self::NoRoomForHistory => 3,
@@ -523,6 +572,7 @@ impl RecordListParentRefusalEnum {
     #[allow(dead_code)]
     pub fn from_underlying(raw: u8) -> Option<Self> {
         match raw {
+            0 => Some(Self::None),
             1 => Some(Self::NotWriter),
             2 => Some(Self::NoRoomForValue),
             3 => Some(Self::NoRoomForHistory),
@@ -542,8 +592,20 @@ impl RecordListParentRefusalEnum {
 pub struct RecordListParentRefusedRecord {
     pub id: u32,
     pub field: u16,
-    pub kind: u8,
+    pub kind: RecordListParentCommandEnum,
     pub reason: RecordListParentRefusalEnum,
+}
+
+/// The bounds this machine is built with, each by the name `sce:limit` gives it (docs/adr/0050).
+#[allow(dead_code)]
+pub struct RecordListParentLimits;
+
+#[allow(dead_code)]
+impl RecordListParentLimits {
+    /// The bound `sce:limit="merge_text"` names, as this build resolved it.
+    pub const MERGE_TEXT: u32 = 96;
+    /// The bound `sce:limit="shared_typed_text"` names, as this build resolved it.
+    pub const SHARED_TYPED_TEXT: u32 = 32;
 }
 
 // ── SCE Accepted Subset §2.15: what a host observes of a sce-static machine ──
@@ -600,10 +662,43 @@ impl RecordListParentObserve for Engine<RecordListParentPolicy> {
 
 // ── SCE Accepted Subset §2.15: saving a sce-static machine and restoring it ──
 
+impl ::sce_rust_runtime::saved_state::SavedValue for RecordListParentCommandEnum {
+    fn to_saved(&self) -> ::sce_rust_runtime::json::Value {
+        ::sce_rust_runtime::json::Value::Text(
+            match self {
+                Self::Edit => "edit",
+                Self::Clear => "clear",
+                Self::Retire => "retire",
+            }
+            .to_string(),
+        )
+    }
+
+    fn from_saved(
+        value: &::sce_rust_runtime::json::Value,
+        what: &str,
+    ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
+        match value {
+            ::sce_rust_runtime::json::Value::Text(declared) => match declared.as_str() {
+                "edit" => Ok(Self::Edit),
+                "clear" => Ok(Self::Clear),
+                "retire" => Ok(Self::Retire),
+                other => Err(::sce_rust_runtime::saved_state::StateRefusal::new(format!(
+                    "'{what}' ({other}) is not a variant of Command"
+                ))),
+            },
+            _ => Err(::sce_rust_runtime::saved_state::StateRefusal::new(format!(
+                "'{what}' is not a text"
+            ))),
+        }
+    }
+}
+
 impl ::sce_rust_runtime::saved_state::SavedValue for RecordListParentRefusalEnum {
     fn to_saved(&self) -> ::sce_rust_runtime::json::Value {
         ::sce_rust_runtime::json::Value::Text(
             match self {
+                Self::None => "none",
                 Self::NotWriter => "notWriter",
                 Self::NoRoomForValue => "noRoomForValue",
                 Self::NoRoomForHistory => "noRoomForHistory",
@@ -623,6 +718,7 @@ impl ::sce_rust_runtime::saved_state::SavedValue for RecordListParentRefusalEnum
     ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
         match value {
             ::sce_rust_runtime::json::Value::Text(declared) => match declared.as_str() {
+                "none" => Ok(Self::None),
                 "notWriter" => Ok(Self::NotWriter),
                 "noRoomForValue" => Ok(Self::NoRoomForValue),
                 "noRoomForHistory" => Ok(Self::NoRoomForHistory),
@@ -889,10 +985,10 @@ impl RecordListParentPersist for Engine<RecordListParentPolicy> {
 
     const SHAPE: ::sce_rust_runtime::saved_state::SavedShape =
         ::sce_rust_runtime::saved_state::SavedShape {
-            first: "0bf8b7e0aa1826e8d423f234d1635b050c1a3a8b82b3ba61c8eea5038880e898",
-            revised: "ae88169004d58fa7d3a3d6ef967259348f953d7ba5b908aff79e32ef2e80ff65",
-            format2_first: "35efd36c455d36f7cfc54ad67c0960d30a9221087c48dc4a2ed2fddb7f8882b5",
-            format2_revised: "22509811fa170756983873a5b2826e7fc895de1adeef80c153b79e15946c28f3",
+            first: "4cdc6c4dba4e65c99e14df0217f3def6c61bcb56e9239c2721561f4d6a4a41f9",
+            revised: "b6b60aaa34a0ccc6709edd6a2d309c0d7f69b895257b4acd809b4343159de88c",
+            format2_first: "4a7cf799833ca50a1b8f86c5afd486ded0f2f0cc626c5260347c2fb4b3a4fa90",
+            format2_revised: "8f73aa2806bb64e5c8311f7ae969457a2ab12e90928b5ed33643a47d7bb8037b",
             records: &[
                 ::sce_rust_runtime::saved_state::RecordLineage {
                     event: "record_list.refused",
@@ -931,17 +1027,30 @@ impl RecordListParentPersist for Engine<RecordListParentPolicy> {
                     ],
                 },
             ],
-            enums: &[::sce_rust_runtime::saved_state::EnumLineage {
-                key: "enum:sce:std/shared/record_refusal.scxml",
-                revision: 1,
-                revisions: &[],
-                added: &[],
-                holders: &[::sce_rust_runtime::saved_state::EnumHolder {
-                    variable: "refused",
-                    field: Some("reason"),
-                    list: false,
-                }],
-            }],
+            enums: &[
+                ::sce_rust_runtime::saved_state::EnumLineage {
+                    key: "enum:sce:std/shared/record_command.scxml",
+                    revision: 1,
+                    revisions: &[],
+                    added: &[],
+                    holders: &[::sce_rust_runtime::saved_state::EnumHolder {
+                        variable: "refused",
+                        field: Some("kind"),
+                        list: false,
+                    }],
+                },
+                ::sce_rust_runtime::saved_state::EnumLineage {
+                    key: "enum:sce:std/shared/record_refusal.scxml",
+                    revision: 1,
+                    revisions: &[],
+                    added: &[],
+                    holders: &[::sce_rust_runtime::saved_state::EnumHolder {
+                        variable: "refused",
+                        field: Some("reason"),
+                        list: false,
+                    }],
+                },
+            ],
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<
@@ -1165,8 +1274,8 @@ impl RecordListParentPolicy {
         let refused: RecordListParentRefusedRecord = RecordListParentRefusedRecord {
             id: 0,
             field: 0,
-            kind: 0,
-            reason: RecordListParentRefusalEnum::NotWriter,
+            kind: RecordListParentCommandEnum::Edit,
+            reason: RecordListParentRefusalEnum::None,
         };
         let refused_count: u32 = 0;
         Self {
@@ -1826,8 +1935,18 @@ impl StatePolicy for RecordListParentPolicy {
                     RecordListParentRecordListRefusedPayload {
                         id: fields.unsigned::<u32>("id")?,
                         field: fields.unsigned::<u16>("field")?,
-                        kind: fields.unsigned::<u8>("kind")?,
+                        kind: match fields.text("kind")?.as_str() {
+                            "edit" => RecordListParentCommandEnum::Edit,
+                            "clear" => RecordListParentCommandEnum::Clear,
+                            "retire" => RecordListParentCommandEnum::Retire,
+                            other => {
+                                return Err(::sce_rust_runtime::event_payload::PayloadRefusal::new(
+                                    format!("kind ({other}) is not a variant of Command"),
+                                ))
+                            }
+                        },
                         reason: match fields.text("reason")?.as_str() {
+                            "none" => RecordListParentRefusalEnum::None,
                             "notWriter" => RecordListParentRefusalEnum::NotWriter,
                             "noRoomForValue" => RecordListParentRefusalEnum::NoRoomForValue,
                             "noRoomForHistory" => RecordListParentRefusalEnum::NoRoomForHistory,
@@ -1953,8 +2072,8 @@ impl StatePolicy for RecordListParentPolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: record_list_parent.scxml:36 :: _machine"]
-    // SCE-MAP: record_list_parent.scxml:36 :: _machine
+    #[doc = "SCE-MAP: record_list_parent.scxml:37 :: _machine"]
+    // SCE-MAP: record_list_parent.scxml:37 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -1963,7 +2082,7 @@ impl StatePolicy for RecordListParentPolicy {
     ) {
         match state {
             RecordListParentState::Holding => {
-                // SCE-MAP: record_list_parent.scxml:85 :: holding :: _state_body
+                // SCE-MAP: record_list_parent.scxml:87 :: holding :: _state_body
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
                 {
                     self.defer_invoke_list(engine);
@@ -1980,8 +2099,8 @@ impl StatePolicy for RecordListParentPolicy {
     // recorded runs nothing.
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: record_list_parent.scxml:36 :: _machine"]
-    // SCE-MAP: record_list_parent.scxml:36 :: _machine
+    #[doc = "SCE-MAP: record_list_parent.scxml:37 :: _machine"]
+    // SCE-MAP: record_list_parent.scxml:37 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -2035,8 +2154,8 @@ impl StatePolicy for RecordListParentPolicy {
     // the first of `state`'s own transitions, in document order, that `event`
     // enables. The engine walks the atomic states and their ancestors and
     // keeps the ordered set. `Event::Null` asks for eventless transitions.
-    #[doc = "SCE-MAP: record_list_parent.scxml:36 :: _machine"]
-    // SCE-MAP: record_list_parent.scxml:36 :: _machine
+    #[doc = "SCE-MAP: record_list_parent.scxml:37 :: _machine"]
+    // SCE-MAP: record_list_parent.scxml:37 :: _machine
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
@@ -2174,8 +2293,8 @@ impl StatePolicy for RecordListParentPolicy {
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries.
-    #[doc = "SCE-MAP: record_list_parent.scxml:36 :: _machine"]
-    // SCE-MAP: record_list_parent.scxml:36 :: _machine
+    #[doc = "SCE-MAP: record_list_parent.scxml:37 :: _machine"]
+    // SCE-MAP: record_list_parent.scxml:37 :: _machine
     fn execute_transition_content(
         &mut self,
         source: Self::State,
@@ -2186,7 +2305,7 @@ impl StatePolicy for RecordListParentPolicy {
             RecordListParentState::Holding => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: record_list_parent.scxml:91 :: holding :: _transition_0
+                        // SCE-MAP: record_list_parent.scxml:93 :: holding :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         let ev = match &self.pending_payload {
                             RecordListParentPayload::RecordListJoin(ev) => ev.clone(),
@@ -2256,7 +2375,7 @@ impl StatePolicy for RecordListParentPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: record_list_parent.scxml:97 :: holding :: _transition_1
+                        // SCE-MAP: record_list_parent.scxml:99 :: holding :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
                         let ev = match &self.pending_payload {
                             RecordListParentPayload::RecordListEdit(ev) => ev.clone(),
@@ -2346,7 +2465,7 @@ impl StatePolicy for RecordListParentPolicy {
                         }
                     }
                     2 => {
-                        // SCE-MAP: record_list_parent.scxml:107 :: holding :: _transition_2
+                        // SCE-MAP: record_list_parent.scxml:109 :: holding :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
                         let ev = match &self.pending_payload {
                             RecordListParentPayload::RecordListClear(ev) => ev.clone(),
@@ -2424,7 +2543,7 @@ impl StatePolicy for RecordListParentPolicy {
                         }
                     }
                     3 => {
-                        // SCE-MAP: record_list_parent.scxml:115 :: holding :: _transition_3
+                        // SCE-MAP: record_list_parent.scxml:117 :: holding :: _transition_3
                         // W3C SCXML 3.13: Transition 3 actions
                         let ev = match &self.pending_payload {
                             RecordListParentPayload::RecordListRetire(ev) => ev.clone(),
@@ -2498,7 +2617,7 @@ impl StatePolicy for RecordListParentPolicy {
                         }
                     }
                     4 => {
-                        // SCE-MAP: record_list_parent.scxml:122 :: holding :: _transition_4
+                        // SCE-MAP: record_list_parent.scxml:124 :: holding :: _transition_4
                         // W3C SCXML 3.13: Transition 4 actions
                         let ev = match &self.pending_payload {
                             RecordListParentPayload::RecordListRole(ev) => ev.clone(),
@@ -2567,7 +2686,7 @@ impl StatePolicy for RecordListParentPolicy {
                         }
                     }
                     5 => {
-                        // SCE-MAP: record_list_parent.scxml:128 :: holding :: _transition_5
+                        // SCE-MAP: record_list_parent.scxml:130 :: holding :: _transition_5
                         // W3C SCXML 3.13: Transition 5 actions
                         let ev = match &self.pending_payload {
                             RecordListParentPayload::RecordListRoom(ev) => ev.clone(),
@@ -2638,7 +2757,7 @@ impl StatePolicy for RecordListParentPolicy {
                         }
                     }
                     6 => {
-                        // SCE-MAP: record_list_parent.scxml:135 :: holding :: _transition_6
+                        // SCE-MAP: record_list_parent.scxml:137 :: holding :: _transition_6
                         // W3C SCXML 3.13: Transition 6 actions
                         let ev = match &self.pending_payload {
                             RecordListParentPayload::RecordListWrite(ev) => ev.clone(),
@@ -2733,7 +2852,7 @@ impl StatePolicy for RecordListParentPolicy {
                         }
                     }
                     7 => {
-                        // SCE-MAP: record_list_parent.scxml:146 :: holding :: _transition_7
+                        // SCE-MAP: record_list_parent.scxml:148 :: holding :: _transition_7
                         // W3C SCXML 3.13: Transition 7 actions
                         let ev = match &self.pending_payload {
                             RecordListParentPayload::RecordListSupersede(ev) => ev.clone(),
@@ -2822,7 +2941,7 @@ impl StatePolicy for RecordListParentPolicy {
                         }
                     }
                     8 => {
-                        // SCE-MAP: record_list_parent.scxml:159 :: holding :: _transition_8
+                        // SCE-MAP: record_list_parent.scxml:161 :: holding :: _transition_8
                         // W3C SCXML 3.13: Transition 8 actions
                         let ev = match &self.pending_payload {
                             RecordListParentPayload::RecordListRegister(ev) => ev.clone(),
@@ -2886,7 +3005,7 @@ impl StatePolicy for RecordListParentPolicy {
                         }
                     }
                     9 => {
-                        // SCE-MAP: record_list_parent.scxml:171 :: holding :: _transition_9
+                        // SCE-MAP: record_list_parent.scxml:173 :: holding :: _transition_9
                         // W3C SCXML 3.13: Transition 9 actions
                         let ev = match &self.pending_payload {
                             RecordListParentPayload::RecordListValue(ev) => ev.clone(),
@@ -2959,7 +3078,7 @@ impl StatePolicy for RecordListParentPolicy {
                         }
                     }
                     10 => {
-                        // SCE-MAP: record_list_parent.scxml:186 :: holding :: _transition_10
+                        // SCE-MAP: record_list_parent.scxml:188 :: holding :: _transition_10
                         // W3C SCXML 3.13: Transition 10 actions
                         let ev = match &self.pending_payload {
                             RecordListParentPayload::RecordListRefused(ev) => ev.clone(),

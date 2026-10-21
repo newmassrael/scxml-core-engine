@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9fab540da93829eaa9159cbc7132fde0b98312062867e02e6e631d43aef759bc
+// source-hash: 0fafd5dc7cb78db436777a56fff2cdefea18c3275c9e740c945e368e87cb13ce
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -20,7 +20,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: static_forge_calls.scxml:15 :: _machine
+// SCE-MAP: static_forge_calls.scxml:23 :: _machine
 
 package static_forge_calls
 
@@ -34,10 +34,15 @@ import (
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
 	sce_forge_call_code "github.com/newmassrael/sce-go-tests/integration/static_datamodel/forge_call_code"
 	sce_forge_call_high "github.com/newmassrael/sce-go-tests/integration/static_datamodel/forge_call_high"
+	sce_forge_call_level "github.com/newmassrael/sce-go-tests/integration/static_datamodel/forge_call_level"
 	sce_forge_call_limit "github.com/newmassrael/sce-go-tests/integration/static_datamodel/forge_call_limit"
+	sce_forge_call_named "github.com/newmassrael/sce-go-tests/integration/static_datamodel/forge_call_named"
+	sce_forge_call_next "github.com/newmassrael/sce-go-tests/integration/static_datamodel/forge_call_next"
 	sce_forge_call_offset "github.com/newmassrael/sce-go-tests/integration/static_datamodel/forge_call_offset"
 	sce_forge_call_range "github.com/newmassrael/sce-go-tests/integration/static_datamodel/forge_call_range"
 	sce_forge_call_ratio "github.com/newmassrael/sce-go-tests/integration/static_datamodel/forge_call_ratio"
+	sce_forge_call_status "github.com/newmassrael/sce-go-tests/integration/static_datamodel/forge_call_status"
+	sce_forge_call_weight "github.com/newmassrael/sce-go-tests/integration/static_datamodel/forge_call_weight"
 )
 
 // Ensure imports are used
@@ -142,17 +147,26 @@ var transitionTargetsOfStaticForgeCalls = [1][][]StaticForgeCallsTarget{
 type StaticForgeCallsEvent int
 
 const (
-	StaticForgeCallsEventErrorExecution StaticForgeCallsEvent = 0
-	StaticForgeCallsEventProbe StaticForgeCallsEvent = 1
-	StaticForgeCallsEventRise StaticForgeCallsEvent = 2
-	StaticForgeCallsEventShift StaticForgeCallsEvent = 3
-	StaticForgeCallsEventSpin StaticForgeCallsEvent = 4
+	StaticForgeCallsEventAdvance StaticForgeCallsEvent = 0
+	StaticForgeCallsEventCheckCustomer StaticForgeCallsEvent = 1
+	StaticForgeCallsEventClearCustomer StaticForgeCallsEvent = 2
+	StaticForgeCallsEventErrorExecution StaticForgeCallsEvent = 3
+	StaticForgeCallsEventProbe StaticForgeCallsEvent = 4
+	StaticForgeCallsEventRise StaticForgeCallsEvent = 5
+	StaticForgeCallsEventShift StaticForgeCallsEvent = 6
+	StaticForgeCallsEventSpin StaticForgeCallsEvent = 7
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	StaticForgeCallsEventNull StaticForgeCallsEvent = 5
+	StaticForgeCallsEventNull StaticForgeCallsEvent = 8
 )
 
 func (e StaticForgeCallsEvent) String() string {
 	switch e {
+	case StaticForgeCallsEventAdvance:
+		return "advance"
+	case StaticForgeCallsEventCheckCustomer:
+		return "check_customer"
+	case StaticForgeCallsEventClearCustomer:
+		return "clear_customer"
 	case StaticForgeCallsEventErrorExecution:
 		return "error.execution"
 	case StaticForgeCallsEventProbe:
@@ -169,23 +183,119 @@ func (e StaticForgeCallsEvent) String() string {
 	return "unknown"
 }
 
+// ── SCE Accepted Subset §2.15: the types the static variables are held in ──
+// SCE Accepted Subset §2.15: an `enum:Status` datamodel value.
+type StaticForgeCallsStatusEnum uint8
+
+const (
+	StaticForgeCallsStatusEnumOpen StaticForgeCallsStatusEnum = 1
+	StaticForgeCallsStatusEnumHeld StaticForgeCallsStatusEnum = 2
+	StaticForgeCallsStatusEnumDone StaticForgeCallsStatusEnum = 3
+)
+
+// String is the name the enum document declares for the value.
+func (v StaticForgeCallsStatusEnum) String() string {
+	switch v {
+	case StaticForgeCallsStatusEnumOpen:
+		return "open"
+	case StaticForgeCallsStatusEnumHeld:
+		return "held"
+	case StaticForgeCallsStatusEnumDone:
+		return "done"
+	}
+	return ""
+}
+
+// ToUnderlying is the number the enum document declares for the value.
+func (v StaticForgeCallsStatusEnum) ToUnderlying() uint8 {
+	return uint8(v)
+}
+
+// StaticForgeCallsStatusEnumFromUnderlying returns the variant that declares raw, and false for a
+// number no variant declares.
+func StaticForgeCallsStatusEnumFromUnderlying(raw uint8) (StaticForgeCallsStatusEnum, bool) {
+	switch raw {
+	case 1, 2, 3:
+		return StaticForgeCallsStatusEnum(raw), true
+	}
+	return 0, false
+}
+
+// SCE Accepted Subset §2.15: an `enum:Level` datamodel value.
+type StaticForgeCallsLevelEnum uint8
+
+const (
+	StaticForgeCallsLevelEnumLight StaticForgeCallsLevelEnum = 10
+	StaticForgeCallsLevelEnumHeavy StaticForgeCallsLevelEnum = 20
+)
+
+// String is the name the enum document declares for the value.
+func (v StaticForgeCallsLevelEnum) String() string {
+	switch v {
+	case StaticForgeCallsLevelEnumLight:
+		return "light"
+	case StaticForgeCallsLevelEnumHeavy:
+		return "heavy"
+	}
+	return ""
+}
+
+// ToUnderlying is the number the enum document declares for the value.
+func (v StaticForgeCallsLevelEnum) ToUnderlying() uint8 {
+	return uint8(v)
+}
+
+// StaticForgeCallsLevelEnumFromUnderlying returns the variant that declares raw, and false for a
+// number no variant declares.
+func StaticForgeCallsLevelEnumFromUnderlying(raw uint8) (StaticForgeCallsLevelEnum, bool) {
+	switch raw {
+	case 10, 20:
+		return StaticForgeCallsLevelEnum(raw), true
+	}
+	return 0, false
+}
+
 // ── SCE Accepted Subset §2.15: what a format-2 saved state of it is bound to ──
 
 // StaticForgeCallsSavedShapeFormat2 is the shape a format-2 saved state of
 // this machine names when every record schema it holds is in its first
 // revision (docs/adr/0045, section 2). The generator computes it once, so it is
 // the text every backend's constant is.
-const StaticForgeCallsSavedShapeFormat2 = "894ce6ad7b5cf850e09034ba3c29f741ef9f52312ca7fd0c01d84819c4390e69"
+const StaticForgeCallsSavedShapeFormat2 = "e1ceb88b42e3ad186cb83379ddd3fac6c041b4cd242dee005c43a6acf78cbcba"
 
 // StaticForgeCallsSavedShapeFormat2Revised is the shape a format-2 saved state
 // of this machine names when it names a later revision of a record schema or
 // an enum.
-const StaticForgeCallsSavedShapeFormat2Revised = "08d66e661a0cdc8c30dcda21efc297b43b2b3f930eef12e2da27da58b6deb180"
+const StaticForgeCallsSavedShapeFormat2Revised = "47d468eaf1347e8d4209e924eca025b0aee6cf836f6689fc2013b701e7531b53"
 
 // StaticForgeCallsSavedEnumKeys names each enum a value of a saved state of
 // this machine is of, by its document (docs/adr/0044): the key `revisions`
 // names it by, and the format-2 shape spells it by.
-var StaticForgeCallsSavedEnumKeys = [...]string{}
+var StaticForgeCallsSavedEnumKeys = [...]string{
+	"enum:forge_call_level.scxml",
+	"enum:forge_call_status.scxml",
+}
+
+// ── SCE Accepted Subset §2.15: calls of an algorithm that takes or returns state ──
+// StaticForgeCallsLevelEnumToDocument is a value of StaticForgeCallsLevelEnum as the variant of the same declared name of sce_forge_call_level.ForgeCallLevel.
+func StaticForgeCallsLevelEnumToDocument(v StaticForgeCallsLevelEnum) sce_forge_call_level.ForgeCallLevel {
+	return map[StaticForgeCallsLevelEnum]sce_forge_call_level.ForgeCallLevel{StaticForgeCallsLevelEnumLight: sce_forge_call_level.ForgeCallLevelLight, StaticForgeCallsLevelEnumHeavy: sce_forge_call_level.ForgeCallLevelHeavy}[v]
+}
+
+// StaticForgeCallsLevelEnumFromDocument is a value of sce_forge_call_level.ForgeCallLevel as the variant of the same declared name of StaticForgeCallsLevelEnum.
+func StaticForgeCallsLevelEnumFromDocument(v sce_forge_call_level.ForgeCallLevel) StaticForgeCallsLevelEnum {
+	return map[sce_forge_call_level.ForgeCallLevel]StaticForgeCallsLevelEnum{sce_forge_call_level.ForgeCallLevelLight: StaticForgeCallsLevelEnumLight, sce_forge_call_level.ForgeCallLevelHeavy: StaticForgeCallsLevelEnumHeavy}[v]
+}
+
+// StaticForgeCallsStatusEnumToDocument is a value of StaticForgeCallsStatusEnum as the variant of the same declared name of sce_forge_call_status.ForgeCallStatus.
+func StaticForgeCallsStatusEnumToDocument(v StaticForgeCallsStatusEnum) sce_forge_call_status.ForgeCallStatus {
+	return map[StaticForgeCallsStatusEnum]sce_forge_call_status.ForgeCallStatus{StaticForgeCallsStatusEnumOpen: sce_forge_call_status.ForgeCallStatusOpen, StaticForgeCallsStatusEnumHeld: sce_forge_call_status.ForgeCallStatusHeld, StaticForgeCallsStatusEnumDone: sce_forge_call_status.ForgeCallStatusDone}[v]
+}
+
+// StaticForgeCallsStatusEnumFromDocument is a value of sce_forge_call_status.ForgeCallStatus as the variant of the same declared name of StaticForgeCallsStatusEnum.
+func StaticForgeCallsStatusEnumFromDocument(v sce_forge_call_status.ForgeCallStatus) StaticForgeCallsStatusEnum {
+	return map[sce_forge_call_status.ForgeCallStatus]StaticForgeCallsStatusEnum{sce_forge_call_status.ForgeCallStatusOpen: StaticForgeCallsStatusEnumOpen, sce_forge_call_status.ForgeCallStatusHeld: StaticForgeCallsStatusEnumHeld, sce_forge_call_status.ForgeCallStatusDone: StaticForgeCallsStatusEnumDone}[v]
+}
 
 // ======================================================================
 // Policy struct
@@ -215,6 +325,14 @@ type StaticForgeCallsPolicy struct {
 	vLimit float64
 	// W3C SCXML 5.2: the `highs` datamodel variable, published (`sce:direction="out"`).
 	vHighs uint32
+	// W3C SCXML 5.2: the `phase` datamodel variable, published (`sce:direction="out"`).
+	vPhase StaticForgeCallsStatusEnum
+	// W3C SCXML 5.2: the `weight` datamodel variable, published (`sce:direction="out"`).
+	vWeight StaticForgeCallsLevelEnum
+	// W3C SCXML 5.2: the `customer` datamodel variable, published (`sce:direction="out"`).
+	vCustomer string
+	// W3C SCXML 5.2: the `known` datamodel variable, published (`sce:direction="out"`).
+	vKnown bool
 	// W3C SCXML 6.4: Parent communication (unbounded — see sce.ParentEventQueue)
 	ParentExternalQueue *sce.ParentEventQueue
 	InvokeID           string
@@ -237,6 +355,10 @@ func NewStaticForgeCallsPolicy() StaticForgeCallsPolicy {
 		vRpm: 0,
 		vLimit: 0.0,
 		vHighs: 0,
+		vPhase: StaticForgeCallsStatusEnumOpen,
+		vWeight: StaticForgeCallsLevelEnumLight,
+		vCustomer: "anna",
+		vKnown: false,
 	}
 }
 
@@ -300,6 +422,30 @@ func (p *StaticForgeCallsPolicy) Highs() uint32 {
 	return p.vHighs
 }
 
+// Phase reports what the published `phase` datamodel
+// variable holds now (W3C SCXML 5.2). Only the machine writes it.
+func (p *StaticForgeCallsPolicy) Phase() StaticForgeCallsStatusEnum {
+	return p.vPhase
+}
+
+// Weight reports what the published `weight` datamodel
+// variable holds now (W3C SCXML 5.2). Only the machine writes it.
+func (p *StaticForgeCallsPolicy) Weight() StaticForgeCallsLevelEnum {
+	return p.vWeight
+}
+
+// Customer reports what the published `customer` datamodel
+// variable holds now (W3C SCXML 5.2). Only the machine writes it.
+func (p *StaticForgeCallsPolicy) Customer() string {
+	return p.vCustomer
+}
+
+// Known reports what the published `known` datamodel
+// variable holds now (W3C SCXML 5.2). Only the machine writes it.
+func (p *StaticForgeCallsPolicy) Known() bool {
+	return p.vKnown
+}
+
 // StaticForgeCallsInvokeParams holds the values a parent's `<param>` and
 // `namelist` give this machine's variables before it starts (§scxml-6.4.1). A
 // variable left nil keeps the value its `<data>` gave it.
@@ -314,6 +460,8 @@ type StaticForgeCallsInvokeParams struct {
 	VRpm *uint16
 	VLimit *float64
 	VHighs *uint32
+	VCustomer *string
+	VKnown *bool
 }
 
 // AcceptParams gives this machine the values params carries, in place of the
@@ -348,6 +496,12 @@ func (p *StaticForgeCallsPolicy) AcceptParams(params StaticForgeCallsInvokeParam
 	}
 	if params.VHighs != nil {
 		p.vHighs = *params.VHighs
+	}
+	if params.VCustomer != nil {
+		p.vCustomer = *params.VCustomer
+	}
+	if params.VKnown != nil {
+		p.vKnown = *params.VKnown
 	}
 }
 
@@ -467,6 +621,12 @@ func (p *StaticForgeCallsPolicy) GetEventName(event StaticForgeCallsEvent) strin
 // GetEventFromName looks up an event by name (W3C SCXML 3.12).
 func (p *StaticForgeCallsPolicy) GetEventFromName(name string) (StaticForgeCallsEvent, bool) {
 	switch name {
+	case "advance":
+		return StaticForgeCallsEventAdvance, true
+	case "check_customer":
+		return StaticForgeCallsEventCheckCustomer, true
+	case "clear_customer":
+		return StaticForgeCallsEventClearCustomer, true
 	case "error.execution":
 		return StaticForgeCallsEventErrorExecution, true
 	case "probe":
@@ -576,7 +736,7 @@ func (p *StaticForgeCallsPolicy) ClearEventMetadata() {
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line static_forge_calls.scxml:15
+//line static_forge_calls.scxml:23
 func (p *StaticForgeCallsPolicy) ExecuteEntryActions(state StaticForgeCallsState, engine *sce.Engine[StaticForgeCallsState, StaticForgeCallsEvent], isDefaultEntry bool) {
 	switch state {
 	default:
@@ -589,7 +749,7 @@ func (p *StaticForgeCallsPolicy) ExecuteEntryActions(state StaticForgeCallsState
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line static_forge_calls.scxml:15
+//line static_forge_calls.scxml:23
 func (p *StaticForgeCallsPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[StaticForgeCallsState, StaticForgeCallsEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -597,7 +757,7 @@ func (p *StaticForgeCallsPolicy) ExecuteHistoryDefaultContent(history sce.Histor
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line static_forge_calls.scxml:15
+//line static_forge_calls.scxml:23
 func (p *StaticForgeCallsPolicy) ExecuteExitActions(state StaticForgeCallsState, engine *sce.Engine[StaticForgeCallsState, StaticForgeCallsEvent], configurationBeforeExit []StaticForgeCallsState) {
 	// §scxml-D-exitStates orders one state's exit as onexit, then
 	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
@@ -614,7 +774,7 @@ func (p *StaticForgeCallsPolicy) ExecuteExitActions(state StaticForgeCallsState,
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line static_forge_calls.scxml:15
+//line static_forge_calls.scxml:23
 func (p *StaticForgeCallsPolicy) BindCurrentEvent(event StaticForgeCallsEvent, engine *sce.Engine[StaticForgeCallsState, StaticForgeCallsEvent]) {
 	// This document's guards never read _event, so there is nothing to bind.
 }
@@ -624,7 +784,7 @@ func (p *StaticForgeCallsPolicy) BindCurrentEvent(event StaticForgeCallsEvent, e
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line static_forge_calls.scxml:15
+//line static_forge_calls.scxml:23
 func (p *StaticForgeCallsPolicy) FirstEnabledTransition(state StaticForgeCallsState, event StaticForgeCallsEvent, engine *sce.Engine[StaticForgeCallsState, StaticForgeCallsEvent]) (sce.EnabledTransition[StaticForgeCallsState, sce.HistoryID], bool) {
 	switch state {
 	case StaticForgeCallsStateRun:
@@ -671,11 +831,41 @@ func (p *StaticForgeCallsPolicy) FirstEnabledTransition(state StaticForgeCallsSt
 				}, true
 			}
 		}
-		if event == StaticForgeCallsEventErrorExecution {
+		if event == StaticForgeCallsEventAdvance {
 			{
 				return sce.EnabledTransition[StaticForgeCallsState, sce.HistoryID]{
 					Source:          state,
 					TransitionIndex: 4,
+					HasActions:      true,
+					IsInternal:      true,
+				}, true
+			}
+		}
+		if event == StaticForgeCallsEventCheckCustomer {
+			{
+				return sce.EnabledTransition[StaticForgeCallsState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 5,
+					HasActions:      true,
+					IsInternal:      true,
+				}, true
+			}
+		}
+		if event == StaticForgeCallsEventClearCustomer {
+			{
+				return sce.EnabledTransition[StaticForgeCallsState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 6,
+					HasActions:      true,
+					IsInternal:      true,
+				}, true
+			}
+		}
+		if event == StaticForgeCallsEventErrorExecution {
+			{
+				return sce.EnabledTransition[StaticForgeCallsState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 7,
 					HasActions:      true,
 					IsInternal:      true,
 				}, true
@@ -687,13 +877,13 @@ func (p *StaticForgeCallsPolicy) FirstEnabledTransition(state StaticForgeCallsSt
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line static_forge_calls.scxml:15
+//line static_forge_calls.scxml:23
 func (p *StaticForgeCallsPolicy) ExecuteTransitionContent(source StaticForgeCallsState, transitionIndex int, engine *sce.Engine[StaticForgeCallsState, StaticForgeCallsEvent]) {
 	switch source {
 	case StaticForgeCallsStateRun:
 		switch transitionIndex {
 		case 0:
-			//line static_forge_calls.scxml:36
+			//line static_forge_calls.scxml:53
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -714,7 +904,7 @@ func (p *StaticForgeCallsPolicy) ExecuteTransitionContent(source StaticForgeCall
 
 			}()
 		case 1:
-			//line static_forge_calls.scxml:41
+			//line static_forge_calls.scxml:58
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -733,7 +923,7 @@ func (p *StaticForgeCallsPolicy) ExecuteTransitionContent(source StaticForgeCall
 
 			}()
 		case 2:
-			//line static_forge_calls.scxml:46
+			//line static_forge_calls.scxml:63
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -748,7 +938,7 @@ func (p *StaticForgeCallsPolicy) ExecuteTransitionContent(source StaticForgeCall
 
 			}()
 		case 3:
-			//line static_forge_calls.scxml:50
+			//line static_forge_calls.scxml:67
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -759,7 +949,42 @@ func (p *StaticForgeCallsPolicy) ExecuteTransitionContent(source StaticForgeCall
 
 			}()
 		case 4:
-			//line static_forge_calls.scxml:53
+			//line static_forge_calls.scxml:70
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+
+
+	p.vPhase = StaticForgeCallsStatusEnumFromDocument(sce_forge_call_next.ComputeAfter(StaticForgeCallsStatusEnumToDocument(p.vPhase)))
+
+
+
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := StaticForgeCallsLevelEnumFromDocument(scealgorithm.TakeOutcome(&sceFailure, scealgorithm.Found(sce_forge_call_weight.LookupWeight(StaticForgeCallsStatusEnumToDocument(p.vPhase))))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForgeCallsEventErrorExecution, "<assign location='weight'>: an integer operation overflowed or failed")); return true }; p.vWeight = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+			}()
+		case 5:
+			//line static_forge_calls.scxml:74
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+
+
+	p.vKnown = sce_forge_call_named.NewForgeCallNamed().Validate(p.vCustomer).Valid
+
+			}()
+		case 6:
+			//line static_forge_calls.scxml:77
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+
+
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "", 16); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForgeCallsEventErrorExecution, "<assign location='customer'>: an integer operation overflowed or failed")); return true }; p.vCustomer = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+			}()
+		case 7:
+			//line static_forge_calls.scxml:80
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

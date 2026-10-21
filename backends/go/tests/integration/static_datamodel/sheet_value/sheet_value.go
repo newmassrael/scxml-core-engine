@@ -9,6 +9,12 @@
 
 package sheet_value
 
+// EventName is the event this schema types (`sce:event-name`), as a host names it.
+const EventName string = "merge.sheet_value"
+
+// Revision is the revision of the schema (`sce:revision`, 1 when the document declares none).
+const Revision uint32 = 1
+
 type SheetValuePayload struct {
 	Value int64
 	Fault uint8

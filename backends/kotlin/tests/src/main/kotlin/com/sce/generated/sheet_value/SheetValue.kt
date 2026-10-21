@@ -9,4 +9,10 @@
 
 package com.sce.generated.sheet_value
 
+/** The event this schema types (`sce:event-name`), as a host names it. */
+const val EVENT_NAME: String = "merge.sheet_value"
+
+/** The revision of the schema (`sce:revision`, 1 when the document declares none). */
+const val REVISION: UInt = 1u
+
 data class SheetValuePayload(    val value: Long,    val fault: UByte)

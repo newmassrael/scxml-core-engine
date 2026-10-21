@@ -9,6 +9,12 @@
 
 package rga_gone
 
+// EventName is the event this schema types (`sce:event-name`), as a host names it.
+const EventName string = "merge.rga_gone"
+
+// Revision is the revision of the schema (`sce:revision`, 1 when the document declares none).
+const Revision uint32 = 1
+
 type RgaGonePayload struct {
 	Key uint64
 	By uint64

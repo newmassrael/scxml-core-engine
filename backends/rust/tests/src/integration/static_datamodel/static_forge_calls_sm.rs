@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9fab540da93829eaa9159cbc7132fde0b98312062867e02e6e631d43aef759bc
+// source-hash: 0fafd5dc7cb78db436777a56fff2cdefea18c3275c9e740c945e368e87cb13ce
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -72,15 +72,20 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-#![doc = "SCE-MAP: static_forge_calls.scxml:15 :: _machine"]
-// SCE-MAP: static_forge_calls.scxml:15 :: _machine
+#![doc = "SCE-MAP: static_forge_calls.scxml:23 :: _machine"]
+// SCE-MAP: static_forge_calls.scxml:23 :: _machine
 
 use super::forge_call_code;
 use super::forge_call_high;
+use super::forge_call_level;
 use super::forge_call_limit;
+use super::forge_call_named;
+use super::forge_call_next;
 use super::forge_call_offset;
 use super::forge_call_range;
 use super::forge_call_ratio;
+use super::forge_call_status;
+use super::forge_call_weight;
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
 
@@ -101,6 +106,9 @@ pub enum StaticForgeCallsState {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StaticForgeCallsEvent {
+    Advance,
+    CheckCustomer,
+    ClearCustomer,
     ErrorExecution,
     Probe,
     Rise,
@@ -127,11 +135,140 @@ impl StaticForgeCallsEvent {
     /// several machines glob-re-exported into one module never collide
     /// on the name.
     pub const EXTERNALLY_DRIVABLE_EVENTS: &'static [StaticForgeCallsEvent] = &[
+        StaticForgeCallsEvent::Advance,
+        StaticForgeCallsEvent::CheckCustomer,
+        StaticForgeCallsEvent::ClearCustomer,
         StaticForgeCallsEvent::Probe,
         StaticForgeCallsEvent::Rise,
         StaticForgeCallsEvent::Shift,
         StaticForgeCallsEvent::Spin,
     ];
+}
+
+// ── SCE Accepted Subset §2.15: the enum and record types the sce-static variables hold ──
+/// SCE Accepted Subset §2.15: an `enum:Status` datamodel value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StaticForgeCallsStatusEnum {
+    Open,
+    Held,
+    Done,
+}
+
+impl StaticForgeCallsStatusEnum {
+    /// The name the enum document declares for this value.
+    #[allow(dead_code)]
+    pub fn sce_name(self) -> &'static str {
+        match self {
+            Self::Open => "open",
+            Self::Held => "held",
+            Self::Done => "done",
+        }
+    }
+
+    /// The number the enum document declares for this value.
+    #[allow(dead_code)]
+    pub fn to_underlying(self) -> u8 {
+        match self {
+            Self::Open => 1,
+            Self::Held => 2,
+            Self::Done => 3,
+        }
+    }
+
+    /// The variant that declares `raw`, or `None` for a number no variant declares.
+    #[allow(dead_code)]
+    pub fn from_underlying(raw: u8) -> Option<Self> {
+        match raw {
+            1 => Some(Self::Open),
+            2 => Some(Self::Held),
+            3 => Some(Self::Done),
+            _ => None,
+        }
+    }
+}
+
+/// SCE Accepted Subset §2.15: an `enum:Level` datamodel value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StaticForgeCallsLevelEnum {
+    Light,
+    Heavy,
+}
+
+impl StaticForgeCallsLevelEnum {
+    /// The name the enum document declares for this value.
+    #[allow(dead_code)]
+    pub fn sce_name(self) -> &'static str {
+        match self {
+            Self::Light => "light",
+            Self::Heavy => "heavy",
+        }
+    }
+
+    /// The number the enum document declares for this value.
+    #[allow(dead_code)]
+    pub fn to_underlying(self) -> u8 {
+        match self {
+            Self::Light => 10,
+            Self::Heavy => 20,
+        }
+    }
+
+    /// The variant that declares `raw`, or `None` for a number no variant declares.
+    #[allow(dead_code)]
+    pub fn from_underlying(raw: u8) -> Option<Self> {
+        match raw {
+            10 => Some(Self::Light),
+            20 => Some(Self::Heavy),
+            _ => None,
+        }
+    }
+}
+
+// ── SCE Accepted Subset §2.15: calls of an algorithm that takes or returns state ──
+/// A value of `StaticForgeCallsLevelEnum` as the variant of the same declared name of `forge_call_level::ForgeCallLevel`.
+#[allow(non_snake_case, dead_code)]
+fn StaticForgeCallsLevelEnumToDocument(
+    v: StaticForgeCallsLevelEnum,
+) -> forge_call_level::ForgeCallLevel {
+    match v {
+        StaticForgeCallsLevelEnum::Light => forge_call_level::ForgeCallLevel::Light,
+        StaticForgeCallsLevelEnum::Heavy => forge_call_level::ForgeCallLevel::Heavy,
+    }
+}
+
+/// A value of `forge_call_level::ForgeCallLevel` as the variant of the same declared name of `StaticForgeCallsLevelEnum`.
+#[allow(non_snake_case, dead_code)]
+fn StaticForgeCallsLevelEnumFromDocument(
+    v: forge_call_level::ForgeCallLevel,
+) -> StaticForgeCallsLevelEnum {
+    match v {
+        forge_call_level::ForgeCallLevel::Light => StaticForgeCallsLevelEnum::Light,
+        forge_call_level::ForgeCallLevel::Heavy => StaticForgeCallsLevelEnum::Heavy,
+    }
+}
+
+/// A value of `StaticForgeCallsStatusEnum` as the variant of the same declared name of `forge_call_status::ForgeCallStatus`.
+#[allow(non_snake_case, dead_code)]
+fn StaticForgeCallsStatusEnumToDocument(
+    v: StaticForgeCallsStatusEnum,
+) -> forge_call_status::ForgeCallStatus {
+    match v {
+        StaticForgeCallsStatusEnum::Open => forge_call_status::ForgeCallStatus::Open,
+        StaticForgeCallsStatusEnum::Held => forge_call_status::ForgeCallStatus::Held,
+        StaticForgeCallsStatusEnum::Done => forge_call_status::ForgeCallStatus::Done,
+    }
+}
+
+/// A value of `forge_call_status::ForgeCallStatus` as the variant of the same declared name of `StaticForgeCallsStatusEnum`.
+#[allow(non_snake_case, dead_code)]
+fn StaticForgeCallsStatusEnumFromDocument(
+    v: forge_call_status::ForgeCallStatus,
+) -> StaticForgeCallsStatusEnum {
+    match v {
+        forge_call_status::ForgeCallStatus::Open => StaticForgeCallsStatusEnum::Open,
+        forge_call_status::ForgeCallStatus::Held => StaticForgeCallsStatusEnum::Held,
+        forge_call_status::ForgeCallStatus::Done => StaticForgeCallsStatusEnum::Done,
+    }
 }
 
 // ── SCE Accepted Subset §2.15: what a host observes of a sce-static machine ──
@@ -151,6 +288,10 @@ pub struct StaticForgeCallsData {
     pub rpm: u16,
     pub limit: f64,
     pub highs: u32,
+    pub phase: StaticForgeCallsStatusEnum,
+    pub weight: StaticForgeCallsLevelEnum,
+    pub customer: String,
+    pub known: bool,
 }
 
 /// What a host observes: the full active configuration — every active state,
@@ -190,6 +331,10 @@ impl StaticForgeCallsObserve for Engine<StaticForgeCallsPolicy> {
                 rpm: policy.rpm,
                 limit: policy.limit,
                 highs: policy.highs,
+                phase: policy.phase,
+                weight: policy.weight,
+                customer: policy.customer.clone(),
+                known: policy.known,
             },
             truncated: self.last_macrostep_truncated(),
         }
@@ -197,6 +342,68 @@ impl StaticForgeCallsObserve for Engine<StaticForgeCallsPolicy> {
 }
 
 // ── SCE Accepted Subset §2.15: saving a sce-static machine and restoring it ──
+
+impl ::sce_rust_runtime::saved_state::SavedValue for StaticForgeCallsStatusEnum {
+    fn to_saved(&self) -> ::sce_rust_runtime::json::Value {
+        ::sce_rust_runtime::json::Value::Text(
+            match self {
+                Self::Open => "open",
+                Self::Held => "held",
+                Self::Done => "done",
+            }
+            .to_string(),
+        )
+    }
+
+    fn from_saved(
+        value: &::sce_rust_runtime::json::Value,
+        what: &str,
+    ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
+        match value {
+            ::sce_rust_runtime::json::Value::Text(declared) => match declared.as_str() {
+                "open" => Ok(Self::Open),
+                "held" => Ok(Self::Held),
+                "done" => Ok(Self::Done),
+                other => Err(::sce_rust_runtime::saved_state::StateRefusal::new(format!(
+                    "'{what}' ({other}) is not a variant of Status"
+                ))),
+            },
+            _ => Err(::sce_rust_runtime::saved_state::StateRefusal::new(format!(
+                "'{what}' is not a text"
+            ))),
+        }
+    }
+}
+
+impl ::sce_rust_runtime::saved_state::SavedValue for StaticForgeCallsLevelEnum {
+    fn to_saved(&self) -> ::sce_rust_runtime::json::Value {
+        ::sce_rust_runtime::json::Value::Text(
+            match self {
+                Self::Light => "light",
+                Self::Heavy => "heavy",
+            }
+            .to_string(),
+        )
+    }
+
+    fn from_saved(
+        value: &::sce_rust_runtime::json::Value,
+        what: &str,
+    ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
+        match value {
+            ::sce_rust_runtime::json::Value::Text(declared) => match declared.as_str() {
+                "light" => Ok(Self::Light),
+                "heavy" => Ok(Self::Heavy),
+                other => Err(::sce_rust_runtime::saved_state::StateRefusal::new(format!(
+                    "'{what}' ({other}) is not a variant of Level"
+                ))),
+            },
+            _ => Err(::sce_rust_runtime::saved_state::StateRefusal::new(format!(
+                "'{what}' is not a text"
+            ))),
+        }
+    }
+}
 
 /// A running machine saved at a macrostep boundary, and restored into a new
 /// process in place of `initialize` — every variable, the machine's own
@@ -300,12 +507,35 @@ impl StaticForgeCallsPersist for Engine<StaticForgeCallsPolicy> {
 
     const SHAPE: ::sce_rust_runtime::saved_state::SavedShape =
         ::sce_rust_runtime::saved_state::SavedShape {
-            first: "894ce6ad7b5cf850e09034ba3c29f741ef9f52312ca7fd0c01d84819c4390e69",
-            revised: "08d66e661a0cdc8c30dcda21efc297b43b2b3f930eef12e2da27da58b6deb180",
-            format2_first: "894ce6ad7b5cf850e09034ba3c29f741ef9f52312ca7fd0c01d84819c4390e69",
-            format2_revised: "08d66e661a0cdc8c30dcda21efc297b43b2b3f930eef12e2da27da58b6deb180",
+            first: "f8c208dcc14ca056d0b9299f9ccd618ec2750f05632205a4c651d46096c9344a",
+            revised: "25698583336d197df47e95c878010ab439aed9ae9aaf753df2da2a80ee38651f",
+            format2_first: "e1ceb88b42e3ad186cb83379ddd3fac6c041b4cd242dee005c43a6acf78cbcba",
+            format2_revised: "47d468eaf1347e8d4209e924eca025b0aee6cf836f6689fc2013b701e7531b53",
             records: &[],
-            enums: &[],
+            enums: &[
+                ::sce_rust_runtime::saved_state::EnumLineage {
+                    key: "enum:forge_call_level.scxml",
+                    revision: 1,
+                    revisions: &[],
+                    added: &[],
+                    holders: &[::sce_rust_runtime::saved_state::EnumHolder {
+                        variable: "weight",
+                        field: None,
+                        list: false,
+                    }],
+                },
+                ::sce_rust_runtime::saved_state::EnumLineage {
+                    key: "enum:forge_call_status.scxml",
+                    revision: 1,
+                    revisions: &[],
+                    added: &[],
+                    holders: &[::sce_rust_runtime::saved_state::EnumHolder {
+                        variable: "phase",
+                        field: None,
+                        list: false,
+                    }],
+                },
+            ],
         };
 
     const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<
@@ -364,6 +594,22 @@ impl StaticForgeCallsPersist for Engine<StaticForgeCallsPolicy> {
                     "highs".to_string(),
                     ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.highs),
                 ),
+                (
+                    "phase".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.phase),
+                ),
+                (
+                    "weight".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.weight),
+                ),
+                (
+                    "customer".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.customer),
+                ),
+                (
+                    "known".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.known),
+                ),
             ],
             ::sce_rust_runtime::saved_state::save_history(self.policy(), Self::HISTORIES),
             Vec::new(),
@@ -419,6 +665,24 @@ impl StaticForgeCallsPersist for Engine<StaticForgeCallsPolicy> {
         let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("highs")?,
             "highs",
+        )?;
+        let _: StaticForgeCallsStatusEnum =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("phase")?,
+                "phase",
+            )?;
+        let _: StaticForgeCallsLevelEnum = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("weight")?,
+            "weight",
+        )?;
+        let _: String = ::sce_rust_runtime::saved_state::bounded_string(
+            saved.variable("customer")?,
+            "customer",
+            16,
+        )?;
+        let _: bool = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("known")?,
+            "known",
         )?;
         ::sce_rust_runtime::saved_state::judge::<StaticForgeCallsPolicy>(saved)
     }
@@ -478,6 +742,23 @@ impl StaticForgeCallsPersist for Engine<StaticForgeCallsPolicy> {
             saved.variable("highs")?,
             "highs",
         )?;
+        policy.phase = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("phase")?,
+            "phase",
+        )?;
+        policy.weight = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("weight")?,
+            "weight",
+        )?;
+        policy.customer = ::sce_rust_runtime::saved_state::bounded_string(
+            saved.variable("customer")?,
+            "customer",
+            16,
+        )?;
+        policy.known = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("known")?,
+            "known",
+        )?;
         ::sce_rust_runtime::saved_state::enter(policy, saved, clock, wall_now_ms)
     }
 }
@@ -497,6 +778,8 @@ pub struct StaticForgeCallsInvokeParams {
     pub rpm: Option<u16>,
     pub limit: Option<f64>,
     pub highs: Option<u32>,
+    pub customer: Option<String>,
+    pub known: Option<bool>,
 }
 
 // ======================================================================
@@ -524,6 +807,14 @@ pub struct StaticForgeCallsPolicy {
     limit: f64,
     /// W3C SCXML 5.2: the `highs` datamodel variable, published (`sce:direction="out"`).
     highs: u32,
+    /// W3C SCXML 5.2: the `phase` datamodel variable, published (`sce:direction="out"`).
+    phase: StaticForgeCallsStatusEnum,
+    /// W3C SCXML 5.2: the `weight` datamodel variable, published (`sce:direction="out"`).
+    weight: StaticForgeCallsLevelEnum,
+    /// W3C SCXML 5.2: the `customer` datamodel variable, published (`sce:direction="out"`).
+    customer: String,
+    /// W3C SCXML 5.2: the `known` datamodel variable, published (`sce:direction="out"`).
+    known: bool,
     // W3C SCXML 5.10: the session's id (script engine, invoke tracking, the
     // saved state), bound when the machine is built and never empty
     // (docs/adr/0045): drawn, given by the host, or given by the parent.
@@ -555,6 +846,10 @@ impl StaticForgeCallsPolicy {
         let rpm: u16 = 0;
         let limit: f64 = 0.0;
         let highs: u32 = 0;
+        let phase: StaticForgeCallsStatusEnum = StaticForgeCallsStatusEnum::Open;
+        let weight: StaticForgeCallsLevelEnum = StaticForgeCallsLevelEnum::Light;
+        let customer: String = "anna".to_string();
+        let known: bool = false;
         Self {
             gear,
             ratio,
@@ -566,6 +861,10 @@ impl StaticForgeCallsPolicy {
             rpm,
             limit,
             highs,
+            phase,
+            weight,
+            customer,
+            known,
             session_id: Some(session_id),
             parent_external_queue: None,
             invoke_id: String::new(),
@@ -644,6 +943,12 @@ impl StaticForgeCallsPolicy {
         if let Some(value) = params.highs {
             self.highs = value;
         }
+        if let Some(value) = params.customer {
+            self.customer = value;
+        }
+        if let Some(value) = params.known {
+            self.known = value;
+        }
     }
 
     /// W3C SCXML 5.2: what the published `gear` datamodel variable
@@ -704,6 +1009,30 @@ impl StaticForgeCallsPolicy {
     /// holds now. Only the machine writes it.
     pub fn highs(&self) -> u32 {
         self.highs
+    }
+
+    /// W3C SCXML 5.2: what the published `phase` datamodel variable
+    /// holds now. Only the machine writes it.
+    pub fn phase(&self) -> StaticForgeCallsStatusEnum {
+        self.phase
+    }
+
+    /// W3C SCXML 5.2: what the published `weight` datamodel variable
+    /// holds now. Only the machine writes it.
+    pub fn weight(&self) -> StaticForgeCallsLevelEnum {
+        self.weight
+    }
+
+    /// W3C SCXML 5.2: what the published `customer` datamodel variable
+    /// holds now. Only the machine writes it.
+    pub fn customer(&self) -> &str {
+        &self.customer
+    }
+
+    /// W3C SCXML 5.2: what the published `known` datamodel variable
+    /// holds now. Only the machine writes it.
+    pub fn known(&self) -> bool {
+        self.known
     }
 }
 
@@ -843,6 +1172,9 @@ impl StatePolicy for StaticForgeCallsPolicy {
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
+            StaticForgeCallsEvent::Advance => "advance",
+            StaticForgeCallsEvent::CheckCustomer => "check_customer",
+            StaticForgeCallsEvent::ClearCustomer => "clear_customer",
             StaticForgeCallsEvent::ErrorExecution => "error.execution",
             StaticForgeCallsEvent::Probe => "probe",
             StaticForgeCallsEvent::Rise => "rise",
@@ -854,6 +1186,9 @@ impl StatePolicy for StaticForgeCallsPolicy {
 
     fn get_event_from_name(name: &str) -> Option<Self::Event> {
         match name {
+            "advance" => Some(StaticForgeCallsEvent::Advance),
+            "check_customer" => Some(StaticForgeCallsEvent::CheckCustomer),
+            "clear_customer" => Some(StaticForgeCallsEvent::ClearCustomer),
             "error.execution" => Some(StaticForgeCallsEvent::ErrorExecution),
             "probe" => Some(StaticForgeCallsEvent::Probe),
             "rise" => Some(StaticForgeCallsEvent::Rise),
@@ -898,8 +1233,8 @@ impl StatePolicy for StaticForgeCallsPolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: static_forge_calls.scxml:15 :: _machine"]
-    // SCE-MAP: static_forge_calls.scxml:15 :: _machine
+    #[doc = "SCE-MAP: static_forge_calls.scxml:23 :: _machine"]
+    // SCE-MAP: static_forge_calls.scxml:23 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -915,8 +1250,8 @@ impl StatePolicy for StaticForgeCallsPolicy {
     // recorded runs nothing.
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: static_forge_calls.scxml:15 :: _machine"]
-    // SCE-MAP: static_forge_calls.scxml:15 :: _machine
+    #[doc = "SCE-MAP: static_forge_calls.scxml:23 :: _machine"]
+    // SCE-MAP: static_forge_calls.scxml:23 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -932,8 +1267,8 @@ impl StatePolicy for StaticForgeCallsPolicy {
     // the first of `state`'s own transitions, in document order, that `event`
     // enables. The engine walks the atomic states and their ancestors and
     // keeps the ordered set. `Event::Null` asks for eventless transitions.
-    #[doc = "SCE-MAP: static_forge_calls.scxml:15 :: _machine"]
-    // SCE-MAP: static_forge_calls.scxml:15 :: _machine
+    #[doc = "SCE-MAP: static_forge_calls.scxml:23 :: _machine"]
+    // SCE-MAP: static_forge_calls.scxml:23 :: _machine
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
@@ -986,12 +1321,45 @@ impl StatePolicy for StaticForgeCallsPolicy {
                         });
                     }
                 }
-                if event == StaticForgeCallsEvent::ErrorExecution {
+                if event == StaticForgeCallsEvent::Advance {
                     {
                         return Some(::sce_rust_runtime::EnabledTransition {
                             source: state,
                             targets: &[],
                             transition_index: 4,
+                            has_actions: true,
+                            is_internal: true,
+                        });
+                    }
+                }
+                if event == StaticForgeCallsEvent::CheckCustomer {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[],
+                            transition_index: 5,
+                            has_actions: true,
+                            is_internal: true,
+                        });
+                    }
+                }
+                if event == StaticForgeCallsEvent::ClearCustomer {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[],
+                            transition_index: 6,
+                            has_actions: true,
+                            is_internal: true,
+                        });
+                    }
+                }
+                if event == StaticForgeCallsEvent::ErrorExecution {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[],
+                            transition_index: 7,
                             has_actions: true,
                             is_internal: true,
                         });
@@ -1005,8 +1373,8 @@ impl StatePolicy for StaticForgeCallsPolicy {
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries.
-    #[doc = "SCE-MAP: static_forge_calls.scxml:15 :: _machine"]
-    // SCE-MAP: static_forge_calls.scxml:15 :: _machine
+    #[doc = "SCE-MAP: static_forge_calls.scxml:23 :: _machine"]
+    // SCE-MAP: static_forge_calls.scxml:23 :: _machine
     fn execute_transition_content(
         &mut self,
         source: Self::State,
@@ -1017,7 +1385,7 @@ impl StatePolicy for StaticForgeCallsPolicy {
             StaticForgeCallsState::Run => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: static_forge_calls.scxml:36 :: run :: _transition_0
+                        // SCE-MAP: static_forge_calls.scxml:53 :: run :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1056,7 +1424,7 @@ impl StatePolicy for StaticForgeCallsPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: static_forge_calls.scxml:41 :: run :: _transition_1
+                        // SCE-MAP: static_forge_calls.scxml:58 :: run :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1085,7 +1453,7 @@ impl StatePolicy for StaticForgeCallsPolicy {
                         }
                     }
                     2 => {
-                        // SCE-MAP: static_forge_calls.scxml:46 :: run :: _transition_2
+                        // SCE-MAP: static_forge_calls.scxml:63 :: run :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1109,7 +1477,7 @@ impl StatePolicy for StaticForgeCallsPolicy {
                         }
                     }
                     3 => {
-                        // SCE-MAP: static_forge_calls.scxml:50 :: run :: _transition_3
+                        // SCE-MAP: static_forge_calls.scxml:67 :: run :: _transition_3
                         // W3C SCXML 3.13: Transition 3 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -1130,8 +1498,68 @@ impl StatePolicy for StaticForgeCallsPolicy {
                         }
                     }
                     4 => {
-                        // SCE-MAP: static_forge_calls.scxml:53 :: run :: _transition_4
+                        // SCE-MAP: static_forge_calls.scxml:70 :: run :: _transition_4
                         // W3C SCXML 3.13: Transition 4 actions
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 5.3: <assign location="phase">
+                            self.phase = StaticForgeCallsStatusEnumFromDocument(
+                                forge_call_next::compute_after(
+                                    StaticForgeCallsStatusEnumToDocument(self.phase),
+                                ),
+                            );
+
+                            // W3C SCXML 5.3: <assign location="weight">
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.weight = StaticForgeCallsLevelEnumFromDocument(sce_forge_runtime::algorithm::found(forge_call_weight::lookup_weight(StaticForgeCallsStatusEnumToDocument(self.phase)))?);
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticForgeCallsEvent::ErrorExecution, "<assign location='weight'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            }
+                        }
+                    }
+                    5 => {
+                        // SCE-MAP: static_forge_calls.scxml:74 :: run :: _transition_5
+                        // W3C SCXML 3.13: Transition 5 actions
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 5.3: <assign location="known">
+                            self.known = forge_call_named::ForgeCallNamed::new()
+                                .validate(&(self.customer))
+                                .valid;
+                        }
+                    }
+                    6 => {
+                        // SCE-MAP: static_forge_calls.scxml:77 :: run :: _transition_6
+                        // W3C SCXML 3.13: Transition 6 actions
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 5.3: <assign location="customer">
+                            let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.customer = sce_forge_runtime::algorithm::bounded("".to_string(), 16)?;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticForgeCallsEvent::ErrorExecution, "<assign location='customer'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                            if sce_failed {
+                                break 'action_block; // W3C SCXML 4.9: the error ends the block
+                            }
+                        }
+                    }
+                    7 => {
+                        // SCE-MAP: static_forge_calls.scxml:80 :: run :: _transition_7
+                        // W3C SCXML 3.13: Transition 7 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             // W3C SCXML 5.3: <assign location="misses">

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9fab540da93829eaa9159cbc7132fde0b98312062867e02e6e631d43aef759bc
+// source-hash: 0fafd5dc7cb78db436777a56fff2cdefea18c3275c9e740c945e368e87cb13ce
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -20,7 +20,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: record_list_parent.scxml:36 :: _machine
+// SCE-MAP: record_list_parent.scxml:37 :: _machine
 
 package record_list_parent
 
@@ -249,7 +249,7 @@ type RecordListParentRecordListJoinPayload struct {
 type RecordListParentRecordListRefusedPayload struct {
 	id uint32
 	field uint16
-	kind uint8
+	kind RecordListParentCommandEnum
 	reason RecordListParentRefusalEnum
 }
 
@@ -401,7 +401,7 @@ func RecordListParentRaiseRecordListJoin(e *sce.Engine[RecordListParentState, Re
 // values in one call so the name↔type pairing cannot be constructed
 // inconsistently. Twin of the Rust `RecordListParentInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RecordListParentRaiseRecordListRefused(e *sce.Engine[RecordListParentState, RecordListParentEvent], id uint32, field uint16, kind uint8, reason RecordListParentRefusalEnum) {
+func RecordListParentRaiseRecordListRefused(e *sce.Engine[RecordListParentState, RecordListParentEvent], id uint32, field uint16, kind RecordListParentCommandEnum, reason RecordListParentRefusalEnum) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[RecordListParentEvent]{
 		Event:    RecordListParentEventRecordListRefused,
 		Metadata: sce.EventMetadata{
@@ -411,7 +411,7 @@ func RecordListParentRaiseRecordListRefused(e *sce.Engine[RecordListParentState,
 			// and `Data`, which is what the script engine binds `_event.data`
 			// from. Filling only the first left an `<assign expr="_event.data.x">`
 			// on this event reading nothing, on every backend alike.
-			Data: sce.PayloadJSON(sce.Pair("id", id), sce.Pair("field", field), sce.Pair("kind", kind), sce.Pair("reason", reason.String())),
+			Data: sce.PayloadJSON(sce.Pair("id", id), sce.Pair("field", field), sce.Pair("kind", kind.String()), sce.Pair("reason", reason.String())),
 		},
 	})
 }
@@ -664,10 +664,48 @@ func (r RecordListParentToldValueRecord) NodeId() uint64 {
 }
 
 
+// SCE Accepted Subset §2.15: an `enum:Command` datamodel value.
+type RecordListParentCommandEnum uint8
+
+const (
+	RecordListParentCommandEnumEdit RecordListParentCommandEnum = 0
+	RecordListParentCommandEnumClear RecordListParentCommandEnum = 1
+	RecordListParentCommandEnumRetire RecordListParentCommandEnum = 2
+)
+
+// String is the name the enum document declares for the value.
+func (v RecordListParentCommandEnum) String() string {
+	switch v {
+	case RecordListParentCommandEnumEdit:
+		return "edit"
+	case RecordListParentCommandEnumClear:
+		return "clear"
+	case RecordListParentCommandEnumRetire:
+		return "retire"
+	}
+	return ""
+}
+
+// ToUnderlying is the number the enum document declares for the value.
+func (v RecordListParentCommandEnum) ToUnderlying() uint8 {
+	return uint8(v)
+}
+
+// RecordListParentCommandEnumFromUnderlying returns the variant that declares raw, and false for a
+// number no variant declares.
+func RecordListParentCommandEnumFromUnderlying(raw uint8) (RecordListParentCommandEnum, bool) {
+	switch raw {
+	case 0, 1, 2:
+		return RecordListParentCommandEnum(raw), true
+	}
+	return 0, false
+}
+
 // SCE Accepted Subset §2.15: an `enum:Refusal` datamodel value.
 type RecordListParentRefusalEnum uint8
 
 const (
+	RecordListParentRefusalEnumNone RecordListParentRefusalEnum = 0
 	RecordListParentRefusalEnumNotWriter RecordListParentRefusalEnum = 1
 	RecordListParentRefusalEnumNoRoomForValue RecordListParentRefusalEnum = 2
 	RecordListParentRefusalEnumNoRoomForHistory RecordListParentRefusalEnum = 3
@@ -681,6 +719,8 @@ const (
 // String is the name the enum document declares for the value.
 func (v RecordListParentRefusalEnum) String() string {
 	switch v {
+	case RecordListParentRefusalEnumNone:
+		return "none"
 	case RecordListParentRefusalEnumNotWriter:
 		return "notWriter"
 	case RecordListParentRefusalEnumNoRoomForValue:
@@ -710,7 +750,7 @@ func (v RecordListParentRefusalEnum) ToUnderlying() uint8 {
 // number no variant declares.
 func RecordListParentRefusalEnumFromUnderlying(raw uint8) (RecordListParentRefusalEnum, bool) {
 	switch raw {
-	case 1, 2, 3, 4, 5, 6, 7, 8:
+	case 0, 1, 2, 3, 4, 5, 6, 7, 8:
 		return RecordListParentRefusalEnum(raw), true
 	}
 	return 0, false
@@ -720,7 +760,7 @@ func RecordListParentRefusalEnumFromUnderlying(raw uint8) (RecordListParentRefus
 type RecordListParentRefusedRecord struct {
 	id uint32
 	field uint16
-	kind uint8
+	kind RecordListParentCommandEnum
 	reason RecordListParentRefusalEnum
 }
 
@@ -735,7 +775,7 @@ func (r RecordListParentRefusedRecord) Field() uint16 {
 }
 
 // Kind reports the `kind` field.
-func (r RecordListParentRefusedRecord) Kind() uint8 {
+func (r RecordListParentRefusedRecord) Kind() RecordListParentCommandEnum {
 	return r.kind
 }
 
@@ -745,23 +785,32 @@ func (r RecordListParentRefusedRecord) Reason() RecordListParentRefusalEnum {
 }
 
 
+// The bounds this machine is built with, each by the name `sce:limit` gives it (docs/adr/0050).
+
+// RecordListParentLimitMergeText is the bound `sce:limit="merge_text"` names, as this build resolved it.
+const RecordListParentLimitMergeText uint32 = 96
+
+// RecordListParentLimitSharedTypedText is the bound `sce:limit="shared_typed_text"` names, as this build resolved it.
+const RecordListParentLimitSharedTypedText uint32 = 32
+
 // ── SCE Accepted Subset §2.15: what a format-2 saved state of it is bound to ──
 
 // RecordListParentSavedShapeFormat2 is the shape a format-2 saved state of
 // this machine names when every record schema it holds is in its first
 // revision (docs/adr/0045, section 2). The generator computes it once, so it is
 // the text every backend's constant is.
-const RecordListParentSavedShapeFormat2 = "35efd36c455d36f7cfc54ad67c0960d30a9221087c48dc4a2ed2fddb7f8882b5"
+const RecordListParentSavedShapeFormat2 = "4a7cf799833ca50a1b8f86c5afd486ded0f2f0cc626c5260347c2fb4b3a4fa90"
 
 // RecordListParentSavedShapeFormat2Revised is the shape a format-2 saved state
 // of this machine names when it names a later revision of a record schema or
 // an enum.
-const RecordListParentSavedShapeFormat2Revised = "22509811fa170756983873a5b2826e7fc895de1adeef80c153b79e15946c28f3"
+const RecordListParentSavedShapeFormat2Revised = "8f73aa2806bb64e5c8311f7ae969457a2ab12e90928b5ed33643a47d7bb8037b"
 
 // RecordListParentSavedEnumKeys names each enum a value of a saved state of
 // this machine is of, by its document (docs/adr/0044): the key `revisions`
 // names it by, and the format-2 shape spells it by.
 var RecordListParentSavedEnumKeys = [...]string{
+	"enum:sce:std/shared/record_command.scxml",
 	"enum:sce:std/shared/record_refusal.scxml",
 }
 
@@ -827,7 +876,7 @@ func NewRecordListParentPolicy() RecordListParentPolicy {
 		vShown: RecordListParentToldRecord{id: 0, field: 0, count: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0},
 		vOthers: nil,
 		vOther: RecordListParentToldValueRecord{id: 0, field: 0, ordinal: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0},
-		vRefused: RecordListParentRefusedRecord{id: 0, field: 0, kind: 0, reason: RecordListParentRefusalEnumNotWriter},
+		vRefused: RecordListParentRefusedRecord{id: 0, field: 0, kind: RecordListParentCommandEnumEdit, reason: RecordListParentRefusalEnumNone},
 		vRefusedCount: 0,
 		pendingInvokes: make([]sce.PendingInvoke[RecordListParentState], 0),
 		activeInvokes:  make(map[string]*sce.ChildSession),
@@ -1445,10 +1494,10 @@ func (p *RecordListParentPolicy) LiftTypedPayload(event RecordListParentEvent, m
 		if payload.field, err = sce.PayloadUnsigned[uint16](fields, "field"); err != nil {
 			return err
 		}
-		if payload.kind, err = sce.PayloadUnsigned[uint8](fields, "kind"); err != nil {
+		if payload.kind, err = func() (RecordListParentCommandEnum, error) { name, err := sce.PayloadString(fields, "kind"); if err != nil { return 0, err }; switch name { case "edit": return RecordListParentCommandEnumEdit, nil; case "clear": return RecordListParentCommandEnumClear, nil; case "retire": return RecordListParentCommandEnumRetire, nil; }; return 0, fmt.Errorf("%q (%s) is not a variant of Command", "kind", name) }(); err != nil {
 			return err
 		}
-		if payload.reason, err = func() (RecordListParentRefusalEnum, error) { name, err := sce.PayloadString(fields, "reason"); if err != nil { return 0, err }; switch name { case "notWriter": return RecordListParentRefusalEnumNotWriter, nil; case "noRoomForValue": return RecordListParentRefusalEnumNoRoomForValue, nil; case "noRoomForHistory": return RecordListParentRefusalEnumNoRoomForHistory, nil; case "noRoomForDigest": return RecordListParentRefusalEnumNoRoomForDigest, nil; case "textTooLong": return RecordListParentRefusalEnumTextTooLong, nil; case "changeTooLarge": return RecordListParentRefusalEnumChangeTooLarge, nil; case "registerNamedTwice": return RecordListParentRefusalEnumRegisterNamedTwice, nil; case "clockExhausted": return RecordListParentRefusalEnumClockExhausted, nil; }; return 0, fmt.Errorf("%q (%s) is not a variant of Refusal", "reason", name) }(); err != nil {
+		if payload.reason, err = func() (RecordListParentRefusalEnum, error) { name, err := sce.PayloadString(fields, "reason"); if err != nil { return 0, err }; switch name { case "none": return RecordListParentRefusalEnumNone, nil; case "notWriter": return RecordListParentRefusalEnumNotWriter, nil; case "noRoomForValue": return RecordListParentRefusalEnumNoRoomForValue, nil; case "noRoomForHistory": return RecordListParentRefusalEnumNoRoomForHistory, nil; case "noRoomForDigest": return RecordListParentRefusalEnumNoRoomForDigest, nil; case "textTooLong": return RecordListParentRefusalEnumTextTooLong, nil; case "changeTooLarge": return RecordListParentRefusalEnumChangeTooLarge, nil; case "registerNamedTwice": return RecordListParentRefusalEnumRegisterNamedTwice, nil; case "clockExhausted": return RecordListParentRefusalEnumClockExhausted, nil; }; return 0, fmt.Errorf("%q (%s) is not a variant of Refusal", "reason", name) }(); err != nil {
 			return err
 		}
 		p.pendingRecordListRefusedPayload = payload
@@ -1652,11 +1701,11 @@ func (p *RecordListParentPolicy) ClearEventMetadata() {
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line record_list_parent.scxml:36
+//line record_list_parent.scxml:37
 func (p *RecordListParentPolicy) ExecuteEntryActions(state RecordListParentState, engine *sce.Engine[RecordListParentState, RecordListParentEvent], isDefaultEntry bool) {
 	switch state {
 	case RecordListParentStateHolding:
-		//line record_list_parent.scxml:85
+		//line record_list_parent.scxml:87
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
 			// docs/adr/0045: the platform part of the id is the number of this
@@ -1679,7 +1728,7 @@ func (p *RecordListParentPolicy) ExecuteEntryActions(state RecordListParentState
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line record_list_parent.scxml:36
+//line record_list_parent.scxml:37
 func (p *RecordListParentPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[RecordListParentState, RecordListParentEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -1687,7 +1736,7 @@ func (p *RecordListParentPolicy) ExecuteHistoryDefaultContent(history sce.Histor
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line record_list_parent.scxml:36
+//line record_list_parent.scxml:37
 func (p *RecordListParentPolicy) ExecuteExitActions(state RecordListParentState, engine *sce.Engine[RecordListParentState, RecordListParentEvent], configurationBeforeExit []RecordListParentState) {
 	// §scxml-D-exitStates orders one state's exit as onexit, then
 	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
@@ -1722,7 +1771,7 @@ func (p *RecordListParentPolicy) ExecuteExitActions(state RecordListParentState,
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line record_list_parent.scxml:36
+//line record_list_parent.scxml:37
 func (p *RecordListParentPolicy) BindCurrentEvent(event RecordListParentEvent, engine *sce.Engine[RecordListParentState, RecordListParentEvent]) {
 	// This document's guards never read _event, so there is nothing to bind.
 }
@@ -1732,7 +1781,7 @@ func (p *RecordListParentPolicy) BindCurrentEvent(event RecordListParentEvent, e
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line record_list_parent.scxml:36
+//line record_list_parent.scxml:37
 func (p *RecordListParentPolicy) FirstEnabledTransition(state RecordListParentState, event RecordListParentEvent, engine *sce.Engine[RecordListParentState, RecordListParentEvent]) (sce.EnabledTransition[RecordListParentState, sce.HistoryID], bool) {
 	switch state {
 	case RecordListParentStateHolding:
@@ -1852,13 +1901,13 @@ func (p *RecordListParentPolicy) FirstEnabledTransition(state RecordListParentSt
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line record_list_parent.scxml:36
+//line record_list_parent.scxml:37
 func (p *RecordListParentPolicy) ExecuteTransitionContent(source RecordListParentState, transitionIndex int, engine *sce.Engine[RecordListParentState, RecordListParentEvent]) {
 	switch source {
 	case RecordListParentStateHolding:
 		switch transitionIndex {
 		case 0:
-			//line record_list_parent.scxml:91
+			//line record_list_parent.scxml:93
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentPayloadTagRecordListJoin {
@@ -1911,7 +1960,7 @@ func (p *RecordListParentPolicy) ExecuteTransitionContent(source RecordListParen
 	}
 			}()
 		case 1:
-			//line record_list_parent.scxml:97
+			//line record_list_parent.scxml:99
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentPayloadTagRecordListEdit {
@@ -1980,7 +2029,7 @@ func (p *RecordListParentPolicy) ExecuteTransitionContent(source RecordListParen
 	}
 			}()
 		case 2:
-			//line record_list_parent.scxml:107
+			//line record_list_parent.scxml:109
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentPayloadTagRecordListClear {
@@ -2041,7 +2090,7 @@ func (p *RecordListParentPolicy) ExecuteTransitionContent(source RecordListParen
 	}
 			}()
 		case 3:
-			//line record_list_parent.scxml:115
+			//line record_list_parent.scxml:117
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentPayloadTagRecordListRetire {
@@ -2098,7 +2147,7 @@ func (p *RecordListParentPolicy) ExecuteTransitionContent(source RecordListParen
 	}
 			}()
 		case 4:
-			//line record_list_parent.scxml:122
+			//line record_list_parent.scxml:124
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentPayloadTagRecordListRole {
@@ -2151,7 +2200,7 @@ func (p *RecordListParentPolicy) ExecuteTransitionContent(source RecordListParen
 	}
 			}()
 		case 5:
-			//line record_list_parent.scxml:128
+			//line record_list_parent.scxml:130
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentPayloadTagRecordListRoom {
@@ -2208,7 +2257,7 @@ func (p *RecordListParentPolicy) ExecuteTransitionContent(source RecordListParen
 	}
 			}()
 		case 6:
-			//line record_list_parent.scxml:135
+			//line record_list_parent.scxml:137
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentPayloadTagRecordListWrite {
@@ -2281,7 +2330,7 @@ func (p *RecordListParentPolicy) ExecuteTransitionContent(source RecordListParen
 	}
 			}()
 		case 7:
-			//line record_list_parent.scxml:146
+			//line record_list_parent.scxml:148
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentPayloadTagRecordListSupersede {
@@ -2350,7 +2399,7 @@ func (p *RecordListParentPolicy) ExecuteTransitionContent(source RecordListParen
 	}
 			}()
 		case 8:
-			//line record_list_parent.scxml:159
+			//line record_list_parent.scxml:161
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentPayloadTagRecordListRegister {
@@ -2403,7 +2452,7 @@ func (p *RecordListParentPolicy) ExecuteTransitionContent(source RecordListParen
 
 			}()
 		case 9:
-			//line record_list_parent.scxml:171
+			//line record_list_parent.scxml:173
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentPayloadTagRecordListValue {
@@ -2458,7 +2507,7 @@ func (p *RecordListParentPolicy) ExecuteTransitionContent(source RecordListParen
 
 			}()
 		case 10:
-			//line record_list_parent.scxml:186
+			//line record_list_parent.scxml:188
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentPayloadTagRecordListRefused {

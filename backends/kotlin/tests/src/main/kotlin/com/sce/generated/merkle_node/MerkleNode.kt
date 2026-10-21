@@ -9,4 +9,10 @@
 
 package com.sce.generated.merkle_node
 
+/** The event this schema types (`sce:event-name`), as a host names it. */
+const val EVENT_NAME: String = "merge.merkle_node"
+
+/** The revision of the schema (`sce:revision`, 1 when the document declares none). */
+const val REVISION: UInt = 1u
+
 data class MerkleNodePayload(    val depth: UByte,    val prefix: ULong,    val hash: UInt)

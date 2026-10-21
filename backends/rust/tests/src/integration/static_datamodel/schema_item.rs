@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9fab540da93829eaa9159cbc7132fde0b98312062867e02e6e631d43aef759bc
+// source-hash: 0fafd5dc7cb78db436777a56fff2cdefea18c3275c9e740c945e368e87cb13ce
 #![doc = "SCE-MAP: schema_item.scxml:9 :: _forge_body"]
 // SCE-MAP: schema_item.scxml:9 :: _forge_body
 
@@ -9,6 +9,13 @@
 // Do not edit — regenerate from the source SCXML file.
 
 use super::enum_item_status;
+
+/// The event this schema types (`sce:event-name`), as a host names it.
+#[allow(dead_code)]
+pub const EVENT_NAME: &str = "item.added";
+/// The revision of the schema (`sce:revision`, 1 when the document declares none).
+#[allow(dead_code)]
+pub const REVISION: u32 = 1;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SchemaItemPayload {

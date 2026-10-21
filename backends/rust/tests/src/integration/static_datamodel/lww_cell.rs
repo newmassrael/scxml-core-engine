@@ -8,6 +8,13 @@
 // Event name: merge.lww_cell
 // Do not edit — regenerate from the source SCXML file.
 
+/// The event this schema types (`sce:event-name`), as a host names it.
+#[allow(dead_code)]
+pub const EVENT_NAME: &str = "merge.lww_cell";
+/// The revision of the schema (`sce:revision`, 1 when the document declares none).
+#[allow(dead_code)]
+pub const REVISION: u32 = 1;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LwwCellPayload {
     pub row: u64,

@@ -9,6 +9,12 @@
 
 package rga_node
 
+// EventName is the event this schema types (`sce:event-name`), as a host names it.
+const EventName string = "merge.rga_node"
+
+// Revision is the revision of the schema (`sce:revision`, 1 when the document declares none).
+const Revision uint32 = 1
+
 type RgaNodePayload struct {
 	Key uint64
 	After uint64

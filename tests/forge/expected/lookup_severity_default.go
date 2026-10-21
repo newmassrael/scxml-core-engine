@@ -6,7 +6,9 @@
 
 package lookup_severity_default
 
-import "github.com/newmassrael/sce-forge-runtime/lookup"
+import (
+	"github.com/newmassrael/sce-forge-runtime/lookup"
+)
 
 var sceKeys = [5]int32{ 100, 200, 300, 400, 500 }
 var sceValues = [5]int32{ 1, 2, 3, 2, 4 }

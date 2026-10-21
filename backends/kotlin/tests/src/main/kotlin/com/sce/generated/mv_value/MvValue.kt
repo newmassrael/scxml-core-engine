@@ -9,4 +9,13 @@
 
 package com.sce.generated.mv_value
 
+/** The event this schema types (`sce:event-name`), as a host names it. */
+const val EVENT_NAME: String = "merge.mv_value"
+
+/** The revision of the schema (`sce:revision`, 1 when the document declares none). */
+const val REVISION: UInt = 1u
+
+/** The most UTF-8 bytes `text` holds (`sce:max-size`, the bound `sce:limit="merge_text"` names), as this build resolved it. */
+const val TEXT_MAX_SIZE: UInt = 96u
+
 data class MvValuePayload(    val id: ULong,    val field: ULong,    val value: Long,    val text: String,    val wallTime: Long,    val counter: UInt,    val nodeId: ULong)

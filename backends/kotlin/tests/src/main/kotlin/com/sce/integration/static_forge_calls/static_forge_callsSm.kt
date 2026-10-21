@@ -1,20 +1,25 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9fab540da93829eaa9159cbc7132fde0b98312062867e02e6e631d43aef759bc
+// source-hash: 0fafd5dc7cb78db436777a56fff2cdefea18c3275c9e740c945e368e87cb13ce
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_forge_calls.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: static_forge_calls.scxml:15 :: _machine
+// SCE-MAP: static_forge_calls.scxml:23 :: _machine
 
 package com.sce.integration.static_forge_calls
 
 import com.sce.runtime.*
 import com.sce.generated.forge_call_code.*
 import com.sce.generated.forge_call_high.*
+import com.sce.generated.forge_call_level.*
 import com.sce.generated.forge_call_limit.*
+import com.sce.generated.forge_call_named.*
+import com.sce.generated.forge_call_next.*
 import com.sce.generated.forge_call_offset.*
 import com.sce.generated.forge_call_range.*
 import com.sce.generated.forge_call_ratio.*
+import com.sce.generated.forge_call_status.*
+import com.sce.generated.forge_call_weight.*
 
 
 // --- States (W3C SCXML 3.2) ---
@@ -26,6 +31,9 @@ sealed interface StaticForgeCallsState : State {
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface StaticForgeCallsEvent : Event {
+    data object Advance : StaticForgeCallsEvent
+    data object CheckCustomer : StaticForgeCallsEvent
+    data object ClearCustomer : StaticForgeCallsEvent
     sealed interface Error : StaticForgeCallsEvent {
         data object Execution : Error
     }
@@ -34,6 +42,73 @@ sealed interface StaticForgeCallsEvent : Event {
     data object Shift : StaticForgeCallsEvent
     data object Spin : StaticForgeCallsEvent
 }
+// ── SCE Accepted Subset §2.15: sce-static enum and record variable classes ─────
+/** SCE Accepted Subset §2.15: an `enum:Status` datamodel value. */
+enum class StaticForgeCallsStatusEnum(val declaredName: String) {
+    OPEN("open"),
+    HELD("held"),
+    DONE("done");
+
+    /** This value as a saved state writes it. */
+    fun toSaved(): Any = declaredName
+
+    /** The number the enum document declares for this value. */
+    fun toUnderlying(): UByte = when (this) {
+        OPEN -> 1u.toUByte()
+        HELD -> 2u.toUByte()
+        DONE -> 3u.toUByte()
+    }
+
+    companion object {
+        /** The value a saved state holds, refused unless it is one. */
+        fun fromSaved(value: Any?, what: String): StaticForgeCallsStatusEnum {
+            val declared = SavedValues.string(value, what)
+            return entries.firstOrNull { it.declaredName == declared }
+                ?: throw StateRefusal("'$what' ($declared) is not a variant of Status")
+        }
+
+        /** The variant that declares [raw], or null for a number no variant declares. */
+        fun fromUnderlying(raw: UByte): StaticForgeCallsStatusEnum? = entries.firstOrNull { it.toUnderlying() == raw }
+    }
+}
+/** SCE Accepted Subset §2.15: an `enum:Level` datamodel value. */
+enum class StaticForgeCallsLevelEnum(val declaredName: String) {
+    LIGHT("light"),
+    HEAVY("heavy");
+
+    /** This value as a saved state writes it. */
+    fun toSaved(): Any = declaredName
+
+    /** The number the enum document declares for this value. */
+    fun toUnderlying(): UByte = when (this) {
+        LIGHT -> 10u.toUByte()
+        HEAVY -> 20u.toUByte()
+    }
+
+    companion object {
+        /** The value a saved state holds, refused unless it is one. */
+        fun fromSaved(value: Any?, what: String): StaticForgeCallsLevelEnum {
+            val declared = SavedValues.string(value, what)
+            return entries.firstOrNull { it.declaredName == declared }
+                ?: throw StateRefusal("'$what' ($declared) is not a variant of Level")
+        }
+
+        /** The variant that declares [raw], or null for a number no variant declares. */
+        fun fromUnderlying(raw: UByte): StaticForgeCallsLevelEnum? = entries.firstOrNull { it.toUnderlying() == raw }
+    }
+}
+// ── SCE Accepted Subset §2.15: calls of an algorithm that takes or returns state ──
+/** A value of [StaticForgeCallsLevelEnum] as the variant of the same declared name of [ForgeCallLevel]. */
+fun StaticForgeCallsLevelEnumToDocument(v: StaticForgeCallsLevelEnum): ForgeCallLevel = when (v) { StaticForgeCallsLevelEnum.LIGHT -> ForgeCallLevel.LIGHT; StaticForgeCallsLevelEnum.HEAVY -> ForgeCallLevel.HEAVY }
+
+/** A value of [ForgeCallLevel] as the variant of the same declared name of [StaticForgeCallsLevelEnum]. */
+fun StaticForgeCallsLevelEnumFromDocument(v: ForgeCallLevel): StaticForgeCallsLevelEnum = when (v) { ForgeCallLevel.LIGHT -> StaticForgeCallsLevelEnum.LIGHT; ForgeCallLevel.HEAVY -> StaticForgeCallsLevelEnum.HEAVY }
+/** A value of [StaticForgeCallsStatusEnum] as the variant of the same declared name of [ForgeCallStatus]. */
+fun StaticForgeCallsStatusEnumToDocument(v: StaticForgeCallsStatusEnum): ForgeCallStatus = when (v) { StaticForgeCallsStatusEnum.OPEN -> ForgeCallStatus.OPEN; StaticForgeCallsStatusEnum.HELD -> ForgeCallStatus.HELD; StaticForgeCallsStatusEnum.DONE -> ForgeCallStatus.DONE }
+
+/** A value of [ForgeCallStatus] as the variant of the same declared name of [StaticForgeCallsStatusEnum]. */
+fun StaticForgeCallsStatusEnumFromDocument(v: ForgeCallStatus): StaticForgeCallsStatusEnum = when (v) { ForgeCallStatus.OPEN -> StaticForgeCallsStatusEnum.OPEN; ForgeCallStatus.HELD -> StaticForgeCallsStatusEnum.HELD; ForgeCallStatus.DONE -> StaticForgeCallsStatusEnum.DONE }
+
 // --- State Machine (W3C SCXML) ---
 
 class StaticForgeCallsStateMachine(
@@ -90,6 +165,26 @@ class StaticForgeCallsStateMachine(
 
     /** What the published `highs` holds. */
     val highs: UInt get() = vHighs
+    /** W3C SCXML 5.2: the `phase` datamodel variable, published (`sce:direction="out"`). */
+    private var vPhase: StaticForgeCallsStatusEnum = StaticForgeCallsStatusEnum.OPEN
+
+    /** What the published `phase` holds. */
+    val phase: StaticForgeCallsStatusEnum get() = vPhase
+    /** W3C SCXML 5.2: the `weight` datamodel variable, published (`sce:direction="out"`). */
+    private var vWeight: StaticForgeCallsLevelEnum = StaticForgeCallsLevelEnum.LIGHT
+
+    /** What the published `weight` holds. */
+    val weight: StaticForgeCallsLevelEnum get() = vWeight
+    /** W3C SCXML 5.2: the `customer` datamodel variable, published (`sce:direction="out"`). */
+    private var vCustomer: String = "anna"
+
+    /** What the published `customer` holds. */
+    val customer: String get() = vCustomer
+    /** W3C SCXML 5.2: the `known` datamodel variable, published (`sce:direction="out"`). */
+    private var vKnown: Boolean = false
+
+    /** What the published `known` holds. */
+    val known: Boolean get() = vKnown
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -107,6 +202,8 @@ class StaticForgeCallsStateMachine(
         var rpm: UShort? = null
         var limit: Double? = null
         var highs: UInt? = null
+        var customer: String? = null
+        var known: Boolean? = null
     }
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
@@ -121,6 +218,8 @@ class StaticForgeCallsStateMachine(
         params.rpm?.let { vRpm = it }
         params.limit?.let { vLimit = it }
         params.highs?.let { vHighs = it }
+        params.customer?.let { vCustomer = it }
+        params.known?.let { vKnown = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -135,6 +234,10 @@ class StaticForgeCallsStateMachine(
         val rpm: UShort,
         val limit: Double,
         val highs: UInt,
+        val phase: StaticForgeCallsStatusEnum,
+        val weight: StaticForgeCallsLevelEnum,
+        val customer: String,
+        val known: Boolean,
     )
 
     /**
@@ -161,6 +264,10 @@ class StaticForgeCallsStateMachine(
         rpm = vRpm,
         limit = vLimit,
         highs = vHighs,
+        phase = vPhase,
+        weight = vWeight,
+        customer = vCustomer,
+        known = vKnown,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -190,13 +297,33 @@ class StaticForgeCallsStateMachine(
      * later revision added at its default.
      */
     val savedShape: SavedShape = SavedShape(
-        first = "894ce6ad7b5cf850e09034ba3c29f741ef9f52312ca7fd0c01d84819c4390e69",
-        revised = "08d66e661a0cdc8c30dcda21efc297b43b2b3f930eef12e2da27da58b6deb180",
-        format2First = "894ce6ad7b5cf850e09034ba3c29f741ef9f52312ca7fd0c01d84819c4390e69",
-        format2Revised = "08d66e661a0cdc8c30dcda21efc297b43b2b3f930eef12e2da27da58b6deb180",
+        first = "f8c208dcc14ca056d0b9299f9ccd618ec2750f05632205a4c651d46096c9344a",
+        revised = "25698583336d197df47e95c878010ab439aed9ae9aaf753df2da2a80ee38651f",
+        format2First = "e1ceb88b42e3ad186cb83379ddd3fac6c041b4cd242dee005c43a6acf78cbcba",
+        format2Revised = "47d468eaf1347e8d4209e924eca025b0aee6cf836f6689fc2013b701e7531b53",
         records = listOf(
         ),
         enums = listOf(
+            EnumLineage(
+                key = "enum:forge_call_level.scxml",
+                revision = 1,
+                revisions = listOf(),
+                added = listOf(
+                ),
+                holders = listOf(
+                    EnumHolder("weight", null, false),
+                ),
+            ),
+            EnumLineage(
+                key = "enum:forge_call_status.scxml",
+                revision = 1,
+                revisions = listOf(),
+                added = listOf(
+                ),
+                holders = listOf(
+                    EnumHolder("phase", null, false),
+                ),
+            ),
         ),
     )
 
@@ -224,6 +351,10 @@ class StaticForgeCallsStateMachine(
             "rpm" to SavedValues.of(vRpm),
             "limit" to SavedValues.of(vLimit),
             "highs" to SavedValues.of(vHighs),
+            "phase" to vPhase.toSaved(),
+            "weight" to vWeight.toSaved(),
+            "customer" to SavedValues.of(vCustomer),
+            "known" to SavedValues.of(vKnown),
         ),
         wallNowMs,
     )
@@ -261,6 +392,10 @@ class StaticForgeCallsStateMachine(
         val saved8 = SavedValues.uint16(savedGrown.variable("rpm"), "rpm")
         val saved9 = SavedValues.float64(savedGrown.variable("limit"), "limit")
         val saved10 = SavedValues.uint32(savedGrown.variable("highs"), "highs")
+        val saved11 = StaticForgeCallsStatusEnum.fromSaved(savedGrown.variable("phase"), "phase")
+        val saved12 = StaticForgeCallsLevelEnum.fromSaved(savedGrown.variable("weight"), "weight")
+        val saved13 = SavedValues.string(savedGrown.variable("customer"), "customer", 16)
+        val saved14 = SavedValues.bool(savedGrown.variable("known"), "known")
         vGear = saved1
         vRatio = saved2
         vCode = saved3
@@ -271,6 +406,10 @@ class StaticForgeCallsStateMachine(
         vRpm = saved8
         vLimit = saved9
         vHighs = saved10
+        vPhase = saved11
+        vWeight = saved12
+        vCustomer = saved13
+        vKnown = saved14
         enterSaved(savedGrown, wallNowMs)
     }
 
@@ -347,6 +486,33 @@ class StaticForgeCallsStateMachine(
             hasActions = true,
             isInternal = true,
         )
+
+        // W3C SCXML 3.13: run's transition 5, as the microstep reads it.
+        val transitionRunAt5 = EnabledTransition<StaticForgeCallsState, HistoryId>(
+            StaticForgeCallsState.Run,
+            emptyList(),
+            5,
+            hasActions = true,
+            isInternal = true,
+        )
+
+        // W3C SCXML 3.13: run's transition 6, as the microstep reads it.
+        val transitionRunAt6 = EnabledTransition<StaticForgeCallsState, HistoryId>(
+            StaticForgeCallsState.Run,
+            emptyList(),
+            6,
+            hasActions = true,
+            isInternal = true,
+        )
+
+        // W3C SCXML 3.13: run's transition 7, as the microstep reads it.
+        val transitionRunAt7 = EnabledTransition<StaticForgeCallsState, HistoryId>(
+            StaticForgeCallsState.Run,
+            emptyList(),
+            7,
+            hasActions = true,
+            isInternal = true,
+        )
     }
 
     // W3C SCXML: Resolve state ID string to State object
@@ -367,6 +533,9 @@ class StaticForgeCallsStateMachine(
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticForgeCallsEvent? = when (name) {
+        "advance" -> StaticForgeCallsEvent.Advance
+        "check_customer" -> StaticForgeCallsEvent.CheckCustomer
+        "clear_customer" -> StaticForgeCallsEvent.ClearCustomer
         "error.execution" -> StaticForgeCallsEvent.Error.Execution
         "probe" -> StaticForgeCallsEvent.Probe
         "rise" -> StaticForgeCallsEvent.Rise
@@ -377,6 +546,9 @@ class StaticForgeCallsStateMachine(
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticForgeCallsEvent): String? = when (event) {
+        is StaticForgeCallsEvent.Advance -> "advance"
+        is StaticForgeCallsEvent.CheckCustomer -> "check_customer"
+        is StaticForgeCallsEvent.ClearCustomer -> "clear_customer"
         is StaticForgeCallsEvent.Error.Execution -> "error.execution"
         is StaticForgeCallsEvent.Probe -> "probe"
         is StaticForgeCallsEvent.Rise -> "rise"
@@ -402,40 +574,43 @@ class StaticForgeCallsStateMachine(
             event is StaticForgeCallsEvent.Rise -> transitionRunAt1
             event is StaticForgeCallsEvent.Spin -> transitionRunAt2
             event is StaticForgeCallsEvent.Probe && forgeCallHigh(vLevel) -> transitionRunAt3
-            event is StaticForgeCallsEvent.Error.Execution -> transitionRunAt4
+            event is StaticForgeCallsEvent.Advance -> transitionRunAt4
+            event is StaticForgeCallsEvent.CheckCustomer -> transitionRunAt5
+            event is StaticForgeCallsEvent.ClearCustomer -> transitionRunAt6
+            event is StaticForgeCallsEvent.Error.Execution -> transitionRunAt7
             else -> null
         }
     }
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: static_forge_calls.scxml:15 :: _machine
+    // SCE-MAP: static_forge_calls.scxml:23 :: _machine
     override fun onEntry(state: StaticForgeCallsState, isDefaultEntry: Boolean) {
         when (state) {
             is StaticForgeCallsState.Run -> {
-                // SCE-MAP: static_forge_calls.scxml:35 :: run :: _state_body
+                // SCE-MAP: static_forge_calls.scxml:52 :: run :: _state_body
             }
         }
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: static_forge_calls.scxml:15 :: _machine
+    // SCE-MAP: static_forge_calls.scxml:23 :: _machine
     override fun onExit(state: StaticForgeCallsState) {
         when (state) {
             is StaticForgeCallsState.Run -> {
-                // SCE-MAP: static_forge_calls.scxml:35 :: run :: _state_body
+                // SCE-MAP: static_forge_calls.scxml:52 :: run :: _state_body
             }
         }
     }
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: static_forge_calls.scxml:15 :: _machine
+    // SCE-MAP: static_forge_calls.scxml:23 :: _machine
     override fun executeTransitionContent(source: StaticForgeCallsState, transitionIndex: Int) {
         when (source) {
         is StaticForgeCallsState.Run -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: static_forge_calls.scxml:36 :: run :: _transition_0
+                // SCE-MAP: static_forge_calls.scxml:53 :: run :: _transition_0
 
             if (try { vGear = com.sce.forge.runtime.SceChecked.add(vGear, 1.toUByte()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForgeCallsEvent.Error.Execution, "<assign location='gear'>: an integer operation overflowed or failed"); true }) {
                 return
@@ -448,7 +623,7 @@ class StaticForgeCallsStateMachine(
             }
             }
             1 -> {
-                // SCE-MAP: static_forge_calls.scxml:41 :: run :: _transition_1
+                // SCE-MAP: static_forge_calls.scxml:58 :: run :: _transition_1
 
             if (try { vLevel = com.sce.forge.runtime.SceChecked.add(vLevel, 7); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForgeCallsEvent.Error.Execution, "<assign location='level'>: an integer operation overflowed or failed"); true }) {
                 return
@@ -459,7 +634,7 @@ class StaticForgeCallsStateMachine(
             vAccepted = ForgeCallRange().validate(vLevel, vOffset).valid
             }
             2 -> {
-                // SCE-MAP: static_forge_calls.scxml:46 :: run :: _transition_2
+                // SCE-MAP: static_forge_calls.scxml:63 :: run :: _transition_2
 
             if (try { vRpm = com.sce.forge.runtime.SceChecked.add(vRpm, 500.toUShort()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForgeCallsEvent.Error.Execution, "<assign location='rpm'>: an integer operation overflowed or failed"); true }) {
                 return
@@ -468,14 +643,35 @@ class StaticForgeCallsStateMachine(
             vLimit = ForgeCallLimit.lookup(vRpm)
             }
             3 -> {
-                // SCE-MAP: static_forge_calls.scxml:50 :: run :: _transition_3
+                // SCE-MAP: static_forge_calls.scxml:67 :: run :: _transition_3
 
             if (try { vHighs = com.sce.forge.runtime.SceChecked.add(vHighs, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForgeCallsEvent.Error.Execution, "<assign location='highs'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             4 -> {
-                // SCE-MAP: static_forge_calls.scxml:53 :: run :: _transition_4
+                // SCE-MAP: static_forge_calls.scxml:70 :: run :: _transition_4
+
+            vPhase = StaticForgeCallsStatusEnumFromDocument(computeAfter(StaticForgeCallsStatusEnumToDocument(vPhase)))
+
+            if (try { vWeight = StaticForgeCallsLevelEnumFromDocument(com.sce.forge.runtime.SceChecked.take(com.sce.forge.runtime.SceChecked.found(lookupWeight(StaticForgeCallsStatusEnumToDocument(vPhase))))); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForgeCallsEvent.Error.Execution, "<assign location='weight'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+            }
+            5 -> {
+                // SCE-MAP: static_forge_calls.scxml:74 :: run :: _transition_5
+
+            vKnown = ForgeCallNamed().validate(vCustomer).valid
+            }
+            6 -> {
+                // SCE-MAP: static_forge_calls.scxml:77 :: run :: _transition_6
+
+            if (try { vCustomer = com.sce.forge.runtime.SceChecked.bounded("", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForgeCallsEvent.Error.Execution, "<assign location='customer'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+            }
+            7 -> {
+                // SCE-MAP: static_forge_calls.scxml:80 :: run :: _transition_7
 
             if (try { vMisses = com.sce.forge.runtime.SceChecked.add(vMisses, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForgeCallsEvent.Error.Execution, "<assign location='misses'>: an integer operation overflowed or failed"); true }) {
                 return

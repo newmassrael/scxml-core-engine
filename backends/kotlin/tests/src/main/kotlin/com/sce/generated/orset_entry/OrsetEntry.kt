@@ -9,4 +9,10 @@
 
 package com.sce.generated.orset_entry
 
+/** The event this schema types (`sce:event-name`), as a host names it. */
+const val EVENT_NAME: String = "merge.orset_entry"
+
+/** The revision of the schema (`sce:revision`, 1 when the document declares none). */
+const val REVISION: UInt = 1u
+
 data class OrsetEntryPayload(    val element: ULong,    val wallTime: Long,    val counter: UInt,    val nodeId: ULong)

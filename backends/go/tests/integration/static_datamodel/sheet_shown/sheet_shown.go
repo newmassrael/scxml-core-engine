@@ -9,6 +9,12 @@
 
 package sheet_shown
 
+// EventName is the event this schema types (`sce:event-name`), as a host names it.
+const EventName string = "merge.sheet_shown"
+
+// Revision is the revision of the schema (`sce:revision`, 1 when the document declares none).
+const Revision uint32 = 1
+
 type SheetShownPayload struct {
 	Row uint64
 	Col uint64

@@ -6,7 +6,9 @@
 
 package validator_signed_roc
 
-import "math"
+import (
+	"math"
+)
 
 // ValidationResult holds the outcome of a validation check.
 type ValidationResult struct {

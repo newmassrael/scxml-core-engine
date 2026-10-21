@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9fab540da93829eaa9159cbc7132fde0b98312062867e02e6e631d43aef759bc
+// source-hash: 0fafd5dc7cb78db436777a56fff2cdefea18c3275c9e740c945e368e87cb13ce
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_string_capacity.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: static_string_capacity.scxml:17 :: _machine
+// SCE-MAP: static_string_capacity.scxml:21 :: _machine
 
 package com.sce.integration.static_string_capacity
 
@@ -28,6 +28,7 @@ sealed interface StaticStringCapacityEvent : Event {
         data object Execution : Error
     }
     data object Fill : StaticStringCapacityEvent
+    data object Measure : StaticStringCapacityEvent
     data object Reset : StaticStringCapacityEvent
 }
 // --- State Machine (W3C SCXML) ---
@@ -51,6 +52,11 @@ class StaticStringCapacityStateMachine(
 
     /** What the published `copied` holds. */
     val copied: UInt get() = vCopied
+    /** W3C SCXML 5.2: the `measured` datamodel variable, published (`sce:direction="out"`). */
+    private var vMeasured: UInt = 0.toUInt()
+
+    /** What the published `measured` holds. */
+    val measured: UInt get() = vMeasured
     /** W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`). */
     private var vRefusals: UInt = 0.toUInt()
 
@@ -66,6 +72,7 @@ class StaticStringCapacityStateMachine(
         var title: String? = null
         var body: String? = null
         var copied: UInt? = null
+        var measured: UInt? = null
         var refusals: UInt? = null
     }
 
@@ -74,6 +81,7 @@ class StaticStringCapacityStateMachine(
         params.title?.let { vTitle = it }
         params.body?.let { vBody = it }
         params.copied?.let { vCopied = it }
+        params.measured?.let { vMeasured = it }
         params.refusals?.let { vRefusals = it }
     }
 
@@ -82,6 +90,7 @@ class StaticStringCapacityStateMachine(
         val title: String,
         val body: String,
         val copied: UInt,
+        val measured: UInt,
         val refusals: UInt,
     )
 
@@ -102,6 +111,7 @@ class StaticStringCapacityStateMachine(
         title = vTitle,
         body = vBody,
         copied = vCopied,
+        measured = vMeasured,
         refusals = vRefusals,
     )
 
@@ -132,10 +142,10 @@ class StaticStringCapacityStateMachine(
      * later revision added at its default.
      */
     val savedShape: SavedShape = SavedShape(
-        first = "135ad12b6f68018262518e29d4184121311cd30e7c5a354debfd73c4d828b891",
-        revised = "c32875621b2dfd2a7a1704592c176705b7a13d6fff45be9abc55e412dc45ed9d",
-        format2First = "135ad12b6f68018262518e29d4184121311cd30e7c5a354debfd73c4d828b891",
-        format2Revised = "c32875621b2dfd2a7a1704592c176705b7a13d6fff45be9abc55e412dc45ed9d",
+        first = "bf28eb6941359e6d96db8e70149c9d5f5993007a44f59f0fece396194843e797",
+        revised = "06ea3b52e7f0c03f52dff181172d4a8fcf030087bbb6fab407c92563f04554a2",
+        format2First = "bf28eb6941359e6d96db8e70149c9d5f5993007a44f59f0fece396194843e797",
+        format2Revised = "06ea3b52e7f0c03f52dff181172d4a8fcf030087bbb6fab407c92563f04554a2",
         records = listOf(
         ),
         enums = listOf(
@@ -159,6 +169,7 @@ class StaticStringCapacityStateMachine(
             "title" to SavedValues.of(vTitle),
             "body" to SavedValues.of(vBody),
             "copied" to SavedValues.of(vCopied),
+            "measured" to SavedValues.of(vMeasured),
             "refusals" to SavedValues.of(vRefusals),
         ),
         wallNowMs,
@@ -190,11 +201,13 @@ class StaticStringCapacityStateMachine(
         val saved1 = SavedValues.string(savedGrown.variable("title"), "title", 4)
         val saved2 = SavedValues.string(savedGrown.variable("body"), "body", 16)
         val saved3 = SavedValues.uint32(savedGrown.variable("copied"), "copied")
-        val saved4 = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
+        val saved4 = SavedValues.uint32(savedGrown.variable("measured"), "measured")
+        val saved5 = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
         vTitle = saved1
         vBody = saved2
         vCopied = saved3
-        vRefusals = saved4
+        vMeasured = saved4
+        vRefusals = saved5
         enterSaved(savedGrown, wallNowMs)
     }
 
@@ -289,6 +302,15 @@ class StaticStringCapacityStateMachine(
             hasActions = true,
             isInternal = true,
         )
+
+        // W3C SCXML 3.13: idle's transition 7, as the microstep reads it.
+        val transitionIdleAt7 = EnabledTransition<StaticStringCapacityState, HistoryId>(
+            StaticStringCapacityState.Idle,
+            emptyList(),
+            7,
+            hasActions = true,
+            isInternal = true,
+        )
     }
 
     // W3C SCXML: Resolve state ID string to State object
@@ -315,6 +337,7 @@ class StaticStringCapacityStateMachine(
         "copy" -> StaticStringCapacityEvent.Copy
         "error.execution" -> StaticStringCapacityEvent.Error.Execution
         "fill" -> StaticStringCapacityEvent.Fill
+        "measure" -> StaticStringCapacityEvent.Measure
         "reset" -> StaticStringCapacityEvent.Reset
         else -> null
     }
@@ -327,6 +350,7 @@ class StaticStringCapacityStateMachine(
         is StaticStringCapacityEvent.Copy -> "copy"
         is StaticStringCapacityEvent.Error.Execution -> "error.execution"
         is StaticStringCapacityEvent.Fill -> "fill"
+        is StaticStringCapacityEvent.Measure -> "measure"
         is StaticStringCapacityEvent.Reset -> "reset"
     }
 
@@ -350,75 +374,76 @@ class StaticStringCapacityStateMachine(
             event is StaticStringCapacityEvent.BodyExact -> transitionIdleAt3
             event is StaticStringCapacityEvent.BodyWide -> transitionIdleAt4
             event is StaticStringCapacityEvent.Copy -> transitionIdleAt5
-            event is StaticStringCapacityEvent.Error.Execution -> transitionIdleAt6
+            event is StaticStringCapacityEvent.Measure -> transitionIdleAt6
+            event is StaticStringCapacityEvent.Error.Execution -> transitionIdleAt7
             else -> null
         }
     }
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: static_string_capacity.scxml:17 :: _machine
+    // SCE-MAP: static_string_capacity.scxml:21 :: _machine
     override fun onEntry(state: StaticStringCapacityState, isDefaultEntry: Boolean) {
         when (state) {
             is StaticStringCapacityState.Idle -> {
-                // SCE-MAP: static_string_capacity.scxml:25 :: idle :: _state_body
+                // SCE-MAP: static_string_capacity.scxml:30 :: idle :: _state_body
             }
         }
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: static_string_capacity.scxml:17 :: _machine
+    // SCE-MAP: static_string_capacity.scxml:21 :: _machine
     override fun onExit(state: StaticStringCapacityState) {
         when (state) {
             is StaticStringCapacityState.Idle -> {
-                // SCE-MAP: static_string_capacity.scxml:25 :: idle :: _state_body
+                // SCE-MAP: static_string_capacity.scxml:30 :: idle :: _state_body
             }
         }
     }
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: static_string_capacity.scxml:17 :: _machine
+    // SCE-MAP: static_string_capacity.scxml:21 :: _machine
     override fun executeTransitionContent(source: StaticStringCapacityState, transitionIndex: Int) {
         when (source) {
         is StaticStringCapacityState.Idle -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: static_string_capacity.scxml:27 :: idle :: _transition_0
+                // SCE-MAP: static_string_capacity.scxml:32 :: idle :: _transition_0
 
             if (try { vTitle = com.sce.forge.runtime.SceChecked.bounded("abcd", 4); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStringCapacityEvent.Error.Execution, "<assign location='title'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             1 -> {
-                // SCE-MAP: static_string_capacity.scxml:30 :: idle :: _transition_1
+                // SCE-MAP: static_string_capacity.scxml:35 :: idle :: _transition_1
 
             if (try { vTitle = com.sce.forge.runtime.SceChecked.bounded("ab", 4); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStringCapacityEvent.Error.Execution, "<assign location='title'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             2 -> {
-                // SCE-MAP: static_string_capacity.scxml:33 :: idle :: _transition_2
+                // SCE-MAP: static_string_capacity.scxml:38 :: idle :: _transition_2
 
             if (try { vBody = com.sce.forge.runtime.SceChecked.bounded("hello", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStringCapacityEvent.Error.Execution, "<assign location='body'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             3 -> {
-                // SCE-MAP: static_string_capacity.scxml:37 :: idle :: _transition_3
+                // SCE-MAP: static_string_capacity.scxml:42 :: idle :: _transition_3
 
             if (try { vBody = com.sce.forge.runtime.SceChecked.bounded("éé", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStringCapacityEvent.Error.Execution, "<assign location='body'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             4 -> {
-                // SCE-MAP: static_string_capacity.scxml:41 :: idle :: _transition_4
+                // SCE-MAP: static_string_capacity.scxml:46 :: idle :: _transition_4
 
             if (try { vBody = com.sce.forge.runtime.SceChecked.bounded("é€", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStringCapacityEvent.Error.Execution, "<assign location='body'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             5 -> {
-                // SCE-MAP: static_string_capacity.scxml:44 :: idle :: _transition_5
+                // SCE-MAP: static_string_capacity.scxml:49 :: idle :: _transition_5
 
             if (try { vTitle = com.sce.forge.runtime.SceChecked.bounded(vBody, 4); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStringCapacityEvent.Error.Execution, "<assign location='title'>: an integer operation overflowed or failed"); true }) {
                 return
@@ -429,7 +454,12 @@ class StaticStringCapacityStateMachine(
             }
             }
             6 -> {
-                // SCE-MAP: static_string_capacity.scxml:48 :: idle :: _transition_6
+                // SCE-MAP: static_string_capacity.scxml:53 :: idle :: _transition_6
+
+            vMeasured = (vBody).encodeToByteArray().size.toUInt()
+            }
+            7 -> {
+                // SCE-MAP: static_string_capacity.scxml:56 :: idle :: _transition_7
 
             if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStringCapacityEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return

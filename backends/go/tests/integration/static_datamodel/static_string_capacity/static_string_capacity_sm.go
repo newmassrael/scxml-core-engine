@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9fab540da93829eaa9159cbc7132fde0b98312062867e02e6e631d43aef759bc
+// source-hash: 0fafd5dc7cb78db436777a56fff2cdefea18c3275c9e740c945e368e87cb13ce
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -20,7 +20,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: static_string_capacity.scxml:17 :: _machine
+// SCE-MAP: static_string_capacity.scxml:21 :: _machine
 
 package static_string_capacity
 
@@ -142,9 +142,10 @@ const (
 	StaticStringCapacityEventCopy StaticStringCapacityEvent = 3
 	StaticStringCapacityEventErrorExecution StaticStringCapacityEvent = 4
 	StaticStringCapacityEventFill StaticStringCapacityEvent = 5
-	StaticStringCapacityEventReset StaticStringCapacityEvent = 6
+	StaticStringCapacityEventMeasure StaticStringCapacityEvent = 6
+	StaticStringCapacityEventReset StaticStringCapacityEvent = 7
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	StaticStringCapacityEventNull StaticStringCapacityEvent = 7
+	StaticStringCapacityEventNull StaticStringCapacityEvent = 8
 )
 
 func (e StaticStringCapacityEvent) String() string {
@@ -161,6 +162,8 @@ func (e StaticStringCapacityEvent) String() string {
 		return "error.execution"
 	case StaticStringCapacityEventFill:
 		return "fill"
+	case StaticStringCapacityEventMeasure:
+		return "measure"
 	case StaticStringCapacityEventReset:
 		return "reset"
 	case StaticStringCapacityEventNull:
@@ -175,12 +178,12 @@ func (e StaticStringCapacityEvent) String() string {
 // this machine names when every record schema it holds is in its first
 // revision (docs/adr/0045, section 2). The generator computes it once, so it is
 // the text every backend's constant is.
-const StaticStringCapacitySavedShapeFormat2 = "135ad12b6f68018262518e29d4184121311cd30e7c5a354debfd73c4d828b891"
+const StaticStringCapacitySavedShapeFormat2 = "bf28eb6941359e6d96db8e70149c9d5f5993007a44f59f0fece396194843e797"
 
 // StaticStringCapacitySavedShapeFormat2Revised is the shape a format-2 saved state
 // of this machine names when it names a later revision of a record schema or
 // an enum.
-const StaticStringCapacitySavedShapeFormat2Revised = "c32875621b2dfd2a7a1704592c176705b7a13d6fff45be9abc55e412dc45ed9d"
+const StaticStringCapacitySavedShapeFormat2Revised = "06ea3b52e7f0c03f52dff181172d4a8fcf030087bbb6fab407c92563f04554a2"
 
 // StaticStringCapacitySavedEnumKeys names each enum a value of a saved state of
 // this machine is of, by its document (docs/adr/0044): the key `revisions`
@@ -201,6 +204,8 @@ type StaticStringCapacityPolicy struct {
 	vBody string
 	// W3C SCXML 5.2: the `copied` datamodel variable, published (`sce:direction="out"`).
 	vCopied uint32
+	// W3C SCXML 5.2: the `measured` datamodel variable, published (`sce:direction="out"`).
+	vMeasured uint32
 	// W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`).
 	vRefusals uint32
 	// W3C SCXML 6.4: Parent communication (unbounded — see sce.ParentEventQueue)
@@ -218,6 +223,7 @@ func NewStaticStringCapacityPolicy() StaticStringCapacityPolicy {
 		vTitle: "ab",
 		vBody: "hello",
 		vCopied: 0,
+		vMeasured: 0,
 		vRefusals: 0,
 	}
 }
@@ -240,6 +246,12 @@ func (p *StaticStringCapacityPolicy) Copied() uint32 {
 	return p.vCopied
 }
 
+// Measured reports what the published `measured` datamodel
+// variable holds now (W3C SCXML 5.2). Only the machine writes it.
+func (p *StaticStringCapacityPolicy) Measured() uint32 {
+	return p.vMeasured
+}
+
 // Refusals reports what the published `refusals` datamodel
 // variable holds now (W3C SCXML 5.2). Only the machine writes it.
 func (p *StaticStringCapacityPolicy) Refusals() uint32 {
@@ -253,6 +265,7 @@ type StaticStringCapacityInvokeParams struct {
 	VTitle *string
 	VBody *string
 	VCopied *uint32
+	VMeasured *uint32
 	VRefusals *uint32
 }
 
@@ -267,6 +280,9 @@ func (p *StaticStringCapacityPolicy) AcceptParams(params StaticStringCapacityInv
 	}
 	if params.VCopied != nil {
 		p.vCopied = *params.VCopied
+	}
+	if params.VMeasured != nil {
+		p.vMeasured = *params.VMeasured
 	}
 	if params.VRefusals != nil {
 		p.vRefusals = *params.VRefusals
@@ -401,6 +417,8 @@ func (p *StaticStringCapacityPolicy) GetEventFromName(name string) (StaticString
 		return StaticStringCapacityEventErrorExecution, true
 	case "fill":
 		return StaticStringCapacityEventFill, true
+	case "measure":
+		return StaticStringCapacityEventMeasure, true
 	case "reset":
 		return StaticStringCapacityEventReset, true
 	}
@@ -502,7 +520,7 @@ func (p *StaticStringCapacityPolicy) ClearEventMetadata() {
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line static_string_capacity.scxml:17
+//line static_string_capacity.scxml:21
 func (p *StaticStringCapacityPolicy) ExecuteEntryActions(state StaticStringCapacityState, engine *sce.Engine[StaticStringCapacityState, StaticStringCapacityEvent], isDefaultEntry bool) {
 	switch state {
 	default:
@@ -515,7 +533,7 @@ func (p *StaticStringCapacityPolicy) ExecuteEntryActions(state StaticStringCapac
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line static_string_capacity.scxml:17
+//line static_string_capacity.scxml:21
 func (p *StaticStringCapacityPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[StaticStringCapacityState, StaticStringCapacityEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -523,7 +541,7 @@ func (p *StaticStringCapacityPolicy) ExecuteHistoryDefaultContent(history sce.Hi
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line static_string_capacity.scxml:17
+//line static_string_capacity.scxml:21
 func (p *StaticStringCapacityPolicy) ExecuteExitActions(state StaticStringCapacityState, engine *sce.Engine[StaticStringCapacityState, StaticStringCapacityEvent], configurationBeforeExit []StaticStringCapacityState) {
 	// §scxml-D-exitStates orders one state's exit as onexit, then
 	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
@@ -540,7 +558,7 @@ func (p *StaticStringCapacityPolicy) ExecuteExitActions(state StaticStringCapaci
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line static_string_capacity.scxml:17
+//line static_string_capacity.scxml:21
 func (p *StaticStringCapacityPolicy) BindCurrentEvent(event StaticStringCapacityEvent, engine *sce.Engine[StaticStringCapacityState, StaticStringCapacityEvent]) {
 	// This document's guards never read _event, so there is nothing to bind.
 }
@@ -550,7 +568,7 @@ func (p *StaticStringCapacityPolicy) BindCurrentEvent(event StaticStringCapacity
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line static_string_capacity.scxml:17
+//line static_string_capacity.scxml:21
 func (p *StaticStringCapacityPolicy) FirstEnabledTransition(state StaticStringCapacityState, event StaticStringCapacityEvent, engine *sce.Engine[StaticStringCapacityState, StaticStringCapacityEvent]) (sce.EnabledTransition[StaticStringCapacityState, sce.HistoryID], bool) {
 	switch state {
 	case StaticStringCapacityStateIdle:
@@ -614,11 +632,21 @@ func (p *StaticStringCapacityPolicy) FirstEnabledTransition(state StaticStringCa
 				}, true
 			}
 		}
-		if event == StaticStringCapacityEventErrorExecution {
+		if event == StaticStringCapacityEventMeasure {
 			{
 				return sce.EnabledTransition[StaticStringCapacityState, sce.HistoryID]{
 					Source:          state,
 					TransitionIndex: 6,
+					HasActions:      true,
+					IsInternal:      true,
+				}, true
+			}
+		}
+		if event == StaticStringCapacityEventErrorExecution {
+			{
+				return sce.EnabledTransition[StaticStringCapacityState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 7,
 					HasActions:      true,
 					IsInternal:      true,
 				}, true
@@ -630,13 +658,13 @@ func (p *StaticStringCapacityPolicy) FirstEnabledTransition(state StaticStringCa
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line static_string_capacity.scxml:17
+//line static_string_capacity.scxml:21
 func (p *StaticStringCapacityPolicy) ExecuteTransitionContent(source StaticStringCapacityState, transitionIndex int, engine *sce.Engine[StaticStringCapacityState, StaticStringCapacityEvent]) {
 	switch source {
 	case StaticStringCapacityStateIdle:
 		switch transitionIndex {
 		case 0:
-			//line static_string_capacity.scxml:27
+			//line static_string_capacity.scxml:32
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -647,7 +675,7 @@ func (p *StaticStringCapacityPolicy) ExecuteTransitionContent(source StaticStrin
 
 			}()
 		case 1:
-			//line static_string_capacity.scxml:30
+			//line static_string_capacity.scxml:35
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -658,7 +686,7 @@ func (p *StaticStringCapacityPolicy) ExecuteTransitionContent(source StaticStrin
 
 			}()
 		case 2:
-			//line static_string_capacity.scxml:33
+			//line static_string_capacity.scxml:38
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -669,7 +697,7 @@ func (p *StaticStringCapacityPolicy) ExecuteTransitionContent(source StaticStrin
 
 			}()
 		case 3:
-			//line static_string_capacity.scxml:37
+			//line static_string_capacity.scxml:42
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -680,7 +708,7 @@ func (p *StaticStringCapacityPolicy) ExecuteTransitionContent(source StaticStrin
 
 			}()
 		case 4:
-			//line static_string_capacity.scxml:41
+			//line static_string_capacity.scxml:46
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -691,7 +719,7 @@ func (p *StaticStringCapacityPolicy) ExecuteTransitionContent(source StaticStrin
 
 			}()
 		case 5:
-			//line static_string_capacity.scxml:44
+			//line static_string_capacity.scxml:49
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -708,7 +736,16 @@ func (p *StaticStringCapacityPolicy) ExecuteTransitionContent(source StaticStrin
 
 			}()
 		case 6:
-			//line static_string_capacity.scxml:48
+			//line static_string_capacity.scxml:53
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+
+
+	p.vMeasured = uint32(len(p.vBody))
+
+			}()
+		case 7:
+			//line static_string_capacity.scxml:56
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

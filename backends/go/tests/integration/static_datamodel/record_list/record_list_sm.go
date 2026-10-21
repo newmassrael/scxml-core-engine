@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: bb47005716c50aa6b44968ec82b51c9817cf962f66ae2a6ed494da5c900c8e1d
+// source-hash: 52dec3eb3cccdf24690d474eaf44f8ac67bafec1b1ed5060c73db2a6256056db
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -20,7 +20,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: record_list.scxml:208 :: _machine
+// SCE-MAP: record_list.scxml:209 :: _machine
 
 package record_list
 
@@ -1054,6 +1054,7 @@ func (r RecordListPartRecord) Parts() uint32 {
 type RecordListRefusalEnum uint8
 
 const (
+	RecordListRefusalEnumNone RecordListRefusalEnum = 0
 	RecordListRefusalEnumNotWriter RecordListRefusalEnum = 1
 	RecordListRefusalEnumNoRoomForValue RecordListRefusalEnum = 2
 	RecordListRefusalEnumNoRoomForHistory RecordListRefusalEnum = 3
@@ -1067,6 +1068,8 @@ const (
 // String is the name the enum document declares for the value.
 func (v RecordListRefusalEnum) String() string {
 	switch v {
+	case RecordListRefusalEnumNone:
+		return "none"
 	case RecordListRefusalEnumNotWriter:
 		return "notWriter"
 	case RecordListRefusalEnumNoRoomForValue:
@@ -1096,11 +1099,80 @@ func (v RecordListRefusalEnum) ToUnderlying() uint8 {
 // number no variant declares.
 func RecordListRefusalEnumFromUnderlying(raw uint8) (RecordListRefusalEnum, bool) {
 	switch raw {
-	case 1, 2, 3, 4, 5, 6, 7, 8:
+	case 0, 1, 2, 3, 4, 5, 6, 7, 8:
 		return RecordListRefusalEnum(raw), true
 	}
 	return 0, false
 }
+
+// SCE Accepted Subset §2.15: an `enum:Command` datamodel value.
+type RecordListCommandEnum uint8
+
+const (
+	RecordListCommandEnumEdit RecordListCommandEnum = 0
+	RecordListCommandEnumClear RecordListCommandEnum = 1
+	RecordListCommandEnumRetire RecordListCommandEnum = 2
+)
+
+// String is the name the enum document declares for the value.
+func (v RecordListCommandEnum) String() string {
+	switch v {
+	case RecordListCommandEnumEdit:
+		return "edit"
+	case RecordListCommandEnumClear:
+		return "clear"
+	case RecordListCommandEnumRetire:
+		return "retire"
+	}
+	return ""
+}
+
+// ToUnderlying is the number the enum document declares for the value.
+func (v RecordListCommandEnum) ToUnderlying() uint8 {
+	return uint8(v)
+}
+
+// RecordListCommandEnumFromUnderlying returns the variant that declares raw, and false for a
+// number no variant declares.
+func RecordListCommandEnumFromUnderlying(raw uint8) (RecordListCommandEnum, bool) {
+	switch raw {
+	case 0, 1, 2:
+		return RecordListCommandEnum(raw), true
+	}
+	return 0, false
+}
+
+// The bounds this machine is built with, each by the name `sce:limit` gives it (docs/adr/0050).
+
+// RecordListLimitMergeDigest is the bound `sce:limit="merge_digest"` names, as this build resolved it.
+const RecordListLimitMergeDigest uint32 = 2048
+
+// RecordListLimitMergeEntries is the bound `sce:limit="merge_entries"` names, as this build resolved it.
+const RecordListLimitMergeEntries uint32 = 1024
+
+// RecordListLimitMergeText is the bound `sce:limit="merge_text"` names, as this build resolved it.
+const RecordListLimitMergeText uint32 = 96
+
+// RecordListLimitMergeValues is the bound `sce:limit="merge_values"` names, as this build resolved it.
+const RecordListLimitMergeValues uint32 = 512
+
+// RecordListLimitSharedAnswers is the bound `sce:limit="shared_answers"` names, as this build resolved it.
+const RecordListLimitSharedAnswers uint32 = 512
+
+// RecordListLimitSharedMoved is the bound `sce:limit="shared_moved"` names, as this build resolved it.
+const RecordListLimitSharedMoved uint32 = 64
+
+// RecordListLimitSharedParts is the bound `sce:limit="shared_parts"` names, as this build resolved it.
+const RecordListLimitSharedParts uint32 = 64
+
+// RecordListLimitSharedRoster is the bound `sce:limit="shared_roster"` names, as this build resolved it.
+const RecordListLimitSharedRoster uint32 = 64
+
+// RecordListLimitSharedStaged is the bound `sce:limit="shared_staged"` names, as this build resolved it.
+const RecordListLimitSharedStaged uint32 = 32
+
+// RecordListLimitSharedTypedText is the bound `sce:limit="shared_typed_text"` names, as this build resolved it.
+const RecordListLimitSharedTypedText uint32 = 32
 
 // ── SCE Accepted Subset §2.15: what a format-2 saved state of it is bound to ──
 
@@ -1108,17 +1180,18 @@ func RecordListRefusalEnumFromUnderlying(raw uint8) (RecordListRefusalEnum, bool
 // this machine names when every record schema it holds is in its first
 // revision (docs/adr/0045, section 2). The generator computes it once, so it is
 // the text every backend's constant is.
-const RecordListSavedShapeFormat2 = "9319a4cd33521f9a673ae2ed8973dcc03d9d5433db676f5bca4f1819a67ca7c0"
+const RecordListSavedShapeFormat2 = "5cc454c365171a28f062aae53cb34fa6b9bd33e46775c22fa8b23dd6b87d271a"
 
 // RecordListSavedShapeFormat2Revised is the shape a format-2 saved state
 // of this machine names when it names a later revision of a record schema or
 // an enum.
-const RecordListSavedShapeFormat2Revised = "66b8be46e87750d5eb4aa82addfe01f4de33de51b83417d2c14314e5c3064967"
+const RecordListSavedShapeFormat2Revised = "3ab46f231c112905dd81548ea9ffa1858522c5b71c84747d9223883798a347b4"
 
 // RecordListSavedEnumKeys names each enum a value of a saved state of
 // this machine is of, by its document (docs/adr/0044): the key `revisions`
 // names it by, and the format-2 shape spells it by.
 var RecordListSavedEnumKeys = [...]string{
+	"enum:sce:std/shared/record_command.scxml",
 	"enum:sce:std/shared/record_refusal.scxml",
 }
 
@@ -1445,7 +1518,7 @@ type RecordListPolicy struct {
 	// W3C SCXML 5.2: the `namedField` datamodel variable.
 	vNamedField uint16
 	// W3C SCXML 5.2: the `namedKind` datamodel variable.
-	vNamedKind uint8
+	vNamedKind RecordListCommandEnum
 	// W3C SCXML 5.2: the `taking` datamodel variable.
 	vTaking []RecordListPartRecord
 	// W3C SCXML 5.2: the `took` datamodel variable.
@@ -1537,7 +1610,7 @@ func NewRecordListPolicy() RecordListPolicy {
 		vSpoiledFor: RecordListRefusalEnumChangeTooLarge,
 		vNamedId: 0,
 		vNamedField: 0,
-		vNamedKind: 0,
+		vNamedKind: RecordListCommandEnumEdit,
 		vTaking: nil,
 		vTook: 0,
 		vPassing: nil,
@@ -1679,7 +1752,6 @@ type RecordListInvokeParams struct {
 	VCovered *bool
 	VNamedId *uint32
 	VNamedField *uint16
-	VNamedKind *uint8
 	VTook *uint32
 	VPassed *uint32
 	VAlready *bool
@@ -1808,9 +1880,6 @@ func (p *RecordListPolicy) AcceptParams(params RecordListInvokeParams) {
 	}
 	if params.VNamedField != nil {
 		p.vNamedField = *params.VNamedField
-	}
-	if params.VNamedKind != nil {
-		p.vNamedKind = *params.VNamedKind
 	}
 	if params.VTook != nil {
 		p.vTook = *params.VTook
@@ -2515,7 +2584,7 @@ func (p *RecordListPolicy) ClearEventMetadata() {
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line record_list.scxml:208
+//line record_list.scxml:209
 func (p *RecordListPolicy) ExecuteEntryActions(state RecordListState, engine *sce.Engine[RecordListState, RecordListEvent], isDefaultEntry bool) {
 	switch state {
 	default:
@@ -2528,7 +2597,7 @@ func (p *RecordListPolicy) ExecuteEntryActions(state RecordListState, engine *sc
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line record_list.scxml:208
+//line record_list.scxml:209
 func (p *RecordListPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[RecordListState, RecordListEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -2536,7 +2605,7 @@ func (p *RecordListPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, e
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line record_list.scxml:208
+//line record_list.scxml:209
 func (p *RecordListPolicy) ExecuteExitActions(state RecordListState, engine *sce.Engine[RecordListState, RecordListEvent], configurationBeforeExit []RecordListState) {
 	// §scxml-D-exitStates orders one state's exit as onexit, then
 	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
@@ -2553,7 +2622,7 @@ func (p *RecordListPolicy) ExecuteExitActions(state RecordListState, engine *sce
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line record_list.scxml:208
+//line record_list.scxml:209
 func (p *RecordListPolicy) BindCurrentEvent(event RecordListEvent, engine *sce.Engine[RecordListState, RecordListEvent]) {
 	// This document's guards never read _event, so there is nothing to bind.
 }
@@ -2563,7 +2632,7 @@ func (p *RecordListPolicy) BindCurrentEvent(event RecordListEvent, engine *sce.E
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line record_list.scxml:208
+//line record_list.scxml:209
 func (p *RecordListPolicy) FirstEnabledTransition(state RecordListState, event RecordListEvent, engine *sce.Engine[RecordListState, RecordListEvent]) (sce.EnabledTransition[RecordListState, sce.HistoryID], bool) {
 	switch state {
 	case RecordListStateOpen:
@@ -2855,13 +2924,13 @@ func (p *RecordListPolicy) FirstEnabledTransition(state RecordListState, event R
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line record_list.scxml:208
+//line record_list.scxml:209
 func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, transitionIndex int, engine *sce.Engine[RecordListState, RecordListEvent]) {
 	switch source {
 	case RecordListStateOpen:
 		switch transitionIndex {
 		case 0:
-			//line record_list.scxml:431
+			//line record_list.scxml:433
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListPayloadTagRecordListJoin {
@@ -2877,7 +2946,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 			}()
 		case 1:
-			//line record_list.scxml:438
+			//line record_list.scxml:440
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListPayloadTagRecordListRoom {
@@ -2897,7 +2966,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 			}()
 		case 2:
-			//line record_list.scxml:449
+			//line record_list.scxml:451
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListPayloadTagRecordListRole {
@@ -2911,7 +2980,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 			}()
 		case 3:
-			//line record_list.scxml:460
+			//line record_list.scxml:462
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListPayloadTagRecordListEdit {
@@ -2933,7 +3002,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 
 
-	p.vNamedKind = 0
+	p.vNamedKind = RecordListCommandEnumEdit
 
 
 
@@ -3013,7 +3082,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 			}()
 		case 4:
-			//line record_list.scxml:487
+			//line record_list.scxml:489
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListPayloadTagRecordListClear {
@@ -3035,7 +3104,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 
 
-	p.vNamedKind = 1
+	p.vNamedKind = RecordListCommandEnumClear
 
 
 
@@ -3105,7 +3174,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 			}()
 		case 5:
-			//line record_list.scxml:512
+			//line record_list.scxml:514
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListPayloadTagRecordListRetire {
@@ -3127,7 +3196,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 
 
-	p.vNamedKind = 2
+	p.vNamedKind = RecordListCommandEnumRetire
 
 
 
@@ -3197,7 +3266,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 			}()
 		case 6:
-			//line record_list.scxml:554
+			//line record_list.scxml:556
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -3269,8 +3338,17 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	p.vNamedField = later.field
 
 
+	if later.kind == 1 {
 
-	p.vNamedKind = later.kind
+
+	p.vNamedKind = RecordListCommandEnumClear
+
+	} else {
+
+
+	p.vNamedKind = RecordListCommandEnumEdit
+
+	}
 
 	}
 
@@ -3304,14 +3382,14 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 		_ = s
 
 	{
-	var ifCondFailed13 bool
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.DivUint64(&sceFailure, a.element, 65536) == uint64(s.id) && (s.kind == 2 || scealgorithm.RemUint64(&sceFailure, a.element, 65536) == uint64(s.field)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<if cond='a.element / 65536 === s.id && (s.kind === 2 || a.element % 65536 === s.field)'>: an integer operation overflowed or failed")); ifCondFailed13 = true; return false }; return sceValue }() {
+	var ifCondFailed14 bool
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.DivUint64(&sceFailure, a.element, 65536) == uint64(s.id) && (s.kind == 2 || scealgorithm.RemUint64(&sceFailure, a.element, 65536) == uint64(s.field)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<if cond='a.element / 65536 === s.id && (s.kind === 2 || a.element % 65536 === s.field)'>: an integer operation overflowed or failed")); ifCondFailed14 = true; return false }; return sceValue }() {
 
 
 	p.vCovered = true
 
 	}
-	if ifCondFailed13 {
+	if ifCondFailed14 {
 		return // W3C SCXML 4.9: the error ends the block
 	}
 	}
@@ -3350,8 +3428,8 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 
 	{
-	var ifCondFailed16 bool
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := !p.vSpoiled && scealgorithm.AddUint32(&sceFailure, p.vGone, p.vWrites) > 0 && p.vRoomValues > 0 && p.vWrites > p.vGone && scealgorithm.AddUint32(&sceFailure, uint32(len(p.vValues)), p.vWrites) > scealgorithm.AddUint32(&sceFailure, p.vRoomValues, p.vGone); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<if cond='!spoiled && gone + writes > 0 && roomValues > 0 && writes > gone && len(values) + writes > roomValues + gone'>: an integer operation overflowed or failed")); ifCondFailed16 = true; return false }; return sceValue }() {
+	var ifCondFailed17 bool
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := !p.vSpoiled && scealgorithm.AddUint32(&sceFailure, p.vGone, p.vWrites) > 0 && p.vRoomValues > 0 && p.vWrites > p.vGone && scealgorithm.AddUint32(&sceFailure, uint32(len(p.vValues)), p.vWrites) > scealgorithm.AddUint32(&sceFailure, p.vRoomValues, p.vGone); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<if cond='!spoiled && gone + writes > 0 && roomValues > 0 && writes > gone && len(values) + writes > roomValues + gone'>: an integer operation overflowed or failed")); ifCondFailed17 = true; return false }; return sceValue }() {
 
 
 	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vFull, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='full'>: an integer operation overflowed or failed")); return true }; p.vFull = sceValue; return false }() {
@@ -3367,15 +3445,15 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	p.vSpoiledFor = RecordListRefusalEnumNoRoomForValue
 
 	}
-	if ifCondFailed16 {
+	if ifCondFailed17 {
 		return // W3C SCXML 4.9: the error ends the block
 	}
 	}
 
 
 	{
-	var ifCondFailed17 bool
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := !p.vSpoiled && scealgorithm.AddUint32(&sceFailure, p.vGone, p.vWrites) > 0 && p.vRoomHistory > 0 && uint32(len(p.vTombstones)) >= p.vRoomHistory; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<if cond='!spoiled && gone + writes > 0 && roomHistory > 0 && len(tombstones) >= roomHistory'>: an integer operation overflowed or failed")); ifCondFailed17 = true; return false }; return sceValue }() {
+	var ifCondFailed18 bool
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := !p.vSpoiled && scealgorithm.AddUint32(&sceFailure, p.vGone, p.vWrites) > 0 && p.vRoomHistory > 0 && uint32(len(p.vTombstones)) >= p.vRoomHistory; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<if cond='!spoiled && gone + writes > 0 && roomHistory > 0 && len(tombstones) >= roomHistory'>: an integer operation overflowed or failed")); ifCondFailed18 = true; return false }; return sceValue }() {
 
 
 	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vFull, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='full'>: an integer operation overflowed or failed")); return true }; p.vFull = sceValue; return false }() {
@@ -3391,15 +3469,15 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	p.vSpoiledFor = RecordListRefusalEnumNoRoomForHistory
 
 	}
-	if ifCondFailed17 {
+	if ifCondFailed18 {
 		return // W3C SCXML 4.9: the error ends the block
 	}
 	}
 
 
 	{
-	var ifCondFailed18 bool
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := !p.vSpoiled && scealgorithm.AddUint32(&sceFailure, p.vGone, p.vWrites) > 0 && p.vRoomDigest > 0 && uint32(len(p.vDigest)) >= p.vRoomDigest; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<if cond='!spoiled && gone + writes > 0 && roomDigest > 0 && len(digest) >= roomDigest'>: an integer operation overflowed or failed")); ifCondFailed18 = true; return false }; return sceValue }() {
+	var ifCondFailed19 bool
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := !p.vSpoiled && scealgorithm.AddUint32(&sceFailure, p.vGone, p.vWrites) > 0 && p.vRoomDigest > 0 && uint32(len(p.vDigest)) >= p.vRoomDigest; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<if cond='!spoiled && gone + writes > 0 && roomDigest > 0 && len(digest) >= roomDigest'>: an integer operation overflowed or failed")); ifCondFailed19 = true; return false }; return sceValue }() {
 
 
 	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vFull, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='full'>: an integer operation overflowed or failed")); return true }; p.vFull = sceValue; return false }() {
@@ -3415,15 +3493,15 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	p.vSpoiledFor = RecordListRefusalEnumNoRoomForDigest
 
 	}
-	if ifCondFailed18 {
+	if ifCondFailed19 {
 		return // W3C SCXML 4.9: the error ends the block
 	}
 	}
 
 
 	{
-	var ifCondFailed19 bool
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := !p.vSpoiled && scealgorithm.AddUint32(&sceFailure, p.vGone, p.vWrites) > 0; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<if cond='!spoiled && gone + writes > 0'>: an integer operation overflowed or failed")); ifCondFailed19 = true; return false }; return sceValue }() {
+	var ifCondFailed20 bool
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := !p.vSpoiled && scealgorithm.AddUint32(&sceFailure, p.vGone, p.vWrites) > 0; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<if cond='!spoiled && gone + writes > 0'>: an integer operation overflowed or failed")); ifCondFailed20 = true; return false }; return sceValue }() {
 
 
 	p.vProbing = true
@@ -3465,14 +3543,14 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 		_ = s
 
 	{
-	var ifCondFailed20 bool
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.DivUint64(&sceFailure, a.element, 65536) == uint64(s.id) && (s.kind == 2 || scealgorithm.RemUint64(&sceFailure, a.element, 65536) == uint64(s.field)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<if cond='a.element / 65536 === s.id && (s.kind === 2 || a.element % 65536 === s.field)'>: an integer operation overflowed or failed")); ifCondFailed20 = true; return false }; return sceValue }() {
+	var ifCondFailed21 bool
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.DivUint64(&sceFailure, a.element, 65536) == uint64(s.id) && (s.kind == 2 || scealgorithm.RemUint64(&sceFailure, a.element, 65536) == uint64(s.field)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<if cond='a.element / 65536 === s.id && (s.kind === 2 || a.element % 65536 === s.field)'>: an integer operation overflowed or failed")); ifCondFailed21 = true; return false }; return sceValue }() {
 
 
 	p.vCovered = true
 
 	}
-	if ifCondFailed20 {
+	if ifCondFailed21 {
 		return // W3C SCXML 4.9: the error ends the block
 	}
 	}
@@ -3695,22 +3773,22 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	}
 
 	}
-	if ifCondFailed19 {
+	if ifCondFailed20 {
 		return // W3C SCXML 4.9: the error ends the block
 	}
 	}
 
 
 	{
-	var ifCondFailed23 bool
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := !p.vSpoiled && scealgorithm.AddUint32(&sceFailure, p.vGone, p.vWrites) == 0; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<if cond='!spoiled && gone + writes === 0'>: an integer operation overflowed or failed")); ifCondFailed23 = true; return false }; return sceValue }() {
+	var ifCondFailed24 bool
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := !p.vSpoiled && scealgorithm.AddUint32(&sceFailure, p.vGone, p.vWrites) == 0; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<if cond='!spoiled && gone + writes === 0'>: an integer operation overflowed or failed")); ifCondFailed24 = true; return false }; return sceValue }() {
 
 	// SCE Accepted Subset §2.15: <sce:clear target="staged">
 
 	p.vStaged = p.vStaged[:0]
 
 	}
-	if ifCondFailed23 {
+	if ifCondFailed24 {
 		return // W3C SCXML 4.9: the error ends the block
 	}
 	}
@@ -3788,7 +3866,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 			parts = append(parts, sce.EventDataParam{Name: "field", Value: sceValue})
 		}
 		{
-			sceValue := int64(p.vNamedKind)
+			sceValue := (p.vNamedKind).String()
 			parts = append(parts, sce.EventDataParam{Name: "kind", Value: sceValue})
 		}
 		{
@@ -3831,7 +3909,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 			}()
 		case 7:
-			//line record_list.scxml:701
+			//line record_list.scxml:708
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -4354,7 +4432,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 			}()
 		case 8:
-			//line record_list.scxml:837
+			//line record_list.scxml:844
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -5091,7 +5169,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 			}()
 		case 9:
-			//line record_list.scxml:940
+			//line record_list.scxml:947
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListPayloadTagRecordListWrite {
@@ -5133,7 +5211,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 			}()
 		case 10:
-			//line record_list.scxml:963
+			//line record_list.scxml:970
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListPayloadTagRecordListWrite {
@@ -5246,7 +5324,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 			}()
 		case 11:
-			//line record_list.scxml:998
+			//line record_list.scxml:1005
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -5257,7 +5335,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 			}()
 		case 12:
-			//line record_list.scxml:1005
+			//line record_list.scxml:1012
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListPayloadTagRecordListSupersede {
@@ -5370,7 +5448,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 			}()
 		case 13:
-			//line record_list.scxml:1045
+			//line record_list.scxml:1052
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -5659,7 +5737,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 			}()
 		case 14:
-			//line record_list.scxml:1124
+			//line record_list.scxml:1131
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListPayloadTagRecordListAnnounce {
@@ -5725,7 +5803,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 			}()
 		case 15:
-			//line record_list.scxml:1147
+			//line record_list.scxml:1154
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -6138,7 +6216,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 			}()
 		case 16:
-			//line record_list.scxml:1202
+			//line record_list.scxml:1209
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListPayloadTagRecordListKeep {
@@ -6174,7 +6252,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 			}()
 		case 17:
-			//line record_list.scxml:1219
+			//line record_list.scxml:1226
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListPayloadTagRecordListCompact {
@@ -6274,7 +6352,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 			}()
 		case 18:
-			//line record_list.scxml:1253
+			//line record_list.scxml:1260
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListPayloadTagRecordListSettle {
@@ -6373,7 +6451,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 			}()
 		case 19:
-			//line record_list.scxml:1274
+			//line record_list.scxml:1281
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListPayloadTagRecordListPropose {
@@ -6499,7 +6577,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 			}()
 		case 20:
-			//line record_list.scxml:1304
+			//line record_list.scxml:1311
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListPayloadTagRecordListAck {
@@ -6782,7 +6860,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 			}()
 		case 21:
-			//line record_list.scxml:1368
+			//line record_list.scxml:1375
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListPayloadTagRecordListFloor {
@@ -6936,7 +7014,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 			}()
 		case 22:
-			//line record_list.scxml:1418
+			//line record_list.scxml:1425
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -7035,7 +7113,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	}
 			}()
 		case 23:
-			//line record_list.scxml:1438
+			//line record_list.scxml:1445
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListPayloadTagRecordListVisit {
@@ -7229,7 +7307,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 			}()
 		case 24:
-			//line record_list.scxml:1475
+			//line record_list.scxml:1482
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListPayloadTagRecordListNode {
@@ -7529,7 +7607,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 			}()
 		case 25:
-			//line record_list.scxml:1524
+			//line record_list.scxml:1531
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListPayloadTagRecordListShare {
@@ -7541,8 +7619,8 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 		_ = v
 
 	{
-	var ifCondFailed104 bool
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.DivInt64(&sceFailure, v.wallTime, 60000) == int64(p.pendingRecordListSharePayload.minute); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<if cond='v.wallTime / 60000 === _event.data.minute'>: an integer operation overflowed or failed")); ifCondFailed104 = true; return false }; return sceValue }() {
+	var ifCondFailed105 bool
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.DivInt64(&sceFailure, v.wallTime, 60000) == int64(p.pendingRecordListSharePayload.minute); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<if cond='v.wallTime / 60000 === _event.data.minute'>: an integer operation overflowed or failed")); ifCondFailed105 = true; return false }; return sceValue }() {
 
 
 	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.NarrowUint32FromUint(&sceFailure, uint64(v.id)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='shareId'>: an integer operation overflowed or failed")); return true }; p.vShareId = sceValue; return false }() {
@@ -7732,7 +7810,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	}
 
 	}
-	if ifCondFailed104 {
+	if ifCondFailed105 {
 		return // W3C SCXML 4.9: the error ends the block
 	}
 	}
@@ -7745,8 +7823,8 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 		_ = t
 
 	{
-	var ifCondFailed107 bool
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.DivInt64(&sceFailure, t.wallTime, 60000) == int64(p.pendingRecordListSharePayload.minute); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<if cond='t.wallTime / 60000 === _event.data.minute'>: an integer operation overflowed or failed")); ifCondFailed107 = true; return false }; return sceValue }() {
+	var ifCondFailed108 bool
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.DivInt64(&sceFailure, t.wallTime, 60000) == int64(p.pendingRecordListSharePayload.minute); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<if cond='t.wallTime / 60000 === _event.data.minute'>: an integer operation overflowed or failed")); ifCondFailed108 = true; return false }; return sceValue }() {
 
 
 	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.NarrowUint32FromUint(&sceFailure, uint64(scealgorithm.DivUint64(&sceFailure, t.element, 65536))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='shareId'>: an integer operation overflowed or failed")); return true }; p.vShareId = sceValue; return false }() {
@@ -7928,7 +8006,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	}
 
 	}
-	if ifCondFailed107 {
+	if ifCondFailed108 {
 		return // W3C SCXML 4.9: the error ends the block
 	}
 	}
@@ -7937,7 +8015,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 			}()
 		case 26:
-			//line record_list.scxml:1586
+			//line record_list.scxml:1593
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

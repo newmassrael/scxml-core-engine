@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9fab540da93829eaa9159cbc7132fde0b98312062867e02e6e631d43aef759bc
+// source-hash: 0fafd5dc7cb78db436777a56fff2cdefea18c3275c9e740c945e368e87cb13ce
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/todo_peer.scxml
@@ -241,6 +241,19 @@ data class TodoPeerMemberRecord(val node: ULong, val role: UByte) {
         /** The value a saved state holds, refused unless it is one. */
         fun fromSaved(value: Any?, what: String): TodoPeerMemberRecord = TodoPeerMemberRecord(node = SavedValues.uint64(SavedValues.field(value, what, "node"), "$what.node"), role = SavedValues.uint8(SavedValues.field(value, what, "role"), "$what.role"))
     }
+}
+/** The bounds this machine is built with, each by the name `sce:limit` gives it (docs/adr/0050). */
+object TodoPeerLimits {
+    /** The bound `sce:limit="merge_digest"` names, as this build resolved it. */
+    const val MERGE_DIGEST: UInt = 2048u
+    /** The bound `sce:limit="merge_entries"` names, as this build resolved it. */
+    const val MERGE_ENTRIES: UInt = 1024u
+    /** The bound `sce:limit="merge_text"` names, as this build resolved it. */
+    const val MERGE_TEXT: UInt = 96u
+    /** The bound `sce:limit="merge_values"` names, as this build resolved it. */
+    const val MERGE_VALUES: UInt = 512u
+    /** The bound `sce:limit="todo_roster"` names, as this build resolved it. */
+    const val TODO_ROSTER: UInt = 64u
 }
 // ── SCE Accepted Subset §2.15: calls of an algorithm that takes or returns state ──
 private fun call_EventAgenda__vv(p0: TodoPeerScheduleRecord, p1: List<TodoPeerValueRecord>, p2: ULong, p3: Long, p4: Long, p5: UInt): com.sce.forge.runtime.AlgorithmResult<List<TodoPeerOccurrenceRecord>> =

@@ -9,6 +9,12 @@
 
 package orset_entry
 
+// EventName is the event this schema types (`sce:event-name`), as a host names it.
+const EventName string = "merge.orset_entry"
+
+// Revision is the revision of the schema (`sce:revision`, 1 when the document declares none).
+const Revision uint32 = 1
+
 type OrsetEntryPayload struct {
 	Element uint64
 	WallTime int64

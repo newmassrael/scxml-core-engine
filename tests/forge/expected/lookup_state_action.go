@@ -6,7 +6,9 @@
 
 package lookup_state_action
 
-import "github.com/newmassrael/sce-forge-runtime/lookup"
+import (
+	"github.com/newmassrael/sce-forge-runtime/lookup"
+)
 
 var sceKeys = [4]int32{ 0, 1, 2, 3 }
 var sceValues = [4]int32{ 10, 20, 30, 40 }

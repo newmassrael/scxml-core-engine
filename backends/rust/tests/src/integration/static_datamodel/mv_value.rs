@@ -8,6 +8,16 @@
 // Event name: merge.mv_value
 // Do not edit — regenerate from the source SCXML file.
 
+/// The event this schema types (`sce:event-name`), as a host names it.
+#[allow(dead_code)]
+pub const EVENT_NAME: &str = "merge.mv_value";
+/// The revision of the schema (`sce:revision`, 1 when the document declares none).
+#[allow(dead_code)]
+pub const REVISION: u32 = 1;
+/// The most UTF-8 bytes `text` holds (`sce:max-size`, the bound `sce:limit="merge_text"` names), as this build resolved it.
+#[allow(dead_code)]
+pub const TEXT_MAX_SIZE: u32 = 96;
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct MvValuePayload {
     pub id: u64,

@@ -9,4 +9,13 @@
 
 package com.sce.generated.text_slot
 
+/** The event this schema types (`sce:event-name`), as a host names it. */
+const val EVENT_NAME: String = "text.slot"
+
+/** The revision of the schema (`sce:revision`, 1 when the document declares none). */
+const val REVISION: UInt = 1u
+
+/** The most UTF-8 bytes `text` holds (`sce:max-size`), as this build resolved it. */
+const val TEXT_MAX_SIZE: UInt = 32u
+
 data class TextSlotPayload(    val slot: UInt,    val version: Long,    val text: String)

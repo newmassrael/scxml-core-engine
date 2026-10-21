@@ -9,4 +9,10 @@
 
 package com.sce.generated.lww_cell
 
+/** The event this schema types (`sce:event-name`), as a host names it. */
+const val EVENT_NAME: String = "merge.lww_cell"
+
+/** The revision of the schema (`sce:revision`, 1 when the document declares none). */
+const val REVISION: UInt = 1u
+
 data class LwwCellPayload(    val row: ULong,    val col: ULong,    val value: Long,    val wallTime: Long,    val counter: UInt,    val nodeId: ULong,    val op: UByte,    val aRef: Boolean,    val aRow: ULong,    val aCol: ULong,    val aVal: Long,    val bRef: Boolean,    val bRow: ULong,    val bCol: ULong,    val bVal: Long)

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9fab540da93829eaa9159cbc7132fde0b98312062867e02e6e631d43aef759bc
+// source-hash: 0fafd5dc7cb78db436777a56fff2cdefea18c3275c9e740c945e368e87cb13ce
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -704,6 +704,24 @@ pub struct TodoPeerAnswerRecord {
 pub struct TodoPeerMemberRecord {
     pub node: u64,
     pub role: u8,
+}
+
+/// The bounds this machine is built with, each by the name `sce:limit` gives it (docs/adr/0050).
+#[allow(dead_code)]
+pub struct TodoPeerLimits;
+
+#[allow(dead_code)]
+impl TodoPeerLimits {
+    /// The bound `sce:limit="merge_digest"` names, as this build resolved it.
+    pub const MERGE_DIGEST: u32 = 2048;
+    /// The bound `sce:limit="merge_entries"` names, as this build resolved it.
+    pub const MERGE_ENTRIES: u32 = 1024;
+    /// The bound `sce:limit="merge_text"` names, as this build resolved it.
+    pub const MERGE_TEXT: u32 = 96;
+    /// The bound `sce:limit="merge_values"` names, as this build resolved it.
+    pub const MERGE_VALUES: u32 = 512;
+    /// The bound `sce:limit="todo_roster"` names, as this build resolved it.
+    pub const TODO_ROSTER: u32 = 64;
 }
 
 // ── SCE Accepted Subset §2.15: calls of an algorithm that takes or returns state ──
