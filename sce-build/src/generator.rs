@@ -5189,6 +5189,34 @@ mod tests {
             6,
             "each refused <assign> still ends its block\n{rust}"
         );
+        // A refused <assign> reads nothing from the script engine, so it binds
+        // none of it: from the brace that opens the element to its refusal,
+        // no `sid` or `se` is written for nothing to read.
+        let lines: Vec<&str> = rust.lines().map(str::trim).collect();
+        let refusals: Vec<usize> = lines
+            .iter()
+            .enumerate()
+            .filter(|(_, line)| line.contains("Invalid or read-only location"))
+            .map(|(at, _)| at)
+            .collect();
+        assert_eq!(refusals.len(), 6, "{rust}");
+        for at in refusals {
+            let opened = lines[..at]
+                .iter()
+                .rposition(|line| *line == "{")
+                .unwrap_or_else(|| panic!("the refused <assign> at line {at} opens a block"));
+            let arm = &lines[opened..=at];
+            assert!(
+                !arm.iter().any(|line| {
+                    line.starts_with("let sid ")
+                        || line.starts_with("let se ")
+                        || line.starts_with("let se:")
+                        || line.starts_with("self.ensure_script_engine()")
+                }),
+                "a refused <assign> binds what it never reads:\n{}",
+                arm.join("\n")
+            );
+        }
 
         // The <if> whose branches all end is the end of its block, so no check
         // of a failed cond follows it; the one without <else> keeps its check.
