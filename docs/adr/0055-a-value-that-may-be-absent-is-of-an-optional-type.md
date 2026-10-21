@@ -333,7 +333,7 @@ helper for each concern:
 | | The type | Absent | Present | Is present | proven `x.value` | `x ?? d` | `===` |
 |---|---|---|---|---|---|---|---|
 | Rust | `Option<T>` | `None` | `Some(v)` | `is_some()` | `sce_forge_runtime::optional::proven(x)` | `match x { Some(v) => v, None => d }` | `==` |
-| Kotlin | `T?` | `null` | `v` | `!= null` | `x!!` | `x ?: d` | `==` |
+| Kotlin | `T?` | `null` | `v` | `!= null` | `SceOptional.proven(x)` | `x ?: d` | `==` |
 | C++ | `std::optional<T>` | `std::nullopt` | `v` | `has_value()` | `*x` | a runtime helper handed `d` as a lambda | `==` (C++17 defines it over `optional`) |
 | Go | `optional.Of[T]` | `optional.None[T]()` | `optional.Some(v)` | `x.IsPresent()` | `x.Proven()` | a runtime helper handed `d` as a function literal | `x.Equal(y)` |
 | Python | `Optional[T]` | `None` | `v` | `is not None` | `x` | a runtime helper handed `d` as a `lambda` | `==` |
@@ -347,8 +347,10 @@ holds every backend to both (a `d` that would overflow, read beside a present `x
 **A proven read has no failure path.** The build proved the value present, so each backend reads
 it directly. Rust reads it through one runtime function, `proven`, whose absent arm is
 `unreachable!`: an arm the build has proven no run reaches, written in one place so that no
-backend's lint reads the test and the read as a pattern to rewrite. Kotlin's `!!`, C++'s `*`, Go's
-`Proven()` and C11's `.value` are the same direct reads. The narrowing rules of section 3 are what
+backend's lint reads the test and the read as a pattern to rewrite. Kotlin reads it through
+`SceOptional.proven` of its forge runtime for the same reason: a test of a stable value (a field of
+a loop's item) smart-casts it to `T`, and `!!` on a `T` is a warning its build refuses. C++'s `*`,
+Go's `Proven()` and C11's `.value` are the same direct reads. The narrowing rules of section 3 are what
 make this sound, and the tests of step 3 hold each of them, an invalidating statement for each.
 
 **What is shared.**
