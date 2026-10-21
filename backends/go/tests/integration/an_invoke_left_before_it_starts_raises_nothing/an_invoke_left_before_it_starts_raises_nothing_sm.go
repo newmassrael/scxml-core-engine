@@ -722,7 +722,7 @@ func (p *AnInvokeLeftBeforeItStartsRaisesNothingPolicy) ExecuteEntryActions(stat
 	p.ensureScriptEngine()
 	switch state {
 	case AnInvokeLeftBeforeItStartsRaisesNothingStateS0:
-		//line an_invoke_left_before_it_starts_raises_nothing.scxml:23
+//line an_invoke_left_before_it_starts_raises_nothing.scxml:23
 		// W3C SCXML 6.4.1: `type` names no processor this platform implements.
 		// Defer only — the error.execution raise happens in
 		// ExecutePendingInvokes, so §scxml-6.4 ordering holds and
@@ -850,7 +850,7 @@ func (p *AnInvokeLeftBeforeItStartsRaisesNothingPolicy) ExecuteTransitionContent
 	case AnInvokeLeftBeforeItStartsRaisesNothingStateS1:
 		switch transitionIndex {
 		case 0:
-			//line an_invoke_left_before_it_starts_raises_nothing.scxml:29
+//line an_invoke_left_before_it_starts_raises_nothing.scxml:29
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

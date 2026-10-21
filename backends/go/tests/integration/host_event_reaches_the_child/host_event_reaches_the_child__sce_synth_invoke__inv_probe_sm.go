@@ -446,7 +446,7 @@ func (p *HostEventReachesTheChildSceSynthInvokeInvProbePolicy) ClearEventMetadat
 func (p *HostEventReachesTheChildSceSynthInvokeInvProbePolicy) ExecuteEntryActions(state HostEventReachesTheChildSceSynthInvokeInvProbeState, engine *sce.Engine[HostEventReachesTheChildSceSynthInvokeInvProbeState, HostEventReachesTheChildSceSynthInvokeInvProbeEvent], isDefaultEntry bool) {
 	switch state {
 	case HostEventReachesTheChildSceSynthInvokeInvProbeStateWatch:
-		//line host_event_reaches_the_child__sce_synth_invoke__inv_probe.scxml:5
+//line host_event_reaches_the_child__sce_synth_invoke__inv_probe.scxml:5
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -554,7 +554,7 @@ func (p *HostEventReachesTheChildSceSynthInvokeInvProbePolicy) ExecuteTransition
 	case HostEventReachesTheChildSceSynthInvokeInvProbeStateWatch:
 		switch transitionIndex {
 		case 0:
-			//line host_event_reaches_the_child__sce_synth_invoke__inv_probe.scxml:9
+//line host_event_reaches_the_child__sce_synth_invoke__inv_probe.scxml:9
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -579,7 +579,7 @@ func (p *HostEventReachesTheChildSceSynthInvokeInvProbePolicy) ExecuteTransition
 	}
 			}()
 		case 1:
-			//line host_event_reaches_the_child__sce_synth_invoke__inv_probe.scxml:12
+//line host_event_reaches_the_child__sce_synth_invoke__inv_probe.scxml:12
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

@@ -668,7 +668,7 @@ func (p *AChildMaySendManyEventsInOneTickSceSynthInvokeChattyPolicy) ExecuteEntr
 	p.ensureScriptEngine()
 	switch state {
 	case AChildMaySendManyEventsInOneTickSceSynthInvokeChattyStateC0:
-		//line a_child_may_send_many_events_in_one_tick__sce_synth_invoke__chatty.scxml:19
+//line a_child_may_send_many_events_in_one_tick__sce_synth_invoke__chatty.scxml:19
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {

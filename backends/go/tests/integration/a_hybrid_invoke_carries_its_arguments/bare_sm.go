@@ -742,7 +742,7 @@ func (p *BarePolicy) ExecuteTransitionContent(source BareState, transitionIndex 
 	case BareStateUp:
 		switch transitionIndex {
 		case 0:
-			//line bare.scxml:12
+//line bare.scxml:12
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

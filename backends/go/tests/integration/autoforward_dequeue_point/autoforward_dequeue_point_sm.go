@@ -687,7 +687,7 @@ func (p *AutoforwardDequeuePointPolicy) ClearEventMetadata() {
 func (p *AutoforwardDequeuePointPolicy) ExecuteEntryActions(state AutoforwardDequeuePointState, engine *sce.Engine[AutoforwardDequeuePointState, AutoforwardDequeuePointEvent], isDefaultEntry bool) {
 	switch state {
 	case AutoforwardDequeuePointStatePhase:
-		//line autoforward_dequeue_point.scxml:70
+//line autoforward_dequeue_point.scxml:70
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
 			// docs/adr/0045: the platform part of the id is the number of this
@@ -821,7 +821,7 @@ func (p *AutoforwardDequeuePointPolicy) ExecuteTransitionContent(source Autoforw
 	case AutoforwardDequeuePointStatePhase:
 		switch transitionIndex {
 		case 0:
-			//line autoforward_dequeue_point.scxml:97
+//line autoforward_dequeue_point.scxml:97
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -856,7 +856,7 @@ func (p *AutoforwardDequeuePointPolicy) ExecuteTransitionContent(source Autoforw
 	}
 			}()
 		case 1:
-			//line autoforward_dequeue_point.scxml:101
+//line autoforward_dequeue_point.scxml:101
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

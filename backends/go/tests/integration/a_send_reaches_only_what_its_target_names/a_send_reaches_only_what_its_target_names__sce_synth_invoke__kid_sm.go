@@ -631,7 +631,7 @@ func (p *ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidPolicy) ExecuteEntry
 	p.ensureScriptEngine()
 	switch state {
 	case ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidStateWait:
-		//line a_send_reaches_only_what_its_target_names__sce_synth_invoke__kid.scxml:5
+//line a_send_reaches_only_what_its_target_names__sce_synth_invoke__kid.scxml:5
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -742,7 +742,7 @@ func (p *ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidPolicy) ExecuteTrans
 	case ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidStateWait:
 		switch transitionIndex {
 		case 0:
-			//line a_send_reaches_only_what_its_target_names__sce_synth_invoke__kid.scxml:9
+//line a_send_reaches_only_what_its_target_names__sce_synth_invoke__kid.scxml:9
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

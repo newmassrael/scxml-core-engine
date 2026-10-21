@@ -728,7 +728,7 @@ func (p *StaticTextRecordPolicy) ExecuteTransitionContent(source StaticTextRecor
 	case StaticTextRecordStateOpen:
 		switch transitionIndex {
 		case 0:
-			//line static_text_record.scxml:41
+//line static_text_record.scxml:41
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticTextRecordPayloadTagTextSlot {
@@ -763,7 +763,7 @@ func (p *StaticTextRecordPolicy) ExecuteTransitionContent(source StaticTextRecor
 
 			}()
 		case 1:
-			//line static_text_record.scxml:49
+//line static_text_record.scxml:49
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -774,7 +774,7 @@ func (p *StaticTextRecordPolicy) ExecuteTransitionContent(source StaticTextRecor
 
 			}()
 		case 2:
-			//line static_text_record.scxml:52
+//line static_text_record.scxml:52
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

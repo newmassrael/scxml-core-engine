@@ -1502,7 +1502,7 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 	p.activeStates = append(p.activeStates, state)
 	switch state {
 	case AiLoopStateAbandoned:
-		//line ai_loop.scxml:493
+//line ai_loop.scxml:493
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -1521,7 +1521,7 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 			engine.Raise(sce.NewEventWithMetadata(AiLoopEventDoneStateRun))
 		}
 	case AiLoopStateClosing:
-		//line ai_loop.scxml:405
+//line ai_loop.scxml:405
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -1591,7 +1591,7 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 	}
 		}()
 	case AiLoopStateJudging:
-		//line ai_loop.scxml:344
+//line ai_loop.scxml:344
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -1661,7 +1661,7 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 	}
 		}()
 	case AiLoopStatePaused:
-		//line ai_loop.scxml:451
+//line ai_loop.scxml:451
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -1708,7 +1708,7 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 	}
 		}()
 	case AiLoopStatePriming:
-		//line ai_loop.scxml:291
+//line ai_loop.scxml:291
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -1778,7 +1778,7 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 	}
 		}()
 	case AiLoopStateReflecting:
-		//line ai_loop.scxml:374
+//line ai_loop.scxml:374
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -1832,7 +1832,7 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 	}
 		}()
 	case AiLoopStateReported:
-		//line ai_loop.scxml:426
+//line ai_loop.scxml:426
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -1843,7 +1843,7 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 		// W3C SCXML 3.7: Final state reached — raise done.state.running
 		engine.Raise(sce.NewEventWithMetadata(AiLoopEventDoneStateRunning))
 	case AiLoopStateRestarting:
-		//line ai_loop.scxml:394
+//line ai_loop.scxml:394
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -1897,7 +1897,7 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 	}
 		}()
 	case AiLoopStateScreening:
-		//line ai_loop.scxml:327
+//line ai_loop.scxml:327
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -1951,7 +1951,7 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 	}
 		}()
 	case AiLoopStateSpent:
-		//line ai_loop.scxml:529
+//line ai_loop.scxml:529
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -1960,7 +1960,7 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 
 		}()
 	case AiLoopStateStuck:
-		//line ai_loop.scxml:434
+//line ai_loop.scxml:434
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -2407,7 +2407,7 @@ func (p *AiLoopPolicy) ExecuteTransitionContent(source AiLoopState, transitionIn
 	case AiLoopStateJudging:
 		switch transitionIndex {
 		case 2:
-			//line ai_loop.scxml:362
+//line ai_loop.scxml:362
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -2479,7 +2479,7 @@ func (p *AiLoopPolicy) ExecuteTransitionContent(source AiLoopState, transitionIn
 	case AiLoopStatePaused:
 		switch transitionIndex {
 		case 0:
-			//line ai_loop.scxml:468
+//line ai_loop.scxml:468
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -2494,7 +2494,7 @@ func (p *AiLoopPolicy) ExecuteTransitionContent(source AiLoopState, transitionIn
 	case AiLoopStateReflecting:
 		switch transitionIndex {
 		case 0:
-			//line ai_loop.scxml:379
+//line ai_loop.scxml:379
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -2520,7 +2520,7 @@ func (p *AiLoopPolicy) ExecuteTransitionContent(source AiLoopState, transitionIn
 
 			}()
 		case 1:
-			//line ai_loop.scxml:385
+//line ai_loop.scxml:385
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -2592,7 +2592,7 @@ func (p *AiLoopPolicy) ExecuteTransitionContent(source AiLoopState, transitionIn
 	case AiLoopStateWithin:
 		switch transitionIndex {
 		case 0:
-			//line ai_loop.scxml:522
+//line ai_loop.scxml:522
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -2604,7 +2604,7 @@ func (p *AiLoopPolicy) ExecuteTransitionContent(source AiLoopState, transitionIn
 
 			}()
 		case 1:
-			//line ai_loop.scxml:525
+//line ai_loop.scxml:525
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -2619,7 +2619,7 @@ func (p *AiLoopPolicy) ExecuteTransitionContent(source AiLoopState, transitionIn
 	case AiLoopStateWorking:
 		switch transitionIndex {
 		case 0:
-			//line ai_loop.scxml:311
+//line ai_loop.scxml:311
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

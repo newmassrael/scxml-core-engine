@@ -668,7 +668,7 @@ func (p *StaticReal32Policy) ExecuteTransitionContent(source StaticReal32State, 
 	case StaticReal32StateIdle:
 		switch transitionIndex {
 		case 0:
-			//line static_real32.scxml:42
+//line static_real32.scxml:42
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -677,7 +677,7 @@ func (p *StaticReal32Policy) ExecuteTransitionContent(source StaticReal32State, 
 
 			}()
 		case 1:
-			//line static_real32.scxml:46
+//line static_real32.scxml:46
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -686,7 +686,7 @@ func (p *StaticReal32Policy) ExecuteTransitionContent(source StaticReal32State, 
 
 			}()
 		case 2:
-			//line static_real32.scxml:50
+//line static_real32.scxml:50
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -695,7 +695,7 @@ func (p *StaticReal32Policy) ExecuteTransitionContent(source StaticReal32State, 
 
 			}()
 		case 3:
-			//line static_real32.scxml:54
+//line static_real32.scxml:54
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -704,7 +704,7 @@ func (p *StaticReal32Policy) ExecuteTransitionContent(source StaticReal32State, 
 
 			}()
 		case 4:
-			//line static_real32.scxml:61
+//line static_real32.scxml:61
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -713,7 +713,7 @@ func (p *StaticReal32Policy) ExecuteTransitionContent(source StaticReal32State, 
 
 			}()
 		case 5:
-			//line static_real32.scxml:65
+//line static_real32.scxml:65
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -725,7 +725,7 @@ func (p *StaticReal32Policy) ExecuteTransitionContent(source StaticReal32State, 
 
 			}()
 		case 6:
-			//line static_real32.scxml:70
+//line static_real32.scxml:70
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -737,7 +737,7 @@ func (p *StaticReal32Policy) ExecuteTransitionContent(source StaticReal32State, 
 
 			}()
 		case 7:
-			//line static_real32.scxml:74
+//line static_real32.scxml:74
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

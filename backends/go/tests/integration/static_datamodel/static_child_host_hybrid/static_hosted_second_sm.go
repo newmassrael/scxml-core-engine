@@ -438,7 +438,7 @@ func (p *StaticHostedSecondPolicy) ClearEventMetadata() {
 func (p *StaticHostedSecondPolicy) ExecuteEntryActions(state StaticHostedSecondState, engine *sce.Engine[StaticHostedSecondState, StaticHostedSecondEvent], isDefaultEntry bool) {
 	switch state {
 	case StaticHostedSecondStateBusy:
-		//line static_hosted_second.scxml:10
+//line static_hosted_second.scxml:10
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {

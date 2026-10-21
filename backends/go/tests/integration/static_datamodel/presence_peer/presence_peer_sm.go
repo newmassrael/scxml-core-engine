@@ -1077,7 +1077,7 @@ func (p *PresencePeerPolicy) ExecuteTransitionContent(source PresencePeerState, 
 	case PresencePeerStateOpen:
 		switch transitionIndex {
 		case 0:
-			//line presence_peer.scxml:79
+//line presence_peer.scxml:79
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != PresencePeerPayloadTagPresenceJoin {
@@ -1111,7 +1111,7 @@ func (p *PresencePeerPolicy) ExecuteTransitionContent(source PresencePeerState, 
 
 			}()
 		case 1:
-			//line presence_peer.scxml:93
+//line presence_peer.scxml:93
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != PresencePeerPayloadTagPresenceBeat {
@@ -1183,7 +1183,7 @@ func (p *PresencePeerPolicy) ExecuteTransitionContent(source PresencePeerState, 
 	}
 			}()
 		case 2:
-			//line presence_peer.scxml:103
+//line presence_peer.scxml:103
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != PresencePeerPayloadTagPresenceAlive {
@@ -1301,7 +1301,7 @@ func (p *PresencePeerPolicy) ExecuteTransitionContent(source PresencePeerState, 
 	}
 			}()
 		case 3:
-			//line presence_peer.scxml:119
+//line presence_peer.scxml:119
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != PresencePeerPayloadTagPresenceSeen {
@@ -1447,7 +1447,7 @@ func (p *PresencePeerPolicy) ExecuteTransitionContent(source PresencePeerState, 
 
 			}()
 		case 4:
-			//line presence_peer.scxml:151
+//line presence_peer.scxml:151
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != PresencePeerPayloadTagPresenceExpire {
@@ -1583,7 +1583,7 @@ func (p *PresencePeerPolicy) ExecuteTransitionContent(source PresencePeerState, 
 
 			}()
 		case 5:
-			//line presence_peer.scxml:179
+//line presence_peer.scxml:179
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != PresencePeerPayloadTagPresenceLeft {
@@ -1631,7 +1631,7 @@ func (p *PresencePeerPolicy) ExecuteTransitionContent(source PresencePeerState, 
 
 			}()
 		case 6:
-			//line presence_peer.scxml:193
+//line presence_peer.scxml:193
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1642,7 +1642,7 @@ func (p *PresencePeerPolicy) ExecuteTransitionContent(source PresencePeerState, 
 
 			}()
 		case 7:
-			//line presence_peer.scxml:197
+//line presence_peer.scxml:197
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

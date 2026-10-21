@@ -781,7 +781,7 @@ func (p *SendNamelistOverHttpPolicy) ExecuteEntryActions(state SendNamelistOverH
 	p.ensureScriptEngine()
 	switch state {
 	case SendNamelistOverHttpStateDiscardPhase:
-		//line send_namelist_over_http.scxml:95
+//line send_namelist_over_http.scxml:95
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -888,7 +888,7 @@ func (p *SendNamelistOverHttpPolicy) ExecuteEntryActions(state SendNamelistOverH
 	}
 		}()
 	case SendNamelistOverHttpStateMapPhase:
-		//line send_namelist_over_http.scxml:71
+//line send_namelist_over_http.scxml:71
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -1159,7 +1159,7 @@ func (p *SendNamelistOverHttpPolicy) ExecuteTransitionContent(source SendNamelis
 	case SendNamelistOverHttpStateDiscardPhase:
 		switch transitionIndex {
 		case 0:
-			//line send_namelist_over_http.scxml:106
+//line send_namelist_over_http.scxml:106
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1174,7 +1174,7 @@ func (p *SendNamelistOverHttpPolicy) ExecuteTransitionContent(source SendNamelis
 	case SendNamelistOverHttpStateMapPhase:
 		switch transitionIndex {
 		case 0:
-			//line send_namelist_over_http.scxml:82
+//line send_namelist_over_http.scxml:82
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

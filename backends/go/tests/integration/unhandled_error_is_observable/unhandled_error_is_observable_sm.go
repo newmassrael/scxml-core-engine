@@ -926,7 +926,7 @@ func (p *UnhandledErrorIsObservablePolicy) ExecuteTransitionContent(source Unhan
 	case UnhandledErrorIsObservableStateGuarded:
 		switch transitionIndex {
 		case 0:
-			//line unhandled_error_is_observable.scxml:90
+//line unhandled_error_is_observable.scxml:90
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -943,7 +943,7 @@ func (p *UnhandledErrorIsObservablePolicy) ExecuteTransitionContent(source Unhan
 
 			}()
 		case 1:
-			//line unhandled_error_is_observable.scxml:94
+//line unhandled_error_is_observable.scxml:94
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -965,7 +965,7 @@ func (p *UnhandledErrorIsObservablePolicy) ExecuteTransitionContent(source Unhan
 	case UnhandledErrorIsObservableStateIdle:
 		switch transitionIndex {
 		case 0:
-			//line unhandled_error_is_observable.scxml:55
+//line unhandled_error_is_observable.scxml:55
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -977,7 +977,7 @@ func (p *UnhandledErrorIsObservablePolicy) ExecuteTransitionContent(source Unhan
 
 			}()
 		case 1:
-			//line unhandled_error_is_observable.scxml:58
+//line unhandled_error_is_observable.scxml:58
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -991,7 +991,7 @@ func (p *UnhandledErrorIsObservablePolicy) ExecuteTransitionContent(source Unhan
 
 			}()
 		case 2:
-			//line unhandled_error_is_observable.scxml:80
+//line unhandled_error_is_observable.scxml:80
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1003,7 +1003,7 @@ func (p *UnhandledErrorIsObservablePolicy) ExecuteTransitionContent(source Unhan
 
 			}()
 		case 3:
-			//line unhandled_error_is_observable.scxml:83
+//line unhandled_error_is_observable.scxml:83
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

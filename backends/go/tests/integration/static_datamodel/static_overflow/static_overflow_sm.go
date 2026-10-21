@@ -567,7 +567,7 @@ func (p *StaticOverflowPolicy) ExecuteTransitionContent(source StaticOverflowSta
 	case StaticOverflowStateWaiting:
 		switch transitionIndex {
 		case 0:
-			//line static_overflow.scxml:22
+//line static_overflow.scxml:22
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -578,7 +578,7 @@ func (p *StaticOverflowPolicy) ExecuteTransitionContent(source StaticOverflowSta
 
 			}()
 		case 2:
-			//line static_overflow.scxml:26
+//line static_overflow.scxml:26
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

@@ -638,7 +638,7 @@ func (p *StaticBytesWirePolicy) ClearEventMetadata() {
 func (p *StaticBytesWirePolicy) ExecuteEntryActions(state StaticBytesWireState, engine *sce.Engine[StaticBytesWireState, StaticBytesWireEvent], isDefaultEntry bool) {
 	switch state {
 	case StaticBytesWireStateDone:
-		//line static_bytes_wire.scxml:44
+//line static_bytes_wire.scxml:44
 		// W3C SCXML 5.5: Evaluate donedata for final state
 		doneEventData := ""
 		{
@@ -773,7 +773,7 @@ func (p *StaticBytesWirePolicy) ExecuteTransitionContent(source StaticBytesWireS
 	case StaticBytesWireStateIdle:
 		switch transitionIndex {
 		case 0:
-			//line static_bytes_wire.scxml:26
+//line static_bytes_wire.scxml:26
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticBytesWirePayloadTagFramedTaken {
@@ -787,7 +787,7 @@ func (p *StaticBytesWirePolicy) ExecuteTransitionContent(source StaticBytesWireS
 
 			}()
 		case 1:
-			//line static_bytes_wire.scxml:29
+//line static_bytes_wire.scxml:29
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -830,7 +830,7 @@ func (p *StaticBytesWirePolicy) ExecuteTransitionContent(source StaticBytesWireS
 	}
 			}()
 		case 2:
-			//line static_bytes_wire.scxml:35
+//line static_bytes_wire.scxml:35
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticBytesWirePayloadTagFramedRelayed {
@@ -850,7 +850,7 @@ func (p *StaticBytesWirePolicy) ExecuteTransitionContent(source StaticBytesWireS
 
 			}()
 		case 4:
-			//line static_bytes_wire.scxml:40
+//line static_bytes_wire.scxml:40
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

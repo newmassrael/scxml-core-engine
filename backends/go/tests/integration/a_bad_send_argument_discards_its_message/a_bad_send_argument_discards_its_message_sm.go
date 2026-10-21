@@ -740,7 +740,7 @@ func (p *ABadSendArgumentDiscardsItsMessagePolicy) ExecuteEntryActions(state ABa
 	p.ensureScriptEngine()
 	switch state {
 	case ABadSendArgumentDiscardsItsMessageStateS0:
-		//line a_bad_send_argument_discards_its_message.scxml:42
+//line a_bad_send_argument_discards_its_message.scxml:42
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -1205,7 +1205,7 @@ func (p *ABadSendArgumentDiscardsItsMessagePolicy) ExecuteTransitionContent(sour
 	case ABadSendArgumentDiscardsItsMessageStateS0:
 		switch transitionIndex {
 		case 0:
-			//line a_bad_send_argument_discards_its_message.scxml:68
+//line a_bad_send_argument_discards_its_message.scxml:68
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1217,7 +1217,7 @@ func (p *ABadSendArgumentDiscardsItsMessagePolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 1:
-			//line a_bad_send_argument_discards_its_message.scxml:71
+//line a_bad_send_argument_discards_its_message.scxml:71
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

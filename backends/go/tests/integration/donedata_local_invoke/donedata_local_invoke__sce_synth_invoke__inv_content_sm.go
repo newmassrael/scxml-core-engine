@@ -613,7 +613,7 @@ func (p *DonedataLocalInvokeSceSynthInvokeInvContentPolicy) ExecuteEntryActions(
 	p.ensureScriptEngine()
 	switch state {
 	case DonedataLocalInvokeSceSynthInvokeInvContentStateDone:
-		//line donedata_local_invoke__sce_synth_invoke__inv_content.scxml:5
+//line donedata_local_invoke__sce_synth_invoke__inv_content.scxml:5
 		// W3C SCXML 5.5: Evaluate donedata for final state
 		doneEventData := ""
 		{

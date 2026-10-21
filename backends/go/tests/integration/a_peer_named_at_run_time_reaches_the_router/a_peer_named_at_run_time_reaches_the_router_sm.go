@@ -727,7 +727,7 @@ func (p *APeerNamedAtRunTimeReachesTheRouterPolicy) ExecuteEntryActions(state AP
 	p.ensureScriptEngine()
 	switch state {
 	case APeerNamedAtRunTimeReachesTheRouterStateS0:
-		//line a_peer_named_at_run_time_reaches_the_router.scxml:31
+//line a_peer_named_at_run_time_reaches_the_router.scxml:31
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -1039,7 +1039,7 @@ func (p *APeerNamedAtRunTimeReachesTheRouterPolicy) ExecuteTransitionContent(sou
 	case APeerNamedAtRunTimeReachesTheRouterStateS0:
 		switch transitionIndex {
 		case 0:
-			//line a_peer_named_at_run_time_reaches_the_router.scxml:37
+//line a_peer_named_at_run_time_reaches_the_router.scxml:37
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1051,7 +1051,7 @@ func (p *APeerNamedAtRunTimeReachesTheRouterPolicy) ExecuteTransitionContent(sou
 
 			}()
 		case 1:
-			//line a_peer_named_at_run_time_reaches_the_router.scxml:40
+//line a_peer_named_at_run_time_reaches_the_router.scxml:40
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

@@ -881,7 +881,7 @@ func (p *AnEventKeepsTheNameItWasSentUnderPolicy) ExecuteEntryActions(state AnEv
 	p.ensureScriptEngine()
 	switch state {
 	case AnEventKeepsTheNameItWasSentUnderStatePhase:
-		//line an_event_keeps_the_name_it_was_sent_under.scxml:31
+//line an_event_keeps_the_name_it_was_sent_under.scxml:31
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
 			// docs/adr/0045: the platform part of the id is the number of this
@@ -1042,7 +1042,7 @@ func (p *AnEventKeepsTheNameItWasSentUnderPolicy) ExecuteTransitionContent(sourc
 	case AnEventKeepsTheNameItWasSentUnderStatePhase:
 		switch transitionIndex {
 		case 0:
-			//line an_event_keeps_the_name_it_was_sent_under.scxml:53
+//line an_event_keeps_the_name_it_was_sent_under.scxml:53
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

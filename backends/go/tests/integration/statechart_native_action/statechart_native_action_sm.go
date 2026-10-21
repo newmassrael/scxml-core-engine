@@ -541,7 +541,7 @@ func (p *StatechartNativeActionPolicy) ClearEventMetadata() {
 func (p *StatechartNativeActionPolicy) ExecuteEntryActions(state StatechartNativeActionState, engine *sce.Engine[StatechartNativeActionState, StatechartNativeActionEvent], isDefaultEntry bool) {
 	switch state {
 	case StatechartNativeActionStateIdle:
-		//line statechart_native_action.scxml:38
+//line statechart_native_action.scxml:38
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -575,7 +575,7 @@ func (p *StatechartNativeActionPolicy) ExecuteExitActions(state StatechartNative
 	// the configuration last.
 	switch state {
 	case StatechartNativeActionStateAssembling:
-		//line statechart_native_action.scxml:59
+//line statechart_native_action.scxml:59
 		// W3C SCXML 3.9 + 4.9: onexit block 0, its own function so an
 		// error ends it with `return`.
 		func() {
@@ -675,7 +675,7 @@ func (p *StatechartNativeActionPolicy) ExecuteTransitionContent(source Statechar
 	case StatechartNativeActionStateAssembling:
 		switch transitionIndex {
 		case 0:
-			//line statechart_native_action.scxml:63
+//line statechart_native_action.scxml:63
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -686,7 +686,7 @@ func (p *StatechartNativeActionPolicy) ExecuteTransitionContent(source Statechar
 	case StatechartNativeActionStateIdle:
 		switch transitionIndex {
 		case 0:
-			//line statechart_native_action.scxml:42
+//line statechart_native_action.scxml:42
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -698,7 +698,7 @@ func (p *StatechartNativeActionPolicy) ExecuteTransitionContent(source Statechar
 	}
 			}()
 		case 1:
-			//line statechart_native_action.scxml:55
+//line statechart_native_action.scxml:55
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

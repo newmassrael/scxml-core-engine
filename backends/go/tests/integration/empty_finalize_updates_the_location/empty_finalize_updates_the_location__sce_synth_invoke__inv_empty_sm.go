@@ -722,7 +722,7 @@ func (p *EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyPolicy) ExecuteTra
 	case EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyStateAnswer:
 		switch transitionIndex {
 		case 0:
-			//line empty_finalize_updates_the_location__sce_synth_invoke__inv_empty.scxml:9
+//line empty_finalize_updates_the_location__sce_synth_invoke__inv_empty.scxml:9
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

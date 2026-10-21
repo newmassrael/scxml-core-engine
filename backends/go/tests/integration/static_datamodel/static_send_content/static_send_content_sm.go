@@ -783,7 +783,7 @@ func (p *StaticSendContentPolicy) ExecuteTransitionContent(source StaticSendCont
 	case StaticSendContentStateViewing:
 		switch transitionIndex {
 		case 0:
-			//line static_send_content.scxml:29
+//line static_send_content.scxml:29
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -798,7 +798,7 @@ func (p *StaticSendContentPolicy) ExecuteTransitionContent(source StaticSendCont
 
 			}()
 		case 1:
-			//line static_send_content.scxml:33
+//line static_send_content.scxml:33
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -841,7 +841,7 @@ func (p *StaticSendContentPolicy) ExecuteTransitionContent(source StaticSendCont
 	}
 			}()
 		case 2:
-			//line static_send_content.scxml:38
+//line static_send_content.scxml:38
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticSendContentPayloadTagViewShown {
@@ -887,7 +887,7 @@ func (p *StaticSendContentPolicy) ExecuteTransitionContent(source StaticSendCont
 	}
 			}()
 		case 3:
-			//line static_send_content.scxml:43
+//line static_send_content.scxml:43
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticSendContentPayloadTagViewRelayed {

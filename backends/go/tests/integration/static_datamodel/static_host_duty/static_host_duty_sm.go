@@ -479,7 +479,7 @@ func (p *StaticHostDutyPolicy) ClearEventMetadata() {
 func (p *StaticHostDutyPolicy) ExecuteEntryActions(state StaticHostDutyState, engine *sce.Engine[StaticHostDutyState, StaticHostDutyEvent], isDefaultEntry bool) {
 	switch state {
 	case StaticHostDutyStateEngaged:
-		//line static_host_duty.scxml:19
+//line static_host_duty.scxml:19
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -516,7 +516,7 @@ func (p *StaticHostDutyPolicy) ExecuteExitActions(state StaticHostDutyState, eng
 	// the configuration last.
 	switch state {
 	case StaticHostDutyStateEngaged:
-		//line static_host_duty.scxml:19
+//line static_host_duty.scxml:19
 		// W3C SCXML 3.9 + 4.9: onexit block 0, its own function so an
 		// error ends it with `return`.
 		func() {

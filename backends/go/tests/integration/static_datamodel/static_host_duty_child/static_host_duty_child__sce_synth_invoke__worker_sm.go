@@ -472,7 +472,7 @@ func (p *StaticHostDutyChildSceSynthInvokeWorkerPolicy) ClearEventMetadata() {
 func (p *StaticHostDutyChildSceSynthInvokeWorkerPolicy) ExecuteEntryActions(state StaticHostDutyChildSceSynthInvokeWorkerState, engine *sce.Engine[StaticHostDutyChildSceSynthInvokeWorkerState, StaticHostDutyChildSceSynthInvokeWorkerEvent], isDefaultEntry bool) {
 	switch state {
 	case StaticHostDutyChildSceSynthInvokeWorkerStateRunning:
-		//line static_host_duty_child__sce_synth_invoke__worker.scxml:5
+//line static_host_duty_child__sce_synth_invoke__worker.scxml:5
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -506,7 +506,7 @@ func (p *StaticHostDutyChildSceSynthInvokeWorkerPolicy) ExecuteExitActions(state
 	// the configuration last.
 	switch state {
 	case StaticHostDutyChildSceSynthInvokeWorkerStateRunning:
-		//line static_host_duty_child__sce_synth_invoke__worker.scxml:5
+//line static_host_duty_child__sce_synth_invoke__worker.scxml:5
 		// W3C SCXML 3.9 + 4.9: onexit block 0, its own function so an
 		// error ends it with `return`.
 		func() {

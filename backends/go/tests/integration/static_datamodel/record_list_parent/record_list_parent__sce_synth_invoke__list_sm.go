@@ -2930,7 +2930,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 	case RecordListParentSceSynthInvokeListStateOpen:
 		switch transitionIndex {
 		case 0:
-			//line record_list.scxml:433
+//line record_list.scxml:433
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentSceSynthInvokeListPayloadTagRecordListJoin {
@@ -2946,7 +2946,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 1:
-			//line record_list.scxml:440
+//line record_list.scxml:440
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentSceSynthInvokeListPayloadTagRecordListRoom {
@@ -2966,7 +2966,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 2:
-			//line record_list.scxml:451
+//line record_list.scxml:451
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentSceSynthInvokeListPayloadTagRecordListRole {
@@ -2980,7 +2980,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 3:
-			//line record_list.scxml:462
+//line record_list.scxml:462
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentSceSynthInvokeListPayloadTagRecordListEdit {
@@ -3082,7 +3082,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 4:
-			//line record_list.scxml:489
+//line record_list.scxml:489
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentSceSynthInvokeListPayloadTagRecordListClear {
@@ -3174,7 +3174,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 5:
-			//line record_list.scxml:514
+//line record_list.scxml:514
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentSceSynthInvokeListPayloadTagRecordListRetire {
@@ -3266,7 +3266,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 6:
-			//line record_list.scxml:556
+//line record_list.scxml:556
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -3909,7 +3909,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 7:
-			//line record_list.scxml:708
+//line record_list.scxml:708
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -4432,7 +4432,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 8:
-			//line record_list.scxml:844
+//line record_list.scxml:844
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -5169,7 +5169,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 9:
-			//line record_list.scxml:947
+//line record_list.scxml:947
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentSceSynthInvokeListPayloadTagRecordListWrite {
@@ -5211,7 +5211,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 10:
-			//line record_list.scxml:970
+//line record_list.scxml:970
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentSceSynthInvokeListPayloadTagRecordListWrite {
@@ -5324,7 +5324,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 11:
-			//line record_list.scxml:1005
+//line record_list.scxml:1005
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -5335,7 +5335,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 12:
-			//line record_list.scxml:1012
+//line record_list.scxml:1012
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentSceSynthInvokeListPayloadTagRecordListSupersede {
@@ -5448,7 +5448,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 13:
-			//line record_list.scxml:1052
+//line record_list.scxml:1052
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -5737,7 +5737,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 14:
-			//line record_list.scxml:1131
+//line record_list.scxml:1131
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentSceSynthInvokeListPayloadTagRecordListAnnounce {
@@ -5803,7 +5803,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 15:
-			//line record_list.scxml:1154
+//line record_list.scxml:1154
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -6216,7 +6216,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 16:
-			//line record_list.scxml:1209
+//line record_list.scxml:1209
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentSceSynthInvokeListPayloadTagRecordListKeep {
@@ -6252,7 +6252,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 17:
-			//line record_list.scxml:1226
+//line record_list.scxml:1226
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentSceSynthInvokeListPayloadTagRecordListCompact {
@@ -6352,7 +6352,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 18:
-			//line record_list.scxml:1260
+//line record_list.scxml:1260
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentSceSynthInvokeListPayloadTagRecordListSettle {
@@ -6451,7 +6451,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 19:
-			//line record_list.scxml:1281
+//line record_list.scxml:1281
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentSceSynthInvokeListPayloadTagRecordListPropose {
@@ -6577,7 +6577,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 20:
-			//line record_list.scxml:1311
+//line record_list.scxml:1311
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentSceSynthInvokeListPayloadTagRecordListAck {
@@ -6860,7 +6860,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 21:
-			//line record_list.scxml:1375
+//line record_list.scxml:1375
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentSceSynthInvokeListPayloadTagRecordListFloor {
@@ -7014,7 +7014,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 22:
-			//line record_list.scxml:1425
+//line record_list.scxml:1425
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -7113,7 +7113,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 	}
 			}()
 		case 23:
-			//line record_list.scxml:1445
+//line record_list.scxml:1445
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentSceSynthInvokeListPayloadTagRecordListVisit {
@@ -7307,7 +7307,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 24:
-			//line record_list.scxml:1482
+//line record_list.scxml:1482
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentSceSynthInvokeListPayloadTagRecordListNode {
@@ -7607,7 +7607,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 25:
-			//line record_list.scxml:1531
+//line record_list.scxml:1531
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentSceSynthInvokeListPayloadTagRecordListShare {
@@ -8015,7 +8015,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 26:
-			//line record_list.scxml:1593
+//line record_list.scxml:1593
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

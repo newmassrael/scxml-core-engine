@@ -757,7 +757,7 @@ func (p *APayloadRidesOnItsOwnEventPolicy) ExecuteEntryActions(state APayloadRid
 	p.ensureScriptEngine()
 	switch state {
 	case APayloadRidesOnItsOwnEventStateS0:
-		//line a_payload_rides_on_its_own_event.scxml:37
+//line a_payload_rides_on_its_own_event.scxml:37
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -1078,7 +1078,7 @@ func (p *APayloadRidesOnItsOwnEventPolicy) ExecuteTransitionContent(source APayl
 	case APayloadRidesOnItsOwnEventStateS0:
 		switch transitionIndex {
 		case 0:
-			//line a_payload_rides_on_its_own_event.scxml:61
+//line a_payload_rides_on_its_own_event.scxml:61
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1090,7 +1090,7 @@ func (p *APayloadRidesOnItsOwnEventPolicy) ExecuteTransitionContent(source APayl
 
 			}()
 		case 1:
-			//line a_payload_rides_on_its_own_event.scxml:64
+//line a_payload_rides_on_its_own_event.scxml:64
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1102,7 +1102,7 @@ func (p *APayloadRidesOnItsOwnEventPolicy) ExecuteTransitionContent(source APayl
 
 			}()
 		case 2:
-			//line a_payload_rides_on_its_own_event.scxml:67
+//line a_payload_rides_on_its_own_event.scxml:67
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1114,7 +1114,7 @@ func (p *APayloadRidesOnItsOwnEventPolicy) ExecuteTransitionContent(source APayl
 
 			}()
 		case 3:
-			//line a_payload_rides_on_its_own_event.scxml:70
+//line a_payload_rides_on_its_own_event.scxml:70
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1126,7 +1126,7 @@ func (p *APayloadRidesOnItsOwnEventPolicy) ExecuteTransitionContent(source APayl
 
 			}()
 		case 4:
-			//line a_payload_rides_on_its_own_event.scxml:73
+//line a_payload_rides_on_its_own_event.scxml:73
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1138,7 +1138,7 @@ func (p *APayloadRidesOnItsOwnEventPolicy) ExecuteTransitionContent(source APayl
 
 			}()
 		case 5:
-			//line a_payload_rides_on_its_own_event.scxml:76
+//line a_payload_rides_on_its_own_event.scxml:76
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

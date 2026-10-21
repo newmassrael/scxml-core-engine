@@ -1007,7 +1007,7 @@ func (p *StaticInvokeStringPolicy) ClearEventMetadata() {
 func (p *StaticInvokeStringPolicy) ExecuteEntryActions(state StaticInvokeStringState, engine *sce.Engine[StaticInvokeStringState, StaticInvokeStringEvent], isDefaultEntry bool) {
 	switch state {
 	case StaticInvokeStringStateRunning:
-		//line static_invoke_string.scxml:30
+//line static_invoke_string.scxml:30
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
 			// docs/adr/0045: the platform part of the id is the number of this
@@ -1185,7 +1185,7 @@ func (p *StaticInvokeStringPolicy) ExecuteTransitionContent(source StaticInvokeS
 	case StaticInvokeStringStateRunning:
 		switch transitionIndex {
 		case 0:
-			//line static_invoke_string.scxml:76
+//line static_invoke_string.scxml:76
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1196,7 +1196,7 @@ func (p *StaticInvokeStringPolicy) ExecuteTransitionContent(source StaticInvokeS
 
 			}()
 		case 1:
-			//line static_invoke_string.scxml:79
+//line static_invoke_string.scxml:79
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1207,7 +1207,7 @@ func (p *StaticInvokeStringPolicy) ExecuteTransitionContent(source StaticInvokeS
 
 			}()
 		case 2:
-			//line static_invoke_string.scxml:82
+//line static_invoke_string.scxml:82
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1218,7 +1218,7 @@ func (p *StaticInvokeStringPolicy) ExecuteTransitionContent(source StaticInvokeS
 
 			}()
 		case 3:
-			//line static_invoke_string.scxml:85
+//line static_invoke_string.scxml:85
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

@@ -473,7 +473,7 @@ func (p *AutoforwardDequeuePointSceSynthInvokeInvProbePolicy) ClearEventMetadata
 func (p *AutoforwardDequeuePointSceSynthInvokeInvProbePolicy) ExecuteEntryActions(state AutoforwardDequeuePointSceSynthInvokeInvProbeState, engine *sce.Engine[AutoforwardDequeuePointSceSynthInvokeInvProbeState, AutoforwardDequeuePointSceSynthInvokeInvProbeEvent], isDefaultEntry bool) {
 	switch state {
 	case AutoforwardDequeuePointSceSynthInvokeInvProbeStateProbe:
-		//line autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:5
+//line autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:5
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -605,7 +605,7 @@ func (p *AutoforwardDequeuePointSceSynthInvokeInvProbePolicy) ExecuteTransitionC
 	case AutoforwardDequeuePointSceSynthInvokeInvProbeStateAwaiting:
 		switch transitionIndex {
 		case 1:
-			//line autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:13
+//line autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:13
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -633,7 +633,7 @@ func (p *AutoforwardDequeuePointSceSynthInvokeInvProbePolicy) ExecuteTransitionC
 	case AutoforwardDequeuePointSceSynthInvokeInvProbeStateMarked:
 		switch transitionIndex {
 		case 0:
-			//line autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:18
+//line autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:18
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

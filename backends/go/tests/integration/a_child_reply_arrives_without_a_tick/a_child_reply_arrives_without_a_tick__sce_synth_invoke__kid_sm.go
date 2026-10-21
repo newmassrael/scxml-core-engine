@@ -402,7 +402,7 @@ func (p *AChildReplyArrivesWithoutATickSceSynthInvokeKidPolicy) ClearEventMetada
 func (p *AChildReplyArrivesWithoutATickSceSynthInvokeKidPolicy) ExecuteEntryActions(state AChildReplyArrivesWithoutATickSceSynthInvokeKidState, engine *sce.Engine[AChildReplyArrivesWithoutATickSceSynthInvokeKidState, AChildReplyArrivesWithoutATickSceSynthInvokeKidEvent], isDefaultEntry bool) {
 	switch state {
 	case AChildReplyArrivesWithoutATickSceSynthInvokeKidStateC0:
-		//line a_child_reply_arrives_without_a_tick__sce_synth_invoke__kid.scxml:5
+//line a_child_reply_arrives_without_a_tick__sce_synth_invoke__kid.scxml:5
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {

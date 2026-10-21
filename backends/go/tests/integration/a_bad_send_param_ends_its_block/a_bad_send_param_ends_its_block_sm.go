@@ -801,7 +801,7 @@ func (p *ABadSendParamEndsItsBlockPolicy) ExecuteEntryActions(state ABadSendPara
 	p.ensureScriptEngine()
 	switch state {
 	case ABadSendParamEndsItsBlockStateS0:
-		//line a_bad_send_param_ends_its_block.scxml:56
+//line a_bad_send_param_ends_its_block.scxml:56
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -1127,7 +1127,7 @@ func (p *ABadSendParamEndsItsBlockPolicy) ExecuteTransitionContent(source ABadSe
 	case ABadSendParamEndsItsBlockStateS0:
 		switch transitionIndex {
 		case 0:
-			//line a_bad_send_param_ends_its_block.scxml:83
+//line a_bad_send_param_ends_its_block.scxml:83
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1139,7 +1139,7 @@ func (p *ABadSendParamEndsItsBlockPolicy) ExecuteTransitionContent(source ABadSe
 
 			}()
 		case 1:
-			//line a_bad_send_param_ends_its_block.scxml:86
+//line a_bad_send_param_ends_its_block.scxml:86
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1151,7 +1151,7 @@ func (p *ABadSendParamEndsItsBlockPolicy) ExecuteTransitionContent(source ABadSe
 
 			}()
 		case 2:
-			//line a_bad_send_param_ends_its_block.scxml:89
+//line a_bad_send_param_ends_its_block.scxml:89
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1163,7 +1163,7 @@ func (p *ABadSendParamEndsItsBlockPolicy) ExecuteTransitionContent(source ABadSe
 
 			}()
 		case 3:
-			//line a_bad_send_param_ends_its_block.scxml:92
+//line a_bad_send_param_ends_its_block.scxml:92
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

@@ -1034,7 +1034,7 @@ func (p *DonedataLocalInvokePolicy) ExecuteEntryActions(state DonedataLocalInvok
 	p.ensureScriptEngine()
 	switch state {
 	case DonedataLocalInvokeStatePhaseContent:
-		//line donedata_local_invoke.scxml:55
+//line donedata_local_invoke.scxml:55
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
 			// docs/adr/0045: the platform part of the id is the number of this
@@ -1048,7 +1048,7 @@ func (p *DonedataLocalInvokePolicy) ExecuteEntryActions(state DonedataLocalInvok
 			})
 		}
 	case DonedataLocalInvokeStatePhaseParam:
-		//line donedata_local_invoke.scxml:34
+//line donedata_local_invoke.scxml:34
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
 			// docs/adr/0045: the platform part of the id is the number of this
@@ -1236,7 +1236,7 @@ func (p *DonedataLocalInvokePolicy) ExecuteTransitionContent(source DonedataLoca
 	case DonedataLocalInvokeStatePhaseParam:
 		switch transitionIndex {
 		case 0:
-			//line donedata_local_invoke.scxml:47
+//line donedata_local_invoke.scxml:47
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

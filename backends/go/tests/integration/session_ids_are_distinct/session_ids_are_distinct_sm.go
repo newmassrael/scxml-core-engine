@@ -1065,7 +1065,7 @@ func (p *SessionIdsAreDistinctPolicy) ExecuteEntryActions(state SessionIdsAreDis
 	p.ensureScriptEngine()
 	switch state {
 	case SessionIdsAreDistinctStatePhase:
-		//line session_ids_are_distinct.scxml:70
+//line session_ids_are_distinct.scxml:70
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
 			// docs/adr/0045: the platform part of the id is the number of this
@@ -1229,7 +1229,7 @@ func (p *SessionIdsAreDistinctPolicy) ExecuteTransitionContent(source SessionIds
 	case SessionIdsAreDistinctStateWaiting:
 		switch transitionIndex {
 		case 0:
-			//line session_ids_are_distinct.scxml:101
+//line session_ids_are_distinct.scxml:101
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

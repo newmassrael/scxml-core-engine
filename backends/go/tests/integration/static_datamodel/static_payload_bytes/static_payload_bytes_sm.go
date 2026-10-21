@@ -747,7 +747,7 @@ func (p *StaticPayloadBytesPolicy) ExecuteTransitionContent(source StaticPayload
 	case StaticPayloadBytesStateIdle:
 		switch transitionIndex {
 		case 0:
-			//line static_payload_bytes.scxml:39
+//line static_payload_bytes.scxml:39
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -758,7 +758,7 @@ func (p *StaticPayloadBytesPolicy) ExecuteTransitionContent(source StaticPayload
 
 			}()
 		case 1:
-			//line static_payload_bytes.scxml:42
+//line static_payload_bytes.scxml:42
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -769,7 +769,7 @@ func (p *StaticPayloadBytesPolicy) ExecuteTransitionContent(source StaticPayload
 
 			}()
 		case 2:
-			//line static_payload_bytes.scxml:45
+//line static_payload_bytes.scxml:45
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticPayloadBytesPayloadTagFramedTaken {
@@ -790,7 +790,7 @@ func (p *StaticPayloadBytesPolicy) ExecuteTransitionContent(source StaticPayload
 
 			}()
 		case 3:
-			//line static_payload_bytes.scxml:49
+//line static_payload_bytes.scxml:49
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticPayloadBytesPayloadTagFramedTaken {
@@ -808,7 +808,7 @@ func (p *StaticPayloadBytesPolicy) ExecuteTransitionContent(source StaticPayload
 
 			}()
 		case 4:
-			//line static_payload_bytes.scxml:53
+//line static_payload_bytes.scxml:53
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticPayloadBytesPayloadTagFramedTaken {
@@ -826,7 +826,7 @@ func (p *StaticPayloadBytesPolicy) ExecuteTransitionContent(source StaticPayload
 
 			}()
 		case 5:
-			//line static_payload_bytes.scxml:57
+//line static_payload_bytes.scxml:57
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

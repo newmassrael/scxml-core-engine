@@ -515,7 +515,7 @@ func (p *StaticDonedataContentPolicy) ClearEventMetadata() {
 func (p *StaticDonedataContentPolicy) ExecuteEntryActions(state StaticDonedataContentState, engine *sce.Engine[StaticDonedataContentState, StaticDonedataContentEvent], isDefaultEntry bool) {
 	switch state {
 	case StaticDonedataContentStateDone:
-		//line static_donedata_content.scxml:37
+//line static_donedata_content.scxml:37
 		// W3C SCXML 5.5: Evaluate donedata for final state
 		doneEventData := ""
 		{
@@ -530,7 +530,7 @@ func (p *StaticDonedataContentPolicy) ExecuteEntryActions(state StaticDonedataCo
 		// Engine::stash_donedata_at_final.
 		engine.StashDonedataAtFinal(doneEventData)
 	case StaticDonedataContentStateLost:
-		//line static_donedata_content.scxml:52
+//line static_donedata_content.scxml:52
 		// W3C SCXML 5.5: Evaluate donedata for final state
 		doneEventData := ""
 		{
@@ -551,7 +551,7 @@ func (p *StaticDonedataContentPolicy) ExecuteEntryActions(state StaticDonedataCo
 		// Engine::stash_donedata_at_final.
 		engine.StashDonedataAtFinal(doneEventData)
 	case StaticDonedataContentStateNamed:
-		//line static_donedata_content.scxml:47
+//line static_donedata_content.scxml:47
 		// W3C SCXML 5.5: Evaluate donedata for final state
 		doneEventData := ""
 		{
@@ -567,7 +567,7 @@ func (p *StaticDonedataContentPolicy) ExecuteEntryActions(state StaticDonedataCo
 		// Engine::stash_donedata_at_final.
 		engine.StashDonedataAtFinal(doneEventData)
 	case StaticDonedataContentStateValued:
-		//line static_donedata_content.scxml:42
+//line static_donedata_content.scxml:42
 		// W3C SCXML 5.5: Evaluate donedata for final state
 		doneEventData := ""
 		{
@@ -702,7 +702,7 @@ func (p *StaticDonedataContentPolicy) ExecuteTransitionContent(source StaticDone
 	case StaticDonedataContentStateCounting:
 		switch transitionIndex {
 		case 0:
-			//line static_donedata_content.scxml:29
+//line static_donedata_content.scxml:29
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

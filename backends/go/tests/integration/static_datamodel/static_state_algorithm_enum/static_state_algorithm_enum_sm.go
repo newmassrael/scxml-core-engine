@@ -876,7 +876,7 @@ func (p *StaticStateAlgorithmEnumPolicy) ExecuteTransitionContent(source StaticS
 	case StaticStateAlgorithmEnumStateBoard:
 		switch transitionIndex {
 		case 0:
-			//line static_state_algorithm_enum.scxml:44
+//line static_state_algorithm_enum.scxml:44
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticStateAlgorithmEnumPayloadTagItemAdded {
@@ -895,7 +895,7 @@ func (p *StaticStateAlgorithmEnumPolicy) ExecuteTransitionContent(source StaticS
 
 			}()
 		case 1:
-			//line static_state_algorithm_enum.scxml:48
+//line static_state_algorithm_enum.scxml:48
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticStateAlgorithmEnumPayloadTagItemMoved {
@@ -913,7 +913,7 @@ func (p *StaticStateAlgorithmEnumPolicy) ExecuteTransitionContent(source StaticS
 
 			}()
 		case 2:
-			//line static_state_algorithm_enum.scxml:52
+//line static_state_algorithm_enum.scxml:52
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -936,7 +936,7 @@ func (p *StaticStateAlgorithmEnumPolicy) ExecuteTransitionContent(source StaticS
 
 			}()
 		case 3:
-			//line static_state_algorithm_enum.scxml:57
+//line static_state_algorithm_enum.scxml:57
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -947,7 +947,7 @@ func (p *StaticStateAlgorithmEnumPolicy) ExecuteTransitionContent(source StaticS
 
 			}()
 		case 4:
-			//line static_state_algorithm_enum.scxml:60
+//line static_state_algorithm_enum.scxml:60
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

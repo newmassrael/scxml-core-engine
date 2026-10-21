@@ -784,7 +784,7 @@ func (p *UndecodablePayloadIsReportedPolicy) ExecuteTransitionContent(source Und
 	case UndecodablePayloadIsReportedStateWaiting:
 		switch transitionIndex {
 		case 1:
-			//line undecodable_payload_is_reported.scxml:65
+//line undecodable_payload_is_reported.scxml:65
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -796,7 +796,7 @@ func (p *UndecodablePayloadIsReportedPolicy) ExecuteTransitionContent(source Und
 
 			}()
 		case 2:
-			//line undecodable_payload_is_reported.scxml:68
+//line undecodable_payload_is_reported.scxml:68
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

@@ -877,7 +877,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteEntryActions(state ExternalChainIs
 	p.ensureScriptEngine()
 	switch state {
 	case ExternalChainIsBoundedStateBounded:
-		//line external_chain_is_bounded.scxml:141
+//line external_chain_is_bounded.scxml:141
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -898,7 +898,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteEntryActions(state ExternalChainIs
 			}
 		}()
 	case ExternalChainIsBoundedStateResuming:
-		//line external_chain_is_bounded.scxml:161
+//line external_chain_is_bounded.scxml:161
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -919,7 +919,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteEntryActions(state ExternalChainIs
 			}
 		}()
 	case ExternalChainIsBoundedStateSpin:
-		//line external_chain_is_bounded.scxml:126
+//line external_chain_is_bounded.scxml:126
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -940,7 +940,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteEntryActions(state ExternalChainIs
 			}
 		}()
 	case ExternalChainIsBoundedStateTiming:
-		//line external_chain_is_bounded.scxml:214
+//line external_chain_is_bounded.scxml:214
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -1066,7 +1066,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteEntryActions(state ExternalChainIs
 			}
 		}()
 	case ExternalChainIsBoundedStateZeroing:
-		//line external_chain_is_bounded.scxml:181
+//line external_chain_is_bounded.scxml:181
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -1087,7 +1087,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteEntryActions(state ExternalChainIs
 			}
 		}()
 	case ExternalChainIsBoundedStateZeroingExpr:
-		//line external_chain_is_bounded.scxml:197
+//line external_chain_is_bounded.scxml:197
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -1431,7 +1431,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteTransitionContent(source ExternalC
 	case ExternalChainIsBoundedStateBounded:
 		switch transitionIndex {
 		case 0:
-			//line external_chain_is_bounded.scxml:143
+//line external_chain_is_bounded.scxml:143
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1457,7 +1457,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteTransitionContent(source ExternalC
 				}
 			}()
 		case 1:
-			//line external_chain_is_bounded.scxml:147
+//line external_chain_is_bounded.scxml:147
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1469,7 +1469,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteTransitionContent(source ExternalC
 
 			}()
 		case 2:
-			//line external_chain_is_bounded.scxml:150
+//line external_chain_is_bounded.scxml:150
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1484,7 +1484,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteTransitionContent(source ExternalC
 	case ExternalChainIsBoundedStateIdle:
 		switch transitionIndex {
 		case 0:
-			//line external_chain_is_bounded.scxml:110
+//line external_chain_is_bounded.scxml:110
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1499,7 +1499,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteTransitionContent(source ExternalC
 	case ExternalChainIsBoundedStateResuming:
 		switch transitionIndex {
 		case 0:
-			//line external_chain_is_bounded.scxml:163
+//line external_chain_is_bounded.scxml:163
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1525,7 +1525,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteTransitionContent(source ExternalC
 				}
 			}()
 		case 1:
-			//line external_chain_is_bounded.scxml:167
+//line external_chain_is_bounded.scxml:167
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1537,7 +1537,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteTransitionContent(source ExternalC
 
 			}()
 		case 2:
-			//line external_chain_is_bounded.scxml:170
+//line external_chain_is_bounded.scxml:170
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1552,7 +1552,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteTransitionContent(source ExternalC
 	case ExternalChainIsBoundedStateSpin:
 		switch transitionIndex {
 		case 0:
-			//line external_chain_is_bounded.scxml:128
+//line external_chain_is_bounded.scxml:128
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1578,7 +1578,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteTransitionContent(source ExternalC
 				}
 			}()
 		case 1:
-			//line external_chain_is_bounded.scxml:132
+//line external_chain_is_bounded.scxml:132
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1593,7 +1593,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteTransitionContent(source ExternalC
 	case ExternalChainIsBoundedStateTiming:
 		switch transitionIndex {
 		case 0:
-			//line external_chain_is_bounded.scxml:225
+//line external_chain_is_bounded.scxml:225
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1605,7 +1605,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteTransitionContent(source ExternalC
 
 			}()
 		case 1:
-			//line external_chain_is_bounded.scxml:228
+//line external_chain_is_bounded.scxml:228
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1620,7 +1620,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteTransitionContent(source ExternalC
 	case ExternalChainIsBoundedStateZeroing:
 		switch transitionIndex {
 		case 0:
-			//line external_chain_is_bounded.scxml:183
+//line external_chain_is_bounded.scxml:183
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1646,7 +1646,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteTransitionContent(source ExternalC
 				}
 			}()
 		case 1:
-			//line external_chain_is_bounded.scxml:187
+//line external_chain_is_bounded.scxml:187
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1661,7 +1661,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteTransitionContent(source ExternalC
 	case ExternalChainIsBoundedStateZeroingExpr:
 		switch transitionIndex {
 		case 0:
-			//line external_chain_is_bounded.scxml:199
+//line external_chain_is_bounded.scxml:199
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1709,7 +1709,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteTransitionContent(source ExternalC
 				}
 			}()
 		case 1:
-			//line external_chain_is_bounded.scxml:203
+//line external_chain_is_bounded.scxml:203
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

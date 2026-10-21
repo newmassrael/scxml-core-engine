@@ -895,7 +895,7 @@ func (p *CancellingAnInvokeRaisesNothingPolicy) ExecuteEntryActions(state Cancel
 	p.ensureScriptEngine()
 	switch state {
 	case CancellingAnInvokeRaisesNothingStateP:
-		//line cancelling_an_invoke_raises_nothing.scxml:21
+//line cancelling_an_invoke_raises_nothing.scxml:21
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
 			// docs/adr/0045: the platform part of the id is the number of this
@@ -1045,7 +1045,7 @@ func (p *CancellingAnInvokeRaisesNothingPolicy) ExecuteTransitionContent(source 
 	case CancellingAnInvokeRaisesNothingStateS2:
 		switch transitionIndex {
 		case 0:
-			//line cancelling_an_invoke_raises_nothing.scxml:33
+//line cancelling_an_invoke_raises_nothing.scxml:33
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1057,7 +1057,7 @@ func (p *CancellingAnInvokeRaisesNothingPolicy) ExecuteTransitionContent(source 
 
 			}()
 		case 1:
-			//line cancelling_an_invoke_raises_nothing.scxml:36
+//line cancelling_an_invoke_raises_nothing.scxml:36
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

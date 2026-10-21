@@ -684,7 +684,7 @@ func (p *StaticBlockEndsPolicy) ExecuteTransitionContent(source StaticBlockEndsS
 	case StaticBlockEndsStateWaiting:
 		switch transitionIndex {
 		case 0:
-			//line static_block_ends.scxml:39
+//line static_block_ends.scxml:39
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -699,7 +699,7 @@ func (p *StaticBlockEndsPolicy) ExecuteTransitionContent(source StaticBlockEndsS
 
 			}()
 		case 1:
-			//line static_block_ends.scxml:43
+//line static_block_ends.scxml:43
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -727,7 +727,7 @@ func (p *StaticBlockEndsPolicy) ExecuteTransitionContent(source StaticBlockEndsS
 
 			}()
 		case 2:
-			//line static_block_ends.scxml:51
+//line static_block_ends.scxml:51
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -750,7 +750,7 @@ func (p *StaticBlockEndsPolicy) ExecuteTransitionContent(source StaticBlockEndsS
 
 			}()
 		case 3:
-			//line static_block_ends.scxml:58
+//line static_block_ends.scxml:58
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -765,7 +765,7 @@ func (p *StaticBlockEndsPolicy) ExecuteTransitionContent(source StaticBlockEndsS
 
 			}()
 		case 4:
-			//line static_block_ends.scxml:62
+//line static_block_ends.scxml:62
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

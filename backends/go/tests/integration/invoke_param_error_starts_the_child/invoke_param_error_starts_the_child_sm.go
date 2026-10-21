@@ -962,7 +962,7 @@ func (p *InvokeParamErrorStartsTheChildPolicy) ExecuteEntryActions(state InvokeP
 	p.ensureScriptEngine()
 	switch state {
 	case InvokeParamErrorStartsTheChildStateParamPhase:
-		//line invoke_param_error_starts_the_child.scxml:70
+//line invoke_param_error_starts_the_child.scxml:70
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -1153,7 +1153,7 @@ func (p *InvokeParamErrorStartsTheChildPolicy) ExecuteTransitionContent(source I
 	case InvokeParamErrorStartsTheChildStateParamPhase:
 		switch transitionIndex {
 		case 0:
-			//line invoke_param_error_starts_the_child.scxml:117
+//line invoke_param_error_starts_the_child.scxml:117
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

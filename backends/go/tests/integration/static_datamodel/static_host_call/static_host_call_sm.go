@@ -454,7 +454,7 @@ func (p *StaticHostCallPolicy) ClearEventMetadata() {
 func (p *StaticHostCallPolicy) ExecuteEntryActions(state StaticHostCallState, engine *sce.Engine[StaticHostCallState, StaticHostCallEvent], isDefaultEntry bool) {
 	switch state {
 	case StaticHostCallStateIdle:
-		//line static_host_call.scxml:18
+//line static_host_call.scxml:18
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -537,7 +537,7 @@ func (p *StaticHostCallPolicy) ExecuteTransitionContent(source StaticHostCallSta
 	case StaticHostCallStateIdle:
 		switch transitionIndex {
 		case 0:
-			//line static_host_call.scxml:25
+//line static_host_call.scxml:25
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

@@ -900,7 +900,7 @@ func (p *TypedReaderNamesPolicy) ExecuteTransitionContent(source TypedReaderName
 	case TypedReaderNamesStateIdle:
 		switch transitionIndex {
 		case 0:
-			//line typed_reader_names.scxml:49
+//line typed_reader_names.scxml:49
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

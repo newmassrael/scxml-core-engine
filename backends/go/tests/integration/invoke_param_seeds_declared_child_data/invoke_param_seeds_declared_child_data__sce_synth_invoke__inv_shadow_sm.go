@@ -798,7 +798,7 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy) Execute
 	case InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowStateReport:
 		switch transitionIndex {
 		case 0:
-			//line invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_shadow.scxml:10
+//line invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_shadow.scxml:10
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -823,7 +823,7 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy) Execute
 	}
 			}()
 		case 1:
-			//line invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_shadow.scxml:13
+//line invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_shadow.scxml:13
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -848,7 +848,7 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy) Execute
 	}
 			}()
 		case 2:
-			//line invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_shadow.scxml:16
+//line invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_shadow.scxml:16
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

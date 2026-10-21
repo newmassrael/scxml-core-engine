@@ -960,7 +960,7 @@ func (p *InvokeCandidateSelectsTheChildPolicy) ExecuteEntryActions(state InvokeC
 	p.ensureScriptEngine()
 	switch state {
 	case InvokeCandidateSelectsTheChildStateProbe:
-		//line invoke_candidate_selects_the_child.scxml:41
+//line invoke_candidate_selects_the_child.scxml:41
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
 			p.invokeStartsInvoke0++

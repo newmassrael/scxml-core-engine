@@ -786,7 +786,7 @@ func (p *StaticSendParamsPolicy) ExecuteTransitionContent(source StaticSendParam
 	case StaticSendParamsStateIdle:
 		switch transitionIndex {
 		case 0:
-			//line static_send_params.scxml:39
+//line static_send_params.scxml:39
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -839,7 +839,7 @@ func (p *StaticSendParamsPolicy) ExecuteTransitionContent(source StaticSendParam
 	}
 			}()
 		case 1:
-			//line static_send_params.scxml:46
+//line static_send_params.scxml:46
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -894,7 +894,7 @@ func (p *StaticSendParamsPolicy) ExecuteTransitionContent(source StaticSendParam
 	}
 			}()
 		case 2:
-			//line static_send_params.scxml:52
+//line static_send_params.scxml:52
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticSendParamsPayloadTagEcho {
@@ -916,7 +916,7 @@ func (p *StaticSendParamsPolicy) ExecuteTransitionContent(source StaticSendParam
 
 			}()
 		case 3:
-			//line static_send_params.scxml:57
+//line static_send_params.scxml:57
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticSendParamsPayloadTagPartial {
@@ -932,7 +932,7 @@ func (p *StaticSendParamsPolicy) ExecuteTransitionContent(source StaticSendParam
 
 			}()
 		case 4:
-			//line static_send_params.scxml:61
+//line static_send_params.scxml:61
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

@@ -502,7 +502,7 @@ func (p *EventDescriptorSpellingsAgreePolicy) ClearEventMetadata() {
 func (p *EventDescriptorSpellingsAgreePolicy) ExecuteEntryActions(state EventDescriptorSpellingsAgreeState, engine *sce.Engine[EventDescriptorSpellingsAgreeState, EventDescriptorSpellingsAgreeEvent], isDefaultEntry bool) {
 	switch state {
 	case EventDescriptorSpellingsAgreeStateBounded:
-		//line event_descriptor_spellings_agree.scxml:76
+//line event_descriptor_spellings_agree.scxml:76
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -511,7 +511,7 @@ func (p *EventDescriptorSpellingsAgreePolicy) ExecuteEntryActions(state EventDes
 
 		}()
 	case EventDescriptorSpellingsAgreeStateDotted:
-		//line event_descriptor_spellings_agree.scxml:68
+//line event_descriptor_spellings_agree.scxml:68
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -520,7 +520,7 @@ func (p *EventDescriptorSpellingsAgreePolicy) ExecuteEntryActions(state EventDes
 
 		}()
 	case EventDescriptorSpellingsAgreeStateSuffixed:
-		//line event_descriptor_spellings_agree.scxml:60
+//line event_descriptor_spellings_agree.scxml:60
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -529,7 +529,7 @@ func (p *EventDescriptorSpellingsAgreePolicy) ExecuteEntryActions(state EventDes
 
 		}()
 	case EventDescriptorSpellingsAgreeStateUniversal:
-		//line event_descriptor_spellings_agree.scxml:84
+//line event_descriptor_spellings_agree.scxml:84
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {

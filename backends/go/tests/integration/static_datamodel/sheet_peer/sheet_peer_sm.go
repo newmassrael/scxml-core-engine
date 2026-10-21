@@ -1859,7 +1859,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 	case SheetPeerStateOpen:
 		switch transitionIndex {
 		case 0:
-			//line sheet_peer.scxml:137
+//line sheet_peer.scxml:137
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != SheetPeerPayloadTagSheetJoin {
@@ -1875,7 +1875,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 
 			}()
 		case 1:
-			//line sheet_peer.scxml:146
+//line sheet_peer.scxml:146
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != SheetPeerPayloadTagSheetEdit {
@@ -2095,7 +2095,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 	}
 			}()
 		case 2:
-			//line sheet_peer.scxml:186
+//line sheet_peer.scxml:186
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != SheetPeerPayloadTagSheetFormula {
@@ -2315,7 +2315,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 	}
 			}()
 		case 3:
-			//line sheet_peer.scxml:225
+//line sheet_peer.scxml:225
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != SheetPeerPayloadTagSheetCell {
@@ -2666,7 +2666,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 
 			}()
 		case 4:
-			//line sheet_peer.scxml:264
+//line sheet_peer.scxml:264
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -2683,7 +2683,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 
 			}()
 		case 5:
-			//line sheet_peer.scxml:271
+//line sheet_peer.scxml:271
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != SheetPeerPayloadTagSheetAddRow {
@@ -2805,7 +2805,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 	}
 			}()
 		case 6:
-			//line sheet_peer.scxml:288
+//line sheet_peer.scxml:288
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != SheetPeerPayloadTagSheetRow {
@@ -3016,7 +3016,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 
 			}()
 		case 7:
-			//line sheet_peer.scxml:314
+//line sheet_peer.scxml:314
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != SheetPeerPayloadTagSheetDropRow {
@@ -3126,7 +3126,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 	}
 			}()
 		case 8:
-			//line sheet_peer.scxml:327
+//line sheet_peer.scxml:327
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != SheetPeerPayloadTagSheetGone {
@@ -3299,7 +3299,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 
 			}()
 		case 9:
-			//line sheet_peer.scxml:349
+//line sheet_peer.scxml:349
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != SheetPeerPayloadTagSheetAddCol {
@@ -3421,7 +3421,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 	}
 			}()
 		case 10:
-			//line sheet_peer.scxml:362
+//line sheet_peer.scxml:362
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != SheetPeerPayloadTagSheetCol {
@@ -3632,7 +3632,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 
 			}()
 		case 11:
-			//line sheet_peer.scxml:387
+//line sheet_peer.scxml:387
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != SheetPeerPayloadTagSheetDropCol {
@@ -3742,7 +3742,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 	}
 			}()
 		case 12:
-			//line sheet_peer.scxml:398
+//line sheet_peer.scxml:398
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != SheetPeerPayloadTagSheetGoneCol {
@@ -3915,7 +3915,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 
 			}()
 		case 13:
-			//line sheet_peer.scxml:417
+//line sheet_peer.scxml:417
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

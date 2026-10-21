@@ -1150,7 +1150,7 @@ func (p *ASendReachesOnlyWhatItsTargetNamesPolicy) ExecuteEntryActions(state ASe
 	p.ensureScriptEngine()
 	switch state {
 	case ASendReachesOnlyWhatItsTargetNamesStateRun:
-		//line a_send_reaches_only_what_its_target_names.scxml:72
+//line a_send_reaches_only_what_its_target_names.scxml:72
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -1679,7 +1679,7 @@ func (p *ASendReachesOnlyWhatItsTargetNamesPolicy) ExecuteTransitionContent(sour
 	case ASendReachesOnlyWhatItsTargetNamesStateRun:
 		switch transitionIndex {
 		case 0:
-			//line a_send_reaches_only_what_its_target_names.scxml:121
+//line a_send_reaches_only_what_its_target_names.scxml:121
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1691,7 +1691,7 @@ func (p *ASendReachesOnlyWhatItsTargetNamesPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 1:
-			//line a_send_reaches_only_what_its_target_names.scxml:124
+//line a_send_reaches_only_what_its_target_names.scxml:124
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1703,7 +1703,7 @@ func (p *ASendReachesOnlyWhatItsTargetNamesPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 2:
-			//line a_send_reaches_only_what_its_target_names.scxml:127
+//line a_send_reaches_only_what_its_target_names.scxml:127
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1715,7 +1715,7 @@ func (p *ASendReachesOnlyWhatItsTargetNamesPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 3:
-			//line a_send_reaches_only_what_its_target_names.scxml:130
+//line a_send_reaches_only_what_its_target_names.scxml:130
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1727,7 +1727,7 @@ func (p *ASendReachesOnlyWhatItsTargetNamesPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 4:
-			//line a_send_reaches_only_what_its_target_names.scxml:133
+//line a_send_reaches_only_what_its_target_names.scxml:133
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1772,7 +1772,7 @@ func (p *ASendReachesOnlyWhatItsTargetNamesPolicy) ExecuteTransitionContent(sour
 	}
 			}()
 		case 5:
-			//line a_send_reaches_only_what_its_target_names.scxml:138
+//line a_send_reaches_only_what_its_target_names.scxml:138
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

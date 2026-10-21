@@ -714,7 +714,7 @@ func (p *StaticSchemaPendingPolicy) ExecuteTransitionContent(source StaticSchema
 	case StaticSchemaPendingStateWaiting:
 		switch transitionIndex {
 		case 0:
-			//line static_schema_pending.scxml:31
+//line static_schema_pending.scxml:31
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -757,7 +757,7 @@ func (p *StaticSchemaPendingPolicy) ExecuteTransitionContent(source StaticSchema
 	}
 			}()
 		case 1:
-			//line static_schema_pending.scxml:37
+//line static_schema_pending.scxml:37
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticSchemaPendingPayloadTagSignalRaised {
@@ -775,7 +775,7 @@ func (p *StaticSchemaPendingPolicy) ExecuteTransitionContent(source StaticSchema
 
 			}()
 		case 2:
-			//line static_schema_pending.scxml:41
+//line static_schema_pending.scxml:41
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

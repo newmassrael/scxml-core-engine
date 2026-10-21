@@ -683,7 +683,7 @@ func (p *ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidPolicy) Execute
 	p.ensureScriptEngine()
 	switch state {
 	case ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidStateWait:
-		//line a_target_expression_is_routed_as_its_literal_is__sce_synth_invoke__kid.scxml:8
+//line a_target_expression_is_routed_as_its_literal_is__sce_synth_invoke__kid.scxml:8
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -824,7 +824,7 @@ func (p *ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidPolicy) Execute
 	case ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidStateWait:
 		switch transitionIndex {
 		case 0:
-			//line a_target_expression_is_routed_as_its_literal_is__sce_synth_invoke__kid.scxml:12
+//line a_target_expression_is_routed_as_its_literal_is__sce_synth_invoke__kid.scxml:12
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -934,7 +934,7 @@ func (p *ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidPolicy) Execute
 	}
 			}()
 		case 1:
-			//line a_target_expression_is_routed_as_its_literal_is__sce_synth_invoke__kid.scxml:15
+//line a_target_expression_is_routed_as_its_literal_is__sce_synth_invoke__kid.scxml:15
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1042,7 +1042,7 @@ time.Duration(10) * time.Millisecond, "__send_1", eventDataStr, p.SessionID)
 	}
 			}()
 		case 2:
-			//line a_target_expression_is_routed_as_its_literal_is__sce_synth_invoke__kid.scxml:18
+//line a_target_expression_is_routed_as_its_literal_is__sce_synth_invoke__kid.scxml:18
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1152,7 +1152,7 @@ time.Duration(10) * time.Millisecond, "__send_1", eventDataStr, p.SessionID)
 	}
 			}()
 		case 3:
-			//line a_target_expression_is_routed_as_its_literal_is__sce_synth_invoke__kid.scxml:21
+//line a_target_expression_is_routed_as_its_literal_is__sce_synth_invoke__kid.scxml:21
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

@@ -545,7 +545,7 @@ func (p *StaticBlockEndsListPolicy) ExecuteTransitionContent(source StaticBlockE
 	case StaticBlockEndsListStateWaiting:
 		switch transitionIndex {
 		case 0:
-			//line static_block_ends_list.scxml:25
+//line static_block_ends_list.scxml:25
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -563,7 +563,7 @@ func (p *StaticBlockEndsListPolicy) ExecuteTransitionContent(source StaticBlockE
 
 			}()
 		case 1:
-			//line static_block_ends_list.scxml:29
+//line static_block_ends_list.scxml:29
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

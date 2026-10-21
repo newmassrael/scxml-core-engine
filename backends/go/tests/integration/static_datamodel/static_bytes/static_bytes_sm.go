@@ -687,7 +687,7 @@ func (p *StaticBytesPolicy) ExecuteTransitionContent(source StaticBytesState, tr
 	case StaticBytesStateIdle:
 		switch transitionIndex {
 		case 0:
-			//line static_bytes.scxml:36
+//line static_bytes.scxml:36
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -698,7 +698,7 @@ func (p *StaticBytesPolicy) ExecuteTransitionContent(source StaticBytesState, tr
 
 			}()
 		case 1:
-			//line static_bytes.scxml:39
+//line static_bytes.scxml:39
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -709,7 +709,7 @@ func (p *StaticBytesPolicy) ExecuteTransitionContent(source StaticBytesState, tr
 
 			}()
 		case 2:
-			//line static_bytes.scxml:42
+//line static_bytes.scxml:42
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -720,7 +720,7 @@ func (p *StaticBytesPolicy) ExecuteTransitionContent(source StaticBytesState, tr
 
 			}()
 		case 3:
-			//line static_bytes.scxml:45
+//line static_bytes.scxml:45
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -731,7 +731,7 @@ func (p *StaticBytesPolicy) ExecuteTransitionContent(source StaticBytesState, tr
 
 			}()
 		case 4:
-			//line static_bytes.scxml:48
+//line static_bytes.scxml:48
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -742,7 +742,7 @@ func (p *StaticBytesPolicy) ExecuteTransitionContent(source StaticBytesState, tr
 
 			}()
 		case 5:
-			//line static_bytes.scxml:51
+//line static_bytes.scxml:51
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -753,7 +753,7 @@ func (p *StaticBytesPolicy) ExecuteTransitionContent(source StaticBytesState, tr
 
 			}()
 		case 6:
-			//line static_bytes.scxml:54
+//line static_bytes.scxml:54
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -764,7 +764,7 @@ func (p *StaticBytesPolicy) ExecuteTransitionContent(source StaticBytesState, tr
 
 			}()
 		case 7:
-			//line static_bytes.scxml:57
+//line static_bytes.scxml:57
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -773,7 +773,7 @@ func (p *StaticBytesPolicy) ExecuteTransitionContent(source StaticBytesState, tr
 
 			}()
 		case 8:
-			//line static_bytes.scxml:60
+//line static_bytes.scxml:60
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

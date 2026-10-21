@@ -665,7 +665,7 @@ func (p *StaticRecordReal32Policy) ExecuteTransitionContent(source StaticRecordR
 	case StaticRecordReal32StateIdle:
 		switch transitionIndex {
 		case 0:
-			//line static_record_real32.scxml:29
+//line static_record_real32.scxml:29
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -678,7 +678,7 @@ func (p *StaticRecordReal32Policy) ExecuteTransitionContent(source StaticRecordR
 
 			}()
 		case 1:
-			//line static_record_real32.scxml:33
+//line static_record_real32.scxml:33
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticRecordReal32PayloadTagReading32Taken {
@@ -694,7 +694,7 @@ func (p *StaticRecordReal32Policy) ExecuteTransitionContent(source StaticRecordR
 
 			}()
 		case 2:
-			//line static_record_real32.scxml:44
+//line static_record_real32.scxml:44
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

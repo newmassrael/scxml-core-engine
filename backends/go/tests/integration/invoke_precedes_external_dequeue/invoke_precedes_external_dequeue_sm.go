@@ -682,7 +682,7 @@ func (p *InvokePrecedesExternalDequeuePolicy) ClearEventMetadata() {
 func (p *InvokePrecedesExternalDequeuePolicy) ExecuteEntryActions(state InvokePrecedesExternalDequeueState, engine *sce.Engine[InvokePrecedesExternalDequeueState, InvokePrecedesExternalDequeueEvent], isDefaultEntry bool) {
 	switch state {
 	case InvokePrecedesExternalDequeueStatePhase:
-		//line invoke_precedes_external_dequeue.scxml:55
+//line invoke_precedes_external_dequeue.scxml:55
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -835,7 +835,7 @@ func (p *InvokePrecedesExternalDequeuePolicy) ExecuteTransitionContent(source In
 	case InvokePrecedesExternalDequeueStatePhase:
 		switch transitionIndex {
 		case 1:
-			//line invoke_precedes_external_dequeue.scxml:85
+//line invoke_precedes_external_dequeue.scxml:85
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

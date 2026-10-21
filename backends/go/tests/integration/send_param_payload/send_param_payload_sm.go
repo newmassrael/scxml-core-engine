@@ -1124,7 +1124,7 @@ func (p *SendParamPayloadPolicy) ExecuteEntryActions(state SendParamPayloadState
 	p.ensureScriptEngine()
 	switch state {
 	case SendParamPayloadStateAwaitChild:
-		//line send_param_payload.scxml:100
+//line send_param_payload.scxml:100
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
 			// docs/adr/0045: the platform part of the id is the number of this
@@ -1138,7 +1138,7 @@ func (p *SendParamPayloadPolicy) ExecuteEntryActions(state SendParamPayloadState
 			})
 		}
 	case SendParamPayloadStateEscapePhase:
-		//line send_param_payload.scxml:236
+//line send_param_payload.scxml:236
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -1188,7 +1188,7 @@ func (p *SendParamPayloadPolicy) ExecuteEntryActions(state SendParamPayloadState
 	}
 		}()
 	case SendParamPayloadStateInternalPhase:
-		//line send_param_payload.scxml:125
+//line send_param_payload.scxml:125
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -1218,7 +1218,7 @@ func (p *SendParamPayloadPolicy) ExecuteEntryActions(state SendParamPayloadState
 	}
 		}()
 	case SendParamPayloadStateParamErrorPhase:
-		//line send_param_payload.scxml:192
+//line send_param_payload.scxml:192
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -1263,7 +1263,7 @@ func (p *SendParamPayloadPolicy) ExecuteEntryActions(state SendParamPayloadState
 	}
 		}()
 	case SendParamPayloadStateTypedPhase:
-		//line send_param_payload.scxml:141
+//line send_param_payload.scxml:141
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -1597,7 +1597,7 @@ func (p *SendParamPayloadPolicy) ExecuteTransitionContent(source SendParamPayloa
 	case SendParamPayloadStateParamErrorPhase:
 		switch transitionIndex {
 		case 0:
-			//line send_param_payload.scxml:199
+//line send_param_payload.scxml:199
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

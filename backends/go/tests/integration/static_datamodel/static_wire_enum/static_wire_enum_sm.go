@@ -747,7 +747,7 @@ func (p *StaticWireEnumPolicy) ExecuteTransitionContent(source StaticWireEnumSta
 	case StaticWireEnumStateViewing:
 		switch transitionIndex {
 		case 0:
-			//line static_wire_enum.scxml:33
+//line static_wire_enum.scxml:33
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -756,7 +756,7 @@ func (p *StaticWireEnumPolicy) ExecuteTransitionContent(source StaticWireEnumSta
 
 			}()
 		case 1:
-			//line static_wire_enum.scxml:36
+//line static_wire_enum.scxml:36
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -799,7 +799,7 @@ func (p *StaticWireEnumPolicy) ExecuteTransitionContent(source StaticWireEnumSta
 	}
 			}()
 		case 2:
-			//line static_wire_enum.scxml:42
+//line static_wire_enum.scxml:42
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -842,7 +842,7 @@ func (p *StaticWireEnumPolicy) ExecuteTransitionContent(source StaticWireEnumSta
 	}
 			}()
 		case 3:
-			//line static_wire_enum.scxml:48
+//line static_wire_enum.scxml:48
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -885,7 +885,7 @@ func (p *StaticWireEnumPolicy) ExecuteTransitionContent(source StaticWireEnumSta
 	}
 			}()
 		case 4:
-			//line static_wire_enum.scxml:54
+//line static_wire_enum.scxml:54
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticWireEnumPayloadTagViewShown {

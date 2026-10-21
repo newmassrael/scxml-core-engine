@@ -946,7 +946,7 @@ func (p *EventlessMacrostepIsBoundedPolicy) ExecuteTransitionContent(source Even
 	case EventlessMacrostepIsBoundedStateBoundedA:
 		switch transitionIndex {
 		case 0:
-			//line eventless_macrostep_is_bounded.scxml:85
+//line eventless_macrostep_is_bounded.scxml:85
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -958,7 +958,7 @@ func (p *EventlessMacrostepIsBoundedPolicy) ExecuteTransitionContent(source Even
 
 			}()
 		case 1:
-			//line eventless_macrostep_is_bounded.scxml:90
+//line eventless_macrostep_is_bounded.scxml:90
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -973,7 +973,7 @@ func (p *EventlessMacrostepIsBoundedPolicy) ExecuteTransitionContent(source Even
 	case EventlessMacrostepIsBoundedStateIdle:
 		switch transitionIndex {
 		case 0:
-			//line eventless_macrostep_is_bounded.scxml:72
+//line eventless_macrostep_is_bounded.scxml:72
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -988,7 +988,7 @@ func (p *EventlessMacrostepIsBoundedPolicy) ExecuteTransitionContent(source Even
 	case EventlessMacrostepIsBoundedStateSpinA:
 		switch transitionIndex {
 		case 0:
-			//line eventless_macrostep_is_bounded.scxml:105
+//line eventless_macrostep_is_bounded.scxml:105
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1000,7 +1000,7 @@ func (p *EventlessMacrostepIsBoundedPolicy) ExecuteTransitionContent(source Even
 
 			}()
 		case 1:
-			//line eventless_macrostep_is_bounded.scxml:108
+//line eventless_macrostep_is_bounded.scxml:108
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

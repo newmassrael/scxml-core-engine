@@ -748,7 +748,7 @@ func (p *StaticChildHostPolicy) ClearEventMetadata() {
 func (p *StaticChildHostPolicy) ExecuteEntryActions(state StaticChildHostState, engine *sce.Engine[StaticChildHostState, StaticChildHostEvent], isDefaultEntry bool) {
 	switch state {
 	case StaticChildHostStateWorking:
-		//line static_child_host.scxml:29
+//line static_child_host.scxml:29
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
 			// docs/adr/0045: the platform part of the id is the number of this
@@ -904,7 +904,7 @@ func (p *StaticChildHostPolicy) ExecuteTransitionContent(source StaticChildHostS
 	case StaticChildHostStateWorking:
 		switch transitionIndex {
 		case 2:
-			//line static_child_host.scxml:62
+//line static_child_host.scxml:62
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

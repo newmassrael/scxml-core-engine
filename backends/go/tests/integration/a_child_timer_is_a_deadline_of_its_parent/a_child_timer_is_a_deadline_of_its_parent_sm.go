@@ -628,7 +628,7 @@ func (p *AChildTimerIsADeadlineOfItsParentPolicy) ClearEventMetadata() {
 func (p *AChildTimerIsADeadlineOfItsParentPolicy) ExecuteEntryActions(state AChildTimerIsADeadlineOfItsParentState, engine *sce.Engine[AChildTimerIsADeadlineOfItsParentState, AChildTimerIsADeadlineOfItsParentEvent], isDefaultEntry bool) {
 	switch state {
 	case AChildTimerIsADeadlineOfItsParentStateWaiting:
-		//line a_child_timer_is_a_deadline_of_its_parent.scxml:41
+//line a_child_timer_is_a_deadline_of_its_parent.scxml:41
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
 			// docs/adr/0045: the platform part of the id is the number of this

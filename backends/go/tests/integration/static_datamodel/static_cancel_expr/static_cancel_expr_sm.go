@@ -652,7 +652,7 @@ func (p *StaticCancelExprPolicy) ExecuteTransitionContent(source StaticCancelExp
 	case StaticCancelExprStateIdle:
 		switch transitionIndex {
 		case 0:
-			//line static_cancel_expr.scxml:29
+//line static_cancel_expr.scxml:29
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -687,7 +687,7 @@ func (p *StaticCancelExprPolicy) ExecuteTransitionContent(source StaticCancelExp
 	}
 			}()
 		case 1:
-			//line static_cancel_expr.scxml:33
+//line static_cancel_expr.scxml:33
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -698,7 +698,7 @@ func (p *StaticCancelExprPolicy) ExecuteTransitionContent(source StaticCancelExp
 
 			}()
 		case 2:
-			//line static_cancel_expr.scxml:36
+//line static_cancel_expr.scxml:36
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -715,7 +715,7 @@ func (p *StaticCancelExprPolicy) ExecuteTransitionContent(source StaticCancelExp
 
 			}()
 		case 3:
-			//line static_cancel_expr.scxml:39
+//line static_cancel_expr.scxml:39
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -726,7 +726,7 @@ func (p *StaticCancelExprPolicy) ExecuteTransitionContent(source StaticCancelExp
 
 			}()
 		case 4:
-			//line static_cancel_expr.scxml:42
+//line static_cancel_expr.scxml:42
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -737,7 +737,7 @@ func (p *StaticCancelExprPolicy) ExecuteTransitionContent(source StaticCancelExp
 
 			}()
 		case 5:
-			//line static_cancel_expr.scxml:45
+//line static_cancel_expr.scxml:45
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -748,7 +748,7 @@ func (p *StaticCancelExprPolicy) ExecuteTransitionContent(source StaticCancelExp
 
 			}()
 		case 6:
-			//line static_cancel_expr.scxml:48
+//line static_cancel_expr.scxml:48
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -759,7 +759,7 @@ func (p *StaticCancelExprPolicy) ExecuteTransitionContent(source StaticCancelExp
 
 			}()
 		case 7:
-			//line static_cancel_expr.scxml:51
+//line static_cancel_expr.scxml:51
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

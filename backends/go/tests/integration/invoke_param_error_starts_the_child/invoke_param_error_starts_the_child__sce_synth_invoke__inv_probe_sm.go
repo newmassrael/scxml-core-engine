@@ -724,7 +724,7 @@ func (p *InvokeParamErrorStartsTheChildSceSynthInvokeInvProbePolicy) ExecuteTran
 	case InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeStateReport:
 		switch transitionIndex {
 		case 0:
-			//line invoke_param_error_starts_the_child__sce_synth_invoke__inv_probe.scxml:26
+//line invoke_param_error_starts_the_child__sce_synth_invoke__inv_probe.scxml:26
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

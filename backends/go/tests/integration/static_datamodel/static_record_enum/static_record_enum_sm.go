@@ -810,7 +810,7 @@ func (p *StaticRecordEnumPolicy) ExecuteTransitionContent(source StaticRecordEnu
 	case StaticRecordEnumStateViewing:
 		switch transitionIndex {
 		case 0:
-			//line static_record_enum.scxml:30
+//line static_record_enum.scxml:30
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -825,7 +825,7 @@ func (p *StaticRecordEnumPolicy) ExecuteTransitionContent(source StaticRecordEnu
 
 			}()
 		case 1:
-			//line static_record_enum.scxml:34
+//line static_record_enum.scxml:34
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -840,7 +840,7 @@ func (p *StaticRecordEnumPolicy) ExecuteTransitionContent(source StaticRecordEnu
 
 			}()
 		case 2:
-			//line static_record_enum.scxml:38
+//line static_record_enum.scxml:38
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -849,7 +849,7 @@ func (p *StaticRecordEnumPolicy) ExecuteTransitionContent(source StaticRecordEnu
 
 			}()
 		case 3:
-			//line static_record_enum.scxml:41
+//line static_record_enum.scxml:41
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -858,7 +858,7 @@ func (p *StaticRecordEnumPolicy) ExecuteTransitionContent(source StaticRecordEnu
 
 			}()
 		case 4:
-			//line static_record_enum.scxml:44
+//line static_record_enum.scxml:44
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -869,7 +869,7 @@ func (p *StaticRecordEnumPolicy) ExecuteTransitionContent(source StaticRecordEnu
 
 			}()
 		case 5:
-			//line static_record_enum.scxml:48
+//line static_record_enum.scxml:48
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -881,7 +881,7 @@ func (p *StaticRecordEnumPolicy) ExecuteTransitionContent(source StaticRecordEnu
 
 			}()
 		case 6:
-			//line static_record_enum.scxml:52
+//line static_record_enum.scxml:52
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -906,7 +906,7 @@ func (p *StaticRecordEnumPolicy) ExecuteTransitionContent(source StaticRecordEnu
 
 			}()
 		case 7:
-			//line static_record_enum.scxml:61
+//line static_record_enum.scxml:61
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -921,7 +921,7 @@ func (p *StaticRecordEnumPolicy) ExecuteTransitionContent(source StaticRecordEnu
 
 			}()
 		case 8:
-			//line static_record_enum.scxml:71
+//line static_record_enum.scxml:71
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -932,7 +932,7 @@ func (p *StaticRecordEnumPolicy) ExecuteTransitionContent(source StaticRecordEnu
 
 			}()
 		case 9:
-			//line static_record_enum.scxml:74
+//line static_record_enum.scxml:74
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -943,7 +943,7 @@ func (p *StaticRecordEnumPolicy) ExecuteTransitionContent(source StaticRecordEnu
 
 			}()
 		case 10:
-			//line static_record_enum.scxml:77
+//line static_record_enum.scxml:77
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -954,7 +954,7 @@ func (p *StaticRecordEnumPolicy) ExecuteTransitionContent(source StaticRecordEnu
 
 			}()
 		case 11:
-			//line static_record_enum.scxml:84
+//line static_record_enum.scxml:84
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -965,7 +965,7 @@ func (p *StaticRecordEnumPolicy) ExecuteTransitionContent(source StaticRecordEnu
 
 			}()
 		case 12:
-			//line static_record_enum.scxml:87
+//line static_record_enum.scxml:87
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -976,7 +976,7 @@ func (p *StaticRecordEnumPolicy) ExecuteTransitionContent(source StaticRecordEnu
 
 			}()
 		case 13:
-			//line static_record_enum.scxml:90
+//line static_record_enum.scxml:90
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

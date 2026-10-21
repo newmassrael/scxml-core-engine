@@ -645,7 +645,7 @@ func (p *AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy) ExecuteEntryActions(
 	p.ensureScriptEngine()
 	switch state {
 	case AutoforwardEventFieldsSceSynthInvokeInvEchoStateEmit:
-		//line autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:5
+//line autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:5
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -791,7 +791,7 @@ func (p *AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy) ExecuteTransitionCon
 	case AutoforwardEventFieldsSceSynthInvokeInvEchoStateEmit:
 		switch transitionIndex {
 		case 0:
-			//line autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:11
+//line autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:11
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -816,7 +816,7 @@ func (p *AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy) ExecuteTransitionCon
 	}
 			}()
 		case 1:
-			//line autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:18
+//line autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:18
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

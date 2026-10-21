@@ -1553,7 +1553,7 @@ func (p *StaticHostKvPolicy) ClearEventMetadata() {
 func (p *StaticHostKvPolicy) ExecuteEntryActions(state StaticHostKvState, engine *sce.Engine[StaticHostKvState, StaticHostKvEvent], isDefaultEntry bool) {
 	switch state {
 	case StaticHostKvStateDeleting:
-		//line static_host_kv.scxml:112
+//line static_host_kv.scxml:112
 		// W3C SCXML 6.4.1: `type` names no processor this platform implements.
 		// Defer only — the error.execution raise happens in
 		// ExecutePendingInvokes, so §scxml-6.4 ordering holds and
@@ -1567,7 +1567,7 @@ func (p *StaticHostKvPolicy) ExecuteEntryActions(state StaticHostKvState, engine
 			})
 		}
 	case StaticHostKvStateGetting:
-		//line static_host_kv.scxml:72
+//line static_host_kv.scxml:72
 		// W3C SCXML 6.4.1: `type` names no processor this platform implements.
 		// Defer only — the error.execution raise happens in
 		// ExecutePendingInvokes, so §scxml-6.4 ordering holds and
@@ -1581,7 +1581,7 @@ func (p *StaticHostKvPolicy) ExecuteEntryActions(state StaticHostKvState, engine
 			})
 		}
 	case StaticHostKvStatePutting:
-		//line static_host_kv.scxml:92
+//line static_host_kv.scxml:92
 		// W3C SCXML 6.4.1: `type` names no processor this platform implements.
 		// Defer only — the error.execution raise happens in
 		// ExecutePendingInvokes, so §scxml-6.4 ordering holds and
@@ -1595,7 +1595,7 @@ func (p *StaticHostKvPolicy) ExecuteEntryActions(state StaticHostKvState, engine
 			})
 		}
 	case StaticHostKvStateWalking:
-		//line static_host_kv.scxml:131
+//line static_host_kv.scxml:131
 		// W3C SCXML 6.4.1: `type` names no processor this platform implements.
 		// Defer only — the error.execution raise happens in
 		// ExecutePendingInvokes, so §scxml-6.4 ordering holds and
@@ -1937,7 +1937,7 @@ func (p *StaticHostKvPolicy) ExecuteTransitionContent(source StaticHostKvState, 
 	case StaticHostKvStateDeleting:
 		switch transitionIndex {
 		case 0:
-			//line static_host_kv.scxml:116
+//line static_host_kv.scxml:116
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticHostKvPayloadTagDoneInvokeDel {
@@ -1955,7 +1955,7 @@ func (p *StaticHostKvPolicy) ExecuteTransitionContent(source StaticHostKvState, 
 
 			}()
 		case 1:
-			//line static_host_kv.scxml:120
+//line static_host_kv.scxml:120
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticHostKvPayloadTagDoneInvokeDel {
@@ -1969,7 +1969,7 @@ func (p *StaticHostKvPolicy) ExecuteTransitionContent(source StaticHostKvState, 
 
 			}()
 		case 2:
-			//line static_host_kv.scxml:123
+//line static_host_kv.scxml:123
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1980,7 +1980,7 @@ func (p *StaticHostKvPolicy) ExecuteTransitionContent(source StaticHostKvState, 
 
 			}()
 		case 3:
-			//line static_host_kv.scxml:126
+//line static_host_kv.scxml:126
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1994,7 +1994,7 @@ func (p *StaticHostKvPolicy) ExecuteTransitionContent(source StaticHostKvState, 
 	case StaticHostKvStateGetting:
 		switch transitionIndex {
 		case 0:
-			//line static_host_kv.scxml:76
+//line static_host_kv.scxml:76
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticHostKvPayloadTagDoneInvokeGet {
@@ -2018,7 +2018,7 @@ func (p *StaticHostKvPolicy) ExecuteTransitionContent(source StaticHostKvState, 
 
 			}()
 		case 1:
-			//line static_host_kv.scxml:81
+//line static_host_kv.scxml:81
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticHostKvPayloadTagDoneInvokeGet {
@@ -2032,7 +2032,7 @@ func (p *StaticHostKvPolicy) ExecuteTransitionContent(source StaticHostKvState, 
 
 			}()
 		case 2:
-			//line static_host_kv.scxml:84
+//line static_host_kv.scxml:84
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -2043,7 +2043,7 @@ func (p *StaticHostKvPolicy) ExecuteTransitionContent(source StaticHostKvState, 
 
 			}()
 		case 3:
-			//line static_host_kv.scxml:87
+//line static_host_kv.scxml:87
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -2057,7 +2057,7 @@ func (p *StaticHostKvPolicy) ExecuteTransitionContent(source StaticHostKvState, 
 	case StaticHostKvStateIdle:
 		switch transitionIndex {
 		case 0:
-			//line static_host_kv.scxml:56
+//line static_host_kv.scxml:56
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticHostKvPayloadTagHostKvGetRequest {
@@ -2071,7 +2071,7 @@ func (p *StaticHostKvPolicy) ExecuteTransitionContent(source StaticHostKvState, 
 
 			}()
 		case 1:
-			//line static_host_kv.scxml:59
+//line static_host_kv.scxml:59
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticHostKvPayloadTagHostKvPutRequest {
@@ -2091,7 +2091,7 @@ func (p *StaticHostKvPolicy) ExecuteTransitionContent(source StaticHostKvState, 
 
 			}()
 		case 2:
-			//line static_host_kv.scxml:63
+//line static_host_kv.scxml:63
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticHostKvPayloadTagHostKvDeleteRequest {
@@ -2105,7 +2105,7 @@ func (p *StaticHostKvPolicy) ExecuteTransitionContent(source StaticHostKvState, 
 
 			}()
 		case 3:
-			//line static_host_kv.scxml:66
+//line static_host_kv.scxml:66
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticHostKvPayloadTagHostKvNextKeyRequest {
@@ -2128,7 +2128,7 @@ func (p *StaticHostKvPolicy) ExecuteTransitionContent(source StaticHostKvState, 
 	case StaticHostKvStatePutting:
 		switch transitionIndex {
 		case 0:
-			//line static_host_kv.scxml:97
+//line static_host_kv.scxml:97
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticHostKvPayloadTagDoneInvokePut {
@@ -2146,7 +2146,7 @@ func (p *StaticHostKvPolicy) ExecuteTransitionContent(source StaticHostKvState, 
 
 			}()
 		case 1:
-			//line static_host_kv.scxml:101
+//line static_host_kv.scxml:101
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticHostKvPayloadTagDoneInvokePut {
@@ -2160,7 +2160,7 @@ func (p *StaticHostKvPolicy) ExecuteTransitionContent(source StaticHostKvState, 
 
 			}()
 		case 2:
-			//line static_host_kv.scxml:104
+//line static_host_kv.scxml:104
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -2171,7 +2171,7 @@ func (p *StaticHostKvPolicy) ExecuteTransitionContent(source StaticHostKvState, 
 
 			}()
 		case 3:
-			//line static_host_kv.scxml:107
+//line static_host_kv.scxml:107
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -2185,7 +2185,7 @@ func (p *StaticHostKvPolicy) ExecuteTransitionContent(source StaticHostKvState, 
 	case StaticHostKvStateWalking:
 		switch transitionIndex {
 		case 0:
-			//line static_host_kv.scxml:136
+//line static_host_kv.scxml:136
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticHostKvPayloadTagDoneInvokeWalk {
@@ -2209,7 +2209,7 @@ func (p *StaticHostKvPolicy) ExecuteTransitionContent(source StaticHostKvState, 
 
 			}()
 		case 1:
-			//line static_host_kv.scxml:141
+//line static_host_kv.scxml:141
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticHostKvPayloadTagDoneInvokeWalk {
@@ -2223,7 +2223,7 @@ func (p *StaticHostKvPolicy) ExecuteTransitionContent(source StaticHostKvState, 
 
 			}()
 		case 2:
-			//line static_host_kv.scxml:144
+//line static_host_kv.scxml:144
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -2234,7 +2234,7 @@ func (p *StaticHostKvPolicy) ExecuteTransitionContent(source StaticHostKvState, 
 
 			}()
 		case 3:
-			//line static_host_kv.scxml:147
+//line static_host_kv.scxml:147
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

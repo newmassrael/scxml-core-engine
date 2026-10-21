@@ -705,7 +705,7 @@ func (p *EventTypeNamesItsQueuePolicy) ExecuteEntryActions(state EventTypeNamesI
 	p.ensureScriptEngine()
 	switch state {
 	case EventTypeNamesItsQueueStateS0:
-		//line event_type_names_its_queue.scxml:39
+//line event_type_names_its_queue.scxml:39
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -873,7 +873,7 @@ func (p *EventTypeNamesItsQueuePolicy) ExecuteTransitionContent(source EventType
 	case EventTypeNamesItsQueueStateS0:
 		switch transitionIndex {
 		case 0:
-			//line event_type_names_its_queue.scxml:48
+//line event_type_names_its_queue.scxml:48
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -911,7 +911,7 @@ func (p *EventTypeNamesItsQueuePolicy) ExecuteTransitionContent(source EventType
 
 			}()
 		case 1:
-			//line event_type_names_its_queue.scxml:58
+//line event_type_names_its_queue.scxml:58
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -949,7 +949,7 @@ func (p *EventTypeNamesItsQueuePolicy) ExecuteTransitionContent(source EventType
 
 			}()
 		case 2:
-			//line event_type_names_its_queue.scxml:68
+//line event_type_names_its_queue.scxml:68
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

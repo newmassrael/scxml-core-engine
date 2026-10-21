@@ -765,7 +765,7 @@ func (p *TheRunEndsByExitingEveryStatePolicy) ExecuteExitActions(state TheRunEnd
 	// the configuration last.
 	switch state {
 	case TheRunEndsByExitingEveryStateStateDone:
-		//line the_run_ends_by_exiting_every_state.scxml:60
+//line the_run_ends_by_exiting_every_state.scxml:60
 		// W3C SCXML 3.9 + 4.9: onexit block 0, its own function so an
 		// error ends it with `return`.
 		func() {
@@ -789,7 +789,7 @@ func (p *TheRunEndsByExitingEveryStatePolicy) ExecuteExitActions(state TheRunEnd
 
 		}()
 	case TheRunEndsByExitingEveryStateStateInner:
-		//line the_run_ends_by_exiting_every_state.scxml:52
+//line the_run_ends_by_exiting_every_state.scxml:52
 		// W3C SCXML 3.9 + 4.9: onexit block 0, its own function so an
 		// error ends it with `return`.
 		func() {
@@ -802,7 +802,7 @@ func (p *TheRunEndsByExitingEveryStatePolicy) ExecuteExitActions(state TheRunEnd
 
 		}()
 	case TheRunEndsByExitingEveryStateStateOuter:
-		//line the_run_ends_by_exiting_every_state.scxml:47
+//line the_run_ends_by_exiting_every_state.scxml:47
 		// W3C SCXML 3.9 + 4.9: onexit block 0, its own function so an
 		// error ends it with `return`.
 		func() {

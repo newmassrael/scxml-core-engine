@@ -702,7 +702,7 @@ func (p *StaticSchemaRevisionPolicy) ExecuteTransitionContent(source StaticSchem
 	case StaticSchemaRevisionStateReading:
 		switch transitionIndex {
 		case 0:
-			//line static_schema_revision.scxml:33
+//line static_schema_revision.scxml:33
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticSchemaRevisionPayloadTagReadingRevised {
@@ -720,7 +720,7 @@ func (p *StaticSchemaRevisionPolicy) ExecuteTransitionContent(source StaticSchem
 
 			}()
 		case 1:
-			//line static_schema_revision.scxml:37
+//line static_schema_revision.scxml:37
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

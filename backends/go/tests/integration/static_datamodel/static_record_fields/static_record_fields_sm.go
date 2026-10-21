@@ -680,7 +680,7 @@ func (p *StaticRecordFieldsPolicy) ExecuteTransitionContent(source StaticRecordF
 	case StaticRecordFieldsStateShowing:
 		switch transitionIndex {
 		case 0:
-			//line static_record_fields.scxml:26
+//line static_record_fields.scxml:26
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -691,7 +691,7 @@ func (p *StaticRecordFieldsPolicy) ExecuteTransitionContent(source StaticRecordF
 
 			}()
 		case 1:
-			//line static_record_fields.scxml:29
+//line static_record_fields.scxml:29
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticRecordFieldsPayloadTagDayPicked {
@@ -711,7 +711,7 @@ func (p *StaticRecordFieldsPolicy) ExecuteTransitionContent(source StaticRecordF
 
 			}()
 		case 2:
-			//line static_record_fields.scxml:34
+//line static_record_fields.scxml:34
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -726,7 +726,7 @@ func (p *StaticRecordFieldsPolicy) ExecuteTransitionContent(source StaticRecordF
 
 			}()
 		case 3:
-			//line static_record_fields.scxml:38
+//line static_record_fields.scxml:38
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

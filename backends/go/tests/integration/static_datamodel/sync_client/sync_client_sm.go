@@ -1056,7 +1056,7 @@ func (p *SyncClientPolicy) ExecuteTransitionContent(source SyncClientState, tran
 	case SyncClientStateClient:
 		switch transitionIndex {
 		case 0:
-			//line sync_client.scxml:141
+//line sync_client.scxml:141
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1070,7 +1070,7 @@ func (p *SyncClientPolicy) ExecuteTransitionContent(source SyncClientState, tran
 	case SyncClientStateDeleting:
 		switch transitionIndex {
 		case 0:
-			//line sync_client.scxml:69
+//line sync_client.scxml:69
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1081,7 +1081,7 @@ func (p *SyncClientPolicy) ExecuteTransitionContent(source SyncClientState, tran
 
 			}()
 		case 1:
-			//line sync_client.scxml:75
+//line sync_client.scxml:75
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1094,7 +1094,7 @@ func (p *SyncClientPolicy) ExecuteTransitionContent(source SyncClientState, tran
 
 			}()
 		case 2:
-			//line sync_client.scxml:80
+//line sync_client.scxml:80
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != SyncClientPayloadTagSyncResponse {
@@ -1117,7 +1117,7 @@ func (p *SyncClientPolicy) ExecuteTransitionContent(source SyncClientState, tran
 	case SyncClientStateIdle:
 		switch transitionIndex {
 		case 0:
-			//line sync_client.scxml:58
+//line sync_client.scxml:58
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != SyncClientPayloadTagSyncStart {
@@ -1152,7 +1152,7 @@ func (p *SyncClientPolicy) ExecuteTransitionContent(source SyncClientState, tran
 	case SyncClientStateListing:
 		switch transitionIndex {
 		case 0:
-			//line sync_client.scxml:117
+//line sync_client.scxml:117
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1163,7 +1163,7 @@ func (p *SyncClientPolicy) ExecuteTransitionContent(source SyncClientState, tran
 
 			}()
 		case 1:
-			//line sync_client.scxml:122
+//line sync_client.scxml:122
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1178,7 +1178,7 @@ func (p *SyncClientPolicy) ExecuteTransitionContent(source SyncClientState, tran
 
 			}()
 		case 2:
-			//line sync_client.scxml:127
+//line sync_client.scxml:127
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1187,7 +1187,7 @@ func (p *SyncClientPolicy) ExecuteTransitionContent(source SyncClientState, tran
 
 			}()
 		case 3:
-			//line sync_client.scxml:132
+//line sync_client.scxml:132
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != SyncClientPayloadTagSyncResponse {
@@ -1210,7 +1210,7 @@ func (p *SyncClientPolicy) ExecuteTransitionContent(source SyncClientState, tran
 	case SyncClientStateUploading:
 		switch transitionIndex {
 		case 0:
-			//line sync_client.scxml:91
+//line sync_client.scxml:91
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != SyncClientPayloadTagSyncResponse {
@@ -1230,7 +1230,7 @@ func (p *SyncClientPolicy) ExecuteTransitionContent(source SyncClientState, tran
 
 			}()
 		case 1:
-			//line sync_client.scxml:96
+//line sync_client.scxml:96
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1241,7 +1241,7 @@ func (p *SyncClientPolicy) ExecuteTransitionContent(source SyncClientState, tran
 
 			}()
 		case 2:
-			//line sync_client.scxml:101
+//line sync_client.scxml:101
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1260,7 +1260,7 @@ func (p *SyncClientPolicy) ExecuteTransitionContent(source SyncClientState, tran
 
 			}()
 		case 3:
-			//line sync_client.scxml:108
+//line sync_client.scxml:108
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != SyncClientPayloadTagSyncResponse {

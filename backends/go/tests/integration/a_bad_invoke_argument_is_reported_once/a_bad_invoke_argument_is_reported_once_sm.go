@@ -1410,7 +1410,7 @@ func (p *ABadInvokeArgumentIsReportedOncePolicy) ExecuteEntryActions(state ABadI
 	p.ensureScriptEngine()
 	switch state {
 	case ABadInvokeArgumentIsReportedOnceStateS0:
-		//line a_bad_invoke_argument_is_reported_once.scxml:65
+//line a_bad_invoke_argument_is_reported_once.scxml:65
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
 			// docs/adr/0045: the platform part of the id is the number of this
@@ -1424,7 +1424,7 @@ func (p *ABadInvokeArgumentIsReportedOncePolicy) ExecuteEntryActions(state ABadI
 			})
 		}
 	case ABadInvokeArgumentIsReportedOnceStateS1:
-		//line a_bad_invoke_argument_is_reported_once.scxml:105
+//line a_bad_invoke_argument_is_reported_once.scxml:105
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
 			// docs/adr/0045: the platform part of the id is the number of this
@@ -1621,7 +1621,7 @@ func (p *ABadInvokeArgumentIsReportedOncePolicy) ExecuteTransitionContent(source
 	case ABadInvokeArgumentIsReportedOnceStateRun:
 		switch transitionIndex {
 		case 0:
-			//line a_bad_invoke_argument_is_reported_once.scxml:57
+//line a_bad_invoke_argument_is_reported_once.scxml:57
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1633,7 +1633,7 @@ func (p *ABadInvokeArgumentIsReportedOncePolicy) ExecuteTransitionContent(source
 
 			}()
 		case 1:
-			//line a_bad_invoke_argument_is_reported_once.scxml:60
+//line a_bad_invoke_argument_is_reported_once.scxml:60
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1648,7 +1648,7 @@ func (p *ABadInvokeArgumentIsReportedOncePolicy) ExecuteTransitionContent(source
 	case ABadInvokeArgumentIsReportedOnceStateS0:
 		switch transitionIndex {
 		case 0:
-			//line a_bad_invoke_argument_is_reported_once.scxml:92
+//line a_bad_invoke_argument_is_reported_once.scxml:92
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

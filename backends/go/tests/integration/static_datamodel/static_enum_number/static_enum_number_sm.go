@@ -761,7 +761,7 @@ func (p *StaticEnumNumberPolicy) ExecuteTransitionContent(source StaticEnumNumbe
 	case StaticEnumNumberStateBoard:
 		switch transitionIndex {
 		case 0:
-			//line static_enum_number.scxml:31
+//line static_enum_number.scxml:31
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticEnumNumberPayloadTagItemMoved {
@@ -773,7 +773,7 @@ func (p *StaticEnumNumberPolicy) ExecuteTransitionContent(source StaticEnumNumbe
 
 			}()
 		case 1:
-			//line static_enum_number.scxml:34
+//line static_enum_number.scxml:34
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticEnumNumberPayloadTagStatusNumber {
@@ -787,7 +787,7 @@ func (p *StaticEnumNumberPolicy) ExecuteTransitionContent(source StaticEnumNumbe
 
 			}()
 		case 2:
-			//line static_enum_number.scxml:37
+//line static_enum_number.scxml:37
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -798,7 +798,7 @@ func (p *StaticEnumNumberPolicy) ExecuteTransitionContent(source StaticEnumNumbe
 
 			}()
 		case 3:
-			//line static_enum_number.scxml:40
+//line static_enum_number.scxml:40
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

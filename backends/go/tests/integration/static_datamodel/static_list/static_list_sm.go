@@ -681,7 +681,7 @@ func (p *StaticListPolicy) ExecuteTransitionContent(source StaticListState, tran
 	case StaticListStateCollecting:
 		switch transitionIndex {
 		case 0:
-			//line static_list.scxml:22
+//line static_list.scxml:22
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticListPayloadTagDayPicked {
@@ -700,7 +700,7 @@ func (p *StaticListPolicy) ExecuteTransitionContent(source StaticListState, tran
 
 			}()
 		case 2:
-			//line static_list.scxml:27
+//line static_list.scxml:27
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -710,7 +710,7 @@ func (p *StaticListPolicy) ExecuteTransitionContent(source StaticListState, tran
 
 			}()
 		case 3:
-			//line static_list.scxml:30
+//line static_list.scxml:30
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

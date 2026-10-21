@@ -1555,7 +1555,7 @@ func (p *StaticHostNotifyPolicy) ClearEventMetadata() {
 func (p *StaticHostNotifyPolicy) ExecuteEntryActions(state StaticHostNotifyState, engine *sce.Engine[StaticHostNotifyState, StaticHostNotifyEvent], isDefaultEntry bool) {
 	switch state {
 	case StaticHostNotifyStateAsking:
-		//line static_host_notify.scxml:81
+//line static_host_notify.scxml:81
 		// W3C SCXML 6.4.1: `type` names no processor this platform implements.
 		// Defer only — the error.execution raise happens in
 		// ExecutePendingInvokes, so §scxml-6.4 ordering holds and
@@ -1569,7 +1569,7 @@ func (p *StaticHostNotifyPolicy) ExecuteEntryActions(state StaticHostNotifyState
 			})
 		}
 	case StaticHostNotifyStateCancelling:
-		//line static_host_notify.scxml:137
+//line static_host_notify.scxml:137
 		// W3C SCXML 6.4.1: `type` names no processor this platform implements.
 		// Defer only — the error.execution raise happens in
 		// ExecutePendingInvokes, so §scxml-6.4 ordering holds and
@@ -1583,7 +1583,7 @@ func (p *StaticHostNotifyPolicy) ExecuteEntryActions(state StaticHostNotifyState
 			})
 		}
 	case StaticHostNotifyStatePosting:
-		//line static_host_notify.scxml:115
+//line static_host_notify.scxml:115
 		// W3C SCXML 6.4.1: `type` names no processor this platform implements.
 		// Defer only — the error.execution raise happens in
 		// ExecutePendingInvokes, so §scxml-6.4 ordering holds and
@@ -1597,7 +1597,7 @@ func (p *StaticHostNotifyPolicy) ExecuteEntryActions(state StaticHostNotifyState
 			})
 		}
 	case StaticHostNotifyStatePostingFar:
-		//line static_host_notify.scxml:62
+//line static_host_notify.scxml:62
 		// W3C SCXML 6.4.1: `type` names no processor this platform implements.
 		// Defer only — the error.execution raise happens in
 		// ExecutePendingInvokes, so §scxml-6.4 ordering holds and
@@ -1611,7 +1611,7 @@ func (p *StaticHostNotifyPolicy) ExecuteEntryActions(state StaticHostNotifyState
 			})
 		}
 	case StaticHostNotifyStateRequesting:
-		//line static_host_notify.scxml:98
+//line static_host_notify.scxml:98
 		// W3C SCXML 6.4.1: `type` names no processor this platform implements.
 		// Defer only — the error.execution raise happens in
 		// ExecutePendingInvokes, so §scxml-6.4 ordering holds and
@@ -2008,7 +2008,7 @@ func (p *StaticHostNotifyPolicy) ExecuteTransitionContent(source StaticHostNotif
 	case StaticHostNotifyStateAsking:
 		switch transitionIndex {
 		case 0:
-			//line static_host_notify.scxml:83
+//line static_host_notify.scxml:83
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticHostNotifyPayloadTagDoneInvokeAsk {
@@ -2028,7 +2028,7 @@ func (p *StaticHostNotifyPolicy) ExecuteTransitionContent(source StaticHostNotif
 
 			}()
 		case 1:
-			//line static_host_notify.scxml:87
+//line static_host_notify.scxml:87
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticHostNotifyPayloadTagDoneInvokeAsk {
@@ -2042,7 +2042,7 @@ func (p *StaticHostNotifyPolicy) ExecuteTransitionContent(source StaticHostNotif
 
 			}()
 		case 2:
-			//line static_host_notify.scxml:90
+//line static_host_notify.scxml:90
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -2053,7 +2053,7 @@ func (p *StaticHostNotifyPolicy) ExecuteTransitionContent(source StaticHostNotif
 
 			}()
 		case 3:
-			//line static_host_notify.scxml:93
+//line static_host_notify.scxml:93
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -2067,7 +2067,7 @@ func (p *StaticHostNotifyPolicy) ExecuteTransitionContent(source StaticHostNotif
 	case StaticHostNotifyStateCancelling:
 		switch transitionIndex {
 		case 0:
-			//line static_host_notify.scxml:141
+//line static_host_notify.scxml:141
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticHostNotifyPayloadTagDoneInvokeCancel {
@@ -2085,7 +2085,7 @@ func (p *StaticHostNotifyPolicy) ExecuteTransitionContent(source StaticHostNotif
 
 			}()
 		case 1:
-			//line static_host_notify.scxml:145
+//line static_host_notify.scxml:145
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticHostNotifyPayloadTagDoneInvokeCancel {
@@ -2099,7 +2099,7 @@ func (p *StaticHostNotifyPolicy) ExecuteTransitionContent(source StaticHostNotif
 
 			}()
 		case 2:
-			//line static_host_notify.scxml:148
+//line static_host_notify.scxml:148
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -2110,7 +2110,7 @@ func (p *StaticHostNotifyPolicy) ExecuteTransitionContent(source StaticHostNotif
 
 			}()
 		case 3:
-			//line static_host_notify.scxml:151
+//line static_host_notify.scxml:151
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -2124,7 +2124,7 @@ func (p *StaticHostNotifyPolicy) ExecuteTransitionContent(source StaticHostNotif
 	case StaticHostNotifyStateIdle:
 		switch transitionIndex {
 		case 2:
-			//line static_host_notify.scxml:44
+//line static_host_notify.scxml:44
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticHostNotifyPayloadTagHostNotifyPostRequest {
@@ -2154,7 +2154,7 @@ func (p *StaticHostNotifyPolicy) ExecuteTransitionContent(source StaticHostNotif
 
 			}()
 		case 3:
-			//line static_host_notify.scxml:50
+//line static_host_notify.scxml:50
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticHostNotifyPayloadTagHostNotifyCancelRequest {
@@ -2168,7 +2168,7 @@ func (p *StaticHostNotifyPolicy) ExecuteTransitionContent(source StaticHostNotif
 
 			}()
 		case 4:
-			//line static_host_notify.scxml:57
+//line static_host_notify.scxml:57
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -2180,7 +2180,7 @@ func (p *StaticHostNotifyPolicy) ExecuteTransitionContent(source StaticHostNotif
 	case StaticHostNotifyStatePosting:
 		switch transitionIndex {
 		case 0:
-			//line static_host_notify.scxml:122
+//line static_host_notify.scxml:122
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticHostNotifyPayloadTagDoneInvokePost {
@@ -2200,7 +2200,7 @@ func (p *StaticHostNotifyPolicy) ExecuteTransitionContent(source StaticHostNotif
 
 			}()
 		case 1:
-			//line static_host_notify.scxml:126
+//line static_host_notify.scxml:126
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticHostNotifyPayloadTagDoneInvokePost {
@@ -2214,7 +2214,7 @@ func (p *StaticHostNotifyPolicy) ExecuteTransitionContent(source StaticHostNotif
 
 			}()
 		case 2:
-			//line static_host_notify.scxml:129
+//line static_host_notify.scxml:129
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -2225,7 +2225,7 @@ func (p *StaticHostNotifyPolicy) ExecuteTransitionContent(source StaticHostNotif
 
 			}()
 		case 3:
-			//line static_host_notify.scxml:132
+//line static_host_notify.scxml:132
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -2239,7 +2239,7 @@ func (p *StaticHostNotifyPolicy) ExecuteTransitionContent(source StaticHostNotif
 	case StaticHostNotifyStatePostingFar:
 		switch transitionIndex {
 		case 0:
-			//line static_host_notify.scxml:69
+//line static_host_notify.scxml:69
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticHostNotifyPayloadTagDoneInvokeFar {
@@ -2259,7 +2259,7 @@ func (p *StaticHostNotifyPolicy) ExecuteTransitionContent(source StaticHostNotif
 
 			}()
 		case 1:
-			//line static_host_notify.scxml:73
+//line static_host_notify.scxml:73
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticHostNotifyPayloadTagDoneInvokeFar {
@@ -2273,7 +2273,7 @@ func (p *StaticHostNotifyPolicy) ExecuteTransitionContent(source StaticHostNotif
 
 			}()
 		case 2:
-			//line static_host_notify.scxml:76
+//line static_host_notify.scxml:76
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -2287,7 +2287,7 @@ func (p *StaticHostNotifyPolicy) ExecuteTransitionContent(source StaticHostNotif
 	case StaticHostNotifyStateRequesting:
 		switch transitionIndex {
 		case 0:
-			//line static_host_notify.scxml:100
+//line static_host_notify.scxml:100
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticHostNotifyPayloadTagDoneInvokePrompt {
@@ -2307,7 +2307,7 @@ func (p *StaticHostNotifyPolicy) ExecuteTransitionContent(source StaticHostNotif
 
 			}()
 		case 1:
-			//line static_host_notify.scxml:104
+//line static_host_notify.scxml:104
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticHostNotifyPayloadTagDoneInvokePrompt {
@@ -2321,7 +2321,7 @@ func (p *StaticHostNotifyPolicy) ExecuteTransitionContent(source StaticHostNotif
 
 			}()
 		case 2:
-			//line static_host_notify.scxml:107
+//line static_host_notify.scxml:107
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -2332,7 +2332,7 @@ func (p *StaticHostNotifyPolicy) ExecuteTransitionContent(source StaticHostNotif
 
 			}()
 		case 3:
-			//line static_host_notify.scxml:110
+//line static_host_notify.scxml:110
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

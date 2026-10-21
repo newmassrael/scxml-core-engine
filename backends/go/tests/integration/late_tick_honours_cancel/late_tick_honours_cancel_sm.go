@@ -443,7 +443,7 @@ func (p *LateTickHonoursCancelPolicy) ClearEventMetadata() {
 func (p *LateTickHonoursCancelPolicy) ExecuteEntryActions(state LateTickHonoursCancelState, engine *sce.Engine[LateTickHonoursCancelState, LateTickHonoursCancelEvent], isDefaultEntry bool) {
 	switch state {
 	case LateTickHonoursCancelStateActive:
-		//line late_tick_honours_cancel.scxml:50
+//line late_tick_honours_cancel.scxml:50
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -467,7 +467,7 @@ func (p *LateTickHonoursCancelPolicy) ExecuteEntryActions(state LateTickHonoursC
 	}
 		}()
 	case LateTickHonoursCancelStateWaiting:
-		//line late_tick_honours_cancel.scxml:42
+//line late_tick_honours_cancel.scxml:42
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {

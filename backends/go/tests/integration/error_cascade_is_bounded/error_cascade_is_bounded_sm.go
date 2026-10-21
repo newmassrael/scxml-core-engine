@@ -757,7 +757,7 @@ func (p *ErrorCascadeIsBoundedPolicy) ExecuteEntryActions(state ErrorCascadeIsBo
 	p.ensureScriptEngine()
 	switch state {
 	case ErrorCascadeIsBoundedStateRunaway:
-		//line error_cascade_is_bounded.scxml:103
+//line error_cascade_is_bounded.scxml:103
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -768,7 +768,7 @@ func (p *ErrorCascadeIsBoundedPolicy) ExecuteEntryActions(state ErrorCascadeIsBo
 
 		}()
 	case ErrorCascadeIsBoundedStateSettling:
-		//line error_cascade_is_bounded.scxml:85
+//line error_cascade_is_bounded.scxml:85
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -972,7 +972,7 @@ func (p *ErrorCascadeIsBoundedPolicy) ExecuteTransitionContent(source ErrorCasca
 	case ErrorCascadeIsBoundedStateIdle:
 		switch transitionIndex {
 		case 0:
-			//line error_cascade_is_bounded.scxml:68
+//line error_cascade_is_bounded.scxml:68
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -984,7 +984,7 @@ func (p *ErrorCascadeIsBoundedPolicy) ExecuteTransitionContent(source ErrorCasca
 
 			}()
 		case 1:
-			//line error_cascade_is_bounded.scxml:74
+//line error_cascade_is_bounded.scxml:74
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -997,7 +997,7 @@ func (p *ErrorCascadeIsBoundedPolicy) ExecuteTransitionContent(source ErrorCasca
 	case ErrorCascadeIsBoundedStateRunaway:
 		switch transitionIndex {
 		case 0:
-			//line error_cascade_is_bounded.scxml:107
+//line error_cascade_is_bounded.scxml:107
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1017,7 +1017,7 @@ func (p *ErrorCascadeIsBoundedPolicy) ExecuteTransitionContent(source ErrorCasca
 
 			}()
 		case 1:
-			//line error_cascade_is_bounded.scxml:120
+//line error_cascade_is_bounded.scxml:120
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1029,7 +1029,7 @@ func (p *ErrorCascadeIsBoundedPolicy) ExecuteTransitionContent(source ErrorCasca
 
 			}()
 		case 2:
-			//line error_cascade_is_bounded.scxml:123
+//line error_cascade_is_bounded.scxml:123
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1044,7 +1044,7 @@ func (p *ErrorCascadeIsBoundedPolicy) ExecuteTransitionContent(source ErrorCasca
 	case ErrorCascadeIsBoundedStateSettling:
 		switch transitionIndex {
 		case 0:
-			//line error_cascade_is_bounded.scxml:89
+//line error_cascade_is_bounded.scxml:89
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1061,7 +1061,7 @@ func (p *ErrorCascadeIsBoundedPolicy) ExecuteTransitionContent(source ErrorCasca
 
 			}()
 		case 1:
-			//line error_cascade_is_bounded.scxml:93
+//line error_cascade_is_bounded.scxml:93
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

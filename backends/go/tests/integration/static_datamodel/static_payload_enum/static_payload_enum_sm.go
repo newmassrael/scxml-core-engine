@@ -686,7 +686,7 @@ func (p *StaticPayloadEnumPolicy) ExecuteTransitionContent(source StaticPayloadE
 	case StaticPayloadEnumStateBrowsing:
 		switch transitionIndex {
 		case 0:
-			//line static_payload_enum.scxml:26
+//line static_payload_enum.scxml:26
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticPayloadEnumPayloadTagViewShown {
@@ -712,7 +712,7 @@ func (p *StaticPayloadEnumPolicy) ExecuteTransitionContent(source StaticPayloadE
 
 			}()
 		case 1:
-			//line static_payload_enum.scxml:32
+//line static_payload_enum.scxml:32
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticPayloadEnumPayloadTagViewShown {

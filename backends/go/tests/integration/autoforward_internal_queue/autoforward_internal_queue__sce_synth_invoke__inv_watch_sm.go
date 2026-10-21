@@ -441,7 +441,7 @@ func (p *AutoforwardInternalQueueSceSynthInvokeInvWatchPolicy) ClearEventMetadat
 func (p *AutoforwardInternalQueueSceSynthInvokeInvWatchPolicy) ExecuteEntryActions(state AutoforwardInternalQueueSceSynthInvokeInvWatchState, engine *sce.Engine[AutoforwardInternalQueueSceSynthInvokeInvWatchState, AutoforwardInternalQueueSceSynthInvokeInvWatchEvent], isDefaultEntry bool) {
 	switch state {
 	case AutoforwardInternalQueueSceSynthInvokeInvWatchStateWatch:
-		//line autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:5
+//line autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:5
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -549,7 +549,7 @@ func (p *AutoforwardInternalQueueSceSynthInvokeInvWatchPolicy) ExecuteTransition
 	case AutoforwardInternalQueueSceSynthInvokeInvWatchStateWatch:
 		switch transitionIndex {
 		case 0:
-			//line autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:9
+//line autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:9
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -574,7 +574,7 @@ func (p *AutoforwardInternalQueueSceSynthInvokeInvWatchPolicy) ExecuteTransition
 	}
 			}()
 		case 1:
-			//line autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:12
+//line autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:12
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

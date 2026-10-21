@@ -750,7 +750,7 @@ func (p *LateDataBindsOnFirstEntryPolicy) ExecuteEntryActions(state LateDataBind
 	p.ensureScriptEngine()
 	switch state {
 	case LateDataBindsOnFirstEntryStateS:
-		//line late_data_binds_on_first_entry.scxml:40
+//line late_data_binds_on_first_entry.scxml:40
 		// §scxml-D-enterStates, late binding: the state's <data> is bound on
 		// its FIRST entry only (s.isFirstEntry), before its <onentry>. The
 		// engine owns the first-entry rule; this is only what binding means
@@ -892,7 +892,7 @@ func (p *LateDataBindsOnFirstEntryPolicy) ExecuteTransitionContent(source LateDa
 	case LateDataBindsOnFirstEntryStateS:
 		switch transitionIndex {
 		case 0:
-			//line late_data_binds_on_first_entry.scxml:50
+//line late_data_binds_on_first_entry.scxml:50
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

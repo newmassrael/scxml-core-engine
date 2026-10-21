@@ -457,7 +457,7 @@ func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) ClearEventMe
 func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) ExecuteEntryActions(state InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, engine *sce.Engine[InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent], isDefaultEntry bool) {
 	switch state {
 	case InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateWaiting:
-		//line invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:5
+//line invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:5
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -577,7 +577,7 @@ func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) ExecuteTrans
 	case InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateSaw:
 		switch transitionIndex {
 		case 0:
-			//line invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:15
+//line invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:15
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -605,7 +605,7 @@ func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) ExecuteTrans
 	case InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateWaiting:
 		switch transitionIndex {
 		case 1:
-			//line invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:10
+//line invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:10
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

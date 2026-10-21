@@ -1696,7 +1696,7 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecuteEntryActions(state Invo
 	p.ensureScriptEngine()
 	switch state {
 	case InvokeParamSeedsDeclaredChildDataStateInfinite:
-		//line invoke_param_seeds_declared_child_data.scxml:235
+//line invoke_param_seeds_declared_child_data.scxml:235
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
 			// docs/adr/0045: the platform part of the id is the number of this
@@ -1710,7 +1710,7 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecuteEntryActions(state Invo
 			})
 		}
 	case InvokeParamSeedsDeclaredChildDataStateNamelistPhase:
-		//line invoke_param_seeds_declared_child_data.scxml:193
+//line invoke_param_seeds_declared_child_data.scxml:193
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
 			// docs/adr/0045: the platform part of the id is the number of this
@@ -1724,7 +1724,7 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecuteEntryActions(state Invo
 			})
 		}
 	case InvokeParamSeedsDeclaredChildDataStateShadowed:
-		//line invoke_param_seeds_declared_child_data.scxml:92
+//line invoke_param_seeds_declared_child_data.scxml:92
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
 			// docs/adr/0045: the platform part of the id is the number of this
@@ -1738,7 +1738,7 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecuteEntryActions(state Invo
 			})
 		}
 	case InvokeParamSeedsDeclaredChildDataStateSoleName:
-		//line invoke_param_seeds_declared_child_data.scxml:123
+//line invoke_param_seeds_declared_child_data.scxml:123
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
 			// docs/adr/0045: the platform part of the id is the number of this
@@ -1752,7 +1752,7 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecuteEntryActions(state Invo
 			})
 		}
 	case InvokeParamSeedsDeclaredChildDataStateUnmatched:
-		//line invoke_param_seeds_declared_child_data.scxml:149
+//line invoke_param_seeds_declared_child_data.scxml:149
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
 			// docs/adr/0045: the platform part of the id is the number of this

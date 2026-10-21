@@ -883,7 +883,7 @@ func (p *StaticHostHttpPolicy) ClearEventMetadata() {
 func (p *StaticHostHttpPolicy) ExecuteEntryActions(state StaticHostHttpState, engine *sce.Engine[StaticHostHttpState, StaticHostHttpEvent], isDefaultEntry bool) {
 	switch state {
 	case StaticHostHttpStateFetching:
-		//line static_host_http.scxml:46
+//line static_host_http.scxml:46
 		// W3C SCXML 6.4.1: `type` names no processor this platform implements.
 		// Defer only — the error.execution raise happens in
 		// ExecutePendingInvokes, so §scxml-6.4 ordering holds and
@@ -1027,7 +1027,7 @@ func (p *StaticHostHttpPolicy) ExecuteTransitionContent(source StaticHostHttpSta
 	case StaticHostHttpStateFetching:
 		switch transitionIndex {
 		case 0:
-			//line static_host_http.scxml:54
+//line static_host_http.scxml:54
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticHostHttpPayloadTagDoneInvokeFetch {
@@ -1057,7 +1057,7 @@ func (p *StaticHostHttpPolicy) ExecuteTransitionContent(source StaticHostHttpSta
 
 			}()
 		case 1:
-			//line static_host_http.scxml:60
+//line static_host_http.scxml:60
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticHostHttpPayloadTagDoneInvokeFetch {
@@ -1071,7 +1071,7 @@ func (p *StaticHostHttpPolicy) ExecuteTransitionContent(source StaticHostHttpSta
 
 			}()
 		case 2:
-			//line static_host_http.scxml:63
+//line static_host_http.scxml:63
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1082,7 +1082,7 @@ func (p *StaticHostHttpPolicy) ExecuteTransitionContent(source StaticHostHttpSta
 
 			}()
 		case 3:
-			//line static_host_http.scxml:66
+//line static_host_http.scxml:66
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1096,7 +1096,7 @@ func (p *StaticHostHttpPolicy) ExecuteTransitionContent(source StaticHostHttpSta
 	case StaticHostHttpStateIdle:
 		switch transitionIndex {
 		case 0:
-			//line static_host_http.scxml:38
+//line static_host_http.scxml:38
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticHostHttpPayloadTagHostHttpFetchRequest {

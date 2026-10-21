@@ -875,7 +875,7 @@ func (p *OnexitRunsBeforeTheStateLeavesPolicy) ExecuteExitActions(state OnexitRu
 	// the configuration last.
 	switch state {
 	case OnexitRunsBeforeTheStateLeavesStateInner:
-		//line onexit_runs_before_the_state_leaves.scxml:56
+//line onexit_runs_before_the_state_leaves.scxml:56
 		// W3C SCXML 3.9 + 4.9: onexit block 0, its own function so an
 		// error ends it with `return`.
 		func() {
@@ -910,7 +910,7 @@ func (p *OnexitRunsBeforeTheStateLeavesPolicy) ExecuteExitActions(state OnexitRu
 
 		}()
 	case OnexitRunsBeforeTheStateLeavesStateOuter:
-		//line onexit_runs_before_the_state_leaves.scxml:45
+//line onexit_runs_before_the_state_leaves.scxml:45
 		// W3C SCXML 3.9 + 4.9: onexit block 0, its own function so an
 		// error ends it with `return`.
 		func() {

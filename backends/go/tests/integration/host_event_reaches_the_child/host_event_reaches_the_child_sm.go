@@ -707,7 +707,7 @@ func (p *HostEventReachesTheChildPolicy) ClearEventMetadata() {
 func (p *HostEventReachesTheChildPolicy) ExecuteEntryActions(state HostEventReachesTheChildState, engine *sce.Engine[HostEventReachesTheChildState, HostEventReachesTheChildEvent], isDefaultEntry bool) {
 	switch state {
 	case HostEventReachesTheChildStatePhase:
-		//line host_event_reaches_the_child.scxml:70
+//line host_event_reaches_the_child.scxml:70
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
 			// docs/adr/0045: the platform part of the id is the number of this
@@ -844,7 +844,7 @@ func (p *HostEventReachesTheChildPolicy) ExecuteTransitionContent(source HostEve
 	case HostEventReachesTheChildStateArmed:
 		switch transitionIndex {
 		case 0:
-			//line host_event_reaches_the_child.scxml:95
+//line host_event_reaches_the_child.scxml:95
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

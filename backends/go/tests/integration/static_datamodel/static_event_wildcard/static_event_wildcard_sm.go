@@ -535,7 +535,7 @@ func (p *StaticEventWildcardPolicy) ExecuteTransitionContent(source StaticEventW
 	case StaticEventWildcardStateListening:
 		switch transitionIndex {
 		case 0:
-			//line static_event_wildcard.scxml:28
+//line static_event_wildcard.scxml:28
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -546,7 +546,7 @@ func (p *StaticEventWildcardPolicy) ExecuteTransitionContent(source StaticEventW
 
 			}()
 		case 1:
-			//line static_event_wildcard.scxml:31
+//line static_event_wildcard.scxml:31
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

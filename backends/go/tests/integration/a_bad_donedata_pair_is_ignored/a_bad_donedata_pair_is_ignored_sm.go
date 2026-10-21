@@ -832,7 +832,7 @@ func (p *ABadDonedataPairIsIgnoredPolicy) ExecuteEntryActions(state ABadDonedata
 	p.activeStates = append(p.activeStates, state)
 	switch state {
 	case ABadDonedataPairIsIgnoredStateR1f:
-		//line a_bad_donedata_pair_is_ignored.scxml:39
+//line a_bad_donedata_pair_is_ignored.scxml:39
 		// W3C SCXML 5.5: Evaluate donedata for final state
 		doneEventData := ""
 		{
@@ -877,7 +877,7 @@ func (p *ABadDonedataPairIsIgnoredPolicy) ExecuteEntryActions(state ABadDonedata
 			engine.Raise(sce.NewEventWithMetadata(ABadDonedataPairIsIgnoredEventDoneStateP))
 		}
 	case ABadDonedataPairIsIgnoredStateR2f:
-		//line a_bad_donedata_pair_is_ignored.scxml:48
+//line a_bad_donedata_pair_is_ignored.scxml:48
 		// W3C SCXML 3.7: Final state reached — raise done.state.r2
 		engine.Raise(sce.NewEventWithMetadata(ABadDonedataPairIsIgnoredEventDoneStateR2))
 		// W3C SCXML 3.4 / §scxml-D-enterStates: a region of p
@@ -1028,7 +1028,7 @@ func (p *ABadDonedataPairIsIgnoredPolicy) ExecuteTransitionContent(source ABadDo
 	case ABadDonedataPairIsIgnoredStateP:
 		switch transitionIndex {
 		case 0:
-			//line a_bad_donedata_pair_is_ignored.scxml:51
+//line a_bad_donedata_pair_is_ignored.scxml:51
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1040,7 +1040,7 @@ func (p *ABadDonedataPairIsIgnoredPolicy) ExecuteTransitionContent(source ABadDo
 
 			}()
 		case 1:
-			//line a_bad_donedata_pair_is_ignored.scxml:54
+//line a_bad_donedata_pair_is_ignored.scxml:54
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1052,7 +1052,7 @@ func (p *ABadDonedataPairIsIgnoredPolicy) ExecuteTransitionContent(source ABadDo
 
 			}()
 		case 2:
-			//line a_bad_donedata_pair_is_ignored.scxml:58
+//line a_bad_donedata_pair_is_ignored.scxml:58
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

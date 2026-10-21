@@ -621,7 +621,7 @@ func (p *SessionIdsAreDistinctSceSynthInvokeInvAPolicy) ExecuteEntryActions(stat
 	p.ensureScriptEngine()
 	switch state {
 	case SessionIdsAreDistinctSceSynthInvokeInvAStateEmit:
-		//line session_ids_are_distinct__sce_synth_invoke__inv_a.scxml:5
+//line session_ids_are_distinct__sce_synth_invoke__inv_a.scxml:5
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {

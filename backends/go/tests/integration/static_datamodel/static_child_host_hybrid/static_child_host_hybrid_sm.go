@@ -761,7 +761,7 @@ func (p *StaticChildHostHybridPolicy) ClearEventMetadata() {
 func (p *StaticChildHostHybridPolicy) ExecuteEntryActions(state StaticChildHostHybridState, engine *sce.Engine[StaticChildHostHybridState, StaticChildHostHybridEvent], isDefaultEntry bool) {
 	switch state {
 	case StaticChildHostHybridStateWorking:
-		//line static_child_host_hybrid.scxml:25
+//line static_child_host_hybrid.scxml:25
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
 			p.invokeStartsWork++
@@ -882,7 +882,7 @@ func (p *StaticChildHostHybridPolicy) ExecuteTransitionContent(source StaticChil
 	case StaticChildHostHybridStateWorking:
 		switch transitionIndex {
 		case 0:
-			//line static_child_host_hybrid.scxml:28
+//line static_child_host_hybrid.scxml:28
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -893,7 +893,7 @@ func (p *StaticChildHostHybridPolicy) ExecuteTransitionContent(source StaticChil
 
 			}()
 		case 1:
-			//line static_child_host_hybrid.scxml:31
+//line static_child_host_hybrid.scxml:31
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

@@ -731,7 +731,7 @@ func (p *StatechartStaticHostParamsPolicy) ClearEventMetadata() {
 func (p *StatechartStaticHostParamsPolicy) ExecuteEntryActions(state StatechartStaticHostParamsState, engine *sce.Engine[StatechartStaticHostParamsState, StatechartStaticHostParamsEvent], isDefaultEntry bool) {
 	switch state {
 	case StatechartStaticHostParamsStateWorking:
-		//line statechart_static_host_params.scxml:109
+//line statechart_static_host_params.scxml:109
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -1211,7 +1211,7 @@ func (p *StatechartStaticHostParamsPolicy) ExecuteTransitionContent(source State
 	case StatechartStaticHostParamsStateIdle:
 		switch transitionIndex {
 		case 0:
-			//line statechart_static_host_params.scxml:95
+//line statechart_static_host_params.scxml:95
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1232,7 +1232,7 @@ func (p *StatechartStaticHostParamsPolicy) ExecuteTransitionContent(source State
 
 			}()
 		case 1:
-			//line statechart_static_host_params.scxml:100
+//line statechart_static_host_params.scxml:100
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1241,7 +1241,7 @@ func (p *StatechartStaticHostParamsPolicy) ExecuteTransitionContent(source State
 
 			}()
 		case 2:
-			//line statechart_static_host_params.scxml:103
+//line statechart_static_host_params.scxml:103
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1253,7 +1253,7 @@ func (p *StatechartStaticHostParamsPolicy) ExecuteTransitionContent(source State
 	case StatechartStaticHostParamsStateWorking:
 		switch transitionIndex {
 		case 0:
-			//line statechart_static_host_params.scxml:146
+//line statechart_static_host_params.scxml:146
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

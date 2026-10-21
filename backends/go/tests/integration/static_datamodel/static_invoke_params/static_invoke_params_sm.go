@@ -990,7 +990,7 @@ func (p *StaticInvokeParamsPolicy) ClearEventMetadata() {
 func (p *StaticInvokeParamsPolicy) ExecuteEntryActions(state StaticInvokeParamsState, engine *sce.Engine[StaticInvokeParamsState, StaticInvokeParamsEvent], isDefaultEntry bool) {
 	switch state {
 	case StaticInvokeParamsStatePlain:
-		//line static_invoke_params.scxml:64
+//line static_invoke_params.scxml:64
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
 			// docs/adr/0045: the platform part of the id is the number of this
@@ -1015,7 +1015,7 @@ func (p *StaticInvokeParamsPolicy) ExecuteEntryActions(state StaticInvokeParamsS
 			})
 		}
 	case StaticInvokeParamsStateWorking:
-		//line static_invoke_params.scxml:40
+//line static_invoke_params.scxml:40
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -1185,7 +1185,7 @@ func (p *StaticInvokeParamsPolicy) ExecuteTransitionContent(source StaticInvokeP
 	case StaticInvokeParamsStatePlain:
 		switch transitionIndex {
 		case 0:
-			//line static_invoke_params.scxml:80
+//line static_invoke_params.scxml:80
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1196,7 +1196,7 @@ func (p *StaticInvokeParamsPolicy) ExecuteTransitionContent(source StaticInvokeP
 
 			}()
 		case 1:
-			//line static_invoke_params.scxml:98
+//line static_invoke_params.scxml:98
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1207,7 +1207,7 @@ func (p *StaticInvokeParamsPolicy) ExecuteTransitionContent(source StaticInvokeP
 
 			}()
 		case 2:
-			//line static_invoke_params.scxml:101
+//line static_invoke_params.scxml:101
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1221,7 +1221,7 @@ func (p *StaticInvokeParamsPolicy) ExecuteTransitionContent(source StaticInvokeP
 	case StaticInvokeParamsStateWorking:
 		switch transitionIndex {
 		case 0:
-			//line static_invoke_params.scxml:60
+//line static_invoke_params.scxml:60
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

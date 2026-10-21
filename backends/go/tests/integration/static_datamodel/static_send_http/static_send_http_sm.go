@@ -592,7 +592,7 @@ func (p *StaticSendHttpPolicy) ExecuteTransitionContent(source StaticSendHttpSta
 	case StaticSendHttpStateIdle:
 		switch transitionIndex {
 		case 0:
-			//line static_send_http.scxml:45
+//line static_send_http.scxml:45
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -611,7 +611,7 @@ func (p *StaticSendHttpPolicy) ExecuteTransitionContent(source StaticSendHttpSta
 
 			}()
 		case 1:
-			//line static_send_http.scxml:50
+//line static_send_http.scxml:50
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -686,7 +686,7 @@ func (p *StaticSendHttpPolicy) ExecuteTransitionContent(source StaticSendHttpSta
 	}
 			}()
 		case 2:
-			//line static_send_http.scxml:60
+//line static_send_http.scxml:60
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -745,7 +745,7 @@ func (p *StaticSendHttpPolicy) ExecuteTransitionContent(source StaticSendHttpSta
 	}
 			}()
 		case 3:
-			//line static_send_http.scxml:66
+//line static_send_http.scxml:66
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

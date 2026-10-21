@@ -727,7 +727,7 @@ func (p *StaticWholePayloadPolicy) ExecuteTransitionContent(source StaticWholePa
 	case StaticWholePayloadStateViewing:
 		switch transitionIndex {
 		case 0:
-			//line static_whole_payload.scxml:32
+//line static_whole_payload.scxml:32
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticWholePayloadPayloadTagViewShown {
@@ -752,7 +752,7 @@ func (p *StaticWholePayloadPolicy) ExecuteTransitionContent(source StaticWholePa
 
 			}()
 		case 1:
-			//line static_whole_payload.scxml:37
+//line static_whole_payload.scxml:37
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -763,7 +763,7 @@ func (p *StaticWholePayloadPolicy) ExecuteTransitionContent(source StaticWholePa
 
 			}()
 		case 2:
-			//line static_whole_payload.scxml:40
+//line static_whole_payload.scxml:40
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

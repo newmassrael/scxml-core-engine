@@ -932,7 +932,7 @@ func (p *StaticHistoryPolicy) ExecuteTransitionContent(source StaticHistoryState
 	case StaticHistoryStatePaused:
 		switch transitionIndex {
 		case 1:
-			//line static_history.scxml:78
+//line static_history.scxml:78
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

@@ -738,7 +738,7 @@ func (p *AComputedEventNameIsMatchedLikeAnyOtherPolicy) ExecuteEntryActions(stat
 	p.ensureScriptEngine()
 	switch state {
 	case AComputedEventNameIsMatchedLikeAnyOtherStateS1:
-		//line a_computed_event_name_is_matched_like_any_other.scxml:42
+//line a_computed_event_name_is_matched_like_any_other.scxml:42
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -775,7 +775,7 @@ func (p *AComputedEventNameIsMatchedLikeAnyOtherPolicy) ExecuteEntryActions(stat
 	}
 		}()
 	case AComputedEventNameIsMatchedLikeAnyOtherStateS2:
-		//line a_computed_event_name_is_matched_like_any_other.scxml:48
+//line a_computed_event_name_is_matched_like_any_other.scxml:48
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -816,7 +816,7 @@ func (p *AComputedEventNameIsMatchedLikeAnyOtherPolicy) ExecuteEntryActions(stat
 	}
 		}()
 	case AComputedEventNameIsMatchedLikeAnyOtherStateS3:
-		//line a_computed_event_name_is_matched_like_any_other.scxml:54
+//line a_computed_event_name_is_matched_like_any_other.scxml:54
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -855,7 +855,7 @@ func (p *AComputedEventNameIsMatchedLikeAnyOtherPolicy) ExecuteEntryActions(stat
 	}
 		}()
 	case AComputedEventNameIsMatchedLikeAnyOtherStateS4:
-		//line a_computed_event_name_is_matched_like_any_other.scxml:60
+//line a_computed_event_name_is_matched_like_any_other.scxml:60
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -894,7 +894,7 @@ func (p *AComputedEventNameIsMatchedLikeAnyOtherPolicy) ExecuteEntryActions(stat
 	}
 		}()
 	case AComputedEventNameIsMatchedLikeAnyOtherStateS5:
-		//line a_computed_event_name_is_matched_like_any_other.scxml:66
+//line a_computed_event_name_is_matched_like_any_other.scxml:66
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -1017,7 +1017,7 @@ func (p *AComputedEventNameIsMatchedLikeAnyOtherPolicy) ExecuteEntryActions(stat
 	}
 		}()
 	case AComputedEventNameIsMatchedLikeAnyOtherStateS6:
-		//line a_computed_event_name_is_matched_like_any_other.scxml:72
+//line a_computed_event_name_is_matched_like_any_other.scxml:72
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {

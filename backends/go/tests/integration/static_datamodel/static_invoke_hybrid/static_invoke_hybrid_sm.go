@@ -1641,7 +1641,7 @@ func (p *StaticInvokeHybridPolicy) ClearEventMetadata() {
 func (p *StaticInvokeHybridPolicy) ExecuteEntryActions(state StaticInvokeHybridState, engine *sce.Engine[StaticInvokeHybridState, StaticInvokeHybridEvent], isDefaultEntry bool) {
 	switch state {
 	case StaticInvokeHybridStateFirst:
-		//line static_invoke_hybrid.scxml:46
+//line static_invoke_hybrid.scxml:46
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -1663,7 +1663,7 @@ func (p *StaticInvokeHybridPolicy) ExecuteEntryActions(state StaticInvokeHybridS
 			})
 		}
 	case StaticInvokeHybridStateLossy:
-		//line static_invoke_hybrid.scxml:72
+//line static_invoke_hybrid.scxml:72
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -1685,7 +1685,7 @@ func (p *StaticInvokeHybridPolicy) ExecuteEntryActions(state StaticInvokeHybridS
 			})
 		}
 	case StaticInvokeHybridStateMissing:
-		//line static_invoke_hybrid.scxml:85
+//line static_invoke_hybrid.scxml:85
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -1707,7 +1707,7 @@ func (p *StaticInvokeHybridPolicy) ExecuteEntryActions(state StaticInvokeHybridS
 			})
 		}
 	case StaticInvokeHybridStateSecond:
-		//line static_invoke_hybrid.scxml:59
+//line static_invoke_hybrid.scxml:59
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -1909,7 +1909,7 @@ func (p *StaticInvokeHybridPolicy) ExecuteTransitionContent(source StaticInvokeH
 	case StaticInvokeHybridStateFirst:
 		switch transitionIndex {
 		case 0:
-			//line static_invoke_hybrid.scxml:55
+//line static_invoke_hybrid.scxml:55
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1923,7 +1923,7 @@ func (p *StaticInvokeHybridPolicy) ExecuteTransitionContent(source StaticInvokeH
 	case StaticInvokeHybridStateLossy:
 		switch transitionIndex {
 		case 0:
-			//line static_invoke_hybrid.scxml:81
+//line static_invoke_hybrid.scxml:81
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1937,7 +1937,7 @@ func (p *StaticInvokeHybridPolicy) ExecuteTransitionContent(source StaticInvokeH
 	case StaticInvokeHybridStateMissing:
 		switch transitionIndex {
 		case 0:
-			//line static_invoke_hybrid.scxml:93
+//line static_invoke_hybrid.scxml:93
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1948,7 +1948,7 @@ func (p *StaticInvokeHybridPolicy) ExecuteTransitionContent(source StaticInvokeH
 
 			}()
 		case 1:
-			//line static_invoke_hybrid.scxml:96
+//line static_invoke_hybrid.scxml:96
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1962,7 +1962,7 @@ func (p *StaticInvokeHybridPolicy) ExecuteTransitionContent(source StaticInvokeH
 	case StaticInvokeHybridStateRun:
 		switch transitionIndex {
 		case 0:
-			//line static_invoke_hybrid.scxml:43
+//line static_invoke_hybrid.scxml:43
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1976,7 +1976,7 @@ func (p *StaticInvokeHybridPolicy) ExecuteTransitionContent(source StaticInvokeH
 	case StaticInvokeHybridStateSecond:
 		switch transitionIndex {
 		case 0:
-			//line static_invoke_hybrid.scxml:68
+//line static_invoke_hybrid.scxml:68
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

@@ -444,7 +444,7 @@ func (p *StaticInvokeEntrySceSynthInvokeSecondPolicy) ClearEventMetadata() {
 func (p *StaticInvokeEntrySceSynthInvokeSecondPolicy) ExecuteEntryActions(state StaticInvokeEntrySceSynthInvokeSecondState, engine *sce.Engine[StaticInvokeEntrySceSynthInvokeSecondState, StaticInvokeEntrySceSynthInvokeSecondEvent], isDefaultEntry bool) {
 	switch state {
 	case StaticInvokeEntrySceSynthInvokeSecondStateEntering:
-		//line static_invoke_entry__sce_synth_invoke__second.scxml:8
+//line static_invoke_entry__sce_synth_invoke__second.scxml:8
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {

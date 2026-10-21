@@ -776,7 +776,7 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedPolicy) Exec
 	case InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedStateReport:
 		switch transitionIndex {
 		case 0:
-			//line invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_unmatched.scxml:9
+//line invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_unmatched.scxml:9
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -801,7 +801,7 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedPolicy) Exec
 	}
 			}()
 		case 1:
-			//line invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_unmatched.scxml:12
+//line invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_unmatched.scxml:12
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -826,7 +826,7 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedPolicy) Exec
 	}
 			}()
 		case 2:
-			//line invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_unmatched.scxml:15
+//line invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_unmatched.scxml:15
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

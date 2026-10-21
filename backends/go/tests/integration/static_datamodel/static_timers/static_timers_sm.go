@@ -475,7 +475,7 @@ func (p *StaticTimersPolicy) ClearEventMetadata() {
 func (p *StaticTimersPolicy) ExecuteEntryActions(state StaticTimersState, engine *sce.Engine[StaticTimersState, StaticTimersEvent], isDefaultEntry bool) {
 	switch state {
 	case StaticTimersStateWaiting:
-		//line static_timers.scxml:27
+//line static_timers.scxml:27
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -649,7 +649,7 @@ func (p *StaticTimersPolicy) ExecuteTransitionContent(source StaticTimersState, 
 	case StaticTimersStateWaiting:
 		switch transitionIndex {
 		case 0:
-			//line static_timers.scxml:34
+//line static_timers.scxml:34
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -660,7 +660,7 @@ func (p *StaticTimersPolicy) ExecuteTransitionContent(source StaticTimersState, 
 
 			}()
 		case 1:
-			//line static_timers.scxml:37
+//line static_timers.scxml:37
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -671,7 +671,7 @@ func (p *StaticTimersPolicy) ExecuteTransitionContent(source StaticTimersState, 
 
 			}()
 		case 2:
-			//line static_timers.scxml:40
+//line static_timers.scxml:40
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -682,7 +682,7 @@ func (p *StaticTimersPolicy) ExecuteTransitionContent(source StaticTimersState, 
 
 			}()
 		case 3:
-			//line static_timers.scxml:43
+//line static_timers.scxml:43
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -693,7 +693,7 @@ func (p *StaticTimersPolicy) ExecuteTransitionContent(source StaticTimersState, 
 
 			}()
 		case 4:
-			//line static_timers.scxml:46
+//line static_timers.scxml:46
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

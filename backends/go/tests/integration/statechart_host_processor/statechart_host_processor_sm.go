@@ -777,7 +777,7 @@ func (p *StatechartHostProcessorPolicy) ExecuteEntryActions(state StatechartHost
 	p.ensureScriptEngine()
 	switch state {
 	case StatechartHostProcessorStateDispatching:
-		//line statechart_host_processor.scxml:59
+//line statechart_host_processor.scxml:59
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -865,7 +865,7 @@ func (p *StatechartHostProcessorPolicy) ExecuteEntryActions(state StatechartHost
 	}
 		}()
 	case StatechartHostProcessorStatePairs:
-		//line statechart_host_processor.scxml:88
+//line statechart_host_processor.scxml:88
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -1096,7 +1096,7 @@ func (p *StatechartHostProcessorPolicy) ExecuteTransitionContent(source Statecha
 	case StatechartHostProcessorStateDispatching:
 		switch transitionIndex {
 		case 0:
-			//line statechart_host_processor.scxml:73
+//line statechart_host_processor.scxml:73
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1108,7 +1108,7 @@ func (p *StatechartHostProcessorPolicy) ExecuteTransitionContent(source Statecha
 
 			}()
 		case 1:
-			//line statechart_host_processor.scxml:76
+//line statechart_host_processor.scxml:76
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1120,7 +1120,7 @@ func (p *StatechartHostProcessorPolicy) ExecuteTransitionContent(source Statecha
 
 			}()
 		case 2:
-			//line statechart_host_processor.scxml:79
+//line statechart_host_processor.scxml:79
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1135,7 +1135,7 @@ func (p *StatechartHostProcessorPolicy) ExecuteTransitionContent(source Statecha
 	case StatechartHostProcessorStatePairs:
 		switch transitionIndex {
 		case 0:
-			//line statechart_host_processor.scxml:95
+//line statechart_host_processor.scxml:95
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1147,7 +1147,7 @@ func (p *StatechartHostProcessorPolicy) ExecuteTransitionContent(source Statecha
 
 			}()
 		case 1:
-			//line statechart_host_processor.scxml:103
+//line statechart_host_processor.scxml:103
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

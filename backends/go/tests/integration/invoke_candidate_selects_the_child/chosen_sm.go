@@ -415,7 +415,7 @@ func (p *ChosenPolicy) ClearEventMetadata() {
 func (p *ChosenPolicy) ExecuteEntryActions(state ChosenState, engine *sce.Engine[ChosenState, ChosenEvent], isDefaultEntry bool) {
 	switch state {
 	case ChosenStateSpeak:
-		//line chosen.scxml:7
+//line chosen.scxml:7
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {

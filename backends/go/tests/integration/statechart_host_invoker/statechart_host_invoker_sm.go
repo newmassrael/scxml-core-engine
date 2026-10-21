@@ -2292,7 +2292,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteEntryActions(state StatechartHostIn
 	p.ensureScriptEngine()
 	switch state {
 	case StatechartHostInvokerStateDone:
-		//line statechart_host_invoker.scxml:221
+//line statechart_host_invoker.scxml:221
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -2317,7 +2317,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteEntryActions(state StatechartHostIn
 			})
 		}
 	case StatechartHostInvokerStateEvaluating:
-		//line statechart_host_invoker.scxml:205
+//line statechart_host_invoker.scxml:205
 		// W3C SCXML 6.4.1: `type` names no processor this platform implements.
 		// Defer only — the error.execution raise happens in
 		// ExecutePendingInvokes, so §scxml-6.4 ordering holds and
@@ -2347,7 +2347,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteEntryActions(state StatechartHostIn
 			})
 		}
 	case StatechartHostInvokerStateFailing:
-		//line statechart_host_invoker.scxml:307
+//line statechart_host_invoker.scxml:307
 		// W3C SCXML 6.4.1: `type` names no processor this platform implements.
 		// Defer only — the error.execution raise happens in
 		// ExecutePendingInvokes, so §scxml-6.4 ordering holds and
@@ -2361,7 +2361,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteEntryActions(state StatechartHostIn
 			})
 		}
 	case StatechartHostInvokerStateInvoking:
-		//line statechart_host_invoker.scxml:174
+//line statechart_host_invoker.scxml:174
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -2394,7 +2394,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteEntryActions(state StatechartHostIn
 			})
 		}
 	case StatechartHostInvokerStateLocating:
-		//line statechart_host_invoker.scxml:232
+//line statechart_host_invoker.scxml:232
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -2486,7 +2486,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteEntryActions(state StatechartHostIn
 			})
 		}
 	case StatechartHostInvokerStatePassing:
-		//line statechart_host_invoker.scxml:328
+//line statechart_host_invoker.scxml:328
 		// W3C SCXML 6.4.1: `type` names no processor this platform implements.
 		// Defer only — the error.execution raise happens in
 		// ExecutePendingInvokes, so §scxml-6.4 ordering holds and
@@ -2500,7 +2500,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteEntryActions(state StatechartHostIn
 			})
 		}
 	case StatechartHostInvokerStateRefusing:
-		//line statechart_host_invoker.scxml:318
+//line statechart_host_invoker.scxml:318
 		// W3C SCXML 6.4.1: `type` names no processor this platform implements.
 		// Defer only — the error.execution raise happens in
 		// ExecutePendingInvokes, so §scxml-6.4 ordering holds and
@@ -2514,7 +2514,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteEntryActions(state StatechartHostIn
 			})
 		}
 	case StatechartHostInvokerStateTimed:
-		//line statechart_host_invoker.scxml:254
+//line statechart_host_invoker.scxml:254
 		// W3C SCXML 6.4.1: `type` names no processor this platform implements.
 		// Defer only — the error.execution raise happens in
 		// ExecutePendingInvokes, so §scxml-6.4 ordering holds and
@@ -2536,7 +2536,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteEntryActions(state StatechartHostIn
 			})
 		}
 	case StatechartHostInvokerStateTyped:
-		//line statechart_host_invoker.scxml:288
+//line statechart_host_invoker.scxml:288
 		// W3C SCXML 6.4.1: `type` names no processor this platform implements.
 		// Defer only — the error.execution raise happens in
 		// ExecutePendingInvokes, so §scxml-6.4 ordering holds and
@@ -3063,7 +3063,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 	case StatechartHostInvokerStateDone:
 		switch transitionIndex {
 		case 0:
-			//line statechart_host_invoker.scxml:226
+//line statechart_host_invoker.scxml:226
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -3078,7 +3078,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 	case StatechartHostInvokerStateEvaluating:
 		switch transitionIndex {
 		case 0:
-			//line statechart_host_invoker.scxml:216
+//line statechart_host_invoker.scxml:216
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -3093,7 +3093,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 	case StatechartHostInvokerStateFailing:
 		switch transitionIndex {
 		case 0:
-			//line statechart_host_invoker.scxml:309
+//line statechart_host_invoker.scxml:309
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -3105,7 +3105,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 
 			}()
 		case 1:
-			//line statechart_host_invoker.scxml:313
+//line statechart_host_invoker.scxml:313
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -3120,7 +3120,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 	case StatechartHostInvokerStateInvoking:
 		switch transitionIndex {
 		case 0:
-			//line statechart_host_invoker.scxml:184
+//line statechart_host_invoker.scxml:184
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -3132,7 +3132,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 
 			}()
 		case 1:
-			//line statechart_host_invoker.scxml:187
+//line statechart_host_invoker.scxml:187
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -3144,7 +3144,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 
 			}()
 		case 2:
-			//line statechart_host_invoker.scxml:190
+//line statechart_host_invoker.scxml:190
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -3159,7 +3159,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 	case StatechartHostInvokerStateLocating:
 		switch transitionIndex {
 		case 0:
-			//line statechart_host_invoker.scxml:240
+//line statechart_host_invoker.scxml:240
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -3171,7 +3171,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 
 			}()
 		case 1:
-			//line statechart_host_invoker.scxml:243
+//line statechart_host_invoker.scxml:243
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -3183,7 +3183,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 
 			}()
 		case 2:
-			//line statechart_host_invoker.scxml:246
+//line statechart_host_invoker.scxml:246
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -3195,7 +3195,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 
 			}()
 		case 3:
-			//line statechart_host_invoker.scxml:249
+//line statechart_host_invoker.scxml:249
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -3210,7 +3210,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 	case StatechartHostInvokerStateRefusing:
 		switch transitionIndex {
 		case 0:
-			//line statechart_host_invoker.scxml:320
+//line statechart_host_invoker.scxml:320
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -3222,7 +3222,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 
 			}()
 		case 1:
-			//line statechart_host_invoker.scxml:323
+//line statechart_host_invoker.scxml:323
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -3237,7 +3237,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 	case StatechartHostInvokerStateTimed:
 		switch transitionIndex {
 		case 0:
-			//line statechart_host_invoker.scxml:261
+//line statechart_host_invoker.scxml:261
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -3249,7 +3249,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 
 			}()
 		case 1:
-			//line statechart_host_invoker.scxml:267
+//line statechart_host_invoker.scxml:267
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -3267,7 +3267,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 
 			}()
 		case 3:
-			//line statechart_host_invoker.scxml:274
+//line statechart_host_invoker.scxml:274
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -3279,7 +3279,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 
 			}()
 		case 4:
-			//line statechart_host_invoker.scxml:278
+//line statechart_host_invoker.scxml:278
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -3294,7 +3294,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 	case StatechartHostInvokerStateTyped:
 		switch transitionIndex {
 		case 0:
-			//line statechart_host_invoker.scxml:293
+//line statechart_host_invoker.scxml:293
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -3306,7 +3306,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 
 			}()
 		case 1:
-			//line statechart_host_invoker.scxml:296
+//line statechart_host_invoker.scxml:296
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -3318,7 +3318,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 
 			}()
 		case 2:
-			//line statechart_host_invoker.scxml:299
+//line statechart_host_invoker.scxml:299
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -3330,7 +3330,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 
 			}()
 		case 3:
-			//line statechart_host_invoker.scxml:302
+//line statechart_host_invoker.scxml:302
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

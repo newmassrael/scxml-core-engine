@@ -899,7 +899,7 @@ func (p *EventOriginIsALocationPolicy) ExecuteEntryActions(state EventOriginIsAL
 	p.ensureScriptEngine()
 	switch state {
 	case EventOriginIsALocationStatePhase:
-		//line event_origin_is_a_location.scxml:49
+//line event_origin_is_a_location.scxml:49
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
 			// docs/adr/0045: the platform part of the id is the number of this
@@ -1040,7 +1040,7 @@ func (p *EventOriginIsALocationPolicy) ExecuteTransitionContent(source EventOrig
 	case EventOriginIsALocationStateWaiting:
 		switch transitionIndex {
 		case 0:
-			//line event_origin_is_a_location.scxml:75
+//line event_origin_is_a_location.scxml:75
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

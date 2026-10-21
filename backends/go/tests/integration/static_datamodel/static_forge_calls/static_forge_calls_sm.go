@@ -883,7 +883,7 @@ func (p *StaticForgeCallsPolicy) ExecuteTransitionContent(source StaticForgeCall
 	case StaticForgeCallsStateRun:
 		switch transitionIndex {
 		case 0:
-			//line static_forge_calls.scxml:53
+//line static_forge_calls.scxml:53
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -904,7 +904,7 @@ func (p *StaticForgeCallsPolicy) ExecuteTransitionContent(source StaticForgeCall
 
 			}()
 		case 1:
-			//line static_forge_calls.scxml:58
+//line static_forge_calls.scxml:58
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -923,7 +923,7 @@ func (p *StaticForgeCallsPolicy) ExecuteTransitionContent(source StaticForgeCall
 
 			}()
 		case 2:
-			//line static_forge_calls.scxml:63
+//line static_forge_calls.scxml:63
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -938,7 +938,7 @@ func (p *StaticForgeCallsPolicy) ExecuteTransitionContent(source StaticForgeCall
 
 			}()
 		case 3:
-			//line static_forge_calls.scxml:67
+//line static_forge_calls.scxml:67
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -949,7 +949,7 @@ func (p *StaticForgeCallsPolicy) ExecuteTransitionContent(source StaticForgeCall
 
 			}()
 		case 4:
-			//line static_forge_calls.scxml:70
+//line static_forge_calls.scxml:70
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -964,7 +964,7 @@ func (p *StaticForgeCallsPolicy) ExecuteTransitionContent(source StaticForgeCall
 
 			}()
 		case 5:
-			//line static_forge_calls.scxml:74
+//line static_forge_calls.scxml:74
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -973,7 +973,7 @@ func (p *StaticForgeCallsPolicy) ExecuteTransitionContent(source StaticForgeCall
 
 			}()
 		case 6:
-			//line static_forge_calls.scxml:77
+//line static_forge_calls.scxml:77
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -984,7 +984,7 @@ func (p *StaticForgeCallsPolicy) ExecuteTransitionContent(source StaticForgeCall
 
 			}()
 		case 7:
-			//line static_forge_calls.scxml:80
+//line static_forge_calls.scxml:80
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

@@ -836,7 +836,7 @@ func (p *StaticRecordListIndexPolicy) ExecuteTransitionContent(source StaticReco
 	case StaticRecordListIndexStateReading:
 		switch transitionIndex {
 		case 0:
-			//line static_record_list_index.scxml:50
+//line static_record_list_index.scxml:50
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticRecordListIndexPayloadTagDayPicked {
@@ -863,7 +863,7 @@ func (p *StaticRecordListIndexPolicy) ExecuteTransitionContent(source StaticReco
 
 			}()
 		case 1:
-			//line static_record_list_index.scxml:56
+//line static_record_list_index.scxml:56
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -886,7 +886,7 @@ func (p *StaticRecordListIndexPolicy) ExecuteTransitionContent(source StaticReco
 
 			}()
 		case 2:
-			//line static_record_list_index.scxml:61
+//line static_record_list_index.scxml:61
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -897,7 +897,7 @@ func (p *StaticRecordListIndexPolicy) ExecuteTransitionContent(source StaticReco
 
 			}()
 		case 3:
-			//line static_record_list_index.scxml:64
+//line static_record_list_index.scxml:64
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -908,7 +908,7 @@ func (p *StaticRecordListIndexPolicy) ExecuteTransitionContent(source StaticReco
 
 			}()
 		case 4:
-			//line static_record_list_index.scxml:67
+//line static_record_list_index.scxml:67
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -919,7 +919,7 @@ func (p *StaticRecordListIndexPolicy) ExecuteTransitionContent(source StaticReco
 
 			}()
 		case 5:
-			//line static_record_list_index.scxml:70
+//line static_record_list_index.scxml:70
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -930,7 +930,7 @@ func (p *StaticRecordListIndexPolicy) ExecuteTransitionContent(source StaticReco
 
 			}()
 		case 6:
-			//line static_record_list_index.scxml:73
+//line static_record_list_index.scxml:73
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -941,7 +941,7 @@ func (p *StaticRecordListIndexPolicy) ExecuteTransitionContent(source StaticReco
 
 			}()
 		case 7:
-			//line static_record_list_index.scxml:76
+//line static_record_list_index.scxml:76
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -950,7 +950,7 @@ func (p *StaticRecordListIndexPolicy) ExecuteTransitionContent(source StaticReco
 
 			}()
 		case 8:
-			//line static_record_list_index.scxml:79
+//line static_record_list_index.scxml:79
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -959,7 +959,7 @@ func (p *StaticRecordListIndexPolicy) ExecuteTransitionContent(source StaticReco
 
 			}()
 		case 9:
-			//line static_record_list_index.scxml:82
+//line static_record_list_index.scxml:82
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

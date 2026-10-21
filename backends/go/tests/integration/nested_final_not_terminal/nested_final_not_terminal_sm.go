@@ -437,7 +437,7 @@ func (p *NestedFinalNotTerminalPolicy) ClearEventMetadata() {
 func (p *NestedFinalNotTerminalPolicy) ExecuteEntryActions(state NestedFinalNotTerminalState, engine *sce.Engine[NestedFinalNotTerminalState, NestedFinalNotTerminalEvent], isDefaultEntry bool) {
 	switch state {
 	case NestedFinalNotTerminalStatePhaseDone:
-		//line nested_final_not_terminal.scxml:48
+//line nested_final_not_terminal.scxml:48
 		// W3C SCXML 3.7: Final state reached — raise done.state.phase
 		engine.Raise(sce.NewEventWithMetadata(NestedFinalNotTerminalEventDoneStatePhase))
 	default:

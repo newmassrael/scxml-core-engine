@@ -764,7 +764,7 @@ func (p *StaticInvokeHybridSavedPolicy) ClearEventMetadata() {
 func (p *StaticInvokeHybridSavedPolicy) ExecuteEntryActions(state StaticInvokeHybridSavedState, engine *sce.Engine[StaticInvokeHybridSavedState, StaticInvokeHybridSavedEvent], isDefaultEntry bool) {
 	switch state {
 	case StaticInvokeHybridSavedStateWorking:
-		//line static_invoke_hybrid_saved.scxml:34
+//line static_invoke_hybrid_saved.scxml:34
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -893,7 +893,7 @@ func (p *StaticInvokeHybridSavedPolicy) ExecuteTransitionContent(source StaticIn
 	case StaticInvokeHybridSavedStateWorking:
 		switch transitionIndex {
 		case 0:
-			//line static_invoke_hybrid_saved.scxml:42
+//line static_invoke_hybrid_saved.scxml:42
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -904,7 +904,7 @@ func (p *StaticInvokeHybridSavedPolicy) ExecuteTransitionContent(source StaticIn
 
 			}()
 		case 1:
-			//line static_invoke_hybrid_saved.scxml:45
+//line static_invoke_hybrid_saved.scxml:45
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -915,7 +915,7 @@ func (p *StaticInvokeHybridSavedPolicy) ExecuteTransitionContent(source StaticIn
 
 			}()
 		case 2:
-			//line static_invoke_hybrid_saved.scxml:48
+//line static_invoke_hybrid_saved.scxml:48
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

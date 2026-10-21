@@ -791,7 +791,7 @@ func (p *TargetlessTransitionCompletesMacrostepPolicy) ExecuteEntryActions(state
 	p.ensureScriptEngine()
 	switch state {
 	case TargetlessTransitionCompletesMacrostepStateRecycled:
-		//line targetless_transition_completes_macrostep.scxml:147
+//line targetless_transition_completes_macrostep.scxml:147
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -964,7 +964,7 @@ func (p *TargetlessTransitionCompletesMacrostepPolicy) ExecuteTransitionContent(
 	case TargetlessTransitionCompletesMacrostepStateIdle:
 		switch transitionIndex {
 		case 0:
-			//line targetless_transition_completes_macrostep.scxml:86
+//line targetless_transition_completes_macrostep.scxml:86
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -976,7 +976,7 @@ func (p *TargetlessTransitionCompletesMacrostepPolicy) ExecuteTransitionContent(
 
 			}()
 		case 1:
-			//line targetless_transition_completes_macrostep.scxml:93
+//line targetless_transition_completes_macrostep.scxml:93
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -988,7 +988,7 @@ func (p *TargetlessTransitionCompletesMacrostepPolicy) ExecuteTransitionContent(
 
 			}()
 		case 2:
-			//line targetless_transition_completes_macrostep.scxml:100
+//line targetless_transition_completes_macrostep.scxml:100
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1000,7 +1000,7 @@ func (p *TargetlessTransitionCompletesMacrostepPolicy) ExecuteTransitionContent(
 
 			}()
 		case 3:
-			//line targetless_transition_completes_macrostep.scxml:107
+//line targetless_transition_completes_macrostep.scxml:107
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1008,7 +1008,7 @@ func (p *TargetlessTransitionCompletesMacrostepPolicy) ExecuteTransitionContent(
 
 			}()
 		case 4:
-			//line targetless_transition_completes_macrostep.scxml:111
+//line targetless_transition_completes_macrostep.scxml:111
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1023,7 +1023,7 @@ func (p *TargetlessTransitionCompletesMacrostepPolicy) ExecuteTransitionContent(
 	case TargetlessTransitionCompletesMacrostepStateSettled:
 		switch transitionIndex {
 		case 0:
-			//line targetless_transition_completes_macrostep.scxml:126
+//line targetless_transition_completes_macrostep.scxml:126
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

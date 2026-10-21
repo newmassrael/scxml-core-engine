@@ -481,7 +481,7 @@ func (p *StaticChildHostSceSynthInvokeWorkerPolicy) ClearEventMetadata() {
 func (p *StaticChildHostSceSynthInvokeWorkerPolicy) ExecuteEntryActions(state StaticChildHostSceSynthInvokeWorkerState, engine *sce.Engine[StaticChildHostSceSynthInvokeWorkerState, StaticChildHostSceSynthInvokeWorkerEvent], isDefaultEntry bool) {
 	switch state {
 	case StaticChildHostSceSynthInvokeWorkerStateFirst:
-		//line static_child_host__sce_synth_invoke__worker.scxml:8
+//line static_child_host__sce_synth_invoke__worker.scxml:8
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -573,7 +573,7 @@ func (p *StaticChildHostSceSynthInvokeWorkerPolicy) ExecuteTransitionContent(sou
 	case StaticChildHostSceSynthInvokeWorkerStateFirst:
 		switch transitionIndex {
 		case 0:
-			//line static_child_host__sce_synth_invoke__worker.scxml:12
+//line static_child_host__sce_synth_invoke__worker.scxml:12
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -587,7 +587,7 @@ func (p *StaticChildHostSceSynthInvokeWorkerPolicy) ExecuteTransitionContent(sou
 	case StaticChildHostSceSynthInvokeWorkerStateSecond:
 		switch transitionIndex {
 		case 0:
-			//line static_child_host__sce_synth_invoke__worker.scxml:17
+//line static_child_host__sce_synth_invoke__worker.scxml:17
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

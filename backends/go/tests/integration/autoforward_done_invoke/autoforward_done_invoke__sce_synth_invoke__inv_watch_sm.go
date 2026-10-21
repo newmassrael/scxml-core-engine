@@ -523,7 +523,7 @@ func (p *AutoforwardDoneInvokeSceSynthInvokeInvWatchPolicy) ExecuteTransitionCon
 	case AutoforwardDoneInvokeSceSynthInvokeInvWatchStateWatch:
 		switch transitionIndex {
 		case 0:
-			//line autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:6
+//line autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:6
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -548,7 +548,7 @@ func (p *AutoforwardDoneInvokeSceSynthInvokeInvWatchPolicy) ExecuteTransitionCon
 	}
 			}()
 		case 1:
-			//line autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:9
+//line autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:9
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

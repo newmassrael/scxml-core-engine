@@ -793,7 +793,7 @@ func (p *StaticStateAlgorithmPolicy) ExecuteTransitionContent(source StaticState
 	case StaticStateAlgorithmStateOpen:
 		switch transitionIndex {
 		case 0:
-			//line static_state_algorithm.scxml:45
+//line static_state_algorithm.scxml:45
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticStateAlgorithmPayloadTagLedgerEntry {
@@ -827,7 +827,7 @@ func (p *StaticStateAlgorithmPolicy) ExecuteTransitionContent(source StaticState
 
 			}()
 		case 1:
-			//line static_state_algorithm.scxml:53
+//line static_state_algorithm.scxml:53
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -838,7 +838,7 @@ func (p *StaticStateAlgorithmPolicy) ExecuteTransitionContent(source StaticState
 
 			}()
 		case 2:
-			//line static_state_algorithm.scxml:56
+//line static_state_algorithm.scxml:56
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -856,7 +856,7 @@ func (p *StaticStateAlgorithmPolicy) ExecuteTransitionContent(source StaticState
 
 			}()
 		case 3:
-			//line static_state_algorithm.scxml:60
+//line static_state_algorithm.scxml:60
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

@@ -912,7 +912,7 @@ func (p *ParallelSelfTransitionKeepsItsLeafPolicy) ExecuteTransitionContent(sour
 	case ParallelSelfTransitionKeepsItsLeafStateWithin:
 		switch transitionIndex {
 		case 0:
-			//line parallel_self_transition_keeps_its_leaf.scxml:73
+//line parallel_self_transition_keeps_its_leaf.scxml:73
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -927,7 +927,7 @@ func (p *ParallelSelfTransitionKeepsItsLeafPolicy) ExecuteTransitionContent(sour
 	case ParallelSelfTransitionKeepsItsLeafStateWorking:
 		switch transitionIndex {
 		case 0:
-			//line parallel_self_transition_keeps_its_leaf.scxml:86
+//line parallel_self_transition_keeps_its_leaf.scxml:86
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

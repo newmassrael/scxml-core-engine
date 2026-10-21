@@ -786,7 +786,7 @@ func (p *ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1Policy) ExecuteTransi
 	case ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1StateReport:
 		switch transitionIndex {
 		case 0:
-			//line a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv1.scxml:11
+//line a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv1.scxml:11
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

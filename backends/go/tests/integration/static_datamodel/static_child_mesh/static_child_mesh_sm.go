@@ -861,7 +861,7 @@ func (p *StaticChildMeshPolicy) ClearEventMetadata() {
 func (p *StaticChildMeshPolicy) ExecuteEntryActions(state StaticChildMeshState, engine *sce.Engine[StaticChildMeshState, StaticChildMeshEvent], isDefaultEntry bool) {
 	switch state {
 	case StaticChildMeshStateJoined:
-		//line static_child_mesh.scxml:61
+//line static_child_mesh.scxml:61
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
 			p.invokeStartsPeer++
@@ -873,7 +873,7 @@ func (p *StaticChildMeshPolicy) ExecuteEntryActions(state StaticChildMeshState, 
 			})
 		}
 	case StaticChildMeshStateWorking:
-		//line static_child_mesh.scxml:35
+//line static_child_mesh.scxml:35
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
 			// docs/adr/0045: the platform part of the id is the number of this
@@ -1022,7 +1022,7 @@ func (p *StaticChildMeshPolicy) ExecuteTransitionContent(source StaticChildMeshS
 	case StaticChildMeshStateWorking:
 		switch transitionIndex {
 		case 0:
-			//line static_child_mesh.scxml:54
+//line static_child_mesh.scxml:54
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

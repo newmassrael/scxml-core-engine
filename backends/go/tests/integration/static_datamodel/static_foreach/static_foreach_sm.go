@@ -745,7 +745,7 @@ func (p *StaticForeachPolicy) ExecuteTransitionContent(source StaticForeachState
 	case StaticForeachStateWorking:
 		switch transitionIndex {
 		case 0:
-			//line static_foreach.scxml:26
+//line static_foreach.scxml:26
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -757,7 +757,7 @@ func (p *StaticForeachPolicy) ExecuteTransitionContent(source StaticForeachState
 
 			}()
 		case 1:
-			//line static_foreach.scxml:27
+//line static_foreach.scxml:27
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -769,7 +769,7 @@ func (p *StaticForeachPolicy) ExecuteTransitionContent(source StaticForeachState
 
 			}()
 		case 2:
-			//line static_foreach.scxml:28
+//line static_foreach.scxml:28
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -781,7 +781,7 @@ func (p *StaticForeachPolicy) ExecuteTransitionContent(source StaticForeachState
 
 			}()
 		case 3:
-			//line static_foreach.scxml:29
+//line static_foreach.scxml:29
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -791,7 +791,7 @@ func (p *StaticForeachPolicy) ExecuteTransitionContent(source StaticForeachState
 
 			}()
 		case 4:
-			//line static_foreach.scxml:31
+//line static_foreach.scxml:31
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -818,7 +818,7 @@ func (p *StaticForeachPolicy) ExecuteTransitionContent(source StaticForeachState
 
 			}()
 		case 5:
-			//line static_foreach.scxml:39
+//line static_foreach.scxml:39
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -845,7 +845,7 @@ func (p *StaticForeachPolicy) ExecuteTransitionContent(source StaticForeachState
 
 			}()
 		case 6:
-			//line static_foreach.scxml:49
+//line static_foreach.scxml:49
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -872,7 +872,7 @@ func (p *StaticForeachPolicy) ExecuteTransitionContent(source StaticForeachState
 
 			}()
 		case 7:
-			//line static_foreach.scxml:58
+//line static_foreach.scxml:58
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -896,7 +896,7 @@ func (p *StaticForeachPolicy) ExecuteTransitionContent(source StaticForeachState
 
 			}()
 		case 8:
-			//line static_foreach.scxml:65
+//line static_foreach.scxml:65
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -923,7 +923,7 @@ func (p *StaticForeachPolicy) ExecuteTransitionContent(source StaticForeachState
 
 			}()
 		case 9:
-			//line static_foreach.scxml:74
+//line static_foreach.scxml:74
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -944,7 +944,7 @@ func (p *StaticForeachPolicy) ExecuteTransitionContent(source StaticForeachState
 
 			}()
 		case 10:
-			//line static_foreach.scxml:80
+//line static_foreach.scxml:80
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

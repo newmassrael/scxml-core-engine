@@ -441,7 +441,7 @@ func (p *StaticChildMeshSceSynthInvokeListPolicy) ClearEventMetadata() {
 func (p *StaticChildMeshSceSynthInvokeListPolicy) ExecuteEntryActions(state StaticChildMeshSceSynthInvokeListState, engine *sce.Engine[StaticChildMeshSceSynthInvokeListState, StaticChildMeshSceSynthInvokeListEvent], isDefaultEntry bool) {
 	switch state {
 	case StaticChildMeshSceSynthInvokeListStateOpen:
-		//line static_child_mesh__sce_synth_invoke__list.scxml:5
+//line static_child_mesh__sce_synth_invoke__list.scxml:5
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -569,7 +569,7 @@ func (p *StaticChildMeshSceSynthInvokeListPolicy) ExecuteTransitionContent(sourc
 	case StaticChildMeshSceSynthInvokeListStateOpen:
 		switch transitionIndex {
 		case 0:
-			//line static_child_mesh__sce_synth_invoke__list.scxml:9
+//line static_child_mesh__sce_synth_invoke__list.scxml:9
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

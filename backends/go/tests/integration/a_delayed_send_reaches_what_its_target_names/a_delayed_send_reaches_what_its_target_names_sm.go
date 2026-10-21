@@ -1229,7 +1229,7 @@ func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) ExecuteEntryActions(state 
 	p.ensureScriptEngine()
 	switch state {
 	case ADelayedSendReachesWhatItsTargetNamesStateRun:
-		//line a_delayed_send_reaches_what_its_target_names.scxml:66
+//line a_delayed_send_reaches_what_its_target_names.scxml:66
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -1517,7 +1517,7 @@ func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) ExecuteTransitionContent(s
 	case ADelayedSendReachesWhatItsTargetNamesStateRun:
 		switch transitionIndex {
 		case 0:
-			//line a_delayed_send_reaches_what_its_target_names.scxml:114
+//line a_delayed_send_reaches_what_its_target_names.scxml:114
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1529,7 +1529,7 @@ func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) ExecuteTransitionContent(s
 
 			}()
 		case 1:
-			//line a_delayed_send_reaches_what_its_target_names.scxml:117
+//line a_delayed_send_reaches_what_its_target_names.scxml:117
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1558,7 +1558,7 @@ func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) ExecuteTransitionContent(s
 
 			}()
 		case 2:
-			//line a_delayed_send_reaches_what_its_target_names.scxml:123
+//line a_delayed_send_reaches_what_its_target_names.scxml:123
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1570,7 +1570,7 @@ func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) ExecuteTransitionContent(s
 
 			}()
 		case 3:
-			//line a_delayed_send_reaches_what_its_target_names.scxml:126
+//line a_delayed_send_reaches_what_its_target_names.scxml:126
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1599,7 +1599,7 @@ func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) ExecuteTransitionContent(s
 
 			}()
 		case 4:
-			//line a_delayed_send_reaches_what_its_target_names.scxml:132
+//line a_delayed_send_reaches_what_its_target_names.scxml:132
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1701,7 +1701,7 @@ func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) ExecuteTransitionContent(s
 	}
 			}()
 		case 5:
-			//line a_delayed_send_reaches_what_its_target_names.scxml:140
+//line a_delayed_send_reaches_what_its_target_names.scxml:140
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1713,7 +1713,7 @@ func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) ExecuteTransitionContent(s
 
 			}()
 		case 6:
-			//line a_delayed_send_reaches_what_its_target_names.scxml:143
+//line a_delayed_send_reaches_what_its_target_names.scxml:143
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1725,7 +1725,7 @@ func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) ExecuteTransitionContent(s
 
 			}()
 		case 7:
-			//line a_delayed_send_reaches_what_its_target_names.scxml:146
+//line a_delayed_send_reaches_what_its_target_names.scxml:146
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

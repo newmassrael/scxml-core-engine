@@ -530,7 +530,7 @@ func (p *ParallelDoneStateIsDeliveredPolicy) ExecuteEntryActions(state ParallelD
 	p.activeStates = append(p.activeStates, state)
 	switch state {
 	case ParallelDoneStateIsDeliveredStateA2:
-		//line parallel_done_state_is_delivered.scxml:41
+//line parallel_done_state_is_delivered.scxml:41
 		// W3C SCXML 3.7: Final state reached — raise done.state.a
 		engine.Raise(sce.NewEventWithMetadata(ParallelDoneStateIsDeliveredEventDoneStateA))
 		// W3C SCXML 3.4 / §scxml-D-enterStates: a region of run
@@ -542,7 +542,7 @@ func (p *ParallelDoneStateIsDeliveredPolicy) ExecuteEntryActions(state ParallelD
 			engine.Raise(sce.NewEventWithMetadata(ParallelDoneStateIsDeliveredEventDoneStateRun))
 		}
 	case ParallelDoneStateIsDeliveredStateB2:
-		//line parallel_done_state_is_delivered.scxml:48
+//line parallel_done_state_is_delivered.scxml:48
 		// W3C SCXML 3.7: Final state reached — raise done.state.b
 		engine.Raise(sce.NewEventWithMetadata(ParallelDoneStateIsDeliveredEventDoneStateB))
 		// W3C SCXML 3.4 / §scxml-D-enterStates: a region of run

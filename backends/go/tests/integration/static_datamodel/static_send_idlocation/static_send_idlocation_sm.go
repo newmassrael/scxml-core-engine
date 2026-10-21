@@ -644,7 +644,7 @@ func (p *StaticSendIdlocationPolicy) ExecuteTransitionContent(source StaticSendI
 	case StaticSendIdlocationStateIdle:
 		switch transitionIndex {
 		case 0:
-			//line static_send_idlocation.scxml:36
+//line static_send_idlocation.scxml:36
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -691,7 +691,7 @@ func (p *StaticSendIdlocationPolicy) ExecuteTransitionContent(source StaticSendI
 	}
 			}()
 		case 1:
-			//line static_send_idlocation.scxml:40
+//line static_send_idlocation.scxml:40
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -741,7 +741,7 @@ func (p *StaticSendIdlocationPolicy) ExecuteTransitionContent(source StaticSendI
 	}
 			}()
 		case 2:
-			//line static_send_idlocation.scxml:44
+//line static_send_idlocation.scxml:44
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -752,7 +752,7 @@ func (p *StaticSendIdlocationPolicy) ExecuteTransitionContent(source StaticSendI
 
 			}()
 		case 3:
-			//line static_send_idlocation.scxml:47
+//line static_send_idlocation.scxml:47
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -763,7 +763,7 @@ func (p *StaticSendIdlocationPolicy) ExecuteTransitionContent(source StaticSendI
 
 			}()
 		case 4:
-			//line static_send_idlocation.scxml:50
+//line static_send_idlocation.scxml:50
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -774,7 +774,7 @@ func (p *StaticSendIdlocationPolicy) ExecuteTransitionContent(source StaticSendI
 
 			}()
 		case 5:
-			//line static_send_idlocation.scxml:53
+//line static_send_idlocation.scxml:53
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -785,7 +785,7 @@ func (p *StaticSendIdlocationPolicy) ExecuteTransitionContent(source StaticSendI
 
 			}()
 		case 6:
-			//line static_send_idlocation.scxml:56
+//line static_send_idlocation.scxml:56
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

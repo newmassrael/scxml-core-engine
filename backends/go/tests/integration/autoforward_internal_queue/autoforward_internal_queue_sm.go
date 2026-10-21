@@ -677,7 +677,7 @@ func (p *AutoforwardInternalQueuePolicy) ClearEventMetadata() {
 func (p *AutoforwardInternalQueuePolicy) ExecuteEntryActions(state AutoforwardInternalQueueState, engine *sce.Engine[AutoforwardInternalQueueState, AutoforwardInternalQueueEvent], isDefaultEntry bool) {
 	switch state {
 	case AutoforwardInternalQueueStatePhase:
-		//line autoforward_internal_queue.scxml:54
+//line autoforward_internal_queue.scxml:54
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
 			// docs/adr/0045: the platform part of the id is the number of this
@@ -811,7 +811,7 @@ func (p *AutoforwardInternalQueuePolicy) ExecuteTransitionContent(source Autofor
 	case AutoforwardInternalQueueStatePhase:
 		switch transitionIndex {
 		case 0:
-			//line autoforward_internal_queue.scxml:75
+//line autoforward_internal_queue.scxml:75
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -827,7 +827,7 @@ func (p *AutoforwardInternalQueuePolicy) ExecuteTransitionContent(source Autofor
 	}
 			}()
 		case 1:
-			//line autoforward_internal_queue.scxml:78
+//line autoforward_internal_queue.scxml:78
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

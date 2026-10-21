@@ -771,7 +771,7 @@ func (p *ADelayIsACss2TimePolicy) ExecuteEntryActions(state ADelayIsACss2TimeSta
 	p.ensureScriptEngine()
 	switch state {
 	case ADelayIsACss2TimeStateS0:
-		//line a_delay_is_a_css2_time.scxml:39
+//line a_delay_is_a_css2_time.scxml:39
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -1009,7 +1009,7 @@ func (p *ADelayIsACss2TimePolicy) ExecuteTransitionContent(source ADelayIsACss2T
 	case ADelayIsACss2TimeStateS0:
 		switch transitionIndex {
 		case 0:
-			//line a_delay_is_a_css2_time.scxml:53
+//line a_delay_is_a_css2_time.scxml:53
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1021,7 +1021,7 @@ func (p *ADelayIsACss2TimePolicy) ExecuteTransitionContent(source ADelayIsACss2T
 
 			}()
 		case 1:
-			//line a_delay_is_a_css2_time.scxml:56
+//line a_delay_is_a_css2_time.scxml:56
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1033,7 +1033,7 @@ func (p *ADelayIsACss2TimePolicy) ExecuteTransitionContent(source ADelayIsACss2T
 
 			}()
 		case 2:
-			//line a_delay_is_a_css2_time.scxml:59
+//line a_delay_is_a_css2_time.scxml:59
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1045,7 +1045,7 @@ func (p *ADelayIsACss2TimePolicy) ExecuteTransitionContent(source ADelayIsACss2T
 
 			}()
 		case 3:
-			//line a_delay_is_a_css2_time.scxml:62
+//line a_delay_is_a_css2_time.scxml:62
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

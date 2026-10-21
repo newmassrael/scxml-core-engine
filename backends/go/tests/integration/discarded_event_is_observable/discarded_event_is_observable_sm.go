@@ -819,7 +819,7 @@ func (p *DiscardedEventIsObservablePolicy) ExecuteTransitionContent(source Disca
 	case DiscardedEventIsObservableStateIdle:
 		switch transitionIndex {
 		case 0:
-			//line discarded_event_is_observable.scxml:38
+//line discarded_event_is_observable.scxml:38
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -831,7 +831,7 @@ func (p *DiscardedEventIsObservablePolicy) ExecuteTransitionContent(source Disca
 
 			}()
 		case 1:
-			//line discarded_event_is_observable.scxml:41
+//line discarded_event_is_observable.scxml:41
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

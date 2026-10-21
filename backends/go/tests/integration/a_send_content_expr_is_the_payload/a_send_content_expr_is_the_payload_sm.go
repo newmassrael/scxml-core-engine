@@ -828,7 +828,7 @@ func (p *ASendContentExprIsThePayloadPolicy) ExecuteEntryActions(state ASendCont
 	p.ensureScriptEngine()
 	switch state {
 	case ASendContentExprIsThePayloadStateRun:
-		//line a_send_content_expr_is_the_payload.scxml:50
+//line a_send_content_expr_is_the_payload.scxml:50
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -1132,7 +1132,7 @@ func (p *ASendContentExprIsThePayloadPolicy) ExecuteTransitionContent(source ASe
 	case ASendContentExprIsThePayloadStateRun:
 		switch transitionIndex {
 		case 0:
-			//line a_send_content_expr_is_the_payload.scxml:64
+//line a_send_content_expr_is_the_payload.scxml:64
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1144,7 +1144,7 @@ func (p *ASendContentExprIsThePayloadPolicy) ExecuteTransitionContent(source ASe
 
 			}()
 		case 1:
-			//line a_send_content_expr_is_the_payload.scxml:67
+//line a_send_content_expr_is_the_payload.scxml:67
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1156,7 +1156,7 @@ func (p *ASendContentExprIsThePayloadPolicy) ExecuteTransitionContent(source ASe
 
 			}()
 		case 2:
-			//line a_send_content_expr_is_the_payload.scxml:70
+//line a_send_content_expr_is_the_payload.scxml:70
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1168,7 +1168,7 @@ func (p *ASendContentExprIsThePayloadPolicy) ExecuteTransitionContent(source ASe
 
 			}()
 		case 3:
-			//line a_send_content_expr_is_the_payload.scxml:73
+//line a_send_content_expr_is_the_payload.scxml:73
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1180,7 +1180,7 @@ func (p *ASendContentExprIsThePayloadPolicy) ExecuteTransitionContent(source ASe
 
 			}()
 		case 4:
-			//line a_send_content_expr_is_the_payload.scxml:76
+//line a_send_content_expr_is_the_payload.scxml:76
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

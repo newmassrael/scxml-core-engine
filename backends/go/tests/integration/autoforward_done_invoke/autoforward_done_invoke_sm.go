@@ -806,7 +806,7 @@ func (p *AutoforwardDoneInvokePolicy) ClearEventMetadata() {
 func (p *AutoforwardDoneInvokePolicy) ExecuteEntryActions(state AutoforwardDoneInvokeState, engine *sce.Engine[AutoforwardDoneInvokeState, AutoforwardDoneInvokeEvent], isDefaultEntry bool) {
 	switch state {
 	case AutoforwardDoneInvokeStatePhase:
-		//line autoforward_done_invoke.scxml:58
+//line autoforward_done_invoke.scxml:58
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
 			// docs/adr/0045: the platform part of the id is the number of this
@@ -964,7 +964,7 @@ func (p *AutoforwardDoneInvokePolicy) ExecuteTransitionContent(source Autoforwar
 	case AutoforwardDoneInvokeStatePhase:
 		switch transitionIndex {
 		case 0:
-			//line autoforward_done_invoke.scxml:84
+//line autoforward_done_invoke.scxml:84
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

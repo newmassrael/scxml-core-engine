@@ -732,7 +732,7 @@ func (p *StaticSendNamelistPolicy) ExecuteTransitionContent(source StaticSendNam
 	case StaticSendNamelistStateViewing:
 		switch transitionIndex {
 		case 0:
-			//line static_send_namelist.scxml:25
+//line static_send_namelist.scxml:25
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -745,7 +745,7 @@ func (p *StaticSendNamelistPolicy) ExecuteTransitionContent(source StaticSendNam
 
 			}()
 		case 1:
-			//line static_send_namelist.scxml:29
+//line static_send_namelist.scxml:29
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -788,7 +788,7 @@ func (p *StaticSendNamelistPolicy) ExecuteTransitionContent(source StaticSendNam
 	}
 			}()
 		case 2:
-			//line static_send_namelist.scxml:32
+//line static_send_namelist.scxml:32
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -837,7 +837,7 @@ func (p *StaticSendNamelistPolicy) ExecuteTransitionContent(source StaticSendNam
 	}
 			}()
 		case 3:
-			//line static_send_namelist.scxml:37
+//line static_send_namelist.scxml:37
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticSendNamelistPayloadTagViewShown {

@@ -644,7 +644,7 @@ func (p *EventOriginIsALocationSceSynthInvokeInvPeerPolicy) ExecuteEntryActions(
 	p.ensureScriptEngine()
 	switch state {
 	case EventOriginIsALocationSceSynthInvokeInvPeerStateEmit:
-		//line event_origin_is_a_location__sce_synth_invoke__inv_peer.scxml:5
+//line event_origin_is_a_location__sce_synth_invoke__inv_peer.scxml:5
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -779,7 +779,7 @@ func (p *EventOriginIsALocationSceSynthInvokeInvPeerPolicy) ExecuteTransitionCon
 	case EventOriginIsALocationSceSynthInvokeInvPeerStateEmit:
 		switch transitionIndex {
 		case 0:
-			//line event_origin_is_a_location__sce_synth_invoke__inv_peer.scxml:12
+//line event_origin_is_a_location__sce_synth_invoke__inv_peer.scxml:12
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

@@ -415,7 +415,7 @@ func (p *SendParamPayloadSceSynthInvokeInvEmitterPolicy) ClearEventMetadata() {
 func (p *SendParamPayloadSceSynthInvokeInvEmitterPolicy) ExecuteEntryActions(state SendParamPayloadSceSynthInvokeInvEmitterState, engine *sce.Engine[SendParamPayloadSceSynthInvokeInvEmitterState, SendParamPayloadSceSynthInvokeInvEmitterEvent], isDefaultEntry bool) {
 	switch state {
 	case SendParamPayloadSceSynthInvokeInvEmitterStateEmit:
-		//line send_param_payload__sce_synth_invoke__inv_emitter.scxml:5
+//line send_param_payload__sce_synth_invoke__inv_emitter.scxml:5
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {

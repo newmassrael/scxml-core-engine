@@ -786,7 +786,7 @@ func (p *KeeperPolicy) ExecuteTransitionContent(source KeeperState, transitionIn
 	case KeeperStateUp:
 		switch transitionIndex {
 		case 0:
-			//line keeper.scxml:14
+//line keeper.scxml:14
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

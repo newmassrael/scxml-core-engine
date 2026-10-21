@@ -888,7 +888,7 @@ func (p *AutoforwardEventFieldsPolicy) ExecuteEntryActions(state AutoforwardEven
 	p.ensureScriptEngine()
 	switch state {
 	case AutoforwardEventFieldsStatePhase:
-		//line autoforward_event_fields.scxml:33
+//line autoforward_event_fields.scxml:33
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
 			// docs/adr/0045: the platform part of the id is the number of this

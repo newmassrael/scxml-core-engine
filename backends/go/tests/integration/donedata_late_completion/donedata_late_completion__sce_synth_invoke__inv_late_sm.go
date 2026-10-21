@@ -639,7 +639,7 @@ func (p *DonedataLateCompletionSceSynthInvokeInvLatePolicy) ExecuteEntryActions(
 	p.ensureScriptEngine()
 	switch state {
 	case DonedataLateCompletionSceSynthInvokeInvLateStateSettled:
-		//line donedata_late_completion__sce_synth_invoke__inv_late.scxml:11
+//line donedata_late_completion__sce_synth_invoke__inv_late.scxml:11
 		// W3C SCXML 5.5: Evaluate donedata for final state
 		doneEventData := ""
 		{
@@ -667,7 +667,7 @@ func (p *DonedataLateCompletionSceSynthInvokeInvLatePolicy) ExecuteEntryActions(
 		// Engine::stash_donedata_at_final.
 		engine.StashDonedataAtFinal(doneEventData)
 	case DonedataLateCompletionSceSynthInvokeInvLateStateWaiting:
-		//line donedata_late_completion__sce_synth_invoke__inv_late.scxml:5
+//line donedata_late_completion__sce_synth_invoke__inv_late.scxml:5
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {

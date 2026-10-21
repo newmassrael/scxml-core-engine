@@ -720,7 +720,7 @@ func (p *StaticInvokePolicy) ClearEventMetadata() {
 func (p *StaticInvokePolicy) ExecuteEntryActions(state StaticInvokeState, engine *sce.Engine[StaticInvokeState, StaticInvokeEvent], isDefaultEntry bool) {
 	switch state {
 	case StaticInvokeStateWorking:
-		//line static_invoke.scxml:32
+//line static_invoke.scxml:32
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
 			// docs/adr/0045: the platform part of the id is the number of this
@@ -864,7 +864,7 @@ func (p *StaticInvokePolicy) ExecuteTransitionContent(source StaticInvokeState, 
 	case StaticInvokeStateWorking:
 		switch transitionIndex {
 		case 2:
-			//line static_invoke.scxml:51
+//line static_invoke.scxml:51
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

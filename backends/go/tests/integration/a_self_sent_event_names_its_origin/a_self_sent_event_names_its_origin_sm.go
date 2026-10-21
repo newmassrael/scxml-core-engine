@@ -837,7 +837,7 @@ func (p *ASelfSentEventNamesItsOriginPolicy) ExecuteEntryActions(state ASelfSent
 	p.ensureScriptEngine()
 	switch state {
 	case ASelfSentEventNamesItsOriginStateBlankTarget:
-		//line a_self_sent_event_names_its_origin.scxml:78
+//line a_self_sent_event_names_its_origin.scxml:78
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -967,7 +967,7 @@ func (p *ASelfSentEventNamesItsOriginPolicy) ExecuteEntryActions(state ASelfSent
 	}
 		}()
 	case ASelfSentEventNamesItsOriginStateDelayed:
-		//line a_self_sent_event_names_its_origin.scxml:67
+//line a_self_sent_event_names_its_origin.scxml:67
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -988,7 +988,7 @@ func (p *ASelfSentEventNamesItsOriginPolicy) ExecuteEntryActions(state ASelfSent
 	}
 		}()
 	case ASelfSentEventNamesItsOriginStateImmediate:
-		//line a_self_sent_event_names_its_origin.scxml:49
+//line a_self_sent_event_names_its_origin.scxml:49
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -1152,7 +1152,7 @@ func (p *ASelfSentEventNamesItsOriginPolicy) ExecuteTransitionContent(source ASe
 	case ASelfSentEventNamesItsOriginStateBlankTarget:
 		switch transitionIndex {
 		case 0:
-			//line a_self_sent_event_names_its_origin.scxml:85
+//line a_self_sent_event_names_its_origin.scxml:85
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1167,7 +1167,7 @@ func (p *ASelfSentEventNamesItsOriginPolicy) ExecuteTransitionContent(source ASe
 	case ASelfSentEventNamesItsOriginStateDelayed:
 		switch transitionIndex {
 		case 0:
-			//line a_self_sent_event_names_its_origin.scxml:71
+//line a_self_sent_event_names_its_origin.scxml:71
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1192,7 +1192,7 @@ func (p *ASelfSentEventNamesItsOriginPolicy) ExecuteTransitionContent(source ASe
 	case ASelfSentEventNamesItsOriginStateImmediate:
 		switch transitionIndex {
 		case 0:
-			//line a_self_sent_event_names_its_origin.scxml:53
+//line a_self_sent_event_names_its_origin.scxml:53
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1322,7 +1322,7 @@ func (p *ASelfSentEventNamesItsOriginPolicy) ExecuteTransitionContent(source ASe
 	case ASelfSentEventNamesItsOriginStateReplying:
 		switch transitionIndex {
 		case 0:
-			//line a_self_sent_event_names_its_origin.scxml:62
+//line a_self_sent_event_names_its_origin.scxml:62
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1337,7 +1337,7 @@ func (p *ASelfSentEventNamesItsOriginPolicy) ExecuteTransitionContent(source ASe
 	case ASelfSentEventNamesItsOriginStateRun:
 		switch transitionIndex {
 		case 0:
-			//line a_self_sent_event_names_its_origin.scxml:45
+//line a_self_sent_event_names_its_origin.scxml:45
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

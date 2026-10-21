@@ -759,7 +759,7 @@ func (p *StaticPayloadEnumUnimportedPolicy) ExecuteTransitionContent(source Stat
 	case StaticPayloadEnumUnimportedStateListening:
 		switch transitionIndex {
 		case 0:
-			//line static_payload_enum_unimported.scxml:27
+//line static_payload_enum_unimported.scxml:27
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticPayloadEnumUnimportedPayloadTagRecordListRefused {

@@ -664,7 +664,7 @@ func (p *StaticStringCapacityPolicy) ExecuteTransitionContent(source StaticStrin
 	case StaticStringCapacityStateIdle:
 		switch transitionIndex {
 		case 0:
-			//line static_string_capacity.scxml:32
+//line static_string_capacity.scxml:32
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -675,7 +675,7 @@ func (p *StaticStringCapacityPolicy) ExecuteTransitionContent(source StaticStrin
 
 			}()
 		case 1:
-			//line static_string_capacity.scxml:35
+//line static_string_capacity.scxml:35
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -686,7 +686,7 @@ func (p *StaticStringCapacityPolicy) ExecuteTransitionContent(source StaticStrin
 
 			}()
 		case 2:
-			//line static_string_capacity.scxml:38
+//line static_string_capacity.scxml:38
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -697,7 +697,7 @@ func (p *StaticStringCapacityPolicy) ExecuteTransitionContent(source StaticStrin
 
 			}()
 		case 3:
-			//line static_string_capacity.scxml:42
+//line static_string_capacity.scxml:42
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -708,7 +708,7 @@ func (p *StaticStringCapacityPolicy) ExecuteTransitionContent(source StaticStrin
 
 			}()
 		case 4:
-			//line static_string_capacity.scxml:46
+//line static_string_capacity.scxml:46
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -719,7 +719,7 @@ func (p *StaticStringCapacityPolicy) ExecuteTransitionContent(source StaticStrin
 
 			}()
 		case 5:
-			//line static_string_capacity.scxml:49
+//line static_string_capacity.scxml:49
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -736,7 +736,7 @@ func (p *StaticStringCapacityPolicy) ExecuteTransitionContent(source StaticStrin
 
 			}()
 		case 6:
-			//line static_string_capacity.scxml:53
+//line static_string_capacity.scxml:53
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -745,7 +745,7 @@ func (p *StaticStringCapacityPolicy) ExecuteTransitionContent(source StaticStrin
 
 			}()
 		case 7:
-			//line static_string_capacity.scxml:56
+//line static_string_capacity.scxml:56
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

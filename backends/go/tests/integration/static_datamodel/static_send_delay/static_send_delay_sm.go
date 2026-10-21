@@ -609,7 +609,7 @@ func (p *StaticSendDelayPolicy) ExecuteTransitionContent(source StaticSendDelayS
 	case StaticSendDelayStateIdle:
 		switch transitionIndex {
 		case 0:
-			//line static_send_delay.scxml:22
+//line static_send_delay.scxml:22
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -650,7 +650,7 @@ func (p *StaticSendDelayPolicy) ExecuteTransitionContent(source StaticSendDelayS
 	}
 			}()
 		case 1:
-			//line static_send_delay.scxml:25
+//line static_send_delay.scxml:25
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -661,7 +661,7 @@ func (p *StaticSendDelayPolicy) ExecuteTransitionContent(source StaticSendDelayS
 
 			}()
 		case 2:
-			//line static_send_delay.scxml:28
+//line static_send_delay.scxml:28
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -702,7 +702,7 @@ func (p *StaticSendDelayPolicy) ExecuteTransitionContent(source StaticSendDelayS
 	}
 			}()
 		case 3:
-			//line static_send_delay.scxml:31
+//line static_send_delay.scxml:31
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -746,7 +746,7 @@ func (p *StaticSendDelayPolicy) ExecuteTransitionContent(source StaticSendDelayS
 	}
 			}()
 		case 4:
-			//line static_send_delay.scxml:34
+//line static_send_delay.scxml:34
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -757,7 +757,7 @@ func (p *StaticSendDelayPolicy) ExecuteTransitionContent(source StaticSendDelayS
 
 			}()
 		case 5:
-			//line static_send_delay.scxml:37
+//line static_send_delay.scxml:37
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

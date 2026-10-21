@@ -762,7 +762,7 @@ func (p *StaticRecordListPolicy) ExecuteTransitionContent(source StaticRecordLis
 	case StaticRecordListStateCollecting:
 		switch transitionIndex {
 		case 0:
-			//line static_record_list.scxml:38
+//line static_record_list.scxml:38
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticRecordListPayloadTagDayPicked {
@@ -789,7 +789,7 @@ func (p *StaticRecordListPolicy) ExecuteTransitionContent(source StaticRecordLis
 
 			}()
 		case 1:
-			//line static_record_list.scxml:45
+//line static_record_list.scxml:45
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -810,7 +810,7 @@ func (p *StaticRecordListPolicy) ExecuteTransitionContent(source StaticRecordLis
 
 			}()
 		case 2:
-			//line static_record_list.scxml:52
+//line static_record_list.scxml:52
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -833,7 +833,7 @@ func (p *StaticRecordListPolicy) ExecuteTransitionContent(source StaticRecordLis
 
 			}()
 		case 3:
-			//line static_record_list.scxml:60
+//line static_record_list.scxml:60
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -848,7 +848,7 @@ func (p *StaticRecordListPolicy) ExecuteTransitionContent(source StaticRecordLis
 
 			}()
 		case 4:
-			//line static_record_list.scxml:66
+//line static_record_list.scxml:66
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -857,7 +857,7 @@ func (p *StaticRecordListPolicy) ExecuteTransitionContent(source StaticRecordLis
 
 			}()
 		case 5:
-			//line static_record_list.scxml:69
+//line static_record_list.scxml:69
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -867,7 +867,7 @@ func (p *StaticRecordListPolicy) ExecuteTransitionContent(source StaticRecordLis
 
 			}()
 		case 6:
-			//line static_record_list.scxml:72
+//line static_record_list.scxml:72
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

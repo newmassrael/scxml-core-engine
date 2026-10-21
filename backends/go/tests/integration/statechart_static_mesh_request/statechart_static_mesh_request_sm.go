@@ -663,7 +663,7 @@ func (p *StatechartStaticMeshRequestPolicy) ClearEventMetadata() {
 func (p *StatechartStaticMeshRequestPolicy) ExecuteEntryActions(state StatechartStaticMeshRequestState, engine *sce.Engine[StatechartStaticMeshRequestState, StatechartStaticMeshRequestEvent], isDefaultEntry bool) {
 	switch state {
 	case StatechartStaticMeshRequestStateAsking:
-		//line statechart_static_mesh_request.scxml:68
+//line statechart_static_mesh_request.scxml:68
 		// W3C SCXML 6.4.1: `type` names no processor this platform implements.
 		// Defer only — the error.execution raise happens in
 		// ExecutePendingInvokes, so §scxml-6.4 ordering holds and
@@ -813,7 +813,7 @@ func (p *StatechartStaticMeshRequestPolicy) ExecuteTransitionContent(source Stat
 	case StatechartStaticMeshRequestStateAsking:
 		switch transitionIndex {
 		case 0:
-			//line statechart_static_mesh_request.scxml:76
+//line statechart_static_mesh_request.scxml:76
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -824,7 +824,7 @@ func (p *StatechartStaticMeshRequestPolicy) ExecuteTransitionContent(source Stat
 
 			}()
 		case 1:
-			//line statechart_static_mesh_request.scxml:79
+//line statechart_static_mesh_request.scxml:79
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -835,7 +835,7 @@ func (p *StatechartStaticMeshRequestPolicy) ExecuteTransitionContent(source Stat
 
 			}()
 		case 2:
-			//line statechart_static_mesh_request.scxml:82
+//line statechart_static_mesh_request.scxml:82
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -849,7 +849,7 @@ func (p *StatechartStaticMeshRequestPolicy) ExecuteTransitionContent(source Stat
 	case StatechartStaticMeshRequestStateIdle:
 		switch transitionIndex {
 		case 0:
-			//line statechart_static_mesh_request.scxml:58
+//line statechart_static_mesh_request.scxml:58
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -866,7 +866,7 @@ func (p *StatechartStaticMeshRequestPolicy) ExecuteTransitionContent(source Stat
 
 			}()
 		case 1:
-			//line statechart_static_mesh_request.scxml:62
+//line statechart_static_mesh_request.scxml:62
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

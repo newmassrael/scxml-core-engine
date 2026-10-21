@@ -457,7 +457,7 @@ func (p *InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchPolicy) ClearEventMeta
 func (p *InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchPolicy) ExecuteEntryActions(state InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState, engine *sce.Engine[InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState, InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchEvent], isDefaultEntry bool) {
 	switch state {
 	case InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchStateWaiting:
-		//line invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:5
+//line invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:5
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -577,7 +577,7 @@ func (p *InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchPolicy) ExecuteTransit
 	case InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchStateSaw:
 		switch transitionIndex {
 		case 0:
-			//line invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:15
+//line invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:15
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -605,7 +605,7 @@ func (p *InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchPolicy) ExecuteTransit
 	case InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchStateWaiting:
 		switch transitionIndex {
 		case 1:
-			//line invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:10
+//line invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:10
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

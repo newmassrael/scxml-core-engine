@@ -505,7 +505,7 @@ func (p *StaticDonedataRecordPolicy) ClearEventMetadata() {
 func (p *StaticDonedataRecordPolicy) ExecuteEntryActions(state StaticDonedataRecordState, engine *sce.Engine[StaticDonedataRecordState, StaticDonedataRecordEvent], isDefaultEntry bool) {
 	switch state {
 	case StaticDonedataRecordStateDone:
-		//line static_donedata_record.scxml:30
+//line static_donedata_record.scxml:30
 		// W3C SCXML 5.5: Evaluate donedata for final state
 		doneEventData := ""
 		{
@@ -616,7 +616,7 @@ func (p *StaticDonedataRecordPolicy) ExecuteTransitionContent(source StaticDoned
 	case StaticDonedataRecordStateCounting:
 		switch transitionIndex {
 		case 0:
-			//line static_donedata_record.scxml:24
+//line static_donedata_record.scxml:24
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

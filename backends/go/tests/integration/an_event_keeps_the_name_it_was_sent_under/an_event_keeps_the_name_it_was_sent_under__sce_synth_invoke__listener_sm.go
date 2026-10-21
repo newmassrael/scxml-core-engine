@@ -650,7 +650,7 @@ func (p *AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerPolicy) ExecuteE
 	p.ensureScriptEngine()
 	switch state {
 	case AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerStateWaiting:
-		//line an_event_keeps_the_name_it_was_sent_under__sce_synth_invoke__listener.scxml:5
+//line an_event_keeps_the_name_it_was_sent_under__sce_synth_invoke__listener.scxml:5
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -773,7 +773,7 @@ func (p *AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerPolicy) ExecuteT
 	case AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerStateWaiting:
 		switch transitionIndex {
 		case 0:
-			//line an_event_keeps_the_name_it_was_sent_under__sce_synth_invoke__listener.scxml:9
+//line an_event_keeps_the_name_it_was_sent_under__sce_synth_invoke__listener.scxml:9
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -798,7 +798,7 @@ func (p *AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerPolicy) ExecuteT
 	}
 			}()
 		case 1:
-			//line an_event_keeps_the_name_it_was_sent_under__sce_synth_invoke__listener.scxml:14
+//line an_event_keeps_the_name_it_was_sent_under__sce_synth_invoke__listener.scxml:14
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

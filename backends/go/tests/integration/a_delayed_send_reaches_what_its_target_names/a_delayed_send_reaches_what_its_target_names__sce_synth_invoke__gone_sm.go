@@ -430,7 +430,7 @@ func (p *ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGonePolicy) ClearEve
 func (p *ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGonePolicy) ExecuteEntryActions(state ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneState, engine *sce.Engine[ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneState, ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEvent], isDefaultEntry bool) {
 	switch state {
 	case ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneStateIdle:
-		//line a_delayed_send_reaches_what_its_target_names__sce_synth_invoke__gone.scxml:5
+//line a_delayed_send_reaches_what_its_target_names__sce_synth_invoke__gone.scxml:5
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -537,7 +537,7 @@ func (p *ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGonePolicy) ExecuteT
 	case ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneStateIdle:
 		switch transitionIndex {
 		case 0:
-			//line a_delayed_send_reaches_what_its_target_names__sce_synth_invoke__gone.scxml:9
+//line a_delayed_send_reaches_what_its_target_names__sce_synth_invoke__gone.scxml:9
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

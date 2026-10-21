@@ -912,7 +912,7 @@ func (p *ParallelRegionsTakeOwnTransitionsPolicy) ExecuteTransitionContent(sourc
 	case ParallelRegionsTakeOwnTransitionsStateWithin:
 		switch transitionIndex {
 		case 0:
-			//line parallel_regions_take_own_transitions.scxml:62
+//line parallel_regions_take_own_transitions.scxml:62
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -927,7 +927,7 @@ func (p *ParallelRegionsTakeOwnTransitionsPolicy) ExecuteTransitionContent(sourc
 	case ParallelRegionsTakeOwnTransitionsStateWorking:
 		switch transitionIndex {
 		case 0:
-			//line parallel_regions_take_own_transitions.scxml:38
+//line parallel_regions_take_own_transitions.scxml:38
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

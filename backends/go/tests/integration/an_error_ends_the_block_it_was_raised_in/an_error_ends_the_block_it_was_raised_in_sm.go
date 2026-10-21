@@ -1205,7 +1205,7 @@ func (p *AnErrorEndsTheBlockItWasRaisedInPolicy) ExecuteEntryActions(state AnErr
 	p.ensureScriptEngine()
 	switch state {
 	case AnErrorEndsTheBlockItWasRaisedInStateP:
-		//line an_error_ends_the_block_it_was_raised_in.scxml:74
+//line an_error_ends_the_block_it_was_raised_in.scxml:74
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -1239,7 +1239,7 @@ func (p *AnErrorEndsTheBlockItWasRaisedInPolicy) ExecuteEntryActions(state AnErr
 			}()
 		}
 	case AnErrorEndsTheBlockItWasRaisedInStateQ:
-		//line an_error_ends_the_block_it_was_raised_in.scxml:94
+//line an_error_ends_the_block_it_was_raised_in.scxml:94
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -1675,7 +1675,7 @@ func (p *AnErrorEndsTheBlockItWasRaisedInPolicy) ExecuteTransitionContent(source
 	case AnErrorEndsTheBlockItWasRaisedInStateP:
 		switch transitionIndex {
 		case 0:
-			//line an_error_ends_the_block_it_was_raised_in.scxml:85
+//line an_error_ends_the_block_it_was_raised_in.scxml:85
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1687,7 +1687,7 @@ func (p *AnErrorEndsTheBlockItWasRaisedInPolicy) ExecuteTransitionContent(source
 
 			}()
 		case 1:
-			//line an_error_ends_the_block_it_was_raised_in.scxml:88
+//line an_error_ends_the_block_it_was_raised_in.scxml:88
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

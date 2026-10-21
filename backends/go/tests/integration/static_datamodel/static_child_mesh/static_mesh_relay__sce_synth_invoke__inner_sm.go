@@ -493,7 +493,7 @@ func (p *StaticMeshRelaySceSynthInvokeInnerPolicy) ExecuteTransitionContent(sour
 	case StaticMeshRelaySceSynthInvokeInnerStateWaiting:
 		switch transitionIndex {
 		case 0:
-			//line static_mesh_relay__sce_synth_invoke__inner.scxml:6
+//line static_mesh_relay__sce_synth_invoke__inner.scxml:6
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

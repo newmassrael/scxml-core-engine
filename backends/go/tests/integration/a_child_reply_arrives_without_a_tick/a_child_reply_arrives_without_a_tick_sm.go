@@ -874,7 +874,7 @@ func (p *AChildReplyArrivesWithoutATickPolicy) ExecuteEntryActions(state AChildR
 	p.ensureScriptEngine()
 	switch state {
 	case AChildReplyArrivesWithoutATickStateS0:
-		//line a_child_reply_arrives_without_a_tick.scxml:30
+//line a_child_reply_arrives_without_a_tick.scxml:30
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
 			// docs/adr/0045: the platform part of the id is the number of this
@@ -1002,7 +1002,7 @@ func (p *AChildReplyArrivesWithoutATickPolicy) ExecuteTransitionContent(source A
 	case AChildReplyArrivesWithoutATickStateS0:
 		switch transitionIndex {
 		case 0:
-			//line a_child_reply_arrives_without_a_tick.scxml:44
+//line a_child_reply_arrives_without_a_tick.scxml:44
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

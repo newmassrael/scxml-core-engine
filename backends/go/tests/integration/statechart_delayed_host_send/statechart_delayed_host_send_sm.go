@@ -500,7 +500,7 @@ func (p *StatechartDelayedHostSendPolicy) ClearEventMetadata() {
 func (p *StatechartDelayedHostSendPolicy) ExecuteEntryActions(state StatechartDelayedHostSendState, engine *sce.Engine[StatechartDelayedHostSendState, StatechartDelayedHostSendEvent], isDefaultEntry bool) {
 	switch state {
 	case StatechartDelayedHostSendStateCancelling:
-		//line statechart_delayed_host_send.scxml:81
+//line statechart_delayed_host_send.scxml:81
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -560,7 +560,7 @@ func (p *StatechartDelayedHostSendPolicy) ExecuteEntryActions(state StatechartDe
 	}
 		}()
 	case StatechartDelayedHostSendStateCancelPending:
-		//line statechart_delayed_host_send.scxml:90
+//line statechart_delayed_host_send.scxml:90
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -584,7 +584,7 @@ func (p *StatechartDelayedHostSendPolicy) ExecuteEntryActions(state StatechartDe
 	}
 		}()
 	case StatechartDelayedHostSendStateWaiting:
-		//line statechart_delayed_host_send.scxml:59
+//line statechart_delayed_host_send.scxml:59
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {

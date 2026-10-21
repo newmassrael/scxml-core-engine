@@ -625,7 +625,7 @@ func (p *StaticSendTargetPolicy) ExecuteTransitionContent(source StaticSendTarge
 	case StaticSendTargetStateIdle:
 		switch transitionIndex {
 		case 0:
-			//line static_send_target.scxml:26
+//line static_send_target.scxml:26
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -696,7 +696,7 @@ func (p *StaticSendTargetPolicy) ExecuteTransitionContent(source StaticSendTarge
 	}
 			}()
 		case 1:
-			//line static_send_target.scxml:29
+//line static_send_target.scxml:29
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -767,7 +767,7 @@ func (p *StaticSendTargetPolicy) ExecuteTransitionContent(source StaticSendTarge
 	}
 			}()
 		case 2:
-			//line static_send_target.scxml:32
+//line static_send_target.scxml:32
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -778,7 +778,7 @@ func (p *StaticSendTargetPolicy) ExecuteTransitionContent(source StaticSendTarge
 
 			}()
 		case 3:
-			//line static_send_target.scxml:35
+//line static_send_target.scxml:35
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -789,7 +789,7 @@ func (p *StaticSendTargetPolicy) ExecuteTransitionContent(source StaticSendTarge
 
 			}()
 		case 4:
-			//line static_send_target.scxml:38
+//line static_send_target.scxml:38
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -800,7 +800,7 @@ func (p *StaticSendTargetPolicy) ExecuteTransitionContent(source StaticSendTarge
 
 			}()
 		case 5:
-			//line static_send_target.scxml:41
+//line static_send_target.scxml:41
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -811,7 +811,7 @@ func (p *StaticSendTargetPolicy) ExecuteTransitionContent(source StaticSendTarge
 
 			}()
 		case 6:
-			//line static_send_target.scxml:44
+//line static_send_target.scxml:44
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

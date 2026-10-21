@@ -465,7 +465,7 @@ func (p *InvokeUnsupportedTypePolicy) ClearEventMetadata() {
 func (p *InvokeUnsupportedTypePolicy) ExecuteEntryActions(state InvokeUnsupportedTypeState, engine *sce.Engine[InvokeUnsupportedTypeState, InvokeUnsupportedTypeEvent], isDefaultEntry bool) {
 	switch state {
 	case InvokeUnsupportedTypeStateProbe:
-		//line invoke_unsupported_type.scxml:38
+//line invoke_unsupported_type.scxml:38
 		// W3C SCXML 6.4.1: `type` names no processor this platform implements.
 		// Defer only — the error.execution raise happens in
 		// ExecutePendingInvokes, so §scxml-6.4 ordering holds and

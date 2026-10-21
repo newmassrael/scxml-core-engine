@@ -921,7 +921,7 @@ func (p *StaticHostClockPolicy) ClearEventMetadata() {
 func (p *StaticHostClockPolicy) ExecuteEntryActions(state StaticHostClockState, engine *sce.Engine[StaticHostClockState, StaticHostClockEvent], isDefaultEntry bool) {
 	switch state {
 	case StaticHostClockStateLocating:
-		//line static_host_clock.scxml:59
+//line static_host_clock.scxml:59
 		// W3C SCXML 6.4.1: `type` names no processor this platform implements.
 		// Defer only — the error.execution raise happens in
 		// ExecutePendingInvokes, so §scxml-6.4 ordering holds and
@@ -935,7 +935,7 @@ func (p *StaticHostClockPolicy) ExecuteEntryActions(state StaticHostClockState, 
 			})
 		}
 	case StaticHostClockStateReading:
-		//line static_host_clock.scxml:41
+//line static_host_clock.scxml:41
 		// W3C SCXML 6.4.1: `type` names no processor this platform implements.
 		// Defer only — the error.execution raise happens in
 		// ExecutePendingInvokes, so §scxml-6.4 ordering holds and
@@ -1145,7 +1145,7 @@ func (p *StaticHostClockPolicy) ExecuteTransitionContent(source StaticHostClockS
 	case StaticHostClockStateLocating:
 		switch transitionIndex {
 		case 0:
-			//line static_host_clock.scxml:61
+//line static_host_clock.scxml:61
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticHostClockPayloadTagDoneInvokeZone {
@@ -1169,7 +1169,7 @@ func (p *StaticHostClockPolicy) ExecuteTransitionContent(source StaticHostClockS
 
 			}()
 		case 1:
-			//line static_host_clock.scxml:66
+//line static_host_clock.scxml:66
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticHostClockPayloadTagDoneInvokeZone {
@@ -1183,7 +1183,7 @@ func (p *StaticHostClockPolicy) ExecuteTransitionContent(source StaticHostClockS
 
 			}()
 		case 2:
-			//line static_host_clock.scxml:69
+//line static_host_clock.scxml:69
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1194,7 +1194,7 @@ func (p *StaticHostClockPolicy) ExecuteTransitionContent(source StaticHostClockS
 
 			}()
 		case 3:
-			//line static_host_clock.scxml:72
+//line static_host_clock.scxml:72
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1208,7 +1208,7 @@ func (p *StaticHostClockPolicy) ExecuteTransitionContent(source StaticHostClockS
 	case StaticHostClockStateReading:
 		switch transitionIndex {
 		case 0:
-			//line static_host_clock.scxml:43
+//line static_host_clock.scxml:43
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticHostClockPayloadTagDoneInvokeNow {
@@ -1230,7 +1230,7 @@ func (p *StaticHostClockPolicy) ExecuteTransitionContent(source StaticHostClockS
 
 			}()
 		case 1:
-			//line static_host_clock.scxml:48
+//line static_host_clock.scxml:48
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticHostClockPayloadTagDoneInvokeNow {
@@ -1244,7 +1244,7 @@ func (p *StaticHostClockPolicy) ExecuteTransitionContent(source StaticHostClockS
 
 			}()
 		case 2:
-			//line static_host_clock.scxml:51
+//line static_host_clock.scxml:51
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1255,7 +1255,7 @@ func (p *StaticHostClockPolicy) ExecuteTransitionContent(source StaticHostClockS
 
 			}()
 		case 3:
-			//line static_host_clock.scxml:54
+//line static_host_clock.scxml:54
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

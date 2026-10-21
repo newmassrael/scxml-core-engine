@@ -879,7 +879,7 @@ func (p *StaticRecordBytesPolicy) ExecuteTransitionContent(source StaticRecordBy
 	case StaticRecordBytesStateIdle:
 		switch transitionIndex {
 		case 0:
-			//line static_record_bytes.scxml:43
+//line static_record_bytes.scxml:43
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -890,7 +890,7 @@ func (p *StaticRecordBytesPolicy) ExecuteTransitionContent(source StaticRecordBy
 
 			}()
 		case 1:
-			//line static_record_bytes.scxml:46
+//line static_record_bytes.scxml:46
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -901,7 +901,7 @@ func (p *StaticRecordBytesPolicy) ExecuteTransitionContent(source StaticRecordBy
 
 			}()
 		case 2:
-			//line static_record_bytes.scxml:49
+//line static_record_bytes.scxml:49
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -912,7 +912,7 @@ func (p *StaticRecordBytesPolicy) ExecuteTransitionContent(source StaticRecordBy
 
 			}()
 		case 3:
-			//line static_record_bytes.scxml:52
+//line static_record_bytes.scxml:52
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -923,7 +923,7 @@ func (p *StaticRecordBytesPolicy) ExecuteTransitionContent(source StaticRecordBy
 
 			}()
 		case 4:
-			//line static_record_bytes.scxml:55
+//line static_record_bytes.scxml:55
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -934,7 +934,7 @@ func (p *StaticRecordBytesPolicy) ExecuteTransitionContent(source StaticRecordBy
 
 			}()
 		case 5:
-			//line static_record_bytes.scxml:58
+//line static_record_bytes.scxml:58
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -945,7 +945,7 @@ func (p *StaticRecordBytesPolicy) ExecuteTransitionContent(source StaticRecordBy
 
 			}()
 		case 6:
-			//line static_record_bytes.scxml:61
+//line static_record_bytes.scxml:61
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -956,7 +956,7 @@ func (p *StaticRecordBytesPolicy) ExecuteTransitionContent(source StaticRecordBy
 
 			}()
 		case 7:
-			//line static_record_bytes.scxml:64
+//line static_record_bytes.scxml:64
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -967,7 +967,7 @@ func (p *StaticRecordBytesPolicy) ExecuteTransitionContent(source StaticRecordBy
 
 			}()
 		case 8:
-			//line static_record_bytes.scxml:67
+//line static_record_bytes.scxml:67
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -978,7 +978,7 @@ func (p *StaticRecordBytesPolicy) ExecuteTransitionContent(source StaticRecordBy
 
 			}()
 		case 9:
-			//line static_record_bytes.scxml:70
+//line static_record_bytes.scxml:70
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -987,7 +987,7 @@ func (p *StaticRecordBytesPolicy) ExecuteTransitionContent(source StaticRecordBy
 
 			}()
 		case 10:
-			//line static_record_bytes.scxml:76
+//line static_record_bytes.scxml:76
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -999,7 +999,7 @@ func (p *StaticRecordBytesPolicy) ExecuteTransitionContent(source StaticRecordBy
 
 			}()
 		case 11:
-			//line static_record_bytes.scxml:79
+//line static_record_bytes.scxml:79
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1016,7 +1016,7 @@ func (p *StaticRecordBytesPolicy) ExecuteTransitionContent(source StaticRecordBy
 
 			}()
 		case 12:
-			//line static_record_bytes.scxml:89
+//line static_record_bytes.scxml:89
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1027,7 +1027,7 @@ func (p *StaticRecordBytesPolicy) ExecuteTransitionContent(source StaticRecordBy
 
 			}()
 		case 13:
-			//line static_record_bytes.scxml:92
+//line static_record_bytes.scxml:92
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1038,7 +1038,7 @@ func (p *StaticRecordBytesPolicy) ExecuteTransitionContent(source StaticRecordBy
 
 			}()
 		case 14:
-			//line static_record_bytes.scxml:95
+//line static_record_bytes.scxml:95
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1049,7 +1049,7 @@ func (p *StaticRecordBytesPolicy) ExecuteTransitionContent(source StaticRecordBy
 
 			}()
 		case 15:
-			//line static_record_bytes.scxml:102
+//line static_record_bytes.scxml:102
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1060,7 +1060,7 @@ func (p *StaticRecordBytesPolicy) ExecuteTransitionContent(source StaticRecordBy
 
 			}()
 		case 16:
-			//line static_record_bytes.scxml:105
+//line static_record_bytes.scxml:105
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1071,7 +1071,7 @@ func (p *StaticRecordBytesPolicy) ExecuteTransitionContent(source StaticRecordBy
 
 			}()
 		case 17:
-			//line static_record_bytes.scxml:108
+//line static_record_bytes.scxml:108
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1081,7 +1081,7 @@ func (p *StaticRecordBytesPolicy) ExecuteTransitionContent(source StaticRecordBy
 
 			}()
 		case 18:
-			//line static_record_bytes.scxml:111
+//line static_record_bytes.scxml:111
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

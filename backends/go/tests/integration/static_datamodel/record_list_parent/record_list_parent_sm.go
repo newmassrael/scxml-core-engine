@@ -1705,7 +1705,7 @@ func (p *RecordListParentPolicy) ClearEventMetadata() {
 func (p *RecordListParentPolicy) ExecuteEntryActions(state RecordListParentState, engine *sce.Engine[RecordListParentState, RecordListParentEvent], isDefaultEntry bool) {
 	switch state {
 	case RecordListParentStateHolding:
-		//line record_list_parent.scxml:87
+//line record_list_parent.scxml:87
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
 			// docs/adr/0045: the platform part of the id is the number of this
@@ -1907,7 +1907,7 @@ func (p *RecordListParentPolicy) ExecuteTransitionContent(source RecordListParen
 	case RecordListParentStateHolding:
 		switch transitionIndex {
 		case 0:
-			//line record_list_parent.scxml:93
+//line record_list_parent.scxml:93
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentPayloadTagRecordListJoin {
@@ -1960,7 +1960,7 @@ func (p *RecordListParentPolicy) ExecuteTransitionContent(source RecordListParen
 	}
 			}()
 		case 1:
-			//line record_list_parent.scxml:99
+//line record_list_parent.scxml:99
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentPayloadTagRecordListEdit {
@@ -2029,7 +2029,7 @@ func (p *RecordListParentPolicy) ExecuteTransitionContent(source RecordListParen
 	}
 			}()
 		case 2:
-			//line record_list_parent.scxml:109
+//line record_list_parent.scxml:109
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentPayloadTagRecordListClear {
@@ -2090,7 +2090,7 @@ func (p *RecordListParentPolicy) ExecuteTransitionContent(source RecordListParen
 	}
 			}()
 		case 3:
-			//line record_list_parent.scxml:117
+//line record_list_parent.scxml:117
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentPayloadTagRecordListRetire {
@@ -2147,7 +2147,7 @@ func (p *RecordListParentPolicy) ExecuteTransitionContent(source RecordListParen
 	}
 			}()
 		case 4:
-			//line record_list_parent.scxml:124
+//line record_list_parent.scxml:124
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentPayloadTagRecordListRole {
@@ -2200,7 +2200,7 @@ func (p *RecordListParentPolicy) ExecuteTransitionContent(source RecordListParen
 	}
 			}()
 		case 5:
-			//line record_list_parent.scxml:130
+//line record_list_parent.scxml:130
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentPayloadTagRecordListRoom {
@@ -2257,7 +2257,7 @@ func (p *RecordListParentPolicy) ExecuteTransitionContent(source RecordListParen
 	}
 			}()
 		case 6:
-			//line record_list_parent.scxml:137
+//line record_list_parent.scxml:137
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentPayloadTagRecordListWrite {
@@ -2330,7 +2330,7 @@ func (p *RecordListParentPolicy) ExecuteTransitionContent(source RecordListParen
 	}
 			}()
 		case 7:
-			//line record_list_parent.scxml:148
+//line record_list_parent.scxml:148
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentPayloadTagRecordListSupersede {
@@ -2399,7 +2399,7 @@ func (p *RecordListParentPolicy) ExecuteTransitionContent(source RecordListParen
 	}
 			}()
 		case 8:
-			//line record_list_parent.scxml:161
+//line record_list_parent.scxml:161
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentPayloadTagRecordListRegister {
@@ -2452,7 +2452,7 @@ func (p *RecordListParentPolicy) ExecuteTransitionContent(source RecordListParen
 
 			}()
 		case 9:
-			//line record_list_parent.scxml:173
+//line record_list_parent.scxml:173
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentPayloadTagRecordListValue {
@@ -2507,7 +2507,7 @@ func (p *RecordListParentPolicy) ExecuteTransitionContent(source RecordListParen
 
 			}()
 		case 10:
-			//line record_list_parent.scxml:188
+//line record_list_parent.scxml:188
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentPayloadTagRecordListRefused {

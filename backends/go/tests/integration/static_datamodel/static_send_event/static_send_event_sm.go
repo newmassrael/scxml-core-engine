@@ -652,7 +652,7 @@ func (p *StaticSendEventPolicy) ExecuteTransitionContent(source StaticSendEventS
 	case StaticSendEventStateIdle:
 		switch transitionIndex {
 		case 0:
-			//line static_send_event.scxml:26
+//line static_send_event.scxml:26
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -686,7 +686,7 @@ func (p *StaticSendEventPolicy) ExecuteTransitionContent(source StaticSendEventS
 	}
 			}()
 		case 1:
-			//line static_send_event.scxml:29
+//line static_send_event.scxml:29
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -724,7 +724,7 @@ func (p *StaticSendEventPolicy) ExecuteTransitionContent(source StaticSendEventS
 	}
 			}()
 		case 2:
-			//line static_send_event.scxml:32
+//line static_send_event.scxml:32
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -735,7 +735,7 @@ func (p *StaticSendEventPolicy) ExecuteTransitionContent(source StaticSendEventS
 
 			}()
 		case 3:
-			//line static_send_event.scxml:35
+//line static_send_event.scxml:35
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -746,7 +746,7 @@ func (p *StaticSendEventPolicy) ExecuteTransitionContent(source StaticSendEventS
 
 			}()
 		case 4:
-			//line static_send_event.scxml:38
+//line static_send_event.scxml:38
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -757,7 +757,7 @@ func (p *StaticSendEventPolicy) ExecuteTransitionContent(source StaticSendEventS
 
 			}()
 		case 5:
-			//line static_send_event.scxml:41
+//line static_send_event.scxml:41
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -768,7 +768,7 @@ func (p *StaticSendEventPolicy) ExecuteTransitionContent(source StaticSendEventS
 
 			}()
 		case 6:
-			//line static_send_event.scxml:44
+//line static_send_event.scxml:44
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -779,7 +779,7 @@ func (p *StaticSendEventPolicy) ExecuteTransitionContent(source StaticSendEventS
 
 			}()
 		case 7:
-			//line static_send_event.scxml:47
+//line static_send_event.scxml:47
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

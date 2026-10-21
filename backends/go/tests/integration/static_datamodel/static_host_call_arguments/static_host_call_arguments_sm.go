@@ -564,7 +564,7 @@ func (p *StaticHostCallArgumentsPolicy) ExecuteTransitionContent(source StaticHo
 	case StaticHostCallArgumentsStateIdle:
 		switch transitionIndex {
 		case 0:
-			//line static_host_call_arguments.scxml:24
+//line static_host_call_arguments.scxml:24
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -572,7 +572,7 @@ func (p *StaticHostCallArgumentsPolicy) ExecuteTransitionContent(source StaticHo
 		{ var sceFailure scealgorithm.Failure; sceArg0 := scealgorithm.AddUint8(&sceFailure, p.vLevel, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticHostCallArgumentsEventErrorExecution, "<sce:action name='report'>: an integer operation overflowed or failed")) } else { p.actions.Report(sceArg0) } }
 			}()
 		case 1:
-			//line static_host_call_arguments.scxml:29
+//line static_host_call_arguments.scxml:29
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -580,7 +580,7 @@ func (p *StaticHostCallArgumentsPolicy) ExecuteTransitionContent(source StaticHo
 		{ var sceFailure scealgorithm.Failure; sceArg0 := scealgorithm.AddUint8(&sceFailure, p.vLevel, 10); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticHostCallArgumentsEventErrorExecution, "<sce:action name='report'>: an integer operation overflowed or failed")) } else { p.actions.Report(sceArg0) } }
 			}()
 		case 2:
-			//line static_host_call_arguments.scxml:34
+//line static_host_call_arguments.scxml:34
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

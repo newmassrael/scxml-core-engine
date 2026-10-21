@@ -875,7 +875,7 @@ func (p *AChildMaySendManyEventsInOneTickPolicy) ExecuteEntryActions(state AChil
 	p.ensureScriptEngine()
 	switch state {
 	case AChildMaySendManyEventsInOneTickStateS0:
-		//line a_child_may_send_many_events_in_one_tick.scxml:30
+//line a_child_may_send_many_events_in_one_tick.scxml:30
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
 			// docs/adr/0045: the platform part of the id is the number of this
@@ -1003,7 +1003,7 @@ func (p *AChildMaySendManyEventsInOneTickPolicy) ExecuteTransitionContent(source
 	case AChildMaySendManyEventsInOneTickStateS0:
 		switch transitionIndex {
 		case 0:
-			//line a_child_may_send_many_events_in_one_tick.scxml:60
+//line a_child_may_send_many_events_in_one_tick.scxml:60
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

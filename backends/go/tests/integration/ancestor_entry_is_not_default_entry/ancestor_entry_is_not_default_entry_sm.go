@@ -908,7 +908,7 @@ func (p *AncestorEntryIsNotDefaultEntryPolicy) ExecuteEntryActions(state Ancesto
 	p.activeStates = append(p.activeStates, state)
 	switch state {
 	case AncestorEntryIsNotDefaultEntryStateByDefault:
-		//line ancestor_entry_is_not_default_entry.scxml:116
+//line ancestor_entry_is_not_default_entry.scxml:116
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -921,7 +921,7 @@ func (p *AncestorEntryIsNotDefaultEntryPolicy) ExecuteEntryActions(state Ancesto
 
 		}()
 	case AncestorEntryIsNotDefaultEntryStateChosen:
-		//line ancestor_entry_is_not_default_entry.scxml:127
+//line ancestor_entry_is_not_default_entry.scxml:127
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -934,7 +934,7 @@ func (p *AncestorEntryIsNotDefaultEntryPolicy) ExecuteEntryActions(state Ancesto
 
 		}()
 	case AncestorEntryIsNotDefaultEntryStateIdle:
-		//line ancestor_entry_is_not_default_entry.scxml:150
+//line ancestor_entry_is_not_default_entry.scxml:150
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -947,7 +947,7 @@ func (p *AncestorEntryIsNotDefaultEntryPolicy) ExecuteEntryActions(state Ancesto
 
 		}()
 	case AncestorEntryIsNotDefaultEntryStateLobby:
-		//line ancestor_entry_is_not_default_entry.scxml:102
+//line ancestor_entry_is_not_default_entry.scxml:102
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {

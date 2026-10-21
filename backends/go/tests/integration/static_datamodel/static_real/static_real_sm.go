@@ -693,7 +693,7 @@ func (p *StaticRealPolicy) ExecuteTransitionContent(source StaticRealState, tran
 	case StaticRealStateHigh:
 		switch transitionIndex {
 		case 0:
-			//line static_real.scxml:58
+//line static_real.scxml:58
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -705,7 +705,7 @@ func (p *StaticRealPolicy) ExecuteTransitionContent(source StaticRealState, tran
 	case StaticRealStateLow:
 		switch transitionIndex {
 		case 0:
-			//line static_real.scxml:32
+//line static_real.scxml:32
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -721,7 +721,7 @@ func (p *StaticRealPolicy) ExecuteTransitionContent(source StaticRealState, tran
 
 			}()
 		case 1:
-			//line static_real.scxml:37
+//line static_real.scxml:37
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -730,7 +730,7 @@ func (p *StaticRealPolicy) ExecuteTransitionContent(source StaticRealState, tran
 
 			}()
 		case 2:
-			//line static_real.scxml:41
+//line static_real.scxml:41
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -749,7 +749,7 @@ func (p *StaticRealPolicy) ExecuteTransitionContent(source StaticRealState, tran
 
 			}()
 		case 3:
-			//line static_real.scxml:48
+//line static_real.scxml:48
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -758,7 +758,7 @@ func (p *StaticRealPolicy) ExecuteTransitionContent(source StaticRealState, tran
 
 			}()
 		case 5:
-			//line static_real.scxml:53
+//line static_real.scxml:53
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

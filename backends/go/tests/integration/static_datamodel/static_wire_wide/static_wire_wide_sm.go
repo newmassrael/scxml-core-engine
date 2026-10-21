@@ -737,7 +737,7 @@ func (p *StaticWireWidePolicy) ExecuteTransitionContent(source StaticWireWideSta
 	case StaticWireWideStateRelaying:
 		switch transitionIndex {
 		case 0:
-			//line static_wire_wide.scxml:41
+//line static_wire_wide.scxml:41
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticWireWidePayloadTagWideIn {
@@ -789,7 +789,7 @@ func (p *StaticWireWidePolicy) ExecuteTransitionContent(source StaticWireWideSta
 	}
 			}()
 		case 1:
-			//line static_wire_wide.scxml:47
+//line static_wire_wide.scxml:47
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticWireWidePayloadTagWideRelayed {
@@ -823,7 +823,7 @@ func (p *StaticWireWidePolicy) ExecuteTransitionContent(source StaticWireWideSta
 
 			}()
 		case 2:
-			//line static_wire_wide.scxml:54
+//line static_wire_wide.scxml:54
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

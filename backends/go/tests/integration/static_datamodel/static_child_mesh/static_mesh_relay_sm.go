@@ -628,7 +628,7 @@ func (p *StaticMeshRelayPolicy) ClearEventMetadata() {
 func (p *StaticMeshRelayPolicy) ExecuteEntryActions(state StaticMeshRelayState, engine *sce.Engine[StaticMeshRelayState, StaticMeshRelayEvent], isDefaultEntry bool) {
 	switch state {
 	case StaticMeshRelayStateRelaying:
-		//line static_mesh_relay.scxml:14
+//line static_mesh_relay.scxml:14
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
 			// docs/adr/0045: the platform part of the id is the number of this

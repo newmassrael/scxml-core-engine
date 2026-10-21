@@ -860,7 +860,7 @@ func (p *WildcardInDocumentOrderPolicy) ExecuteEntryActions(state WildcardInDocu
 	p.ensureScriptEngine()
 	switch state {
 	case WildcardInDocumentOrderStateGuardClosed:
-		//line wildcard_in_document_order.scxml:64
+//line wildcard_in_document_order.scxml:64
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -869,7 +869,7 @@ func (p *WildcardInDocumentOrderPolicy) ExecuteEntryActions(state WildcardInDocu
 
 		}()
 	case WildcardInDocumentOrderStateGuardedInternal:
-		//line wildcard_in_document_order.scxml:85
+//line wildcard_in_document_order.scxml:85
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -885,7 +885,7 @@ func (p *WildcardInDocumentOrderPolicy) ExecuteEntryActions(state WildcardInDocu
 
 		}()
 	case WildcardInDocumentOrderStateGuardOpen:
-		//line wildcard_in_document_order.scxml:74
+//line wildcard_in_document_order.scxml:74
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -901,7 +901,7 @@ func (p *WildcardInDocumentOrderPolicy) ExecuteEntryActions(state WildcardInDocu
 
 		}()
 	case WildcardInDocumentOrderStateSealedInternal:
-		//line wildcard_in_document_order.scxml:98
+//line wildcard_in_document_order.scxml:98
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {

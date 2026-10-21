@@ -1154,7 +1154,7 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionContent(source InternalC
 	case InternalChainIsBoundedStateAlt:
 		switch transitionIndex {
 		case 0:
-			//line internal_chain_is_bounded.scxml:212
+//line internal_chain_is_bounded.scxml:212
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1173,7 +1173,7 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionContent(source InternalC
 
 			}()
 		case 1:
-			//line internal_chain_is_bounded.scxml:216
+//line internal_chain_is_bounded.scxml:216
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1188,7 +1188,7 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionContent(source InternalC
 
 			}()
 		case 2:
-			//line internal_chain_is_bounded.scxml:220
+//line internal_chain_is_bounded.scxml:220
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1203,7 +1203,7 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionContent(source InternalC
 	case InternalChainIsBoundedStateBounded:
 		switch transitionIndex {
 		case 0:
-			//line internal_chain_is_bounded.scxml:154
+//line internal_chain_is_bounded.scxml:154
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1218,7 +1218,7 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionContent(source InternalC
 
 			}()
 		case 1:
-			//line internal_chain_is_bounded.scxml:158
+//line internal_chain_is_bounded.scxml:158
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1230,7 +1230,7 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionContent(source InternalC
 
 			}()
 		case 2:
-			//line internal_chain_is_bounded.scxml:163
+//line internal_chain_is_bounded.scxml:163
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1245,7 +1245,7 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionContent(source InternalC
 	case InternalChainIsBoundedStateIdle:
 		switch transitionIndex {
 		case 0:
-			//line internal_chain_is_bounded.scxml:123
+//line internal_chain_is_bounded.scxml:123
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1257,7 +1257,7 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionContent(source InternalC
 
 			}()
 		case 1:
-			//line internal_chain_is_bounded.scxml:126
+//line internal_chain_is_bounded.scxml:126
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1265,7 +1265,7 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionContent(source InternalC
 
 			}()
 		case 2:
-			//line internal_chain_is_bounded.scxml:129
+//line internal_chain_is_bounded.scxml:129
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1273,7 +1273,7 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionContent(source InternalC
 
 			}()
 		case 3:
-			//line internal_chain_is_bounded.scxml:132
+//line internal_chain_is_bounded.scxml:132
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1281,7 +1281,7 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionContent(source InternalC
 
 			}()
 		case 4:
-			//line internal_chain_is_bounded.scxml:135
+//line internal_chain_is_bounded.scxml:135
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1289,7 +1289,7 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionContent(source InternalC
 
 			}()
 		case 5:
-			//line internal_chain_is_bounded.scxml:138
+//line internal_chain_is_bounded.scxml:138
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1300,7 +1300,7 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionContent(source InternalC
 	case InternalChainIsBoundedStateIgnoring:
 		switch transitionIndex {
 		case 0:
-			//line internal_chain_is_bounded.scxml:245
+//line internal_chain_is_bounded.scxml:245
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1318,7 +1318,7 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionContent(source InternalC
 
 			}()
 		case 1:
-			//line internal_chain_is_bounded.scxml:250
+//line internal_chain_is_bounded.scxml:250
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1330,7 +1330,7 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionContent(source InternalC
 
 			}()
 		case 2:
-			//line internal_chain_is_bounded.scxml:253
+//line internal_chain_is_bounded.scxml:253
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1345,7 +1345,7 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionContent(source InternalC
 	case InternalChainIsBoundedStateResuming:
 		switch transitionIndex {
 		case 0:
-			//line internal_chain_is_bounded.scxml:193
+//line internal_chain_is_bounded.scxml:193
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1360,7 +1360,7 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionContent(source InternalC
 
 			}()
 		case 1:
-			//line internal_chain_is_bounded.scxml:197
+//line internal_chain_is_bounded.scxml:197
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1372,7 +1372,7 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionContent(source InternalC
 
 			}()
 		case 2:
-			//line internal_chain_is_bounded.scxml:200
+//line internal_chain_is_bounded.scxml:200
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1387,7 +1387,7 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionContent(source InternalC
 	case InternalChainIsBoundedStateSpin:
 		switch transitionIndex {
 		case 0:
-			//line internal_chain_is_bounded.scxml:175
+//line internal_chain_is_bounded.scxml:175
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1402,7 +1402,7 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionContent(source InternalC
 
 			}()
 		case 1:
-			//line internal_chain_is_bounded.scxml:179
+//line internal_chain_is_bounded.scxml:179
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
