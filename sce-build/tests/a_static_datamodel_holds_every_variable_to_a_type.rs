@@ -6018,11 +6018,8 @@ const INTERPRETER: &str = "interpreter";
 /// an engine takes that engine's line off and replays the scenario in its driver;
 /// the test below fails for a line whose engine lowers the machine, and for a
 /// machine no engine lowers that does not name every engine here.
-const NOT_YET_LOWERED: &[(&str, &str, &str)] = &[("static_optional", "c11", OPTIONAL_NOT_LOWERED)];
-
-/// Why the scenario of an optional value is not replayed on an engine yet.
-const OPTIONAL_NOT_LOWERED: &str =
-    "an optional value has no lowering on it yet (docs/adr/0055, step 5)";
+/// Empty since step 5 of docs/adr/0055 lowered an optional value on all seven.
+const NOT_YET_LOWERED: &[(&str, &str, &str)] = &[];
 
 /// Where each backend's regen script commits a machine: the file that exists
 /// only if it did.

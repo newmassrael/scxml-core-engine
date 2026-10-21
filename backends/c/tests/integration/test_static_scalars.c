@@ -67,6 +67,11 @@
 //   * `static_record_enum`: a record's enum field is held in the machine's type for
 //     the enum, compared, assigned a variant and appended with the record, and
 //     observed as the name its document declares.
+//   * `static_optional`: a value that may be absent (docs/adr/0055) is the flag and
+//     the value of `sce/forge/optional.h`, held in a variable, a record and a list of
+//     records; it is tested, read where a test proves it present, read with a default
+//     evaluated only when it is absent, and compared; a payload carries it as a value
+//     or `null` and is refused without its key, and a send and the done data write it.
 //   * `static_donedata`: a top-level final writes the pairs of its `<donedata>`, each
 //     read from the machine's own fields, as the JSON object of the done event's
 //     data; a pair whose value failed to compute is left out and the others cross.
@@ -148,6 +153,7 @@
 #include "static_list_assign_sm.h"
 #include "static_list_index_sm.h"
 #include "static_list_sm.h"
+#include "static_optional_sm.h"
 #include "static_overflow_sm.h"
 #include "static_payload_bytes_sm.h"
 #include "static_payload_enum_sm.h"
@@ -341,10 +347,10 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
 // asked of them, each since it was last asked, or is NULL for a machine with none.
 // DELIVER hands a step's `invoke` event to the running child of that path through
 // the Mesh router the driver gave it, or is NULL for a machine whose children are
-// given none. No machine here holds a value that may be absent, so none is asked
-// whether one is present.
+// given none. PRESENCE answers whether a value that may be absent is present
+// (docs/adr/0055), or is NULL for a machine that holds none.
 #define STATIC_SCENARIO_CORE(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, DONE, REAL, REAL_LIST, RECORD_REAL, INIT,     \
-                             ADVANCE, HOST_CALLS, SENT, CHILD_HOSTS, DELIVER)                                          \
+                             ADVANCE, HOST_CALLS, SENT, CHILD_HOSTS, DELIVER, PRESENCE)                                \
     static bool M##_read_record_field(void *sm, const char *name, size_t index, const char *field, int64_t *out) {     \
         for (size_t i = 0; RECORDS[i].name != NULL; ++i) {                                                             \
             if (strcmp(RECORDS[i].name, name) == 0) {                                                                  \
@@ -447,7 +453,7 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
                                               sent,                                                                    \
                                               CHILD_HOSTS,                                                             \
                                               DELIVER,                                                                 \
-                                              NULL};                                                                   \
+                                              PRESENCE};                                                               \
         char path[512];                                                                                                \
         (void)snprintf(path, sizeof(path), "%s/%s.json", SCE_STATIC_SCENARIO_DIR, scenario);                           \
         int replayed = 0;                                                                                              \
@@ -469,14 +475,14 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
 // A machine that waits on no clock, started as `_init` starts it.
 #define STATIC_SCENARIO_FULL(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, DONE, REAL, REAL_LIST, RECORD_REAL)           \
     STATIC_SCENARIO_CORE(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, DONE, REAL, REAL_LIST, RECORD_REAL,               \
-                         M##_init(&sm), NULL, NULL, NULL, NULL, NULL)
+                         M##_init(&sm), NULL, NULL, NULL, NULL, NULL, NULL)
 
 // A machine whose `<sce:action>`s go to a host that records them: INIT starts it
 // with that host installed, which it must be before the first entry runs, and
 // HOST_CALLS answers what the host heard since it was last asked.
 #define STATIC_SCENARIO_HOSTED(M, STATES, VARIABLES, INIT, HOST_CALLS)                                                 \
     STATIC_SCENARIO_CORE(M, STATES, VARIABLES, NULL, no_lists, no_records, NULL, NULL, NULL, NULL, INIT, NULL,         \
-                         HOST_CALLS, NULL, NULL, NULL)
+                         HOST_CALLS, NULL, NULL, NULL, NULL)
 
 // A machine that declares no act of its own and whose children are given hosts
 // that record: INIT starts it with the table of the host that answers each child's
@@ -484,7 +490,7 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
 // what those hosts were asked since it was last asked.
 #define STATIC_SCENARIO_CHILD_HOSTED(M, STATES, VARIABLES, INIT, CHILD_HOSTS)                                          \
     STATIC_SCENARIO_CORE(M, STATES, VARIABLES, NULL, no_lists, no_records, NULL, NULL, NULL, NULL, INIT, NULL, NULL,   \
-                         NULL, CHILD_HOSTS, NULL)
+                         NULL, CHILD_HOSTS, NULL, NULL)
 
 // What the machines below sent their Mesh peers, kept by the router installed
 // here as the compact JSON a scenario's `sent` states: each send its target, its
@@ -581,7 +587,7 @@ static const char *peers_sent(void *sm) {
         M##_init_with_host_processors(sm, &wiring);                                                                    \
     }                                                                                                                  \
     STATIC_SCENARIO_CORE(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, NULL, NULL, NULL, NULL,                           \
-                         M##_start_with_router(&sm), NULL, NULL, peers_sent, NULL, NULL)
+                         M##_start_with_router(&sm), NULL, NULL, peers_sent, NULL, NULL, NULL)
 
 // The same machine, started as a host that attached no link starts it (docs/adr/0046,
 // section 4): with no Mesh router installed, so every send to a peer is refused where
@@ -603,7 +609,8 @@ static const char *peers_sent(void *sm) {
         return true;                                                                                                   \
     }                                                                                                                  \
     STATIC_SCENARIO_CORE(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, NULL, NULL, NULL, NULL,                           \
-                         M##_init_with_clock(&sm, sce_clock_manual(0u)), M##_advance_clock, NULL, NULL, NULL, NULL)
+                         M##_init_with_clock(&sm, sce_clock_manual(0u)), M##_advance_clock, NULL, NULL, NULL, NULL,    \
+                         NULL)
 
 // A machine that does both: it sends to Mesh peers and its delayed sends wait on a
 // clock the scenario owns. It is started with the router installed and on a manual
@@ -625,7 +632,7 @@ static const char *peers_sent(void *sm) {
         return true;                                                                                                   \
     }                                                                                                                  \
     STATIC_SCENARIO_CORE(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, NULL, NULL, NULL, NULL,                           \
-                         M##_start_with_router_and_clock(&sm), M##_advance_clock, NULL, peers_sent, NULL, NULL)
+                         M##_start_with_router_and_clock(&sm), M##_advance_clock, NULL, peers_sent, NULL, NULL, NULL)
 
 // The routers the driver gives the child sessions of a machine (SCE_MESH.md, Child
 // Sessions in Mesh): the factory answers one for every child, which writes what
@@ -782,7 +789,7 @@ static bool child_routers_deliver(const char *path, const char *event, const cha
         return true;                                                                                                   \
     }                                                                                                                  \
     STATIC_SCENARIO_CORE(M, STATES, VARIABLES, NULL, no_lists, no_records, NULL, NULL, NULL, NULL,                     \
-                         M##_start_with_routers(&sm), NULL, NULL, peers_sent, NULL, M##_deliver)
+                         M##_start_with_routers(&sm), NULL, NULL, peers_sent, NULL, M##_deliver, NULL)
 
 // A machine that publishes no real: DONE as above, and REAL, REAL_LIST and
 // RECORD_REAL — the readers of a real variable, of a list of reals and of a real
@@ -1864,6 +1871,197 @@ static const record_variable_t whole_payload_records[] = {
     RECORD_ROW(static_whole_payload, shown), RECORD_LIST_ROW(static_whole_payload, seen), {NULL, NULL, NULL, NULL}};
 STATIC_SCENARIO(static_whole_payload, whole_payload_states, whole_payload_variables, NULL, no_lists,
                 whole_payload_records)
+
+// static_optional: values that may be absent (docs/adr/0055), each the struct of a
+// flag and a value `sce/forge/optional.h` declares for its element, held in
+// variables, in a record and in a list of records, and carried by a payload, a send
+// and the done data. A scenario states an absent value as `null` and a present one
+// as its value, which these readers answer once the presence reader has said it is
+// there.
+#define STATIC_OPTIONAL_SCENARIO(M, STATES, VARIABLES, TEXT, RECORDS, DONE, PRESENCE)                                  \
+    STATIC_SCENARIO_CORE(M, STATES, VARIABLES, TEXT, no_lists, RECORDS, DONE, NULL, NULL, NULL, M##_init(&sm), NULL,   \
+                         NULL, NULL, NULL, NULL, PRESENCE)
+VARIABLE_READER(static_optional, days)
+VARIABLE_READER(static_optional, following)
+VARIABLE_READER(static_optional, late)
+VARIABLE_READER(static_optional, early)
+VARIABLE_READER(static_optional, kept)
+VARIABLE_READER(static_optional, listed)
+VARIABLE_READER(static_optional, missing)
+VARIABLE_READER(static_optional, same)
+VARIABLE_READER(static_optional, absent)
+VARIABLE_READER(static_optional, statusDone)
+VARIABLE_READER(static_optional, echoed)
+VARIABLE_READER(static_optional, fallbacks)
+VARIABLE_READER(static_optional, errors)
+
+// The present value of an optional integer, read only where it is present.
+static int64_t static_optional_read_due(const void *sm) {
+    return static_optional_get_due((const static_optional_t *)sm).value;
+}
+
+static int64_t static_optional_read_other(const void *sm) {
+    return static_optional_get_other((const static_optional_t *)sm).value;
+}
+
+// The text an optional text holds, copied out of the value its reader answers by
+// value; `held` is one of the buffers below, a step reading one value at a time.
+static const char *optional_text(sce_optional_string_16_t value, char *held, size_t cap) {
+    if (!value.present) {
+        return NULL;
+    }
+    (void)snprintf(held, cap, "%s", value.value.data);
+    return held;
+}
+
+// The name the enum declares for the value an optional value of it holds.
+static const char *optional_status(sce_optional_enum_enum_item_status_t value) {
+    return value.present ? enum_item_status_declared_name(value.value) : NULL;
+}
+
+static const char *static_optional_text(void *sm, const char *name) {
+    static char held[16 + 1];
+    const static_optional_t *machine = (const static_optional_t *)sm;
+    if (strcmp(name, "label") == 0) {
+        return static_optional_get_label(machine);
+    }
+    if (strcmp(name, "plain") == 0) {
+        return enum_item_status_declared_name(static_optional_get_plain(machine));
+    }
+    if (strcmp(name, "title") == 0) {
+        return optional_text(static_optional_get_title(machine), held, sizeof(held));
+    }
+    if (strcmp(name, "echoTitle") == 0) {
+        return optional_text(static_optional_get_echoTitle(machine), held, sizeof(held));
+    }
+    if (strcmp(name, "status") == 0) {
+        return optional_status(static_optional_get_status(machine));
+    }
+    if (strcmp(name, "echoStatus") == 0) {
+        return optional_status(static_optional_get_echoStatus(machine));
+    }
+    return NULL;
+}
+
+// The record `item`, or element `index` of the list `items`: false for any other
+// name and for an element the list does not hold.
+static bool optional_record(const static_optional_t *machine, const char *name, size_t index,
+                            static_optional_record_due_t *out) {
+    if (strcmp(name, "item") == 0 && index == SCE_SCENARIO_WHOLE) {
+        *out = static_optional_get_item(machine);
+        return true;
+    }
+    if (strcmp(name, "items") == 0) {
+        const static_optional_record_due_view_t view = static_optional_get_items(machine);
+        if (index >= view.len) {
+            return false;
+        }
+        *out = view.data[index];
+        return true;
+    }
+    return false;
+}
+
+static bool static_optional_read_record_item(const void *sm, size_t index, const char *field, int64_t *out) {
+    static_optional_record_due_t rec;
+    if (!optional_record((const static_optional_t *)sm, index == SCE_SCENARIO_WHOLE ? "item" : "items", index, &rec)) {
+        return false;
+    }
+    if (strcmp(field, "id") == 0) {
+        *out = (int64_t)rec.id;
+        return true;
+    }
+    if (strcmp(field, "due") == 0 && rec.due.present) {
+        *out = rec.due.value;
+        return true;
+    }
+    return false;
+}
+
+static const char *static_optional_text_record_item(const void *sm, size_t index, const char *field) {
+    static char held[16 + 1];
+    static_optional_record_due_t rec;
+    if (!optional_record((const static_optional_t *)sm, index == SCE_SCENARIO_WHOLE ? "item" : "items", index, &rec)) {
+        return NULL;
+    }
+    if (strcmp(field, "title") == 0) {
+        return optional_text(rec.title, held, sizeof(held));
+    }
+    if (strcmp(field, "status") == 0) {
+        return optional_status(rec.status);
+    }
+    return NULL;
+}
+
+static size_t static_optional_count_record_items(const void *sm) {
+    return static_optional_get_items((const static_optional_t *)sm).len;
+}
+
+// Whether the optional value a step names is present: 1, 0, or -1 for a place that
+// holds no optional value.
+static int static_optional_presence(void *sm, const char *name, size_t index, const char *field) {
+    const static_optional_t *machine = (const static_optional_t *)sm;
+    if (field == NULL) {
+        if (strcmp(name, "due") == 0) {
+            return static_optional_get_due(machine).present ? 1 : 0;
+        }
+        if (strcmp(name, "other") == 0) {
+            return static_optional_get_other(machine).present ? 1 : 0;
+        }
+        if (strcmp(name, "title") == 0) {
+            return static_optional_get_title(machine).present ? 1 : 0;
+        }
+        if (strcmp(name, "echoTitle") == 0) {
+            return static_optional_get_echoTitle(machine).present ? 1 : 0;
+        }
+        if (strcmp(name, "status") == 0) {
+            return static_optional_get_status(machine).present ? 1 : 0;
+        }
+        if (strcmp(name, "echoStatus") == 0) {
+            return static_optional_get_echoStatus(machine).present ? 1 : 0;
+        }
+        return -1;
+    }
+    static_optional_record_due_t rec;
+    if (!optional_record(machine, name, index, &rec)) {
+        return -1;
+    }
+    if (strcmp(field, "due") == 0) {
+        return rec.due.present ? 1 : 0;
+    }
+    if (strcmp(field, "title") == 0) {
+        return rec.title.present ? 1 : 0;
+    }
+    if (strcmp(field, "status") == 0) {
+        return rec.status.present ? 1 : 0;
+    }
+    return -1;
+}
+
+static const char *static_optional_done(void *sm) {
+    return static_optional_done_data((const static_optional_t *)sm);
+}
+
+static const name_value_t optional_states[] = {
+    {"tracking", STATIC_OPTIONAL_STATE_TRACKING},
+    {"done", STATIC_OPTIONAL_STATE_DONE},
+};
+static const variable_t optional_variables[] = {
+    {"due", static_optional_read_due},         {"other", static_optional_read_other},
+    {"days", static_optional_read_days},       {"following", static_optional_read_following},
+    {"late", static_optional_read_late},       {"early", static_optional_read_early},
+    {"kept", static_optional_read_kept},       {"listed", static_optional_read_listed},
+    {"missing", static_optional_read_missing}, {"same", static_optional_read_same},
+    {"absent", static_optional_read_absent},   {"statusDone", static_optional_read_statusDone},
+    {"echoed", static_optional_read_echoed},   {"fallbacks", static_optional_read_fallbacks},
+    {"errors", static_optional_read_errors},
+};
+static const record_variable_t optional_records[] = {
+    {"item", static_optional_read_record_item, static_optional_text_record_item, NULL},
+    {"items", static_optional_read_record_item, static_optional_text_record_item, static_optional_count_record_items},
+    {NULL, NULL, NULL, NULL}};
+STATIC_OPTIONAL_SCENARIO(static_optional, optional_states, optional_variables, static_optional_text, optional_records,
+                         static_optional_done, static_optional_presence)
 
 // static_schema_revision: a delivery written against an earlier revision of a
 // schema that grew lacks the fields a later revision added, and takes their
@@ -3029,6 +3227,7 @@ int main(void) {
     bad |= static_record_list_index_scenario("static_record_list_index", 19);
     bad |= static_record_enum_scenario("static_record_enum", 29);
     bad |= static_whole_payload_scenario("static_whole_payload", 9);
+    bad |= static_optional_scenario("static_optional", 16);
     bad |= static_schema_revision_scenario("static_schema_revision", 9);
     bad |= static_wire_wide_scenario("static_wire_wide", 9);
     bad |= static_wire_enum_scenario("static_wire_enum", 7);

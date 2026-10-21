@@ -2762,6 +2762,14 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_whole_payload.scxml"
         STAGE_ALSO schema_view.scxml enum_view_mode.scxml
     )
+    # Values that may be absent (docs/adr/0055): the machine holds an optional value
+    # of the enum its schemas import, and reads the payloads of the two schemas, so
+    # the staging carries the three beside it.
+    sce_generate_static_integration_c_test(static_optional
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_optional.scxml"
+        STAGE_ALSO schema_due.scxml schema_due_sent.scxml enum_item_status.scxml
+    )
     # A delivery of an earlier revision of a schema that grew takes the defaults of
     # the fields added since; the schema imports the enum its added field holds.
     sce_generate_static_integration_c_test(static_schema_revision
@@ -3124,6 +3132,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_record_list_index_SOURCES}
         ${INTEGRATION_C_TEST_static_record_enum_SOURCES}
         ${INTEGRATION_C_TEST_static_whole_payload_SOURCES}
+        ${INTEGRATION_C_TEST_static_optional_SOURCES}
         ${INTEGRATION_C_TEST_static_schema_revision_SOURCES}
         ${INTEGRATION_C_TEST_static_wire_wide_SOURCES}
         ${INTEGRATION_C_TEST_static_wire_enum_SOURCES}
