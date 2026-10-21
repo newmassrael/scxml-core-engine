@@ -29,14 +29,14 @@ mutation_oracles sce-build/tests/an_algorithm_rule_is_refused_at_the_attribute_t
 
 mutation_case "a string field the schema does not bound is let through" <<'PY'
 edit("sce-build/src/forge/generator.rs",
-     "        .find(|f| matches!(f.ty, SceType::String) && f.max_size.is_none())",
-     "        .find(|f| matches!(f.ty, SceType::String) && f.max_size.is_none() && false)")
+     "        .find(|f| matches!(f.ty.present_type(), SceType::String) && f.max_size.is_none())",
+     "        .find(|f| matches!(f.ty.present_type(), SceType::String) && f.max_size.is_none() && false)")
 PY
 
 mutation_case "a byte string field is let through" <<'PY'
 edit("sce-build/src/forge/generator.rs",
-     "            || matches!(f.ty, SceType::Enum(_) | SceType::String))",
-     "            || matches!(f.ty, SceType::Enum(_) | SceType::String | SceType::Bytes))")
+     "            || matches!(present, SceType::Enum(_) | SceType::String))",
+     "            || matches!(present, SceType::Enum(_) | SceType::String | SceType::Bytes))")
 PY
 
 mutation_case "a copy into a smaller bound is let through" <<'PY'

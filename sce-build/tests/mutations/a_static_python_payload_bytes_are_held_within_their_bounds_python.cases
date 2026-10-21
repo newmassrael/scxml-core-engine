@@ -27,8 +27,8 @@ mutation_oracles backends/python/tests/integration/static_datamodel/test_static_
 
 mutation_case "a record taken whole from a payload is not held to its bytes field's bound" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
-     "            (SceType::Bytes, Some(bound)) => {\n                bounded = true;\n                let held = target.bounded_bytes(&read.text, bound);",
-     "            (SceType::Bytes, Some(bound)) if false => {\n                bounded = true;\n                let held = target.bounded_bytes(&read.text, bound);")
+     "            (FieldType::Scalar(SceType::Bytes), Some(bound)) => {\n                bounded = true;\n                let held = target.bounded_bytes(&read.text, bound);",
+     "            (FieldType::Scalar(SceType::Bytes), Some(bound)) if false => {\n                bounded = true;\n                let held = target.bounded_bytes(&read.text, bound);")
 PY
 
 mutation_case "a character past U+00FF is dropped from the bytes and not refused" <<'PY'

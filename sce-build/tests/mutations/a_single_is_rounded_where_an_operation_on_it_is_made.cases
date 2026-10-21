@@ -93,8 +93,8 @@ PY
 
 mutation_case "C does not hold a float variable" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
-     "matches!(ty, SceType::Enum(_) | SceType::Float32 | SceType::Float64)",
-     "matches!(ty, SceType::Enum(_) | SceType::Float64)")
+     "|| matches!(ty, SceType::Enum(_) | SceType::Float32 | SceType::Float64)",
+     "|| matches!(ty, SceType::Enum(_) | SceType::Float64)")
 PY
 
 mutation_case "C does not hold a list of floats" <<'PY'

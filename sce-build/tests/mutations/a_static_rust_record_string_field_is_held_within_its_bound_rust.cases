@@ -43,8 +43,8 @@ PY
 
 mutation_case "a payload taken whole into a record is not held to its string bound" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
-     "            (SceType::String, Some(bound)) => {\n                bounded = true;",
-     "            (SceType::String, Some(bound)) if false => {\n                bounded = true;")
+     "            (FieldType::Scalar(SceType::String), Some(bound)) => {\n                bounded = true;",
+     "            (FieldType::Scalar(SceType::String), Some(bound)) if false => {\n                bounded = true;")
 PY
 
 mutation_case "a saved string past the bound is read back" <<'PY'

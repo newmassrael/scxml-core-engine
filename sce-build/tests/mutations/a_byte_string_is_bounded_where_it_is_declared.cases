@@ -39,8 +39,8 @@ PY
 
 mutation_case "a record's bytes field that has no max-size is let through" <<'PY'
 edit("sce-build/src/forge/static_datamodel.rs",
-     "            matches!(f.sce_type, SceType::String | SceType::Bytes) && f.max_size.is_none()",
-     "            matches!(f.sce_type, SceType::String) && f.max_size.is_none()")
+     "            matches!(f.sce_type.present_type(), SceType::String | SceType::Bytes)\n                && f.max_size.is_none()",
+     "            matches!(f.sce_type.present_type(), SceType::String)\n                && f.max_size.is_none()")
 PY
 
 mutation_case "a literal past printable ASCII is let through" <<'PY'

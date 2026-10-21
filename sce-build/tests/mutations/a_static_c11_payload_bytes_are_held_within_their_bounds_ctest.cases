@@ -31,8 +31,8 @@ mutation_oracles backends/c/tests/integration/test_static_scalars.c sce-build/te
 
 mutation_case "a record taken whole from a payload is not held to its bytes field's bound" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
-     "            (SceType::Bytes, Some(bound)) => {\n                bounded = true;\n                let held = target.bounded_bytes(&read.text, bound);",
-     "            (SceType::Bytes, Some(bound)) if false => {\n                bounded = true;\n                let held = target.bounded_bytes(&read.text, bound);")
+     "            (FieldType::Scalar(SceType::Bytes), Some(bound)) => {\n                bounded = true;\n                let held = target.bounded_bytes(&read.text, bound);",
+     "            (FieldType::Scalar(SceType::Bytes), Some(bound)) if false => {\n                bounded = true;\n                let held = target.bounded_bytes(&read.text, bound);")
 PY
 
 mutation_case "an assignment to a bytes variable is not held to its bound" <<'PY'
