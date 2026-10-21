@@ -196,4 +196,15 @@ impl CodecChainFlagEntry {
 // name every codec's view has, which lets a codec that embeds, lists or
 // dispatches to it name `CodecChainFlagEntryView` whatever kind of codec it is.
 #[allow(dead_code)]
-pub type CodecChainFlagEntryView =CodecChainFlagEntry;
+pub type CodecChainFlagEntryView = CodecChainFlagEntry;
+
+#[allow(dead_code)]
+impl CodecChainFlagEntry {
+    /// Fill `_out` with what this value says, as the view of any other codec
+    /// does (`CodecChainFlagEntryView` is this type, so it takes part in the same
+    /// call).
+    pub fn into_builder(&self, _out: &mut Self) -> Result<(), CodecError> {
+        _out.clone_from(self);
+        Ok(())
+    }
+}

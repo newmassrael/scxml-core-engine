@@ -141,7 +141,18 @@ impl<'a> CodecZenohLocator<'a> {
 // name every codec's view has, which lets a codec that embeds, lists or
 // dispatches to it name `CodecZenohLocatorView` whatever kind of codec it is.
 #[allow(dead_code)]
-pub type CodecZenohLocatorView<'a> =CodecZenohLocator<'a>;
+pub type CodecZenohLocatorView<'a> = CodecZenohLocator<'a>;
+
+#[allow(dead_code)]
+impl<'a> CodecZenohLocator<'a> {
+    /// Fill `_out` with what this value says, as the view of any other codec
+    /// does (`CodecZenohLocatorView` is this type, so it takes part in the same
+    /// call).
+    pub fn into_builder(&self, _out: &mut Self) -> Result<(), CodecError> {
+        _out.clone_from(self);
+        Ok(())
+    }
+}
 
 // ── Owned projection (storage-parameterised native form) ─────────────
 // `CodecZenohLocator<'a>` above is a zero-copy view borrowing the decode

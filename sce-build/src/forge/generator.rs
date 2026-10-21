@@ -6248,6 +6248,15 @@ fn render_codec(
                     if emit_views {
                         // ADR 0049: the list is held as the frame it was read
                         // from; the scan reads each entry once to check it.
+                        obj.insert(
+                            "view_into_builder_stmt".into(),
+                            rust_view::into_builder_list(
+                                &codec_field_decode_local(&f.id, lang),
+                                &body_type,
+                                f.present_if.is_some(),
+                            )
+                            .into(),
+                        );
                         let entry = format!("{body_type}View");
                         obj.insert(
                             "view_rs_type".into(),
@@ -6299,6 +6308,23 @@ fn render_codec(
                                 ListEncode {
                                     bound: max_count,
                                     flavor: EncodeFlavor::Owned,
+                                },
+                                lang,
+                            )
+                            .into(),
+                        );
+                    }
+                    if emit_views {
+                        obj.insert(
+                            "repeat_encode_block_view".into(),
+                            repeat_streaming_encode_block(
+                                f,
+                                &m.fields,
+                                &body_encoder,
+                                &repeat_thread.encode_arg,
+                                ListEncode {
+                                    bound: max_count,
+                                    flavor: EncodeFlavor::View,
                                 },
                                 lang,
                             )
@@ -6459,6 +6485,15 @@ fn render_codec(
                         with_chain_has_decls(decode_stmt, f, &m.fields, &chain_masks, lang);
                     obj.insert("tlv_chain_decode_stmt".into(), decode_stmt.into());
                     if emit_views {
+                        obj.insert(
+                            "view_into_builder_stmt".into(),
+                            rust_view::into_builder_list(
+                                &codec_field_decode_local(&f.id, lang),
+                                &body_type,
+                                gated,
+                            )
+                            .into(),
+                        );
                         let entry = format!("{body_type}View");
                         obj.insert(
                             "view_rs_type".into(),
@@ -6526,6 +6561,12 @@ fn render_codec(
                         obj.insert(
                             "tlv_chain_encode_block_owned".into(),
                             encode_chain(EncodeFlavor::Owned).into(),
+                        );
+                    }
+                    if emit_views {
+                        obj.insert(
+                            "tlv_chain_encode_block_view".into(),
+                            encode_chain(EncodeFlavor::View).into(),
                         );
                     }
                     // Kotlin's data-class primary constructor needs a
@@ -6619,6 +6660,15 @@ fn render_codec(
                     );
                     if emit_views {
                         // The body is decoded where it sits as its own view.
+                        obj.insert(
+                            "view_into_builder_stmt".into(),
+                            rust_view::into_builder_embed(
+                                &codec_field_decode_local(&f.id, lang),
+                                &body_type,
+                                f.present_if.is_some(),
+                            )
+                            .into(),
+                        );
                         let view_ty = rust_view::view_type(imports, alias, &body_type);
                         obj.insert(
                             "view_rs_type".into(),
@@ -7163,6 +7213,10 @@ fn render_codec(
                     .cloned()
                     .expect("every field has its Rust type before the view reads it");
                 obj.insert("view_rs_type".into(), eager);
+                obj.insert(
+                    "view_into_builder_stmt".into(),
+                    rust_view::into_builder_plain(&codec_field_decode_local(&f.id, lang)).into(),
+                );
             }
             Ok(serde_json::Value::Object(obj))
         })
@@ -7508,6 +7562,19 @@ fn render_codec(
                 m,
                 imports,
                 EncodeFlavor::Owned,
+                lang,
+            )
+            .into(),
+        );
+    }
+    if emit_views {
+        ctx.insert(
+            "parent_tag_derivation_block_view".into(),
+            parent_tag_derivation_block(
+                &parent_tag_derivations,
+                m,
+                imports,
+                EncodeFlavor::View,
                 lang,
             )
             .into(),
@@ -8431,7 +8498,23 @@ fn render_codec(
             let view_imports: Vec<serde_json::Value> = imports
                 .iter()
                 .filter(|i| i.kind == "codec")
-                .map(|i| format!("use super::{}::{}View;", i.namespace, i.type_name).into())
+                .map(|i| {
+                    // The encode of a view names the view variant of an
+                    // embedded dispatcher to derive a carrier's bits from the
+                    // arm it holds, as the owned encode does.
+                    let derives = parent_tag_derivations
+                        .iter()
+                        .any(|d| d.embed_alias == i.alias);
+                    if derives {
+                        format!(
+                            "use super::{}::{{{}View, {}ViewVariant}};",
+                            i.namespace, i.type_name, i.type_name
+                        )
+                    } else {
+                        format!("use super::{}::{}View;", i.namespace, i.type_name)
+                    }
+                    .into()
+                })
                 .collect();
             ctx.insert(
                 "view_imports".into(),
@@ -12034,10 +12117,16 @@ const RUST_DECODE_OUT: &str = "_out";
 /// text through `SceByteBuf` / `SceStr`, and a variant enum is the
 /// `...OwnedVariant`. A number, a flag or an embedded body is read the same
 /// on both, so those blocks are shared. Rust only.
+///
+/// A codec view (`{Codec}View`, ADR 0049) is the third: it holds its strings
+/// and bytes as the borrowed codec does and its lists as a `ListView`, which
+/// is walked by value (`iter()`) and holds no more than the bound it was
+/// scanned against, and its variant enum is the `...ViewVariant`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum EncodeFlavor {
     Borrowed,
     Owned,
+    View,
 }
 
 /// How a list field's `encode` is emitted: for which Rust type, and the
@@ -12061,6 +12150,9 @@ impl EncodeFlavor {
         match self {
             Self::Borrowed => list.to_string(),
             Self::Owned => format!("{RUNTIME_CODEC}::bounded_entries::<_, _, {bound}>({list})?"),
+            // `list` is a reference to the field (`&self.f`); the walk is made
+            // of the list itself.
+            Self::View => format!("{}.iter()", list.trim_start_matches('&')),
         }
     }
 
@@ -12068,7 +12160,7 @@ impl EncodeFlavor {
     /// owned container), as the `&[u8]` the sink takes.
     fn bytes(self, expr: &str) -> String {
         match self {
-            Self::Borrowed => expr.to_string(),
+            Self::Borrowed | Self::View => expr.to_string(),
             Self::Owned => format!("{RUNTIME_CODEC}::SceByteBuf::as_slice(&{expr})"),
         }
     }
@@ -12077,7 +12169,7 @@ impl EncodeFlavor {
     /// gated field).
     fn bytes_of_ref(self, reference: &str) -> String {
         match self {
-            Self::Borrowed => reference.to_string(),
+            Self::Borrowed | Self::View => reference.to_string(),
             Self::Owned => format!("{RUNTIME_CODEC}::SceByteBuf::as_slice({reference})"),
         }
     }
@@ -12085,7 +12177,7 @@ impl EncodeFlavor {
     /// A text value held by `expr`, as the bytes the sink takes.
     fn text_bytes(self, expr: &str) -> String {
         match self {
-            Self::Borrowed => format!("{expr}.as_bytes()"),
+            Self::Borrowed | Self::View => format!("{expr}.as_bytes()"),
             Self::Owned => format!("{RUNTIME_CODEC}::SceStr::as_str(&{expr}).as_bytes()"),
         }
     }
@@ -12093,7 +12185,7 @@ impl EncodeFlavor {
     /// Like [`Self::text_bytes`] for a reference already in hand.
     fn text_bytes_of_ref(self, reference: &str) -> String {
         match self {
-            Self::Borrowed => format!("{reference}.as_bytes()"),
+            Self::Borrowed | Self::View => format!("{reference}.as_bytes()"),
             Self::Owned => format!("{RUNTIME_CODEC}::SceStr::as_str({reference}).as_bytes()"),
         }
     }
@@ -12103,6 +12195,7 @@ impl EncodeFlavor {
         match self {
             Self::Borrowed => format!("{pascal}Variant"),
             Self::Owned => format!("{pascal}OwnedVariant"),
+            Self::View => format!("{pascal}ViewVariant"),
         }
     }
 }

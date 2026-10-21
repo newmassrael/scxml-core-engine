@@ -3,9 +3,12 @@
 {#- The statements of a Rust codec's `encode`, between its signature and its
     closing brace, for the borrowed view and for its owned mirror.
 
-    Included by `forge/rust/codec.rs.jinja2` twice. `owned_encode` is false for
-    the borrowed view (`{Codec}<'a>`) and true for the owned mirror
-    (`{Codec}Owned<S>`), and picks the three things that differ: the block each
+    Included by `forge/rust/codec.rs.jinja2` three times. `owned_encode` is false
+    for the borrowed codec (`{Codec}<'a>`) and true for the owned mirror
+    (`{Codec}Owned<S>`); `encode_view` is true for the codec view
+    (`{Codec}View`, ADR 0049), which reads its strings and bytes as the borrowed
+    codec does, walks its lists by value and matches a `...ViewVariant`. They
+    pick the three things that differ: the block each
     field renders (`*_owned` where a string, bytes or list field is read through
     the profile's container), the variant enum an arm is matched against, and
     how a bytes field is handed to the sink. A field written as a number, a
@@ -25,7 +28,7 @@
         // parent-tag variant's active arm before the carrier byte is
         // emitted. Each `_derived_<carrier>` local is OR'd into the
         // carrier's encode site (see `inject_parent_tag_carrier_suffix`).
-{{ parent_tag_derivation_block_owned if owned_encode else parent_tag_derivation_block }}
+{{ parent_tag_derivation_block_owned if owned_encode else (parent_tag_derivation_block_view if encode_view else parent_tag_derivation_block) }}
 {% endif %}
 {% if present_if_encode_prologue %}{{ present_if_encode_prologue_owned if owned_encode else present_if_encode_prologue }}{% endif %}
 {% if has_no_fields %}
@@ -46,9 +49,9 @@
         // through the same per-field path.
 {% for field in fields %}
 {% if field.is_repeat %}
-{{ field.repeat_encode_block_owned if owned_encode else field.repeat_encode_block }}
+{{ field.repeat_encode_block_owned if owned_encode else (field.repeat_encode_block_view if encode_view else field.repeat_encode_block) }}
 {% elif field.is_tlv_chain %}
-{{ field.tlv_chain_encode_block_owned if owned_encode else field.tlv_chain_encode_block }}
+{{ field.tlv_chain_encode_block_owned if owned_encode else (field.tlv_chain_encode_block_view if encode_view else field.tlv_chain_encode_block) }}
 {% elif field.is_embed %}
 {{ field.embed_encode_block }}
 {% else %}
@@ -68,12 +71,12 @@
         // Append the active arm's encoded bytes.
         match &self.body {
 {% for arm in variant.arms %}
-            {{ struct_name }}{{ 'Owned' if owned_encode else '' }}Variant::{{ arm.variant_name }}(b) => {
+            {{ struct_name }}{{ 'Owned' if owned_encode else ('View' if encode_view else '') }}Variant::{{ arm.variant_name }}(b) => {
                 b.encode(w{{ arm.body_encode_args_with_leading_comma }})?;
             }
 {% endfor %}
 {% if variant.default_arm %}
-            {{ struct_name }}{{ 'Owned' if owned_encode else '' }}Variant::{{ variant.default_arm.variant_name }} { body, .. } => {
+            {{ struct_name }}{{ 'Owned' if owned_encode else ('View' if encode_view else '') }}Variant::{{ variant.default_arm.variant_name }} { body, .. } => {
                 body.encode(w{{ variant.default_arm.body_encode_args_with_leading_comma }})?;
             }
 {% endif %}
@@ -91,9 +94,9 @@
         // (its non-gated arm covers plain fixed / tail / length-ref / VLE).
 {% for field in fields %}
 {% if field.is_repeat %}
-{{ field.repeat_encode_block_owned if owned_encode else field.repeat_encode_block }}
+{{ field.repeat_encode_block_owned if owned_encode else (field.repeat_encode_block_view if encode_view else field.repeat_encode_block) }}
 {% elif field.is_tlv_chain %}
-{{ field.tlv_chain_encode_block_owned if owned_encode else field.tlv_chain_encode_block }}
+{{ field.tlv_chain_encode_block_owned if owned_encode else (field.tlv_chain_encode_block_view if encode_view else field.tlv_chain_encode_block) }}
 {% elif field.is_embed %}
 {{ field.embed_encode_block }}
 {% else %}

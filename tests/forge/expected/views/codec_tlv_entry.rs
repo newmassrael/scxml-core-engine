@@ -143,7 +143,18 @@ impl<'a> CodecTlvEntry<'a> {
 // name every codec's view has, which lets a codec that embeds, lists or
 // dispatches to it name `CodecTlvEntryView` whatever kind of codec it is.
 #[allow(dead_code)]
-pub type CodecTlvEntryView<'a> =CodecTlvEntry<'a>;
+pub type CodecTlvEntryView<'a> = CodecTlvEntry<'a>;
+
+#[allow(dead_code)]
+impl<'a> CodecTlvEntry<'a> {
+    /// Fill `_out` with what this value says, as the view of any other codec
+    /// does (`CodecTlvEntryView` is this type, so it takes part in the same
+    /// call).
+    pub fn into_builder(&self, _out: &mut Self) -> Result<(), CodecError> {
+        _out.clone_from(self);
+        Ok(())
+    }
+}
 
 // ── Owned projection (storage-parameterised native form) ─────────────
 // `CodecTlvEntry<'a>` above is a zero-copy view borrowing the decode

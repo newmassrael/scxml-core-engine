@@ -133,8 +133,12 @@ Each step is gated on a number, taken the way the existing ones were: the genera
    unused codecs and views link to 52 bytes of text; the job is 4288 bytes of text through `decode_into` and 4192
    through the view; the job's stack frame is 644 bytes and 244, with 2 and 1 copy calls. These fixtures declare
    smaller `max-count`s than the downstream consumer's request, whose prototype measured 1792 bytes to 184, so the
-   gain here is the smaller one. **Not built:** `into_builder` and `XView::encode` (decision 4), which nothing in the
-   gate needs.
+   gain here is the smaller one.
+   Decision 4 is built too: `XView::into_builder` fills the builder form in place (an alias view gets the same method
+   on the codec), and `XView::encode` is the borrowed encode's emission with a third flavor, `View`, which walks a list
+   by value and matches a `...ViewVariant`. The sweep checks both on every frame it accepts: the rebuilt value equals
+   the one `decode` returned, and the view writes the bytes, or the refusal, the builder writes. A mutation of each
+   (an entry pushed and never filled, the first entry skipped on encode) is killed.
    The sweep also found a defect that predates views: the positional decode of a length-referenced field sliced the
    frame by the length the wire states before checking the frame was that long. Rust panicked; C++ read past the frame
    (AddressSanitizer: stack-buffer-overflow, 200 bytes), Go panicked or, with spare capacity in the buffer, returned

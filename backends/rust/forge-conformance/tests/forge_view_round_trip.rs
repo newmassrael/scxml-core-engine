@@ -177,7 +177,7 @@ use codecs::codec_variant_dispatch::{CodecVariantDispatch, CodecVariantDispatchV
 use codecs::codec_variant_peek_basic::{CodecVariantPeekBasic, CodecVariantPeekBasicView};
 use codecs::codec_zenoh_request::{CodecZenohRequest, CodecZenohRequestView};
 use codecs::codec_zenoh_response::{CodecZenohResponse, CodecZenohResponseView};
-use sce_forge_runtime::codec::SceCursor;
+use sce_forge_runtime::codec::{SceCursor, VecSink};
 
 /// A deterministic byte source: the same frames on every run and every host.
 struct Rng(u64);
@@ -227,6 +227,29 @@ macro_rules! agree {
                     view_cursor.remaining(),
                     eager_cursor.remaining(),
                     "the view stops elsewhere for frame {frame:02x?}"
+                );
+                // The view says the same thing in the builder form: filling a
+                // codec from it gives the value `decode` returned.
+                let mut rebuilt = <$eager>::default();
+                view.into_builder(&mut rebuilt)
+                    .unwrap_or_else(|e| panic!("into_builder failed ({e:?}) for {frame:02x?}"));
+                assert_eq!(
+                    rebuilt, eager,
+                    "into_builder says another value for frame {frame:02x?}"
+                );
+                // And it writes the bytes the builder form writes, or refuses
+                // as it does, without the builder.
+                let mut from_builder = Vec::new();
+                let built = rebuilt.encode(&mut VecSink::new(&mut from_builder));
+                let mut from_view = Vec::new();
+                let written = view.encode(&mut VecSink::new(&mut from_view));
+                assert_eq!(
+                    written, built,
+                    "the view encodes to another verdict for frame {frame:02x?}"
+                );
+                assert_eq!(
+                    from_view, from_builder,
+                    "the view encodes other bytes for frame {frame:02x?}"
                 );
                 Verdict::Accepted
             }

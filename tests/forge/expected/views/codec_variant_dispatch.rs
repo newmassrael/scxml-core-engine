@@ -279,4 +279,79 @@ impl CodecVariantDispatchView {
         _out.msg_id = msg_id;
         Ok(())
     }
+
+    /// Fill `_out`, the builder form [`CodecVariantDispatch`] a sender fills and
+    /// encodes, with what this view says: every field, each embedded body, the
+    /// variant arm, and each list entry as the walk yields it, built in the
+    /// destination where it will live. Fails only where the destination cannot
+    /// hold it, which a destination of the same declared bounds does.
+    pub fn into_builder(&self, _out: &mut CodecVariantDispatch) -> Result<(), CodecError> {
+        _out.msg_id = self.msg_id;
+        match &self.body {
+            CodecVariantDispatchViewVariant::CodecVariantSessionOpen(_b) => {
+                _out.body = CodecVariantDispatchVariant::CodecVariantSessionOpen(CodecVariantSessionOpen::default());
+                if let CodecVariantDispatchVariant::CodecVariantSessionOpen(_o) = &mut _out.body {
+                    _b.into_builder(_o)?;
+                }
+            }
+            CodecVariantDispatchViewVariant::CodecVariantSessionClose(_b) => {
+                _out.body = CodecVariantDispatchVariant::CodecVariantSessionClose(CodecVariantSessionClose::default());
+                if let CodecVariantDispatchVariant::CodecVariantSessionClose(_o) = &mut _out.body {
+                    _b.into_builder(_o)?;
+                }
+            }
+            CodecVariantDispatchViewVariant::Default { tag, body } => {
+                _out.body = CodecVariantDispatchVariant::Default {
+                    tag: *tag,
+                    body: CodecVariantSessionClose::default(),
+                };
+                if let CodecVariantDispatchVariant::Default { body: _o, .. } = &mut _out.body {
+                    body.into_builder(_o)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Worst-case encoded byte count for this codec, as
+    /// [`CodecVariantDispatch::MAX_ENCODED_BYTES`].
+    pub const MAX_ENCODED_BYTES: usize = 3;
+
+    /// Encode what this view says into the caller-owned sink: the bytes
+    /// [`CodecVariantDispatch::encode`] writes for the value [`Self::into_builder`]
+    /// fills, written straight from the view, walking each list, without the
+    /// builder. It writes the canonical wire, not the frame the view was decoded
+    /// from, so a frame `decode` accepted in a form that is not canonical is
+    /// not passed on as it came.
+    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
+        // Encode fixed prefix (tag field is part of the prefix). The
+        // tag value is read from the struct field, NOT derived from
+        // the body discriminant — keeping author-set msg_id / body in
+        // sync is the caller's responsibility (v1 keeps the layout
+        // simple; future extensions may auto-sync via a typed setter).
+        w.write_u8(self.msg_id)?;
+        // Append the active arm's encoded bytes.
+        match &self.body {
+            CodecVariantDispatchViewVariant::CodecVariantSessionOpen(b) => {
+                b.encode(w)?;
+            }
+            CodecVariantDispatchViewVariant::CodecVariantSessionClose(b) => {
+                b.encode(w)?;
+            }
+            CodecVariantDispatchViewVariant::Default { body, .. } => {
+                body.encode(w)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Heap-backed convenience facade over [`Self::encode`].
+    #[cfg(feature = "alloc")]
+    pub fn encode_to_vec(&self) -> Vec<u8> {
+        let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
+        let mut _sce_sink = VecSink::new(&mut _sce_v);
+        self.encode(&mut _sce_sink)
+            .expect("VecSink is infallible");
+        _sce_v
+    }
 }

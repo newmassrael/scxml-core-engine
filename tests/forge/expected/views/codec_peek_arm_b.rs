@@ -145,4 +145,15 @@ impl CodecPeekArmB {
 // name every codec's view has, which lets a codec that embeds, lists or
 // dispatches to it name `CodecPeekArmBView` whatever kind of codec it is.
 #[allow(dead_code)]
-pub type CodecPeekArmBView =CodecPeekArmB;
+pub type CodecPeekArmBView = CodecPeekArmB;
+
+#[allow(dead_code)]
+impl CodecPeekArmB {
+    /// Fill `_out` with what this value says, as the view of any other codec
+    /// does (`CodecPeekArmBView` is this type, so it takes part in the same
+    /// call).
+    pub fn into_builder(&self, _out: &mut Self) -> Result<(), CodecError> {
+        _out.clone_from(self);
+        Ok(())
+    }
+}

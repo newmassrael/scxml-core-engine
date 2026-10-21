@@ -275,3 +275,58 @@ pub(super) fn tlv_chain_decode_stmt(list: &ViewList, chain: &ViewChain) -> Strin
         }
     }
 }
+
+/// `into_builder` of a field a view holds as the codec holds it (a number, a
+/// string, bytes, an enum, an optional of those): copied across.
+pub(super) fn into_builder_plain(id: &str) -> String {
+    format!("_out.{id} = self.{id};")
+}
+
+/// `into_builder` of an embedded body: the body's view fills the body in the
+/// destination where it sits. `body` is the body's codec type, which a gated
+/// body is installed as before it is filled.
+pub(super) fn into_builder_embed(id: &str, body: &str, gated: bool) -> String {
+    if gated {
+        format!(
+            "match &self.{id} {{\n            \
+                 Some(_b) => _b.into_builder(_out.{id}.insert({body}::default()))?,\n            \
+                 None => _out.{id} = None,\n        \
+             }}"
+        )
+    } else {
+        format!("self.{id}.into_builder(&mut _out.{id})?;")
+    }
+}
+
+/// `into_builder` of a list: the destination list is cleared and each entry the
+/// walk yields is pushed as the codec's default and filled in the list, so no
+/// entry is moved into it whole. The scan bounded the list by the same `N` the
+/// destination holds, so the push cannot fail; the arm is there because `push`
+/// returns a `Result`.
+pub(super) fn into_builder_list(id: &str, entry: &str, gated: bool) -> String {
+    let fill = |list: &str, indent: &str, walk: &str| {
+        format!(
+            "{list}.clear();\n{indent}\
+             for _e in {walk}.iter() {{\n{indent}    \
+                 {list}.push({entry}::default()).map_err(|_| CodecError::TooManyElements)?;\n{indent}    \
+                 if let Some(_slot) = {list}.last_mut() {{\n{indent}        \
+                     _e.into_builder(_slot)?;\n{indent}    \
+                 }}\n{indent}\
+             }}"
+        )
+    };
+    if gated {
+        let body = fill("_vec", "                ", "_l");
+        format!(
+            "match &self.{id} {{\n            \
+                 Some(_l) => {{\n                \
+                     let _vec = _out.{id}.insert(HeaplessVec::new());\n                \
+                     {body}\n            \
+                 }}\n            \
+                 None => _out.{id} = None,\n        \
+             }}"
+        )
+    } else {
+        fill(&format!("_out.{id}"), "        ", &format!("self.{id}"))
+    }
+}

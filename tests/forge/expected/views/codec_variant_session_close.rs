@@ -106,4 +106,15 @@ impl CodecVariantSessionClose {
 // name every codec's view has, which lets a codec that embeds, lists or
 // dispatches to it name `CodecVariantSessionCloseView` whatever kind of codec it is.
 #[allow(dead_code)]
-pub type CodecVariantSessionCloseView =CodecVariantSessionClose;
+pub type CodecVariantSessionCloseView = CodecVariantSessionClose;
+
+#[allow(dead_code)]
+impl CodecVariantSessionClose {
+    /// Fill `_out` with what this value says, as the view of any other codec
+    /// does (`CodecVariantSessionCloseView` is this type, so it takes part in the same
+    /// call).
+    pub fn into_builder(&self, _out: &mut Self) -> Result<(), CodecError> {
+        _out.clone_from(self);
+        Ok(())
+    }
+}

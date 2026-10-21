@@ -222,6 +222,60 @@ impl<'a> CodecNestedBodyView<'a> {
         _out.n = n;
         Ok(())
     }
+
+    /// Fill `_out`, the builder form [`CodecNestedBody`] a sender fills and
+    /// encodes, with what this view says: every field, each embedded body, the
+    /// variant arm, and each list entry as the walk yields it, built in the
+    /// destination where it will live. Fails only where the destination cannot
+    /// hold it, which a destination of the same declared bounds does.
+    pub fn into_builder(&self, _out: &mut CodecNestedBody<'a>) -> Result<(), CodecError> {
+        _out.n = self.n;
+        _out.locs.clear();
+        for _e in self.locs.iter() {
+            _out.locs.push(CodecZenohLocator::default()).map_err(|_| CodecError::TooManyElements)?;
+            if let Some(_slot) = _out.locs.last_mut() {
+                _e.into_builder(_slot)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Worst-case encoded byte count for this codec, as
+    /// [`CodecNestedBody::MAX_ENCODED_BYTES`].
+    pub const MAX_ENCODED_BYTES: usize = 549;
+
+    /// Encode what this view says into the caller-owned sink: the bytes
+    /// [`CodecNestedBody::encode`] writes for the value [`Self::into_builder`]
+    /// fills, written straight from the view, walking each list, without the
+    /// builder. It writes the canonical wire, not the frame the view was decoded
+    /// from, so a frame `decode` accepted in a form that is not canonical is
+    /// not passed on as it came.
+    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
+        // Streaming cursor encode (SSOT selection: `needs_streaming`).
+        // Mirrors the streaming decode: every field appends its own bytes
+        // in declaration order through the per-field encode blocks, so a
+        // gated field skips its append when absent, and a fixed field after
+        // a variable-length payload lands after the payload (the positional
+        // path appends variable fields last, placing it ahead on the wire).
+        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
+        // dedicated helpers; everything else uses `present_if_encode_block`
+        // (its non-gated arm covers plain fixed / tail / length-ref / VLE).
+        w.write_u8(self.n)?;
+        for _e in self.locs.iter() {
+            _e.encode(w)?;
+        }
+        Ok(())
+    }
+
+    /// Heap-backed convenience facade over [`Self::encode`].
+    #[cfg(feature = "alloc")]
+    pub fn encode_to_vec(&self) -> Vec<u8> {
+        let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
+        let mut _sce_sink = VecSink::new(&mut _sce_v);
+        self.encode(&mut _sce_sink)
+            .expect("VecSink is infallible");
+        _sce_v
+    }
 }
 
 // ── Owned projection (storage-parameterised native form) ─────────────

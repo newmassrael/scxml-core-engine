@@ -132,4 +132,15 @@ impl CodecChainHasTaggedEntry {
 // name every codec's view has, which lets a codec that embeds, lists or
 // dispatches to it name `CodecChainHasTaggedEntryView` whatever kind of codec it is.
 #[allow(dead_code)]
-pub type CodecChainHasTaggedEntryView =CodecChainHasTaggedEntry;
+pub type CodecChainHasTaggedEntryView = CodecChainHasTaggedEntry;
+
+#[allow(dead_code)]
+impl CodecChainHasTaggedEntry {
+    /// Fill `_out` with what this value says, as the view of any other codec
+    /// does (`CodecChainHasTaggedEntryView` is this type, so it takes part in the same
+    /// call).
+    pub fn into_builder(&self, _out: &mut Self) -> Result<(), CodecError> {
+        _out.clone_from(self);
+        Ok(())
+    }
+}

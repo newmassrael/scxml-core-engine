@@ -255,6 +255,7 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
     /// sinks (e.g. `VecSink`) are effectively infallible.
     pub fn encode<S: SceSink>(&self, w: &mut S{{ params_after_first_arg }}) -> Result<(), CodecError> {
 {% set owned_encode = false %}
+{% set encode_view = false %}
 {% include '_macros/forge_rust_codec_encode_body.jinja2' %}
     }
 
@@ -310,7 +311,18 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
 // name every codec's view has, which lets a codec that embeds, lists or
 // dispatches to it name `{{ struct_name }}View` whatever kind of codec it is.
 #[allow(dead_code)]
-pub type {{ struct_name }}View{{ view_lifetime }} ={{ struct_name }}{{ struct_lifetime }};
+pub type {{ struct_name }}View{{ view_lifetime }} = {{ struct_name }}{{ struct_lifetime }};
+
+#[allow(dead_code)]
+impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
+    /// Fill `_out` with what this value says, as the view of any other codec
+    /// does (`{{ struct_name }}View` is this type, so it takes part in the same
+    /// call).
+    pub fn into_builder(&self, _out: &mut Self) -> Result<(), CodecError> {
+        _out.clone_from(self);
+        Ok(())
+    }
+}
 {% else %}
 // `{{ struct_name }}View` is what a decode of `{{ struct_name }}` learned, not a
 // copy of what the wire repeated: a scalar, a string or a bytes field is held
@@ -404,6 +416,80 @@ impl{{ view_lifetime }} {{ struct_name }}View{{ view_lifetime }} {
 {% set view_decode = true %}
 {% include '_macros/forge_rust_codec_decode_body.jinja2' %}
     }
+
+    /// Fill `_out`, the builder form [`{{ struct_name }}`] a sender fills and
+    /// encodes, with what this view says: every field, each embedded body, the
+    /// variant arm, and each list entry as the walk yields it, built in the
+    /// destination where it will live. Fails only where the destination cannot
+    /// hold it, which a destination of the same declared bounds does.
+    pub fn into_builder(&self, _out: &mut {{ struct_name }}{{ struct_lifetime }}) -> Result<(), CodecError> {
+{% for field in fields %}
+        {{ field.view_into_builder_stmt }}
+{% endfor %}
+{% if has_variant %}
+        match &self.body {
+{% for arm in variant.arms %}
+            {{ struct_name }}ViewVariant::{{ arm.variant_name }}(_b) => {
+                _out.body = {{ struct_name }}Variant::{{ arm.variant_name }}({{ arm.body_type }}::default());
+                if let {{ struct_name }}Variant::{{ arm.variant_name }}(_o) = &mut _out.body {
+                    _b.into_builder(_o)?;
+                }
+            }
+{% endfor %}
+{% if variant.default_arm %}
+            {{ struct_name }}ViewVariant::{{ variant.default_arm.variant_name }} { tag, body } => {
+                _out.body = {{ struct_name }}Variant::{{ variant.default_arm.variant_name }} {
+                    tag: *tag,
+                    body: {{ variant.default_arm.body_type }}::default(),
+                };
+                if let {{ struct_name }}Variant::{{ variant.default_arm.variant_name }} { body: _o, .. } = &mut _out.body {
+                    body.into_builder(_o)?;
+                }
+            }
+{% endif %}
+        }
+{% endif %}
+        Ok(())
+    }
+
+    /// Worst-case encoded byte count for this codec, as
+    /// [`{{ struct_name }}::MAX_ENCODED_BYTES`].
+    pub const MAX_ENCODED_BYTES: usize = {{ max_bytes }};
+
+    /// Encode what this view says into the caller-owned sink: the bytes
+    /// [`{{ struct_name }}::encode`] writes for the value [`Self::into_builder`]
+    /// fills, written straight from the view, walking each list, without the
+    /// builder. It writes the canonical wire, not the frame the view was decoded
+    /// from, so a frame `decode` accepted in a form that is not canonical is
+    /// not passed on as it came.
+    pub fn encode<S: SceSink>(&self, w: &mut S{{ params_after_first_arg }}) -> Result<(), CodecError> {
+{% set owned_encode = false %}
+{% set encode_view = true %}
+{% include '_macros/forge_rust_codec_encode_body.jinja2' %}
+    }
+{% if encode_can_refuse %}
+
+    /// Heap-backed convenience facade over [`Self::encode`], fallible where
+    /// `encode` can refuse a message whose presence disagrees with a gate.
+    #[cfg(feature = "alloc")]
+    pub fn encode_to_vec(&self{{ params_after_first_arg }}) -> Result<Vec<u8>, CodecError> {
+        let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
+        let mut _sce_sink = VecSink::new(&mut _sce_v);
+        self.encode(&mut _sce_sink{{ params_first_arg_with_comma }})?;
+        Ok(_sce_v)
+    }
+{% else %}
+
+    /// Heap-backed convenience facade over [`Self::encode`].
+    #[cfg(feature = "alloc")]
+    pub fn encode_to_vec(&self{{ params_after_first_arg }}) -> Vec<u8> {
+        let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
+        let mut _sce_sink = VecSink::new(&mut _sce_v);
+        self.encode(&mut _sce_sink{{ params_first_arg_with_comma }})
+            .expect("VecSink is infallible");
+        _sce_v
+    }
+{% endif %}
 {% if has_flags %}
 
 {{ flags.accessors(fields, false) }}
@@ -664,6 +750,7 @@ impl{{ owned_generics_impl }} {{ struct_name }}Owned{{ owned_generics_args }} {
     /// decoder would reject.
     pub fn encode<K: SceSink>(&self, w: &mut K{{ params_after_first_arg }}) -> Result<(), CodecError> {
 {% set owned_encode = true %}
+{% set encode_view = false %}
 {% include '_macros/forge_rust_codec_encode_body.jinja2' %}
     }
 

@@ -259,4 +259,67 @@ impl CodecVariantPeekBasicView {
         }
         Ok(())
     }
+
+    /// Fill `_out`, the builder form [`CodecVariantPeekBasic`] a sender fills and
+    /// encodes, with what this view says: every field, each embedded body, the
+    /// variant arm, and each list entry as the walk yields it, built in the
+    /// destination where it will live. Fails only where the destination cannot
+    /// hold it, which a destination of the same declared bounds does.
+    pub fn into_builder(&self, _out: &mut CodecVariantPeekBasic) -> Result<(), CodecError> {
+        match &self.body {
+            CodecVariantPeekBasicViewVariant::CodecPeekArmA(_b) => {
+                _out.body = CodecVariantPeekBasicVariant::CodecPeekArmA(CodecPeekArmA::default());
+                if let CodecVariantPeekBasicVariant::CodecPeekArmA(_o) = &mut _out.body {
+                    _b.into_builder(_o)?;
+                }
+            }
+            CodecVariantPeekBasicViewVariant::CodecPeekArmB(_b) => {
+                _out.body = CodecVariantPeekBasicVariant::CodecPeekArmB(CodecPeekArmB::default());
+                if let CodecVariantPeekBasicVariant::CodecPeekArmB(_o) = &mut _out.body {
+                    _b.into_builder(_o)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Worst-case encoded byte count for this codec, as
+    /// [`CodecVariantPeekBasic::MAX_ENCODED_BYTES`].
+    pub const MAX_ENCODED_BYTES: usize = 3;
+
+    /// Encode what this view says into the caller-owned sink: the bytes
+    /// [`CodecVariantPeekBasic::encode`] writes for the value [`Self::into_builder`]
+    /// fills, written straight from the view, walking each list, without the
+    /// builder. It writes the canonical wire, not the frame the view was decoded
+    /// from, so a frame `decode` accepted in a form that is not canonical is
+    /// not passed on as it came.
+    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
+        // RFC §synth-5-B peek-byte / streaming-prefix:
+        // streaming prefix encode (per-field present_if/tlv-chain/embed/
+        // repeat helpers). Peek-byte mode: the arm body's encode prepends
+        // its own header byte (which the decoder peeked); no separate
+        // tag byte is emitted here. Streaming-prefix mode (own-field
+        // variant): the carrier is part of the prefix fields and emits
+        // through the same per-field path.
+        // Append the active arm's encoded bytes.
+        match &self.body {
+            CodecVariantPeekBasicViewVariant::CodecPeekArmA(b) => {
+                b.encode(w)?;
+            }
+            CodecVariantPeekBasicViewVariant::CodecPeekArmB(b) => {
+                b.encode(w)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Heap-backed convenience facade over [`Self::encode`].
+    #[cfg(feature = "alloc")]
+    pub fn encode_to_vec(&self) -> Vec<u8> {
+        let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
+        let mut _sce_sink = VecSink::new(&mut _sce_v);
+        self.encode(&mut _sce_sink)
+            .expect("VecSink is infallible");
+        _sce_v
+    }
 }

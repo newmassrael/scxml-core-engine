@@ -107,4 +107,15 @@ impl CodecRepeatElem {
 // name every codec's view has, which lets a codec that embeds, lists or
 // dispatches to it name `CodecRepeatElemView` whatever kind of codec it is.
 #[allow(dead_code)]
-pub type CodecRepeatElemView =CodecRepeatElem;
+pub type CodecRepeatElemView = CodecRepeatElem;
+
+#[allow(dead_code)]
+impl CodecRepeatElem {
+    /// Fill `_out` with what this value says, as the view of any other codec
+    /// does (`CodecRepeatElemView` is this type, so it takes part in the same
+    /// call).
+    pub fn into_builder(&self, _out: &mut Self) -> Result<(), CodecError> {
+        _out.clone_from(self);
+        Ok(())
+    }
+}

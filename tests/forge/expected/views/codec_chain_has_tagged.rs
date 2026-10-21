@@ -329,6 +329,85 @@ impl<'a> CodecChainHasTaggedView<'a> {
         Ok(())
     }
 
+    /// Fill `_out`, the builder form [`CodecChainHasTagged`] a sender fills and
+    /// encodes, with what this view says: every field, each embedded body, the
+    /// variant arm, and each list entry as the walk yields it, built in the
+    /// destination where it will live. Fails only where the destination cannot
+    /// hold it, which a destination of the same declared bounds does.
+    pub fn into_builder(&self, _out: &mut CodecChainHasTagged) -> Result<(), CodecError> {
+        _out.header = self.header;
+        _out.entries.clear();
+        for _e in self.entries.iter() {
+            _out.entries.push(CodecChainHasTaggedEntry::default()).map_err(|_| CodecError::TooManyElements)?;
+            if let Some(_slot) = _out.entries.last_mut() {
+                _e.into_builder(_slot)?;
+            }
+        }
+        _out.priority = self.priority;
+        _out.checksum = self.checksum;
+        Ok(())
+    }
+
+    /// Worst-case encoded byte count for this codec, as
+    /// [`CodecChainHasTagged::MAX_ENCODED_BYTES`].
+    pub const MAX_ENCODED_BYTES: usize = 14;
+
+    /// Encode what this view says into the caller-owned sink: the bytes
+    /// [`CodecChainHasTagged::encode`] writes for the value [`Self::into_builder`]
+    /// fills, written straight from the view, walking each list, without the
+    /// builder. It writes the canonical wire, not the frame the view was decoded
+    /// from, so a frame `decode` accepted in a form that is not canonical is
+    /// not passed on as it came.
+    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
+        let _has_entries_7 = self.entries.iter().any(|_e| u64::from(_e.entry_type) == 7u64);
+        let _has_entries_9 = self.entries.iter().any(|_e| u64::from(_e.entry_type) == 9u64);
+        if _has_entries_7 || (self.header & 0x01u8) != 0 {
+            if self.priority.is_none() {
+                return Err(CodecError::PresentIfMismatch);
+            }
+        } else if self.priority.is_some() {
+            return Err(CodecError::PresentIfMismatch);
+        }
+        if !_has_entries_9 {
+            if self.checksum.is_none() {
+                return Err(CodecError::PresentIfMismatch);
+            }
+        } else if self.checksum.is_some() {
+            return Err(CodecError::PresentIfMismatch);
+        }
+        // Streaming cursor encode (SSOT selection: `needs_streaming`).
+        // Mirrors the streaming decode: every field appends its own bytes
+        // in declaration order through the per-field encode blocks, so a
+        // gated field skips its append when absent, and a fixed field after
+        // a variable-length payload lands after the payload (the positional
+        // path appends variable fields last, placing it ahead on the wire).
+        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
+        // dedicated helpers; everything else uses `present_if_encode_block`
+        // (its non-gated arm covers plain fixed / tail / length-ref / VLE).
+        w.write_u8(self.header)?;
+        for _e in self.entries.iter() {
+            _e.encode(w)?;
+        }
+        if let Some(_v) = self.priority {
+            w.write_u8(_v)?;
+        }
+        if let Some(_v) = self.checksum {
+            w.write_u8((_v >> 8 & 0xFF) as u8)?;
+            w.write_u8((_v & 0xFF) as u8)?;
+        }
+        Ok(())
+    }
+
+    /// Heap-backed convenience facade over [`Self::encode`], fallible where
+    /// `encode` can refuse a message whose presence disagrees with a gate.
+    #[cfg(feature = "alloc")]
+    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
+        let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
+        let mut _sce_sink = VecSink::new(&mut _sce_v);
+        self.encode(&mut _sce_sink)?;
+        Ok(_sce_v)
+    }
+
     pub fn wide(&self) -> bool {
         (self.header & 0x01) != 0
     }
