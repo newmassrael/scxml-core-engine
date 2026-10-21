@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A lookup keyed and answering by the variants of two enums, which
+  static_forge_calls.scxml calls as `Weight(phase)` (docs/adr/0051): the table names
+  each key and value by the name its variant declares, never by the number. A status
+  the table does not list is a miss, which is an error: the call fails.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="lookup" name="forge_call_weight" version="1.0">
+  <sce:import kind="enum" src="forge_call_status.scxml" as="Status"/>
+  <sce:import kind="enum" src="forge_call_level.scxml" as="Level"/>
+  <datamodel>
+    <data id="status" sce:type="enum:Status" sce:direction="in"/>
+    <data id="weight" sce:type="enum:Level" sce:direction="out"/>
+    <data id="mapping" sce:on-miss="error">
+      <sce:entry key="open" value="light"/>
+      <sce:entry key="held" value="heavy"/>
+    </data>
+  </datamodel>
+</scxml>

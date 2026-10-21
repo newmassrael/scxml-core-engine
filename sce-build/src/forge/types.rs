@@ -1187,6 +1187,39 @@ pub struct TypeCtx<'a> {
     /// algorithm): there a read of a name this does not hold is refused naming the
     /// ones it does; anywhere else the expression is left as it was written.
     pub limits: HashMap<&'a str, crate::forge::type_ctx::BuildLimit>,
+    /// How each argument of a call of the function a key names, and its value, cross
+    /// between the caller and the function, where the two hold it apart
+    /// ([`CallCrossing`]): a `sce-static` statechart's call of a transform, condition,
+    /// lookup or validator (docs/adr/0051).
+    ///
+    /// ⚠ Empty everywhere but a lowered `sce-static` statechart, and emptiness is
+    /// what keeps every other call exactly what it was.
+    pub crossings: HashMap<&'a str, CallCrossing<'a>>,
+}
+
+/// How the arguments of one call, and the value it answers, cross between a
+/// statechart and the function it calls ([`TypeCtx::crossings`]).
+#[derive(Debug, Clone, Default)]
+pub struct CallCrossing<'a> {
+    /// One per parameter, in order.
+    pub params: Vec<SlotCrossing<'a>>,
+    /// The function a value of an enum the call answers is taken back through, from
+    /// the type the enum document declares into the statechart's own; `None` where
+    /// the call answers no enum, or both hold one type.
+    pub ret: Option<&'a str>,
+}
+
+/// How one argument crosses into the function a statechart calls.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SlotCrossing<'a> {
+    /// As it is.
+    AsIs,
+    /// A value of an enum, through the function that answers the variant of the
+    /// same declared name in the type the enum document declares.
+    Enum(&'a str),
+    /// A text, which a target whose machine owns its strings lends to a function
+    /// that borrows one (Rust's `&str`).
+    Text,
 }
 
 /// Whether a record's members are known to the expression that reads it.
@@ -1223,6 +1256,7 @@ impl<'a> TypeCtx<'a> {
             rounds_to_single: true,
             record_text: std::collections::HashSet::new(),
             limits: HashMap::new(),
+            crossings: HashMap::new(),
         }
     }
 

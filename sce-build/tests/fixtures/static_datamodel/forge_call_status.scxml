@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The status of an order static_forge_calls.scxml steps through a transform
+  (`Next`) and keys a lookup (`Weight`) by (docs/adr/0051): a value of an enum handed
+  to a function of another kind, crossing by the name its variant declares.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="enum" name="forge_call_status" sce:underlying-type="uint8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="open" value="1"/>
+      <sce:variant name="held" value="2"/>
+      <sce:variant name="done" value="3"/>
+    </data>
+  </datamodel>
+</scxml>

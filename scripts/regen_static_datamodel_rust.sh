@@ -122,6 +122,10 @@ STD_ALGORITHMS+=(shared/record_member shared/record_roster shared/record_settled
 # (docs/adr/0048). A machine's import names each as `super::<name>`, so it is
 # generated beside the machines.
 CALLED=(forge_call_high forge_call_offset forge_call_ratio forge_call_code forge_call_limit forge_call_range)
+# ... and a transform, a lookup and a validator a value of an enum or a text is handed
+# to, with the enums that value crosses into each by, which a called document and the
+# machine's crossing both name as `super::<name>` (docs/adr/0051).
+CALLED+=(forge_call_next forge_call_weight forge_call_named forge_call_status forge_call_level)
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT

@@ -980,10 +980,16 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, AnEnumIsReadAsItsNumberAndBack) {
 
 // docs/adr/0048: a condition, a transform, two lookups, an interpolation and a
 // validator called as `Alias(args)`; a lookup whose miss is an error fails into
-// error.execution, and the variable keeps what it held.
+// error.execution, and the variable keeps what it held. A value of an enum and a text
+// are handed over and taken back too (docs/adr/0051), the enum's read by `sceLogName`.
 TEST(AStaticDatamodelRunsGeneratedCppTest, TheKindsThatAreFunctionsAreCalledAsAnAlgorithmIs) {
-    using Machine = G::static_forge_calls::static_forge_calls;
+    namespace F = G::static_forge_calls;
+    using Machine = F::static_forge_calls;
     Driver<Machine> driver({
+        {"phase", [](const Machine &m) { return json(std::string(F::sceLogName(m.phase()))); }},
+        {"weight", [](const Machine &m) { return json(std::string(F::sceLogName(m.weight()))); }},
+        {"customer", [](const Machine &m) { return json(m.customer()); }},
+        {"known", [](const Machine &m) { return json(m.known()); }},
         {"gear", [](const Machine &m) { return json(m.gear()); }},
         {"ratio", [](const Machine &m) { return json(m.ratio()); }},
         {"code", [](const Machine &m) { return json(m.code()); }},

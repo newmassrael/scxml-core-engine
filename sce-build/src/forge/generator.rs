@@ -1958,6 +1958,41 @@ fn render_lookup(
         forge_stateless_def_symbol(&m.name, &forge_lookup_symbol(&m.output.id, lang), lang);
     let output_is_string = m.output_is_string();
     let on_miss_error = m.miss_policy.is_error();
+    // A slot of an enum is keyed and answered by the variants of the enum the lookup
+    // imports, each written as its declared name (`<sce:entry key="open"
+    // value="high"/>`) and emitted as this backend's reference to it, so a table
+    // never respells the numbers an enum declares (docs/adr/0051). A name the enum
+    // does not declare is refused, naming the entry.
+    let entry_literal = |text: &str, ty: &SceType, what: &str| -> Result<String, ForgeError> {
+        let SceType::Enum(reference) = ty else {
+            return Ok(l.literal(text, ty));
+        };
+        let declared = imports
+            .iter()
+            .find(|i| i.alias == reference.alias && i.kind == "enum")
+            .map(|i| i.enum_variants.as_slice())
+            .unwrap_or_default();
+        if !declared.iter().any(|variant| variant == text) {
+            return Err(GenerateError::InvalidConfig(format!(
+                "lookup '{}': the {what} `{text}` is no variant of the enum `{}`, which declares {}",
+                m.name,
+                reference.alias,
+                if declared.is_empty() {
+                    "none this build read".to_string()
+                } else {
+                    declared.join(", ")
+                }
+            ))
+            .into());
+        }
+        let imported = l.enum_import(&reference.alias);
+        Ok(crate::forge::enum_naming::variant_ref(
+            lang,
+            &imported.qualified,
+            &imported.source_name,
+            text,
+        ))
+    };
     // A string-output Go lookup returns the constants `{enum_name}{value}` from
     // the body that reads the input, so an input under the enum's name would
     // hide them; `local_id` shifts it like any other local.
@@ -1976,7 +2011,19 @@ fn render_lookup(
 
     // String-enum strategy: entries grouped by output value.
     let (entries_by_value, unique_values, default_value) = if output_is_string {
-        let raw_ebv = m.entries_by_value();
+        // A number key stands in a case as the document writes it; an enum key is the
+        // variant's reference.
+        let mut raw_ebv = Vec::new();
+        for (value, keys) in m.entries_by_value() {
+            let keys = if matches!(m.input.sce_type, SceType::Enum(_)) {
+                keys.iter()
+                    .map(|key| entry_literal(key, &m.input.sce_type, "key"))
+                    .collect::<Result<Vec<_>, ForgeError>>()?
+            } else {
+                keys
+            };
+            raw_ebv.push((value, keys));
+        }
 
         let ebv: Vec<serde_json::Value> = match lang {
             Language::Swift => no_swift_emitter("render_lookup"),
@@ -2037,15 +2084,15 @@ fn render_lookup(
         let kl: Vec<String> = m
             .entries
             .iter()
-            .map(|e| l.literal(&e.key, &m.input.sce_type))
-            .collect();
+            .map(|e| entry_literal(&e.key, &m.input.sce_type, "key"))
+            .collect::<Result<_, ForgeError>>()?;
         let vl: Vec<String> = m
             .entries
             .iter()
-            .map(|e| l.literal(&e.value, &m.output.sce_type))
-            .collect();
+            .map(|e| entry_literal(&e.value, &m.output.sce_type, "value"))
+            .collect::<Result<_, ForgeError>>()?;
         let dl = match &m.miss_policy {
-            MissPolicy::Default(s) => l.literal(s, &m.output.sce_type),
+            MissPolicy::Default(s) => entry_literal(s, &m.output.sce_type, "default")?,
             MissPolicy::Error => String::new(),
         };
         (kl, vl, dl)
@@ -2068,6 +2115,17 @@ fn render_lookup(
     ctx.insert("default_literal".into(), default_literal.into());
     ctx.insert("output_is_string".into(), output_is_string.into());
     ctx.insert("on_miss_error".into(), on_miss_error.into());
+    // The import of each enum a key or a value is a variant of, which the Go table
+    // imports beside the runtime's lookup (docs/adr/0051).
+    let lookup_enum_imports: Vec<String> = imports
+        .iter()
+        .filter(|i| i.kind == "enum")
+        .map(|i| i.include_stmt.clone())
+        .collect();
+    ctx.insert(
+        "lookup_enum_imports".into(),
+        serde_json::json!(lookup_enum_imports),
+    );
     ctx.insert("keys_literal".into(), serde_json::json!(keys_literal));
     ctx.insert("values_literal".into(), serde_json::json!(values_literal));
     ctx.insert("n".into(), m.entries.len().into());
@@ -2549,11 +2607,13 @@ pub(crate) fn c11_lookup_found_name(function: &str) -> String {
 /// a C lookup with `sce:on-miss="error"` declares), which no expression can hold;
 /// this turns it into the result every C call that may fail answers. Written under a
 /// guard of the function's name, so two machines of one program declare it once.
-pub(crate) fn c11_lookup_found(function: &str, key: &SceType, value: &SceType) -> String {
+/// `key` and `value` are the C types of the lookup's input and output, a value of an
+/// enum in the type its document declares (docs/adr/0051).
+pub(crate) fn c11_lookup_found(function: &str, key: &str, value: &str) -> String {
     c11_found_reading(
         &c11_lookup_found_name(function),
-        c_type(value),
-        &format!("{} key", c_type(key)),
+        value,
+        &format!("{key} key"),
         "The value the table holds for `key`, or why there is none: a key the\n \
          * table does not hold is outside it.",
         &format!("    result.ok = {function}(key, &result.value);\n"),

@@ -504,29 +504,31 @@ pub(crate) fn resolve(
         let ForgeDocument::Algorithm(algorithm) = &parsed.document else {
             // A transform, a condition, a lookup, an interpolation or a validator:
             // called with the arguments as they are, or refused where it is
-            // imported, naming why.
-            let callee = function_callee(import, &parsed).map_err(|reason| {
-                Located::new(
-                    ScxmlSemanticError::StaticDatamodelRule {
-                        construct: format!(
-                            "<sce:import kind=\"{}\" as=\"{}\">",
-                            import.kind, import.alias
-                        ),
-                        datamodel: model.datamodel.as_str().to_string(),
-                        rule: format!(
-                            "a statechart calls an imported {} as a function of its \
+            // imported, naming why. Its own imports are written relative to it.
+            let function_base = source.path.parent().unwrap_or(base_dir);
+            let callee =
+                function_callee(import, &parsed, function_base, &own_enums).map_err(|reason| {
+                    Located::new(
+                        ScxmlSemanticError::StaticDatamodelRule {
+                            construct: format!(
+                                "<sce:import kind=\"{}\" as=\"{}\">",
+                                import.kind, import.alias
+                            ),
+                            datamodel: model.datamodel.as_str().to_string(),
+                            rule: format!(
+                                "a statechart calls an imported {} as a function of its \
                              arguments, and `{}` is not one: {reason}",
-                            import.kind, import.alias
-                        ),
-                        state: String::new(),
-                        observed: Some(import.alias.clone()),
-                    }
-                    .into(),
-                    diag_label,
-                    import.line,
-                    None,
-                )
-            })?;
+                                import.kind, import.alias
+                            ),
+                            state: String::new(),
+                            observed: Some(import.alias.clone()),
+                        }
+                        .into(),
+                        diag_label,
+                        import.line,
+                        None,
+                    )
+                })?;
             callees.push(callee);
             continue;
         };
@@ -594,27 +596,38 @@ pub(crate) fn resolve(
 
 /// The callee `import` is to a statechart when it names a transform, a condition, a
 /// lookup, an interpolation or a validator (docs/adr/0048), `parsed` being the
-/// document it names: the function the document emits, called with the
-/// statechart's numbers and truth values and answering one, with the signature a
-/// forge kind that imports the document calls it by
+/// document it names (its own imports read from `callee_base`): the function the
+/// document emits, called with the statechart's values and answering one, with the
+/// signature a forge kind that imports the document calls it by
 /// ([`crate::discover_stateless_signature`]) — a validator's check takes its inputs
-/// and answers whether they are valid. `Err` says why a statechart cannot call it as
-/// the document declares it:
+/// and answers whether they are valid. A slot is a number or a truth value, a value
+/// of an enum the statechart imports from the same document (`own_enums`), which
+/// crosses by the name its variant declares, or, for an input, a string
+/// (docs/adr/0051). `Err` says why a statechart cannot call it as the document
+/// declares it:
 ///
 /// - a transform of more than one output, which no one call names the value of, and
 ///   one that reads `previous()`, which keeps a value from one activation to the next
 ///   that a call keeps nowhere;
 /// - a lookup whose output is a string, which it answers as a type of its own that no
-///   statechart variable holds;
+///   statechart variable holds, and one keyed by a string, which no backend's table
+///   compares alike;
 /// - an interpolation whose `sce:out-of-bounds` is not `clamp`, which its generated
 ///   function does not do on any backend;
 /// - a validator that keeps state — a rate-of-change rule, a stateful import — which a
 ///   validator built for each call would forget;
-/// - a slot that is not a number or a truth value.
+/// - a slot of an enum the statechart does not import from the same document, or of
+///   an open enum; an output that is a string, which a call answers with no bound;
+///   and a slot that is a byte string.
 ///
 /// A lookup whose miss is an error may fail: a key its table does not hold is the
 /// call's `out-of-range` failure ([`CallReading::Found`]), received as any call's.
-fn function_callee(import: &ForgeImport, parsed: &ParsedForge) -> Result<StaticCallee, String> {
+fn function_callee(
+    import: &ForgeImport,
+    parsed: &ParsedForge,
+    callee_base: &Path,
+    own_enums: &BTreeMap<String, EnumDocument>,
+) -> Result<StaticCallee, String> {
     let document = &parsed.document;
     // The slots, by the names the document gives them, for a refusal to name.
     let (inputs, output): (Vec<&ForgeField>, Option<&ForgeField>) = match document {
@@ -680,20 +693,53 @@ fn function_callee(import: &ForgeImport, parsed: &ParsedForge) -> Result<StaticC
             ))
         }
     };
-    for (what, field) in inputs
-        .iter()
-        .map(|f| ("input", *f))
-        .chain(output.map(|f| ("output", f)))
-    {
-        if !crate::forge::static_lowering::plain_scalar(&field.sce_type) {
-            return Err(format!(
-                "its {what} `{}` is of type {}, and a statechart hands such a document \
-                 numbers and truth values and takes one back",
-                field.id,
-                field.sce_type.as_attr()
-            ));
+    // Each slot as the statechart holds it: a value of an enum by the alias the
+    // statechart imports the same document under, any other slot as it is.
+    let is_lookup = matches!(document, ForgeDocument::Lookup(_));
+    let slot = |what: &str, field: &ForgeField| -> Result<SceType, String> {
+        match &field.sce_type {
+            SceType::Enum(reference) => {
+                let what = format!("its {what} `{}`", field.id);
+                let read = enum_document(&parsed.imports, callee_base, &reference.alias);
+                let held = crossable_enum(&what, &reference.alias, read.as_ref())?;
+                let own = own_enums
+                    .iter()
+                    .find(|(_, own)| own.identity == held.identity)
+                    .map(|(own_alias, _)| own_alias.clone())
+                    .ok_or_else(|| {
+                        format!(
+                            "{what} holds the enum `{}` of {}, which the statechart does not \
+                             import as an enum",
+                            reference.alias, held.identity
+                        )
+                    })?;
+                Ok(SceType::Enum(EnumRef { alias: own }))
+            }
+            SceType::String if what == "input" && is_lookup => Err(format!(
+                "its input `{}` is a string, and a lookup's table is keyed by numbers or by \
+                 the variants of an enum, which every backend compares alike (key it by an \
+                 enum)",
+                field.id
+            )),
+            SceType::String if what == "input" => Ok(SceType::String),
+            SceType::String => Err(format!(
+                "its output `{}` is a string, which a call answers with no bound a statechart \
+                 holds it within",
+                field.id
+            )),
+            SceType::Bytes => Err(format!(
+                "its {what} `{}` is a byte string, which a statechart hands such a document \
+                 on no backend alike",
+                field.id
+            )),
+            other => Ok(other.clone()),
         }
-    }
+    };
+    let params = inputs
+        .iter()
+        .map(|field| slot("input", field))
+        .collect::<Result<Vec<_>, _>>()?;
+    let output = output.map(|field| slot("output", field)).transpose()?;
     let (kind, ret, may_fail, reading) = match document {
         ForgeDocument::Validator(_) => (
             CalleeKind::Validator,
@@ -704,9 +750,12 @@ fn function_callee(import: &ForgeImport, parsed: &ParsedForge) -> Result<StaticC
         _ => {
             let function = StatelessFunction::of(document)
                 .ok_or_else(|| "it emits no function a caller is named".to_string())?;
-            let ret = crate::discover_stateless_signature(document)
-                .ret
-                .ok_or_else(|| "it answers no value".to_string())?;
+            // A condition answers its truth value; every other kind its one output.
+            let ret = match (document, output) {
+                (ForgeDocument::Condition(_), _) => SceType::Bool,
+                (_, Some(ty)) => ty,
+                (_, None) => return Err("it answers no value".to_string()),
+            };
             let misses = matches!(document, ForgeDocument::Lookup(m) if m.miss_policy.is_error());
             let reading = if misses {
                 CallReading::Found
@@ -721,7 +770,7 @@ fn function_callee(import: &ForgeImport, parsed: &ParsedForge) -> Result<StaticC
         document_name: document.name().to_string(),
         kind,
         reading,
-        params: inputs.iter().map(|f| f.sce_type.clone()).collect(),
+        params,
         ret: Some(ret),
         host_only: None,
         may_fail,

@@ -45,7 +45,14 @@ func {{ func_name }}({{ input_id }} {{ input_type }}) {{ enum_name }} {
 }
 {% else %}
 
-import "github.com/newmassrael/sce-forge-runtime/lookup"
+{# The enum a key or a value is a variant of is imported beside the runtime's
+   lookup, as the string-output table imports it. #}
+import (
+	"github.com/newmassrael/sce-forge-runtime/lookup"
+{% for stmt in lookup_enum_imports %}
+{{ stmt }}
+{% endfor %}
+)
 
 {# The tables are package-level, so they carry the `sce` prefix, the
    generator's own: an input called `keys` or `values` cannot hide them. #}

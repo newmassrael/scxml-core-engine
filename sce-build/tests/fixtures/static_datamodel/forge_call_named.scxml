@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A validator of a text, which static_forge_calls.scxml calls as `Named(name)` with
+  the string itself (docs/adr/0051): a name is valid when it is not empty.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="validator" name="forge_call_named" version="1.0">
+  <datamodel>
+    <data id="name" sce:type="string" sce:direction="in"/>
+    <data id="valid" sce:type="bool" sce:direction="out"
+          sce:plausibility="name !== ''"/>
+  </datamodel>
+</scxml>

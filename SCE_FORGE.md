@@ -678,6 +678,28 @@ The enum path is used when the output values are symbolic (state names, status c
 
 Policy selection is independent of output type, so the four combinations (`string|numeric` × `error|default`) are all valid codegen targets.
 
+**Keyed and answering by an enum.** The input and the output may each be `enum:<alias>`, a value of
+an imported enum document. The table then names each key and value, and `sce:default`, by the
+variant's declared name — never by the number it declares — and each backend writes the variant's
+own reference into the table the numeric strategy builds, so a table and the enum cannot disagree.
+A name the enum does not declare is refused where the lookup is generated, naming the entry
+(docs/adr/0051):
+
+```xml
+<scxml sce:kind="lookup" name="weight_of">
+  <sce:import kind="enum" src="status.scxml" as="Status"/>
+  <sce:import kind="enum" src="level.scxml" as="Level"/>
+  <datamodel>
+    <data id="status" sce:type="enum:Status" sce:direction="in"/>
+    <data id="weight" sce:type="enum:Level" sce:direction="out"/>
+    <data id="mapping" sce:on-miss="error">
+      <sce:entry key="open" value="light"/>
+      <sce:entry key="held" value="heavy"/>
+    </data>
+  </datamodel>
+</scxml>
+```
+
 ```xml
 <scxml sce:kind="lookup">
   <datamodel>

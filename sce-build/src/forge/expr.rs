@@ -710,6 +710,7 @@ fn resolve_then_rename(
         lower_stateful_import_calls(ast, lowerings);
     }
     lower_enum_conversions(ast, ctx, target);
+    lower_call_crossings(ast, ctx, target);
     lower_call_readings(ast, ctx, target);
     lower_enum_variant_refs(ast, ctx, target)?;
     // A C string is a bounded buffer: a join of strings the data model sizes is
@@ -5059,6 +5060,53 @@ fn wrap_in_found(expr: &mut TypedExpr, wrapper: &str) {
     *args = vec![reading];
     *params = vec![InferredType::Unknown];
     *fails = true;
+}
+
+/// Each call of a function whose arguments or value cross between the caller and
+/// the function ([`TypeCtx::crossings`], docs/adr/0051), with them crossed: a value
+/// of an enum taken into the type the enum document declares through the function
+/// the target names for it, and the value an enum is answered in taken back the same
+/// way; a text lent where the target's machine owns its strings and the function
+/// borrows one (Rust). Runs before the call is read as its signature says
+/// ([`lower_call_readings`]), so a reading that may find nothing is read inside the
+/// crossing back: the value crosses once it is found.
+fn lower_call_crossings(expr: &mut TypedExpr, ctx: &TypeCtx<'_>, target: ExprTarget) {
+    for child in expr.children_mut() {
+        lower_call_crossings(child, ctx, target);
+    }
+    let crossing = match &expr.kind {
+        ExprKind::Call { callee, .. } => match &callee.kind {
+            ExprKind::Ident(name) => ctx.crossings.get(name.as_str()).cloned(),
+            _ => None,
+        },
+        _ => None,
+    };
+    let Some(crossing) = crossing else {
+        return;
+    };
+    if let ExprKind::Call { args, .. } = &mut expr.kind {
+        for (arg, slot) in args.iter_mut().zip(&crossing.params) {
+            // A crossing keeps the type the value had: the enum's conversion
+            // answers the same value under the other document's type, and Rust's
+            // `&` lends the text it is given.
+            let ty = arg.ty;
+            match slot {
+                crate::forge::types::SlotCrossing::AsIs => {}
+                crate::forge::types::SlotCrossing::Enum(function) => {
+                    wrap_in_call(arg, function, ty)
+                }
+                crate::forge::types::SlotCrossing::Text => {
+                    if target == ExprTarget::Rust {
+                        wrap_in_call(arg, "&", ty);
+                    }
+                }
+            }
+        }
+    }
+    if let Some(function) = crossing.ret {
+        let ty = expr.ty;
+        wrap_in_call(expr, function, ty);
+    }
 }
 
 /// The field of a validator's `ValidationResult` that says whether its inputs are

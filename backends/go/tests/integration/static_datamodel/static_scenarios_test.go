@@ -1088,6 +1088,12 @@ func TestTheKindsThatAreFunctionsAreCalledAsAnAlgorithmIs(t *testing.T) {
 		"rpm":      func() any { return policy.Rpm() },
 		"limit":    func() any { return policy.Limit() },
 		"highs":    func() any { return policy.Highs() },
+		// A value of an enum handed over and taken back, by the name its document
+		// declares, and the text a validator is handed (docs/adr/0051).
+		"phase":    func() any { return policy.Phase().String() },
+		"weight":   func() any { return policy.Weight().String() },
+		"customer": func() any { return policy.Customer() },
+		"known":    func() any { return policy.Known() },
 	}))
 }
 

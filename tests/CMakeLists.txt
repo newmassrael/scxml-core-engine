@@ -545,7 +545,8 @@ endforeach()
 # (docs/adr/0048). Each is a document of its own kind, generated beside the machine
 # that includes its header, as an algorithm is.
 foreach(_CALLED_DOCUMENT forge_call_high forge_call_offset forge_call_ratio forge_call_code
-                         forge_call_limit forge_call_range)
+                         forge_call_limit forge_call_range forge_call_status forge_call_level
+                         forge_call_next forge_call_weight forge_call_named)
     sce_add_algorithm(
         TARGET static_datamodel_generated_cpp_test
         SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_CALLED_DOCUMENT}.scxml

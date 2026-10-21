@@ -472,6 +472,14 @@ fn limit_doc(name: &str) -> String {
     format!("The bound `sce:limit=\"{name}\"` names, as this build resolved it.")
 }
 
+/// The names of the functions a value of the machine's own type `ty` for an enum
+/// crosses through, into the enum document's type and back
+/// ([`StaticTarget::enum_crossing_names`]): one spelling, named by the type, which
+/// carries the machine's name, on every target that names them.
+fn enum_crossing_function_names(ty: &str) -> (String, String) {
+    (format!("{ty}ToDocument"), format!("{ty}FromDocument"))
+}
+
 /// Whether `ty` is a number or a truth value (see [`plain_schema`]).
 pub(crate) fn plain_scalar(ty: &SceType) -> bool {
     !matches!(ty, SceType::Enum(_) | SceType::String | SceType::Bytes)
@@ -723,6 +731,20 @@ pub trait StaticTarget {
     /// (docs/adr/0050). `limits` is never empty. `None` for a target that declares
     /// none: the Interpreter's ecmascript, whose document is the host's to read.
     fn limits_def(&self, _machine: &str, _limits: &[(String, u32)]) -> Option<String> {
+        None
+    }
+    /// The names of the two functions a value of the machine's own type for an enum,
+    /// `ty`, crosses through into the type the enum document's generation declares
+    /// and back, where a function of another kind the machine calls holds a value of
+    /// the enum (docs/adr/0051). `None` for a target whose machine holds the
+    /// document's own type, across which a value passes as it is.
+    fn enum_crossing_names(&self, _ty: &str) -> Option<(String, String)> {
+        None
+    }
+    /// The declaration of the two functions [`Self::enum_crossing_names`] names, each
+    /// the crossing a call of an algorithm already makes ([`Self::enum_crossing`]) as a
+    /// function of the machine's unit. `None` where the target names none.
+    fn enum_crossing_def(&self, _ty: &str, _model: &EnumModel) -> Option<String> {
         None
     }
     /// Whether an adapter names the type the algorithm's unit gives a record it
@@ -1523,6 +1545,22 @@ impl StaticTarget for KotlinTarget {
             "/** {LIMITS_DOC} */\nobject {machine}Limits {{\n{constants}}}"
         ))
     }
+    fn enum_crossing_names(&self, ty: &str) -> Option<(String, String)> {
+        Some(enum_crossing_function_names(ty))
+    }
+    // Two functions of the file, each a `when` over every variant.
+    fn enum_crossing_def(&self, ty: &str, model: &EnumModel) -> Option<String> {
+        let (to, from) = enum_crossing_function_names(ty);
+        let document = crate::forge::generator::enum_qualified_type(&model.name, Language::Kotlin);
+        let into = self.enum_crossing(ty, model, "v", Crossing::ToAlgorithm)?;
+        let back = self.enum_crossing(ty, model, "v", Crossing::FromAlgorithm)?;
+        Some(format!(
+            "/** A value of [{ty}] as the variant of the same declared name of [{document}]. */\n\
+             fun {to}(v: {ty}): {document} = {into}\n\n\
+             /** A value of [{document}] as the variant of the same declared name of [{ty}]. */\n\
+             fun {from}(v: {document}): {ty} = {back}"
+        ))
+    }
     // A function of the machine's file that takes the machine's values, builds the
     // algorithm's from them, calls it, and builds the machine's own from what it
     // returns, answering as the algorithm does: an `AlgorithmResult` where it may
@@ -2172,6 +2210,25 @@ impl StaticTarget for RustTarget {
             .collect();
         Some(format!(
             "/// {LIMITS_DOC}\n#[allow(dead_code)]\npub struct {machine}Limits;\n\n#[allow(dead_code)]\nimpl {machine}Limits {{\n{constants}}}"
+        ))
+    }
+    fn enum_crossing_names(&self, ty: &str) -> Option<(String, String)> {
+        Some(enum_crossing_function_names(ty))
+    }
+    // Two functions of the module, each a `match` over every variant, named as the
+    // adapters are.
+    fn enum_crossing_def(&self, ty: &str, model: &EnumModel) -> Option<String> {
+        let (to, from) = enum_crossing_function_names(ty);
+        let document = crate::forge::generator::enum_qualified_type(&model.name, Language::Rust);
+        let into = self.enum_crossing(ty, model, "v", Crossing::ToAlgorithm)?;
+        let back = self.enum_crossing(ty, model, "v", Crossing::FromAlgorithm)?;
+        Some(format!(
+            "/// A value of `{ty}` as the variant of the same declared name of `{document}`.\n\
+             #[allow(non_snake_case, dead_code)]\n\
+             fn {to}(v: {ty}) -> {document} {{\n    {into}\n}}\n\n\
+             /// A value of `{document}` as the variant of the same declared name of `{ty}`.\n\
+             #[allow(non_snake_case, dead_code)]\n\
+             fn {from}(v: {document}) -> {ty} {{\n    {back}\n}}"
         ))
     }
     // A function of the machine's file that takes the values the machine holds —
@@ -2954,10 +3011,15 @@ pub fn lower(
         // declares, as the machine's own type for the enum answers them
         // ([`StaticTarget::enum_number_symbols`]).
         let (to_number, from_number) = target.enum_number_symbols(&ty, model);
+        // The functions a value crosses into the enum document's type and back, where
+        // a function of another kind the machine calls holds it (docs/adr/0051).
+        let (to_document, from_document) = target.enum_crossing_names(&ty).unwrap_or_default();
         crate::forge::type_ctx::StaticEnumSpelling {
             qualified_type: ty,
             to_number,
             from_number,
+            to_document,
+            from_document,
         }
     });
     // A call the target cannot spell would be an undefined name where the
@@ -3741,6 +3803,31 @@ pub fn lower(
     // What a target declares beside its calls of a callee it does not call as the
     // imported function itself: C's reading of a lookup whose miss is an error.
     adapter_defs.extend(scope.callees.iter().filter_map(|c| target.callee_def(c)));
+    // The functions a value of an enum crosses through where a function of another
+    // kind the machine calls holds it (docs/adr/0051), each enum's once, and the unit
+    // of the enum document they name.
+    let crossed: BTreeSet<&str> = scope
+        .callees
+        .iter()
+        .filter(|c| !c.kind.is_algorithm())
+        .flat_map(|c| c.params.iter().chain(c.ret.iter()))
+        .filter_map(|ty| match ty {
+            SceType::Enum(reference) => Some(reference.alias.as_str()),
+            _ => None,
+        })
+        .collect();
+    for alias in crossed {
+        let (Some(model), Some(ty)) = (imported_enums.get(alias), target.enum_type(machine, alias))
+        else {
+            continue;
+        };
+        if let Some(def) = target.enum_crossing_def(&ty, model) {
+            adapter_defs.push(def);
+            if let Some(line) = target.enum_import(&model.name) {
+                imports.insert(line);
+            }
+        }
+    }
     let imports: Vec<String> = imports.into_iter().collect();
     Ok(StaticLowering {
         fields,
@@ -4916,6 +5003,23 @@ impl StaticTarget for CppTarget {
             "/// {LIMITS_DOC}\nstruct {machine}Limits {{\n{constants}}};"
         ))
     }
+    fn enum_crossing_names(&self, ty: &str) -> Option<(String, String)> {
+        Some(enum_crossing_function_names(ty))
+    }
+    // Two inline functions of the machine's namespace, each the conditional over
+    // every variant a call of an algorithm crosses by.
+    fn enum_crossing_def(&self, ty: &str, model: &EnumModel) -> Option<String> {
+        let (to, from) = enum_crossing_function_names(ty);
+        let document = crate::forge::generator::enum_qualified_type(&model.name, Language::Cpp);
+        let into = self.enum_crossing(ty, model, "v", Crossing::ToAlgorithm)?;
+        let back = self.enum_crossing(ty, model, "v", Crossing::FromAlgorithm)?;
+        Some(format!(
+            "/// A value of `{ty}` as the variant of the same declared name of `{document}`.\n\
+             inline {document} {to}({ty} v) {{\n    return {into};\n}}\n\n\
+             /// A value of `{document}` as the variant of the same declared name of `{ty}`.\n\
+             inline {ty} {from}({document} v) {{\n    return {back};\n}}"
+        ))
+    }
     // A function of the machine's file that builds the algorithm's records from the
     // machine's, calls it, and builds the machine's own from what it returns,
     // answering as the algorithm does: an `AlgorithmResult` where it may fail, which
@@ -5728,6 +5832,23 @@ impl StaticTarget for GoTarget<'_> {
             .collect();
         Some(format!("// {LIMITS_DOC}\n\n{}", constants.join("\n\n")))
     }
+    fn enum_crossing_names(&self, ty: &str) -> Option<(String, String)> {
+        Some(enum_crossing_function_names(ty))
+    }
+    // Two functions of the package, each the map over every variant a call of an
+    // algorithm crosses by.
+    fn enum_crossing_def(&self, ty: &str, model: &EnumModel) -> Option<String> {
+        let (to, from) = enum_crossing_function_names(ty);
+        let document = crate::forge::generator::enum_qualified_type(&model.name, Language::Go);
+        let into = self.enum_crossing(ty, model, "v", Crossing::ToAlgorithm)?;
+        let back = self.enum_crossing(ty, model, "v", Crossing::FromAlgorithm)?;
+        Some(format!(
+            "// {to} is a value of {ty} as the variant of the same declared name of {document}.\n\
+             func {to}(v {ty}) {document} {{\n\treturn {into}\n}}\n\n\
+             // {from} is a value of {document} as the variant of the same declared name of {ty}.\n\
+             func {from}(v {document}) {ty} {{\n\treturn {back}\n}}"
+        ))
+    }
     // The adapter reads what the algorithm returns by its fields (`e.Row`) and writes
     // the machine's own type, so the package of a record only a return names would be
     // an import nothing uses.
@@ -6528,6 +6649,23 @@ impl StaticTarget for PythonTarget {
             "class {machine}Limits:\n    \"\"\"{LIMITS_DOC}\"\"\"\n\n{constants}"
         ))
     }
+    fn enum_crossing_names(&self, ty: &str) -> Option<(String, String)> {
+        Some(enum_crossing_function_names(ty))
+    }
+    // Two functions of the module, each the dict over every variant a call of an
+    // algorithm crosses by.
+    fn enum_crossing_def(&self, ty: &str, model: &EnumModel) -> Option<String> {
+        let (to, from) = enum_crossing_function_names(ty);
+        let document = crate::forge::generator::enum_qualified_type(&model.name, Language::Python);
+        let into = self.enum_crossing(ty, model, "v", Crossing::ToAlgorithm)?;
+        let back = self.enum_crossing(ty, model, "v", Crossing::FromAlgorithm)?;
+        Some(format!(
+            "def {to}(v):\n    \"\"\"A value of {ty} as the variant of the same declared name of \
+             {document}.\"\"\"\n    return {into}\n\n\n\
+             def {from}(v):\n    \"\"\"A value of {document} as the variant of the same declared \
+             name of {ty}.\"\"\"\n    return {back}"
+        ))
+    }
     // A function of the machine's file that builds the algorithm's records from the
     // machine's, calls it, and builds the machine's from what it returns. The
     // algorithm raises where it fails, as the machine's own checked operations do,
@@ -7284,10 +7422,19 @@ impl StaticTarget for CTarget {
             return None;
         }
         let function = generated_callee(Language::C11, callee, None).call;
+        // A value of an enum is of the type its document declares, which the lookup
+        // and the machine both hold it in.
+        let c_slot = |ty: &SceType| match ty {
+            SceType::Enum(reference) => crate::forge::generator::enum_qualified_type(
+                &self.enum_document_name(&reference.alias),
+                Language::C11,
+            ),
+            other => crate::forge::generator::c_type(other).to_string(),
+        };
         Some(crate::forge::generator::c11_lookup_found(
             &function,
-            callee.params.first()?,
-            callee.ret.as_ref()?,
+            &c_slot(callee.params.first()?),
+            &c_slot(callee.ret.as_ref()?),
         ))
     }
     fn lowers_state_calls(&self) -> bool {

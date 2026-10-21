@@ -2803,10 +2803,15 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_forge_calls.scxml"
         STAGE_ALSO forge_call_high.scxml forge_call_offset.scxml forge_call_ratio.scxml
                    forge_call_code.scxml forge_call_limit.scxml forge_call_range.scxml
+                   forge_call_status.scxml forge_call_level.scxml forge_call_next.scxml
+                   forge_call_weight.scxml forge_call_named.scxml
     )
+    # The enums a value crosses into a called document by (docs/adr/0051) are
+    # documents of their own too, whose headers the called documents include.
     set(_CALLED_HEADERS "")
     foreach(_CALLED_DOCUMENT forge_call_high forge_call_offset forge_call_ratio forge_call_code
-                             forge_call_limit forge_call_range)
+                             forge_call_limit forge_call_range forge_call_status forge_call_level
+                             forge_call_next forge_call_weight forge_call_named)
         set(_CALLED_SOURCE
             "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_CALLED_DOCUMENT}.scxml")
         set(_CALLED_OUTPUT "${SCE_C_INTEGRATION_GENERATED_DIR}/${_CALLED_DOCUMENT}.h")

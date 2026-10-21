@@ -973,6 +973,7 @@ VARIABLE_READER(static_forge_calls, offset)
 VARIABLE_READER(static_forge_calls, accepted)
 VARIABLE_READER(static_forge_calls, rpm)
 VARIABLE_READER(static_forge_calls, highs)
+VARIABLE_READER(static_forge_calls, known)
 
 static bool static_forge_calls_read_real(void *sm, const char *name, double *out) {
     if (strcmp(name, "limit") == 0) {
@@ -980,6 +981,22 @@ static bool static_forge_calls_read_real(void *sm, const char *name, double *out
         return true;
     }
     return false;
+}
+
+// A value of an enum handed to a function of another kind and taken back, read by the
+// name its document declares, and the text a validator is handed (docs/adr/0051).
+static const char *static_forge_calls_text(void *sm, const char *name) {
+    const static_forge_calls_t *machine = (const static_forge_calls_t *)sm;
+    if (strcmp(name, "phase") == 0) {
+        return forge_call_status_declared_name(static_forge_calls_get_phase(machine));
+    }
+    if (strcmp(name, "weight") == 0) {
+        return forge_call_level_declared_name(static_forge_calls_get_weight(machine));
+    }
+    if (strcmp(name, "customer") == 0) {
+        return static_forge_calls_get_customer(machine);
+    }
+    return NULL;
 }
 
 static const name_value_t forge_calls_states[] = {
@@ -990,10 +1007,10 @@ static const variable_t forge_calls_variables[] = {
     {"code", static_forge_calls_read_code},         {"misses", static_forge_calls_read_misses},
     {"level", static_forge_calls_read_level},       {"offset", static_forge_calls_read_offset},
     {"accepted", static_forge_calls_read_accepted}, {"rpm", static_forge_calls_read_rpm},
-    {"highs", static_forge_calls_read_highs},
+    {"highs", static_forge_calls_read_highs},       {"known", static_forge_calls_read_known},
 };
-STATIC_SCENARIO_FULL(static_forge_calls, forge_calls_states, forge_calls_variables, NULL, no_lists, no_records, NULL,
-                     static_forge_calls_read_real, NULL, NULL)
+STATIC_SCENARIO_FULL(static_forge_calls, forge_calls_states, forge_calls_variables, static_forge_calls_text, no_lists,
+                     no_records, NULL, static_forge_calls_read_real, NULL, NULL)
 
 // static_payload_enum: an event's payload carries an enum field, the variant's
 // declared name, held in the machine's own enum and lifted from the data it
@@ -3016,7 +3033,7 @@ int main(void) {
     bad |= static_payload_scenario("static_payload", 5);
     bad |= static_enum_scenario("static_enum", 11);
     bad |= static_enum_number_scenario("static_enum_number", 12);
-    bad |= static_forge_calls_scenario("static_forge_calls", 18);
+    bad |= static_forge_calls_scenario("static_forge_calls", 24);
     bad |= static_payload_enum_scenario("static_payload_enum", 8);
     bad |= static_payload_relay_scenario("static_payload_relay", 5);
     bad |= static_string_capacity_scenario("static_string_capacity", 14);

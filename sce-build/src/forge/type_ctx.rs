@@ -17,7 +17,9 @@
 use crate::forge::generator::ImportContext;
 use crate::forge::model::*;
 use crate::forge::quantity::{NumericBaseType, Quantity};
-use crate::forge::types::{EnumScope, FuncSig, InferredType, RecordShape, TypeCtx};
+use crate::forge::types::{
+    CallCrossing, EnumScope, FuncSig, InferredType, RecordShape, SlotCrossing, TypeCtx,
+};
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Low-level helpers
@@ -567,16 +569,25 @@ pub struct StaticEnum {
     /// ([`EnumScope::to_number`], [`EnumScope::from_number`]).
     pub to_number: String,
     pub from_number: String,
+    /// The functions a value of the enum crosses through into the type the enum
+    /// document declares and back, where a function of another kind the statechart
+    /// calls holds it (docs/adr/0051); empty for a target whose machine holds the
+    /// document's own type, and for a check that lowers nothing.
+    pub to_document: String,
+    pub from_document: String,
 }
 
 /// How a backend spells an enum a statechart imports: the type it holds a value
 /// in, and the functions its two conversions are lowered to
-/// ([`StaticEnum::from_imports`]).
+/// ([`StaticEnum::from_imports`]), and the two it crosses into the enum
+/// document's own type by ([`StaticEnum::to_document`]).
 #[derive(Debug, Clone)]
 pub struct StaticEnumSpelling {
     pub qualified_type: String,
     pub to_number: String,
     pub from_number: String,
+    pub to_document: String,
+    pub from_document: String,
 }
 
 impl StaticEnumSpelling {
@@ -587,6 +598,8 @@ impl StaticEnumSpelling {
             qualified_type: alias.to_string(),
             to_number: format!("{alias}.{}", crate::forge::types::ENUM_TO_NUMBER),
             from_number: format!("{alias}.{}", crate::forge::types::ENUM_FROM_NUMBER),
+            to_document: String::new(),
+            from_document: String::new(),
         }
     }
 }
@@ -611,6 +624,8 @@ impl StaticEnum {
                     carrier: model.underlying_type.clone(),
                     to_number: spelled.to_number,
                     from_number: spelled.from_number,
+                    to_document: spelled.to_document,
+                    from_document: spelled.from_document,
                 }
             })
             .collect()
@@ -1107,12 +1122,32 @@ impl StaticScope {
         let alias = self
             .state_call(name)
             .map_or(name, |call| call.alias.as_str());
-        let value = self.value_callee(alias)?.value.as_ref()?;
-        let held = |slot: &StaticSlot| slot.enum_alias().map(str::to_string);
-        Some(crate::forge::static_enum::CallEnums {
-            callee: alias.to_string(),
-            params: value.params.iter().map(held).collect(),
-            ret: value.ret.as_ref().and_then(held),
+        if let Some(value) = self.value_callee(alias).and_then(|c| c.value.as_ref()) {
+            let held = |slot: &StaticSlot| slot.enum_alias().map(str::to_string);
+            return Some(crate::forge::static_enum::CallEnums {
+                callee: alias.to_string(),
+                params: value.params.iter().map(held).collect(),
+                ret: value.ret.as_ref().and_then(held),
+            });
+        }
+        // A function of another kind whose slot holds a value of an enum the
+        // statechart imports (docs/adr/0051): its slots are the statechart's own.
+        let callee = self
+            .callees
+            .iter()
+            .find(|c| c.alias == alias && !c.kind.is_algorithm())?;
+        let held = |ty: &SceType| match ty {
+            SceType::Enum(reference) => Some(reference.alias.clone()),
+            _ => None,
+        };
+        let params: Vec<Option<String>> = callee.params.iter().map(held).collect();
+        let ret = callee.ret.as_ref().and_then(held);
+        (ret.is_some() || params.iter().any(Option::is_some)).then(|| {
+            crate::forge::static_enum::CallEnums {
+                callee: alias.to_string(),
+                params,
+                ret,
+            }
         })
     }
 
@@ -1465,6 +1500,34 @@ impl StaticScope {
                 }
             }
         }
+        // How each argument of a call of a function of another kind, and the value
+        // it answers, cross between the machine and the function (docs/adr/0051): a
+        // value of an enum through the functions the target declares for it, a text
+        // as the target lends one.
+        for callee in self.callees.iter().filter(|c| !c.kind.is_algorithm()) {
+            let params: Vec<SlotCrossing<'a>> = callee
+                .params
+                .iter()
+                .map(|ty| match ty {
+                    SceType::Enum(reference) => {
+                        enum_crossing_function(enums, &reference.alias, Crossing::ToDocument)
+                            .map_or(SlotCrossing::AsIs, SlotCrossing::Enum)
+                    }
+                    SceType::String => SlotCrossing::Text,
+                    _ => SlotCrossing::AsIs,
+                })
+                .collect();
+            let ret = match callee.ret.as_ref() {
+                Some(SceType::Enum(reference)) => {
+                    enum_crossing_function(enums, &reference.alias, Crossing::FromDocument)
+                }
+                _ => None,
+            };
+            if ret.is_some() || params.iter().any(|p| *p != SlotCrossing::AsIs) {
+                ctx.crossings
+                    .insert(callee.alias.as_str(), CallCrossing { params, ret });
+            }
+        }
         // E12 D5: a machine receives the failures of what it runs — an
         // integer operation that overflows, a call of a callee that declares
         // `may-fail` — as `error.execution`, so every integer operation is
@@ -1472,6 +1535,30 @@ impl StaticScope {
         ctx.receives_failures = true;
         ctx
     }
+}
+
+/// Which way [`enum_crossing_function`] crosses.
+#[derive(Debug, Clone, Copy)]
+enum Crossing {
+    ToDocument,
+    FromDocument,
+}
+
+/// The function a value of the enum `alias` crosses through, into the type its
+/// document declares or back, as the target spells it ([`StaticEnum::to_document`]);
+/// `None` where the target names none, since its machine holds the document's own
+/// type, or the scope does not import the enum.
+fn enum_crossing_function<'e>(
+    enums: &'e [StaticEnum],
+    alias: &str,
+    crossing: Crossing,
+) -> Option<&'e str> {
+    let held = enums.iter().find(|e| e.alias == alias)?;
+    let function = match crossing {
+        Crossing::ToDocument => held.to_document.as_str(),
+        Crossing::FromDocument => held.from_document.as_str(),
+    };
+    (!function.is_empty()).then_some(function)
 }
 
 /// TypeCtx for a statechart's expression under `datamodel="sce-static"`

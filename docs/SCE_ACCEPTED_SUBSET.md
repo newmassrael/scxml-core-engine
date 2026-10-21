@@ -4447,9 +4447,24 @@ could not do as the document declares it is refused where it is imported, as
 one output, or one that reads `previous()`; a lookup whose output is a string; an
 interpolation whose `sce:out-of-bounds` is not `clamp`, since the generated
 function clamps on every backend; a validator with a rate-of-change rule or a
-stateful import, which keeps what it read; and a slot that is not a number or a
-truth value. The six generated backends call them; the Interpreter refuses such a
+stateful import, which keeps what it read; and a slot of any other type than the
+ones below. The six generated backends call them; the Interpreter refuses such a
 call by name, as a construct it has no lowering for yet.
+
+A slot is a number or a truth value, a value of an enum, or, for an input, a text
+(docs/adr/0051). A value of an enum crosses by the name its variant declares: the
+slot's enum is one the statechart imports from the same document and is closed, and
+the call's arguments are held to it as an algorithm's are (a value of that enum and
+nothing else, and the call a value of the enum it answers). The machine declares two
+functions for each such enum, `<MachineEnum>ToDocument` and `<MachineEnum>FromDocument`,
+the crossing an algorithm's adapter makes, and each argument and value crosses through
+them; C holds the document's own type and passes it as it is. A text is handed as it
+is (a Rust machine lends its `String` as `&str`), so a validator compares the text
+itself. Refused where the callee is imported: an enum the statechart does not import
+from the same document, or an open one; a text output, which a call answers with no
+bound; a lookup keyed by a text, which no backend's table compares alike; and a byte
+string. A lookup is keyed and answers by an enum's variants, naming each by its
+declared name (SCE_FORGE.md §4.3).
 `scenarios/static_forge_calls.json` replays a call of each kind, and
 `sce-build/tests/a_statechart_calls_the_forge_kinds_that_are_functions.rs` holds
 the rule, each refusal and what each backend lowers a call to.

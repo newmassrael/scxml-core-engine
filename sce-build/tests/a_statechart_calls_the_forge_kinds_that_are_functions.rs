@@ -37,13 +37,18 @@ fn fixtures() -> PathBuf {
 
 /// The machine of the fixtures, and the documents it calls, beside it.
 const MACHINE: &str = "static_forge_calls.scxml";
-const SIBLINGS: [&str; 6] = [
+const SIBLINGS: [&str; 11] = [
     "forge_call_high.scxml",
     "forge_call_offset.scxml",
     "forge_call_ratio.scxml",
     "forge_call_code.scxml",
     "forge_call_limit.scxml",
     "forge_call_range.scxml",
+    "forge_call_status.scxml",
+    "forge_call_level.scxml",
+    "forge_call_next.scxml",
+    "forge_call_weight.scxml",
+    "forge_call_named.scxml",
 ];
 
 /// The fixture document `name`, with `from` replaced by `to` when given.
@@ -337,20 +342,191 @@ fn a_validator_that_keeps_what_it_read_is_refused_where_it_is_imported() {
     );
 }
 
+/// A byte string is no slot a statechart hands such a document (docs/adr/0051).
 #[test]
-fn a_slot_that_is_not_a_number_or_a_truth_value_is_refused_where_it_is_imported() {
+fn a_slot_of_bytes_is_refused_where_it_is_imported() {
     let text = fixture(
         "forge_call_high.scxml",
         Some((
             "<data id=\"level\" sce:type=\"int32\" sce:direction=\"in\"/>",
             "<data id=\"level\" sce:type=\"int32\" sce:direction=\"in\"/>\n    \
-             <data id=\"label\" sce:type=\"string\" sce:direction=\"in\"/>",
+             <data id=\"frame\" sce:type=\"bytes\" sce:direction=\"in\"/>",
         )),
     );
     refused(
         &[("forge_call_high.scxml", &text)],
-        "its input `label` is of type string",
+        "its input `frame` is a byte string",
     );
+}
+
+/// A text is an input a statechart hands over as it is (docs/adr/0051), and an
+/// output it does not take: a call answers a text with no bound a statechart holds.
+#[test]
+fn a_text_is_an_input_and_no_output() {
+    let output = fixture(
+        "forge_call_offset.scxml",
+        Some((
+            "<data id=\"offset\" sce:type=\"int32\" sce:direction=\"out\" expr=\"level - 10\"/>",
+            "<data id=\"offset\" sce:type=\"string\" sce:direction=\"out\" expr=\"'x'\"/>",
+        )),
+    );
+    refused(
+        &[("forge_call_offset.scxml", &output)],
+        "its output `offset` is a string",
+    );
+    // A lookup is keyed by numbers or by an enum's variants, which every backend's
+    // table compares alike, and not by a text.
+    let keyed = fixture(
+        "forge_call_code.scxml",
+        Some((
+            "<data id=\"gear\" sce:type=\"uint8\" sce:direction=\"in\"/>",
+            "<data id=\"gear\" sce:type=\"string\" sce:direction=\"in\"/>",
+        )),
+    );
+    refused(
+        &[("forge_call_code.scxml", &keyed)],
+        "its input `gear` is a string",
+    );
+}
+
+/// A value of an enum crosses by the name its variant declares, which only one
+/// document gives both sides: a slot of an enum the statechart does not import from
+/// the same document is refused where the callee is imported (docs/adr/0051).
+#[test]
+fn a_slot_of_an_enum_the_statechart_does_not_import_is_refused() {
+    let machine = fixture(
+        MACHINE,
+        Some((
+            "  <sce:import kind=\"enum\" src=\"forge_call_level.scxml\" as=\"Level\"/>\n",
+            "",
+        )),
+    )
+    .replace(
+        "<data id=\"weight\" sce:type=\"enum:Level\" expr=\"Level.light\" sce:direction=\"out\"/>",
+        "",
+    )
+    .replace(
+        "<assign location=\"weight\" expr=\"Weight(phase)\"/>",
+        "<assign location=\"misses\" expr=\"misses\"/>",
+    );
+    refused(
+        &[(MACHINE, &machine)],
+        "which the statechart does not import as an enum",
+    );
+}
+
+/// A value of an enum is handed to a callee whose slot holds that enum, and taken
+/// back where a value of it stands: a number is no status (docs/adr/0051).
+#[test]
+fn an_argument_of_an_enum_slot_is_a_value_of_that_enum() {
+    let machine = fixture(
+        MACHINE,
+        Some((
+            "<assign location=\"phase\" expr=\"Next(phase)\"/>",
+            "<assign location=\"phase\" expr=\"Next(gear)\"/>",
+        )),
+    );
+    refused(
+        &[(MACHINE, &machine)],
+        "a value that is not of the enum `Status` handed to `Next`",
+    );
+}
+
+/// A lookup names each key and value by the variant's declared name, and a name the
+/// enum does not declare is refused where the lookup is generated.
+#[test]
+fn a_lookup_entry_names_a_variant_its_enum_declares() {
+    let dir = staged(&[(
+        "forge_call_weight.scxml",
+        &fixture(
+            "forge_call_weight.scxml",
+            Some(("key=\"held\"", "key=\"waiting\"")),
+        ),
+    )]);
+    let out = Command::new(sce_codegen_bin())
+        .arg("--workspace-root")
+        .arg(repo_root())
+        .args(["check", "-l", "rust"])
+        .arg(dir.path().join("forge_call_weight.scxml"))
+        .output()
+        .expect("invoke sce-codegen");
+    let text =
+        String::from_utf8_lossy(&out.stderr).into_owned() + &String::from_utf8_lossy(&out.stdout);
+    assert!(!out.status.success(), "an unknown key was taken:\n{text}");
+    assert!(
+        text.contains("waiting") && text.contains("no variant of the enum `Status`"),
+        "{text}"
+    );
+}
+
+/// Each backend crosses a value of an enum into the type the enum document declares
+/// through a function its machine declares, and takes it back through the other; C
+/// holds the document's own type and passes it as it is (docs/adr/0051).
+#[test]
+fn each_backend_crosses_a_value_of_an_enum_into_the_callee_and_back() {
+    for (language, fragments) in [
+        (
+            "rust",
+            &[
+                "fn StaticForgeCallsStatusEnumToDocument(",
+                "fn StaticForgeCallsLevelEnumFromDocument(",
+                "forge_call_status::ForgeCallStatus",
+                "forge_call_next::compute_after(",
+                "StaticForgeCallsStatusEnumToDocument(self.phase)",
+                "forge_call_weight::lookup_weight(",
+                "forge_call_named::ForgeCallNamed::new().validate(",
+                "&(self.customer)",
+            ][..],
+        ),
+        (
+            "kotlin",
+            &[
+                "fun StaticForgeCallsStatusEnumToDocument(v: StaticForgeCallsStatusEnum): ForgeCallStatus",
+                "fun StaticForgeCallsLevelEnumFromDocument(v: ForgeCallLevel): StaticForgeCallsLevelEnum",
+                "computeAfter(StaticForgeCallsStatusEnumToDocument(",
+            ][..],
+        ),
+        (
+            "cpp",
+            &[
+                "StaticForgeCallsStatusEnumToDocument(",
+                "StaticForgeCallsLevelEnumFromDocument(",
+            ][..],
+        ),
+        (
+            "go",
+            &[
+                "func StaticForgeCallsStatusEnumToDocument(v StaticForgeCallsStatusEnum)",
+                "func StaticForgeCallsLevelEnumFromDocument(",
+            ][..],
+        ),
+        (
+            "python",
+            &[
+                "def StaticForgeCallsStatusEnumToDocument(v):",
+                "def StaticForgeCallsLevelEnumFromDocument(v):",
+            ][..],
+        ),
+        (
+            "c11",
+            &[
+                "forge_call_next_compute_after(",
+                "forge_call_weight_weight_found(",
+                "forge_call_named_validate(",
+            ][..],
+        ),
+    ] {
+        let out = generated(language);
+        for fragment in fragments {
+            assert!(
+                out.contains(fragment),
+                "{language}: the generated machine holds `{fragment}`:\n{out}"
+            );
+        }
+    }
+    // C's machine holds the document's own type, so nothing crosses there.
+    let c = generated("c11");
+    assert!(!c.contains("ToDocument"), "{c}");
 }
 
 /// An import nothing calls is refused by its own kind, as an unused algorithm is.

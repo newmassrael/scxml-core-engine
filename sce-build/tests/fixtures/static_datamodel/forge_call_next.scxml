@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A transform from a value of an enum to a value of the same enum, which
+  static_forge_calls.scxml calls as `Next(phase)` (docs/adr/0051): an open order is
+  held, and a held or done one is done.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="transform" name="forge_call_next" version="1.0">
+  <sce:import kind="enum" src="forge_call_status.scxml" as="Status"/>
+  <datamodel>
+    <data id="status" sce:type="enum:Status" sce:direction="in"/>
+    <data id="after" sce:type="enum:Status" sce:direction="out"
+          expr="status === Status.open ? Status.held : Status.done"/>
+  </datamodel>
+</scxml>

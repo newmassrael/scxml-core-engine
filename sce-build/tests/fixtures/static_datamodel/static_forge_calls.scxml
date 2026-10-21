@@ -11,6 +11,14 @@
   (`Offset`) and asks a validator (`Range`) whether the two are valid. `spin` steps
   the engine speed and reads the limit an interpolation (`Limit`) gives it. `probe`
   is guarded by a condition (`High`) of the level.
+
+  A value of an enum and a text are handed over too (docs/adr/0051). `advance` steps
+  the order's `phase` through a transform from a status to a status (`Next`) and reads
+  the weight a lookup keyed and answering by enums (`Weight`) gives the new phase: a
+  done order is a status the table does not list, so the assignment fails and
+  `weight` keeps what it held, counted in `misses`. `check_customer` asks a validator
+  of the text itself (`Named`) whether `customer` is not empty, writing it to `known`,
+  and `clear_customer` empties it.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="run" datamodel="sce-static" name="static_forge_calls">
@@ -20,6 +28,11 @@
   <sce:import kind="lookup" src="forge_call_code.scxml" as="Code"/>
   <sce:import kind="interpolation" src="forge_call_limit.scxml" as="Limit"/>
   <sce:import kind="validator" src="forge_call_range.scxml" as="Range"/>
+  <sce:import kind="enum" src="forge_call_status.scxml" as="Status"/>
+  <sce:import kind="enum" src="forge_call_level.scxml" as="Level"/>
+  <sce:import kind="transform" src="forge_call_next.scxml" as="Next"/>
+  <sce:import kind="lookup" src="forge_call_weight.scxml" as="Weight"/>
+  <sce:import kind="validator" src="forge_call_named.scxml" as="Named"/>
   <datamodel>
     <data id="gear" sce:type="uint8" expr="0" sce:direction="out"/>
     <data id="ratio" sce:type="int32" expr="0" sce:direction="out"/>
@@ -31,6 +44,10 @@
     <data id="rpm" sce:type="uint16" expr="0" sce:direction="out"/>
     <data id="limit" sce:type="float64" expr="0.0" sce:direction="out"/>
     <data id="highs" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="phase" sce:type="enum:Status" expr="Status.open" sce:direction="out"/>
+    <data id="weight" sce:type="enum:Level" expr="Level.light" sce:direction="out"/>
+    <data id="customer" sce:type="string" sce:capacity="16" expr="'anna'" sce:direction="out"/>
+    <data id="known" sce:type="bool" expr="false" sce:direction="out"/>
   </datamodel>
   <state id="run">
     <transition event="shift" type="internal">
@@ -49,6 +66,16 @@
     </transition>
     <transition event="probe" cond="High(level)" type="internal">
       <assign location="highs" expr="highs + 1"/>
+    </transition>
+    <transition event="advance" type="internal">
+      <assign location="phase" expr="Next(phase)"/>
+      <assign location="weight" expr="Weight(phase)"/>
+    </transition>
+    <transition event="check_customer" type="internal">
+      <assign location="known" expr="Named(customer)"/>
+    </transition>
+    <transition event="clear_customer" type="internal">
+      <assign location="customer" expr="''"/>
     </transition>
     <transition event="error.execution" type="internal">
       <assign location="misses" expr="misses + 1"/>

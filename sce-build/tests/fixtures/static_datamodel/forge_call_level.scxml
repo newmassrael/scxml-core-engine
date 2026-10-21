@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The weight a lookup (`Weight`) answers for a status, which static_forge_calls.scxml
+  takes back as a value of an enum (docs/adr/0051).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="enum" name="forge_call_level" sce:underlying-type="uint8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="light" value="10"/>
+      <sce:variant name="heavy" value="20"/>
+    </data>
+  </datamodel>
+</scxml>
