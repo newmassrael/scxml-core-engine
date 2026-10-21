@@ -1296,7 +1296,7 @@ fn an_underscore_does_not_make_two_invoke_ids_one_identifier_on_any_backend() {
     let scratch = reset_scratch("in_line_underscore");
     let alone = in_line_underscore_document(&scratch.join("alone"), &["kid"]);
     let both = in_line_underscore_document(&scratch.join("both"), &["_kid", "kid"]);
-    for lang in STATIC_DATAMODEL_BACKENDS {
+    for lang in static_datamodel_backends() {
         let extra: &[&str] = if lang == "cpp" { &["--no-format"] } else { &[] };
         let alone_out = scratch.join("out_alone").join(lang);
         let both_out = scratch.join("out_both").join(lang);
@@ -1428,7 +1428,7 @@ fn a_candidates_names_are_never_another_invokes_on_any_backend() {
     let scratch = reset_scratch("in_line_joint");
     let clashing = joint_document(&scratch.join("clashing"), "a_b");
     let apart = joint_document(&scratch.join("apart"), "c_d");
-    for lang in STATIC_DATAMODEL_BACKENDS {
+    for lang in static_datamodel_backends() {
         let extra: &[&str] = if lang == "cpp" { &["--no-format"] } else { &[] };
         let parent_text = |document: &Path, out: &str| {
             let out_dir = scratch.join(out).join(lang);
