@@ -270,38 +270,56 @@ mod tests {
     }
 
     /// The render door reads both import facts off the same text, so a Go
-    /// template that lists the standard packages the text uses lists the
-    /// runtime the text uses too. Each kind that left it out built until a
-    /// document of that kind held an enum-valued conditional: `algorithm`
-    /// (2026-10-07), then `transform` (2026-10-21).
+    /// template whose text holds an author's expression lists both, and one
+    /// that lists either lists the other. Each kind that left one out built
+    /// until a document of that kind held an enum-valued conditional or a
+    /// `floor`: `algorithm` (2026-10-07), then `transform` and `validator`
+    /// (2026-10-21).
     #[test]
-    fn a_go_forge_template_that_reads_its_packages_reads_the_runtime_too() {
+    fn a_go_forge_template_reads_its_packages_and_the_runtime_alike() {
+        // The kinds whose text holds an expression an author wrote.
+        const EXPRESSION_KINDS: &[&str] = &[
+            "algorithm",
+            "condition",
+            "observer",
+            "procedure",
+            "transform",
+            "validator",
+        ];
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../tools/codegen/templates/forge/go");
         let mut reading = Vec::new();
         for entry in std::fs::read_dir(&dir).expect("read the Go forge templates") {
             let path = entry.expect("read a directory entry").path();
-            if path.extension().and_then(|e| e.to_str()) != Some("jinja2") {
-                continue;
-            }
-            let text = std::fs::read_to_string(&path).expect("read a template");
-            if !text.contains("std_imports") {
-                continue;
-            }
             let name = path.file_name().unwrap().to_string_lossy().into_owned();
+            let Some(kind) = name.strip_suffix(".go.jinja2") else {
+                continue;
+            };
+            let text = std::fs::read_to_string(&path).expect("read a template");
+            let packages = text.contains("{% for pkg in std_imports %}");
+            let runtime = text.contains("{% if uses_scealgorithm %}")
+                && text.contains(super::GO_FORGE_RUNTIME_PATH);
+            if !(packages || runtime || EXPRESSION_KINDS.contains(&kind)) {
+                continue;
+            }
             assert!(
-                text.contains("{% if uses_scealgorithm %}")
-                    && text.contains(super::GO_FORGE_RUNTIME_PATH),
-                "{name} lists `std_imports` but not `uses_scealgorithm`: a body of its kind \
-                 that names `{}` is refused at generation",
+                packages && runtime,
+                "{name} lists {} of what the render door reads off its text: a body of its \
+                 kind that names a standard package or `{}` is refused at generation",
+                if packages {
+                    "`std_imports` and not `uses_scealgorithm`"
+                } else if runtime {
+                    "`uses_scealgorithm` and not `std_imports`"
+                } else {
+                    "neither"
+                },
                 super::GO_FORGE_RUNTIME_ALIAS
             );
-            reading.push(name);
+            reading.push(kind.to_string());
         }
-        reading.sort();
-        for kind in ["algorithm", "condition", "transform"] {
+        for kind in EXPRESSION_KINDS {
             assert!(
-                reading.contains(&format!("{kind}.go.jinja2")),
+                reading.iter().any(|read| read == kind),
                 "read {reading:?}, which does not hold the {kind} template"
             );
         }

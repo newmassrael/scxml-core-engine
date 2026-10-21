@@ -9,20 +9,25 @@
 // Do not edit — regenerate from the source SCXML file.
 
 package {{ package }}
-{% set needs_math = roc_rules | selectattr("is_float") | list | length > 0 or roc_rules | selectattr("is_signed") | list | length > 0 %}
-{% if all_imports %}
+{# `std_imports` is the standard packages the emitted text uses and
+   `uses_scealgorithm` whether it names the forge runtime, both read off the
+   text by the render door: a float rate-of-change rule names `math.Abs`, and
+   the plausibility expression can name `math`, `strconv` or
+   `scealgorithm.Choose`. A flag computed here from the rules could not see the
+   expression, and named `math` for a signed rule that never uses it. #}
+{% if all_imports or uses_scealgorithm or std_imports %}
 
 import (
-{% if needs_math %}
-	"math"
+{% for pkg in std_imports %}
+	"{{ pkg }}"
+{% endfor %}
+{% if uses_scealgorithm %}
+	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
 {% endif %}
 {% for imp in all_imports %}
 {{ imp.include_stmt }}
 {% endfor %}
 )
-{% elif needs_math %}
-
-import "math"
 {% endif %}
 
 // ValidationResult holds the outcome of a validation check.

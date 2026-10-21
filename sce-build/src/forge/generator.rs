@@ -24663,37 +24663,38 @@ fn render_procedure_go(
         &[],
     )?;
 
-    let tmpl = env
-        .get_template("procedure.go.jinja2")
-        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
-
     // Cross-file imports
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
 
-    let ctx = minijinja::context! {
-        package => package,
-        class_name => &pascal,
-        pascal_name => &pascal,
-        needs_fmt => needs_fmt,
-        state_enum => minijinja::Value::from_serialize(&common.state_enum),
-        event_enum => minijinja::Value::from_serialize(&common.event_enum),
-        input_fields => minijinja::Value::from_serialize(&input_fields),
-        internal_fields => minijinja::Value::from_serialize(&internal_fields),
-        helper_fields => minijinja::Value::from_serialize(&helper_fields),
-        initial_state => common.initial_state,
-        final_states => minijinja::Value::from_serialize(&common.final_states),
-        states_with_entry => minijinja::Value::from_serialize(&states_with_entry),
-        final_states_with_donedata => minijinja::Value::from_serialize(&final_states_with_donedata),
-        non_final_states => minijinja::Value::from_serialize(&non_final_states),
-        states_with_assigns => minijinja::Value::from_serialize(&states_with_assigns),
-        has_external_deps => common.has_external_deps,
-        payload_exprs => minijinja::Value::from_serialize(&common.payload_exprs),
-        has_imports => has_imports,
-        imports => stateful_imports,
-        all_imports => all_imports,
+    let serde_json::Value::Object(ctx) = serde_json::json!({
+        "package": package,
+        "class_name": &pascal,
+        "pascal_name": &pascal,
+        "needs_fmt": needs_fmt,
+        "state_enum": &common.state_enum,
+        "event_enum": &common.event_enum,
+        "input_fields": &input_fields,
+        "internal_fields": &internal_fields,
+        "helper_fields": &helper_fields,
+        "initial_state": &common.initial_state,
+        "final_states": &common.final_states,
+        "states_with_entry": &states_with_entry,
+        "final_states_with_donedata": &final_states_with_donedata,
+        "non_final_states": &non_final_states,
+        "states_with_assigns": &states_with_assigns,
+        "has_external_deps": common.has_external_deps,
+        "payload_exprs": &common.payload_exprs,
+        "has_imports": has_imports,
+        "imports": stateful_imports,
+        "all_imports": all_imports,
+    }) else {
+        unreachable!("a JSON object literal is an object")
     };
 
-    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
+    // Through the door that reads the imports off the text: a guard or an
+    // assignment can name `math`, `strconv` or the forge runtime, and the
+    // template's import block cannot know which.
+    l.render(env, "procedure", ctx)
 }
 
 // ── Procedure: Python ───────────────────────────────────────
@@ -26233,7 +26234,10 @@ fn render_observer(
         );
     }
 
-    render_phase3(env, &format!("observer.{}.jinja2", l.template_ext()), ctx)
+    // Through the door that reads the imports off the text: a monitor
+    // expression can name `math`, `strconv` or the forge runtime, and the
+    // template's import block cannot know which.
+    l.render(env, "observer", ctx)
 }
 
 // ── Algorithm (RFC §synth-5-A) ──────────────────────────────────────
