@@ -97,6 +97,8 @@ fn assert_standalone_forge_with(
     // pipeline) to refresh stale goldens. Requires manual review of the diff
     // before committing.
     if std::env::var("UPDATE_GOLDEN").is_ok() {
+        std::fs::create_dir_all(expected_path.parent().unwrap())
+            .unwrap_or_else(|e| panic!("Cannot create {}: {e}", expected_path.display()));
         std::fs::write(&expected_path, generated.trim().to_string() + "\n")
             .unwrap_or_else(|e| panic!("Cannot write {}: {e}", expected_path.display()));
         return;
@@ -2435,6 +2437,160 @@ fn forge_codec_origin_envelope_rust() {
 #[test]
 fn forge_codec_origin_choice_rust() {
     assert_origin_rust("codec_origin_choice");
+}
+
+// ── Rust views (`generate --views`, docs/adr/0049)
+// A view holds a decoded codec's bounded lists as the frame they were read
+// from, so its size does not depend on a `max-count`. The goldens are the one
+// place the output of the option is read as text: one per shape of list a view
+// scans (a counted repeat, until-EOF, a gated repeat, a chain, a chain with a
+// per-entry value, a gated chain), the embed and the variant, and the codec
+// that gets no type of its own (its view is an alias).
+
+fn views_options() -> sce_build::ForgeCompileOptions {
+    let mut opts = golden_options(sce_build::generator::Language::Rust);
+    opts.views = true;
+    opts
+}
+
+/// The goldens of the option live in their own directory, `expected/views/`: a
+/// parent's view names the view of each codec it lists, embeds or dispatches
+/// to, so the family has to be generated with the option on together, and the
+/// ordinary goldens (which are not) must not be moved to make it so. The
+/// directory is linted as a crate of its own (`scripts/check_clippy_codec.sh`).
+fn assert_views_rust(scxml_name: &str) {
+    assert_standalone_forge_with(
+        scxml_name,
+        &format!("views/{scxml_name}.rs"),
+        sce_build::generator::Language::Rust,
+        views_options(),
+    );
+}
+
+#[test]
+fn forge_codec_repeat_basic_views_rust() {
+    assert_views_rust("codec_repeat_basic");
+}
+
+#[test]
+fn forge_codec_until_eof_basic_views_rust() {
+    assert_views_rust("codec_until_eof_basic");
+}
+
+#[test]
+fn forge_codec_repeat_present_if_basic_views_rust() {
+    assert_views_rust("codec_repeat_present_if_basic");
+}
+
+#[test]
+fn forge_codec_repeat_flag_carrier_views_rust() {
+    assert_views_rust("codec_repeat_flag_carrier");
+}
+
+#[test]
+fn forge_codec_tlv_chain_basic_views_rust() {
+    assert_views_rust("codec_tlv_chain_basic");
+}
+
+#[test]
+fn forge_codec_tlv_chain_present_if_basic_views_rust() {
+    assert_views_rust("codec_tlv_chain_present_if_basic");
+}
+
+#[test]
+fn forge_codec_chain_prev_carrier_views_rust() {
+    assert_views_rust("codec_chain_prev_carrier");
+}
+
+#[test]
+fn forge_codec_chain_prev_gated_views_rust() {
+    assert_views_rust("codec_chain_prev_gated");
+}
+
+#[test]
+fn forge_codec_chain_has_tagged_views_rust() {
+    assert_views_rust("codec_chain_has_tagged");
+}
+
+// What the codecs above list, embed or dispatch to: the family a parent's view
+// names the views of.
+#[test]
+fn forge_views_of_the_codecs_the_parents_use_rust() {
+    for name in [
+        "codec_repeat_elem",
+        "codec_tlv_entry",
+        "codec_chain_prev_entry",
+        "codec_chain_flag_entry",
+        "codec_chain_has_tagged_entry",
+        "codec_zenoh_locator",
+        "codec_nested_body",
+        "codec_variant_session_open",
+        "codec_variant_session_close",
+        "codec_peek_arm_a",
+        "codec_peek_arm_b",
+    ] {
+        assert_views_rust(name);
+    }
+}
+
+#[test]
+fn forge_codec_nested_parent_views_rust() {
+    assert_views_rust("codec_nested_parent");
+}
+
+#[test]
+fn forge_codec_variant_dispatch_views_rust() {
+    assert_views_rust("codec_variant_dispatch");
+}
+
+#[test]
+fn forge_codec_variant_peek_basic_views_rust() {
+    assert_views_rust("codec_variant_peek_basic");
+}
+
+#[test]
+fn forge_codec_simple_frame_views_rust() {
+    assert_views_rust("codec_simple_frame");
+}
+
+/// Without the option no view is rendered: the output is what it was before the
+/// option existed, which every other golden of this file holds for the whole
+/// set. This one says so for the two shapes a view would add the most to.
+#[test]
+fn forge_views_are_not_rendered_unless_asked_for() {
+    for name in ["codec_tlv_chain_basic", "codec_variant_dispatch"] {
+        let scxml_path = resource_dir().join(format!("{name}.scxml"));
+        let content = std::fs::read_to_string(&scxml_path).unwrap();
+        let render = |opts: &sce_build::ForgeCompileOptions| {
+            sce_build::compile_forge_with_imports(
+                &content,
+                sce_build::DocumentLabel::symmetric(name),
+                sce_build::generator::Language::Rust,
+                scxml_path.parent().unwrap(),
+                opts,
+            )
+            .unwrap()
+            .files
+            .remove(0)
+            .1
+        };
+        let plain = render(&golden_options(sce_build::generator::Language::Rust));
+        assert!(
+            !plain.contains("View"),
+            "{name}: a view is rendered without the option"
+        );
+        let with = render(&views_options());
+        assert!(with.contains("View"), "{name}: no view with the option");
+        // Additive: every line of the plain output is still there, in order,
+        // so the eager type and its decode are what they were.
+        let mut lines = with.lines();
+        for line in plain.lines() {
+            assert!(
+                lines.any(|l| l == line),
+                "{name}: the option changed a line of the plain output: {line:?}"
+            );
+        }
+    }
 }
 
 #[test]

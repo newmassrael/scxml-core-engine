@@ -1,7 +1,7 @@
 # ADR 0049 — A decoded Rust codec is a view over its wire bytes, and does not grow with its lists
 
 - Status: Proposed (2026-10-21). A draft for the owner: the decision it asks for is in "Decisions to take". Step 0 (a
-  hand prototype) is done and its result is below; nothing is built in the generator. (Numbered 0047 when first
+  hand prototype) is done and its result is below; step 1 is built for the decode side (see "Order of work"). (Numbered 0047 when first
   written; renumbered 0049 because another ADR took 0047 first.)
 - Date: 2026-10-21
 - Scope: `tools/codegen/templates/forge/rust/codec.rs.jinja2` and the Rust half of `sce-build/src/forge/generator.rs`
@@ -51,7 +51,8 @@ The draft proposes the following; each is the owner's to accept, change or refus
 
 ### 1. A decoded value is a view, and a view is small
 
-Each borrowed codec `X` gains a generated `XView<'a>`, additive: `X`, `decode`, `decode_into` and the owned mirror
+Each codec `X` gains a generated `XView`, additive (with the lifetime a view needs, and as an alias of `X` where `X`
+holds no list, body or variant): `X`, `decode`, `decode_into` and the owned mirror
 stay as they are. A view holds what a decode learned, not a copy of what the wire repeated:
 
 - a scalar, a string or a byte field: as today (decoded eagerly; a string is validated as UTF-8 at decode);
@@ -114,9 +115,25 @@ Each step is gated on a number, taken the way the existing ones were: the genera
 0. **A prototype by hand**, on the request and query codecs, outside the generator. Gate: `size_of::<RequestView>()`
    is a small multiple of the field count and does not move when a `max-count` is doubled; one decode makes no copy of
    a list; the cost of walking a list twice is measured and written down. If the gate fails, the draft stops here.
-1. **The generator**, Rust only, behind the option of decision 6, one commit for the templates and one for the goldens.
+1. **The generator**, Rust only, behind the option of decision 6 (one commit, goldens with the templates: the tests
+   that read the goldens would fail in a commit that held one without the other).
    Gate: with the option off the goldens do not change; with it on, for every codec fixture, the entries a view
    yields equal the entries `decode` returned, and a frame `decode` refuses a view refuses with the same error.
+   *Built (2026-10-21), decode side:* `generate --views` renders `{Codec}View`, `decode` and `decode_into`, the flag
+   accessors, `Debug` and `PartialEq`; a codec with no list, embedded body or variant gets the alias
+   `{Codec}View = {Codec}`, so a parent names a body's view without knowing which kind it is. The goldens are in
+   `tests/forge/expected/views/` and are linted and built `no_std` as crates of their own. The gate is held by
+   `forge_view_round_trip.rs`, which decodes seeded random frames, and every prefix and one-byte change of each frame
+   the eager decode accepts, both ways: value, error and cursor position agree, for a counted, until-EOF and gated
+   repeat, a chain, a chain carrying a value from entry to entry, a gated chain, a field gated on `<chain>.has(..)`, an
+   embed, a variant, and the Zenoh request and response. Two mutations of the scan (an off-by-one in the bound, the walk
+   not carrying the chain's value) are killed. On a 64-bit host the request is 672 bytes and its view 240, the
+   response 472 and 200, a chain bounded at 8 entries 208 and 48. **Not built:** `into_builder` and `XView::encode`
+   (decision 4), which nothing in the gate needs; the numbers on `thumbv7em-none-eabihf` for the generated views are
+   not taken yet.
+   The sweep also found a defect that predates views: the eager decode of a length-referenced field sliced
+   `&raw[a..a + len]` before checking the frame was that long, and panicked on a short frame. It now raises
+   `NeedMoreBytes`; C++, Kotlin, Go and Python index the same way and are not fixed.
 2. **An in-tree consumer**: the Rust mesh host reads its envelopes through views. Gate: its tests unchanged, and
    no list copied on its decode path.
 3. **The downstream consumer** takes the view and measures. Gate: its footprint check passes without a rebase of its

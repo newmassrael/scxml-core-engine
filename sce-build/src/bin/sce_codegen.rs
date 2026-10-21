@@ -1751,6 +1751,17 @@ struct GenerateArgs {
     /// to has to be generated with it on too; ignored for other languages.
     #[arg(long)]
     owned_origin: bool,
+    /// Rust only: also generate each codec's view, `{Codec}View`, whose size
+    /// does not grow with its lists' declared maximum (ADR 0049). A view holds
+    /// a bounded list as the bytes its entries occupy and reads the entries by
+    /// walking them; it is built by one pass that refuses what `decode`
+    /// refuses. A codec with no list, embedded body or variant has nothing a
+    /// view would hold differently, so its view is the codec itself under that
+    /// name. Off by default, and when off the output is unchanged. Every codec
+    /// an enabled codec embeds, repeats or dispatches to has to be generated
+    /// with it on too; ignored for other languages.
+    #[arg(long)]
+    views: bool,
     /// Path to a .clang-format file for C++ output formatting.
     /// When omitted, the built-in default style is used.
     #[arg(long)]
@@ -5797,6 +5808,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
         write_deps,
         go_module_prefix,
         owned_origin,
+        views,
         format_style,
         no_format,
         deploy,
@@ -5923,6 +5935,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
                 go_module_prefix: go_module_prefix.map(str::to_owned),
                 const_fold_budget,
                 owned_origin,
+                views,
                 ..Default::default()
             };
 
@@ -6700,6 +6713,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
                             go_module_prefix: go_module_prefix.map(str::to_owned),
                             const_fold_budget,
                             owned_origin,
+                            views,
                             ..Default::default()
                         }),
                         codegen: Some(&sce_build::generator::StatechartCodegenOptions {

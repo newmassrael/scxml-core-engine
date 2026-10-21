@@ -29,7 +29,8 @@ machine that produced it.
 
 A flag that changes WHAT is written, not how a path is spelled, is an input
 like the document: `--owned-origin` (Rust) appends the origin-aware owned
-projection to each borrowed codec and, off, changes nothing. Pass the same
+projection to each borrowed codec and, off, changes nothing; `--views` (Rust)
+adds a `{Codec}View` to every codec and, off, changes nothing. Pass the same
 flags to a regeneration and to `--assert-unchanged` as produced the files, and
 generate every codec of a set that embeds or repeats one another the same way
 (SCE_FORGE.md §4.6).

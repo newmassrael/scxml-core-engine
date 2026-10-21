@@ -468,6 +468,15 @@ const GENERATE_FLAGS: &[FlagFacts] = &[
         "emits a deploy topology's transport layer without its machine",
     ),
     f(
+        "--views",
+        Reach::Emission,
+        Some(&["--views"]),
+        "rust",
+        "adds a `{Codec}View` to each Rust codec (docs/adr/0049); what is \
+         accepted is unchanged, since a view of a parent whose element was not \
+         generated the same way fails in the host compiler, not in the generator",
+    ),
+    f(
         "--with-imports",
         Reach::Emission,
         Some(&["--with-imports"]),

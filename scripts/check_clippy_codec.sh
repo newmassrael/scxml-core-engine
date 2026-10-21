@@ -19,18 +19,22 @@
 # compiles `--no-default-features`; this gate proves the alloc-ON path
 # (owned projection included) is lint-clean.
 #
-# Usage (from repo root):  scripts/check_clippy_codec.sh
+# Usage (from repo root):  scripts/check_clippy_codec.sh [goldens-dir]
 
 set -euo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
-EXPECTED="tests/forge/expected"
+# The directory of goldens to lint: the ordinary ones by default, or the
+# `views/` family, which is generated with `--views` and so is a crate of its
+# own (a parent's view names the view of every codec it uses, which the
+# ordinary goldens do not have).
+EXPECTED="${1:-tests/forge/expected}"
 RUNTIME="$REPO_ROOT/backends/rust/forge-runtime"
 
 # Build dir under target/ (gitignored) so the workspace stays clean.
-WORK="$REPO_ROOT/target/clippy_codec_check"
+WORK="$REPO_ROOT/target/clippy_codec_check_$(basename "$EXPECTED")"
 rm -rf "$WORK"
 mkdir -p "$WORK/src"
 

@@ -67,7 +67,16 @@ fn main() {
         Manifest::load(&manifest_path).unwrap_or_else(|e| panic!("load conformance manifest: {e}"));
 
     // Step 2: generate each fixture's Rust code into OUT_DIR.
-    let options = ForgeCompileOptions::default();
+    //
+    // With `views`: a view is additive (ADR 0049), so everything a fixture
+    // generated without it is still here, and compiling the catalog with the
+    // option on is what shows that the view of every codec shape it holds is
+    // code that compiles. The tests that read a view are
+    // `forge_view_round_trip.rs`.
+    let options = ForgeCompileOptions {
+        views: true,
+        ..ForgeCompileOptions::default()
+    };
     for fixture in &manifest.fixtures {
         // A fixture Rust refuses by name is not scheduled for it, and the harness
         // rendered in Step 3 does not ask for its code: the one answer the

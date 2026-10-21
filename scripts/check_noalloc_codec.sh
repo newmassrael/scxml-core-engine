@@ -122,3 +122,45 @@ echo "==> Compiling ${#CODECS[@]} borrowed scalar codecs and ${#ALGORITHMS[@]} t
 
 echo "OK: scalar + list-bearing (repeat / tlv-chain) codecs and the text algorithms compile no_std without alloc."
 rm -rf "$WORK"
+
+# The views (`generate --views`, docs/adr/0049) are for the same tier: a view
+# holds a list as a span of the frame, so a codec that holds a list needs
+# nothing from an allocator to be read through one. Every committed view golden
+# is its own `#[path] mod` of one crate, since a parent's view names the view of
+# each codec it uses.
+VIEWS="$EXPECTED/views"
+VIEW_WORK="$REPO_ROOT/target/noalloc_codec_views_check"
+rm -rf "$VIEW_WORK"
+mkdir -p "$VIEW_WORK/src"
+cat > "$VIEW_WORK/Cargo.toml" <<EOF
+[package]
+name = "sce_noalloc_codec_views_check"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+sce-forge-runtime = { path = "$RUNTIME", default-features = false }
+sce-portable-bytes = { path = "$PORTABLE", default-features = false }
+
+[features]
+alloc = ["sce-forge-runtime/alloc", "sce-portable-bytes/alloc"]
+
+[workspace]
+EOF
+{
+    echo '#![no_std]'
+    echo '#![allow(dead_code)]'
+    for f in "$VIEWS"/codec_*.rs; do
+        b="$(basename "$f" .rs)"
+        echo "#[path = \"${b}.rs\"]"
+        echo "pub mod ${b};"
+        cp "$f" "$VIEW_WORK/src/${b}.rs"
+    done
+} > "$VIEW_WORK/src/lib.rs"
+
+echo "==> Compiling the committed codec views with --no-default-features (no_std, no alloc)"
+( cd "$VIEW_WORK" && cargo build --no-default-features )
+
+echo "OK: the codec views compile no_std without alloc."
+rm -rf "$VIEW_WORK"

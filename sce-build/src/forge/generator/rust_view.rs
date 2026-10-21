@@ -1,0 +1,277 @@
+// SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+// SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+
+//! The Rust codec view (ADR 0049): what `{Codec}View` is made of and the
+//! statements that decode one.
+//!
+//! A decoded `{Codec}<'a>` holds each bounded list as a `heapless::Vec<E, N>`,
+//! so the record is as large as its lists can be and every move of it copies
+//! that. A view holds a list as a [`ListView`](sce_forge_runtime::view::ListView):
+//! the frame from the list's first entry on, how many entries there are, and
+//! what a walk needs to read them again. The decode of a view is one scan that
+//! decodes every entry once, as the eager decode does, and keeps none of them;
+//! so it refuses exactly the frames the eager decode refuses, with the same
+//! error, and a walk afterwards cannot fail.
+//!
+//! The scalars, strings, embedded bodies and variants of a view are decoded by
+//! the same statements the eager decode uses, with the view type of the body
+//! in place of its eager type. Only the lists differ, and they are here.
+
+use super::*;
+
+/// The Rust spelling of the view of the codec imported as `alias`, where it
+/// names a type: `{Type}View`, with the `<'a>` its view carries.
+pub(super) fn view_type(imports: &[ImportContext], alias: &str, type_name: &str) -> String {
+    format!(
+        "{type_name}View{}",
+        view_lifetime(import_codec_view_borrowed(imports, alias))
+    )
+}
+
+/// `<'a>` for a view that carries the lifetime, otherwise nothing.
+pub(super) fn view_lifetime(borrowed: bool) -> &'static str {
+    if borrowed {
+        "<'a>"
+    } else {
+        ""
+    }
+}
+
+/// The type of a list field of a view: a [`ListView`](sce_forge_runtime::view::ListView) of the
+/// entry's view, `K` being how many flag inputs an entry's decode takes.
+pub(super) fn list_type(entry_view_ty: &str, inputs: usize, gated: bool) -> String {
+    let list = format!("ListView<'a, {entry_view_ty}, {inputs}>");
+    if gated {
+        format!("Option<{list}>")
+    } else {
+        list
+    }
+}
+
+/// One list of a view, as the scan that reads it needs it.
+pub(super) struct ViewList<'a> {
+    pub field: &'a CodecField,
+    pub fields: &'a [CodecField],
+    /// The entry's view, as a path for a call (`{Entry}View`).
+    pub entry: &'a str,
+    /// What each entry's `decode` is handed after the cursor, one by one and
+    /// joined (see [`EmbedThreadArgs`]).
+    pub inputs: &'a [ThreadInput],
+    pub decode_arg: &'a str,
+}
+
+impl ViewList<'_> {
+    fn id(&self) -> String {
+        codec_field_decode_local(&self.field.id, crate::generator::Language::Rust)
+    }
+
+    /// The statement that makes the field's value from what the scan counted.
+    ///
+    /// `args` are what the walk starts with: what the parent fixes for every
+    /// entry, evaluated here, after the scan, where the parent's locals are
+    /// still in scope; and 0 for what a chain carries from one entry to the
+    /// next, which is 0 before the first entry (`ChainEntryBinds::decls`).
+    /// `advance` rewrites the carried values from the entry just read.
+    fn build(&self, advance: &[String]) -> String {
+        let args = self
+            .inputs
+            .iter()
+            .map(|i| if i.from_chain { "0" } else { i.expr.as_str() })
+            .collect::<Vec<_>>()
+            .join(", ");
+        let call_args: String = (0..self.inputs.len())
+            .map(|i| format!(", _a[{i}]"))
+            .collect();
+        let entry = self.entry;
+        let advance = if advance.is_empty() {
+            "|_, _| {}".to_string()
+        } else {
+            format!("|_e, _s| {{ {} }}", advance.join(" "))
+        };
+        format!(
+            "ListView::new(_rest, _count, [{args}], |_c, _a| {entry}::decode(_c{call_args}), {advance})"
+        )
+    }
+
+    /// The field's value, from `build`, as the field holds it.
+    fn value(&self, advance: &[String]) -> String {
+        let list = self.build(advance);
+        if self.field.present_if.is_some() {
+            format!("Some({list})")
+        } else {
+            list
+        }
+    }
+}
+
+/// What the scan of any list begins with: the frame from the list's first
+/// entry on, which is what the walk reads from, and the entry count.
+const SCAN_OPEN: &str = "let _rest = cursor.peek_slice(cursor.remaining())?;\n            \
+                         let mut _count: u32 = 0;";
+
+/// A `<sce:repeat>` field of a view: decode `count` or until-EOF entries, each
+/// once and for the checks alone, and keep the span.
+///
+/// An entry past `max_count` is refused after it decoded, as the eager decode
+/// refuses it when the push that follows its decode finds the list full.
+pub(super) fn repeat_decode_stmt(list: &ViewList, max_count: u32) -> String {
+    let field = list.field;
+    let id = list.id();
+    let entry = list.entry;
+    let decode_arg = list.decode_arg;
+    let count_ref = match &field.bit_size {
+        BitSize::Repeat { count_ref } => count_ref,
+        _ => unreachable!("a view repeat statement is made for a repeat field"),
+    };
+    let scan = |indent: &str, head: &str| {
+        format!(
+            "{head} {{\n{indent}    \
+                 {entry}::decode(cursor{decode_arg})?;\n{indent}    \
+                 if _count == {max_count} {{\n{indent}        \
+                     return Err(CodecError::TooManyElements);\n{indent}    \
+                 }}\n{indent}    \
+                 _count += 1;\n{indent}\
+             }}"
+        )
+    };
+    let value = list.value(&[]);
+    match &field.present_if {
+        None => {
+            let head = match count_ref {
+                CountRef::LengthField(len_field) => {
+                    format!("for _ in 0..{}", filters::to_snake_case(len_field.clone()))
+                }
+                CountRef::UntilEof => "while cursor.remaining() > 0".to_string(),
+            };
+            let scan = scan("            ", &head);
+            format!(
+                "{{\n            \
+                     {SCAN_OPEN}\n            \
+                     {scan}\n            \
+                     _out.{id} = {value};\n        \
+                 }}"
+            )
+        }
+        Some(pred) => {
+            let test = present_if_test_literal(list.fields, pred, crate::generator::Language::Rust);
+            let (count_decl, head) = match count_ref {
+                CountRef::LengthField(len_field) => {
+                    let gated = sibling_field_gated(list.fields, len_field.as_str());
+                    (
+                        format!(
+                            "let _n = {};\n            ",
+                            rust_repeat_count_read(gated, len_field)
+                        ),
+                        "for _ in 0.._n".to_string(),
+                    )
+                }
+                CountRef::UntilEof => (String::new(), "while cursor.remaining() > 0".to_string()),
+            };
+            let scan = scan("            ", &head);
+            format!(
+                "if {test} {{\n            \
+                     {count_decl}{SCAN_OPEN}\n            \
+                     {scan}\n            \
+                     _out.{id} = {value};\n        \
+                 }} else {{\n            \
+                     _out.{id} = None;\n        \
+                 }}"
+            )
+        }
+    }
+}
+
+/// What a `<sce:tlv-chain>` view scan needs beyond the list itself.
+pub(super) struct ViewChain<'a> {
+    /// The flag-inputs the chain supplies entry by entry.
+    pub entry_binds: &'a ChainEntryBinds,
+    pub max_depth: u32,
+    pub on_overflow: crate::forge::model::TlvOverflowPolicy,
+    pub terminate_on: &'a crate::forge::model::TlvTerminateStrategy,
+}
+
+/// A `<sce:tlv-chain>` field of a view: the loop of the eager decode, with the
+/// push that keeps the entry replaced by a count. Every check the eager loop
+/// makes is made here, in the same order: the entry's own decode, the flag
+/// that ends the chain, and the guard after the loop that tells a chain cut
+/// short from one that ran past `max-depth` (`tlv_chain_guard`).
+///
+/// The values an `entry-flag-bind` carries are kept in the locals the loop
+/// declares, as in the eager decode; the walk keeps them in the list's
+/// arguments, rewritten by the closure `advance`, which makes the same test.
+pub(super) fn tlv_chain_decode_stmt(list: &ViewList, chain: &ViewChain) -> String {
+    use crate::forge::model::TlvTerminateStrategy;
+    use crate::generator::Language;
+    let lang = Language::Rust;
+    let field = list.field;
+    let id = list.id();
+    let entry = list.entry;
+    let decode_arg = list.decode_arg;
+    let ViewChain {
+        entry_binds,
+        max_depth,
+        on_overflow,
+        terminate_on,
+    } = chain;
+    let entry_flag_acc = match terminate_on {
+        TlvTerminateStrategy::ExhaustOrDepth => None,
+        TlvTerminateStrategy::EntryFlag { flag_name } => Some(flag_getter_name(flag_name, lang)),
+    };
+    let overflow_check =
+        tlv_chain_guard(lang, *on_overflow, entry_flag_acc.is_some(), "            ");
+    let indent = "                ";
+    let mut lines = vec!["if cursor.remaining() == 0 { break; }".to_string()];
+    // The entry is bound to a local when the loop reads something off it: the
+    // flag that ends the chain, the identifier a per-entry flag-input is
+    // waiting for.
+    if entry_flag_acc.is_some() || !entry_binds.is_empty() {
+        lines.push(format!(
+            "let _entry = {entry}::decode(cursor{decode_arg})?;"
+        ));
+    } else {
+        lines.push(format!("{entry}::decode(cursor{decode_arg})?;"));
+    }
+    if let Some(acc) = &entry_flag_acc {
+        lines.push(format!("_more = _entry.{acc}();"));
+    }
+    lines.extend(entry_binds.update_lines(field, "_entry", lang, indent));
+    lines.push("_count += 1;".to_string());
+    if entry_flag_acc.is_some() {
+        lines.push("if !_more { break; }".to_string());
+    }
+    let body = chain_loop_body(indent, Some("            "), &lines);
+    let more_decl = more_decl_line(lang, &entry_flag_acc, entry_binds, "            ");
+    let advance: Vec<String> = entry_binds
+        .binds
+        .iter()
+        .map(|bind| {
+            let position = list
+                .inputs
+                .iter()
+                .position(|i| i.from_chain && i.input == bind.input)
+                .expect("an entry-flag-bind names an input the entry codec declares");
+            format!(
+                "_s[{position}] = u8::from({});",
+                entry_binds.previous_entry_test(bind, field, "_e", lang)
+            )
+        })
+        .collect();
+    let value = list.value(&advance);
+    let scan = format!(
+        "{SCAN_OPEN}\n            \
+         {more_decl}for _ in 0..{max_depth}u32 {{\n{body}\
+         }}{overflow_check}\n            \
+         _out.{id} = {value};"
+    );
+    match &field.present_if {
+        None => format!("{{\n            {scan}\n        }}"),
+        Some(pred) => {
+            let test = present_if_test_literal(list.fields, pred, lang);
+            format!(
+                "if {test} {{\n            {scan}\n        }} else {{\n            \
+                     _out.{id} = None;\n        \
+                 }}"
+            )
+        }
+    }
+}

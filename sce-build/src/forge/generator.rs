@@ -21,6 +21,8 @@ use crate::forge::model::*;
 use crate::generator::{self, GeneratedOutput};
 use std::path::Path;
 
+mod rust_view;
+
 // ── Cross-file import resolution ──────────────────────────────────
 
 /// One variant of an imported enum as a content line writes it
@@ -206,6 +208,14 @@ pub struct ImportContext {
     /// imports whose model failed to parse during enrichment.
     #[serde(skip)]
     pub codec_is_borrowed: bool,
+
+    /// ADR 0049: `true` when the imported codec's Rust view (`{Codec}View`)
+    /// carries a `<'a>` lifetime — [`Self::codec_is_borrowed`] plus any bounded
+    /// list, which a view holds as a span of the wire bytes. A parent that
+    /// embeds or dispatches to the codec spells its view with the lifetime
+    /// when this is set. `false` for non-codec imports.
+    #[serde(skip)]
+    pub codec_view_is_borrowed: bool,
 
     /// Owned→borrowed projection round: this import's *contribution* to a
     /// parent codec's `as_borrowed` fallibility — `true` only when the
@@ -892,6 +902,7 @@ fn resolve_single_import(
         codec_fields: Vec::new(),
         codec_emits_default_ctor: false,
         codec_is_borrowed: false,
+        codec_view_is_borrowed: false,
         codec_as_borrowed_fallible: false,
         buffer_pool_slot_size: None,
         queue_consumers_many: false,
@@ -1325,9 +1336,14 @@ pub fn generate_cpp_with_imports_and_externs(
         ForgeDocument::Condition(m) => {
             render_condition(&env, m, imports, crate::generator::Language::Cpp)?
         }
-        ForgeDocument::Codec(m) => {
-            render_codec(&env, m, imports, crate::generator::Language::Cpp, false)?
-        }
+        ForgeDocument::Codec(m) => render_codec(
+            &env,
+            m,
+            imports,
+            crate::generator::Language::Cpp,
+            false,
+            false,
+        )?,
         ForgeDocument::Validator(m) => {
             render_validator(&env, m, imports, crate::generator::Language::Cpp)?
         }
@@ -5242,6 +5258,23 @@ fn codec_self_borrowed(m: &CodecModel, imports: &[ImportContext]) -> bool {
     m.is_borrowed_with(|alias| import_codec_borrowed(imports, alias))
 }
 
+/// Whether the imported codec aliased `alias` has a Rust view with a `<'a>`
+/// lifetime (ADR 0049); reads [`ImportContext::codec_view_is_borrowed`].
+fn import_codec_view_borrowed(imports: &[ImportContext], alias: &str) -> bool {
+    imports
+        .iter()
+        .find(|i| i.alias == alias)
+        .map(|i| i.codec_view_is_borrowed)
+        .unwrap_or(false)
+}
+
+/// [`codec_self_borrowed`] for the codec's Rust view: whether `{Codec}View`
+/// needs a `<'a>` lifetime parameter. Same predicate as the enrichment-time
+/// walk (`lib.rs::codec_view_is_borrowed_recursive`).
+fn codec_self_view_borrowed(m: &CodecModel, imports: &[ImportContext]) -> bool {
+    m.is_view_borrowed_with(|alias| import_codec_view_borrowed(imports, alias))
+}
+
 /// An imported codec body's *contribution* to a parent's `as_borrowed`
 /// fallibility: `true` only when the body is borrowed (else it is cloned
 /// wholesale, never failing) AND its own projection is fallible. Reads the
@@ -5760,6 +5793,8 @@ fn render_codec(
     imports: &[ImportContext],
     lang: crate::generator::Language,
     owned_origin: bool,
+    // Rust only: also render `{Codec}View` (ADR 0049).
+    views: bool,
 ) -> Result<String, ForgeError> {
     // SCE_FORGE.md §4.6: a CBOR codec has no positional field for anything
     // below to read, so it is rendered by its own module before any of it runs.
@@ -5926,6 +5961,8 @@ fn render_codec(
     // storage profile are rendered beside the borrowed ones under `*_owned`.
     let owned_encode =
         matches!(lang, crate::generator::Language::Rust) && codec_self_borrowed(m, imports);
+    // ADR 0049: a Rust codec is also rendered as `{Codec}View` when asked to.
+    let emit_views = views && matches!(lang, crate::generator::Language::Rust);
     let has_present_if_fields = m.has_present_if_fields();
     let has_repeat_fields = m.has_repeat_fields();
 
@@ -6208,6 +6245,34 @@ fn render_codec(
                         })
                         .into(),
                     );
+                    if emit_views {
+                        // ADR 0049: the list is held as the frame it was read
+                        // from; the scan reads each entry once to check it.
+                        let entry = format!("{body_type}View");
+                        obj.insert(
+                            "view_rs_type".into(),
+                            rust_view::list_type(
+                                &rust_view::view_type(imports, alias, &body_type),
+                                repeat_thread.inputs.len(),
+                                f.present_if.is_some(),
+                            )
+                            .into(),
+                        );
+                        obj.insert(
+                            "view_repeat_decode_stmt".into(),
+                            rust_view::repeat_decode_stmt(
+                                &rust_view::ViewList {
+                                    field: f,
+                                    fields: &m.fields,
+                                    entry: &entry,
+                                    inputs: &repeat_thread.inputs,
+                                    decode_arg: &repeat_thread.decode_arg,
+                                },
+                                max_count,
+                            )
+                            .into(),
+                        );
+                    }
                     obj.insert(
                         "repeat_encode_block".into(),
                         repeat_streaming_encode_block(
@@ -6393,6 +6458,38 @@ fn render_codec(
                     let decode_stmt =
                         with_chain_has_decls(decode_stmt, f, &m.fields, &chain_masks, lang);
                     obj.insert("tlv_chain_decode_stmt".into(), decode_stmt.into());
+                    if emit_views {
+                        let entry = format!("{body_type}View");
+                        obj.insert(
+                            "view_rs_type".into(),
+                            rust_view::list_type(
+                                &rust_view::view_type(imports, alias, &body_type),
+                                entry_thread.inputs.len(),
+                                gated,
+                            )
+                            .into(),
+                        );
+                        let view_stmt = rust_view::tlv_chain_decode_stmt(
+                            &rust_view::ViewList {
+                                field: f,
+                                fields: &m.fields,
+                                entry: &entry,
+                                inputs: &entry_thread.inputs,
+                                decode_arg: &entry_thread.decode_arg,
+                            },
+                            &rust_view::ViewChain {
+                                entry_binds: &entry_binds,
+                                max_depth: *max_depth,
+                                on_overflow: *on_overflow,
+                                terminate_on,
+                            },
+                        );
+                        obj.insert(
+                            "view_tlv_chain_decode_stmt".into(),
+                            with_chain_has_decls(view_stmt, f, &m.fields, &chain_masks, lang)
+                                .into(),
+                        );
+                    }
                     let encode_chain = |flavor: EncodeFlavor| {
                         if f.present_if.is_some() {
                             tlv_chain_streaming_encode_block_gated(
@@ -6520,6 +6617,31 @@ fn render_codec(
                         )
                         .into(),
                     );
+                    if emit_views {
+                        // The body is decoded where it sits as its own view.
+                        let view_ty = rust_view::view_type(imports, alias, &body_type);
+                        obj.insert(
+                            "view_rs_type".into(),
+                            if f.present_if.is_some() {
+                                format!("Option<{view_ty}>")
+                            } else {
+                                view_ty
+                            }
+                            .into(),
+                        );
+                        obj.insert(
+                            "view_embed_decode_stmt".into(),
+                            embed_streaming_decode_stmt(
+                                f,
+                                &format!("{body_type}View"),
+                                &body_decoder,
+                                &embed_thread.decode_arg,
+                                &m.fields,
+                                lang,
+                            )
+                            .into(),
+                        );
+                    }
                     obj.insert(
                         "embed_encode_block".into(),
                         embed_streaming_encode_block(
@@ -7025,6 +7147,15 @@ fn render_codec(
                     "rs_as_borrowed_into_stmt".into(),
                     rs_as_borrowed_into_stmt.into(),
                 );
+            }
+            // ADR 0049: every field that is not a list or a body is held by a
+            // view as the eager struct holds it.
+            if emit_views && !obj.contains_key("view_rs_type") {
+                let eager = obj
+                    .get(type_key)
+                    .cloned()
+                    .expect("every field has its Rust type before the view reads it");
+                obj.insert("view_rs_type".into(), eager);
             }
             Ok(serde_json::Value::Object(obj))
         })
@@ -7627,6 +7758,19 @@ fn render_codec(
                     };
                     obj.insert("as_borrowed_into_stmt".into(), as_borrowed_into_stmt.into());
                 }
+                if emit_views {
+                    // ADR 0049: the arm of the view's variant enum holds the
+                    // body's view.
+                    obj.insert("view_body_type".into(), format!("{body_type}View").into());
+                    obj.insert(
+                        "view_body_lifetime".into(),
+                        rust_view::view_lifetime(import_codec_view_borrowed(
+                            imports,
+                            &arm.body_alias,
+                        ))
+                        .into(),
+                    );
+                }
                 obj.insert("body_type".into(), body_type.into());
                 // Borrowed zero-copy: type-position `<'a>` suffix when
                 // this arm's body codec is borrowed. The enum-variant
@@ -7779,6 +7923,17 @@ fn render_codec(
                     obj.insert(
                         "as_borrowed_into_stmt".into(),
                         as_borrowed_into_stmt.into(),
+                    );
+                }
+                if emit_views {
+                    obj.insert("view_body_type".into(), format!("{body_type}View").into());
+                    obj.insert(
+                        "view_body_lifetime".into(),
+                        rust_view::view_lifetime(import_codec_view_borrowed(
+                            imports,
+                            &d.body_alias,
+                        ))
+                        .into(),
                     );
                 }
                 obj.insert("body_type".into(), body_type.into());
@@ -8234,6 +8389,48 @@ fn render_codec(
             "owned_imports".into(),
             serde_json::Value::Array(owned_imports),
         );
+        // ADR 0049: the view of this codec. A codec with no list, embedded
+        // body or variant has nothing a view would hold differently, so its
+        // view is the codec itself under the view's name (`view_is_alias`);
+        // every other codec gets a type of its own. Either way every codec
+        // generated with views has a `{Codec}View`, which is what lets a
+        // parent name the view of a body without knowing which kind it is.
+        ctx.insert("emit_views".into(), emit_views.into());
+        if emit_views {
+            let view_borrowed = codec_self_view_borrowed(m, imports);
+            ctx.insert("view_is_alias".into(), (!m.has_own_view()).into());
+            ctx.insert(
+                "view_lifetime".into(),
+                rust_view::view_lifetime(view_borrowed).into(),
+            );
+            ctx.insert(
+                "view_cursor_lifetime".into(),
+                if view_borrowed { "'a" } else { "'_" }.into(),
+            );
+            let view_variant_borrowed = m.variant.as_ref().is_some_and(|v| {
+                v.arms
+                    .iter()
+                    .chain(v.default_arm.iter())
+                    .any(|arm| import_codec_view_borrowed(imports, &arm.body_alias))
+            });
+            ctx.insert(
+                "view_variant_lifetime".into(),
+                rust_view::view_lifetime(view_variant_borrowed).into(),
+            );
+            ctx.insert(
+                "has_view_lists".into(),
+                (m.has_repeat_fields() || m.has_tlv_chain_fields()).into(),
+            );
+            let view_imports: Vec<serde_json::Value> = imports
+                .iter()
+                .filter(|i| i.kind == "codec")
+                .map(|i| format!("use super::{}::{}View;", i.namespace, i.type_name).into())
+                .collect();
+            ctx.insert(
+                "view_imports".into(),
+                serde_json::Value::Array(view_imports),
+            );
+        }
         // Storage-profile parameter for the owned mirror. Every container the
         // mirror owns — text, bytes, bounded lists, nested body mirrors — is
         // the profile's choice, so the mirror is declared once against the
@@ -10845,6 +11042,24 @@ fn embed_streaming_encode_block(
 struct EmbedThreadArgs {
     decode_arg: String,
     encode_arg: String,
+    /// The same arguments one by one, in the order `decode_arg` joins them:
+    /// what a Rust view needs to read an entry again later, when the parent's
+    /// locals are gone (ADR 0049). The joined strings are what every other
+    /// caller reads.
+    inputs: Vec<ThreadInput>,
+}
+
+/// One argument an entry's `decode` is handed (a `u8`: a flag input or the
+/// caller's tag), as the parent's decode body evaluates it.
+struct ThreadInput {
+    /// The imported codec's name for the input this feeds (`tag` for the
+    /// caller's tag).
+    input: String,
+    /// The expression, valid where the parent's decode body runs.
+    expr: String,
+    /// Whether it is the chain's per-entry local, rewritten from entry to
+    /// entry as the chain is walked, and not a value the parent fixes.
+    from_chain: bool,
 }
 
 fn embed_parent_flags_thread_args(
@@ -10878,9 +11093,18 @@ fn embed_parent_flags_thread_args(
     // `tag` correctly; emitting `(tag, n)` would compile (both `u8`)
     // but silently swap them at the call site, selecting the wrong
     // variant arm at decode.
+    let mut inputs = flag_bind_args.inputs;
+    if let Some(tag) = caller_tag_decode_arg.strip_prefix(", ") {
+        inputs.push(ThreadInput {
+            input: "tag".to_string(),
+            expr: tag.to_string(),
+            from_chain: false,
+        });
+    }
     EmbedThreadArgs {
         decode_arg: format!("{}{}", flag_bind_args.decode_arg, caller_tag_decode_arg),
         encode_arg: flag_bind_args.encode_arg,
+        inputs,
     }
 }
 
@@ -10934,6 +11158,7 @@ fn embed_flag_bind_thread_args_supplying(
             return EmbedThreadArgs {
                 decode_arg: String::new(),
                 encode_arg: String::new(),
+                inputs: Vec::new(),
             }
         }
     };
@@ -10941,14 +11166,21 @@ fn embed_flag_bind_thread_args_supplying(
         return EmbedThreadArgs {
             decode_arg: String::new(),
             encode_arg: String::new(),
+            inputs: Vec::new(),
         };
     }
     let mut decode_out = String::new();
     let mut encode_out = String::new();
+    let mut inputs: Vec<ThreadInput> = Vec::new();
     for input in &imp.codec_flag_inputs {
         if let Some(arg) = supplied(&input.name) {
             decode_out.push_str(&format!(", {arg}"));
             encode_out.push_str(&format!(", {arg}"));
+            inputs.push(ThreadInput {
+                input: input.name.clone(),
+                expr: arg,
+                from_chain: true,
+            });
             continue;
         }
         let bind = match imp.flag_binds.iter().find(|b| b.input == input.name) {
@@ -11034,6 +11266,11 @@ fn embed_flag_bind_thread_args_supplying(
                 };
                 decode_out.push_str(&decode_arg);
                 encode_out.push_str(&encode_arg);
+                inputs.push(ThreadInput {
+                    input: input.name.clone(),
+                    expr: decode_arg.trim_start_matches(", ").to_string(),
+                    from_chain: false,
+                });
             }
             crate::forge::model::FlagBindSource::Input { name } => {
                 let arg = match lang {
@@ -11047,12 +11284,18 @@ fn embed_flag_bind_thread_args_supplying(
                 };
                 decode_out.push_str(&arg);
                 encode_out.push_str(&arg);
+                inputs.push(ThreadInput {
+                    input: input.name.clone(),
+                    expr: arg.trim_start_matches(", ").to_string(),
+                    from_chain: false,
+                });
             }
         }
     }
     EmbedThreadArgs {
         decode_arg: decode_out,
         encode_arg: encode_out,
+        inputs,
     }
 }
 
@@ -11314,6 +11557,19 @@ struct RepeatDecodeGated<'a> {
     lang: crate::generator::Language,
 }
 
+/// How a Rust decode reads the count of a gated repeat inside its True arm: a
+/// count gated with the repeat is an `Option` the co-gating validator proves
+/// is `Some` there; one that is always on the wire is a plain local. Shared by
+/// the eager and the view decode, which loop over the same count.
+fn rust_repeat_count_read(count_is_gated: bool, len_field: &str) -> String {
+    let snake = filters::to_snake_case(len_field.to_string());
+    if count_is_gated {
+        format!("{snake}.expect(\"co-gating: count present-if matches repeat\")")
+    } else {
+        snake
+    }
+}
+
 /// RFC §synth-5-B — gated repeat decode. Wraps
 /// `repeat_streaming_decode_stmt` body with a per-language predicate
 /// test so a `parent.L`-style flag toggles the entire count + repeat
@@ -11372,12 +11628,7 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
         // so the wrap reduces to `if test { Some(<until-eof body>) } else
         // { None }`.
         (Language::Rust, CountRef::LengthField(len_field)) => {
-            let len_field_snake = filters::to_snake_case(len_field.clone());
-            let count_read = if count_is_gated {
-                format!("{len_field_snake}.expect(\"co-gating: count present-if matches repeat\")")
-            } else {
-                len_field_snake.clone()
-            };
+            let count_read = rust_repeat_count_read(count_is_gated, len_field);
             format!(
                 "if {test} {{\n            \
                      let _n = {count_read};\n            \
@@ -16167,6 +16418,8 @@ fn chain_identifier_literal(value: u64, lang: crate::generator::Language) -> Str
 
 /// One flag-input the chain supplies to its entry codec entry by entry.
 struct ChainEntryBind {
+    /// The entry codec's name for the flag-input the chain supplies.
+    input: String,
     /// The local that carries the value into the entry's `decode` / `encode`.
     local: String,
     /// The identifier the entry before must have for the input to be 1.
@@ -16191,6 +16444,7 @@ impl ChainEntryBinds {
             BitSize::TlvChain { entry_binds, .. } => entry_binds
                 .iter()
                 .map(|bind| ChainEntryBind {
+                    input: bind.input.clone(),
                     local: Self::local_name(chain, &bind.input),
                     previous_entry_id: bind.previous_entry_id,
                 })
@@ -16254,6 +16508,23 @@ impl ChainEntryBinds {
             .collect()
     }
 
+    /// "`entry` is the one `bind` waits for": true when its identifier is the
+    /// `previous_entry_id` the next entry's input is 1 for. The test every
+    /// rewrite of the bind's local makes, here and in a Rust view's walk.
+    fn previous_entry_test(
+        &self,
+        bind: &ChainEntryBind,
+        chain: &CodecField,
+        entry: &str,
+        lang: crate::generator::Language,
+    ) -> String {
+        format!(
+            "{} == {}",
+            chain_entry_identifier(chain, entry, self.mask, lang),
+            chain_identifier_literal(bind.previous_entry_id, lang)
+        )
+    }
+
     /// The statements, one list per bind in order, that rewrite every local
     /// from `entry`, the entry just handled: 1 when its identifier is the one
     /// the next entry is waiting for, 0 otherwise. `entry` is an expression
@@ -16271,11 +16542,7 @@ impl ChainEntryBinds {
         let mut lines = Vec::new();
         for bind in &self.binds {
             let local = &bind.local;
-            let test = format!(
-                "{} == {}",
-                chain_entry_identifier(chain, entry, self.mask, lang),
-                chain_identifier_literal(bind.previous_entry_id, lang)
-            );
+            let test = self.previous_entry_test(bind, chain, entry, lang);
             lines.push(match lang {
                 Language::Rust => format!("{local} = u8::from({test});"),
                 Language::Cpp => format!("{local} = static_cast<std::uint8_t>({test});"),
@@ -16915,6 +17182,9 @@ fn generate_decode_expr(
                     format!("std::vector<uint8_t>(raw + {byte_off}, raw + {byte_off} + {len_value_cpp}{suffix_signed})"),
                 Language::Kotlin =>
                     format!("raw.copyOfRange({byte_off}, {byte_off} + {len_value_kotlin}{suffix_signed})"),
+                // The length is the wire's, and a frame may hold fewer bytes
+                // than it says: a slice index would panic on it, where the
+                // decode refuses a short frame with `NeedMoreBytes`.
                 Language::Rust =>
                     format!("raw.get({byte_off}..{byte_off} + {len_value_rust}{suffix_signed}).ok_or(CodecError::NeedMoreBytes)?"),
                 Language::Go =>
@@ -17182,9 +17452,6 @@ struct ParentTagDerivation {
 
 /// RFC §synth-5-B parent-tag dispatch — emit per-language locals at the parent codec's
 /// `encode` entry that derive each carrier's dispatch bits from the active
-                // The length is the wire's, and a frame may hold fewer bytes
-                // than it says: a slice index would panic on it, where the
-                // decode refuses a short frame with `NeedMoreBytes`.
 /// embed-variant arm. Returns the empty string when the codec has no
 /// derivations; templates render the result verbatim.
 ///
@@ -18354,9 +18621,14 @@ pub fn generate_kotlin_with_imports(
         ForgeDocument::Condition(m) => {
             render_condition(&env, m, imports, crate::generator::Language::Kotlin)?
         }
-        ForgeDocument::Codec(m) => {
-            render_codec(&env, m, imports, crate::generator::Language::Kotlin, false)?
-        }
+        ForgeDocument::Codec(m) => render_codec(
+            &env,
+            m,
+            imports,
+            crate::generator::Language::Kotlin,
+            false,
+            false,
+        )?,
         ForgeDocument::Validator(m) => {
             render_validator(&env, m, imports, crate::generator::Language::Kotlin)?
         }
@@ -18538,6 +18810,7 @@ pub fn generate_rust_with_imports_and_externs(
             imports,
             crate::generator::Language::Rust,
             options.owned_origin,
+            options.views,
         )?,
         ForgeDocument::Validator(m) => {
             render_validator(&env, m, imports, crate::generator::Language::Rust)?
@@ -21684,9 +21957,14 @@ pub fn generate_go_with_imports(
         ForgeDocument::Condition(m) => {
             render_condition(&env, m, imports, crate::generator::Language::Go)?
         }
-        ForgeDocument::Codec(m) => {
-            render_codec(&env, m, imports, crate::generator::Language::Go, false)?
-        }
+        ForgeDocument::Codec(m) => render_codec(
+            &env,
+            m,
+            imports,
+            crate::generator::Language::Go,
+            false,
+            false,
+        )?,
         ForgeDocument::Validator(m) => {
             render_validator(&env, m, imports, crate::generator::Language::Go)?
         }
@@ -21889,9 +22167,14 @@ pub fn generate_python_with_imports(
         ForgeDocument::Condition(m) => {
             render_condition(&env, m, imports, crate::generator::Language::Python)?
         }
-        ForgeDocument::Codec(m) => {
-            render_codec(&env, m, imports, crate::generator::Language::Python, false)?
-        }
+        ForgeDocument::Codec(m) => render_codec(
+            &env,
+            m,
+            imports,
+            crate::generator::Language::Python,
+            false,
+            false,
+        )?,
         ForgeDocument::Validator(m) => {
             render_validator(&env, m, imports, crate::generator::Language::Python)?
         }
@@ -22118,9 +22401,14 @@ pub fn generate_c11_with_imports_and_externs(
         ForgeDocument::Lookup(m) => {
             render_lookup(&env, m, imports, crate::generator::Language::C11)?
         }
-        ForgeDocument::Codec(m) => {
-            render_codec(&env, m, imports, crate::generator::Language::C11, false)?
-        }
+        ForgeDocument::Codec(m) => render_codec(
+            &env,
+            m,
+            imports,
+            crate::generator::Language::C11,
+            false,
+            false,
+        )?,
         ForgeDocument::Validator(m) => {
             render_validator(&env, m, imports, crate::generator::Language::C11)?
         }
@@ -32529,6 +32817,7 @@ mod tests {
             codec_fields: Vec::new(),
             codec_emits_default_ctor: false,
             codec_is_borrowed: false,
+            codec_view_is_borrowed: false,
             codec_as_borrowed_fallible: false,
             buffer_pool_slot_size: None,
             queue_consumers_many: false,
@@ -33401,6 +33690,7 @@ mod tests {
                 codec_fields: Vec::new(),
                 codec_emits_default_ctor: false,
                 codec_is_borrowed: false,
+                codec_view_is_borrowed: false,
                 codec_as_borrowed_fallible: false,
                 buffer_pool_slot_size: None,
                 queue_consumers_many: false,
@@ -33448,6 +33738,7 @@ mod tests {
                 codec_fields: Vec::new(),
                 codec_emits_default_ctor: false,
                 codec_is_borrowed: false,
+                codec_view_is_borrowed: false,
                 codec_as_borrowed_fallible: false,
                 buffer_pool_slot_size: None,
                 queue_consumers_many: false,

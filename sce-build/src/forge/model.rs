@@ -3170,6 +3170,36 @@ impl CodecModel {
         })
     }
 
+    /// Whether this codec's generated Rust view (`{Codec}View`, ADR 0049)
+    /// needs a `<'a>` lifetime parameter: [`Self::is_borrowed_with`] with one
+    /// more way to borrow. A bounded list (`<sce:repeat>` / `<sce:tlv-chain>`)
+    /// is held as the span of wire bytes its entries occupy, so a codec with
+    /// one borrows whatever its entries are. `body_view_borrowed(alias)` asks the
+    /// same of an embedded or dispatched body's view, resolved by the caller
+    /// as `is_borrowed_with`'s is; the two share the traversal, so the
+    /// inference stays exact (an unused lifetime parameter is E0392).
+    pub(crate) fn is_view_borrowed_with(
+        &self,
+        body_view_borrowed: impl FnMut(&str) -> bool,
+    ) -> bool {
+        self.fields
+            .iter()
+            .any(|f| f.is_repeat() || f.is_tlv_chain())
+            || self.is_borrowed_with(body_view_borrowed)
+    }
+
+    /// Whether this codec has a generated Rust view of its own, as against
+    /// the alias `{Codec}View = {Codec}` every other codec gets: it holds a
+    /// bounded list, an embedded body or a variant, the three shapes whose
+    /// eager value is larger than the wire it was read from.
+    pub(crate) fn has_own_view(&self) -> bool {
+        self.variant.is_some()
+            || self
+                .fields
+                .iter()
+                .any(|f| f.is_repeat() || f.is_tlv_chain() || f.is_embed())
+    }
+
     /// Owned→borrowed projection round — SSOT for "must this codec's
     /// `{Codec}Owned::as_borrowed` projection be fallible
     /// (`try_as_borrowed -> Result`) rather than infallible (`as_borrowed

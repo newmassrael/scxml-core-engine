@@ -20,3 +20,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 ./scripts/check_clippy_codec.sh \
     || sce_gate_fail "generated codecs are not clippy-clean with alloc on — fix the codec template, not the golden"
+
+# The views (`generate --views`, docs/adr/0049) are a family of their own.
+./scripts/check_clippy_codec.sh tests/forge/expected/views \
+    || sce_gate_fail "generated codec views are not clippy-clean with alloc on — fix the codec template, not the golden"

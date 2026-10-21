@@ -31,6 +31,7 @@ pub mod observer;
 pub mod queue;
 pub mod storage;
 pub mod timer;
+pub mod view;
 
 // Re-export `heapless` so generated codec output can spell its bounded
 // inline list type as `sce_forge_runtime::heapless::Vec<T, N>` without a
