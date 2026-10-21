@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md, "An event schema that
+  grows"; docs/adr/0055, section 6): a machine that replays a log of entries
+  through `schema_due_widened.scxml`, the second revision of a schema whose
+  first carried the day as an int64. The second widened the day to a value that
+  may be absent and added a reminder that may be absent, with no default.
+
+  An entry written at the first revision carries the day as a value, which reads
+  present, and lacks the reminder, which reads absent. An entry written at the
+  second carries `null` for either where it is absent. An entry that lacks the
+  day, which every revision carries, is refused as any payload that does not fit
+  its schema is: nothing is written, and error.execution says so, which
+  `refusals` counts.
+
+  The payload's day is read in the first statement of its block, so a refused
+  delivery writes nothing on any engine, the Interpreter's included.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="reading" datamodel="sce-static" name="static_optional_widened">
+  <sce:import kind="event-schema" src="schema_due_widened.scxml" as="Due"/>
+  <datamodel>
+    <data id="entry" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="due" sce:type="optional&lt;int64&gt;" expr="null" sce:direction="out"/>
+    <data id="remind" sce:type="optional&lt;int64&gt;" expr="null" sce:direction="out"/>
+    <data id="taken" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="reading">
+    <transition event="due.widened" type="internal">
+      <assign location="due" expr="_event.data.due"/>
+      <assign location="remind" expr="_event.data.remind"/>
+      <assign location="entry" expr="_event.data.id"/>
+      <assign location="taken" expr="taken + 1"/>
+    </transition>
+    <transition event="error.execution" type="internal">
+      <assign location="refusals" expr="refusals + 1"/>
+    </transition>
+  </state>
+</scxml>

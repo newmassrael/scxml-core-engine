@@ -313,7 +313,8 @@ pub struct SavedAddedField {
     pub since: u32,
     /// Its default as saved-state JSON: the JSON a delivery carries for it
     /// ([`crate::forge::schema_revision::default_wire`]), which is how a saved
-    /// state writes a value of every type a field can have.
+    /// state writes a value of every type a field can have; `null` for an
+    /// optional field that declares none.
     pub default: String,
 }
 
@@ -786,7 +787,9 @@ pub trait StaticTarget {
     /// `field` of the payload `accessor` as the optional value it is: `null`
     /// absent, a value of the field's element present (held to `variants` for an
     /// enum), and a delivery that lacks the key refused, since a field of the
-    /// first revision is carried by every delivery (docs/adr/0055, section 4).
+    /// first revision is carried by every delivery, or read as its default
+    /// ([`crate::forge::schema_revision::default_wire`], `null` when it declares
+    /// none) for a field a later revision added (docs/adr/0055, section 4).
     /// `None` for a target whose generated lift reads the payload into a struct
     /// of its own, whose optional field an expression reads as it is.
     fn payload_optional_read(
@@ -3271,54 +3274,28 @@ pub(crate) fn optional_not_lowered(what: &str, lang: &str) -> GenerateError {
 
 /// The refusal of the first optional value of `model` that a later step of
 /// docs/adr/0055 lowers, on any target: a variable of an optional record
-/// (step 9), and a field of a schema that a revision past the first added as an
-/// optional field (step 7: what a delivery that lacks it reads). The rest of
-/// what a later step lowers is refused where it is judged: a child session's
-/// optional variable as a `<param>`, an algorithm's optional slot of a text, an
-/// enum or a record, a typed request's optional field. `None` for a document
-/// that holds none of them.
-fn optional_beyond_this_step(
-    model: &SCXMLModel,
-    scope: &StaticScope,
-    lang: &str,
-) -> Option<GenerateError> {
+/// (step 9). The rest of what a later step lowers is refused where it is
+/// judged: a child session's optional variable as a `<param>`, an algorithm's
+/// optional slot of a text, an enum or a record, a typed request's optional
+/// field. `None` for a document that holds none of them.
+fn optional_beyond_this_step(scope: &StaticScope, lang: &str) -> Option<GenerateError> {
     use crate::forge::model::AlgorithmValueType;
-    if let Some(variable) = scope.variables.iter().find(|v| {
+    let variable = scope.variables.iter().find(|v| {
         v.value_type
             .as_ref()
             .and_then(AlgorithmValueType::optional_elem)
             .is_some_and(|elem| elem.record_alias().is_some())
-    }) {
-        return Some(GenerateError::unsupported(format!(
-            "<data id=\"{}\" sce:type=\"{}\">: an optional record has no {lang} lowering yet \
-             (docs/adr/0055, step 9)",
-            variable.id,
-            variable
-                .value_type
-                .as_ref()
-                .map(AlgorithmValueType::as_attr)
-                .unwrap_or_default()
-        )));
-    }
-    model
-        .imported_event_schemas
-        .values()
-        .chain(model.imported_records.values())
-        .find_map(|schema| {
-            let field = schema
-                .fields
-                .iter()
-                .find(|f| f.since.is_some() && f.sce_type.optional_elem().is_some())?;
-            Some(GenerateError::unsupported(format!(
-                "the field `{}` of the event schema `{}`, sce:type=\"{}\" added by revision {}: \
-                 an optional field a later revision adds has no {lang} lowering yet \
-                 (docs/adr/0055, step 7)",
-                field.id,
-                schema.name,
-                field.sce_type.as_attr(),
-                field.since.unwrap_or_default()
-            )))
-        })
+    })?;
+    Some(GenerateError::unsupported(format!(
+        "<data id=\"{}\" sce:type=\"{}\">: an optional record has no {lang} lowering yet \
+         (docs/adr/0055, step 9)",
+        variable.id,
+        variable
+            .value_type
+            .as_ref()
+            .map(AlgorithmValueType::as_attr)
+            .unwrap_or_default()
+    )))
 }
 
 /// The type the present value of an optional value (docs/adr/0055) of the
@@ -3532,7 +3509,7 @@ pub fn lower(
     }
     // What a later step of docs/adr/0055 lowers stays refused by name on every
     // target, the ones that lower an optional value included.
-    if let Some(refusal) = optional_beyond_this_step(model, &scope, lang) {
+    if let Some(refusal) = optional_beyond_this_step(&scope, lang) {
         return Err(refusal);
     }
     let variables = &scope.variables;
@@ -5070,7 +5047,9 @@ fn record_lineage(model: &SCXMLModel, schema: &EventSchemaModel) -> SavedRecordL
                     id: field.id.clone(),
                     since: field.since?,
                     // The parser refuses a field with a `since` and no default
-                    // that is a value of it, so this is never `None` for one.
+                    // that is a value of it, but for an optional one, whose
+                    // default is then `null` (docs/adr/0055, section 4), so
+                    // this is never `None` for one.
                     default: crate::forge::schema_revision::default_wire(field)?,
                 })
             })
@@ -10031,8 +10010,8 @@ fn payload_enum_reads(
                 field.id
             );
             // An optional field is read as the optional value it is
-            // (docs/adr/0055), by its own read; a later revision that adds one
-            // was refused where the machine was lowered.
+            // (docs/adr/0055), by its own read, which reads the default of one a
+            // later revision added where the delivery lacks it.
             if field.sce_type.optional_elem().is_some() {
                 return target
                     .payload_optional_read(accessor, field, &variants)
@@ -12573,6 +12552,59 @@ mod tests {
         assert_ne!(second.records[0].revisions, retyped.records[0].revisions);
         // Neither moves the first shape, which names the first revision only.
         assert_eq!(second.first, retyped.first);
+    }
+
+    /// A revision that only widens a field from `T` to `optional<T>`
+    /// (docs/adr/0055, section 6) declares, as a saved state names it, what the
+    /// revision before it declared: a digest names each field by the type its
+    /// present value is, so the widened field's earlier revisions keep theirs and
+    /// a state saved at either revision restores into a build of the other.
+    #[test]
+    fn a_revision_that_widens_a_field_writes_the_digest_of_the_revision_before() {
+        const LEVEL_WIDENED_AT_3: &str = r#"<data id="level" sce:type="optional&lt;uint8&gt;" sce:direction="in" sce:optional-since="3"/>"#;
+        let sets = format!("{SET_LEVEL}{SET_URGENT}");
+        let second = reading_shape(&reading_schema(2, &[LEVEL, URGENT]), &sets);
+        let unwidened = reading_shape(&reading_schema(3, &[LEVEL, URGENT]), &sets);
+        let widened = reading_shape(&reading_schema(3, &[LEVEL_WIDENED_AT_3, URGENT]), &sets);
+        assert_eq!(widened.records[0].revision, 3);
+        assert_eq!(widened.records[0].revisions, unwidened.records[0].revisions);
+        // Revision 3 widened only, so its digest is revision 2's, which a build
+        // of revision 2 computes alike.
+        assert_eq!(
+            widened.records[0].revisions,
+            [
+                second.records[0].revisions[0].clone(),
+                second.records[0].revisions[0].clone()
+            ]
+        );
+        assert_eq!(widened.first, second.first);
+        assert_eq!(widened.revised, second.revised);
+        // The fields a later revision added are what they were: a widening adds
+        // none.
+        let added: Vec<(&str, u32)> = widened.records[0]
+            .added
+            .iter()
+            .map(|f| (f.id.as_str(), f.since))
+            .collect();
+        assert_eq!(added, [("urgent", 2)]);
+    }
+
+    /// An optional field a later revision added with no default (docs/adr/0055,
+    /// section 4) is grown into a record saved before it as `null`: a sender
+    /// that predates the field said nothing about it, which is what absent means.
+    #[test]
+    fn an_optional_field_added_with_no_default_grows_a_saved_record_absent() {
+        const REMIND: &str = r#"<data id="remind" sce:type="optional&lt;uint16&gt;" sce:direction="in" sce:since="2"/>"#;
+        let shape = reading_shape(
+            &reading_schema(2, &[LEVEL, REMIND]),
+            &format!("{SET_LEVEL}<sce:set name=\"remind\" expr=\"null\"/>"),
+        );
+        let added: Vec<(&str, u32, &str)> = shape.records[0]
+            .added
+            .iter()
+            .map(|f| (f.id.as_str(), f.since, f.default.as_str()))
+            .collect();
+        assert_eq!(added, [("remind", 2, "null")]);
     }
 
     /// What a saved state is bound to for a machine holding `level`, a variable

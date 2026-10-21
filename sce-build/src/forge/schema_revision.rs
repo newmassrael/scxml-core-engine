@@ -121,13 +121,20 @@ pub fn wire_of(ty: &SceType, max_size: Option<u32>, text: &str) -> Result<String
 }
 
 /// The JSON a delivery that lacks `field` reads in its place: its default as
-/// [`wire_of`] spells it. `None` for a field that declares no default, or one
-/// whose default is no value of it (which the parser refuses).
+/// [`wire_of`] spells it, and `null` for an optional field a later revision
+/// added that declares none, which reads absent (docs/adr/0055, section 4).
+/// `None` for any other field that declares no default, or one whose default
+/// is no value of it (which the parser refuses).
 pub fn default_wire(field: &SchemaField) -> Option<String> {
-    let text = field.default.as_deref()?;
-    // A default is a value of what the field holds when present, never a
-    // spelling of absence (docs/adr/0055).
-    wire_of(field.sce_type.present_type(), field.max_size, text).ok()
+    match field.default.as_deref() {
+        // A default is a value of what the field holds when present, never a
+        // spelling of absence (docs/adr/0055).
+        Some(text) => wire_of(field.sce_type.present_type(), field.max_size, text).ok(),
+        None if field.since.is_some() && field.sce_type.optional_elem().is_some() => {
+            Some("null".to_string())
+        }
+        None => None,
+    }
 }
 
 /// The defaults of every field of `schema` a later revision added, as one
@@ -223,10 +230,16 @@ pub enum Party {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Divergence {
     /// Both declare `field`, and declare it differently: another type, bound,
-    /// quantity, `sce:since` or `sce:default`.
+    /// quantity, `sce:since`, `sce:default` or `sce:optional-since`, or a
+    /// widening from `T` to `optional<T>` at a revision the other schema's
+    /// own revision includes (docs/adr/0055, section 6).
     Redeclared {
         /// The field's id.
         field: String,
+        /// How the first schema declares the field's type.
+        first: DeclaredType,
+        /// How the second schema declares the field's type.
+        second: DeclaredType,
     },
     /// One schema declares `field` as of revision `since` (1 for a field of the
     /// first revision), and `from`, whose revision is `since` or later, does not
@@ -252,6 +265,38 @@ pub enum Divergence {
         /// Where the two enums part.
         divergence: EnumDivergence,
     },
+}
+
+/// How a schema declares the type of a field two schemas part on
+/// ([`Divergence::Redeclared`]): what the reason of a refusal names of each
+/// side.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeclaredType {
+    /// The field's `sce:type` as the model spells it: `int64`,
+    /// `optional<int64>`.
+    pub sce_type: String,
+    /// The revision that widened the field from the type its present value is
+    /// (`sce:optional-since`), when one did.
+    pub optional_since: Option<u32>,
+}
+
+impl DeclaredType {
+    /// How `field` declares its type.
+    pub fn of(field: &SchemaField) -> Self {
+        Self {
+            sce_type: field.sce_type.as_attr(),
+            optional_since: field.optional_since,
+        }
+    }
+}
+
+impl std::fmt::Display for DeclaredType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.optional_since {
+            Some(widened) => write!(f, "{} widened at revision {widened}", self.sce_type),
+            None => f.write_str(&self.sce_type),
+        }
+    }
 }
 
 /// Where two enums part, so that they are not revisions of one enum
@@ -287,12 +332,31 @@ pub fn added_at(field: &SchemaField) -> u32 {
     field.since.unwrap_or(1)
 }
 
+/// `field` as revision `revision` of its schema declares it (docs/adr/0055,
+/// section 6): of the type its present value is at a revision before the one
+/// that widened it (`sce:optional-since`), and as the schema declares it at
+/// every other. A widening is the one change of type a revision may make, so
+/// this is the only way a field of one schema is declared otherwise at an
+/// earlier revision.
+pub fn field_at(field: &SchemaField, revision: u32) -> std::borrow::Cow<'_, SchemaField> {
+    match (&field.sce_type, field.optional_since) {
+        (FieldType::Optional { elem }, Some(widened)) if revision < widened => {
+            let mut before = field.clone();
+            before.sce_type = FieldType::Scalar(elem.clone());
+            before.optional_since = None;
+            std::borrow::Cow::Owned(before)
+        }
+        _ => std::borrow::Cow::Borrowed(field),
+    }
+}
+
 /// Where two members of one kind that grows by revisions part — the fields
 /// of two event schemas, the variants of two enums (docs/adr/0044).
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum Parting {
-    /// Both declare the member, and declare it differently.
-    Redeclared(String),
+#[derive(Debug)]
+enum Parting<'a, T> {
+    /// Both declare the member, and declare it differently: the first
+    /// document's and the second's.
+    Redeclared { first: &'a T, second: &'a T },
     /// One declares it as of revision `since`, and `from`, whose revision has
     /// it, does not.
     Missing {
@@ -307,26 +371,36 @@ enum Parting {
 /// declared alike, and every member only one declares was added after the
 /// other's revision. `members` are each document's members with its revision,
 /// first then second; `name` keys a member, `added_at` is the revision that
-/// added it and `alike` whether two of one name are declared alike.
+/// added it and `alike` whether two of one name, each handed with the revision
+/// of the document that declares it, are declared alike.
 ///
 /// `None` when they are revisions of one; otherwise the first parting, the
 /// first document's members judged before the second's, each in declaration
 /// order, so the same pair always answers the same.
-fn parting<T>(
-    first: (&[T], u32),
-    second: (&[T], u32),
+fn parting<'a, T>(
+    first: (&'a [T], u32),
+    second: (&'a [T], u32),
     name: impl Fn(&T) -> &str,
     added_at: impl Fn(&T) -> u32,
-    alike: impl Fn(&T, &T) -> bool,
-) -> Option<Parting> {
-    for ((one, _), (other, other_revision), from) in [
+    alike: impl Fn((&T, u32), (&T, u32)) -> bool,
+) -> Option<Parting<'a, T>> {
+    for ((one, one_revision), (other, other_revision), from) in [
         (first, second, Party::Second),
         (second, first, Party::First),
     ] {
         for member in one {
             match other.iter().find(|theirs| name(theirs) == name(member)) {
-                Some(theirs) if !alike(member, theirs) => {
-                    return Some(Parting::Redeclared(name(member).to_string()));
+                Some(theirs) if !alike((member, one_revision), (theirs, other_revision)) => {
+                    // As the two documents were handed over, whichever pass
+                    // found it.
+                    let (first_member, second_member) = match from {
+                        Party::Second => (member, theirs),
+                        Party::First => (theirs, member),
+                    };
+                    return Some(Parting::Redeclared {
+                        first: first_member,
+                        second: second_member,
+                    });
                 }
                 Some(_) => {}
                 None if added_at(member) <= other_revision => {
@@ -347,16 +421,21 @@ fn parting<T>(
 }
 
 /// Whether `first` and `second`, two schemas of one event, are revisions of one
-/// schema, and where they part when they are not (docs/adr/0044).
+/// schema, and where they part when they are not (docs/adr/0044, decision 1, as
+/// docs/adr/0055 section 6 amends it).
 ///
 /// They are when every field both declare is declared alike (the field as the
-/// forge model serialises it: type, bound, quantity, `since`, default), and every
-/// field only one declares was added after the other's revision. So a later
-/// revision keeps every field of an earlier one, alike, and adds fields only past
-/// the earlier revision; a field removed, renamed or re-typed, two schemas of one
-/// revision that declare different fields, and two that disagree about which
-/// revision added a field all part. The rule is symmetric: which of the two is the
-/// older does not matter, and neither does the order the fields are declared in.
+/// forge model serialises it: type, bound, quantity, `since`, default and
+/// `optional-since`) or differs only in that one declares `T` and the other
+/// `optional<T>` widened at a revision past the revision of the schema that
+/// declares `T` ([`field_at`]), and every field only one declares was added
+/// after the other's revision. So a later revision keeps every field of an
+/// earlier one, alike or widened, and adds fields only past the earlier
+/// revision; a field removed, renamed or re-typed otherwise, a field narrowed,
+/// two schemas of one revision that declare different fields, and two that
+/// disagree about which revision added or widened a field all part. The rule is
+/// symmetric: which of the two is the older does not matter, and neither does
+/// the order the fields are declared in.
 ///
 /// An enum field is compared by the alias it names; whether the two enums under
 /// that alias are revisions of one enum needs the enum documents
@@ -371,10 +450,23 @@ pub fn divergence(first: &EventSchemaModel, second: &EventSchemaModel) -> Option
         (second.fields.as_slice(), second.revision()),
         |f: &SchemaField| f.id.as_str(),
         added_at,
-        declared_alike,
+        |(one, one_revision): (&SchemaField, u32), (other, other_revision): (&SchemaField, u32)| {
+            // Alike as declared, or alike at the revision of the one whose
+            // schema predates the other's widening of the field.
+            declared_alike(one, other)
+                || declared_alike(one, &field_at(other, one_revision))
+                || declared_alike(&field_at(one, other_revision), other)
+        },
     )
     .map(|parted| match parted {
-        Parting::Redeclared(field) => Divergence::Redeclared { field },
+        Parting::Redeclared {
+            first: one,
+            second: other,
+        } => Divergence::Redeclared {
+            field: one.id.clone(),
+            first: DeclaredType::of(one),
+            second: DeclaredType::of(other),
+        },
         Parting::Missing { name, since, from } => Divergence::Missing {
             field: name,
             since,
@@ -575,12 +667,14 @@ pub fn enum_divergence(first: &EnumModel, second: &EnumModel) -> Option<EnumDive
         (second.variants.as_slice(), second.revision()),
         |v: &EnumVariant| v.name.as_str(),
         EnumVariant::added_at,
-        |one: &EnumVariant, other: &EnumVariant| {
+        |(one, _): (&EnumVariant, u32), (other, _): (&EnumVariant, u32)| {
             one.value == other.value && one.since == other.since
         },
     )
     .map(|parted| match parted {
-        Parting::Redeclared(variant) => EnumDivergence::Redeclared { variant },
+        Parting::Redeclared { first, .. } => EnumDivergence::Redeclared {
+            variant: first.name.clone(),
+        },
         Parting::Missing { name, since, from } => EnumDivergence::Missing {
             variant: name,
             since,
@@ -646,6 +740,7 @@ mod tests {
             initial: None,
             initial_spelling: None,
             since,
+            optional_since: None,
             default: default.map(str::to_string),
             default_spelling: None,
         }
@@ -888,7 +983,9 @@ mod tests {
         assert_eq!(
             divergence(&second, &untyped),
             Some(Divergence::Redeclared {
-                field: "layout".into()
+                field: "layout".into(),
+                first: declared("enum:ViewMode", None),
+                second: declared("uint8", None),
             })
         );
     }
@@ -908,7 +1005,9 @@ mod tests {
         assert_eq!(
             divergence(&third, &wider),
             Some(Divergence::Redeclared {
-                field: "level".into()
+                field: "level".into(),
+                first: declared("uint8", None),
+                second: declared("uint16", None),
             })
         );
         // Another default: a receiver reads it for every older delivery.
@@ -923,7 +1022,9 @@ mod tests {
         assert_eq!(
             divergence(&third, &other_default),
             Some(Divergence::Redeclared {
-                field: "urgent".into()
+                field: "urgent".into(),
+                first: declared("bool", None),
+                second: declared("bool", None),
             })
         );
         // Added by another revision.
@@ -938,8 +1039,183 @@ mod tests {
         assert_eq!(
             divergence(&third, &earlier_since),
             Some(Divergence::Redeclared {
-                field: "urgent".into()
+                field: "urgent".into(),
+                first: declared("bool", None),
+                second: declared("bool", None),
             })
+        );
+    }
+
+    // ── A field widened across revisions (docs/adr/0055, section 6) ──
+
+    /// How a schema declares a field's type, as a [`Divergence::Redeclared`]
+    /// names it.
+    fn declared(sce_type: &str, optional_since: Option<u32>) -> DeclaredType {
+        DeclaredType {
+            sce_type: sce_type.to_string(),
+            optional_since,
+        }
+    }
+
+    /// `field` as `optional<T>` of its type, widened by revision `widened`
+    /// (`None`: optional from the revision that added it).
+    fn optional(mut field: SchemaField, widened: Option<u32>) -> SchemaField {
+        let FieldType::Scalar(present) = field.sce_type.clone() else {
+            panic!("an optional field is made from a field of T");
+        };
+        field.sce_type = FieldType::Optional { elem: present };
+        field.optional_since = widened;
+        field
+    }
+
+    #[test]
+    fn a_field_widened_by_a_later_revision_is_one_schema_with_every_earlier_one() {
+        let first = at_revision(1, vec![level()]);
+        let second = at_revision(2, vec![optional(level(), Some(2)), layout()]);
+        let third = at_revision(3, vec![optional(level(), Some(2)), layout(), urgent()]);
+        // Widened alike, and widened past the other's revision, either way round.
+        for (one, other) in [
+            (&first, &second),
+            (&first, &third),
+            (&second, &third),
+            (&second, &second),
+        ] {
+            assert_eq!(divergence(one, other), None, "{one:?} / {other:?}");
+            assert_eq!(divergence(other, one), None, "{other:?} / {one:?}");
+        }
+        // A field a later revision added, widened by a still later one.
+        let added = at_revision(2, vec![level(), layout()]);
+        let widened_added = at_revision(3, vec![level(), optional(layout(), Some(3)), urgent()]);
+        assert_eq!(divergence(&added, &widened_added), None);
+        assert_eq!(divergence(&widened_added, &added), None);
+    }
+
+    #[test]
+    fn a_field_widened_at_two_revisions_parts_two_schemas() {
+        let at_2 = at_revision(3, vec![optional(level(), Some(2)), layout(), urgent()]);
+        let at_3 = at_revision(3, vec![optional(level(), Some(3)), layout(), urgent()]);
+        assert_eq!(
+            divergence(&at_2, &at_3),
+            Some(Divergence::Redeclared {
+                field: "level".into(),
+                first: declared("optional<uint8>", Some(2)),
+                second: declared("optional<uint8>", Some(3)),
+            })
+        );
+        // Their revisions 2: the one says `optional<uint8>`, the other, which
+        // widens it only at 3, `uint8`.
+        let second_widened = at_revision(2, vec![optional(level(), Some(2)), layout()]);
+        let second_unwidened = at_revision(2, vec![level(), layout()]);
+        assert_eq!(
+            divergence(&second_widened, &second_unwidened),
+            Some(Divergence::Redeclared {
+                field: "level".into(),
+                first: declared("optional<uint8>", Some(2)),
+                second: declared("uint8", None),
+            })
+        );
+    }
+
+    #[test]
+    fn a_field_narrowed_parts_two_schemas() {
+        // Optional from the first revision, then `uint8`: a value the earlier
+        // revision holds is not one the later holds.
+        let optional_first = at_revision(1, vec![optional(level(), None)]);
+        let narrowed = at_revision(2, vec![level(), layout()]);
+        assert_eq!(
+            divergence(&optional_first, &narrowed),
+            Some(Divergence::Redeclared {
+                field: "level".into(),
+                first: declared("optional<uint8>", None),
+                second: declared("uint8", None),
+            })
+        );
+        assert_eq!(
+            divergence(&narrowed, &optional_first),
+            Some(Divergence::Redeclared {
+                field: "level".into(),
+                first: declared("uint8", None),
+                second: declared("optional<uint8>", None),
+            })
+        );
+    }
+
+    #[test]
+    fn a_widening_the_other_schema_s_revision_includes_parts_two_schemas() {
+        // The other is at revision 2 too, and declares the field `uint8`.
+        let widened = at_revision(2, vec![optional(level(), Some(2)), layout()]);
+        let unwidened = at_revision(2, vec![level(), layout()]);
+        assert_eq!(
+            divergence(&unwidened, &widened),
+            Some(Divergence::Redeclared {
+                field: "level".into(),
+                first: declared("uint8", None),
+                second: declared("optional<uint8>", Some(2)),
+            })
+        );
+        // Widened to the optional of another type: no revision widens to it.
+        let wider = at_revision(
+            2,
+            vec![
+                optional(field("level", SceType::Uint16, None, None), Some(2)),
+                layout(),
+            ],
+        );
+        let first = at_revision(1, vec![level()]);
+        assert_eq!(
+            divergence(&first, &wider),
+            Some(Divergence::Redeclared {
+                field: "level".into(),
+                first: declared("uint8", None),
+                second: declared("optional<uint16>", Some(2)),
+            })
+        );
+    }
+
+    #[test]
+    fn a_field_is_of_its_present_type_before_the_revision_that_widened_it() {
+        let widened = optional(level(), Some(3));
+        assert_eq!(
+            field_at(&widened, 2).sce_type,
+            FieldType::Scalar(SceType::Uint8)
+        );
+        assert_eq!(field_at(&widened, 2).optional_since, None);
+        assert_eq!(field_at(&widened, 3).sce_type, widened.sce_type);
+        assert_eq!(field_at(&widened, 4).optional_since, Some(3));
+        // A field optional from the revision that added it is optional at each.
+        let always = optional(level(), None);
+        assert_eq!(field_at(&always, 1).sce_type, always.sce_type);
+    }
+
+    #[test]
+    fn the_reason_names_a_widened_type_with_its_revision() {
+        assert_eq!(
+            declared("optional<int64>", Some(2)).to_string(),
+            "optional<int64> widened at revision 2"
+        );
+        assert_eq!(declared("int64", None).to_string(), "int64");
+    }
+
+    #[test]
+    fn an_optional_field_a_later_revision_added_with_no_default_reads_absent() {
+        let remind = optional(field("remind", SceType::Int64, Some(2), None), None);
+        assert_eq!(default_wire(&remind).as_deref(), Some("null"));
+        let revised = at_revision(2, vec![level(), remind]);
+        assert_eq!(
+            defaults_wire(&revised).as_deref(),
+            Some(r#"{"remind":null}"#)
+        );
+        // A default it declares is a value of its present type, as for a field
+        // of `T`.
+        let defaulted = optional(field("remind", SceType::Int64, Some(2), Some("5")), None);
+        assert_eq!(default_wire(&defaulted).as_deref(), Some("\"5\""));
+        // An optional field of the first revision has no default: every
+        // delivery carries it.
+        assert_eq!(default_wire(&optional(level(), None)), None);
+        // A field of `T` with no default has none to read.
+        assert_eq!(
+            default_wire(&field("level", SceType::Uint8, Some(2), None)),
+            None
         );
     }
 
@@ -1446,6 +1722,88 @@ mod tests {
         assert_eq!(refused(&error), ("rule", "sce:default".to_string()));
     }
 
+    /// An optional `int64` field `due` declaring `attrs`, for [`parse_schema`].
+    fn optional_due(attrs: &str) -> String {
+        format!(r#"<data id="due" sce:type="optional&lt;int64&gt;" sce:direction="in" {attrs}/>"#)
+    }
+
+    #[test]
+    fn a_widened_field_reads_the_revision_that_widened_it() {
+        let schema = parse_schema(
+            r#" sce:revision="2""#,
+            &optional_due(r#"sce:optional-since="2""#),
+        )
+        .expect("a field of the first revision widened by the second reads");
+        assert_eq!(schema.fields[1].since, None);
+        assert_eq!(schema.fields[1].optional_since, Some(2));
+        // A field the second revision added as `int64`, widened by the third.
+        let schema = parse_schema(
+            r#" sce:revision="3""#,
+            &optional_due(r#"sce:since="2" sce:default="4" sce:optional-since="3""#),
+        )
+        .expect("a field added and later widened reads");
+        assert_eq!(schema.fields[1].since, Some(2));
+        assert_eq!(schema.fields[1].optional_since, Some(3));
+        // Optional from the revision that added it: no widening to name.
+        let schema = parse_schema(r#" sce:revision="2""#, &optional_due(""))
+            .expect("an optional field of the first revision reads");
+        assert_eq!(schema.fields[1].optional_since, None);
+    }
+
+    #[test]
+    fn an_optional_since_no_revision_of_the_schema_can_have_widened_is_refused() {
+        for (root, attrs) in [
+            // Past the schema's own revision.
+            (r#" sce:revision="2""#, r#"sce:optional-since="3""#),
+            // The revision that added the field: it was optional from there.
+            (r#" sce:revision="2""#, r#"sce:optional-since="1""#),
+            (
+                r#" sce:revision="3""#,
+                r#"sce:since="2" sce:optional-since="2""#,
+            ),
+            (r#" sce:revision="2""#, r#"sce:optional-since="soon""#),
+            // A schema of one revision widened nothing.
+            ("", r#"sce:optional-since="2""#),
+        ] {
+            let error = parse_schema(root, &optional_due(attrs))
+                .expect_err("no revision of the schema widened the field there");
+            assert_eq!(
+                refused(&error),
+                ("rule", "sce:optional-since".to_string()),
+                "{root} {attrs}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_optional_since_on_a_field_that_is_never_absent_is_read_by_nothing_and_refused() {
+        let error = parse_schema(
+            r#" sce:revision="2""#,
+            r#"<data id="due" sce:type="int64" sce:direction="in" sce:optional-since="2"/>"#,
+        )
+        .expect_err("a field of int64 was widened by no revision");
+        assert!(
+            matches!(*error, ValidationError::UnreadSceAttributes(_)),
+            "{error:?}"
+        );
+    }
+
+    #[test]
+    fn an_optional_field_a_later_revision_added_may_leave_its_default_out() {
+        let schema = parse_schema(r#" sce:revision="2""#, &optional_due(r#"sce:since="2""#))
+            .expect("a delivery that lacks the field reads it absent");
+        assert_eq!(schema.fields[1].since, Some(2));
+        assert_eq!(schema.fields[1].default, None);
+        assert_eq!(defaults_wire(&schema).as_deref(), Some(r#"{"due":null}"#));
+        // A default it writes is a value of `int64`: `null` spells no integer.
+        let error = parse_schema(
+            r#" sce:revision="2""#,
+            &optional_due(r#"sce:since="2" sce:default="null""#),
+        )
+        .expect_err("absence is never spelled by a default");
+        assert_eq!(refused(&error), ("rule", "sce:default".to_string()));
+    }
+
     #[test]
     fn a_revision_on_another_kind_is_read_by_nothing_and_refused() {
         // An event schema and an enum grow by revisions (docs/adr/0044); a
@@ -1684,6 +2042,146 @@ mod tests {
             "SceStatic.field(_event.data, 'layout', ['month', 'week', 'day', 'agenda_list'], \"week\")",
             "SceStatic.field(_event.data, 'urgent', 'bool', true)",
             "SceStatic.field(_event.data, 'level', 'uint8')",
+        ] {
+            assert!(expressions.contains(read), "no `{read}` in:\n{expressions}");
+        }
+    }
+
+    // ── A field widened across revisions, through the entry points the
+    //    generator uses (docs/adr/0055, section 6) ──
+    //
+    // `sce:optional-since` passes the same four gates `sce:revision` does on an
+    // enum (below): the grammar, the forge roster of known names, the ledger of
+    // what a parse read, and the reader. These read the committed fixtures the
+    // scenario drivers replay.
+
+    /// The committed event schema `name`, valid where the grammar is checked
+    /// and read as the forge parser reads it.
+    fn committed_schema(name: &str) -> EventSchemaModel {
+        let file = format!("{name}.scxml");
+        let content = std::fs::read_to_string(fixtures().join(&file)).expect("the schema");
+        // The grammar on its own, so a skipped validation cannot pass as one.
+        #[cfg(feature = "xsd")]
+        assert!(
+            matches!(
+                crate::forge::xsd_validator::validate_or_skip(&content, &file),
+                Ok(crate::forge::xsd_validator::XsdOutcome::Validated)
+            ),
+            "the grammar refused, or did not check, {file}"
+        );
+        let label = crate::DocumentLabel {
+            identifier: name,
+            diagnostic_label: &file,
+        };
+        let parsed = crate::forge::parser::parse_forge_with_imports(&content, label)
+            .unwrap_or_else(|e| panic!("{file} parses as a forge document: {e:?}"))
+            .unwrap_or_else(|| panic!("{file} is a forge document"));
+        match parsed.document {
+            ForgeDocument::EventSchema(schema) => schema,
+            other => panic!("{file} read as another kind: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn the_committed_revisions_of_a_widened_schema_are_one_schema() {
+        let first = committed_schema("schema_due_widened_first");
+        let second = committed_schema("schema_due_widened");
+        let widened: Vec<(&str, Option<u32>, Option<u32>)> = second
+            .fields
+            .iter()
+            .map(|f| (f.id.as_str(), f.since, f.optional_since))
+            .collect();
+        assert_eq!(
+            widened,
+            vec![
+                ("id", None, None),
+                ("due", None, Some(2)),
+                ("remind", Some(2), None)
+            ]
+        );
+        assert_eq!(
+            field_at(&second.fields[1], 1).sce_type,
+            first.fields[1].sce_type
+        );
+        assert_eq!(divergence(&first, &second), None);
+        assert_eq!(divergence(&second, &first), None);
+        // The reminder the second revision added reads absent where a delivery
+        // of the first lacks it.
+        assert_eq!(
+            defaults_wire(&second).as_deref(),
+            Some(r#"{"remind":null}"#)
+        );
+    }
+
+    /// The defaults of `schema_due_widened.scxml` as every backend's string
+    /// literal spells them.
+    const WIDENED_DEFAULTS: &str = r#""{\"remind\":null}""#;
+
+    #[test]
+    fn the_committed_widened_machine_is_generated_with_its_absent_default_on_every_backend() {
+        use crate::generator::Language;
+        let statechart = fixtures().join("static_optional_widened.scxml");
+        let schema = fixtures().join("schema_due_widened.scxml");
+        let mut generated = 0;
+        for &language in Language::ALL {
+            if !crate::generator::lowers_static_datamodel(language) {
+                continue;
+            }
+            // Go has no bare import form: it asks where the generated packages live.
+            let options = crate::ForgeCompileOptions {
+                go_module_prefix: matches!(language, Language::Go)
+                    .then(|| "example.com/consumer/generated".to_string()),
+                ..crate::ForgeCompileOptions::default()
+            };
+            let outputs = crate::compile_scxml_with_imports(
+                &[statechart.as_path()],
+                &[schema.as_path()],
+                &crate::find_template_dir_for(language),
+                language,
+                &options,
+                None,
+            )
+            .unwrap_or_else(|e| panic!("{language:?}: the machine generates: {e:?}"));
+            let text: String = outputs
+                .iter()
+                .flat_map(|(_, output)| output.files.iter().map(|(_, content)| content.as_str()))
+                .collect();
+            assert!(
+                text.contains(WIDENED_DEFAULTS),
+                "{language:?}: the lift is not handed {WIDENED_DEFAULTS}"
+            );
+            generated += 1;
+        }
+        assert!(
+            generated >= 6,
+            "only {generated} backends generated the machine"
+        );
+    }
+
+    #[test]
+    fn the_committed_widened_machine_is_lowered_for_the_interpreter_with_its_absent_default() {
+        let statechart = fixtures().join("static_optional_widened.scxml");
+        let lowered = crate::forge::static_js::lower_file_set(
+            statechart.to_str().expect("a UTF-8 path"),
+            Vec::new(),
+        )
+        .unwrap_or_else(|e| panic!("the machine lowers for the Interpreter: {e:?}"));
+        let mut expressions = String::new();
+        for document in &lowered {
+            let parsed = roxmltree::Document::parse(&document.text).expect("lowered XML");
+            for node in parsed.descendants().filter(|n| n.is_element()) {
+                for attribute in node.attributes() {
+                    expressions.push_str(attribute.value());
+                    expressions.push('\n');
+                }
+            }
+        }
+        for read in [
+            // A field of the first revision, widened: no default, so a delivery
+            // that lacks it is refused.
+            "SceStatic.field(_event.data, 'due', {optional: 'int64'})",
+            // A field the second revision added with no default: absent.
+            "SceStatic.field(_event.data, 'remind', {optional: 'int64'}, null)",
         ] {
             assert!(expressions.contains(read), "no `{read}` in:\n{expressions}");
         }

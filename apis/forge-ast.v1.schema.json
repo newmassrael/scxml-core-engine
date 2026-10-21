@@ -4123,6 +4123,15 @@
             "null"
           ]
         },
+        "optional_since": {
+          "description": "`sce:optional-since` — on an `optional<T>` field of an event schema, the revision of the schema that widened the field from `T` (docs/adr/0055, section 6): an integer past the revision that added the field and at most the schema's own. Before it the field is of `T`, from it on of `optional<T>`. `None` for a field that was optional from the revision that added it, for a field of `T` and for a field of any other kind.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "quantity": {
           "anyOf": [
             {
@@ -4200,6 +4209,15 @@
         },
         "max_size": {
           "description": "Per-slot capacity for `bytes`-typed fields, declared via `sce:max-size=\"N\"`. `None` ⇒ fall back to [`crate::forge::limits::BYTES_DEFAULT_MAX`]. Ignored for non-bytes types.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "optional_since": {
+          "description": "`sce:optional-since` — on an `optional<T>` field of an event schema, the revision of the schema that widened the field from `T` (docs/adr/0055, section 6): an integer past the revision that added the field and at most the schema's own. Before it the field is of `T`, from it on of `optional<T>`. `None` for a field that was optional from the revision that added it, for a field of `T` and for a field of any other kind.",
           "format": "uint32",
           "minimum": 0.0,
           "type": [

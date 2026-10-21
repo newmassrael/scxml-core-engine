@@ -247,8 +247,10 @@ pub struct LinkDriverClassMismatchPayload {
 pub enum EventSchemaMismatchReason {
     /// Both machines declare an EventSchema for the event, and the two are not
     /// revisions of one schema ([`crate::forge::schema_revision::divergence`],
-    /// docs/adr/0044): a field both declare is declared differently, or a field
-    /// one declares is missing from the other at a revision that has it. Two
+    /// docs/adr/0044): a field both declare is declared differently (a
+    /// widening to `optional<T>` the other side's revision cannot hold
+    /// included, docs/adr/0055), or a field one declares is missing from the
+    /// other at a revision that has it. Two
     /// revisions of one schema are not refused: a receiver reads an older
     /// sender's delivery through its defaults and walks past the fields a newer
     /// sender adds.
@@ -281,11 +283,18 @@ impl std::fmt::Display for EventSchemaMismatchReason {
                 receiver_revision,
                 divergence,
             } => match divergence.as_ref() {
-                Divergence::Redeclared { field } => write!(
+                Divergence::Redeclared {
+                    field,
+                    first,
+                    second,
+                } => write!(
                     f,
                     "the two are not revisions of one schema: both declare field '{field}' \
                      (sender revision {sender_revision}, receiver revision {receiver_revision}) \
-                     and declare it differently (its type, bound, sce:since or sce:default)"
+                     and declare it differently: the sender as {first}, the receiver as \
+                     {second}; two revisions declare a field alike (its type, bound, \
+                     sce:since, sce:default and sce:optional-since), or one as T and the other \
+                     as optional<T> widened at a revision past that of the one declaring T"
                 ),
                 Divergence::Missing { field, since, from } => {
                     let (declares, declares_revision, lacks, lacks_revision) = match from {
@@ -4985,7 +4994,7 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
                     use crate::forge::schema_revision::Divergence;
                     use crate::forge::schema_revision::EnumDivergence;
                     let (tag, field, variant) = match divergence.as_ref() {
-                        Divergence::Redeclared { field } => ("field-redeclared", field, None),
+                        Divergence::Redeclared { field, .. } => ("field-redeclared", field, None),
                         Divergence::Missing { field, .. } => ("field-missing", field, None),
                         Divergence::Enum {
                             field, divergence, ..

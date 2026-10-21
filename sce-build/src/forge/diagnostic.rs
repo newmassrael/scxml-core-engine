@@ -16545,12 +16545,20 @@ mod tests {
                         divergence: Box::new(
                             crate::forge::schema_revision::Divergence::Redeclared {
                                 field: "elapsed_ms".into(),
+                                first: crate::forge::schema_revision::DeclaredType {
+                                    sce_type: "uint32".into(),
+                                    optional_since: None,
+                                },
+                                second: crate::forge::schema_revision::DeclaredType {
+                                    sce_type: "uint64".into(),
+                                    optional_since: None,
+                                },
                             },
                         ),
                     },
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:beb22930fc8f4567","code":"mesh/event-schema-mismatch","stage":"mesh-deploy","message":"cross-machine schema mismatch on event 'job.completed' between sender machine 'alpha' and receiver machine 'beta': the two are not revisions of one schema: both declare field 'elapsed_ms' (sender revision 1, receiver revision 2) and declare it differently (its type, bound, sce:since or sce:default)"}"#,
+                r#"{"v":1,"id":"fnv1a:beb22930fc8f4567","code":"mesh/event-schema-mismatch","stage":"mesh-deploy","message":"cross-machine schema mismatch on event 'job.completed' between sender machine 'alpha' and receiver machine 'beta': the two are not revisions of one schema: both declare field 'elapsed_ms' (sender revision 1, receiver revision 2) and declare it differently: the sender as uint32, the receiver as uint64; two revisions declare a field alike (its type, bound, sce:since, sce:default and sce:optional-since), or one as T and the other as optional<T> widened at a revision past that of the one declaring T"}"#,
             ),
             // A schema on one side only: no `actual` or `expected`, since
             // whether a document declares a schema is no token of the deploy

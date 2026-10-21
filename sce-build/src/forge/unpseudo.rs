@@ -688,6 +688,7 @@ fn parse_typed_field<T>(
         initial: None,
         initial_spelling: None,
         since: None,
+        optional_since: None,
         default: None,
         default_spelling: None,
     };
@@ -762,6 +763,16 @@ fn parse_typed_field<T>(
             "since" => {
                 let written = rest.get(i + 1).copied().unwrap_or("");
                 f.since = Some(written.parse().map_err(|_| ParseError {
+                    line: line.number,
+                    why: format!("`{written}` is not a revision this renderer could have written"),
+                })?);
+                i += 2;
+            }
+            // `optional-since <revision>` — the revision of its event schema
+            // that widened an optional field (docs/adr/0055, section 6).
+            "optional-since" => {
+                let written = rest.get(i + 1).copied().unwrap_or("");
+                f.optional_since = Some(written.parse().map_err(|_| ParseError {
                     line: line.number,
                     why: format!("`{written}` is not a revision this renderer could have written"),
                 })?);

@@ -274,6 +274,7 @@ fn every_field_clause_survives_the_round_trip() {
         initial: Some("hello world".to_string()),
         initial_spelling: None,
         since: Some(2),
+        optional_since: Some(3),
         // A spaced default, and one that holds ` = `, which a reader taking
         // everything after the first ` = ` as the expression would split.
         default: Some("left = right".to_string()),

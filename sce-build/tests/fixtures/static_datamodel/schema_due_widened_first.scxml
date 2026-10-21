@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The first revision of the schema of `due.widened` (docs/adr/0055, section 6):
+  an entry of a log an application writes, whose day is an int64 every entry
+  carries. `schema_due_widened.scxml` is its second revision, which widens the
+  day to a value that may be absent and adds a reminder. The two are revisions
+  of one schema: every entry this revision describes reads on a machine built
+  from the second, its day present, and the Mesh check builds a machine of each
+  revision into one deployment (`forge::schema_revision`).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="schema_due_widened_first"
+       sce:event-name="due.widened">
+  <datamodel>
+    <data id="id" sce:type="uint32" sce:direction="in"/>
+    <data id="due" sce:type="int64" sce:direction="in"/>
+  </datamodel>
+</scxml>

@@ -290,6 +290,7 @@ mod tests {
                 initial: None,
                 initial_spelling: None,
                 since: None,
+                optional_since: None,
                 default: None,
                 default_spelling: None,
             }],

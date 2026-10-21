@@ -381,6 +381,19 @@
        for it rather than in libxml2's. -->
   <xs:attribute name="revision" type="xs:string"/>
   <xs:attribute name="since" type="xs:string"/>
+  <!-- A field widened across revisions (docs/adr/0055, section 6).
+       `sce:optional-since` on an `optional<T>` `<data>` field of a
+       `sce:kind="event-schema"` names the revision that widened the field
+       from `T`: an integer past the revision that added the field (its
+       `sce:since`, or 1) and at most the root's revision. At a revision
+       before it the field is of `T`, from it on of `optional<T>`. A field
+       that was optional from the revision that added it declares none.
+
+       A string at the XSD layer, as `sce:since` is: the parser owns the
+       range (`validation/attribute-rule-violated`), and on a field of `T`
+       or on any other kind nothing reads the attribute, which is refused as
+       `validation/sce-attribute-unread`. -->
+  <xs:attribute name="optional-since" type="xs:string"/>
   <!-- `sce:default-covers` on an enum-typed INPUT `<data>` of a
        `sce:kind="transform"`: the variants of that input's value space
        which reach the expression's default branch on purpose. It is the

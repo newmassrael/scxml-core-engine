@@ -359,9 +359,8 @@ impl StaticTarget for JsTarget {
         variants: &[&str],
         default: &str,
     ) -> Option<String> {
-        // `lower` refused an optional field a later revision adds before any
-        // read is asked for (docs/adr/0055, step 7), so the field here holds a
-        // present value.
+        // An optional field is read by `payload_optional_read`, its default
+        // included (docs/adr/0055), so the field here holds a present value.
         let kind = field_kind(field.sce_type.present_type(), variants)?;
         Some(format!(
             "{RUNTIME_GLOBAL}.field({accessor}, '{}', {kind}, {default})",
@@ -371,7 +370,10 @@ impl StaticTarget for JsTarget {
     // An optional field is read through `field` with its type written
     // `{optional: T}` (docs/adr/0055, section 4): a delivered `null` is absent, a
     // delivered value is held to `T`, and a delivery that lacks the key is
-    // refused, since every field of the first revision is carried.
+    // refused, since every field of the first revision is carried. A field a
+    // later revision added is handed its default as the fourth argument, `null`
+    // when it declares none, which the library reads absent where the data
+    // names no such field.
     fn payload_optional_read(
         &self,
         accessor: &str,
@@ -379,8 +381,13 @@ impl StaticTarget for JsTarget {
         variants: &[&str],
     ) -> Option<String> {
         let kind = field_kind(field.sce_type.optional_elem()?, variants)?;
+        let default = field
+            .since
+            .and_then(|_| crate::forge::schema_revision::default_wire(field))
+            .map(|default| format!(", {default}"))
+            .unwrap_or_default();
         Some(format!(
-            "{RUNTIME_GLOBAL}.field({accessor}, '{}', {{optional: {kind}}})",
+            "{RUNTIME_GLOBAL}.field({accessor}, '{}', {{optional: {kind}}}{default})",
             field.id
         ))
     }
@@ -2142,6 +2149,7 @@ mod tests {
             initial: None,
             initial_spelling: None,
             since: None,
+            optional_since: None,
             default: None,
             default_spelling: None,
         };
@@ -2163,6 +2171,23 @@ mod tests {
                 .payload_optional_read("_event.data", &field("status", status), &["open", "done"])
                 .as_deref(),
             Some("SceStatic.field(_event.data, 'status', {optional: ['open', 'done']})")
+        );
+        // A field a later revision added is handed its default, `null` when it
+        // declares none, which reads absent (docs/adr/0055, section 4).
+        let mut remind = field("remind", SceType::Int64);
+        remind.since = Some(2);
+        assert_eq!(
+            target
+                .payload_optional_read("_event.data", &remind, &[])
+                .as_deref(),
+            Some("SceStatic.field(_event.data, 'remind', {optional: 'int64'}, null)")
+        );
+        remind.default = Some("5".to_string());
+        assert_eq!(
+            target
+                .payload_optional_read("_event.data", &remind, &[])
+                .as_deref(),
+            Some("SceStatic.field(_event.data, 'remind', {optional: 'int64'}, \"5\")")
         );
         // A field that is never absent is no optional read.
         let mut plain = field("id", SceType::Uint32);

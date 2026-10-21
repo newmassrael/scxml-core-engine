@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The second revision of the schema of `due.widened` (docs/adr/0055, section 6),
+  which `static_optional_widened.scxml` reads its payload through. The first
+  revision (`schema_due_widened_first.scxml`) carried the day as an int64; this
+  one widens it to a value that may be absent and says which revision did
+  (`sce:optional-since`), the one change of type a revision may make. An entry
+  written at the first revision carries the day as a value and reads present; one
+  written at this revision may carry `null`, which is absent. The day is a field
+  of the first revision, so a delivery that lacks the key is refused as before.
+
+  The reminder came with this revision as an optional value with no default: a
+  delivery of the first revision lacks it, and reads it absent.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="schema_due_widened"
+       sce:event-name="due.widened"
+       sce:revision="2">
+  <datamodel>
+    <data id="id" sce:type="uint32" sce:direction="in"/>
+    <data id="due" sce:type="optional&lt;int64&gt;" sce:direction="in" sce:optional-since="2"/>
+    <data id="remind" sce:type="optional&lt;int64&gt;" sce:direction="in" sce:since="2"/>
+  </datamodel>
+</scxml>

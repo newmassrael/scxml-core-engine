@@ -11087,16 +11087,19 @@ fn read_revision(
     }
 }
 
-/// `sce:since` and `sce:default` on one field of an event schema whose
-/// root declares `revision`.
+/// `sce:since`, `sce:default` and `sce:optional-since` on one field of an
+/// event schema whose root declares `revision`.
 ///
 /// A field a later revision added says which revision added it, `2..=` the
 /// schema's own, and what a delivery that lacks it takes; a field of the
-/// first revision says neither, because every delivery carries it. Each other
-/// combination is refused here, and so is a default that is no value of its
-/// field ([`crate::forge::schema_revision::wire_of`]), except an enum default
-/// naming no variant, which needs the enum document
-/// ([`crate::forge::schema_revision::check`]).
+/// first revision says neither, because every delivery carries it. An
+/// optional field a later revision added may leave its default out, and a
+/// delivery that lacks it then reads absent (docs/adr/0055, section 4). Each
+/// other combination is refused here, and so is a default that is no value of
+/// its field ([`crate::forge::schema_revision::wire_of`]), except an enum
+/// default naming no variant, which needs the enum document
+/// ([`crate::forge::schema_revision::check`]). An optional field widened from
+/// `T` by a later revision says which ([`read_optional_since`]).
 fn read_field_revision(
     data: &roxmltree::Node,
     field: &mut SchemaField,
@@ -11140,6 +11143,10 @@ fn read_field_revision(
     let default = sce_attr(data, "default");
     match (since, default.as_deref()) {
         (None, None) => {}
+        // An optional field a later revision added may leave its default out:
+        // a delivery written before the field existed said nothing of it, which
+        // is what absent means, and it reads absent (docs/adr/0055, section 4).
+        (Some(_), None) if field.sce_type.optional_elem().is_some() => {}
         (None, Some(value)) => {
             return Err(located(
                 data,
@@ -11187,10 +11194,67 @@ fn read_field_revision(
             }
         }
     }
+    // Read only on an optional field (docs/adr/0055, section 6): written on a
+    // field of `T`, nothing reads it, and the parse refuses it as unread.
+    let optional_since = match field.sce_type {
+        FieldType::Optional { .. } => read_optional_since(data, &element, since, latest, doc_name)?,
+        FieldType::Scalar(_) => None,
+    };
     field.since = since;
+    field.optional_since = optional_since;
     field.default_spelling = AttributeSpelling::of(data, Some(SCE_NAMESPACE), "default");
     field.default = default;
     Ok(())
+}
+
+/// `sce:optional-since` on the optional field `data` of an event schema whose
+/// root declares `latest` as its revision: the revision that widened the field
+/// from `T` to `optional<T>` (docs/adr/0055, section 6), an integer past the
+/// revision that added the field (its `since`, or 1 for a field of the first
+/// revision) and at most `latest`. `None` when the field declares none: it was
+/// optional from the revision that added it. `element` names the field in a
+/// refusal.
+fn read_optional_since(
+    data: &roxmltree::Node,
+    element: &str,
+    since: Option<u32>,
+    latest: u32,
+    doc_name: &str,
+) -> Result<Option<u32>, Located<ForgeError>> {
+    let Some(text) = sce_attr(data, "optional-since") else {
+        return Ok(None);
+    };
+    let added = since.unwrap_or(1);
+    match text.trim().parse::<u32>() {
+        Ok(n) if n > added && n <= latest => Ok(Some(n)),
+        _ => {
+            let rule = if added >= latest {
+                format!(
+                    "the revision that widened the field from its present type, past the \
+                     revision that added it ({added}) and at most the schema's sce:revision \
+                     ({latest}) — this schema declares no revision past the one that added \
+                     the field, so none widened it"
+                )
+            } else {
+                format!(
+                    "the revision that widened the field from its present type, an integer \
+                     from {} up to the schema's sce:revision ({latest}); a field optional \
+                     from the revision that added it declares none",
+                    added + 1
+                )
+            };
+            Err(located(
+                data,
+                doc_name,
+                ValidationError::AttributeRuleViolated {
+                    element: element.to_string(),
+                    attr: "sce:optional-since".into(),
+                    value: text,
+                    rule,
+                },
+            ))
+        }
+    }
 }
 
 fn require_attr(
@@ -12046,6 +12110,10 @@ const KNOWN_SCE_ATTRS: &[&str] = &[
     "on-enter",
     "on-leave",
     "on-miss",
+    // The revision of an event schema that widened an optional field from the
+    // type its present value is (docs/adr/0055, section 6;
+    // `read_optional_since`, `forge::schema_revision`).
+    "optional-since",
     "out-of-bounds",
     // A content-line codec entry that is a parameter of a property.
     "param",
@@ -12468,6 +12536,7 @@ fn parse_field_body<T>(
         // `sce:since` and `sce:default` for its own fields, and on a field of
         // any other kind they are left unread and refused as such.
         since: None,
+        optional_since: None,
         default: None,
         default_spelling: None,
     })

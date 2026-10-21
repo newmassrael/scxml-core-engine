@@ -1069,6 +1069,15 @@ pub struct ForgeField<T = SceType> {
     /// See [`crate::forge::schema_revision`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub since: Option<u32>,
+    /// `sce:optional-since` — on an `optional<T>` field of an event schema,
+    /// the revision of the schema that widened the field from `T`
+    /// (docs/adr/0055, section 6): an integer past the revision that added
+    /// the field and at most the schema's own. Before it the field is of
+    /// `T`, from it on of `optional<T>`. `None` for a field that was
+    /// optional from the revision that added it, for a field of `T` and for
+    /// a field of any other kind.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub optional_since: Option<u32>,
     /// `sce:default` — on a field that declares `sce:since`, the value a
     /// delivery that lacks the field takes. Verbatim as the author wrote
     /// it; a literal of the field's own type, held to its bounds where the
@@ -1104,6 +1113,7 @@ impl<T> ForgeField<T> {
             initial: self.initial.clone(),
             initial_spelling: self.initial_spelling.clone(),
             since: self.since,
+            optional_since: self.optional_since,
             default: self.default.clone(),
             default_spelling: self.default_spelling.clone(),
         }

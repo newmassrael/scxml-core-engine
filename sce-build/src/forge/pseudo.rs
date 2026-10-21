@@ -1427,6 +1427,11 @@ fn render_typed_field<T>(f: &ForgeField<T>, ty: &str, out: &mut Out<'_>) {
     if let Some(since) = f.since {
         let _ = write!(line, " since {since}");
     }
+    // The revision that widened an optional field from its present type
+    // (docs/adr/0055, section 6), its own clause.
+    if let Some(widened) = f.optional_since {
+        let _ = write!(line, " optional-since {widened}");
+    }
     if let Some(default) = &f.default {
         let quoted = serde_json::to_string(default).expect("a string is JSON");
         let _ = write!(line, " default {}", word(&quoted));

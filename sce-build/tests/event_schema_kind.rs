@@ -780,6 +780,17 @@ fn two_revisions_of_one_schema_build_as_one_deployment_in_either_direction() {
     build_two_machines(&second, &second).expect("one revision on both sides");
 }
 
+/// How a schema declares a field's type, as the reason of a refusal names it.
+fn declared(
+    sce_type: &str,
+    optional_since: Option<u32>,
+) -> sce_build::forge::schema_revision::DeclaredType {
+    sce_build::forge::schema_revision::DeclaredType {
+        sce_type: sce_type.to_string(),
+        optional_since,
+    }
+}
+
 #[test]
 fn two_schemas_that_are_not_revisions_of_one_are_refused_with_the_field_they_part_on() {
     use sce_build::forge::schema_revision::{Divergence, Party};
@@ -802,7 +813,9 @@ fn two_schemas_that_are_not_revisions_of_one_are_refused_with_the_field_they_par
             sender_revision: 1,
             receiver_revision: 2,
             divergence: Box::new(Divergence::Redeclared {
-                field: "level".into()
+                field: "level".into(),
+                first: declared("uint8", None),
+                second: declared("uint16", None),
             }),
         }
     );
@@ -835,6 +848,119 @@ fn two_schemas_that_are_not_revisions_of_one_are_refused_with_the_field_they_par
                 field: "urgent".into(),
                 since: 2,
                 from: Party::Second,
+            }),
+        }
+    );
+}
+
+// ─── docs/adr/0055, section 6: a field widened across revisions ──
+//
+// A later revision may widen a field from `T` to `optional<T>`, and says
+// which revision did (`sce:optional-since`): every value an older sender
+// writes is a value of the widened field, so the two builds are one
+// deployment. Every other change of type, a narrowing among them, and two
+// builds that disagree about which revision widened the field, still part
+// them, the two types and revisions in the reason.
+
+/// `level` as the first revision declares it, widened by the second.
+const LEVEL_WIDENED_AT_2: &str = r#"<data id="level" sce:type="optional&lt;uint8&gt;" sce:direction="in" sce:optional-since="2"/>"#;
+/// `level` widened by the third revision.
+const LEVEL_WIDENED_AT_3: &str = r#"<data id="level" sce:type="optional&lt;uint8&gt;" sce:direction="in" sce:optional-since="3"/>"#;
+
+#[test]
+fn a_field_widened_by_a_later_revision_builds_as_one_deployment_in_either_direction() {
+    let first = reading_schema("schema_sender", 1, &[LEVEL]);
+    let widened = reading_schema("schema_receiver", 2, &[LEVEL_WIDENED_AT_2]);
+    // An older sender writes a value of `uint8`, which the widened field reads
+    // as present.
+    build_two_machines(&first, &widened)
+        .expect("an older sender is read by a receiver that widened the field");
+    // A newer sender may write `null`, which the older receiver refuses at run
+    // time: the build accepts the pair, and the receivers are upgraded first.
+    build_two_machines(&widened, &first)
+        .expect("a sender that widened the field and an older receiver are one deployment");
+    // Widened alike on both sides, and alike at a later revision of each.
+    build_two_machines(&widened, &widened).expect("one widening on both sides");
+    let third = reading_schema("schema_sender", 3, &[LEVEL_WIDENED_AT_2]);
+    build_two_machines(&first, &third).expect("a widening two revisions past the sender's");
+}
+
+#[test]
+fn a_change_of_type_other_than_a_widening_is_refused_with_both_types() {
+    use sce_build::forge::schema_revision::Divergence;
+    use sce_build::mesh::error::EventSchemaMismatchReason;
+
+    let first = reading_schema("schema_sender", 1, &[LEVEL]);
+
+    // A narrowing: optional from the first revision, then `uint8`.
+    let optional_first = reading_schema(
+        "schema_sender",
+        1,
+        &[r#"<data id="level" sce:type="optional&lt;uint8&gt;" sce:direction="in"/>"#],
+    );
+    let narrowed = reading_schema("schema_receiver", 2, &[LEVEL]);
+    assert_eq!(
+        mismatch_reason(build_two_machines(&optional_first, &narrowed)),
+        EventSchemaMismatchReason::NotOneSchema {
+            sender_revision: 1,
+            receiver_revision: 2,
+            divergence: Box::new(Divergence::Redeclared {
+                field: "level".into(),
+                first: declared("optional<uint8>", None),
+                second: declared("uint8", None),
+            }),
+        }
+    );
+
+    // A widening to the optional of another type.
+    let widened_wider = reading_schema(
+        "schema_receiver",
+        2,
+        &[
+            r#"<data id="level" sce:type="optional&lt;uint16&gt;" sce:direction="in" sce:optional-since="2"/>"#,
+        ],
+    );
+    assert_eq!(
+        mismatch_reason(build_two_machines(&first, &widened_wider)),
+        EventSchemaMismatchReason::NotOneSchema {
+            sender_revision: 1,
+            receiver_revision: 2,
+            divergence: Box::new(Divergence::Redeclared {
+                field: "level".into(),
+                first: declared("uint8", None),
+                second: declared("optional<uint16>", Some(2)),
+            }),
+        }
+    );
+
+    // Two builds that disagree about which revision widened the field.
+    let at_2 = reading_schema("schema_sender", 3, &[LEVEL_WIDENED_AT_2]);
+    let at_3 = reading_schema("schema_receiver", 3, &[LEVEL_WIDENED_AT_3]);
+    assert_eq!(
+        mismatch_reason(build_two_machines(&at_2, &at_3)),
+        EventSchemaMismatchReason::NotOneSchema {
+            sender_revision: 3,
+            receiver_revision: 3,
+            divergence: Box::new(Divergence::Redeclared {
+                field: "level".into(),
+                first: declared("optional<uint8>", Some(2)),
+                second: declared("optional<uint8>", Some(3)),
+            }),
+        }
+    );
+
+    // A schema at the revision that widened the field, which declares it `uint8`.
+    let second_unwidened = reading_schema("schema_sender", 2, &[LEVEL]);
+    let widened = reading_schema("schema_receiver", 2, &[LEVEL_WIDENED_AT_2]);
+    assert_eq!(
+        mismatch_reason(build_two_machines(&second_unwidened, &widened)),
+        EventSchemaMismatchReason::NotOneSchema {
+            sender_revision: 2,
+            receiver_revision: 2,
+            divergence: Box::new(Divergence::Redeclared {
+                field: "level".into(),
+                first: declared("uint8", None),
+                second: declared("optional<uint8>", Some(2)),
             }),
         }
     );
