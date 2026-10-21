@@ -105,14 +105,22 @@ edit("tools/codegen/templates/kotlin/actions/send.kt.jinja2",
      """{% set content_data = 'evaluateSendContent("\\'' ~ (action.content | escape_kotlin) ~ '\\'")' %}""")
 PY
 
-mutation_case "the comparison stops looking at four backends" <<'PY'
+# Re-aimed 2026-10-21: `e211fd266b` moved the list of compared backends out
+# of the guard test into `served()`, which every comparison loop iterates, so
+# the anchor on the guard's own `Language::ALL` line no longer matched. The
+# mutation now narrows `served()` to C++ alone, which is the defect the guard
+# was written for: every loop compares one backend and still passes, and only
+# `every_backend_the_tool_serves_is_compared` can see the list shrink.
+mutation_case "the comparison stops looking at all but one backend" <<'PY'
 edit("sce-build/tests/inline_content_has_one_reading.rs",
-     """    let probed: Vec<&str> = Language::ALL.iter().map(|l| l.canonical_name()).collect();""",
-     """    let probed: Vec<&str> = Language::ALL
-        .iter()
-        .filter(|l| **l == Language::Cpp)
-        .map(|l| l.canonical_name())
-        .collect();""")
+     """fn served() -> impl Iterator<Item = &'static str> {
+    emitting(ForgeKind::Statechart).map(Language::canonical_name)
+}""",
+     """fn served() -> impl Iterator<Item = &'static str> {
+    emitting(ForgeKind::Statechart)
+        .filter(|l| *l == Language::Cpp)
+        .map(Language::canonical_name)
+}""")
 PY
 
 # The line-comment path is the load-bearing one: the C++ emitter explains
