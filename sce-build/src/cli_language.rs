@@ -38,6 +38,18 @@
 
 use std::sync::LazyLock;
 
+/// The backends that emit nothing yet, by name, for a refusal or a help text to
+/// say which backend it means: derived from the codegen matrix, so the one
+/// that starts emitting leaves the sentence without an edit.
+fn emitless_backends() -> String {
+    Language::ALL
+        .iter()
+        .filter(|language| !crate::forge::codegen_matrix::emits_anything(**language))
+        .map(|language| language.canonical_name())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 use crate::generator::Language;
 
 /// A `sce-codegen` subcommand that takes `--language`, together with the
@@ -161,24 +173,25 @@ impl LanguageRoute {
     /// to explain — and a route that grows a restriction without a
     /// reason is a route whose refusal tells the caller to go away
     /// without saying where.
-    pub fn exclusion_reason(self) -> Option<&'static str> {
+    pub fn exclusion_reason(self) -> Option<String> {
+        let emitless = emitless_backends();
         match self {
-            LanguageRoute::GenerateW3c => Some(
+            LanguageRoute::GenerateW3c => Some(format!(
                 "C11 is absent because no C11 W3C statechart emitter exists yet (RFC §5.J.1); \
                  single-document `generate -l c11` uses a different emitter and does work. A \
-                 backend that emits nothing yet is absent too",
-            ),
-            LanguageRoute::GenerateIntegration => Some(
+                 backend that emits nothing yet ({emitless}) is absent too",
+            )),
+            LanguageRoute::GenerateIntegration => Some(format!(
                 "cpp and c11 are absent because their integration fixtures emit at CMake build \
                  time through `sce_generate_static_integration_test`, leaving no committed tree \
-                 for this subcommand to regenerate. A backend that emits nothing yet is absent \
-                 too",
-            ),
+                 for this subcommand to regenerate. A backend that emits nothing yet \
+                 ({emitless}) is absent too",
+            )),
             LanguageRoute::Generate
             | LanguageRoute::Orchestrate
-            | LanguageRoute::GenerateConformance => {
-                Some("a backend that emits nothing yet is absent")
-            }
+            | LanguageRoute::GenerateConformance => Some(format!(
+                "a backend that emits nothing yet ({emitless}) is absent"
+            )),
             LanguageRoute::Check | LanguageRoute::ListFixtures => None,
         }
     }

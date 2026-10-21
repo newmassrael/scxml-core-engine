@@ -32,8 +32,9 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
+use sce_build::forge::codegen_matrix::emitting;
+use sce_build::forge::model::ForgeKind;
 use sce_build::forge::unpseudo;
-use sce_build::generator::Language;
 use sce_build::DocumentLabel;
 
 const NONE: &str = include_str!("fixtures/event_schema_payload_free/job_requested.scxml");
@@ -690,10 +691,7 @@ fn the_machine_for_a_payload_free_event_is_the_schemaless_machine_on_every_backe
     );
     let without = lay("pf-parity-without", &[("job.scxml", &open_without_them())]);
 
-    for language in Language::ALL
-        .iter()
-        .map(|language| language.canonical_name())
-    {
+    for language in emitting(ForgeKind::Statechart).map(|language| language.canonical_name()) {
         let mut generated = Vec::new();
         for (dir, label) in [(&with, "with"), (&without, "without")] {
             let out_dir = dir.join(format!("out-{language}"));

@@ -35,7 +35,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use sce_build::generator::Language;
+use sce_build::forge::codegen_matrix::emitting;
+use sce_build::forge::model::ForgeKind;
 
 fn sce_codegen_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_sce-codegen"))
@@ -101,12 +102,12 @@ impl Drop for ScratchDir {
     }
 }
 
-/// Backends, as `--language` names them, in the order `Language::ALL`
-/// declares them.
+/// Backends that emit a machine, as `--language` names them. `orchestrate`
+/// serves these and no other, so they are the ones `check` can be compared with
+/// it on; a backend that emits nothing yet is held by
+/// `a_backend_with_no_emitter_is_refused`.
 fn backends() -> impl Iterator<Item = &'static str> {
-    Language::ALL
-        .iter()
-        .map(|language| language.canonical_name())
+    emitting(ForgeKind::Statechart).map(|language| language.canonical_name())
 }
 
 /// Backends that lower the MCU-class forge kinds (`buffer-pool`,
@@ -416,7 +417,7 @@ fn check_and_orchestrate_agree_on_every_document_set_and_backend() {
     );
     assert_eq!(
         compared,
-        deploy_variants(&docs).len() * Language::ALL.len(),
+        deploy_variants(&docs).len() * backends().count(),
         "the sweep must compare every deploy variant against every backend",
     );
     let refusing_variants = deploy_variants(&docs).iter().filter(|v| v.2).count();
@@ -647,8 +648,8 @@ fn a_document_set_sweep_reports_every_backend() {
         .expect("sweep manifest carries languages");
     assert_eq!(
         languages.len(),
-        Language::ALL.len(),
-        "sweep must report every backend: {stdout}",
+        backends().count(),
+        "sweep must report every backend that emits: {stdout}",
     );
 
     // The record is only a contract if it is checked against the schema
@@ -745,7 +746,7 @@ fn a_sweep_still_fails_on_a_refusal_no_backend_could_avoid() {
         .collect();
     assert_eq!(
         rejected.len(),
-        Language::ALL.len() - MCU_CLASS_BACKENDS.len(),
+        backends().count() - MCU_CLASS_BACKENDS.len(),
         "every backend that cannot lower an MCU-class kind must be reported, not fatal: \
          {swept_stdout}",
     );

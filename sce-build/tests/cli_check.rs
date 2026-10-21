@@ -28,6 +28,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use sce_build::forge::codegen_matrix::emitting;
+use sce_build::forge::model::ForgeKind;
 use sce_build::generator::Language;
 use sce_build::manifest::language_wire_name;
 
@@ -83,12 +85,12 @@ impl Drop for ScratchDir {
     }
 }
 
-/// Backends, as `--language` names them, in the order `Language::ALL`
-/// declares them.
+/// Backends that emit a machine, as `--language` names them. `generate` serves
+/// these and no other, so they are the ones `check` can be compared with it on;
+/// a backend that emits nothing yet is held by
+/// `a_backend_with_no_emitter_is_refused`.
 fn backends() -> impl Iterator<Item = &'static str> {
-    Language::ALL
-        .iter()
-        .map(|language| language.canonical_name())
+    emitting(ForgeKind::Statechart).map(|language| language.canonical_name())
 }
 
 /// What one invocation reported: process exit status and, when it
@@ -475,15 +477,14 @@ fn backend_axis_refusal_is_fatal_only_when_the_backend_was_named() {
 
     assert_eq!(
         verdicts.len(),
-        Language::ALL.len(),
-        "sweep must report every backend: {verdicts:?}",
+        emitting(ForgeKind::Statechart).count(),
+        "sweep must report every backend that emits: {verdicts:?}",
     );
     assert_eq!(verdicts.get("cpp").map(String::as_str), Some("ok"));
-    for backend in Language::ALL
-        .iter()
+    for backend in emitting(ForgeKind::Statechart)
         // C++ owns `cpp:` and lowers it, as asserted above.
-        .filter(|language| **language != Language::Cpp)
-        .map(|language| language_wire_name(*language))
+        .filter(|language| *language != Language::Cpp)
+        .map(language_wire_name)
     {
         assert_eq!(
             verdicts.get(backend).map(String::as_str),

@@ -30,13 +30,14 @@ use std::process::{Command, Output, Stdio};
 
 use regex::Regex;
 use sce_build::filters;
+use sce_build::forge::codegen_matrix::emitting;
+use sce_build::forge::model::ForgeKind;
 use sce_build::generator::Language;
 use sce_build::toolchain;
 
-/// Every backend, by the identifier `generate -l` takes.
+/// Every backend that emits a machine, by the identifier `generate -l` takes.
 fn backends() -> Vec<&'static str> {
-    Language::ALL
-        .iter()
+    emitting(ForgeKind::Statechart)
         .map(|language| language.canonical_name())
         .collect()
 }
@@ -570,9 +571,7 @@ fn every_backend_writes_an_annotation_as_the_literal_its_language_needs() {
         annotations.iter().any(|a| a.contains('$')),
         "the document must carry a `$` for this to ask about it"
     );
-    for lang in Language::ALL
-        .iter()
-        .copied()
+    for lang in emitting(ForgeKind::Statechart)
         // Python: `literal_of` writes no Python literal; its table is held by
         // `the_python_table_imports_and_holds_the_export`, which imports the
         // module and compares the values the literals build.

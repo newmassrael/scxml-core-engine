@@ -17,6 +17,8 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use sce_build::forge::codegen_matrix::emitting;
+use sce_build::forge::model::ForgeKind;
 use sce_build::generator::Language;
 use tempfile::tempdir;
 
@@ -385,9 +387,7 @@ fn c11_names_each_construct_it_does_not_lower_yet() {
 /// `string` field within the bound its schema declares (docs/adr/0005, decision 1).
 /// Go is checked with a module prefix, which it needs to write its imports.
 fn record_string_field() -> impl Iterator<Item = &'static str> {
-    Language::ALL
-        .iter()
-        .map(|language| language.canonical_name())
+    emitting(ForgeKind::Statechart).map(|language| language.canonical_name())
 }
 
 /// `check -l <lang>` of `document`, with what that language needs to read it.
@@ -551,9 +551,7 @@ fn a_record_string_field_starts_at_a_literal_that_fits_its_bound() {
 /// staging that said which language held which place — a refusal by name, lifted
 /// by the commit that lowered the place — was removed when the last of them did.
 fn bytes_languages() -> impl Iterator<Item = &'static str> {
-    Language::ALL
-        .iter()
-        .map(|language| language.canonical_name())
+    emitting(ForgeKind::Statechart).map(|language| language.canonical_name())
 }
 
 /// The schema of a record with a byte-string field, bounded by `max_size`
@@ -814,10 +812,7 @@ fn a_payload_enum_field_the_document_does_not_import_is_refused_by_name_in_every
   </state>
 </scxml>
 "##;
-    for language in Language::ALL
-        .iter()
-        .map(|language| language.canonical_name())
-    {
+    for language in emitting(ForgeKind::Statechart).map(|language| language.canonical_name()) {
         let out_dir = tempdir().expect("tempdir");
         let (ok, out) = run_beside(
             &[
@@ -942,10 +937,7 @@ fn a_host_run_invoke_is_lowered_where_its_params_are_read_from_the_fields() {
             .join("sce-build/tests/fixtures/host_processor/statechart_static_host_invoke.scxml"),
     )
     .expect("the host invoke fixture");
-    for lang in Language::ALL
-        .iter()
-        .map(|language| language.canonical_name())
-    {
+    for lang in emitting(ForgeKind::Statechart).map(|language| language.canonical_name()) {
         let (ok, out) = run(
             &[
                 "check",
@@ -977,10 +969,7 @@ fn every_backend_lowers_the_model_with_no_script_engine() {
     // document evaluated by a script engine in a language it never declared is
     // what `datamodel` exists to prevent — and one added to the language list
     // with neither fails here, not for a user.
-    for lang in Language::ALL
-        .iter()
-        .map(|language| language.canonical_name())
-    {
+    for lang in emitting(ForgeKind::Statechart).map(|language| language.canonical_name()) {
         let (ok, out) = run(
             &["check", "-l", lang],
             &machine(
@@ -1010,10 +999,7 @@ fn a_32_bit_real_is_held_by_every_backend_alone_in_a_list_and_as_a_record_field(
     let alone = read("static_real32.scxml");
     let record = read("static_record_real32.scxml");
     let schema = read("schema_reading32.scxml");
-    for lang in Language::ALL
-        .iter()
-        .map(|language| language.canonical_name())
-    {
+    for lang in emitting(ForgeKind::Statechart).map(|language| language.canonical_name()) {
         let (ok, out) = run(&["check", "-l", lang], &alone);
         assert!(
             ok,
@@ -1179,9 +1165,7 @@ fn routing(send: &str) -> String {
 /// and the refusal was removed from the shared walk when the last of them did. The
 /// Interpreter is read through `lower`.
 fn computed_target_languages() -> impl Iterator<Item = &'static str> {
-    Language::ALL
-        .iter()
-        .map(|language| language.canonical_name())
+    emitting(ForgeKind::Statechart).map(|language| language.canonical_name())
 }
 
 #[test]
@@ -1925,11 +1909,10 @@ fn every_backend_hands_a_string_to_a_child_that_declares_its_bound() {
         r#"<param name="title" expr="'x'"/>"#,
         r#"<data id="title" sce:type="string" sce:capacity="8" expr="''"/>"#,
     );
-    for lang in Language::ALL
-        .iter()
+    for lang in emitting(ForgeKind::Statechart)
         // Go is checked below, with the module prefix it needs to write its
         // imports.
-        .filter(|language| **language != Language::Go)
+        .filter(|language| *language != Language::Go)
         .map(|language| language.canonical_name())
     {
         let (ok, out) = run(&["check", "-l", lang], &document);
@@ -1950,9 +1933,7 @@ fn every_backend_hands_a_string_to_a_child_that_declares_its_bound() {
 /// `lower`, and its engine gives the child the host
 /// (`INativeActionHost::hostForChild`).
 fn child_host_languages() -> impl Iterator<Item = &'static str> {
-    Language::ALL
-        .iter()
-        .map(|language| language.canonical_name())
+    emitting(ForgeKind::Statechart).map(|language| language.canonical_name())
 }
 
 /// The arguments `check` takes to generate for `lang`: Go also names the module
@@ -3088,10 +3069,7 @@ fn a_send_delayexpr_is_lowered_to_the_string_it_computes_and_needs_no_engine() {
     // Every backend, C11 too: C11 lowers the joined string since 66e6072f73,
     // and its own test below reads the buffer the data model sizes for it.
     // That test asserts generation, not this manifest, so C11 is held here.
-    for language in Language::ALL
-        .iter()
-        .map(|language| language.canonical_name())
-    {
+    for language in emitting(ForgeKind::Statechart).map(|language| language.canonical_name()) {
         let out_dir = tempdir().expect("tempdir");
         let (ok, out) = run(
             &[
@@ -3346,10 +3324,7 @@ fn a_send_eventexpr_is_lowered_to_the_string_it_computes_and_needs_no_engine() {
     // is, so no engine evaluates it and the manifest says so.
     let document = sending_event(r#"eventexpr="'on.' + count""#);
     // Every backend, C11 too, for the reason the delayexpr test gives.
-    for language in Language::ALL
-        .iter()
-        .map(|language| language.canonical_name())
-    {
+    for language in emitting(ForgeKind::Statechart).map(|language| language.canonical_name()) {
         let out_dir = tempdir().expect("tempdir");
         let (ok, out) = run(
             &[
@@ -3536,10 +3511,7 @@ fn a_cancel_sendidexpr_is_lowered_to_the_string_it_computes_and_needs_no_engine(
     // evaluates it and the manifest says so.
     let document = cancelling(r#"sendidexpr="'timer.' + count""#);
     // Every backend, C11 too, for the reason the delayexpr test gives.
-    for language in Language::ALL
-        .iter()
-        .map(|language| language.canonical_name())
-    {
+    for language in emitting(ForgeKind::Statechart).map(|language| language.canonical_name()) {
         let out_dir = tempdir().expect("tempdir");
         let (ok, out) = run(
             &[
@@ -4977,10 +4949,7 @@ fn a_host_run_invoke_namelist_is_the_params_it_abbreviates_and_needs_no_engine()
     let written = invoking_the_host(
         r#"<invoke type="x-sce-host" id="h"><param name="k" expr="count * 2"/><param name="count" expr="count"/><param name="ready" expr="ready"/></invoke>"#,
     );
-    for language in Language::ALL
-        .iter()
-        .map(|language| language.canonical_name())
-    {
+    for language in emitting(ForgeKind::Statechart).map(|language| language.canonical_name()) {
         let (out, from_short) = generated_code(language, &short);
         let (_, from_written) = generated_code(language, &written);
         assert!(

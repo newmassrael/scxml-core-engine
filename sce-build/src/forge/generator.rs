@@ -511,6 +511,14 @@ pub(crate) fn resolve_imports(
     lang: &crate::generator::Language,
     options: &crate::ForgeCompileOptions,
 ) -> Result<Vec<ImportContext>, ForgeError> {
+    // A backend that emits nothing yet has no import identity to compute: the
+    // first import is where the document asks it for one, so that is where the
+    // one refusal every kind gets for it is raised, before an identity is read.
+    if !crate::forge::codegen_matrix::emits_anything(*lang) {
+        if let Some(imp) = imports.first() {
+            return Err(crate::forge::codegen_matrix::emit_missing(imp.kind, *lang).into());
+        }
+    }
     validate_options(imports, lang, options)?;
     Ok(imports
         .iter()

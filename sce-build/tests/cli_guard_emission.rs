@@ -23,6 +23,8 @@
 
 mod common;
 
+use sce_build::forge::codegen_matrix::emitting;
+use sce_build::forge::model::ForgeKind;
 use sce_build::generator::Language;
 use sce_build::parser::SCXMLParser;
 use std::path::{Path, PathBuf};
@@ -82,14 +84,18 @@ impl Drop for ScratchDir {
     }
 }
 
-/// Every backend, derived rather than restated.
+/// Every backend that emits a machine, derived rather than restated.
 ///
 /// `Language::ALL` says why in its own words: a site that restates the
 /// list is how a new backend ends up covered by some all-backends checks
-/// and silently skipped by the rest. This file's whole claim is that six
-/// emitters agree, so it is exactly the site that must not restate them.
+/// and silently skipped by the rest. This file's whole claim is that the
+/// emitters agree, so it is exactly the site that must not restate them. A
+/// backend that emits nothing yet has no guard to emit and is refused instead
+/// (`a_backend_with_no_emitter_is_refused`).
 fn backends() -> Vec<&'static str> {
-    Language::ALL.iter().map(|l| l.canonical_name()).collect()
+    emitting(ForgeKind::Statechart)
+        .map(|l| l.canonical_name())
+        .collect()
 }
 
 fn document(cond: &str) -> String {
@@ -148,8 +154,8 @@ fn every_backend_the_tool_serves_is_probed() {
     let probed = backends();
     assert_eq!(
         probed.len(),
-        Language::ALL.len(),
-        "the probe list is not every backend: {probed:?}"
+        emitting(ForgeKind::Statechart).count(),
+        "the probe list is not every backend that emits: {probed:?}"
     );
     for name in &probed {
         assert!(

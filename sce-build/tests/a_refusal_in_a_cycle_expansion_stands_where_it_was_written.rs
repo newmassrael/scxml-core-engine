@@ -21,7 +21,8 @@
 
 use std::process::Command;
 
-use sce_build::forge::codegen_matrix::language_wire_name;
+use sce_build::forge::codegen_matrix::{emitting, language_wire_name};
+use sce_build::forge::model::ForgeKind;
 use sce_build::generator::Language;
 
 const MODE_ENUM: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -119,7 +120,7 @@ fn assert_every_backend_places(document: &str, token: &str, needle: &str) {
     let (row, col) = written_at(document, needle);
     let col = col + needle.find(token).expect("the needle holds the token") as u64;
     let mut wrong = Vec::new();
-    for &lang in Language::ALL {
+    for lang in emitting(ForgeKind::Statechart) {
         let record = refusal(document, lang);
         let placed = (
             record["location"]["line"].as_u64(),

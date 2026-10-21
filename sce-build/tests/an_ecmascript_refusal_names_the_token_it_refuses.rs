@@ -34,7 +34,8 @@ mod common;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use sce_build::forge::codegen_matrix::language_wire_name;
+use sce_build::forge::codegen_matrix::{emitting, language_wire_name};
+use sce_build::forge::model::ForgeKind;
 use sce_build::generator::Language;
 
 fn codegen_bin() -> PathBuf {
@@ -475,7 +476,7 @@ fn every_backend_names_the_row_and_column_of_the_refused_token() {
     let dir = fixture();
     let mut failures = Vec::new();
     for case in CASES {
-        for &lang in Language::ALL {
+        for lang in emitting(ForgeKind::Statechart) {
             let wrong = match refusal(dir.path(), case, lang) {
                 Ok(record) => mismatches(case, &record),
                 Err(why) => vec![why],
@@ -494,7 +495,7 @@ fn every_backend_names_the_row_and_column_of_the_refused_token() {
         failures.is_empty(),
         "{} of {} refusals are not placed at their token:\n{}",
         failures.len(),
-        CASES.len() * Language::ALL.len(),
+        CASES.len() * emitting(ForgeKind::Statechart).count(),
         failures.join("\n")
     );
 }

@@ -53,7 +53,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use sce_build::generator::Language;
+use sce_build::forge::codegen_matrix::emitting;
+use sce_build::forge::model::ForgeKind;
 use sce_build::manifest::language_wire_name;
 
 fn sce_codegen_bin() -> PathBuf {
@@ -534,7 +535,7 @@ fn the_host_declarations_reach_the_producer_that_check_predicts() {
     // is per backend, not in aggregate: two commands that disagree about one
     // language while agreeing about the others agree about nothing that
     // matters.
-    for &language in Language::ALL {
+    for language in emitting(ForgeKind::Statechart) {
         let lang = language_wire_name(language);
         assert!(
             checked.stdout.contains(&format!(r#""language":"{lang}""#)),
@@ -548,7 +549,7 @@ fn the_host_declarations_reach_the_producer_that_check_predicts() {
     // purpose: the property that must hold is "check's verdict is one its
     // producer can reach", and the day one backend stops clearing is
     // exactly the day nobody would think to re-derive it by hand.
-    for &language in Language::ALL {
+    for language in emitting(ForgeKind::Statechart) {
         let lang = language.canonical_name();
         let wire = language_wire_name(language);
         let out = ScratchDir::new(&format!("orch-host-{lang}"));

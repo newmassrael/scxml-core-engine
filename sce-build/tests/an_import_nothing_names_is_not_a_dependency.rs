@@ -14,6 +14,8 @@
 // that does not name it is measuring an absence the generator could have
 // produced, not one it never could.
 
+use sce_build::forge::codegen_matrix::emitting;
+use sce_build::forge::model::ForgeKind;
 use sce_build::generator::Language;
 use sce_build::{DocumentLabel, ForgeCompileOptions};
 
@@ -70,7 +72,7 @@ fn generated(scxml: &str, language: Language) -> String {
 #[test]
 fn an_import_the_document_names_is_a_dependency_on_every_backend() {
     let scxml = transform("enum:Nrc");
-    for &language in Language::ALL {
+    for language in emitting(ForgeKind::Transform) {
         let code = generated(&scxml, language);
         assert!(
             code.contains(IMPORTED),
@@ -82,7 +84,7 @@ fn an_import_the_document_names_is_a_dependency_on_every_backend() {
 #[test]
 fn an_import_nothing_names_is_not_a_dependency_on_any_backend() {
     let scxml = transform("uint8");
-    for &language in Language::ALL {
+    for language in emitting(ForgeKind::Transform) {
         let code = generated(&scxml, language);
         assert!(
             !code.contains(IMPORTED),

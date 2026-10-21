@@ -31,8 +31,8 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use sce_build::forge::codegen_matrix::language_wire_name;
-use sce_build::generator::Language;
+use sce_build::forge::codegen_matrix::{emitting, language_wire_name};
+use sce_build::forge::model::ForgeKind;
 
 fn sce_codegen_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_sce-codegen"))
@@ -98,8 +98,8 @@ fn every_cli_diagnostic_in_the_fixture_corpus_validates_against_the_schema() {
     for doc in &documents {
         // Every backend, from the one list of them: a seventh backend
         // widens this sweep without an edit here.
-        for lang in Language::ALL {
-            let wire = language_wire_name(*lang);
+        for lang in emitting(ForgeKind::Statechart) {
+            let wire = language_wire_name(lang);
             let out = Command::new(sce_codegen_bin())
                 .arg("check")
                 .arg(doc)

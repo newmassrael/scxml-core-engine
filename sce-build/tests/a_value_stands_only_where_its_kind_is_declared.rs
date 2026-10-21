@@ -40,7 +40,8 @@ mod common;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use sce_build::forge::codegen_matrix::language_wire_name;
+use sce_build::forge::codegen_matrix::{emitting, language_wire_name};
+use sce_build::forge::model::ForgeKind;
 use sce_build::generator::Language;
 use sce_build::ForgeCompileOptions;
 
@@ -564,7 +565,7 @@ fn every_backend_refuses_the_value_where_it_is_written() {
     let dir = fixture();
     let mut failures = Vec::new();
     for case in CASES {
-        for &lang in Language::ALL {
+        for lang in emitting(ForgeKind::Statechart) {
             let wire = language_wire_name(lang);
             let wrong = match check(dir.path(), case.file, wire) {
                 (true, lines) => vec![format!("accepted: {lines:?}")],
@@ -585,7 +586,7 @@ fn every_backend_refuses_the_value_where_it_is_written() {
         failures.is_empty(),
         "{} of {} refusals are wrong:\n{}",
         failures.len(),
-        CASES.len() * Language::ALL.len(),
+        CASES.len() * emitting(ForgeKind::Statechart).count(),
         failures.join("\n")
     );
 }
@@ -597,7 +598,7 @@ fn every_backend_accepts_what_the_rule_admits() {
     let dir = fixture();
     let mut refused = Vec::new();
     for &file in CONTROLS {
-        for &lang in Language::ALL {
+        for lang in emitting(ForgeKind::Statechart) {
             let wire = language_wire_name(lang);
             if let (false, lines) = check(dir.path(), file, wire) {
                 refused.push(format!("{file} [{wire}] {lines:?}"));

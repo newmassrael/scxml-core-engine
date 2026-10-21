@@ -22,6 +22,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::str::FromStr;
 
+use sce_build::forge::codegen_matrix::emitting;
+use sce_build::forge::model::ForgeKind;
 use sce_build::generator::Language;
 use sce_build::reader_names::{emitted_members, rendered_members, reserved};
 
@@ -114,7 +116,9 @@ fn every_member_a_generated_type_defines_is_reserved() {
     let mut unreserved: BTreeSet<String> = BTreeSet::new();
     for (index, (fixture, extra)) in fixtures().into_iter().enumerate() {
         let model = model(&fixture);
-        for &language in Language::ALL {
+        // A backend that emits nothing yet defines no member of a generated
+        // type; its reserved words are held by `reader_names`' own tests.
+        for language in emitting(ForgeKind::Statechart) {
             let readers: BTreeSet<String> = model
                 .readable_variables
                 .iter()
@@ -179,7 +183,7 @@ fn names_that_broke_generation_now_generate_and_say_why_they_have_no_reader() {
     ]
     .into_iter()
     .collect();
-    for &language in Language::ALL {
+    for language in emitting(ForgeKind::Statechart) {
         let (manifest, _) = generate(
             &fixture,
             language,

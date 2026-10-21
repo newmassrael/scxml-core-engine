@@ -15,6 +15,8 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use sce_build::forge::codegen_matrix::emitting;
+use sce_build::forge::model::ForgeKind;
 use sce_build::forge::standard_host::{document, lookup, TYPES};
 use sce_build::generator::Language;
 use tempfile::tempdir;
@@ -55,9 +57,8 @@ fn run(args: &[&str], doc: &str, siblings: &[(&str, &str)]) -> (bool, String) {
 
 /// Every backend, by the identifier `-l` takes.
 fn languages() -> Vec<&'static str> {
-    Language::ALL
-        .iter()
-        .map(|language| language.canonical_name())
+    emitting(ForgeKind::Statechart)
+        .map(Language::canonical_name)
         .collect()
 }
 

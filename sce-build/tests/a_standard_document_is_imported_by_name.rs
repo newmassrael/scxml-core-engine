@@ -10,6 +10,8 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use sce_build::compile_scxml_with_imports;
+use sce_build::forge::codegen_matrix::emitting;
+use sce_build::forge::model::ForgeKind;
 use sce_build::generator::Language;
 use sce_build::ForgeCompileOptions;
 
@@ -97,7 +99,7 @@ fn caller(dir: &Path, src: &str) -> PathBuf {
 fn a_document_imports_a_standard_one_by_name_on_every_backend() {
     let dir = tempfile::tempdir().expect("tempdir");
     let caller = caller(dir.path(), DAYS_FROM_CIVIL);
-    for &language in Language::ALL {
+    for language in emitting(ForgeKind::Statechart) {
         let outputs = compile_scxml_with_imports(
             &[],
             &[Path::new(DAYS_FROM_CIVIL), caller.as_path()],
@@ -156,7 +158,7 @@ fn every_standard_document_generates_on_every_backend() {
         "the time documents are in the library: {names:?}"
     );
     let paths: Vec<&Path> = names.iter().map(Path::new).collect();
-    for &language in Language::ALL {
+    for language in emitting(ForgeKind::Statechart) {
         let outputs = compile_scxml_with_imports(
             &[],
             &paths,
@@ -194,7 +196,7 @@ fn every_standard_statechart_generates_by_its_name_on_every_backend() {
         "the shared record list is in the library: {statecharts:?}"
     );
     for name in &statecharts {
-        for &language in Language::ALL {
+        for language in emitting(ForgeKind::Statechart) {
             let out = tempfile::tempdir().expect("tempdir");
             let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_sce-codegen"));
             command
