@@ -358,10 +358,10 @@ abstract class StateMachineEngine<S : State, E : Event>(
     var basicHttpAccessUri: String = ""
 
     /**
-     * The id a parent gave this session when it started it (docs/adr/0045): the
-     * parent's own id and the id of the start, `<parent>.<invokeid>`, so a
-     * child's id comes from the tree alone and is the text every backend
-     * writes. `null` for a session a host started.
+     * The id a parent gave this session where it built it ([adoptChild];
+     * docs/adr/0045): the parent's own id and the id of the start,
+     * `<parent>.<invokeid>`, so a child's id comes from the tree alone and is
+     * the text every backend writes. `null` for a session a host started.
      */
     private var assignedSessionId: String? = null
 
@@ -4378,10 +4378,35 @@ abstract class StateMachineEngine<S : State, E : Event>(
     protected var pendingInvokeParams: Map<String, Any?> = emptyMap()
 
     /**
+     * docs/adr/0045: give [child], a session this machine has just built to
+     * start under [generatedInvokeId], its id: this session's id and the id of
+     * the start, `<parent>.<invokeid>`, so a child's id comes from the tree
+     * alone and is the text every backend writes.
+     *
+     * Called where the child is built, before anything else reaches it: the
+     * id is the child's from then on, so a script session it opens — to take
+     * an argument, to declare its datamodel, to run — is named by it, and no
+     * session id drawn by the process can stand in its place. [startInvoke]
+     * refuses a child that was not given its id this way.
+     *
+     * @return [child], so a construction can be written as one expression.
+     * @throws IllegalStateException for a child whose script session is already
+     *   open: it is named by an id the tree does not derive (codegen invariant).
+     */
+    protected fun <C : StateMachineEngine<*, *>> adoptChild(child: C, generatedInvokeId: String): C {
+        check(child.scriptSessionId == null) {
+            "the child to start under '$generatedInvokeId' opened its script session " +
+                "'${child.scriptSessionId}' before it was given its id (codegen invariant)"
+        }
+        child.assignedSessionId = "$sessionIdentity.$generatedInvokeId"
+        return child
+    }
+
+    /**
      * §scxml-6.4: Start an invoked child state machine.
      *
      * @param invokeId Static invoke element ID — used for activeInvokes key, done.invoke metadata, cancelInvoke
-     * @param child Child state machine instance
+     * @param child Child state machine instance, given its id by [adoptChild] where it was built
      * @param autoforward Forward parent events to child
      * @param doneEvent Event to send when child completes (done.invoke)
      * @param finalizeScript §scxml-6.5: Script to execute before child events are processed
@@ -4389,6 +4414,8 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * @param childDocument The stem of the document the child was loaded from, empty for a child
      *   written inline: what this machine's factory of children's routers is asked with
      *   ([registerChildMeshRouters])
+     * @throws IllegalStateException for a child [adoptChild] did not give the
+     *   id of this start (codegen invariant).
      */
     protected fun startInvoke(
         invokeId: String,
@@ -4400,11 +4427,13 @@ abstract class StateMachineEngine<S : State, E : Event>(
         childDocument: String = "",
     ) {
         // docs/adr/0045: the child's id is this session's and the id of the
-        // start, so it comes from the tree alone. Given before the child
-        // initializes, so the script session it may open is named by it.
-        // A child whose script session was already opened (to take an
-        // argument) keeps that one, which is what it publishes.
-        child.assignedSessionId = "$sessionIdentity.$generatedInvokeId"
+        // start, given where the child was built ([adoptChild]); a child that
+        // reached here without it would be named by whatever its process drew.
+        val derived = "$sessionIdentity.$generatedInvokeId"
+        check(child.assignedSessionId == derived) {
+            "the child of '$invokeId' was not given the id '$derived' where it was built " +
+                "(codegen invariant)"
+        }
         // SCE_MESH.md, Child Sessions in Mesh: the child's router, asked of this
         // machine's factory and installed before the child initializes, since
         // its first `onEntry` may already send to a peer.

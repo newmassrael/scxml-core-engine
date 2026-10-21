@@ -164,7 +164,8 @@
                             }
                             // The stub, for the reason the srcexpr arm above states.
                             @Suppress("UNUSED_VARIABLE") val _evaluated = scxmlContent
-                            val childSM = {{ inv.child_class }}StateMachine({% if inv.child_needs_script_engine %}scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"){% endif %})
+                            // docs/adr/0045: the child takes its id where it is built.
+                            val childSM = adoptChild({{ inv.child_class }}StateMachine({% if inv.child_needs_script_engine %}scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"){% endif %}), generatedInvokeId)
 {% endif %}
 {% if inv.native_src or inv.srcexpr %}
 {% if inv.candidates %}
@@ -173,15 +174,17 @@
                             // document stem so `file:x.scxml` and `./x.scxml` name
                             // one child. `startInvoke` takes a star-projected
                             // machine, so only the construction differs here.
+                            // docs/adr/0045: each candidate takes its id where it
+                            // is built, before it is handed an argument.
                             val __sceSelected = DocumentStem.of(filePath)
                             val childSM = when (__sceSelected) {
 {% for candidate in inv.candidates %}
 {% if candidate.seeds or candidate.unkept %}
-                                "{{ candidate.stem | escape_kotlin }}" -> {{ candidate.stem | to_pascal_case }}StateMachine({{ candidate.child_host_call }}{% if candidate.child_declares_host_duties %}, acceptSimulatedHost = acceptSimulatedHost{% endif %}).also { child ->
+                                "{{ candidate.stem | escape_kotlin }}" -> adoptChild({{ candidate.stem | to_pascal_case }}StateMachine({{ candidate.child_host_call }}{% if candidate.child_declares_host_duties %}, acceptSimulatedHost = acceptSimulatedHost{% endif %}), generatedInvokeId).also { child ->
 {{ param_macros.seed_static_child(candidate.stem | to_pascal_case, candidate.seeds, candidate.unkept, 'child', model, machine_name, '                                    ') }}
                                 }
 {% else %}
-                                "{{ candidate.stem | escape_kotlin }}" -> {{ candidate.stem | to_pascal_case }}StateMachine({% if candidate.child_host_call %}{{ candidate.child_host_call }}{% if candidate.child_needs_script_engine %}, {% endif %}{% endif %}{% if candidate.child_needs_script_engine %}scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"){% endif %}{% if candidate.child_declares_host_duties %}, acceptSimulatedHost = acceptSimulatedHost{% endif %})
+                                "{{ candidate.stem | escape_kotlin }}" -> adoptChild({{ candidate.stem | to_pascal_case }}StateMachine({% if candidate.child_host_call %}{{ candidate.child_host_call }}{% if candidate.child_needs_script_engine %}, {% endif %}{% endif %}{% if candidate.child_needs_script_engine %}scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"){% endif %}{% if candidate.child_declares_host_duties %}, acceptSimulatedHost = acceptSimulatedHost{% endif %}), generatedInvokeId)
 {% endif %}
 {% endfor %}
                                 else -> {
@@ -200,7 +203,8 @@
                             // evaluates, and what the value NAMES is a residue this
                             // path does not honour (SCE_ACCEPTED_SUBSET.md §2.13).
                             @Suppress("UNUSED_VARIABLE") val _evaluated = filePath
-                            val childSM = {{ inv.child_class }}StateMachine({% if inv.child_needs_script_engine %}scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"){% endif %})
+                            // docs/adr/0045: the child takes its id where it is built.
+                            val childSM = adoptChild({{ inv.child_class }}StateMachine({% if inv.child_needs_script_engine %}scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"){% endif %}), generatedInvokeId)
 {% endif %}
 {% endif %}
 {#- §scxml-6.4.1: the child is chosen (a value naming no candidate has
@@ -664,11 +668,13 @@
 {# The host the child performs its acts through is asked of the parent's own
     host here, where the invocation starts, so a state invoked again — on entry
     again, or after a restore — is given a fresh one (docs/adr/0005, decision 6).
-    It leads the child's parameters, as it does the machine's own. #}
+    It leads the child's parameters, as it does the machine's own. The child
+    takes its id where it is built (docs/adr/0045), before it is handed an
+    argument or anything else reaches it. #}
 {% if inv.child_needs_script_engine %}
-                    val childSM = {{ inv.child_class }}StateMachine({% if inv.child_host_call %}{{ inv.child_host_call }}, {% endif %}scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"){% if inv.child_declares_host_duties %}, acceptSimulatedHost = acceptSimulatedHost{% endif %})
+                    val childSM = adoptChild({{ inv.child_class }}StateMachine({% if inv.child_host_call %}{{ inv.child_host_call }}, {% endif %}scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"){% if inv.child_declares_host_duties %}, acceptSimulatedHost = acceptSimulatedHost{% endif %}), generatedInvokeId)
 {% else %}
-                    val childSM = {{ inv.child_class }}StateMachine({{ inv.child_host_call }}{% if inv.child_declares_host_duties %}, acceptSimulatedHost = acceptSimulatedHost{% endif %})
+                    val childSM = adoptChild({{ inv.child_class }}StateMachine({{ inv.child_host_call }}{% if inv.child_declares_host_duties %}, acceptSimulatedHost = acceptSimulatedHost{% endif %}), generatedInvokeId)
 {% endif %}
 {% if (inv.params or inv.namelist) and model.needs_script_engine %}
                     setInvokeParams(childSM, invokeParams)
