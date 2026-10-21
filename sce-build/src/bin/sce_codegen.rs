@@ -5488,27 +5488,40 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
                         Err(refusal) => error_format.emit_and_exit(&refusal, ""),
                     };
                 let template_dir = sce_build::find_template_dir_for(*lang);
-                let outcome = sce_build::emit_model_artifacts(
-                    &model,
-                    &template_dir,
-                    input_stem,
-                    scxml_path,
-                    *lang,
-                    &sce_build::ModelEmitOptions {
-                        forge: Some(&sce_build::ForgeCompileOptions {
-                            go_module_prefix: go_module_prefix.clone(),
-                            const_fold_budget,
-                            ..Default::default()
-                        }),
-                        codegen: Some(&sce_build::generator::StatechartCodegenOptions {
-                            no_std,
-                            ..Default::default()
-                        }),
-                        script_engine: selected_engine,
-                        ..Default::default()
-                    },
-                )
-                .map(|_| ());
+                let forge_options = sce_build::ForgeCompileOptions {
+                    go_module_prefix: go_module_prefix.clone(),
+                    const_fold_budget,
+                    ..Default::default()
+                };
+                let codegen_options = sce_build::generator::StatechartCodegenOptions {
+                    no_std,
+                    ..Default::default()
+                };
+                let emit_options = sce_build::ModelEmitOptions {
+                    forge: Some(&forge_options),
+                    codegen: Some(&codegen_options),
+                    script_engine: selected_engine,
+                    ..Default::default()
+                };
+                let render = |machine: &SCXMLModel, stem: &str| {
+                    sce_build::emit_model_artifacts(
+                        machine,
+                        &template_dir,
+                        stem,
+                        scxml_path,
+                        *lang,
+                        &emit_options,
+                    )
+                    .map(|_| ())
+                };
+                // The machine, then every child it carries, in the order
+                // `generate` writes them: a child `generate` would refuse is
+                // this backend's refusal here too (`carried_children`).
+                let outcome = render(&model, input_stem).and_then(|()| {
+                    carried_children(&model, scxml_path, *lang, &host_processor, &host_invoker)
+                        .iter()
+                        .try_for_each(|(stem, child)| render(child, stem.as_str()))
+                });
                 record_backend_outcome(&mut verdicts, *lang, explicit, error_format, outcome);
             }
         }
@@ -6696,71 +6709,31 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
         // SCE_MESH.md §9.6.6: emit synth-invoke children alongside the
         // parent. Mirrors `generate_child_sms` (the W3C unified path) for
         // the standalone `generate` CLI so a consumer no longer drives a
-        // separate `--as-child` pass per inline `<content>` child. C11
-        // skips the `has_parent_communication=true` override that the
-        // other backends use under `--as-child` because C11 child
-        // templates auto-detect parent-communication from the model and
-        // the override would break that detection.
+        // separate `--as-child` pass per inline `<content>` child.
         //
         // Every depth: a child's own in-line children are machines its
         // machine starts by name, so a run that wrote only the first level
         // left a package that names a machine nobody wrote. Each is placed
         // in the package the document's in-line children are placed in.
-        for invoke in model.inline_child_invokes() {
-            let Some(child_box) = invoke.inline_child.as_deref() else {
-                continue;
-            };
-            let child_stem = invoke.child_name.as_str();
-            if child_stem.is_empty() {
-                continue;
-            }
-
-            // Synth SCXML was already written to `out_path` (and
-            // `deploy_dir` when distinct) earlier in this function,
-            // before the mesh-injection chain that depends on the
-            // file. No second emit here.
-
-            let mut child_model = child_box.clone();
-            if lang != Language::C11 {
-                child_model.has_parent_communication = true;
-            }
-            let synthetic_path = Path::new(scxml_path)
-                .parent()
-                .unwrap_or(Path::new("."))
-                .join(format!("{child_stem}.scxml"));
-            analyzer::analyze(&mut child_model, &synthetic_path.to_string_lossy());
-            // docs/adr/0045: the host's declaration is the tree's. The host
-            // serves its invoke types to every session its machine starts (the
-            // invokers are handed down the tree, and each request names the
-            // session that made it), so a child's `<invoke type>` naming one is
-            // host-run as the parent's is, and not refused as an undeclared type.
-            if let Err(refused) = sce_build::host_processor_analyzer::declare_host_surfaces(
-                &mut child_model,
-                &host_processor,
-                &host_invoker,
-            ) {
-                cli_exit(refused.into());
-            }
-            if analyzer::can_generate_static(&child_model, &synthetic_path.to_string_lossy())
-                .is_err()
-            {
-                continue;
-            }
+        //
+        // Synth SCXML was already written to `out_path` (and `deploy_dir`
+        // when distinct) earlier in this function, before the
+        // mesh-injection chain that depends on the file. No second emit
+        // here.
+        for (child_stem, mut child_model) in
+            carried_children(&model, scxml_path, lang, &host_processor, &host_invoker)
+        {
             // The child's declarations mean what they mean on a root: it was
             // judged with the parent (`transition_function_findings` asks the
             // in-line children), and it is bound to the digest its machine's
             // header carries, this run's, so its transition function and
             // table are written beside its machine and named after its stem.
             sce_build::bind_run_digest(&mut child_model, &drift_ctx.header.source_hex());
-            // `resolve_source_path` canonicalizes the path, which fails
-            // on the synthetic (the file does not exist on disk —
-            // inline children live in-memory). Set `scxml_source_path`
-            // directly so the `// From:` license header + Forge AST
-            // envelope match the byte-stable goldens from the prior
-            // `--as-child` flow that staged the synth child on disk.
-            child_model.scxml_source_path = synthetic_path.to_string_lossy().into_owned();
-            let child_output =
-                emit_for_model(&child_model, child_stem, Some(inline_children_package));
+            let child_output = emit_for_model(
+                &child_model,
+                child_stem.as_str(),
+                Some(inline_children_package),
+            );
             artifact_deps.extend(child_output.deps);
             let child_files = maybe_format_files(child_output.files, &cpp_formatter);
             for (filename, code) in &child_files {
@@ -6954,6 +6927,77 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
 
     report.formatter = cpp_formatter.used();
     report
+}
+
+/// Every child `model` carries, at any depth, that a run generating it for
+/// `lang` writes beside it, each prepared as that run renders it and paired
+/// with the stem its machine is named by.
+///
+/// A carried child is one written in `<content>` or named by its library name
+/// (`sce:std/...`): the parser holds it in memory
+/// ([`SCXMLModel::inline_child_invokes`]), and its machine is a file of the
+/// run. `generate` writes it and `check` renders it here, through this one
+/// preparation: `check` reaches the verdict `generate` would, and a child
+/// prepared on one route alone is a refusal the other never reports (the
+/// standard list, which calls imported algorithms, refused `generate -l go`
+/// without a module prefix while `check -l go` accepted the document).
+///
+/// The run's digest is not bound here: `generate` binds the digest of the
+/// source set it hashed, which only it computes.
+fn carried_children(
+    model: &SCXMLModel,
+    scxml_path: &str,
+    lang: Language,
+    host_processor: &[String],
+    host_invoker: &[String],
+) -> Vec<(String, SCXMLModel)> {
+    let mut children = Vec::new();
+    for invoke in model.inline_child_invokes() {
+        let Some(child_box) = invoke.inline_child.as_deref() else {
+            continue;
+        };
+        let child_stem = invoke.child_name.as_str();
+        if child_stem.is_empty() {
+            continue;
+        }
+        let mut child_model = child_box.clone();
+        // C11 skips the `has_parent_communication=true` override that the
+        // other backends use under `--as-child`: C11 child templates
+        // auto-detect parent communication from the model, and the override
+        // would break that detection.
+        if lang != Language::C11 {
+            child_model.has_parent_communication = true;
+        }
+        let synthetic_path = Path::new(scxml_path)
+            .parent()
+            .unwrap_or(Path::new("."))
+            .join(format!("{child_stem}.scxml"));
+        analyzer::analyze(&mut child_model, &synthetic_path.to_string_lossy());
+        // docs/adr/0045: the host's declaration is the tree's. The host
+        // serves its invoke types to every session its machine starts (the
+        // invokers are handed down the tree, and each request names the
+        // session that made it), so a child's `<invoke type>` naming one is
+        // host-run as the parent's is, and not refused as an undeclared type.
+        if let Err(refused) = sce_build::host_processor_analyzer::declare_host_surfaces(
+            &mut child_model,
+            host_processor,
+            host_invoker,
+        ) {
+            cli_exit(refused.into());
+        }
+        if analyzer::can_generate_static(&child_model, &synthetic_path.to_string_lossy()).is_err() {
+            continue;
+        }
+        // `resolve_source_path` canonicalizes the path, which fails on the
+        // synthetic (the file does not exist on disk: carried children live
+        // in memory). Set `scxml_source_path` directly so the `// From:`
+        // license header and Forge AST envelope match the byte-stable goldens
+        // from the prior `--as-child` flow that staged the synth child on
+        // disk.
+        child_model.scxml_source_path = synthetic_path.to_string_lossy().into_owned();
+        children.push((child_stem.to_string(), child_model));
+    }
+    children
 }
 
 /// Collect child SCXML names from model's static/hybrid invokes.

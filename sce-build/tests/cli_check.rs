@@ -220,6 +220,10 @@ const SYNTHETIC_AXES: &[(&str, &str)] = &[
     // inside every backend's transpile — which is exactly why the sweep
     // needs it: that route had assumed whatever reached its per-backend
     // recorder was one backend's refusal.
+    // A child the document carries, which `generate` writes beside the
+    // machine: the axis is refused by the child alone, so a route that
+    // renders only the machine reaches a different verdict.
+    ("axis_carried_child_refused.scxml", CARRIED_CHILD_AXIS),
     (
         "axis_forge_undeclared_operand.scxml",
         r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -233,6 +237,39 @@ const SYNTHETIC_AXES: &[(&str, &str)] = &[
 "#,
     ),
 ];
+
+/// A machine whose in-line child calls an imported algorithm. The Go backend
+/// imports an algorithm's package by the module path the run is given
+/// (`--go-module-prefix`), and a Go import path has no bare form, so without
+/// one the child's machine is refused while the machine that carries it,
+/// which calls nothing, is not.
+const CARRIED_CHILD_AXIS: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="working" datamodel="sce-static" name="axis_carried_child_refused">
+  <state id="working">
+    <invoke type="scxml" id="worker">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+               version="1.0" initial="sending" datamodel="sce-static">
+          <sce:import kind="algorithm" src="sce:std/mesh/outbound_sends_now.scxml" as="SendsNow"/>
+          <datamodel>
+            <data id="ready" sce:type="bool" expr="true"/>
+            <data id="depth" sce:type="uint32" expr="0"/>
+            <data id="now" sce:type="bool" expr="false"/>
+          </datamodel>
+          <state id="sending">
+            <transition event="poll" type="internal">
+              <assign location="now" expr="SendsNow(ready, depth)"/>
+            </transition>
+          </state>
+        </scxml>
+      </content>
+    </invoke>
+    <transition event="finish" target="finished"/>
+  </state>
+  <final id="finished"/>
+</scxml>
+"#;
 
 /// Stage every synthetic axis document into `dir` and return the paths.
 fn stage_synthetic_axes(dir: &Path) -> Vec<PathBuf> {
@@ -324,6 +361,66 @@ fn check_and_generate_agree_on_every_document_and_backend() {
          {MIN_COMPARED_REFUSALS}. Parity over accepted documents alone would let a \
          missing validator on the check side pass unnoticed.",
     );
+}
+
+/// A child the document carries is part of the verdict on both routes.
+///
+/// `generate` writes the machine of every child a document carries, so a
+/// child its backend refuses refuses the run. `check` once rendered the
+/// machine alone and accepted the document: the standard record list, a child
+/// that calls imported algorithms, was refused by `generate -l go` without a
+/// module prefix while `check -l go` reported it `ok`. The run given the
+/// prefix is accepted on both, so the refusal is the child's import and
+/// nothing else of the document.
+#[test]
+fn check_refuses_what_a_carried_child_refuses() {
+    let staged = ScratchDir::new("check-carried-child");
+    let doc = staged.path().join("axis_carried_child_refused.scxml");
+    std::fs::write(&doc, CARRIED_CHILD_AXIS).expect("stage the carried-child document");
+    let doc = doc.to_str().expect("staged path is utf8");
+    let out = ScratchDir::new("check-carried-child-out");
+    let out = out.path().to_str().expect("scratch path is utf8");
+    let cwd = repo_root();
+
+    let (generated, _) = run(&["generate", doc, "-l", "go", "-o", out], &cwd);
+    let (checked, _) = run(&["check", doc, "-l", "go"], &cwd);
+    assert_eq!(
+        generated.code.as_deref(),
+        Some("generate/invalid-config"),
+        "generate -l go without a module prefix must refuse the child's import: {generated:?}",
+    );
+    assert_eq!(
+        checked, generated,
+        "check must refuse what generate refuses"
+    );
+
+    let prefix = "example.com/generated";
+    let (generated, _) = run(
+        &[
+            "generate",
+            doc,
+            "-l",
+            "go",
+            "-o",
+            out,
+            "--go-module-prefix",
+            prefix,
+        ],
+        &cwd,
+    );
+    let (checked, _) = run(
+        &["check", doc, "-l", "go", "--go-module-prefix", prefix],
+        &cwd,
+    );
+    assert_eq!(
+        generated,
+        Verdict {
+            exit: Some(0),
+            code: None,
+        },
+        "given a module prefix, generate accepts the document",
+    );
+    assert_eq!(checked, generated, "check accepts what generate accepts");
 }
 
 /// `check` creates nothing — not in the working directory, not beside
