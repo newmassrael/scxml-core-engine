@@ -14,6 +14,9 @@
 {% endfor %}
 {% endif %}
 
+{# The expression is the document's, lowered as the other five backends lower
+   it: a text compared to `''` stays a comparison, not `is_empty()`. #}
+#[allow(clippy::comparison_to_empty)]
 pub fn {{ func_name }}({{ params }}) -> bool {
     {{ expr }}
 }

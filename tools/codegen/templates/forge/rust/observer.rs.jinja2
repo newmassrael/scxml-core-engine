@@ -71,6 +71,9 @@ impl {{ struct_name }} {
         }
     }
 
+    {# The monitor expressions are the document's, lowered as the other five
+       backends lower them: a text compared to `''` stays a comparison. #}
+    #[allow(clippy::comparison_to_empty)]
     pub fn update(&mut self, {{ params }}) -> EventQueue<ForgeDomain> {
         let mut sce_events: EventQueue<ForgeDomain> = EventQueue::new();
 {% for mon in monitors %}

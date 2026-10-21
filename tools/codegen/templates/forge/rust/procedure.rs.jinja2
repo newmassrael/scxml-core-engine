@@ -142,6 +142,10 @@ impl {{ struct_name }} {
     }
 }
 
+{# The guards, assignments and send expressions are the document's, lowered as
+   the other five backends lower them: a text compared to `''` stays a
+   comparison. #}
+#[allow(clippy::comparison_to_empty)]
 impl ProcedurePolicy for {{ struct_name }} {
     type State = State;
     type Event = Event;

@@ -27,6 +27,9 @@
 /// Output unit: `{{ func.output_quantity.unit }}` (physical = raw * {{ func.output_quantity.scale_repr }} + {{ func.output_quantity.offset_repr }}).
 {% endif %}
 {% endif %}
+{# The expression is the document's, lowered as the other five backends lower
+   it: a text compared to `''` stays a comparison, not `is_empty()`. #}
+#[allow(clippy::comparison_to_empty)]
 pub fn {{ func.name }}({{ func.params }}) -> {{ func.ret_type }} {
     {{ func.expr }}
 }
