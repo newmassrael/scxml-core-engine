@@ -6385,7 +6385,11 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
             .clone_from(&model.host_invoker_types);
 
         // §scxml-6.4: Generate children metadata + hybrid SCXML stubs for all languages.
-        // C++ uses _children.txt for CMake post-processing; all languages need hybrid stubs.
+        // C++ lists, in `_children.txt`, every child a machine this run writes
+        // starts, for a build that generates those children itself; nothing in
+        // this repository reads it since the W3C CMake rules name each child
+        // from RESOURCE_DIR (cmake/SCEStaticW3CTest.cmake). All languages need
+        // hybrid stubs.
         let children = collect_invoke_child_names(&model);
         if lang == Language::Cpp && !children.is_empty() {
             let children_file = out_path.join(format!("{input_stem}_children.txt"));
@@ -6527,26 +6531,36 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
 }
 
 /// Collect child SCXML names from model's static/hybrid invokes.
+///
+/// Every machine the run writes is asked, the document and each child it
+/// carries at any depth ([`SCXMLModel::with_carried_descendants`]): a carried
+/// child's machine names its children as the document's names its own, and
+/// the build that compiles it has to have them. A carried child is listed once,
+/// where its parent starts it; a child two machines start is listed once.
 fn collect_invoke_child_names(model: &SCXMLModel) -> Vec<String> {
-    let mut children = Vec::new();
-    for invoke in model.iter_scxml_invokes() {
-        if !invoke.child_name.is_empty() {
-            children.push(invoke.child_name.clone());
+    let mut children: Vec<String> = Vec::new();
+    let mut listed: BTreeSet<String> = BTreeSet::new();
+    let mut list = |name: &str| {
+        if !name.is_empty() && listed.insert(name.to_string()) {
+            children.push(name.to_string());
         }
-    }
-    for invoke in model.iter_hybrid_invokes() {
-        // §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: a declared candidate set
-        // replaces the stub, so what the build has to generate is one child
-        // per candidate. Naming the stub here as well would ask the build for
-        // a machine the parent no longer references.
-        if !invoke.candidates.is_empty() {
-            for candidate in &invoke.candidates {
-                children.push(candidate.stem.clone());
+    };
+    for machine in model.with_carried_descendants() {
+        for invoke in machine.iter_scxml_invokes() {
+            list(&invoke.child_name);
+        }
+        for invoke in machine.iter_hybrid_invokes() {
+            // §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: a declared candidate set
+            // replaces the stub, so what the build has to generate is one child
+            // per candidate. Naming the stub here as well would ask the build for
+            // a machine the parent no longer references.
+            if invoke.candidates.is_empty() {
+                list(&invoke.child_name);
+            } else {
+                for candidate in &invoke.candidates {
+                    list(&candidate.stem);
+                }
             }
-            continue;
-        }
-        if !invoke.child_name.is_empty() {
-            children.push(invoke.child_name.clone());
         }
     }
     children
@@ -6565,7 +6579,11 @@ fn collect_invoke_child_names(model: &SCXMLModel) -> Vec<String> {
 /// materialise as parent-adjacent files (Mesh §9.6.6 naming is enforced by
 /// codegen emit, not by a parser write). They are skipped here — there is
 /// no source-side file to copy and downstream codegen reads them from the
-/// parent model directly.
+/// parent model directly. Their own children are not: a carried child's
+/// machine is written by this run, so a document it starts by `src` or as a
+/// candidate is staged as one the document starts is, from the same
+/// directory, which is where the carried child's references were written from
+/// ([`SCXMLModel::with_carried_descendants`]).
 fn copy_static_invoke_children(
     model: &SCXMLModel,
     scxml_path: &Path,
@@ -6573,13 +6591,17 @@ fn copy_static_invoke_children(
     output_dir: &Path,
 ) {
     let source_dir = scxml_path.parent().unwrap_or(Path::new("."));
+    let machines = model.with_carried_descendants();
 
     // §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: a hybrid invoke that
     // declared `sce:candidates` has one child per candidate, and they are
     // ordinary documents beside the parent — the same shape a static `src`
     // child has, which is why they are staged by the same pass rather than
     // by a second one that would drift from it.
-    for invoke in model.iter_hybrid_invokes() {
+    for invoke in machines
+        .iter()
+        .flat_map(|machine| machine.iter_hybrid_invokes())
+    {
         for candidate in &invoke.candidates {
             let child_scxml = format!("{}.scxml", candidate.stem);
             let dest = output_dir.join(&child_scxml);
@@ -6610,7 +6632,10 @@ fn copy_static_invoke_children(
         }
     }
 
-    for invoke in model.iter_scxml_invokes() {
+    for invoke in machines
+        .iter()
+        .flat_map(|machine| machine.iter_scxml_invokes())
+    {
         if invoke.child_name.is_empty() || invoke.inline_child.is_some() {
             continue;
         }
@@ -6654,9 +6679,17 @@ fn stage_child_document(src: &Path, dest: &Path) -> std::io::Result<()> {
 /// changes from the next incremental build. `write_if_changed` skips the
 /// write when the bytes are identical, so CMake mtime-based dependency
 /// tracking stays quiet on no-op runs.
+///
+/// A child the document carries has its hybrid invokes' stubs written as well:
+/// its machine is this run's, and names them
+/// ([`SCXMLModel::with_carried_descendants`]).
 fn generate_hybrid_child_scxmls(model: &SCXMLModel, output_dir: &Path) -> Vec<PathBuf> {
     let mut written = Vec::new();
-    for invoke in model.iter_hybrid_invokes() {
+    for invoke in model
+        .with_carried_descendants()
+        .into_iter()
+        .flat_map(|machine| machine.iter_hybrid_invokes())
+    {
         let Some(stub) = invoke.stub_document() else {
             continue;
         };
@@ -7530,7 +7563,9 @@ trait W3cBackend {
 /// standard statechart) is generated with the children ITS document carries,
 /// at every depth, each right after the machine that starts it: they are
 /// named after that machine (`<child>__sce_synth_invoke__<id>`), and that
-/// machine names them.
+/// machine names them. Such a child's `src` and hybrid children are the test's
+/// as the document's are; a child read from disk brings only the children it
+/// carries.
 ///
 /// A child declaring its transition function or table is generated as a
 /// fixture is: judged, bound to this run's digest, and written with its
@@ -7561,41 +7596,54 @@ fn generate_child_sms(
         Disk(PathBuf),
     }
 
-    // A child whose document its invoke carries (written in-line, or a
-    // standard statechart), under the machine name the parse gave it.
-    fn carried(invoke: &sce_build::model::ScxmlInvokeInfo) -> Option<(String, ChildSource)> {
-        let child = invoke.inline_child.as_deref()?;
-        Some((
-            invoke.child_name.clone(),
-            ChildSource::Inline(Box::new(child.clone())),
-        ))
+    // The children `machine` starts, each under the machine name the parse
+    // gave it: a child whose document its invoke carries (written in-line, or
+    // a standard statechart) from that document, and — when `whole` — a `src`
+    // child from `resource_dir` and a hybrid invoke's stub from `stub_dir`.
+    // The document and each child it carries are machines of this test whose
+    // children are all the test's; a child read from disk is a document of its
+    // own, of which only the children it carries are.
+    fn started(
+        machine: &SCXMLModel,
+        whole: bool,
+        resource_dir: &Path,
+        stub_dir: Option<&Path>,
+    ) -> Vec<(String, ChildSource)> {
+        let mut children = Vec::new();
+        for invoke in machine.iter_scxml_invokes() {
+            match invoke.inline_child.as_deref() {
+                Some(child) => children.push((
+                    invoke.child_name.clone(),
+                    ChildSource::Inline(Box::new(child.clone())),
+                )),
+                None if whole => children.push((
+                    invoke.child_name.clone(),
+                    ChildSource::Disk(resource_dir.to_path_buf()),
+                )),
+                None => {}
+            }
+        }
+        if let Some(stub_dir) = stub_dir.filter(|_| whole) {
+            children.extend(machine.iter_hybrid_invokes().map(|invoke| {
+                (
+                    invoke.child_name.clone(),
+                    ChildSource::Disk(stub_dir.to_path_buf()),
+                )
+            }));
+        }
+        children
     }
 
-    let mut pending: std::collections::VecDeque<(String, ChildSource)> = model
-        .iter_scxml_invokes()
-        .map(|inv| {
-            carried(inv).unwrap_or_else(|| {
-                (
-                    inv.child_name.clone(),
-                    ChildSource::Disk(resource_dir.to_path_buf()),
-                )
-            })
-        })
-        .collect();
-    if backend.emits_hybrid_child_stub() {
-        pending.extend(model.iter_hybrid_invokes().map(|inv| {
-            (
-                inv.child_name.clone(),
-                ChildSource::Disk(test_mod_dir.to_path_buf()),
-            )
-        }));
-    }
+    let stub_dir = backend.emits_hybrid_child_stub().then_some(test_mod_dir);
+    let mut pending: std::collections::VecDeque<(String, ChildSource)> =
+        started(model, true, resource_dir, stub_dir).into();
 
     while let Some((child_name, child_source)) = pending.pop_front() {
         let child_name = child_name.as_str();
         if child_name.is_empty() || !seen.insert(child_name.to_string()) {
             continue;
         }
+        let carried = matches!(child_source, ChildSource::Inline(_));
 
         // Resolve the child model + the diagnostic label used by the
         // analyzer / source-path resolver. Inline children synthesize an
@@ -7630,10 +7678,11 @@ fn generate_child_sms(
         // its machine starts them by name, and a run that wrote only the
         // parent's children left one that names a machine nobody wrote. Each
         // is generated right after the child, in its document order, with its
-        // own carried children after it.
-        for (offset, entry) in child_model
-            .iter_scxml_invokes()
-            .filter_map(carried)
+        // own children after it. A carried child's `src` and hybrid children
+        // are the test's too, as the document's are: its machine is this
+        // test's, and `generate_hybrid_child_scxmls` wrote its stubs.
+        for (offset, entry) in started(&child_model, carried, resource_dir, stub_dir)
+            .into_iter()
             .enumerate()
         {
             pending.insert(offset, entry);
@@ -9237,7 +9286,9 @@ impl W3cBackend for CppBackend {
         _test_mod_dir: &Path,
         _drift_ctx: &DriftContext,
     ) {
-        // C++ children are handled by CMake via _children.txt, not the W3C generator
+        // C++ children are generated by the CMake rules of
+        // cmake/SCEStaticW3CTest.cmake (an in-line child by its parent's own
+        // `generate`), not the W3C generator
     }
 
     fn clean(&self) {

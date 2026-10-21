@@ -4805,6 +4805,20 @@ impl SCXMLModel {
             .flat_map(ScxmlInvokeInfo::with_inline_descendants)
             .collect()
     }
+    /// This document's model, followed by the model of each child
+    /// [`Self::inline_child_invokes`] gives, in that order: every machine a run
+    /// that generates this document writes. A child each of them starts by a
+    /// document it does not carry (`src`, a hybrid invoke's candidate or stub)
+    /// is a child that run has to name and stage, whichever of them starts it.
+    pub fn with_carried_descendants(&self) -> Vec<&SCXMLModel> {
+        std::iter::once(self)
+            .chain(
+                self.inline_child_invokes()
+                    .into_iter()
+                    .filter_map(|invoke| invoke.inline_child.as_deref()),
+            )
+            .collect()
+    }
     /// Iterate every hybrid-SCXML invoke across all states in document order.
     pub fn iter_hybrid_invokes(&self) -> impl Iterator<Item = &HybridInvokeInfo> {
         let mut ordered: Vec<&State> = self.states.values().collect();

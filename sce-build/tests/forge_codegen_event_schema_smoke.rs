@@ -1165,6 +1165,72 @@ fn a_generated_and_an_authored_invoke_id_name_two_in_line_children() {
     );
 }
 
+/// A document whose in-line child `kid` starts an in-line `kid` of its own and,
+/// by `src`, the document [`IN_LINE_LISTING_LEAF`] beside the parent.
+const IN_LINE_LISTING: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       initial="running" name="in_line_listing">
+  <state id="running">
+    <invoke type="scxml" id="kid">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="waiting">
+          <state id="waiting">
+            <invoke type="scxml" id="kid">
+              <content>
+                <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="idle">
+                  <state id="idle"/>
+                </scxml>
+              </content>
+            </invoke>
+            <invoke type="scxml" id="beside" src="in_line_listing_leaf.scxml"/>
+          </state>
+        </scxml>
+      </content>
+    </invoke>
+  </state>
+</scxml>"#;
+
+/// The document [`IN_LINE_LISTING`]'s in-line child starts by `src`.
+const IN_LINE_LISTING_LEAF: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       initial="idle" name="in_line_listing_leaf">
+  <state id="idle"/>
+</scxml>"#;
+
+/// The C++ children listing (`<stem>_children.txt`) names the children of
+/// every machine the run writes, the in-line child's as well as the
+/// document's, and the document that child starts by `src` is staged into the
+/// output directory as one the document starts is. The listing named the
+/// document's own children only, and nothing staged the in-line child's
+/// `src` child, whose machine the in-line child's machine includes.
+#[test]
+fn a_cpp_children_listing_names_the_children_of_every_machine_the_run_writes() {
+    let scratch = reset_scratch("cpp_in_line_listing");
+    let document = scratch.join("in_line_listing.scxml");
+    std::fs::write(&document, IN_LINE_LISTING).expect("write in_line_listing");
+    std::fs::write(
+        scratch.join("in_line_listing_leaf.scxml"),
+        IN_LINE_LISTING_LEAF,
+    )
+    .expect("write in_line_listing_leaf");
+    let out_dir = scratch.join("out");
+    generate_into("cpp", &document, &out_dir, &["--no-format"]);
+    let listing = std::fs::read_to_string(out_dir.join("in_line_listing_children.txt"))
+        .expect("read the children listing");
+    let listed: Vec<&str> = listing.lines().collect();
+    assert_eq!(
+        listed,
+        [
+            "in_line_listing__sce_synth_invoke__kid",
+            "in_line_listing__sce_synth_invoke__kid__sce_synth_invoke__kid",
+            "in_line_listing_leaf",
+        ],
+        "the listing names each child of each machine the run writes, once"
+    );
+    assert!(
+        out_dir.join("in_line_listing_leaf.scxml").is_file(),
+        "the document the in-line child starts by `src` was not staged beside the output"
+    );
+}
+
 /// The machine `static_child_mesh` and the candidate its hybrid `<invoke>`
 /// names, `static_mesh_relay`, generated for `lang` into `out_dir` as the
 /// committed trees generate them: the candidate `--as-child --parent-stem
