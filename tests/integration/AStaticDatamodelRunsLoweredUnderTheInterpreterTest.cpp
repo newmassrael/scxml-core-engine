@@ -864,12 +864,11 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheInterpreterDoesWha
     }
     EXPECT_NE(std::find(notYetLowered.begin(), notYetLowered.end(), "record_list_parent"), notYetLowered.end())
         << "record_list_parent was lowered: its child has no text in it to lower, so the refusal by `src` is gone";
-    // ... and the scenario of values that may be absent (docs/adr/0055): an optional
-    // value has no lowering for the Interpreter until the step of the ADR that gives it
-    // one, which takes this line off and lets the scan above replay the scenario.
-    EXPECT_NE(std::find(notYetLowered.begin(), notYetLowered.end(), "static_optional"), notYetLowered.end())
-        << "static_optional was lowered: an optional value has a lowering for the Interpreter now, so take this "
-        << "line off and let the scan replay the scenario";
+    // ... and the scenario of values that may be absent (docs/adr/0055), each `null` in a
+    // variable, a record, a list, a payload, a send and the done data, so that a refusal
+    // the scan above would let pass does not stand for its lowering.
+    EXPECT_NE(std::find(replayed.begin(), replayed.end(), "static_optional"), replayed.end())
+        << "static_optional was not replayed: an optional value has no lowering for the Interpreter";
     // ... and the copies of the list of who is online, whose entries are let go by the
     // machine's own delayed send, which the Interpreter's scheduler releases as the
     // scenario moves its logical clock on.

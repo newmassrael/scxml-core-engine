@@ -6024,7 +6024,6 @@ const NOT_YET_LOWERED: &[(&str, &str, &str)] = &[
     ("static_optional", "cpp", OPTIONAL_NOT_LOWERED),
     ("static_optional", "python", OPTIONAL_NOT_LOWERED),
     ("static_optional", "c11", OPTIONAL_NOT_LOWERED),
-    ("static_optional", INTERPRETER, OPTIONAL_NOT_LOWERED),
 ];
 
 /// Why the scenario of an optional value is not replayed on an engine yet.
