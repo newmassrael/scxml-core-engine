@@ -293,3 +293,19 @@ build  = "cargo build --bin sce-codegen --features cli -p sce-build && cmake -S 
 # with the port free, then the server, then cargo. Both statuses are OR'd so
 # a red ctest cannot be hidden by a green cargo run.
 verify = "ctest --test-dir build --output-on-failure; c=$?; node tests/w3c/standalone_http_server.js 8080 /test & srv=$!; sleep 1; cargo test --workspace --features cli --no-fail-fast; r=$?; kill $srv 2>/dev/null; exit $(( c | r ))"
+
+# Regenerating the forge goldens writes into the tree, so `writes` keeps a plain
+# `bx -- UPDATE_GOLDEN=1 cargo test ...` on this machine. Declared as an action
+# it runs on a build machine and only the files it rewrote come back
+# (`bx --action golden`). Measured by the bx session on a clean clone: the
+# whole action took 118 s on a build machine, against 1240 s for the same run
+# local under load.
+#
+# `inputs = ["**"]` is deliberate: the test builds the generator from the whole
+# workspace, so no narrower list is honest, and with it nothing is cached or
+# isolated, which suits a run nothing else reuses. The outputs are the
+# committed goldens only; `__pycache__` beside them is ignored and not listed.
+[actions.golden]
+run = 'UPDATE_GOLDEN=1 cargo test -p sce-build --test forge_conformance'
+inputs = ["**"]
+outputs = ["tests/forge/expected/*"]
