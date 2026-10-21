@@ -1695,6 +1695,10 @@
           "file": "sce-build/src/forge/generator.rs",
           "symbol": "insert_c_codec_symbols",
           "kind": "implements"
+        },
+        {
+          "file": "tools/codegen/templates/_macros/forge_rust_codec_encode_body.jinja2",
+          "kind": "references"
         }
       ]
     },

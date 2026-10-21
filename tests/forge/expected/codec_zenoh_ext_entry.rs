@@ -467,3 +467,52 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohExtEntryOwned<S> {
         self.as_borrowed().try_into_owned_in::<D>()
     }
 }
+
+#[allow(dead_code)]
+impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohExtEntryOwned<S> {
+    /// Encode `self` into the caller-owned sink, straight from the owned
+    /// fields: the bytes `as_borrowed` followed by
+    /// [`CodecZenohExtEntry::encode`] writes, without the projection.
+    ///
+    /// The projection builds the whole borrowed record (every list and
+    /// embedded body in it, by value) only for `encode` to read it once. A
+    /// sender that holds an owned value encodes it from here. The same
+    /// refusals as the projection's: a list longer than the borrowed view
+    /// declares raises `CodecError::TooManyElements`, so an owned value the
+    /// borrowed form could not carry is an error and never a frame its own
+    /// decoder would reject.
+    pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), CodecError> {
+        // Encode fixed prefix (tag field is part of the prefix). The
+        // tag value is read from the struct field, NOT derived from
+        // the body discriminant — keeping author-set msg_id / body in
+        // sync is the caller's responsibility (v1 keeps the layout
+        // simple; future extensions may auto-sync via a typed setter).
+        w.write_u8(self.header)?;
+        // Append the active arm's encoded bytes.
+        match &self.body {
+            CodecZenohExtEntryOwnedVariant::CodecZenohExtUnit(b) => {
+                b.encode(w)?;
+            }
+            CodecZenohExtEntryOwnedVariant::CodecZenohExtZint(b) => {
+                b.encode(w)?;
+            }
+            CodecZenohExtEntryOwnedVariant::CodecZenohExtZbuf(b) => {
+                b.encode(w)?;
+            }
+            CodecZenohExtEntryOwnedVariant::Default { body, .. } => {
+                body.encode(w)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Heap-backed convenience facade over [`Self::encode`].
+    #[cfg(feature = "alloc")]
+    pub fn encode_to_vec(&self) -> Vec<u8> {
+        let mut _sce_v: Vec<u8> = Vec::with_capacity(CodecZenohExtEntry::MAX_ENCODED_BYTES);
+        let mut _sce_sink = VecSink::new(&mut _sce_v);
+        self.encode(&mut _sce_sink)
+            .expect("VecSink is infallible");
+        _sce_v
+    }
+}

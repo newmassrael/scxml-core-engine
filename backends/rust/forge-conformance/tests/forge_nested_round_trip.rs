@@ -260,3 +260,112 @@ fn nested_projection_rejects_overflowing_list() {
         "body_list of 5 exceeds max-count 4 -> try_as_borrowed must reject",
     );
 }
+
+/// `encode` on the owned mirror writes the bytes the projection followed by
+/// the borrowed `encode` writes, at both storage profiles. The owned form
+/// exists so a sender need not build the borrowed record, so the two must not
+/// be able to disagree: every field kind of the fixture (a required embed, an
+/// optional embed, a list of embeds, text) goes through it.
+#[test]
+fn owned_encode_writes_what_the_projection_writes() {
+    let wire = parent().encode_to_vec();
+    let view = CodecNestedParent::decode(&mut SceCursor::new(&wire)).expect("decodes");
+
+    let growable: CodecNestedParentOwned<Heap> = view
+        .clone()
+        .try_into_owned_in::<Heap>()
+        .expect("within every bound");
+    let inline: CodecNestedParentOwned<Inline> = view
+        .try_into_owned_in::<Inline>()
+        .expect("within every declared capacity");
+
+    for (profile, projected, direct) in [
+        (
+            "Heap",
+            growable
+                .try_as_borrowed()
+                .expect("within max-count")
+                .encode_to_vec(),
+            growable.encode_to_vec().expect("within max-count"),
+        ),
+        (
+            "Inline",
+            inline
+                .try_as_borrowed()
+                .expect("within max-count")
+                .encode_to_vec(),
+            inline.encode_to_vec().expect("within max-count"),
+        ),
+    ] {
+        assert_eq!(
+            direct, projected,
+            "{profile}: owned encode must equal projection then encode"
+        );
+        assert_eq!(direct, wire, "{profile}: and the wire it was decoded from");
+    }
+}
+
+/// With the optional embed absent the two still agree, and the sink-based
+/// `encode` fills a caller-owned buffer the same way `encode_to_vec` does.
+#[test]
+fn owned_encode_agrees_with_an_absent_optional_and_a_bounded_sink() {
+    let mut absent = parent();
+    absent.hdr = 0x00;
+    absent.optional_body = None;
+    let owned: CodecNestedParentOwned = absent.try_into_owned().expect("within every bound");
+
+    let projected = owned
+        .try_as_borrowed()
+        .expect("within max-count")
+        .encode_to_vec();
+    assert_eq!(
+        owned.encode_to_vec().expect("within max-count"),
+        projected,
+        "an absent optional embed must encode alike on both forms",
+    );
+
+    let mut storage = [0u8; 256];
+    let mut sink = sce_forge_runtime::codec::SliceSink::new(&mut storage);
+    owned.encode(&mut sink).expect("fits 256 bytes");
+    let written = sink.position();
+    assert_eq!(
+        &storage[..written],
+        projected.as_slice(),
+        "a caller-owned sink receives the same bytes"
+    );
+}
+
+/// An owned list past the borrowed view's bound is refused by `encode` with
+/// the error `try_as_borrowed` gives, at both profiles. Without it a value the
+/// borrowed form cannot carry would be written as a frame its own decoder
+/// rejects, because the projection that used to refuse it is no longer in the
+/// path.
+#[test]
+fn owned_encode_refuses_a_list_past_the_bound_like_the_projection() {
+    fn locator() -> CodecZenohLocatorOwned {
+        CodecZenohLocatorOwned {
+            locator_len: 1,
+            locator: sce_forge_runtime::codec::SceString::from_text("a").unwrap(),
+        }
+    }
+    fn body() -> CodecNestedBodyOwned {
+        CodecNestedBodyOwned {
+            n: 1,
+            locs: vec![locator()],
+        }
+    }
+    let owned = CodecNestedParentOwned {
+        hdr: 0,
+        m: 5,
+        required_body: body(),
+        optional_body: None,
+        body_list: (0..5).map(|_| body()).collect(),
+    };
+    let projected = owned.try_as_borrowed().map(|_| ()).unwrap_err();
+    let direct = owned.encode_to_vec().unwrap_err();
+    assert_eq!(projected, CodecError::TooManyElements);
+    assert_eq!(
+        direct, projected,
+        "owned encode must raise the projection's error"
+    );
+}

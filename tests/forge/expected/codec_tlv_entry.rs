@@ -248,3 +248,36 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecTlvEntryOwned<S> {
         self.as_borrowed().try_into_owned_in::<D>()
     }
 }
+
+#[allow(dead_code)]
+impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecTlvEntryOwned<S> {
+    /// Encode `self` into the caller-owned sink, straight from the owned
+    /// fields: the bytes `as_borrowed` followed by
+    /// [`CodecTlvEntry::encode`] writes, without the projection.
+    ///
+    /// The projection builds the whole borrowed record (every list and
+    /// embedded body in it, by value) only for `encode` to read it once. A
+    /// sender that holds an owned value encodes it from here. The same
+    /// refusals as the projection's: a list longer than the borrowed view
+    /// declares raises `CodecError::TooManyElements`, so an owned value the
+    /// borrowed form could not carry is an error and never a frame its own
+    /// decoder would reject.
+    pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), CodecError> {
+        w.write_u8(self.entry_type)?;
+        w.write_u8(self.entry_len)?;
+        // The owned form holds the bytes in the profile's container; read them
+        // through the trait every profile implements.
+        w.write_bytes(::sce_forge_runtime::codec::SceByteBuf::as_slice(&self.entry_body))?;
+        Ok(())
+    }
+
+    /// Heap-backed convenience facade over [`Self::encode`].
+    #[cfg(feature = "alloc")]
+    pub fn encode_to_vec(&self) -> Vec<u8> {
+        let mut _sce_v: Vec<u8> = Vec::with_capacity(CodecTlvEntry::MAX_ENCODED_BYTES);
+        let mut _sce_sink = VecSink::new(&mut _sce_v);
+        self.encode(&mut _sce_sink)
+            .expect("VecSink is infallible");
+        _sce_v
+    }
+}

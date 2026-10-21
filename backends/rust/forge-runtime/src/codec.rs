@@ -214,6 +214,29 @@ where
     Ok(())
 }
 
+/// The entries of an owned list, refused past the bound the borrowed view
+/// declares for it.
+///
+/// An owned codec encodes straight from its own fields, without projecting
+/// into the borrowed view first. That projection (`try_project_bounded_into`)
+/// is where a list longer than the borrowed `heapless::Vec<_, N>` can hold was
+/// refused with [`CodecError::TooManyElements`], and a growable profile can
+/// hold more than `N` (an inline one is sized to its own advisory capacity,
+/// which may exceed it). Encoding from the owned fields has to raise the
+/// same error, or a value the borrowed view could not carry would be written
+/// as a frame its own decoder would reject; this is that check, in one place
+/// for every generated owned `encode`.
+pub fn bounded_entries<L, T, const N: usize>(list: &L) -> Result<&[T], CodecError>
+where
+    L: crate::storage::SceList<T>,
+{
+    let entries = list.as_slice();
+    if entries.len() > N {
+        return Err(CodecError::TooManyElements);
+    }
+    Ok(entries)
+}
+
 // ── Owned storage profiles ───────────────────────────────────────
 //
 // A codec's borrowed view decodes `bytes` / `string` / list fields as

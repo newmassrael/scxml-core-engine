@@ -452,124 +452,8 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `VecSink`) are effectively infallible.
     pub fn encode<S: SceSink>(&self, w: &mut S{{ params_after_first_arg }}) -> Result<(), CodecError> {
-{% if has_parent_flags %}
-        // RFC §synth-5-B: see `decode` — same parameter, same suppress.
-        let _ = parent_flags;
-{% endif %}
-{% if has_flag_inputs %}
-        // Declared-but-unconsumed flag inputs: see `decode` — same suppress per
-        // declared `<sce:flag-input>`.
-{{ flag_input_unused_suppress }}
-{% endif %}
-{% if has_parent_tag_derivation %}
-        // RFC §synth-5-B parent-tag carriers — derive carrier bits from each embedded
-        // parent-tag variant's active arm before the carrier byte is
-        // emitted. Each `_derived_<carrier>` local is OR'd into the
-        // carrier's encode site (see `inject_parent_tag_carrier_suffix`).
-{{ parent_tag_derivation_block }}
-{% endif %}
-{% if present_if_encode_prologue %}{{ present_if_encode_prologue }}{% endif %}
-{% if has_no_fields %}
-        // RFC §synth-5-B empty body — zero-byte payload (the surrounding
-        // wire-protocol header byte alone marks this codec on the wire).
-        // Suppress the unused-sink warning explicitly so empty codecs
-        // stay warning-clean under `warnings = "deny"`.
-        let _ = w;
-        Ok(())
-{% elif has_variant %}
-{% if variant.has_streaming_prefix %}
-        // RFC §synth-5-B peek-byte / streaming-prefix:
-        // streaming prefix encode (per-field present_if/tlv-chain/embed/
-        // repeat helpers). Peek-byte mode: the arm body's encode prepends
-        // its own header byte (which the decoder peeked); no separate
-        // tag byte is emitted here. Streaming-prefix mode (own-field
-        // variant): the carrier is part of the prefix fields and emits
-        // through the same per-field path.
-{% for field in fields %}
-{% if field.is_repeat %}
-{{ field.repeat_encode_block }}
-{% elif field.is_tlv_chain %}
-{{ field.tlv_chain_encode_block }}
-{% elif field.is_embed %}
-{{ field.embed_encode_block }}
-{% else %}
-{{ field.present_if_encode_block }}
-{% endif %}
-{% endfor %}
-{% else %}
-        // Encode fixed prefix (tag field is part of the prefix). The
-        // tag value is read from the struct field, NOT derived from
-        // the body discriminant — keeping author-set msg_id / body in
-        // sync is the caller's responsibility (v1 keeps the layout
-        // simple; future extensions may auto-sync via a typed setter).
-{% for expr in encode_exprs %}
-        w.write_u8({{ expr }})?;
-{% endfor %}
-{% endif %}
-        // Append the active arm's encoded bytes.
-        match &self.body {
-{% for arm in variant.arms %}
-            {{ struct_name }}Variant::{{ arm.variant_name }}(b) => {
-                b.encode(w{{ arm.body_encode_args_with_leading_comma }})?;
-            }
-{% endfor %}
-{% if variant.default_arm %}
-            {{ struct_name }}Variant::{{ variant.default_arm.variant_name }} { body, .. } => {
-                body.encode(w{{ variant.default_arm.body_encode_args_with_leading_comma }})?;
-            }
-{% endif %}
-        }
-        Ok(())
-{% elif needs_streaming %}
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when absent, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`
-        // (its non-gated arm covers plain fixed / tail / length-ref / VLE).
-{% for field in fields %}
-{% if field.is_repeat %}
-{{ field.repeat_encode_block }}
-{% elif field.is_tlv_chain %}
-{{ field.tlv_chain_encode_block }}
-{% elif field.is_embed %}
-{{ field.embed_encode_block }}
-{% else %}
-{{ field.present_if_encode_block }}
-{% endif %}
-{% endfor %}
-        Ok(())
-{% elif has_variable_fields %}
-{% for expr in encode_exprs %}
-        w.write_u8({{ expr }})?;
-{% endfor %}
-{% for field in fields %}
-{% if field.is_variable %}
-{% if has_dma_aligned_fields %}
-        // RFC §synth-5-B B3 DMA padding: zero-fill any gap between the
-        // current write position and this field's authored byte
-        // offset (deterministic zeros on the wire so peers stay
-        // byte-compatible regardless of host allocator — RFC §synth-5-B
-        // "wire layout, not host allocator").
-        while w.position() < {{ field.byte_off }} {
-            w.write_u8(0)?;
-        }
-{% endif %}
-        // `self.<id>` is the borrowed `&'a [u8]` view — pass it directly;
-        // `&self.<id>` would be `&&[u8]` (clippy::needless_borrow).
-        w.write_bytes(self.{{ field.id }})?;
-{% endif %}
-{% endfor %}
-        Ok(())
-{% else %}
-{% for expr in encode_exprs %}
-        w.write_u8({{ expr }})?;
-{% endfor %}
-        Ok(())
-{% endif %}
+{% set owned_encode = false %}
+{% include '_macros/forge_rust_codec_encode_body.jinja2' %}
     }
 
 {% if encode_can_refuse %}
@@ -851,6 +735,48 @@ impl{{ owned_generics_impl }} {{ struct_name }}Owned{{ owned_generics_args }} {
     pub fn transcode_in<D: {{ codec_storage_path }}>(&self) -> Result<{{ struct_name }}Owned<D>, CodecError> {
         self.{{ as_borrowed_fn }}(){{ as_borrowed_try }}.{{ owned_in_fn }}::<D>()
     }
+}
+
+#[allow(dead_code)]
+impl{{ owned_generics_impl }} {{ struct_name }}Owned{{ owned_generics_args }} {
+    /// Encode `self` into the caller-owned sink, straight from the owned
+    /// fields: the bytes `{{ as_borrowed_fn }}` followed by
+    /// [`{{ struct_name }}::encode`] writes, without the projection.
+    ///
+    /// The projection builds the whole borrowed record (every list and
+    /// embedded body in it, by value) only for `encode` to read it once. A
+    /// sender that holds an owned value encodes it from here. The same
+    /// refusals as the projection's: a list longer than the borrowed view
+    /// declares raises `CodecError::TooManyElements`, so an owned value the
+    /// borrowed form could not carry is an error and never a frame its own
+    /// decoder would reject.
+    pub fn encode<K: SceSink>(&self, w: &mut K{{ params_after_first_arg }}) -> Result<(), CodecError> {
+{% set owned_encode = true %}
+{% include '_macros/forge_rust_codec_encode_body.jinja2' %}
+    }
+
+{% if owned_encode_can_refuse %}
+    /// Heap-backed convenience facade over [`Self::encode`]. Fallible: a list
+    /// past the bound the borrowed view declares is refused, and so is a
+    /// presence the chain predicates disagree with.
+    #[cfg(feature = "alloc")]
+    pub fn encode_to_vec(&self{{ params_after_first_arg }}) -> Result<Vec<u8>, CodecError> {
+        let mut _sce_v: Vec<u8> = Vec::with_capacity({{ struct_name }}::MAX_ENCODED_BYTES);
+        let mut _sce_sink = VecSink::new(&mut _sce_v);
+        self.encode(&mut _sce_sink{{ params_first_arg_with_comma }})?;
+        Ok(_sce_v)
+    }
+{% else %}
+    /// Heap-backed convenience facade over [`Self::encode`].
+    #[cfg(feature = "alloc")]
+    pub fn encode_to_vec(&self{{ params_after_first_arg }}) -> Vec<u8> {
+        let mut _sce_v: Vec<u8> = Vec::with_capacity({{ struct_name }}::MAX_ENCODED_BYTES);
+        let mut _sce_sink = VecSink::new(&mut _sce_v);
+        self.encode(&mut _sce_sink{{ params_first_arg_with_comma }})
+            .expect("VecSink is infallible");
+        _sce_v
+    }
+{% endif %}
 }
 {% if owned_origin %}
 {% if has_variant and variant_owned_generics_args %}

@@ -372,3 +372,60 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohInitBodyOwned<S> {
         self.as_borrowed().try_into_owned_in::<D>()
     }
 }
+
+#[allow(dead_code)]
+impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohInitBodyOwned<S> {
+    /// Encode `self` into the caller-owned sink, straight from the owned
+    /// fields: the bytes `as_borrowed` followed by
+    /// [`CodecZenohInitBody::encode`] writes, without the projection.
+    ///
+    /// The projection builds the whole borrowed record (every list and
+    /// embedded body in it, by value) only for `encode` to read it once. A
+    /// sender that holds an owned value encodes it from here. The same
+    /// refusals as the projection's: a list longer than the borrowed view
+    /// declares raises `CodecError::TooManyElements`, so an owned value the
+    /// borrowed form could not carry is an error and never a frame its own
+    /// decoder would reject.
+    pub fn encode<K: SceSink>(&self, w: &mut K, s: u8, a: u8) -> Result<(), CodecError> {
+        // Declared-but-unconsumed flag inputs: see `decode` — same suppress per
+        // declared `<sce:flag-input>`.
+        let _ = s;
+        let _ = a;
+        // Streaming cursor encode (SSOT selection: `needs_streaming`).
+        // Mirrors the streaming decode: every field appends its own bytes
+        // in declaration order through the per-field encode blocks, so a
+        // gated field skips its append when absent, and a fixed field after
+        // a variable-length payload lands after the payload (the positional
+        // path appends variable fields last, placing it ahead on the wire).
+        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
+        // dedicated helpers; everything else uses `present_if_encode_block`
+        // (its non-gated arm covers plain fixed / tail / length-ref / VLE).
+        w.write_u8(self.version)?;
+        w.write_u8(self.cbyte)?;
+        w.write_bytes(::sce_forge_runtime::codec::SceByteBuf::as_slice(&self.zid))?;
+        if let Some(_v) = self.sn_res {
+            w.write_u8(_v)?;
+        }
+        if let Some(_v) = self.batch_size {
+            w.write_u8((_v & 0xFF) as u8)?;
+            w.write_u8((_v >> 8 & 0xFF) as u8)?;
+        }
+        if let Some(_v) = self.cookie_len {
+        w.write_vle_u64(_v)?;
+        }
+        if let Some(_v) = &self.cookie {
+            w.write_bytes(::sce_forge_runtime::codec::SceByteBuf::as_slice(_v))?;
+        }
+        Ok(())
+    }
+
+    /// Heap-backed convenience facade over [`Self::encode`].
+    #[cfg(feature = "alloc")]
+    pub fn encode_to_vec(&self, s: u8, a: u8) -> Vec<u8> {
+        let mut _sce_v: Vec<u8> = Vec::with_capacity(CodecZenohInitBody::MAX_ENCODED_BYTES);
+        let mut _sce_sink = VecSink::new(&mut _sce_v);
+        self.encode(&mut _sce_sink, s, a)
+            .expect("VecSink is infallible");
+        _sce_v
+    }
+}

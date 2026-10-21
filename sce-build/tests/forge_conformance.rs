@@ -12097,6 +12097,96 @@ fn forge_parent_tag_round_trip_local_nonlocal_rust() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// Rust compile+run: the owned mirror of a parent whose carrier bits are
+/// derived from the arm an embedded dispatcher holds encodes the bytes the
+/// projection followed by the borrowed `encode` writes.
+///
+/// The owned `encode` names the dispatcher's owned variant enum to derive the
+/// carrier, so that enum has to be in scope in the parent's module, which the
+/// goldens never exercise (none has a parent-tag derivation). Here the local arm
+/// holds bytes, which makes the dispatcher, and so the parent, a borrowed
+/// codec with an owned mirror. The owned header is left with the wrong bit on
+/// purpose, so the frame is right only if the derivation runs on the owned
+/// side too.
+#[test]
+fn forge_rust_parent_tag_owned_encode_runtime() {
+    const HARNESS: &str = r#"// Injected by forge_rust_parent_tag_owned_encode_runtime.
+#[cfg(test)]
+mod tests {
+    use crate::codec_b5nu_parent::CodecB5nuParent as Parent;
+    use ::sce_forge_runtime::codec::SceCursor;
+
+    fn owned_of(frame: &[u8]) -> crate::codec_b5nu_parent::CodecB5nuParentOwned {
+        Parent::decode(&mut SceCursor::new(frame))
+            .expect("decode parent frame")
+            .try_into_owned()
+            .expect("within every bound")
+    }
+
+    fn check(frame: &[u8]) {
+        let owned = owned_of(frame);
+        let projected = owned.as_borrowed().encode_to_vec();
+        assert_eq!(projected.as_slice(), frame, "projection re-encodes the frame");
+        assert_eq!(
+            owned.encode_to_vec().as_slice(),
+            projected.as_slice(),
+            "owned encode must write what the projection writes"
+        );
+
+        // The carrier's M bit is derived from the arm, not read back: with it
+        // cleared on the owned value both forms still write the arm's bit.
+        let mut wrong = owned_of(frame);
+        wrong.header ^= 0x40;
+        assert_eq!(
+            wrong.encode_to_vec().as_slice(),
+            wrong.as_borrowed().encode_to_vec().as_slice(),
+            "the derivation runs on the owned form as it does on the projection"
+        );
+    }
+
+    #[test]
+    fn the_local_arm_is_written_alike() {
+        // header.M = 1 selects the local arm: a kind byte, then the bytes to the end.
+        check(&[0x5du8, 0x07, 0xAA, 0xBB, 0xCC]);
+    }
+
+    #[test]
+    fn the_nonlocal_arm_is_written_alike() {
+        // header.M = 0 selects the nonlocal arm: a 16-bit payload.
+        check(&[0x1du8, 0x12, 0x34]);
+    }
+}
+"#;
+    let (dir, _) = parent_tag_write_round_trip_fixture("", "");
+    // The local arm carries bytes, so the dispatcher and the parent are borrowed.
+    std::fs::write(
+        dir.join("codec_b5nu_local.scxml"),
+        r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big">
+  <datamodel>
+    <sce:field id="kind" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:field id="payload" sce:type="bytes" sce:byte="1" sce:bit-size="tail"/>
+  </datamodel>
+</scxml>"#,
+    )
+    .expect("write local with bytes");
+    rustc_test_codec_set_with_extra(
+        &dir,
+        &[
+            "codec_b5nu_local.scxml",
+            "codec_b5nu_nonlocal.scxml",
+            "codec_b5nu_keyexpr.scxml",
+            "codec_b5nu_parent.scxml",
+        ],
+        &[("owned_encode_roundtrip.rs", HARNESS)],
+        "parent_tag_owned_encode_runtime",
+    )
+    .expect("an owned parent with a derived carrier must encode what its projection encodes");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// Dispatch-inversion β (caller-tag) shape — fixture writer with
 /// parent-side `<sce:variant-dispatch flag="header.M"/>` declared on
 /// the import and a β-shape leaf (no `tag=` attribute, no RPF). Mirrors the

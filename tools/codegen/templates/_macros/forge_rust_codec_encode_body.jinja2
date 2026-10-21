@@ -1,0 +1,137 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -#}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -#}
+{#- The statements of a Rust codec's `encode`, between its signature and its
+    closing brace, for the borrowed view and for its owned mirror.
+
+    Included by `forge/rust/codec.rs.jinja2` twice. `owned_encode` is false for
+    the borrowed view (`{Codec}<'a>`) and true for the owned mirror
+    (`{Codec}Owned<S>`), and picks the three things that differ: the block each
+    field renders (`*_owned` where a string, bytes or list field is read through
+    the profile's container), the variant enum an arm is matched against, and
+    how a bytes field is handed to the sink. A field written as a number, a
+    flag or an embedded body reads the same on both, so those blocks are shared.
+    One skeleton, so a branch added here reaches both. -#}
+{% if has_parent_flags %}
+        // RFC §synth-5-B: see `decode` — same parameter, same suppress.
+        let _ = parent_flags;
+{% endif %}
+{% if has_flag_inputs %}
+        // Declared-but-unconsumed flag inputs: see `decode` — same suppress per
+        // declared `<sce:flag-input>`.
+{{ flag_input_unused_suppress }}
+{% endif %}
+{% if has_parent_tag_derivation %}
+        // RFC §synth-5-B parent-tag carriers — derive carrier bits from each embedded
+        // parent-tag variant's active arm before the carrier byte is
+        // emitted. Each `_derived_<carrier>` local is OR'd into the
+        // carrier's encode site (see `inject_parent_tag_carrier_suffix`).
+{{ parent_tag_derivation_block_owned if owned_encode else parent_tag_derivation_block }}
+{% endif %}
+{% if present_if_encode_prologue %}{{ present_if_encode_prologue_owned if owned_encode else present_if_encode_prologue }}{% endif %}
+{% if has_no_fields %}
+        // RFC §synth-5-B empty body — zero-byte payload (the surrounding
+        // wire-protocol header byte alone marks this codec on the wire).
+        // Suppress the unused-sink warning explicitly so empty codecs
+        // stay warning-clean under `warnings = "deny"`.
+        let _ = w;
+        Ok(())
+{% elif has_variant %}
+{% if variant.has_streaming_prefix %}
+        // RFC §synth-5-B peek-byte / streaming-prefix:
+        // streaming prefix encode (per-field present_if/tlv-chain/embed/
+        // repeat helpers). Peek-byte mode: the arm body's encode prepends
+        // its own header byte (which the decoder peeked); no separate
+        // tag byte is emitted here. Streaming-prefix mode (own-field
+        // variant): the carrier is part of the prefix fields and emits
+        // through the same per-field path.
+{% for field in fields %}
+{% if field.is_repeat %}
+{{ field.repeat_encode_block_owned if owned_encode else field.repeat_encode_block }}
+{% elif field.is_tlv_chain %}
+{{ field.tlv_chain_encode_block_owned if owned_encode else field.tlv_chain_encode_block }}
+{% elif field.is_embed %}
+{{ field.embed_encode_block }}
+{% else %}
+{{ field.present_if_encode_block_owned if owned_encode else field.present_if_encode_block }}
+{% endif %}
+{% endfor %}
+{% else %}
+        // Encode fixed prefix (tag field is part of the prefix). The
+        // tag value is read from the struct field, NOT derived from
+        // the body discriminant — keeping author-set msg_id / body in
+        // sync is the caller's responsibility (v1 keeps the layout
+        // simple; future extensions may auto-sync via a typed setter).
+{% for expr in encode_exprs %}
+        w.write_u8({{ expr }})?;
+{% endfor %}
+{% endif %}
+        // Append the active arm's encoded bytes.
+        match &self.body {
+{% for arm in variant.arms %}
+            {{ struct_name }}{{ 'Owned' if owned_encode else '' }}Variant::{{ arm.variant_name }}(b) => {
+                b.encode(w{{ arm.body_encode_args_with_leading_comma }})?;
+            }
+{% endfor %}
+{% if variant.default_arm %}
+            {{ struct_name }}{{ 'Owned' if owned_encode else '' }}Variant::{{ variant.default_arm.variant_name }} { body, .. } => {
+                body.encode(w{{ variant.default_arm.body_encode_args_with_leading_comma }})?;
+            }
+{% endif %}
+        }
+        Ok(())
+{% elif needs_streaming %}
+        // Streaming cursor encode (SSOT selection: `needs_streaming`).
+        // Mirrors the streaming decode: every field appends its own bytes
+        // in declaration order through the per-field encode blocks, so a
+        // gated field skips its append when absent, and a fixed field after
+        // a variable-length payload lands after the payload (the positional
+        // path appends variable fields last, placing it ahead on the wire).
+        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
+        // dedicated helpers; everything else uses `present_if_encode_block`
+        // (its non-gated arm covers plain fixed / tail / length-ref / VLE).
+{% for field in fields %}
+{% if field.is_repeat %}
+{{ field.repeat_encode_block_owned if owned_encode else field.repeat_encode_block }}
+{% elif field.is_tlv_chain %}
+{{ field.tlv_chain_encode_block_owned if owned_encode else field.tlv_chain_encode_block }}
+{% elif field.is_embed %}
+{{ field.embed_encode_block }}
+{% else %}
+{{ field.present_if_encode_block_owned if owned_encode else field.present_if_encode_block }}
+{% endif %}
+{% endfor %}
+        Ok(())
+{% elif has_variable_fields %}
+{% for expr in encode_exprs %}
+        w.write_u8({{ expr }})?;
+{% endfor %}
+{% for field in fields %}
+{% if field.is_variable %}
+{% if has_dma_aligned_fields %}
+        // RFC §synth-5-B B3 DMA padding: zero-fill any gap between the
+        // current write position and this field's authored byte
+        // offset (deterministic zeros on the wire so peers stay
+        // byte-compatible regardless of host allocator — RFC §synth-5-B
+        // "wire layout, not host allocator").
+        while w.position() < {{ field.byte_off }} {
+            w.write_u8(0)?;
+        }
+{% endif %}
+{% if owned_encode %}
+        // The owned form holds the bytes in the profile's container; read them
+        // through the trait every profile implements.
+        w.write_bytes(::sce_forge_runtime::codec::SceByteBuf::as_slice(&self.{{ field.id }}))?;
+{% else %}
+        // `self.<id>` is the borrowed `&'a [u8]` view — pass it directly;
+        // `&self.<id>` would be `&&[u8]` (clippy::needless_borrow).
+        w.write_bytes(self.{{ field.id }})?;
+{% endif %}
+{% endif %}
+{% endfor %}
+        Ok(())
+{% else %}
+{% for expr in encode_exprs %}
+        w.write_u8({{ expr }})?;
+{% endfor %}
+        Ok(())
+{% endif %}
