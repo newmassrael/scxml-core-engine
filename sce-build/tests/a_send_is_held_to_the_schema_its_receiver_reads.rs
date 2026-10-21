@@ -85,9 +85,18 @@ fn parent(imports: &str, target: &str, value: &str) -> String {
     )
 }
 
+/// What a run of `sce-codegen check -l rust` of a probe gave back.
+struct Run {
+    ok: bool,
+    /// Its stderr, then its stdout.
+    out: String,
+    /// The path the probe was named by on the command line.
+    named: String,
+}
+
 /// `sce-codegen check -l rust` of `probe` in a directory that holds the documents it
-/// imports: the exit status and what it wrote.
-fn check(probe: &str) -> (bool, String) {
+/// imports, its refusals written in `format` (`json` or `human`).
+fn run(probe: &str, format: &str) -> Run {
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::write(dir.path().join("probe_status.scxml"), STATUS).expect("write the enum");
     std::fs::write(dir.path().join("probe_moved.scxml"), MOVED).expect("write the schema");
@@ -96,15 +105,24 @@ fn check(probe: &str) -> (bool, String) {
     let out = Command::new(codegen_bin())
         .arg("--workspace-root")
         .arg(repo_root())
-        .arg("--error-format=json")
+        .arg(format!("--error-format={format}"))
         .args(["check", "-l", "rust"])
         .arg(&path)
         .output()
         .expect("invoke sce-codegen");
-    (
-        out.status.success(),
-        String::from_utf8_lossy(&out.stderr).into_owned() + &String::from_utf8_lossy(&out.stdout),
-    )
+    Run {
+        ok: out.status.success(),
+        out: String::from_utf8_lossy(&out.stderr).into_owned()
+            + &String::from_utf8_lossy(&out.stdout),
+        named: path.display().to_string(),
+    }
+}
+
+/// `sce-codegen check -l rust` of `probe`, its refusals written as records: the exit
+/// status and what it wrote.
+fn check(probe: &str) -> (bool, String) {
+    let Run { ok, out, .. } = run(probe, "json");
+    (ok, out)
 }
 
 /// `probe` is refused as `scxml/static-datamodel-rule`, naming every one of `reasons`.
@@ -257,5 +275,61 @@ fn a_text_narrowed_into_a_variable_of_the_bound_is_sent() {
     assert!(
         ok,
         "the record's text narrowed by an assignment is sent:\n{out}"
+    );
+}
+
+/// The 1-based row and column `needle` starts at in `text`.
+fn written_at(text: &str, needle: &str) -> (u64, u64) {
+    let offset = text.find(needle).expect("the probe spells the needle");
+    let before = &text[..offset];
+    let row = before.matches('\n').count() as u64 + 1;
+    let col = before[before.rfind('\n').map_or(0, |i| i + 1)..]
+        .chars()
+        .count() as u64
+        + 1;
+    (row, col)
+}
+
+/// Measured 2026-10-21: an application's document of some thirty sends was refused
+/// with the rule alone, and the `<param>` it was about had to be found by hand. The
+/// record stands at the `<param>`, and the `human` form leads with the same place.
+#[test]
+fn the_refusal_names_the_param_it_stands_at() {
+    let probe = text_parent(32, "written.text");
+    let (row, col) = written_at(&probe, r#"<param name="text""#);
+
+    let json = run(&probe, "json");
+    assert!(!json.ok, "expected a refusal:\n{}", json.out);
+    let record: serde_json::Value = json
+        .out
+        .lines()
+        .filter(|line| line.starts_with('{'))
+        .map(|line| {
+            serde_json::from_str::<serde_json::Value>(line).expect("one JSON record per line")
+        })
+        .find(|record| record["code"] == "scxml/static-datamodel-rule")
+        .unwrap_or_else(|| panic!("expected scxml/static-datamodel-rule:\n{}", json.out));
+    // The document is named as the command line named it.
+    assert_eq!(
+        (
+            record["location"]["file"].as_str(),
+            record["location"]["line"].as_u64(),
+            record["location"]["col"].as_u64(),
+        ),
+        (Some(json.named.as_str()), Some(row), Some(col)),
+        "the record does not stand at the <param>: {record}"
+    );
+
+    // The same place, written as a compiler writes it ahead of the rule.
+    let human = run(&probe, "human");
+    assert!(!human.ok, "expected a refusal:\n{}", human.out);
+    let at = format!("{}:{row}:{col}: ", human.named);
+    assert!(
+        human
+            .out
+            .lines()
+            .any(|line| line.starts_with(&at) && line.contains("<param name=\"text\">")),
+        "the human refusal does not lead with `{at}`:\n{}",
+        human.out
     );
 }

@@ -5674,6 +5674,24 @@ impl From<&crate::forge::error::SourceLocation> for Location {
     }
 }
 
+/// The place as a compiler writes it ahead of its message, `file:line:col`,
+/// so the `human` form of a refusal names the place its record's `location`
+/// names. What the location does not know is left off: `file:line` for a line
+/// alone, and `file` for no line, since a column of no line is no place a
+/// reader can go to.
+impl std::fmt::Display for Location {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.file)?;
+        if let Some(line) = self.line {
+            write!(f, ":{line}")?;
+            if let Some(col) = self.col {
+                write!(f, ":{col}")?;
+            }
+        }
+        Ok(())
+    }
+}
+
 /// One entry of a record's `related` — another site the rejection
 /// involves (SCE_ERROR_CONTRACT.md §2.4).
 #[derive(Debug, Clone, Serialize)]
@@ -11277,6 +11295,19 @@ mod tests {
 
         // Same semantic error, different location → different id.
         assert_ne!(d_bare.id, d_loc.id);
+    }
+
+    #[test]
+    fn a_location_is_written_as_far_as_it_is_known() {
+        let at = |line, col| Location {
+            file: "spec/main.scxml".into(),
+            line,
+            col,
+        };
+        assert_eq!(at(Some(460), Some(9)).to_string(), "spec/main.scxml:460:9");
+        assert_eq!(at(Some(460), None).to_string(), "spec/main.scxml:460");
+        assert_eq!(at(None, None).to_string(), "spec/main.scxml");
+        assert_eq!(at(None, Some(9)).to_string(), "spec/main.scxml");
     }
 
     #[test]

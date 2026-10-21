@@ -670,9 +670,10 @@ fn write_sourcemap(acc: &SymbolAccumulator, target_dir: &Path, source_hash: Stri
 
 /// How diagnostics are rendered to stderr.
 ///
-/// `Human` is the default and preserves existing CLI output verbatim.
-/// `Json` is the machine-readable contract consumed by upstream consumers
-/// (LangGraph triage, IDE LSP bridges, CI bots). In JSON mode each
+/// `Human` is the default: prose, each refusal led by the place it stands
+/// when it stands at one (`file:line:col: `). `Json` is the machine-readable
+/// contract consumed by upstream consumers (LangGraph triage, IDE LSP
+/// bridges, CI bots). In JSON mode each
 /// diagnostic is a single NDJSON line on stderr; stdout continues to
 /// carry artifact paths and progress text so build systems that parse
 /// stdout are unaffected.
@@ -721,6 +722,23 @@ fn reached_from() -> Vec<sce_build::forge::error::RelatedSite> {
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .clone()
+}
+
+/// Where a refusal written in `human` form stands, as a compiler writes it
+/// ahead of its message (`file:line:col: `), read off the one record the
+/// `json` form writes for it: a refusal raised at a `<param>` of a document
+/// with thirty sends otherwise leaves its reader to search for it by hand.
+///
+/// Empty for a refusal of no place (a command-line argument, whose record
+/// carries no `location`) and for one that writes several records (an XSD
+/// validation that found several violations), which is no one place.
+fn human_location<E: ToDiagnostics>(err: &E) -> String {
+    match err.to_diagnostics().as_slice() {
+        [Diagnostic {
+            location: Some(at), ..
+        }] if !at.file.is_empty() => format!("{at}: "),
+        _ => String::new(),
+    }
 }
 
 /// Write the chain under a refusal already written in `human` form, one
@@ -855,10 +873,14 @@ impl ErrorFormat {
     /// `generate --with-imports` run reached its document through
     /// ([`REACHED_FROM`]); outside such a run there are none, and the record
     /// is the one it always was.
+    ///
+    /// A refusal written in `human` form leads with the place its record's
+    /// `location` names ([`human_location`]), so the two forms of one refusal
+    /// name the same place.
     fn report<E: ToDiagnostics + std::fmt::Display>(self, err: &E, human_prefix: &str) {
         match self {
             ErrorFormat::Human => {
-                eprintln!("{human_prefix}{err}");
+                eprintln!("{}{human_prefix}{err}", human_location(err));
                 report_reached_from_human();
             }
             ErrorFormat::Json => {
@@ -4510,17 +4532,10 @@ fn report_refused_expressions(
     if refused.is_empty() {
         return;
     }
+    // The place each stands is written ahead of it by the reporter, as for
+    // every refusal.
     for refusal in &refused {
-        let human_prefix = match &refusal.location {
-            Some(at) => format!(
-                "{}:{}:{}: ",
-                at.file,
-                at.line.unwrap_or(0),
-                at.col.unwrap_or(0)
-            ),
-            None => String::new(),
-        };
-        error_format.report(refusal, &human_prefix);
+        error_format.report(refusal, "");
     }
     if lint {
         // Reported first, then fatal: an author fixing a document wants
