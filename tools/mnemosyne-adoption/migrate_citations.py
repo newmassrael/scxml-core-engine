@@ -235,9 +235,18 @@ KNOWN_EXTS = SLASH_EXTS | HASH_EXTS | WHOLE_TEXT_EXTS
 DOCSTRING_OWNERS = (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
 
 
-def comment_mask(text, nested):
+def comment_mask(text, nested, raw_backtick=False):
     """Return a bytearray-like list of booleans, True where text[i] is inside a
     line or block comment (and not inside a string/char literal).
+
+    Go-aware when `raw_backtick` is set (the .go dispatch): a backtick string
+    is opaque to its closing backtick, with no escapes and any number of `"`
+    inside. The plain-quote state machine read the `"` of a raw string such as
+    ``return `"` + s`` as the opening of an ordinary string and flipped parity,
+    so every comment after it was masked out until a later raw string flipped
+    it back. Measured on backends/go/runtime/helpers.go: the citations at five
+    places in one stretch of the file were invisible to the existence check and
+    to the backend citation comparison (`--list-cited`).
 
     Rust-aware when `nested` is set (the .rs dispatch): raw strings
     (`r"..."`, `r#"..."#`, `br##"..."##`) terminate only at the matching
@@ -307,6 +316,10 @@ def comment_mask(text, nested):
                         end = text.find(closer, k + 1)
                         i = n if end == -1 else end + len(closer)
                         continue
+            if raw_backtick and c == "`":
+                end = text.find("`", i + 1)
+                i = n if end == -1 else end + 1
+                continue
             if c == '"' or (nested and c == "b" and nxt == '"'):
                 if c == "b":
                     i += 1  # the opening quote of a byte string
@@ -429,7 +442,7 @@ def rewrite_mask_for(path, text):
     if ext in HASH_EXTS:
         return hash_comment_mask(text)
     if ext in SLASH_EXTS:
-        return comment_mask(text, nested=(ext in NESTED_BLOCK))
+        return comment_mask(text, nested=(ext in NESTED_BLOCK), raw_backtick=(ext == ".go"))
     return [True] * len(text)
 
 

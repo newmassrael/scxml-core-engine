@@ -93,6 +93,38 @@ class CommentScope(unittest.TestCase):
         new, _, _ = plan(src)
         self.assertIn("§scxml-5.10", new)
 
+    def test_go_raw_string_holding_a_quote_does_not_desync(self):
+        # A Go backtick string is opaque to its closing backtick. The `"` in
+        # it opened an ordinary string, so the comment after the function was
+        # masked out and its citation went unread.
+        src = (
+            "func q(s string) string {\n"
+            '\treturn `"` + s + `"`\n'
+            "}\n"
+            "// W3C SCXML 6.2: after the raw strings\n"
+        )
+        new, migs, _ = plan(src, name="f.go")
+        self.assertIn("§scxml-6.2", new)
+        self.assertEqual(migs[0]["id"], "scxml-6.2")
+
+    def test_go_raw_string_ending_in_a_backslash_does_not_desync(self):
+        # `\` is one backslash in a raw string; it escapes nothing.
+        src = (
+            "func e(s string) string {\n"
+            "\treturn strings.ReplaceAll(s, `\\`, `\\\\`)\n"
+            "}\n"
+            "// W3C SCXML 6.2: after the raw strings\n"
+        )
+        new, migs, _ = plan(src, name="f.go")
+        self.assertIn("§scxml-6.2", new)
+        self.assertEqual(migs[0]["id"], "scxml-6.2")
+
+    def test_go_citation_text_inside_a_raw_string_is_not_read(self):
+        src = "var doc = `W3C SCXML 6.2`\n"
+        new, migs, _ = plan(src, name="f.go")
+        self.assertEqual(new, src)
+        self.assertEqual(migs, [])
+
 
 class ProseUntouched(unittest.TestCase):
     def test_word_led_mentions_left(self):
