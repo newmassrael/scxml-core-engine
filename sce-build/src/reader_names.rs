@@ -750,10 +750,15 @@ fn member_patterns(language: Language) -> Vec<Regex> {
         // namespace with a method and the same line shape declares one.
         Language::Go => vec![regex(r"func\s*\([^)]*\)\s*([A-Z][A-Za-z0-9_]*)")],
         // Methods, and instance attributes, which shadow a method of the
-        // same name.
+        // same name. An attribute a template builds from the document
+        // (`self._invoke_starts_{{ invoke_info.field_suffix }}: int = 0`, one
+        // per invoke) is matched through its template tags, so its fixed half
+        // is kept as a prefix as a method's is.
         Language::Python => vec![
             regex(r"\bdef\s+([A-Za-z_][A-Za-z0-9_]*)"),
-            regex(r"\bself\.([A-Za-z_][A-Za-z0-9_]*)\s*(?::[^=\n]*)?="),
+            regex(
+                r"\bself\.([A-Za-z_][A-Za-z0-9_]*)(?:\{\{[^}]*\}\}[A-Za-z0-9_]*)*\s*(?::[^=\n]*)?=",
+            ),
         ],
         Language::C11 => Vec::new(),
     }
@@ -1185,6 +1190,41 @@ mod tests {
         assert!(reserved(Language::Cpp).covers("machinePolicy", m));
         assert!(!reserved(Language::Rust).covers("slot", m));
         assert!(!reserved(Language::Go).covers("AiLoopStateRun", m));
+    }
+
+    /// The count of an invoke's starts is a member per invoke, named from its
+    /// field suffix, so each backend that keeps it in a namespace a reader
+    /// shares holds its fixed half as a prefix. Python's is an instance
+    /// attribute, which a template spells through its tags; C++'s a data
+    /// member. Rust's field and C11's struct member share no namespace with a
+    /// reader, and Go's lowercase field none with an exported one.
+    #[test]
+    fn an_invokes_start_count_is_reserved_where_a_reader_could_meet_it() {
+        let m = "machine";
+        assert!(reserved(Language::Python)
+            .prefixes
+            .contains("_invoke_starts_"));
+        assert!(reserved(Language::Python).covers("_invoke_starts_inv_absent", m));
+        assert!(reserved(Language::Python).covers("_invoke_starts_0zz5fzx", m));
+        assert!(reserved(Language::Cpp).covers("invokeStarts_inv_absent_", m));
+        // The prefix alone names no counter.
+        assert!(!reserved(Language::Python).covers("_invoke_starts_", m));
+    }
+
+    /// An attribute built from the document is read as a prefix and a whole
+    /// attribute as a name; a rendered one, whose tags are gone, as a name.
+    #[test]
+    fn a_python_attribute_spelled_through_template_tags_is_a_prefix() {
+        let mut read = Reserved::default();
+        scan_code(
+            Language::Python,
+            "        self._count_{{ inv.field_suffix }}: int = 0\n        self._plain = 1\n",
+            &mut read,
+        );
+        assert!(read.prefixes.contains("_count_"), "{read:?}");
+        assert!(read.names.contains("_plain"), "{read:?}");
+        let rendered = rendered_members(Language::Python, "self._count_inv: int = 0\n", "m_");
+        assert!(rendered.contains("_count_inv"), "{rendered:?}");
     }
 
     /// A transition function's names are in a scope of their own, so a reader
