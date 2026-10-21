@@ -1,6 +1,7 @@
 # ADR 0053 — The Rust runtime's features only add, and a bare-metal crate asks for none
 
-- Status: Accepted (2026-10-21) and implemented
+- Status: Accepted (2026-10-21) and implemented; amended 2026-10-21, when the owner answered the
+  three questions it left open (see the amendment at the end)
 - Date: 2026-10-21
 - Scope: the `[features]` of `sce-rust-runtime` (`backends/rust/runtime/Cargo.toml`), the `cfg`
   that selects its two profiles in every file of `backends/rust/runtime/src`, the manifests of the
@@ -166,6 +167,9 @@ runtime without `std` has not, and that the BasicHTTP processor is part of the `
 
 ## Questions left open
 
+Answered by the owner on 2026-10-21; the answers are the amendment below, and the questions stand
+here as they were asked.
+
 1. **`no_macrostep_diagnostics` still takes away.** It removes `truncated_macrosteps` and its
    siblings, so a build that unifies a crate naming it with one that reads them fails to compile in
    the reader. The failure is loud, never a silent loss of the report, which is the property the
@@ -180,3 +184,52 @@ runtime without `std` has not, and that the BasicHTTP processor is part of the `
 3. **The forge `bounded_collection` template emits `cfg(feature = "no_std")` into a generated forge
    crate**, naming that crate's own feature, the same subtracting shape. It is the consumer's
    feature, not this crate's, and is not changed here.
+
+## Amendment, 2026-10-21: the three questions, answered toward features that only add
+
+The owner's rule, which decided all three: a feature only adds, so that one Cargo build can unify
+a crate for a microcontroller with a crate for an application processor.
+
+### 1. The macrostep report is the feature `macrostep-diagnostics`, in `default`
+
+```toml
+default = ["std", "http-send", "macrostep-diagnostics"]
+macrostep-diagnostics = []
+```
+
+Every `cfg(not(feature = "no_macrostep_diagnostics"))` is `cfg(feature = "macrostep-diagnostics")`.
+The report is `truncated_macrosteps`, `last_truncated_macrostep_state`, `truncated_event_chains`,
+`last_truncated_event`, the counters behind them and the log line of a refused macrostep; the bound
+(`MAX_MACROSTEP_MICROSTEPS`, the external-event budget, `last_macrostep_truncated`) is in every
+build, as before.
+
+- **A consumer who writes nothing keeps the report**, which is the 2026-08-21 decision: it is in
+  `default`.
+- **A bare-metal crate that writes `default-features = false` does not carry it**, the same
+  pattern as `std`: the counters are per engine, which is the RAM the opt-out was offered to
+  save. The question above called this "the opposite of that decision"; the owner weighed it and
+  chose it, because the crate that writes `default-features = false` has stated what it asks for,
+  and a feature that removes cannot be unified. A bare-metal crate that reads the report asks for
+  `macrostep-diagnostics`.
+- **A unified host build gets it** whenever any crate of the build takes the defaults or names
+  it, so an application crate that reads the accessors compiles beside a bare-metal crate that
+  does not. The bare-metal crate's firmware, built alone for its target, gets what it asked for.
+- **`no_macrostep_diagnostics` is removed with no alias**, for the reason `no_std` was: an empty
+  feature of that name would say the opposite of what it does. Cargo refuses a manifest that still
+  names it, with the feature named, and the repair is to delete it; a bare-metal crate that named
+  it already has, with `default-features = false`, the build it asked for.
+- **An application crate that writes `default-features = false`** to leave out `http-send` names
+  `macrostep-diagnostics` beside `std` when it reads the report or wants the refusal logged. In
+  this repository `sce-rust-tests` reads it and names it; the library crates that ask for `std`
+  alone (`sce-rust-lua`, `sce-rust-mesh`, `sce-rust-world`, `sce-rust-scenarios`,
+  `sce-rust-host-features`, `sce-specs`) read nothing of it and do not ask, so their lone builds
+  carry no report and the application that links them decides.
+
+What holds it: the application crate of `backends/rust/probes/feature-unification` reads
+`truncated_macrosteps` and `truncated_event_chains`, and the bare-metal crate beside it asks for
+nothing, so the gate's host `cargo check --workspace` fails if the union loses the report and its
+thumb build of the bare-metal crate alone builds the runtime without it. The footprint probe weighs
+the same two builds it weighed before: `TOTAL_BYTES` with its `macrostep-diagnostics` feature
+(formerly no feature), `TOTAL_BYTES_NO_DIAGNOSTICS` with no feature (formerly
+`no_macrostep_diagnostics`). The code each build compiles did not change, so both figures are
+expected to hold; they are re-measured on the first run of the `nostd-mcu` gate.

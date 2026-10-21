@@ -16,6 +16,6 @@ license = "AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE
 path = "src/lib.rs"
 
 [dependencies]
-# What an application crate asks of the runtime: its defaults, `std` and
-# `http-send`.
+# What an application crate asks of the runtime: its defaults, `std`,
+# `http-send` and `macrostep-diagnostics`.
 sce-rust-runtime = { path = "../../../runtime" }

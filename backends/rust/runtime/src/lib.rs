@@ -62,16 +62,18 @@
 //!
 //! ## Features
 //!
-//! Every feature adds to the crate except `no_macrostep_diagnostics`, so a
-//! build that holds a bare-metal crate and an application crate compiles
+//! Every feature adds to the crate and none refuses another, so a build that
+//! holds a bare-metal crate and an application crate compiles
 //! (docs/adr/0053).
 //!
 //! - `std` (default): the application profile. Without it the crate is
 //!   `#![no_std]` with no allocator, the bare-metal profile a crate for a
 //!   microcontroller selects with `default-features = false`.
 //! - `http-send` (default): the BasicHTTP event processor; asks for `std`.
-//! - `no_macrostep_diagnostics`: compiles the macrostep report out, and with it
-//!   the accessors that read it.
+//! - `macrostep-diagnostics` (default): the macrostep report, and the
+//!   accessors that read it (`truncated_macrosteps` and its siblings). The
+//!   bound it reports on is in every build; a bare-metal crate that reads the
+//!   report asks for this feature.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![deny(clippy::undocumented_unsafe_blocks)]

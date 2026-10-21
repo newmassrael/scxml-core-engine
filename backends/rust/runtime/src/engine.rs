@@ -127,7 +127,8 @@ const CHILD_MESH_ROUTER_HELD: &str =
 pub(crate) const MAX_ERROR_CASCADE_DEPTH: u32 = 100;
 
 /// How many microsteps one macrostep may take before this engine stops taking
-/// them — see [`Engine::truncated_macrosteps`].
+/// them — see `Engine::truncated_macrosteps` (the `macrostep-diagnostics`
+/// feature).
 ///
 /// The specification defines a macrostep as a chain of microsteps ending in a
 /// configuration where nothing is enabled by NULL and the internal queue is
@@ -160,7 +161,7 @@ pub(crate) const MAX_MACROSTEP_MICROSTEPS: usize = 1000;
 
 /// How many external events one invocation of the main event loop may take off
 /// the queue before this engine hands control back — see
-/// [`Engine::truncated_event_chains`] and ARCHITECTURE.md "External-Event
+/// `Engine::truncated_event_chains` and ARCHITECTURE.md "External-Event
 /// Budget", the contract every engine here holds.
 ///
 /// A machine that answers an event by sending itself the next one, with no
@@ -1099,34 +1100,34 @@ pub struct Engine<P: StatePolicy> {
     /// chain still going — see
     /// `truncated_macrosteps`.
     ///
-    /// Gone under `no_macrostep_diagnostics`, and the RAM is the point of
-    /// removing it: this and its sibling below are per-ENGINE, so an MCU image
-    /// holding five machines carries five copies whether or not anything reads
-    /// them.
-    #[cfg(not(feature = "no_macrostep_diagnostics"))]
+    /// Present with the `macrostep-diagnostics` feature only, and the RAM is
+    /// the point of leaving it out: this and its sibling below are per-ENGINE,
+    /// so an MCU image holding five machines carries five copies whether or
+    /// not anything reads them.
+    #[cfg(feature = "macrostep-diagnostics")]
     pub(crate) truncated_macrosteps: u32,
     /// The state the drain was in when it last stopped that way — see
     /// `last_truncated_macrostep_state`.
-    #[cfg(not(feature = "no_macrostep_diagnostics"))]
+    #[cfg(feature = "macrostep-diagnostics")]
     pub(crate) last_truncated_macrostep_state: Option<P::State>,
     /// External events one invocation of the main event loop may take — see
     /// [`max_external_events_per_call`](Self::max_external_events_per_call).
     ///
-    /// Present on every profile: it is the BOUND, not the report, so
-    /// `no_macrostep_diagnostics` leaves it in.
+    /// Present on every profile: it is the BOUND, not the report, so it does
+    /// not wait for the `macrostep-diagnostics` feature.
     pub(crate) max_external_events_per_call: u32,
     /// Invocations of the main event loop this engine handed back with an
     /// external event still queued — see
     /// [`truncated_event_chains`](Self::truncated_event_chains).
     ///
-    /// Gone under `no_macrostep_diagnostics` with its sibling below, for the
-    /// reason `truncated_macrosteps` is: per-ENGINE RAM, whether or not anything
-    /// reads it.
-    #[cfg(not(feature = "no_macrostep_diagnostics"))]
+    /// Present with the `macrostep-diagnostics` feature only, with its sibling
+    /// below, for the reason `truncated_macrosteps` is: per-ENGINE RAM, whether
+    /// or not anything reads it.
+    #[cfg(feature = "macrostep-diagnostics")]
     pub(crate) truncated_event_chains: u32,
     /// The event at the head of the queue the last time a call was handed back
     /// that way — see [`last_truncated_event`](Self::last_truncated_event).
-    #[cfg(not(feature = "no_macrostep_diagnostics"))]
+    #[cfg(feature = "macrostep-diagnostics")]
     pub(crate) last_truncated_event: Option<P::Event>,
     /// Microsteps taken by the macrostep now in progress, against
     /// [`MAX_MACROSTEP_MICROSTEPS`].
@@ -1220,14 +1221,14 @@ impl<P: StatePolicy> Engine<P> {
             error_cascade_depth: 0,
             error_cascade_events: 0,
             last_error_cascade_event: None,
-            #[cfg(not(feature = "no_macrostep_diagnostics"))]
+            #[cfg(feature = "macrostep-diagnostics")]
             truncated_macrosteps: 0,
-            #[cfg(not(feature = "no_macrostep_diagnostics"))]
+            #[cfg(feature = "macrostep-diagnostics")]
             last_truncated_macrostep_state: None,
             max_external_events_per_call: MAX_EXTERNAL_EVENTS_PER_CALL,
-            #[cfg(not(feature = "no_macrostep_diagnostics"))]
+            #[cfg(feature = "macrostep-diagnostics")]
             truncated_event_chains: 0,
-            #[cfg(not(feature = "no_macrostep_diagnostics"))]
+            #[cfg(feature = "macrostep-diagnostics")]
             last_truncated_event: None,
             macrostep_microsteps_taken: 0,
             macrostep_truncated: false,
@@ -2213,11 +2214,11 @@ impl<P: StatePolicy> Engine<P> {
     /// transition enabled by NULL, or an event left on the internal queue.
     /// Long chains are ordinary; endless ones are not.
     ///
-    /// Absent under `no_macrostep_diagnostics`, deliberately. A consumer who
-    /// compiled the report out and then called this would be handed a `0` that
-    /// means "not counted" while reading it as "did not happen" — a wrong
-    /// answer where a compile error is available.
-    #[cfg(not(feature = "no_macrostep_diagnostics"))]
+    /// Present with the `macrostep-diagnostics` feature only (in `default`),
+    /// deliberately. A build without the report that still answered this would
+    /// hand back a `0` that means "not counted" while its reader took it as
+    /// "did not happen" — a wrong answer where a compile error is available.
+    #[cfg(feature = "macrostep-diagnostics")]
     pub fn truncated_macrosteps(&self) -> u32 {
         self.truncated_macrosteps
     }
@@ -2233,8 +2234,9 @@ impl<P: StatePolicy> Engine<P> {
     /// says a document somewhere cannot settle; this says where to look. Copy,
     /// so reading it costs nothing on the no_std profile.
     ///
-    /// Absent under `no_macrostep_diagnostics`, for the reason its sibling is.
-    #[cfg(not(feature = "no_macrostep_diagnostics"))]
+    /// Present with the `macrostep-diagnostics` feature only, for the reason
+    /// its sibling is.
+    #[cfg(feature = "macrostep-diagnostics")]
     pub fn last_truncated_macrostep_state(&self) -> Option<P::State> {
         self.last_truncated_macrostep_state
     }
@@ -2262,10 +2264,10 @@ impl<P: StatePolicy> Engine<P> {
     /// A cut of the same-instant bound on the scheduler counts here too (see
     /// [`tick`](Self::tick)).
     ///
-    /// Absent under `no_macrostep_diagnostics`, for the reason
-    /// `truncated_macrosteps` is: the BOUND stays in, only this report is
-    /// compiled out.
-    #[cfg(not(feature = "no_macrostep_diagnostics"))]
+    /// Present with the `macrostep-diagnostics` feature only, for the reason
+    /// `truncated_macrosteps` is: the BOUND is in every build, and only this
+    /// report waits for the feature.
+    #[cfg(feature = "macrostep-diagnostics")]
     pub fn truncated_event_chains(&self) -> u32 {
         self.truncated_event_chains
     }
@@ -2278,8 +2280,9 @@ impl<P: StatePolicy> Engine<P> {
     /// the scheduler it is the event of the due entry left waiting, and `None`
     /// when that entry delivers no event of this machine's.
     ///
-    /// Absent under `no_macrostep_diagnostics`, for the reason its sibling is.
-    #[cfg(not(feature = "no_macrostep_diagnostics"))]
+    /// Present with the `macrostep-diagnostics` feature only, for the reason
+    /// its sibling is.
+    #[cfg(feature = "macrostep-diagnostics")]
     pub fn last_truncated_event(&self) -> Option<P::Event> {
         self.last_truncated_event
     }
@@ -2304,11 +2307,11 @@ impl<P: StatePolicy> Engine<P> {
 
     /// Whether the macrostep the last host call drove was stopped at
     /// the microstep ceiling (`MAX_MACROSTEP_MICROSTEPS`) rather than reaching a stable
-    /// configuration — the one macrostep's answer, where
-    /// [`truncated_macrosteps`](Self::truncated_macrosteps) counts every one.
+    /// configuration — the one macrostep's answer, where `truncated_macrosteps`
+    /// (with the `macrostep-diagnostics` feature) counts every one.
     ///
     /// Present on every profile: it reads the flag that enforces the bound,
-    /// not the report `no_macrostep_diagnostics` compiles out. A generated
+    /// not the report that waits for that feature. A generated
     /// `sce-static` machine's snapshot carries it, so a host never mistakes
     /// the configuration a stopped macrostep left for a stable one (the
     /// Kotlin snapshot's `truncated`).
@@ -4669,14 +4672,14 @@ impl<P: StatePolicy> Engine<P> {
 
     /// Say that a call was handed back with work still waiting: the count, and
     /// what it was still taking. The bound itself is enforced by the caller; this
-    /// is only the report, which `no_macrostep_diagnostics` compiles out.
+    /// is only the report, which waits for the `macrostep-diagnostics` feature.
     pub(crate) fn record_truncated_event_chain(&mut self, head: Option<P::Event>) {
-        #[cfg(not(feature = "no_macrostep_diagnostics"))]
+        #[cfg(feature = "macrostep-diagnostics")]
         {
             self.truncated_event_chains = self.truncated_event_chains.saturating_add(1);
             self.last_truncated_event = head;
         }
-        #[cfg(feature = "no_macrostep_diagnostics")]
+        #[cfg(not(feature = "macrostep-diagnostics"))]
         let _ = head;
     }
 
@@ -4759,7 +4762,7 @@ impl<P: StatePolicy> Engine<P> {
     /// entered.
     fn refuse_macrostep(&mut self, stopped_in: P::State) {
         self.record_truncated_macrostep(stopped_in);
-        #[cfg(not(feature = "no_macrostep_diagnostics"))]
+        #[cfg(feature = "macrostep-diagnostics")]
         sce_log_error!(
             "Engine::complete_macrostep: macrostep still going after {} microsteps; stopped",
             MAX_MACROSTEP_MICROSTEPS
@@ -4970,16 +4973,16 @@ impl<P: StatePolicy> Engine<P> {
     /// and that is the line between the bound and its report. The flag is what
     /// stops the drain re-entering a chain it already refused — remove it and
     /// the engine spins. The counter and the state snapshot are what a host
-    /// READS, and a consumer who reads neither can compile them out with
-    /// `no_macrostep_diagnostics` (see this crate's Cargo.toml for why that
-    /// one is opt-out rather than opt-in).
+    /// READS, and they are kept only with the `macrostep-diagnostics` feature,
+    /// which `default` carries and a bare-metal crate asks for when it reads
+    /// them (see this crate's Cargo.toml for why it is in `default`).
     pub(crate) fn record_truncated_macrostep(&mut self, state: P::State) {
-        #[cfg(not(feature = "no_macrostep_diagnostics"))]
+        #[cfg(feature = "macrostep-diagnostics")]
         {
             self.truncated_macrosteps = self.truncated_macrosteps.saturating_add(1);
             self.last_truncated_macrostep_state = Some(state);
         }
-        #[cfg(feature = "no_macrostep_diagnostics")]
+        #[cfg(not(feature = "macrostep-diagnostics"))]
         let _ = state;
         self.macrostep_truncated = true;
     }

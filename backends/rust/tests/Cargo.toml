@@ -12,7 +12,10 @@ authors.workspace = true
 description = "SCE W3C SCXML 1.0 conformance test harness (202 tests)"
 
 [dependencies]
-sce-rust-runtime = { path = "../runtime", default-features = false, features = ["http-send"] }
+# `macrostep-diagnostics`: the bounded-chain tests read the macrostep report
+# (`truncated_macrosteps` and its siblings), which is a feature of its own
+# (docs/adr/0053) and not part of `http-send`'s `std`.
+sce-rust-runtime = { path = "../runtime", default-features = false, features = ["http-send", "macrostep-diagnostics"] }
 # Engine DI Parity RFC (Path B+): test wrappers construct `LuaEngine` and
 # pass it to `Policy::new(engine)`, so the Lua crate is a hard dependency
 # rather than an optional feature.

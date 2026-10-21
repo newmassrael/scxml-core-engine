@@ -79,7 +79,10 @@ cargo build --manifest-path backends/rust/probes/nostd-build/Cargo.toml \
 # One workspace holding a bare-metal crate and an application crate, as a
 # downstream workspace does (docs/adr/0053). Cargo builds one runtime for both
 # with the union of their features; when `no_std` refused `http-send`, this
-# host check stopped at the runtime although each crate built alone. The
+# host check stopped at the runtime although each crate built alone, and the
+# application crate reads the macrostep report, which a removing feature
+# (`no_macrostep_diagnostics`, now the additive `macrostep-diagnostics`) took
+# away from the whole build. The
 # bare-metal crate holds the `--no-std` emission generated here (the
 # portable-emit machine), so the host check is also the single-emit
 # portability gate on the std side (the bytes-field `E0433: cannot find
@@ -210,9 +213,11 @@ sce_footprint_weigh() {
     fi
 }
 
-# As shipped, then with the macrostep report compiled out. The second build is
-# not only a second number: an opt-out feature nothing builds is one that stops
-# compiling and nobody finds out until a consumer sets it.
-sce_footprint_weigh "diagnostics on" "$TOTAL_BYTES"
-sce_footprint_weigh "diagnostics off" "$TOTAL_BYTES_NO_DIAGNOSTICS" \
-    --features no_macrostep_diagnostics
+# With the macrostep report, which a bare-metal crate asks for by naming the
+# runtime's `macrostep-diagnostics`, then as a bare-metal crate that asks for
+# no feature builds it (docs/adr/0053). Both builds are weighed: a feature
+# nothing builds is one that stops compiling and nobody finds out until a
+# consumer sets it.
+sce_footprint_weigh "diagnostics on" "$TOTAL_BYTES" \
+    --features macrostep-diagnostics
+sce_footprint_weigh "diagnostics off" "$TOTAL_BYTES_NO_DIAGNOSTICS"

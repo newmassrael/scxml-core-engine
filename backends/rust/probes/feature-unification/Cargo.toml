@@ -6,18 +6,21 @@
 #
 # Cargo builds ONE copy of `sce-rust-runtime` for every package of one build,
 # with the union of the features they ask for. `mcu` asks for none (the
-# bare-metal profile); `ap` asks for the defaults (`std`, `http-send`). Before
-# the runtime's features were additive, the runtime refused `no_std` beside
-# `http-send` with `compile_error!`, so a `cargo check --workspace` here
-# stopped at the runtime although each crate built alone.
+# bare-metal profile); `ap` asks for the defaults (`std`, `http-send`,
+# `macrostep-diagnostics`). Before the runtime's features were additive, the
+# runtime refused `no_std` beside `http-send` with `compile_error!`, so a
+# `cargo check --workspace` here stopped at the runtime although each crate
+# built alone; and a bare-metal crate naming `no_macrostep_diagnostics` took
+# the macrostep report's accessors away from the application crate beside it.
 #
 # The gate (`scripts/gates/nostd-mcu.sh`) asks two things of it:
 #
 #   1. `cargo check --workspace` on the host: the union is the `std` profile,
 #      and the bare-metal crate, written against the names its profile
-#      declares, still compiles inside it. `ap` holds an item that compiles
-#      only where `SceString` is `String` and the HTTP processor exists, so a
-#      union that fell to the bare-metal profile fails here too.
+#      declares, still compiles inside it. `ap` holds items that compile only
+#      where `SceString` is `String`, the HTTP processor exists and the
+#      macrostep report can be read, so a union that fell short of what `ap`
+#      asked for fails here too.
 #   2. `cargo build -p sce-feature-unification-mcu --target
 #      thumbv7em-none-eabihf`: one command that selects the bare-metal crate
 #      alone gets the bare-metal profile, because Cargo unifies features only

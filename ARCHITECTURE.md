@@ -990,9 +990,10 @@ its raiser to name the head of the external queue without taking it
 the host left it, and taking an event and putting it back would append it behind
 everything queued after it.
 
-Where the engine already gates its truncation diagnostics out of a small build
-(Rust's `no_macrostep_diagnostics`), the BOUND stays in and only the count and
-the head may be compiled out, as with `truncated_macrosteps`: the flag that
+Where the engine already keeps its truncation diagnostics out of a small build
+(Rust's `macrostep-diagnostics` feature, in `default` and absent from a
+bare-metal crate that asks for no features), the BOUND stays in and only the
+count and the head wait for the feature, as with `truncated_macrosteps`: the flag that
 enforces the ceiling is not a diagnostic. C11's external queue is a fixed ring
 (`SCE_MAX_EVENTS`) that drops on overflow, which is a different bound and not
 this one; it holds only one event at a time in a chain that sends the next.

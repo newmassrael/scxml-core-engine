@@ -80,11 +80,12 @@ pub extern "C" fn sce_footprint_process_event() -> bool {
 /// alive in the image. A consumer that never reads them pays for them anyway;
 /// that is the question the budget exists to make answerable.
 ///
-/// Absent under `no_macrostep_diagnostics`, because the accessor itself is:
-/// compiling this out is how the two configurations are weighed against each
-/// other, and an entry point that still called a removed accessor would just
-/// be a build error dressed as a measurement.
-#[cfg(not(feature = "no_macrostep_diagnostics"))]
+/// Present with this crate's `macrostep-diagnostics` feature only, because the
+/// accessor itself is present with the runtime's feature of that name only:
+/// leaving this out is how the two configurations are weighed against each
+/// other, and an entry point that called an accessor the build does not have
+/// would just be a build error dressed as a measurement.
+#[cfg(feature = "macrostep-diagnostics")]
 #[no_mangle]
 pub extern "C" fn sce_footprint_diagnostics() -> u32 {
     let Ok(policy) = ParallelHistoryProbePolicy::new_with_session_id(PROBE_SESSION_ID) else {

@@ -63,7 +63,14 @@ MACHINE_SYMBOLS='sce_nostd_build_probe::'
 # says so, and a re-pin names the toolchain it was taken on.
 MEASURED_WITH='rustc 1.99.1 (58cf8f9c3 2026-10-13)'
 
-# Sum of every machine symbol in the staticlib, as the engine ships.
+# Sum of every machine symbol in the staticlib with the macrostep report: the
+# probe built with its `macrostep-diagnostics` feature, which turns on the
+# runtime's feature of that name. That is the build a bare-metal crate gets
+# when it asks for the report, and it is the same code this figure weighed
+# before 2026-10-21, when the report was in every build that did not name
+# `no_macrostep_diagnostics` (docs/adr/0053, amendment of 2026-10-21). Only
+# the way the gate asks for the build changed, so the figure is expected to
+# hold; it was not re-measured when the feature was renamed.
 #
 # 4976 -> 5070 (2026-09-26): what the bytes bought is W3C SCXML Appendix D's
 # exitInterpreter, which the engine had skipped — a run that ends in a
@@ -83,8 +90,13 @@ MEASURED_WITH='rustc 1.99.1 (58cf8f9c3 2026-10-13)'
 # of the old pin.
 TOTAL_BYTES=5236
 
-# The same sum with `no_macrostep_diagnostics`, which compiles the macrostep
-# REPORT out and leaves the bound in place.
+# The same sum without the macrostep REPORT, the bound left in place: the probe
+# built with no feature, so the runtime has none either. That is the build a
+# bare-metal crate that writes `default-features = false` gets, and the same
+# code this figure weighed before 2026-10-21 with the opt-out
+# `no_macrostep_diagnostics`, which the runtime no longer has: what was an
+# opt-out is now the absence of `macrostep-diagnostics`. The figure is expected
+# to hold for the reason the one above is.
 #
 # The difference — 52 bytes per machine at the 2026-10-21 re-pin on rustc
 # 1.99.1, the same before and after the session id; 28 at the exitInterpreter
@@ -92,9 +104,9 @@ TOTAL_BYTES=5236
 # number that feature is worth,
 # and it is here rather than in a commit message because it is the answer to a
 # question a consumer asked: whether gating the diagnostics would recover what
-# two commits cost their image. Measuring both ways is also what keeps the
-# opt-out configuration from rotting — a feature nothing builds is a feature
-# that stops compiling and nobody learns until a consumer sets it.
+# two commits cost their image. Measuring both ways is also what keeps each
+# configuration from rotting — a feature nothing builds is a feature that
+# stops compiling and nobody learns until a consumer sets it.
 #
 # It was 44 when the feature was offered and 48 just before the microstep moved
 # into the runtime. The two places that refuse a macrostep now share one

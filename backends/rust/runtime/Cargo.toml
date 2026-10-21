@@ -24,9 +24,9 @@ description = "SCXML Core Engine — Rust runtime (policy trait, Engine<P>, help
 # features they ask for, so a feature that took something away, or refused
 # another one, broke the build of a workspace that holds a bare-metal crate
 # beside an application crate: each built alone, and `cargo check --workspace`
-# stopped at this crate. The one exception left is `no_macrostep_diagnostics`
-# below, and its comment says why it stays.
-default = ["std", "http-send"]
+# stopped at this crate. No feature here removes a name or refuses another
+# feature, and `default` is what a consumer who writes nothing gets.
+default = ["std", "http-send", "macrostep-diagnostics"]
 
 # The application profile: the crate links `std`, holds its owned strings and
 # lists in `String` and `Vec`, and carries what needs an allocator or an
@@ -53,38 +53,43 @@ http-send = ["std"]
 # Deterministic fake-clock scheduler for tests (swaps PullScheduler impl)
 test-clock = []
 
-# §scxml-3.13: the macrostep ceiling REPORTS itself, and this turns the report
-# off — never the ceiling.
+# §scxml-3.13: the macrostep ceiling REPORTS itself, and this feature is the
+# report — never the ceiling.
 #
 # The two are not the same thing and the distinction is the whole design. A
 # macrostep that cannot end is a document the specification permits, so this
 # engine's refusal to walk one forever is a departure it must not make
-# silently: `truncated_macrosteps`, `last_truncated_macrostep_state` and the
-# error log are how a host learns the configuration it is reading is not a
-# stable one. The BOUND — the budget, and the flag that stops the same chain
-# being handed a second one — is not behind this feature and cannot be turned
-# off. A policy that could opt out of terminating is not a policy this engine
-# offers.
+# silently: `truncated_macrosteps`, `last_truncated_macrostep_state`,
+# `truncated_event_chains`, `last_truncated_event` and the error log are how a
+# host learns the configuration it is reading is not a stable one. The BOUND —
+# the budget, and the flag that stops the same chain being handed a second
+# one — is not behind this feature and is in every build. A policy that could
+# opt out of terminating is not a policy this engine offers.
 #
-# It is opt-OUT, which is deliberate and unusual. Additive opt-in is the Cargo
-# convention, and the convention is wrong here: a consumer who does nothing
-# must keep the report, because losing it silently is exactly the failure the
-# report exists to prevent. Naming `no_macrostep_diagnostics` is a consumer
-# stating that nothing in their image reads those counters.
+# It is in `default`, so a consumer who writes nothing keeps the report, as
+# the owner decided on 2026-08-21: losing it silently is the failure the report
+# exists to prevent. A bare-metal crate writes `default-features = false` and
+# so does not carry it, which is the RAM it was offered to save: the counters
+# are per ENGINE, and an image holding five machines carries five copies
+# whether or not anything reads them. A bare-metal crate that reads them asks
+# for `macrostep-diagnostics`; an application crate that writes
+# `default-features = false` to leave out `http-send` names it beside `std`.
 #
-# The price of opt-out is the unification `std` no longer has: in one build
-# that holds a crate naming this feature and another that reads the counters,
-# the reader stops compiling, because the accessors are gone. That failure is
-# loud, never a silent loss of the report, and docs/adr/0053 leaves the choice
-# between the two conventions with the owner of the 2026-08-21 decision.
+# It only adds (docs/adr/0053, amendment of 2026-10-21). It replaced the
+# opt-out `no_macrostep_diagnostics`, which removed the accessors, so a build
+# that unified a crate naming it with a crate that read them stopped compiling
+# in the reader. Now the union of such a build has the accessors, and a
+# bare-metal crate built alone for its target does not. The opt-out is gone
+# with no alias, so Cargo refuses a manifest that still names it and says
+# which feature it does not have.
 #
-# Measured on `thumbv7em-none-eabihf` before it was offered — see
+# Measured on `thumbv7em-none-eabihf` both ways — see
 # `backends/rust/probes/nostd-footprint`, whose budget file carries both
-# figures. A downstream bare-metal consumer asked for this after proving the
-# residue is not logging (2026-08-21): with `lto = true` and no logger
+# figures. A downstream bare-metal consumer asked for the way out after proving
+# the residue is not logging (2026-08-21): with `lto = true` and no logger
 # installed, link-time optimisation had already discarded every `log::` call,
 # so `release_max_level_off` bought them exactly zero bytes.
-no_macrostep_diagnostics = []
+macrostep-diagnostics = []
 
 [dependencies]
 log = { workspace = true }

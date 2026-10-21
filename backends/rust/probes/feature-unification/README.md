@@ -8,7 +8,7 @@ One workspace holding a bare-metal crate (`mcu`) and an application crate
 # mcu/Cargo.toml: the bare-metal profile is the absence of `std`
 sce-rust-runtime = { path = "...", default-features = false }
 
-# ap/Cargo.toml: the defaults, `std` and `http-send`
+# ap/Cargo.toml: the defaults, `std`, `http-send` and `macrostep-diagnostics`
 sce-rust-runtime = { path = "..." }
 ```
 
@@ -20,7 +20,8 @@ for:
 - `cargo check --workspace` on the host builds the `std` profile, the union.
   `mcu` compiles in it because it names only what the bare-metal profile
   declares, which `std` declares too; `ap` holds code that compiles only where
-  `SceString` is `String` and the HTTP processor exists.
+  `SceString` is `String`, the HTTP processor exists and the macrostep report
+  (`truncated_macrosteps`) can be read.
 - `cargo build -p sce-feature-unification-mcu --target thumbv7em-none-eabihf`
   selects `mcu` alone, and Cargo unifies features only across the packages one
   command builds, so the runtime is its bare-metal profile. The thumb target
@@ -30,7 +31,11 @@ for:
 `--no-std` machine, so both builds compile a real emission.
 
 Before the runtime's features were additive, the first command stopped at the
-runtime: its `no_std` feature refused `http-send` with `compile_error!`.
+runtime: its `no_std` feature refused `http-send` with `compile_error!`. And a
+bare-metal crate that named `no_macrostep_diagnostics` removed the report's
+accessors from the whole build, so an application crate beside it that read
+them stopped compiling; the report is now the feature `macrostep-diagnostics`,
+which adds them.
 
 ## Run locally
 

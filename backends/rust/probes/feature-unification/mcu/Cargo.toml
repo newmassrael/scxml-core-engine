@@ -18,7 +18,9 @@ path = "src/lib.rs"
 
 [dependencies]
 # What a bare-metal crate asks of the runtime: nothing. Its profile is the
-# absence of `std`.
+# absence of `std`, and its thumb build carries no macrostep report either
+# (`macrostep-diagnostics` is not asked for), while the host build of the
+# workspace has the report the application crate reads.
 sce-rust-runtime = { path = "../../../runtime", default-features = false }
 # The generated `--no-std` machine (sce-build/tests/fixtures/no_std/portable_probe.scxml,
 # generated into that crate by the gate).
