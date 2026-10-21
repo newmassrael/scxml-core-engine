@@ -564,9 +564,8 @@ const SHARED_STATE_TICK: &str = r#"
 /// `shared_state` and `shared_state_kid`, written into `dir`. The parent holds
 /// [`SHARED_STATE_DATA`] and invokes the child as a candidate of a hybrid
 /// `<invoke>` (`sce:candidates`), which is generated into the parent's package;
-/// the child holds the same and makes the same call. The child is a document of
-/// its own and not an in-line `<content>` one, because an in-line child is read
-/// with no directory and its `<sce:import>`s are not resolved.
+/// the child holds the same and makes the same call. The child written in-line
+/// instead is [`a_go_package_declares_each_name_once_where_an_in_line_child_holds_the_same_state`]'s.
 fn shared_state_documents(dir: &Path) -> (PathBuf, PathBuf) {
     let parent = dir.join("shared_state.scxml");
     std::fs::write(
@@ -629,7 +628,13 @@ fn a_go_package_declares_each_name_once_where_a_parent_and_its_child_hold_the_sa
         ["shared_state_kid_sm.go", "shared_state_sm.go"],
         "the parent and its candidate are generated into one package"
     );
-    for (file_name, names) in &machines {
+    assert_each_machine_holds_the_shared_state_once(&machines);
+}
+
+/// Each machine of `machines` holds [`SHARED_STATE_DATA`] and makes the call of
+/// [`SHARED_STATE_TICK`], and no package-level name is declared twice.
+fn assert_each_machine_holds_the_shared_state_once(machines: &GoPackageMachines) {
+    for (file_name, names) in machines {
         // Each machine has its adapter of the call, so the check below reads the
         // declarations that collided rather than a file it misread.
         assert!(
@@ -645,11 +650,167 @@ fn a_go_package_declares_each_name_once_where_a_parent_and_its_child_hold_the_sa
             "{file_name} declares no constant for `Status.ok`: {names:?}"
         );
     }
-    let twice = declared_more_than_once(&machines);
+    let twice = declared_more_than_once(machines);
     assert!(
         twice.is_empty(),
         "names declared more than once in the package: {twice:?}"
     );
+}
+
+/// `in_line_shared_state`, written into `dir`: a parent that holds
+/// [`SHARED_STATE_DATA`] and makes the call of [`SHARED_STATE_TICK`], and starts,
+/// written in-line under the id `kid`, a child that imports, holds and calls the
+/// same.
+fn in_line_shared_state_document(dir: &Path) -> PathBuf {
+    let parent = dir.join("in_line_shared_state.scxml");
+    std::fs::write(
+        &parent,
+        format!(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="running" datamodel="sce-static" name="in_line_shared_state">{SHARED_STATE_IMPORTS}
+  <datamodel>{SHARED_STATE_DATA}
+  </datamodel>
+  <state id="running">
+    <invoke type="scxml" id="kid">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+               version="1.0" initial="running" datamodel="sce-static">{SHARED_STATE_IMPORTS}
+          <datamodel>{SHARED_STATE_DATA}
+          </datamodel>
+          <state id="running">{SHARED_STATE_TICK}
+          </state>
+        </scxml>
+      </content>
+    </invoke>{SHARED_STATE_TICK}
+  </state>
+</scxml>"#
+        ),
+    )
+    .expect("write in_line_shared_state");
+    parent
+}
+
+/// [`a_go_package_declares_each_name_once_where_a_parent_and_its_child_hold_the_same_state`]
+/// with the child written in-line. An in-line child was parsed with no
+/// directory, so none of its `<sce:import>`s resolved and `Status.ok` in it was
+/// an unknown identifier: the document was refused. Its imports resolve as its
+/// parent's do, and the two machines, written into one package, declare every
+/// package-level name once.
+#[test]
+fn a_go_package_declares_each_name_once_where_an_in_line_child_holds_the_same_state() {
+    let scratch = reset_scratch("go_in_line_shared_state");
+    let parent = in_line_shared_state_document(&scratch);
+    let machines = generate_go_package(&parent, &scratch.join("out"));
+    let file_names: Vec<&str> = machines.iter().map(|(name, _)| name.as_str()).collect();
+    assert_eq!(
+        file_names,
+        [
+            "in_line_shared_state__sce_synth_invoke__kid_sm.go",
+            "in_line_shared_state_sm.go"
+        ],
+        "the parent and its in-line child are generated into one package"
+    );
+    assert_each_machine_holds_the_shared_state_once(&machines);
+}
+
+/// The backends that lower `datamodel="sce-static"`, by the name `-l` takes.
+const STATIC_DATAMODEL_BACKENDS: [&str; 6] = ["rust", "cpp", "c11", "go", "kotlin", "python"];
+
+/// A parent whose in-line child imports an enum of the standard library by its
+/// library name and an algorithm beside the parent by a relative `src`, and
+/// uses both: `Status.ok` in a guard, `DaysInMonth(year, month)` in an
+/// `<assign>`.
+const IN_LINE_IMPORTS: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="running" datamodel="sce-static" name="in_line_imports">
+  <state id="running">
+    <invoke type="scxml" id="kid">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+               version="1.0" initial="counting" datamodel="sce-static">
+          <sce:import kind="enum" src="sce:std/mesh/rpc_status.scxml" as="Status"/>
+          <sce:import kind="algorithm" src="algorithm_days_in_month.scxml" as="DaysInMonth"/>
+          <datamodel>
+            <data id="status" sce:type="enum:Status" expr="Status.ok"/>
+            <data id="year" sce:type="uint16" expr="2024"/>
+            <data id="month" sce:type="uint8" expr="2"/>
+            <data id="days" sce:type="uint8" expr="0"/>
+          </datamodel>
+          <state id="counting">
+            <onentry>
+              <assign location="days" expr="DaysInMonth(year, month)"/>
+            </onentry>
+            <transition event="tick" cond="status === Status.ok" target="done"/>
+          </state>
+          <final id="done"/>
+        </scxml>
+      </content>
+    </invoke>
+  </state>
+</scxml>"#;
+
+/// An in-line child's `<sce:import>`s resolve as the enclosing document's do,
+/// on every backend that lowers `sce-static`: a library name from the library,
+/// a relative `src` against the directory of the document whose `<content>`
+/// holds the child. The child was parsed with no directory, so neither
+/// resolved and the run was refused (`expression/unknown-identifier` for
+/// `Status.ok`). Each run succeeds and writes the child's machine, which names
+/// the algorithm it calls.
+#[test]
+fn an_in_line_childs_imports_resolve_as_its_parents_do_on_every_backend() {
+    let scratch = reset_scratch("in_line_imports");
+    let parent = scratch.join("in_line_imports.scxml");
+    std::fs::write(&parent, IN_LINE_IMPORTS).expect("write in_line_imports");
+    std::fs::copy(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/static_datamodel/algorithm_days_in_month.scxml"),
+        scratch.join("algorithm_days_in_month.scxml"),
+    )
+    .expect("copy the algorithm beside the document");
+    for lang in STATIC_DATAMODEL_BACKENDS {
+        let out_dir = scratch.join("out").join(lang);
+        let extra: &[&str] = if lang == "cpp" { &["--no-format"] } else { &[] };
+        generate_into(lang, &parent, &out_dir, extra);
+        // The child's machine files, and not the copy of its document the run
+        // writes beside them, which holds the call as its author wrote it.
+        let child_files: Vec<PathBuf> =
+            machine_files_of(&out_dir, "in_line_imports__sce_synth_invoke__kid");
+        assert!(
+            !child_files.is_empty(),
+            "{lang}: the in-line child's machine was not written into {}",
+            out_dir.display()
+        );
+        let folded: String = child_files
+            .iter()
+            .map(|path| std::fs::read_to_string(path).expect("read the child's machine"))
+            .collect::<String>()
+            .to_lowercase()
+            .replace('_', "");
+        assert!(
+            folded.contains("daysinmonth"),
+            "{lang}: the in-line child's machine does not name the algorithm it calls"
+        );
+    }
+}
+
+/// The files in `dir` a machine named `machine` was generated into: every file
+/// whose name is the machine's followed by what a backend appends to it
+/// (`_sm.rs`, `Sm.kt`, `_sm.h`, ...). Neither the copy of the machine's
+/// document a run writes beside it (`<machine>.scxml`) nor the machine of a
+/// child it starts (`<machine>__sce_synth_invoke__<id>_sm.rs`) is one.
+fn machine_files_of(dir: &Path, machine: &str) -> Vec<PathBuf> {
+    let mut files: Vec<PathBuf> = std::fs::read_dir(dir)
+        .expect("read the output directory")
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .and_then(|name| name.strip_prefix(machine))
+                .is_some_and(|rest| rest.starts_with("_sm") || rest.starts_with("Sm"))
+        })
+        .collect();
+    files.sort();
+    files
 }
 
 /// A parent that invokes a child in-line under the id `kid`, whose child invokes

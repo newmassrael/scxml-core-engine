@@ -2276,12 +2276,33 @@ impl SCXMLParser {
     /// matches the pre-refactor on-disk-synth byte goldens) are both
     /// authoritative without crossing the [`DocumentLabel::symmetric`]
     /// contract.
+    ///
+    /// `base_dir` is the directory the text's relative references resolve
+    /// against — its `<sce:import>`s, a `<script src>`, an `<invoke src>`, a
+    /// hybrid invoke's candidates. For an in-line child it is the directory
+    /// of the document whose `<content>` holds it, which is where its author
+    /// wrote those references from; `None` for text that has no place on
+    /// disk, which then resolves none of them, as [`parse_string`] resolves
+    /// none.
+    ///
+    /// [`parse_string`]: SCXMLParser::parse_string
     pub fn parse_string_with_label(
         &mut self,
         content: &str,
         label: DocumentLabel<'_>,
+        base_dir: Option<&Path>,
     ) -> Result<SCXMLModel, crate::forge::error::Located<crate::forge::error::ForgeError>> {
-        self.parse_impl(content, label, None)
+        self.parse_impl(content, label, base_dir)
+    }
+
+    /// A parser for an in-line child of the document this one is parsing:
+    /// configured as this one is, so the child's documents are looked for
+    /// where the parent's are, and counted afresh, so its ids, document order
+    /// and invoke numbering are its own and not continued from the parent's.
+    fn for_inline_child(&self) -> Self {
+        Self::new()
+            .with_include_dirs(self.include_dirs.clone())
+            .with_candidate_roots(self.candidate_roots.clone())
     }
 
     /// Parse the standard statechart `src` names (`sce:std/...`), whose text is
@@ -4973,7 +4994,13 @@ impl SCXMLParser {
                 );
                 // Recursive parse uses a fresh parser instance — sharing
                 // `self` would cross-contaminate document_order_counter /
-                // invoke_counter between parent and child. Asymmetric
+                // invoke_counter between parent and child. The child is read
+                // from this document's directory: an in-line document has no
+                // place of its own, and the references its author wrote in
+                // it (`<sce:import src>` among them) were written from where
+                // the document that holds it stands. A library name
+                // (`sce:std/...`) is read from the library, whatever that
+                // directory is. Asymmetric
                 // [`DocumentLabel`]: identifier = synth name (extension-
                 // free, drives template symbols), diagnostic label =
                 // `<synth>.scxml` (matches the historical on-disk file
@@ -4992,12 +5019,19 @@ impl SCXMLParser {
                 // judged once the child is analysed) is moved to the rows its
                 // author wrote by the same mapping.
                 let positions = inline.positions(&synth_diag_label);
-                let inline_child = SCXMLParser::new()
+                let mut child_parser = self.for_inline_child();
+                let inline_child = child_parser
                     .parse_string_with_label(
                         &inline.text,
                         DocumentLabel::asymmetric(&synth_name, &synth_diag_label),
+                        base_dir,
                     )
                     .map_err(|err| positions.authored(err))?;
+                // A document the child read (a candidate it may start) is an
+                // input of this document's output as much as one this
+                // document read itself.
+                self.preprocessor_deps
+                    .extend(child_parser.preprocessor_deps);
                 // SCE Mesh §9.6.6 rule 2: the rewritten `<invoke>`
                 // carries the canonical `#<machine>` mesh peer
                 // reference so `classify_remote_scxml_invokes`

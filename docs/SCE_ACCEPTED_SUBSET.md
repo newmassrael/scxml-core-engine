@@ -3662,6 +3662,12 @@ rewrites an inline child where it stands in its parent's text, and a standard ch
 no place there, so it is refused as an invoke by `src` (`generate/unsupported-feature`).
 `sce-build/tests/a_standard_document_is_imported_by_name.rs` holds this.
 
+A child written inline has no place of its own, so it is read from the directory of the
+document whose `<content>` holds it: its `<sce:import>`s resolve as that document's do, a
+library name (`sce:std/...`) from the library and any other `src` beside the document that
+holds it, on every route that reads the document (`generate`, `check`, the Interpreter's
+lowering). `sce-build/tests/forge_codegen_event_schema_smoke.rs` holds this on every backend.
+
 A child that declares `<sce:action>`s takes the host that performs its acts when it
 is built, because its first `<onentry>` can already perform an act and a host
 installed afterwards would arrive one act too late. So the host has to exist when
