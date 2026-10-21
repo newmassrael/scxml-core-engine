@@ -2246,11 +2246,23 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, AStandardRecordListClearsAFieldAndRet
 // dots, a count of 0 when every value was written over, and nothing for a write the
 // list already held.
 TEST(AStaticDatamodelRunsGeneratedCppTest, AParentIsToldWhatEachRegisterOfItsListHolds) {
-    using Machine = G::record_list_parent::record_list_parent;
+    namespace P = G::record_list_parent;
+    using Machine = P::record_list_parent;
     Driver<Machine> driver({
         {"told", [](const Machine &m) { return json(m.told()); }},
         {"shown", [](const Machine &m) { return registerJson(m.shown()); }},
         {"others", [](const Machine &m) { return registerValuesJson(m.others()); }},
+        // The last change the list refused: the command at fault, and the reason by the
+        // name the enum record_refusal declares (docs/adr/0046).
+        {"refused",
+         [](const Machine &m) {
+             const auto refused = m.refused();
+             return json{{"id", refused.id},
+                         {"field", refused.field},
+                         {"kind", refused.kind},
+                         {"reason", std::string(P::sceLogName(refused.reason))}};
+         }},
+        {"refusedCount", [](const Machine &m) { return json(m.refusedCount()); }},
     });
     replay("record_list_parent", driver);
 }

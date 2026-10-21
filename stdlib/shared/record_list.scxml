@@ -165,7 +165,10 @@
   person's edit, a write-over of each value it saw and then a write, is told as the one
   register it moved, as it stands after the write, and a change of several fields as
   each of them once. A parent may name a register itself by sending the list
-  `record_list.announce`, to be told what it holds.
+  `record_list.announce`, to be told what it holds. A change of its own the list refuses
+  is told too, once, after the command that ended it: `record_list.refused`
+  (record_refused) with the command at fault and why (record_refusal), so a parent never
+  takes a change nothing was written for as made (docs/adr/0046).
 
   A list a host started has no parent, and `#_parent` names no session there: `announce`
   keeps the value its <data> gives it, false, and the list tells no one. The condition is
@@ -243,6 +246,8 @@
   <sce:import kind="event-schema" src="sce:std/shared/record_part.scxml" as="Part"/>
   <sce:import kind="event-schema" src="sce:std/shared/record_clear.scxml" as="Clear"/>
   <sce:import kind="event-schema" src="sce:std/shared/record_retire.scxml" as="Retire"/>
+  <sce:import kind="enum" src="sce:std/shared/record_refusal.scxml" as="Refusal"/>
+  <sce:import kind="event-schema" src="sce:std/shared/record_refused.scxml" as="Refused"/>
   <datamodel>
     <data id="node" sce:type="uint64" expr="0" sce:direction="out"/>
     <data id="hub" sce:type="bool" expr="false" sce:direction="out"/>
@@ -367,6 +372,15 @@
     <data id="gone" sce:type="uint32" expr="0"/>
     <data id="writes" sce:type="uint32" expr="0"/>
     <data id="covered" sce:type="bool" expr="false"/>
+    <!-- What a refused change is told to the parent as (record_list.refused): why the
+         statement in hand would refuse it if it failed (`probe`), why it was refused
+         (`spoiledFor`), and the command at fault (`namedId`, `namedField`, `namedKind`,
+         the kind as record_part numbers a staged command). -->
+    <data id="probe" sce:type="enum:Refusal" expr="Refusal.changeTooLarge"/>
+    <data id="spoiledFor" sce:type="enum:Refusal" expr="Refusal.changeTooLarge"/>
+    <data id="namedId" sce:type="uint32" expr="0"/>
+    <data id="namedField" sce:type="uint16" expr="0"/>
+    <data id="namedKind" sce:type="uint8" expr="0"/>
     <!-- The operations to take in (`taking`, the next at `took`) and to send on
          (`passing`, the next at `passed`), each read by an event of its own that carries
          no data; the parts of changes not yet whole (`waiting`), and a list the parts
@@ -444,13 +458,18 @@
     <transition event="record_list.edit" type="internal">
       <assign location="holding" expr="_event.data.more"/>
       <if cond="!spoiled">
+        <assign location="namedId" expr="_event.data.id"/>
+        <assign location="namedField" expr="_event.data.field"/>
+        <assign location="namedKind" expr="0"/>
         <assign location="probing" expr="true"/>
+        <assign location="probe" expr="Refusal.textTooLong"/>
         <assign location="typed" expr="_event.data.text"/>
         <assign location="part.kind" expr="0"/>
         <assign location="part.id" expr="_event.data.id"/>
         <assign location="part.field" expr="_event.data.field"/>
         <assign location="part.value" expr="_event.data.value"/>
         <assign location="part.text" expr="_event.data.text"/>
+        <assign location="probe" expr="Refusal.changeTooLarge"/>
         <sce:append target="staged" expr="part"/>
         <assign location="probing" expr="false"/>
       </if>
@@ -466,7 +485,11 @@
     <transition event="record_list.clear" type="internal">
       <assign location="holding" expr="_event.data.more"/>
       <if cond="!spoiled">
+        <assign location="namedId" expr="_event.data.id"/>
+        <assign location="namedField" expr="_event.data.field"/>
+        <assign location="namedKind" expr="1"/>
         <assign location="probing" expr="true"/>
+        <assign location="probe" expr="Refusal.changeTooLarge"/>
         <assign location="part.kind" expr="1"/>
         <assign location="part.id" expr="_event.data.id"/>
         <assign location="part.field" expr="_event.data.field"/>
@@ -487,7 +510,11 @@
     <transition event="record_list.retire" type="internal">
       <assign location="holding" expr="_event.data.more"/>
       <if cond="!spoiled">
+        <assign location="namedId" expr="_event.data.id"/>
+        <assign location="namedField" expr="0"/>
+        <assign location="namedKind" expr="2"/>
         <assign location="probing" expr="true"/>
+        <assign location="probe" expr="Refusal.changeTooLarge"/>
         <assign location="part.kind" expr="2"/>
         <assign location="part.id" expr="_event.data.id"/>
         <assign location="part.field" expr="0"/>
@@ -533,13 +560,18 @@
         <if cond="forbidden">
           <assign location="denied" expr="denied + 1"/>
           <assign location="spoiled" expr="true"/>
+          <assign location="spoiledFor" expr="Refusal.notWriter"/>
         </if>
       </if>
       <if cond="!spoiled">
         <foreach array="staged" item="earlier" index="earlierAt">
           <foreach array="staged" item="later" index="laterAt">
-            <if cond="laterAt &gt; earlierAt &amp;&amp; earlier.kind !== 2 &amp;&amp; later.kind !== 2 &amp;&amp; earlier.id === later.id &amp;&amp; earlier.field === later.field">
+            <if cond="!spoiled &amp;&amp; laterAt &gt; earlierAt &amp;&amp; earlier.kind !== 2 &amp;&amp; later.kind !== 2 &amp;&amp; earlier.id === later.id &amp;&amp; earlier.field === later.field">
               <assign location="spoiled" expr="true"/>
+              <assign location="spoiledFor" expr="Refusal.registerNamedTwice"/>
+              <assign location="namedId" expr="later.id"/>
+              <assign location="namedField" expr="later.field"/>
+              <assign location="namedKind" expr="later.kind"/>
             </if>
           </foreach>
         </foreach>
@@ -564,13 +596,26 @@
           </if>
         </foreach>
       </if>
-      <if cond="!spoiled &amp;&amp; gone + writes &gt; 0 &amp;&amp; ((roomValues &gt; 0 &amp;&amp; writes &gt; gone &amp;&amp; len(values) + writes &gt; roomValues + gone) || (roomHistory &gt; 0 &amp;&amp; len(tombstones) &gt;= roomHistory) || (roomDigest &gt; 0 &amp;&amp; len(digest) &gt;= roomDigest))">
+      <if cond="!spoiled &amp;&amp; gone + writes &gt; 0 &amp;&amp; roomValues &gt; 0 &amp;&amp; writes &gt; gone &amp;&amp; len(values) + writes &gt; roomValues + gone">
         <assign location="full" expr="full + 1"/>
         <assign location="spoiled" expr="true"/>
+        <assign location="spoiledFor" expr="Refusal.noRoomForValue"/>
+      </if>
+      <if cond="!spoiled &amp;&amp; gone + writes &gt; 0 &amp;&amp; roomHistory &gt; 0 &amp;&amp; len(tombstones) &gt;= roomHistory">
+        <assign location="full" expr="full + 1"/>
+        <assign location="spoiled" expr="true"/>
+        <assign location="spoiledFor" expr="Refusal.noRoomForHistory"/>
+      </if>
+      <if cond="!spoiled &amp;&amp; gone + writes &gt; 0 &amp;&amp; roomDigest &gt; 0 &amp;&amp; len(digest) &gt;= roomDigest">
+        <assign location="full" expr="full + 1"/>
+        <assign location="spoiled" expr="true"/>
+        <assign location="spoiledFor" expr="Refusal.noRoomForDigest"/>
       </if>
       <if cond="!spoiled &amp;&amp; gone + writes &gt; 0">
         <assign location="probing" expr="true"/>
+        <assign location="probe" expr="Refusal.clockExhausted"/>
         <assign location="stamp" expr="HlcSend(clock, closingNow, node)"/>
+        <assign location="probe" expr="Refusal.changeTooLarge"/>
         <sce:clear target="taking"/>
         <assign location="took" expr="0"/>
         <foreach array="adds" item="a">
@@ -631,9 +676,20 @@
       <if cond="!spoiled &amp;&amp; gone + writes === 0">
         <sce:clear target="staged"/>
       </if>
+      <!-- A refused change is dropped whole and told to the statechart that invoked the
+           list, once, with the command at fault and why (record_refused); a list a host
+           started tells no one. -->
       <if cond="spoiled">
         <sce:clear target="staged"/>
         <assign location="spoiled" expr="false"/>
+        <if cond="announce">
+          <send event="record_list.refused" targetexpr="'#_parent'" sce:targets="#_parent">
+            <param name="id" expr="namedId"/>
+            <param name="field" expr="namedField"/>
+            <param name="kind" expr="namedKind"/>
+            <param name="reason" expr="spoiledFor"/>
+          </send>
+        </if>
       </if>
     </transition>
 
@@ -1530,6 +1586,7 @@
       <if cond="probing">
         <assign location="probing" expr="false"/>
         <assign location="spoiled" expr="true"/>
+        <assign location="spoiledFor" expr="probe"/>
         <if cond="!holding">
           <send target="#_internal" event="record_list.close"/>
         </if>

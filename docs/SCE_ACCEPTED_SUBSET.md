@@ -5903,8 +5903,11 @@ over; and `record_list_parent` is a statechart that invokes it and publishes wha
 it was told: a register's one value, two values written at once told as a count of 2
 with the earlier dot first, a register written over value by value told as a count of
 0, a write already held told nothing, the hub's own change told once, a retired row told
-as each of its registers holding nothing, and a write its author made without seeing
-the retire told as the field coming back. The model the
+as each of its registers holding nothing, a write its author made without seeing
+the retire told as the field coming back, and each change the list refused told once as
+`record_list.refused`, the command at fault and the reason, a value of the standard
+enum `record_refusal` (its member may only read, the room, a text too long, a register
+named twice). The model the
 expected values come from was first held to every step `todo_peer` took in the world's
 to-do afternoon. The world test replays that afternoon on the standard part's Rust
 machine in its own process, the sends by their routes and an edit that wrote over what

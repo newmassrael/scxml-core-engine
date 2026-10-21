@@ -26,6 +26,12 @@
   writes its own, three changes inside the list, is told once. A retire of a row is told
   as each of its registers holding nothing, once, and a write to the row its author had
   not seen brings the field back, which is told as any write is (docs/adr/0046).
+
+  The host's role and room are passed to the list as well, and a change the list
+  refuses is told to the parent (`record_list.refused`): it keeps the last refusal
+  (`refused`, the command at fault and the reason, a value of the enum record_refusal)
+  and counts them (`refusedCount`), so a change that was not made is never shown as one
+  that was.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="holding" datamodel="sce-static" name="record_list_parent">
@@ -39,6 +45,12 @@
        name is spelled from the alias, and `register` is a word of C and C++. -->
   <sce:import kind="event-schema" src="sce:std/shared/record_register.scxml" as="Told"/>
   <sce:import kind="event-schema" src="sce:std/shared/record_value.scxml" as="ToldValue"/>
+  <sce:import kind="event-schema" src="sce:std/shared/record_role.scxml" as="Role"/>
+  <sce:import kind="event-schema" src="sce:std/shared/record_room.scxml" as="Room"/>
+  <!-- A refusal the list tells, whose reason is a value of the enum the schema imports,
+       under the alias the schema writes. -->
+  <sce:import kind="event-schema" src="sce:std/shared/record_refused.scxml" as="Refused"/>
+  <sce:import kind="enum" src="sce:std/shared/record_refusal.scxml" as="Refusal"/>
   <datamodel>
     <data id="told" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="shown" sce:type="record:Told" sce:direction="out">
@@ -62,6 +74,13 @@
       <sce:set name="counter" expr="0"/>
       <sce:set name="nodeId" expr="0"/>
     </data>
+    <data id="refused" sce:type="record:Refused" sce:direction="out">
+      <sce:set name="id" expr="0"/>
+      <sce:set name="field" expr="0"/>
+      <sce:set name="kind" expr="0"/>
+      <sce:set name="reason" expr="Refusal.notWriter"/>
+    </data>
+    <data id="refusedCount" sce:type="uint32" expr="0" sce:direction="out"/>
   </datamodel>
   <state id="holding">
     <invoke type="scxml" id="list" src="sce:std/shared/record_list.scxml">
@@ -98,6 +117,19 @@
         <param name="id" expr="_event.data.id"/>
         <param name="now" expr="_event.data.now"/>
         <param name="more" expr="_event.data.more"/>
+      </send>
+    </transition>
+    <transition event="record_list.role" type="internal">
+      <send target="#_list" event="record_list.role">
+        <param name="node" expr="_event.data.node"/>
+        <param name="role" expr="_event.data.role"/>
+      </send>
+    </transition>
+    <transition event="record_list.room" type="internal">
+      <send target="#_list" event="record_list.room">
+        <param name="values" expr="_event.data.values"/>
+        <param name="history" expr="_event.data.history"/>
+        <param name="digest" expr="_event.data.digest"/>
       </send>
     </transition>
     <transition event="record_list.write" type="internal">
@@ -147,6 +179,16 @@
       <assign location="other.nodeId" expr="_event.data.nodeId"/>
       <sce:append target="others" expr="other"/>
       <assign location="told" expr="told + 1"/>
+    </transition>
+
+    <!-- A change the list refused: the command at fault and why, the last kept, and
+         every one counted. -->
+    <transition event="record_list.refused" type="internal">
+      <assign location="refused.id" expr="_event.data.id"/>
+      <assign location="refused.field" expr="_event.data.field"/>
+      <assign location="refused.kind" expr="_event.data.kind"/>
+      <assign location="refused.reason" expr="_event.data.reason"/>
+      <assign location="refusedCount" expr="refusedCount + 1"/>
     </transition>
   </state>
 </scxml>

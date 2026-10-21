@@ -98,7 +98,8 @@
 //     Mesh router, when it keeps every change it makes; and
 //     `record_list_parent`, which
 //     invokes it by its library name and publishes what it was told of each
-//     register.
+//     register, and of each change the list refused, its reason by the name the
+//     standard enum record_refusal declares.
 //
 // Linked WITHOUT `sce_c_scripting` and `lua54` on purpose: these machines carry
 // no script engine, so the link is the proof. If the emit ever reached for one,
@@ -2698,7 +2699,15 @@ STATIC_SCENARIO_UNROUTED(record_list)
     E(wallTime, wide_signed_digits)                                                                                    \
     N(counter)                                                                                                         \
     E(nodeId, wide_digits)
+// The last change the list refused: the command at fault, and the reason by the name
+// the enum record_refusal declares (docs/adr/0046).
+#define RECORD_LIST_REFUSED_FIELDS(N, E)                                                                               \
+    N(id)                                                                                                              \
+    N(field)                                                                                                           \
+    N(kind)                                                                                                            \
+    E(reason, record_refusal_declared_name)
 VARIABLE_READER(record_list_parent, told)
+VARIABLE_READER(record_list_parent, refusedCount)
 
 static const char *record_list_parent_text_text(sce_static_string_96_t text) {
     static char copy[sizeof(text.data)];
@@ -2709,14 +2718,18 @@ static const char *record_list_parent_text_text(sce_static_string_96_t text) {
 RECORD_READER(record_list_parent, shown, record_list_parent_record_told_t, RECORD_LIST_REGISTER_FIELDS)
 RECORD_LIST_READER(record_list_parent, others, record_list_parent_record_told_value_view_t,
                    record_list_parent_record_told_value_t, RECORD_LIST_REGISTER_VALUE_FIELDS)
+RECORD_READER(record_list_parent, refused, record_list_parent_record_refused_t, RECORD_LIST_REFUSED_FIELDS)
 static const name_value_t record_list_parent_states[] = {
     {"holding", RECORD_LIST_PARENT_STATE_HOLDING},
 };
 static const variable_t record_list_parent_variables[] = {
     {"told", record_list_parent_read_told},
+    {"refusedCount", record_list_parent_read_refusedCount},
 };
-static const record_variable_t record_list_parent_records[] = {
-    RECORD_ROW(record_list_parent, shown), RECORD_LIST_ROW(record_list_parent, others), {NULL, NULL, NULL, NULL}};
+static const record_variable_t record_list_parent_records[] = {RECORD_ROW(record_list_parent, shown),
+                                                               RECORD_LIST_ROW(record_list_parent, others),
+                                                               RECORD_ROW(record_list_parent, refused),
+                                                               {NULL, NULL, NULL, NULL}};
 STATIC_SCENARIO(record_list_parent, record_list_parent_states, record_list_parent_variables, NULL, no_lists,
                 record_list_parent_records)
 
@@ -2968,7 +2981,7 @@ int main(void) {
     bad |= record_list_unrouted_scenario("record_list_offline", 8);
     bad |= record_list_scenario("record_list_change", 26);
     bad |= record_list_scenario("record_list_retire", 15);
-    bad |= record_list_parent_scenario("record_list_parent", 13);
+    bad |= record_list_parent_scenario("record_list_parent", 24);
     bad |= sheet_peer_scenario("sheet_peer_alice", 24);
     bad |= sheet_peer_scenario("sheet_peer_bob", 26);
     bad |= sheet_peer_scenario("sheet_peer_server", 26);

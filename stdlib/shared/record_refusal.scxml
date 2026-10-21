@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/shared/record_refusal.scxml — why a copy of a shared record list refused a
+  change of its own (docs/adr/0046), as record_list.refused (record_refused) tells the
+  statechart that invoked the list. A change is refused whole, so a reason is the
+  reason of the whole change:
+
+  - `notWriter`: the copy's member may only read (record_list.role);
+  - `noRoomForValue`: the values the copy would hold after the change pass the room the
+    host gave it (record_list.room, `values`);
+  - `noRoomForHistory`: the copy holds as many tombstones as the room lets it (`history`),
+    which a settle frees;
+  - `noRoomForDigest`: the copy holds as many digest nodes as the room lets it (`digest`);
+  - `textTooLong`: an edit's text is past what a person writes (record_edit, the bound
+    `shared_typed_text`);
+  - `changeTooLarge`: the change stages more commands, or is more operations, than the
+    copy is built to hold (`shared_staged`, `shared_parts`);
+  - `registerNamedTwice`: two commands of the change write or clear one register;
+  - `clockExhausted`: the copy's clock cannot stamp another change in its millisecond.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="enum" name="record_refusal" sce:underlying-type="uint8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="notWriter" value="1"/>
+      <sce:variant name="noRoomForValue" value="2"/>
+      <sce:variant name="noRoomForHistory" value="3"/>
+      <sce:variant name="noRoomForDigest" value="4"/>
+      <sce:variant name="textTooLong" value="5"/>
+      <sce:variant name="changeTooLarge" value="6"/>
+      <sce:variant name="registerNamedTwice" value="7"/>
+      <sce:variant name="clockExhausted" value="8"/>
+    </data>
+  </datamodel>
+</scxml>

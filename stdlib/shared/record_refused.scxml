@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/shared/record_refused.scxml — what a shared record list (record_list) tells the
+  statechart that invoked it when it refused a change of its own (docs/adr/0046): once
+  for each change refused, after the command that ended it. The command at fault is named
+  by its row (`id`), its field (`field`, 0 for a retire) and its `kind` (0 an edit, 1 a
+  clear, 2 a retire): the one whose text or staging failed, the second of two that name
+  one register, or, for what is judged of the whole change, the one that ended it.
+  `reason` says why (record_refusal). Nothing of a refused change is taken in, stamped or
+  sent, so a parent that told its user the change was made tells them it was not.
+
+  A list a host started has no parent and tells no one, as it tells no register.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="record_refused"
+       sce:event-name="record_list.refused">
+  <sce:import kind="enum" src="sce:std/shared/record_refusal.scxml" as="Refusal"/>
+  <datamodel>
+    <data id="id" sce:type="uint32" sce:direction="in"/>
+    <data id="field" sce:type="uint16" sce:direction="in"/>
+    <data id="kind" sce:type="uint8" sce:direction="in"/>
+    <data id="reason" sce:type="enum:Refusal" sce:direction="in"/>
+  </datamodel>
+</scxml>
