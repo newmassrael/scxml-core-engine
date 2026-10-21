@@ -403,7 +403,7 @@ interface ScxmlScriptEngine {
      * §scxml-B-2: Parse raw data value as XML DOM, JSON, or space-normalized string.
      *
      * C++ parseEventData() pattern. Used for:
-     * - Inline <content> in <data> elements
+     * - Inline <content> in <data> elements (§scxml-5.3.2)
      * - External <data src="..."> file content
      * - Event data in <send>/<content>
      *

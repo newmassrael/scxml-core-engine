@@ -969,6 +969,9 @@
                 engine._script_engine.set_variable(self._session_id, _name, _val)
 
     def init_state_datamodel(self, state, engine) -> None:
+{# W3C SCXML 5.3.3: under `binding="late"` a state's `<data>` is given its
+   value on the state's first entry, before any `<onentry>`. The engine
+   calls this at that entry; `is_late_binding` is the attribute it reads. #}
 {% set ns_local = namespace(any=false) %}
 {% for state_id, st in model.states | dictsort %}
 {% if st.datamodel and not static_fields %}{% set ns_local.any = true %}{% endif %}

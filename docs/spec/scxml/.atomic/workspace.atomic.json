@@ -4286,6 +4286,10 @@
         {
           "file": "sce-build/src/forge/type_ctx.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/helpers.go",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -6758,6 +6762,14 @@
         {
           "file": "backends/rust/runtime/src/helpers/datamodel_init.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/helpers.go",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/ScxmlScriptEngine.kt",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -6798,6 +6810,10 @@
         },
         {
           "file": "backends/rust/runtime/src/helpers/datamodel_init.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "kind": "references"
         }
       ],
@@ -11636,6 +11652,10 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "completeMacrostep",
           "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/helpers.go",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -13480,6 +13500,15 @@
           "file": "backends/rust/runtime/src/scripting/i_script_engine.rs",
           "symbol": "set_variable_as_dom",
           "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/helpers.go",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/helpers.go",
+          "symbol": "InitializeVariableFromContent",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -14112,6 +14141,15 @@
         },
         {
           "file": "sce-build/src/script_engine_analyzer.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/helpers.go",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/helpers.go",
+          "symbol": "PayloadReading",
           "kind": "references"
         }
       ],
@@ -15498,6 +15536,15 @@
         },
         {
           "file": "sce-build/src/forge/static_lowering.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/helpers.go",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/helpers.go",
+          "symbol": "WireParamsFromTypedParams",
           "kind": "references"
         }
       ],

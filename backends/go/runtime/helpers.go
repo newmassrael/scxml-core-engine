@@ -212,7 +212,7 @@ type EventDataParam struct {
 // form parameters a transport takes.
 //
 // §scxml-6.2.3 evaluates a `<send>`'s arguments when the element is evaluated,
-// once, so the map a BasicHTTP POST sends (W3C SCXML C.2) is a RENDERING of
+// once, so the map a BasicHTTP POST sends (§scxml-C-2) is a RENDERING of
 // that evaluation rather than a second reading of the data model. The BasicHTTP
 // arm used to re-read: it collected the namelist again with no error arm, so
 // the two readings could only agree while nothing failed.
@@ -290,7 +290,8 @@ func QuoteLuaString(s string) string {
 	return `"` + escaped + `"`
 }
 
-// InitializeVariableFromContent initializes a datamodel variable from loaded content.
+// §scxml-5.3.2: InitializeVariableFromContent initializes a datamodel variable
+// from the in-line children of its `<data>` (or loaded content).
 // Matches Rust sce_rust_runtime::helpers::datamodel_init::initialize_variable.
 // Tries: direct Lua eval → JSON.parse → whitespace-normalized string.
 func InitializeVariableFromContent(se IScriptEngine, sessionID, varID, content string) {
@@ -300,7 +301,7 @@ func InitializeVariableFromContent(se IScriptEngine, sessionID, varID, content s
 		return
 	}
 
-	// W3C SCXML B.2: XML content -> DOM object with getElementsByTagName/getAttribute
+	// §scxml-B-2: XML content -> DOM object with getElementsByTagName/getAttribute
 	if strings.HasPrefix(trimmed, "<") {
 		_ = se.SetVariableAsDOM(sessionID, varID, trimmed)
 		return
@@ -312,7 +313,7 @@ func InitializeVariableFromContent(se IScriptEngine, sessionID, varID, content s
 		return
 	}
 
-	// W3C SCXML B.2 test 446: Try JSON.parse for JSON content
+	// §scxml-B-2 test 446: Try JSON.parse for JSON content
 	if strings.HasPrefix(trimmed, "[") || strings.HasPrefix(trimmed, "{") {
 		jsonExpr := varID + " = JSON.parse(" + QuoteLuaString(trimmed) + ")"
 		if err := se.ExecuteScript(sessionID, jsonExpr); err == nil {
@@ -320,13 +321,13 @@ func InitializeVariableFromContent(se IScriptEngine, sessionID, varID, content s
 		}
 	}
 
-	// W3C SCXML B.2 test 558: Fall back to whitespace-normalized string
+	// §scxml-B-2 test 558: Fall back to whitespace-normalized string
 	normalized := strings.Join(strings.Fields(trimmed), " ")
 	_ = se.SetVariable(sessionID, varID, normalized)
 }
 
 // IsValidIdentifier checks if a name is a valid Lua/ECMAScript identifier
-// (W3C SCXML 4.6: foreach item must be a valid location expression).
+// (§scxml-4.6: foreach item must be a valid location expression).
 func IsValidIdentifier(name string) bool {
 	if len(name) == 0 {
 		return false
@@ -347,14 +348,14 @@ func IsValidIdentifier(name string) bool {
 
 // ── Parent event ───────────────────────────────────────────────────
 
-// ParentEvent represents an event sent from child to parent (W3C SCXML 6.4).
+// ParentEvent represents an event sent from child to parent (§scxml-6.4).
 type ParentEvent struct {
 	Name string
 	Data string
 }
 
 // ParentEventQueue holds the events a child has sent its parent until the
-// parent drains them (W3C SCXML 6.4: they are the parent's external events
+// parent drains them (§scxml-6.4: they are the parent's external events
 // from the moment they are sent). It is unbounded and keeps send order.
 //
 // It used to be a `chan ParentEvent` buffered at 100, written with a
@@ -389,7 +390,7 @@ func (q *ParentEventQueue) Drain() []ParentEvent {
 	return out
 }
 
-// PayloadReading is which reading of W3C SCXML B.2.8.1 a payload actually got.
+// PayloadReading is which reading of §scxml-B-2-8-1 a payload actually got.
 //
 // The clause gives _event.data three readings and no fourth: content the
 // processor can interpret as XML becomes a DOM, content it can interpret as a

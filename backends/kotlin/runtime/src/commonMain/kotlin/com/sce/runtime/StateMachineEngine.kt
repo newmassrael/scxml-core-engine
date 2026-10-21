@@ -4979,7 +4979,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
     private var sessionUsedByARun = false
 
     /**
-     * §scxml-D-enterStates, late binding: the states whose `<data>` this run
+     * §scxml-5.3.3 and §scxml-D-enterStates, late binding: the states whose `<data>` this run
      * has already bound — `s.isFirstEntry` is false for exactly these. Cleared
      * when a run starts ([beginRun]); seeded from the configuration [enterAt]
      * restores.

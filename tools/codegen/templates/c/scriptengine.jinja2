@@ -40,8 +40,8 @@
    a subtraction to Lua, so a legal declaration was never initialised. The
    other Lua backends key the variable the same way.
 
-   `fallback`, when given, is the literal an inline `<data>` content that does
-   not evaluate becomes (W3C SCXML B.2); without it the failure is the
+   `fallback`, when given, is the literal an inline `<data>` content
+   (W3C SCXML 5.3.2) that does not evaluate becomes (W3C SCXML B.2); without it the failure is the
    expression's, and raises error.execution. #}
 {% macro lua_set_data_global(name, lua_value, fallback=none) %}
         if ((luaL_loadstring(sm->L, "return ({{ lua_value | escape_c }})") || lua_pcall(sm->L, 0, 1, 0)) != 0) {
@@ -411,7 +411,7 @@
     }
 {% endmacro %}
 
-{# W3C SCXML 5.3 late binding: state-local <data> variables initialise on
+{# W3C SCXML 5.3.3 late binding: state-local <data> variables initialise on
    the *entry* of the owning state, before any onentry markup runs. Called
    from `state_machine.c.jinja2::execute_entry_actions` for each state with
    `state.datamodel and model.binding == 'late'`. Mirrors cpp
