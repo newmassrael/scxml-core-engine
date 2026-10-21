@@ -1854,6 +1854,9 @@ mod tests {
                     "_SAVED_ENUM_KEY_COUNT",
                     "\n\n",
                 ),
+                Language::Swift => {
+                    unreachable!("swift lowers no sce-static, so it is skipped below")
+                }
             }
         };
         let mut declared = 0;
