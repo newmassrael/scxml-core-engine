@@ -125,6 +125,9 @@ mutation_targets backends/go/tests/integration/static_datamodel/presence_peer/pr
 mutation_targets backends/go/tests/integration/static_datamodel/record_list/record_list_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/record_list_parent/record_list_parent_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/record_list_parent/record_list_parent__sce_synth_invoke__list_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_enum_number/static_enum_number_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_forge_calls/static_forge_calls_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_state_algorithm_enum/static_state_algorithm_enum_sm.go
 mutation_regen scripts/regen_static_datamodel_go.sh
 mutation_oracles backends/go/tests/integration/static_datamodel/static_scenarios_test.go
 
