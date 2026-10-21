@@ -29,9 +29,10 @@
 
   The host's role and room are passed to the list as well, and a change the list
   refuses is told to the parent (`record_list.refused`): it keeps the last refusal
-  (`refused`, the command at fault and the reason, a value of the enum record_refusal)
-  and counts them (`refusedCount`), so a change that was not made is never shown as one
-  that was.
+  (`refused`, the command at fault, a value of the enum record_command, and the reason,
+  a value of the enum record_refusal) and counts them (`refusedCount`), so a change that
+  was not made is never shown as one that was. Before the first refusal `refused` holds
+  the reason `none` (docs/adr/0052).
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="holding" datamodel="sce-static" name="record_list_parent">
@@ -47,9 +48,10 @@
   <sce:import kind="event-schema" src="sce:std/shared/record_value.scxml" as="ToldValue"/>
   <sce:import kind="event-schema" src="sce:std/shared/record_role.scxml" as="Role"/>
   <sce:import kind="event-schema" src="sce:std/shared/record_room.scxml" as="Room"/>
-  <!-- A refusal the list tells, whose reason is a value of the enum the schema imports,
-       under the alias the schema writes. -->
+  <!-- A refusal the list tells, whose command and reason are values of the enums the
+       schema imports, under the aliases the schema writes. -->
   <sce:import kind="event-schema" src="sce:std/shared/record_refused.scxml" as="Refused"/>
+  <sce:import kind="enum" src="sce:std/shared/record_command.scxml" as="Command"/>
   <sce:import kind="enum" src="sce:std/shared/record_refusal.scxml" as="Refusal"/>
   <datamodel>
     <data id="told" sce:type="uint32" expr="0" sce:direction="out"/>
@@ -77,8 +79,8 @@
     <data id="refused" sce:type="record:Refused" sce:direction="out">
       <sce:set name="id" expr="0"/>
       <sce:set name="field" expr="0"/>
-      <sce:set name="kind" expr="0"/>
-      <sce:set name="reason" expr="Refusal.notWriter"/>
+      <sce:set name="kind" expr="Command.edit"/>
+      <sce:set name="reason" expr="Refusal.none"/>
     </data>
     <data id="refusedCount" sce:type="uint32" expr="0" sce:direction="out"/>
   </datamodel>

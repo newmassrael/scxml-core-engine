@@ -1,6 +1,6 @@
 {
   "about": "The saved shape of every standard statechart that saves, by its path in the repository (docs/adr/0045, \"The shape of a tree\"). A child's saved state is refused when the document it runs changed shape, so a standard statechart an application invokes is a promise about its shape: it changes only as docs/adr/0044 allows. An edit that moves one of these values refuses the saved states of every application that runs the statechart; a_standard_statechart_that_saves_keeps_its_shape fails on it here, in the repository, rather than on their devices. A new standard statechart that saves is added with its shape.",
   "shapes": {
-    "stdlib/shared/record_list.scxml": "f733c5c2690cb4ca1dbf3607bb081a3c032a1f1b93633700a40598fc659576de"
+    "stdlib/shared/record_list.scxml": "340859b0a721fd543a2cd19a56c731fc7deccc79c4a0e1238a11b13b109af194"
   }
 }

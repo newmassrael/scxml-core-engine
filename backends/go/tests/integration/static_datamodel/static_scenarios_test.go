@@ -2148,12 +2148,13 @@ func TestAParentIsToldWhatEachRegisterOfItsListHolds(t *testing.T) {
 		"told":   func() any { return policy.Told() },
 		"shown":  func() any { return registerJSON(policy.Shown()) },
 		"others": func() any { return registerValuesJSON(policy.Others()) },
-		// The last change the list refused: the command at fault, and the reason by
-		// the name the enum record_refusal declares (docs/adr/0046).
+		// The last change the list refused: the command at fault and the reason, each
+		// by the name its enum declares, record_command and record_refusal
+		// (docs/adr/0046, docs/adr/0052).
 		"refused": func() any {
 			refused := policy.Refused()
 			return map[string]any{
-				"id": refused.Id(), "field": refused.Field(), "kind": refused.Kind(),
+				"id": refused.Id(), "field": refused.Field(), "kind": refused.Kind().String(),
 				"reason": refused.Reason().String(),
 			}
 		},

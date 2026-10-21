@@ -5,6 +5,8 @@
 - Date: 2026-10-21
 - Amends: ADR 0042 (the shared record list is a standard part); its section 4 rule that the
   protocol is changed in both copies at once is amended in section 7 below
+- Amended by: ADR 0052 (section 5: the command at fault is the enum `record_command`, and
+  `record_refusal` declares `none`, the value a parent holds before the first refusal)
 - Scope: `stdlib/shared/record_list.scxml` and its schemas under `stdlib/shared/` (`record_edit`,
   `record_write` and `record_supersede` at revision 2; `record_clear`, `record_retire`,
   `record_take`, `record_refused` and the enum `record_refusal`, new);
@@ -206,8 +208,10 @@ hub, with no router, holding every change it makes.
 ### 5. A change the list refuses is told to its parent, with a typed reason
 
 A list a statechart started (`announce`, ADR 0042) sends that statechart `record_list.refused`
-(`record_refused`) once for each change it refuses: `id`, `field` and `kind` (0 an edit, 1 a clear,
-2 a retire) of the command at fault, and `reason`, a value of the enum `record_refusal`:
+(`record_refused`) once for each change it refuses: `id`, `field` and `kind` of the command at fault
+(a value of the enum `record_command`, `edit`, `clear` or `retire`, ADR 0052), and `reason`, a
+value of the enum `record_refusal`, which also declares `none` = 0 for a parent's "no refusal yet"
+and is never told it (ADR 0052):
 
 | Variant | Value | What refused the change |
 |---|---|---|

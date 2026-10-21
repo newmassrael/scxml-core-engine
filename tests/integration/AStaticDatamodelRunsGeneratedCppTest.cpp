@@ -2290,14 +2290,15 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, AParentIsToldWhatEachRegisterOfItsLis
         {"told", [](const Machine &m) { return json(m.told()); }},
         {"shown", [](const Machine &m) { return registerJson(m.shown()); }},
         {"others", [](const Machine &m) { return registerValuesJson(m.others()); }},
-        // The last change the list refused: the command at fault, and the reason by the
-        // name the enum record_refusal declares (docs/adr/0046).
+        // The last change the list refused: the command at fault and the reason, each by
+        // the name its enum declares, record_command and record_refusal (docs/adr/0046,
+        // docs/adr/0052).
         {"refused",
          [](const Machine &m) {
              const auto refused = m.refused();
              return json{{"id", refused.id},
                          {"field", refused.field},
-                         {"kind", refused.kind},
+                         {"kind", std::string(P::sceLogName(refused.kind))},
                          {"reason", std::string(P::sceLogName(refused.reason))}};
          }},
         {"refusedCount", [](const Machine &m) { return json(m.refusedCount()); }},

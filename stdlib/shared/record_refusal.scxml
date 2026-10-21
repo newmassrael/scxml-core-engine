@@ -7,6 +7,9 @@
   statechart that invoked the list. A change is refused whole, so a reason is the
   reason of the whole change:
 
+  - `none`: no change was refused. The list never tells it: it is the value a parent
+    holds the last refusal in before there was one (docs/adr/0052), since a statechart
+    variable of the enum always holds one of its variants;
   - `notWriter`: the copy's member may only read (record_list.role);
   - `noRoomForValue`: the values the copy would hold after the change pass the room the
     host gave it (record_list.room, `values`);
@@ -24,6 +27,7 @@
        version="1.0" sce:kind="enum" name="record_refusal" sce:underlying-type="uint8">
   <datamodel>
     <data id="variants">
+      <sce:variant name="none" value="0"/>
       <sce:variant name="notWriter" value="1"/>
       <sce:variant name="noRoomForValue" value="2"/>
       <sce:variant name="noRoomForHistory" value="3"/>

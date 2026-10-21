@@ -169,8 +169,9 @@
   each of them once. A parent may name a register itself by sending the list
   `record_list.announce`, to be told what it holds. A change of its own the list refuses
   is told too, once, after the command that ended it: `record_list.refused`
-  (record_refused) with the command at fault and why (record_refusal), so a parent never
-  takes a change nothing was written for as made (docs/adr/0046).
+  (record_refused) with the command at fault (record_command) and why (record_refusal),
+  so a parent never takes a change nothing was written for as made (docs/adr/0046,
+  docs/adr/0052).
 
   A list a host started has no parent, and `#_parent` names no session there: `announce`
   keeps the value its <data> gives it, false, and the list tells no one. The condition is
@@ -248,6 +249,7 @@
   <sce:import kind="event-schema" src="sce:std/shared/record_part.scxml" as="Part"/>
   <sce:import kind="event-schema" src="sce:std/shared/record_clear.scxml" as="Clear"/>
   <sce:import kind="event-schema" src="sce:std/shared/record_retire.scxml" as="Retire"/>
+  <sce:import kind="enum" src="sce:std/shared/record_command.scxml" as="Command"/>
   <sce:import kind="enum" src="sce:std/shared/record_refusal.scxml" as="Refusal"/>
   <sce:import kind="event-schema" src="sce:std/shared/record_refused.scxml" as="Refused"/>
   <datamodel>
@@ -376,13 +378,13 @@
     <data id="covered" sce:type="bool" expr="false"/>
     <!-- What a refused change is told to the parent as (record_list.refused): why the
          statement in hand would refuse it if it failed (`probe`), why it was refused
-         (`spoiledFor`), and the command at fault (`namedId`, `namedField`, `namedKind`,
-         the kind as record_part numbers a staged command). -->
+         (`spoiledFor`), and the command at fault (`namedId`, `namedField`, and
+         `namedKind`, the command it was). -->
     <data id="probe" sce:type="enum:Refusal" expr="Refusal.changeTooLarge"/>
     <data id="spoiledFor" sce:type="enum:Refusal" expr="Refusal.changeTooLarge"/>
     <data id="namedId" sce:type="uint32" expr="0"/>
     <data id="namedField" sce:type="uint16" expr="0"/>
-    <data id="namedKind" sce:type="uint8" expr="0"/>
+    <data id="namedKind" sce:type="enum:Command" expr="Command.edit"/>
     <!-- The operations to take in (`taking`, the next at `took`) and to send on
          (`passing`, the next at `passed`), each read by an event of its own that carries
          no data; the parts of changes not yet whole (`waiting`), and a list the parts
@@ -462,7 +464,7 @@
       <if cond="!spoiled">
         <assign location="namedId" expr="_event.data.id"/>
         <assign location="namedField" expr="_event.data.field"/>
-        <assign location="namedKind" expr="0"/>
+        <assign location="namedKind" expr="Command.edit"/>
         <assign location="probing" expr="true"/>
         <assign location="probe" expr="Refusal.textTooLong"/>
         <assign location="typed" expr="_event.data.text"/>
@@ -489,7 +491,7 @@
       <if cond="!spoiled">
         <assign location="namedId" expr="_event.data.id"/>
         <assign location="namedField" expr="_event.data.field"/>
-        <assign location="namedKind" expr="1"/>
+        <assign location="namedKind" expr="Command.clear"/>
         <assign location="probing" expr="true"/>
         <assign location="probe" expr="Refusal.changeTooLarge"/>
         <assign location="part.kind" expr="1"/>
@@ -514,7 +516,7 @@
       <if cond="!spoiled">
         <assign location="namedId" expr="_event.data.id"/>
         <assign location="namedField" expr="0"/>
-        <assign location="namedKind" expr="2"/>
+        <assign location="namedKind" expr="Command.retire"/>
         <assign location="probing" expr="true"/>
         <assign location="probe" expr="Refusal.changeTooLarge"/>
         <assign location="part.kind" expr="2"/>
@@ -573,7 +575,12 @@
               <assign location="spoiledFor" expr="Refusal.registerNamedTwice"/>
               <assign location="namedId" expr="later.id"/>
               <assign location="namedField" expr="later.field"/>
-              <assign location="namedKind" expr="later.kind"/>
+              <!-- Neither is a retire, so the second is an edit or a clear. -->
+              <if cond="later.kind === 1">
+                <assign location="namedKind" expr="Command.clear"/>
+              <else/>
+                <assign location="namedKind" expr="Command.edit"/>
+              </if>
             </if>
           </foreach>
         </foreach>

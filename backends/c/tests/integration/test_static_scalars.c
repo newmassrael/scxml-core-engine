@@ -2775,12 +2775,12 @@ STATIC_SCENARIO_UNROUTED(record_list)
     E(wallTime, wide_signed_digits)                                                                                    \
     N(counter)                                                                                                         \
     E(nodeId, wide_digits)
-// The last change the list refused: the command at fault, and the reason by the name
-// the enum record_refusal declares (docs/adr/0046).
+// The last change the list refused: the command at fault and the reason, each by the
+// name its enum declares, record_command and record_refusal (docs/adr/0046, docs/adr/0052).
 #define RECORD_LIST_REFUSED_FIELDS(N, E)                                                                               \
     N(id)                                                                                                              \
     N(field)                                                                                                           \
-    N(kind)                                                                                                            \
+    E(kind, record_command_declared_name)                                                                              \
     E(reason, record_refusal_declared_name)
 VARIABLE_READER(record_list_parent, told)
 VARIABLE_READER(record_list_parent, refusedCount)

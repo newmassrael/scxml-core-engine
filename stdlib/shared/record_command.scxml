@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/shared/record_command.scxml — the command of a change to a shared record list
+  (record_list, docs/adr/0046) that record_list.refused (record_refused) names as the
+  one at fault, by the event the list was given it as:
+
+  - `edit`: record_list.edit (record_edit), a value written to the register `id`,
+    `field`;
+  - `clear`: record_list.clear (record_clear), the register written over and given
+    nothing;
+  - `retire`: record_list.retire (record_retire), every register of the row `id`
+    written over.
+
+  The numbers are the ones the list numbers a staged command by (record_part's `kind`),
+  so `Command.fromNumber` of a staged command's kind is the command it is.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="enum" name="record_command" sce:underlying-type="uint8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="edit" value="0"/>
+      <sce:variant name="clear" value="1"/>
+      <sce:variant name="retire" value="2"/>
+    </data>
+  </datamodel>
+</scxml>
