@@ -5751,18 +5751,28 @@ mod invoke_identifiers {
         assert_eq!(invoke_identifier("invokedChild", false), "0zinvokedzuchild");
     }
 
+    /// A case a backend writes a name in: what it is called, and the filter
+    /// that writes it.
+    type Spelling = (&'static str, fn(String) -> String);
+
+    /// Every case a backend writes a name built from an identifier in.
+    const SPELLINGS: [Spelling; 6] = [
+        ("as derived", as_derived),
+        ("snake", filters::to_snake_case),
+        ("upper snake", filters::to_upper_snake_case),
+        ("Pascal", filters::to_pascal_case),
+        ("camel", filters::to_camel_case),
+        ("Python constant", filters::to_python_const),
+    ];
+
+    fn as_derived(name: String) -> String {
+        name
+    }
+
     #[test]
     fn distinct_ids_have_distinct_identifiers_in_every_case() {
         let identifiers = every_identifier();
-        let spellings: [(&str, fn(String) -> String); 6] = [
-            ("as derived", |s| s),
-            ("snake", filters::to_snake_case),
-            ("upper snake", filters::to_upper_snake_case),
-            ("Pascal", filters::to_pascal_case),
-            ("camel", filters::to_camel_case),
-            ("Python constant", filters::to_python_const),
-        ];
-        for (case, spell) in spellings {
+        for (case, spell) in SPELLINGS {
             let mut seen = std::collections::BTreeMap::new();
             for (id, identifier) in WRITTEN
                 .iter()
