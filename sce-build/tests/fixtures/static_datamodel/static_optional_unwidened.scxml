@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Saving and
+  restoring"; docs/adr/0055, section 6): `static_optional.scxml` before its
+  values were widened. The same states and the same variables in the same order,
+  each optional value of it here of the type a present value of it is (`int64`,
+  `string`, `enum:Status`, a record of `schema_due_unwidened.scxml`), so the two
+  machines have one saved shape: a saved shape names an optional value by the
+  type its present value is.
+
+  A state this machine saves restores into `static_optional` with every value
+  present, and a state `static_optional` saved holding an absent value is
+  refused here at the first one, naming it. `keep` adds the record `item` to the
+  list `items`, so a saved list of records holds a value too.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="tracking" datamodel="sce-static" name="static_optional_unwidened">
+  <sce:import kind="enum" src="enum_item_status.scxml" as="Status"/>
+  <sce:import kind="event-schema" src="schema_due_unwidened.scxml" as="Due"/>
+  <datamodel>
+    <data id="due" sce:type="int64" expr="12" sce:direction="out"/>
+    <data id="other" sce:type="int64" expr="7" sce:direction="out"/>
+    <data id="title" sce:type="string" sce:capacity="16" expr="'later'" sce:direction="out"/>
+    <data id="status" sce:type="enum:Status" expr="Status.in_progress" sce:direction="out"/>
+    <data id="item" sce:type="record:Due" sce:direction="out">
+      <sce:set name="id" expr="2"/>
+      <sce:set name="due" expr="3"/>
+      <sce:set name="title" expr="'first'"/>
+      <sce:set name="status" expr="Status.open"/>
+    </data>
+    <data id="items" sce:type="list&lt;record:Due&gt;" sce:capacity="3" sce:direction="out"/>
+    <data id="days" sce:type="int64" expr="0" sce:direction="out"/>
+    <data id="following" sce:type="int64" expr="0" sce:direction="out"/>
+    <data id="late" sce:type="bool" expr="false" sce:direction="out"/>
+    <data id="early" sce:type="bool" expr="false" sce:direction="out"/>
+    <data id="label" sce:type="string" sce:capacity="16" expr="''" sce:direction="out"/>
+    <data id="plain" sce:type="enum:Status" expr="Status.open" sce:direction="out"/>
+    <data id="kept" sce:type="int64" expr="0" sce:direction="out"/>
+    <data id="listed" sce:type="int64" expr="0" sce:direction="out"/>
+    <data id="missing" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="same" sce:type="bool" expr="false" sce:direction="out"/>
+    <data id="absent" sce:type="bool" expr="false" sce:direction="out"/>
+    <data id="statusDone" sce:type="bool" expr="false" sce:direction="out"/>
+    <data id="echoed" sce:type="int64" expr="0" sce:direction="out"/>
+    <data id="echoTitle" sce:type="string" sce:capacity="16" expr="'echo'" sce:direction="out"/>
+    <data id="echoStatus" sce:type="enum:Status" expr="Status.done" sce:direction="out"/>
+    <data id="fallbacks" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="errors" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="huge" sce:type="int64" expr="4294967296"/>
+  </datamodel>
+  <state id="tracking">
+    <transition event="keep" type="internal">
+      <sce:append target="items" expr="item"/>
+    </transition>
+    <transition event="finish" target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>

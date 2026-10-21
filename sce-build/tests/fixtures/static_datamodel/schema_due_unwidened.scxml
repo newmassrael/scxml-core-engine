@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  `schema_due.scxml` before its fields were widened (docs/adr/0055, section 6):
+  the same fields, each of the type a present value of it is. The record
+  `static_optional_unwidened.scxml` holds, so a state that machine saves is a
+  state saved before the widening, which `static_optional.scxml` restores with
+  every value present. A saved shape names a record's fields and not the event
+  its schema declares, so the event is a name of its own.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="schema_due_unwidened"
+       sce:event-name="due.unwidened">
+  <sce:import src="enum_item_status.scxml" kind="enum" as="Status"/>
+  <datamodel>
+    <data id="id" sce:type="uint32" sce:direction="in"/>
+    <data id="due" sce:type="int64" sce:direction="in"/>
+    <data id="title" sce:type="string" sce:max-size="16" sce:direction="in"/>
+    <data id="status" sce:type="enum:Status" sce:direction="in"/>
+  </datamodel>
+</scxml>

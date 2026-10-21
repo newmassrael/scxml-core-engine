@@ -3,7 +3,7 @@
 - Status: Accepted (2026-10-21). The owner decided every question the proposal left open ("The
   owner's answers", below), under the standing rule: the most long-term correct structure, cost
   ignored; never a sentinel number and never a companion flag that admits impossible states. Steps
-  1 to 4 are implemented; the others follow in the order section 9 gives. Section 8 and step 12 amended the
+  1 to 6 are implemented; the others follow in the order section 9 gives. Section 8 and step 12 amended the
   same day by that rule: a codec document declares its format, and format 1 is refused for good.
 - Date: 2026-10-21
 - Amends: ADR 0044 decisions 1 and 3 (a revision may widen a field from `T` to `optional<T>`);
@@ -666,14 +666,31 @@ documents, not observed from a backend.
    where a variable or a field takes them, they are the walk's). A payload's optional text
    is the buffer of its `sce:max-size`, as a record's field is, so one taken whole is one
    type; an optional text with no `sce:max-size` is refused on C11.
-6. **The saved state (Rust, Kotlin).** `null` in the two saved-state schemas; the shape type;
-   the per-value check of a `null`; `saved/static_optional.json` and
+6. **The saved state (Rust, Kotlin)** (implemented). `null` in the two saved-state schemas; the
+   shape type; the per-value check of a `null`; `saved/static_optional.json` and
    `saved/format1/static_optional.json` (one absent and one present value of each element),
    validated by `sce-build/tests/saved_state_schema.rs` and restored by each backend's saved-state
    tests; a state of a machine whose variable is `int64` restored into the machine widened to
    `optional<int64>` (restores, present), and a state holding `null` restored into the machine of
    `int64` (refused, naming the variable); a test that the shape of a widened machine is the shape
    of the unwidened one, and that `int64` to `int32` still moves it.
+   As built, the Rust and Kotlin backends are the two that save; Go, C++ and C11 declare the
+   format-2 shape only, which now names a machine that holds an optional value too. The shared
+   walk spells a variable by its shape type (`static_lowering::shape_type`, a field already by its
+   present type), so `a_tree_can_hold` no longer refuses a machine that holds an optional value.
+   Rust saves one through `SavedValue for Option<T>` and, for a text or a byte string held to a
+   bound, `saved_state::optional` and `optional_to_saved`; Kotlin through `SavedValues.optional`,
+   a record's own `toSaved` / `fromSaved` included. The per-value check is each runtime's reader of
+   `T`: a `null` where the restoring build's type is `T` is refused as "'<variable>' is absent
+   (null), and its type is not optional", a record's field named `<variable>.<field>`. The machine
+   before the widening is `static_optional_unwidened.scxml` (over `schema_due_unwidened.scxml`):
+   the states and variables of `static_optional.scxml`, each optional value of its present type.
+   Tests: `a_widening_to_an_optional_value_keeps_the_saved_shape` in `static_lowering`; the
+   runtime's `a_value_that_may_be_absent_is_saved_as_null_or_its_present_value` and
+   `a_saved_null_is_refused_where_the_type_is_not_optional`; the `static_optional` section of
+   `backends/rust/tests/tests/static_datamodel.rs` and of the Kotlin `StaticDatamodelTest`; and
+   `an_absent_value_is_null_in_both_formats` in `saved_state_schema.rs`. The scenario replays
+   on Rust and Kotlin read the machine back through its saved state again.
 7. **Widening across revisions.** `sce:optional-since` in the grammar, the forge roster of known
    names, the reader and the rendering; the amended `divergence` and its `Redeclared` reason; the
    shape type in the per-revision digests; the restore refusing `null` saved at a revision before

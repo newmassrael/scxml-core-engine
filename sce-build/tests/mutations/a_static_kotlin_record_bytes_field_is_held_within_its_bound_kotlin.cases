@@ -37,8 +37,8 @@ PY
 
 mutation_case "a saved record's bytes are read back unbounded" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
-     "                    (SceType::Bytes, Some(bound)) => {\n                        format!(\"{name} = SavedValues.bytes(",
-     "                    (SceType::Bytes, Some(bound)) if false => {\n                        format!(\"{name} = SavedValues.bytes(")
+     "                        (SceType::Bytes, Some(bound)) => {\n                            format!(\"SavedValues.bytes(",
+     "                        (SceType::Bytes, Some(bound)) if false => {\n                            format!(\"SavedValues.bytes(")
 PY
 
 mutation_case "a record is handed to a host with the machine's own array" <<'PY'

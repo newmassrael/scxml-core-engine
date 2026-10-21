@@ -282,8 +282,12 @@ class {{ machine_name }}StateMachine(
 {% if static_saved_shape %}
 
     // ── SCE Accepted Subset §2.15: saving this machine, restoring it ─────────
-{% macro saved_write(kind, type, name) -%}
-{%- if kind == "record" or kind == "enum" -%}
+{% macro saved_write(kind, type, name, elem) -%}
+{%- if kind == "optional" and elem == "enum" -%}
+SavedValues.optional({{ name }}) { it.toSaved() }
+{%- elif kind == "optional" -%}
+SavedValues.optional({{ name }}) { SavedValues.of(it) }
+{%- elif kind == "record" or kind == "enum" -%}
 {{ name }}.toSaved()
 {%- elif kind == "list" -%}
 SavedValues.list({{ name }}) { SavedValues.of(it) }
@@ -293,8 +297,16 @@ SavedValues.list({{ name }}) { it.toSaved() }
 SavedValues.of({{ name }})
 {%- endif -%}
 {%- endmacro %}
-{% macro saved_read(kind, type, value, what, bound) -%}
-{%- if kind == "record" or kind == "enum" -%}
+{% macro saved_read(kind, type, value, what, bound, elem) -%}
+{%- if kind == "optional" and elem == "enum" -%}
+SavedValues.optional({{ value }}, {{ what }}) { e, w -> {{ type }}.fromSaved(e, w) }
+{%- elif kind == "optional" and type == "bytes" -%}
+SavedValues.optional({{ value }}, {{ what }}) { e, w -> SavedValues.bytes(e, w, {{ bound if bound is not none else "Int.MAX_VALUE" }}) }
+{%- elif kind == "optional" and type == "string" and bound is not none -%}
+SavedValues.optional({{ value }}, {{ what }}) { e, w -> SavedValues.string(e, w, {{ bound }}) }
+{%- elif kind == "optional" -%}
+SavedValues.optional({{ value }}, {{ what }}) { e, w -> SavedValues.{{ type }}(e, w) }
+{%- elif kind == "record" or kind == "enum" -%}
 {{ type }}.fromSaved({{ value }}, {{ what }})
 {%- elif kind == "list" -%}
 SavedValues.list({{ value }}, {{ what }}, {{ bound }}) { e, w -> SavedValues.{{ type }}(e, w) }
@@ -312,7 +324,11 @@ SavedValues.{{ type }}({{ value }}, {{ what }})
    `fromSaved`, emitted with the type by the static lowering). A per-type function here, named by
    prefixing the record's type, would reserve every variable name that prefix
    could match (`crate::reader_names` reads a template name as a pattern), and
-   did: `readBackProbe` lost its reader in every backend (2026-09-27). #}
+   did: `readBackProbe` lost its reader in every backend (2026-09-27).
+   An optional value (docs/adr/0055) is written as `null` or as its present
+   value, `elem` saying how that is held: by its own type for an enum, as a
+   scalar otherwise; and it is read back absent from `null` and otherwise as its
+   present value is, a text held to its bound. #}
 
     /**
      * What a saved state of this document is bound to: a state saved from a
@@ -381,7 +397,7 @@ SavedValues.{{ type }}({{ value }}, {{ what }})
         savedShape,
         linkedMapOf(
 {% for field in static_fields %}
-            "{{ field.id }}" to {{ saved_write(field.saved_kind, field.saved_type, field.name) }},
+            "{{ field.id }}" to {{ saved_write(field.saved_kind, field.saved_type, field.name, field.saved_elem) }},
 {% endfor %}
         ),
         wallNowMs,
@@ -411,7 +427,7 @@ SavedValues.{{ type }}({{ value }}, {{ what }})
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
 {% for field in static_fields %}
-        val saved{{ loop.index }} = {{ saved_read(field.saved_kind, field.saved_type, 'savedGrown.variable("' ~ field.id ~ '")', '"' ~ field.id ~ '"', field.bound) }}
+        val saved{{ loop.index }} = {{ saved_read(field.saved_kind, field.saved_type, 'savedGrown.variable("' ~ field.id ~ '")', '"' ~ field.id ~ '"', field.bound, field.saved_elem) }}
 {% endfor %}
 {% for field in static_fields %}
         {{ field.name }} = saved{{ loop.index }}

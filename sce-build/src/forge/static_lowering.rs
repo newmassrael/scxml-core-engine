@@ -62,13 +62,21 @@ pub struct StaticField {
     /// UTF-8 bytes: the machine never holds more, so neither may a restored
     /// value.
     pub bound: Option<u32>,
-    /// How a saved state holds the value: `scalar`, `list` or `record`.
+    /// How a saved state holds the value: `scalar`, `enum`, `list`, `record`,
+    /// `record_list`, or `optional` for a value that may be absent, which a
+    /// saved state holds as `null` or as its present value (docs/adr/0055).
     pub saved_kind: &'static str,
     /// What [`Self::saved_kind`] is of: a scalar's or a list element's
-    /// `sce:type` spelling (`uint8`, `bool`, `bytes`, …), or a record's
-    /// backend type. A backend without overloading on type reads each value
-    /// with the function this names.
+    /// `sce:type` spelling (`uint8`, `bool`, `bytes`, …), or a record's or an
+    /// enum's backend type; for an optional value, what its present value is
+    /// of, by the same rule. A backend without overloading on type reads each
+    /// value with the function this names.
     pub saved_type: String,
+    /// For an optional value, how a saved state holds its present value:
+    /// `scalar`, or `enum` for a value of an enum the machine declares, which is
+    /// written and read by its own type as a variable of the enum is
+    /// ([`Self::saved_type`] is then that type). `None` for every other kind.
+    pub saved_elem: Option<&'static str>,
     /// The name a host reads this field through when the field's own name is
     /// not it ([`StaticTarget::reader_name`]) — `None` for a name the backend
     /// cannot give a reader.
@@ -326,12 +334,17 @@ pub struct StaticRecordField {
     pub id: String,
     /// The backend identifier ([`StaticTarget::record_field`]).
     pub name: String,
-    /// The field's `sce:type` spelling (see [`StaticField::saved_type`]).
+    /// The field's `sce:type` spelling (see [`StaticField::saved_type`]); for an
+    /// optional field, its present value's.
     pub saved_type: String,
     /// The most UTF-8 bytes a `string` field holds, or the most bytes a `bytes`
     /// field does, which a saved state being restored is held to as the machine is
     /// (the `sce:max-size` its schema declares); `None` for a field that is neither.
     pub bound: Option<u32>,
+    /// Whether the field is optional (docs/adr/0055): a saved state holds it as
+    /// `null` or as its present value, which is read as [`Self::saved_type`]
+    /// and [`Self::bound`] say.
+    pub optional: bool,
 }
 
 /// An enum type a `sce-static` machine declares, as a saved state writes it:
@@ -1930,36 +1943,31 @@ impl StaticTarget for KotlinTarget {
             })
             .collect();
         let bytes_members = self.record_bytes_members(ty, schema);
-        // A record with an optional field is held only by a machine that has no
-        // saved state before step 6 of docs/adr/0055 (`holds_an_optional_value`),
-        // so it has no saved form to write or read.
-        if schema.first_optional_field().is_some() {
-            return format!(
-                "/** SCE Accepted Subset §2.15: a `record:{alias}` datamodel value. */\n\
-                 data class {ty}({params}){body}",
-                params = params.join(", "),
-                body = if bytes_members.is_empty() {
-                    String::new()
-                } else {
-                    format!(" {{{bytes_members}}}")
-                }
-            );
-        }
         // Its saved form (`com.sce.runtime.SavedValues`) lives on the type: an
         // object of the schema's fields keyed by their ids. Fixed member names
         // rather than per-type functions on the machine, whose name pattern
         // would reserve every variable name it could match
-        // (`crate::reader_names`).
+        // (`crate::reader_names`). An optional field is written as `null` or as
+        // its present value, and read back absent from `null` and otherwise as
+        // its present value is (docs/adr/0055, section 4).
         let writes: Vec<String> = schema
             .fields
             .iter()
             .map(|field| {
                 let member = self.record_field(&field.id);
-                match field.sce_type.present_type() {
-                    // An enum is saved by its own type, as a variable of it is.
-                    SceType::Enum(_) => format!("\"{}\" to {member}.toSaved()", field.id),
-                    _ => format!("\"{}\" to SavedValues.of({member})", field.id),
-                }
+                // A present value: an enum is saved by its own type, as a
+                // variable of it is.
+                let write = |value: &str| match field.sce_type.present_type() {
+                    SceType::Enum(_) => format!("{value}.toSaved()"),
+                    _ => format!("SavedValues.of({value})"),
+                };
+                let saved = match &field.sce_type {
+                    FieldType::Optional { .. } => {
+                        format!("SavedValues.optional({member}) {{ {} }}", write("it"))
+                    }
+                    FieldType::Scalar(_) => write(&member),
+                };
+                format!("\"{}\" to {saved}", field.id)
             })
             .collect();
         let reads: Vec<String> = schema
@@ -1968,25 +1976,33 @@ impl StaticTarget for KotlinTarget {
             .map(|field| {
                 let name = self.record_field(&field.id);
                 let id = &field.id;
+                // A present value `saved`, named `what` in a refusal.
+                let read =
+                    |saved: &str, what: &str| match (field.sce_type.present_type(), field.max_size)
+                    {
+                        (SceType::Enum(reference), _) => format!(
+                            "{}.fromSaved({saved}, {what})",
+                            enum_types[&reference.alias]
+                        ),
+                        // A string is read back only if it fits the bound the
+                        // schema declares, as a string variable's is.
+                        (SceType::String, Some(bound)) => {
+                            format!("SavedValues.string({saved}, {what}, {bound})")
+                        }
+                        // ... and so is a byte string, in bytes.
+                        (SceType::Bytes, Some(bound)) => {
+                            format!("SavedValues.bytes({saved}, {what}, {bound})")
+                        }
+                        (other, _) => format!("SavedValues.{}({saved}, {what})", other.as_attr()),
+                    };
                 let saved = format!("SavedValues.field(value, what, \"{id}\")");
-                match (field.sce_type.present_type(), field.max_size) {
-                    (SceType::Enum(reference), _) => format!(
-                        "{name} = {}.fromSaved({saved}, \"$what.{id}\")",
-                        enum_types[&reference.alias]
+                let what = format!("\"$what.{id}\"");
+                match &field.sce_type {
+                    FieldType::Optional { .. } => format!(
+                        "{name} = SavedValues.optional({saved}, {what}) {{ e, w -> {} }}",
+                        read("e", "w")
                     ),
-                    // A string is read back only if it fits the bound the
-                    // schema declares, as a string variable's is.
-                    (SceType::String, Some(bound)) => {
-                        format!("{name} = SavedValues.string({saved}, \"$what.{id}\", {bound})")
-                    }
-                    // ... and so is a byte string, in bytes.
-                    (SceType::Bytes, Some(bound)) => {
-                        format!("{name} = SavedValues.bytes({saved}, \"$what.{id}\", {bound})")
-                    }
-                    (other, _) => format!(
-                        "{name} = SavedValues.{}({saved}, \"$what.{id}\")",
-                        other.as_attr()
-                    ),
+                    FieldType::Scalar(_) => format!("{name} = {}", read(&saved, &what)),
                 }
             })
             .collect();
@@ -3741,6 +3757,7 @@ pub fn lower(
                     read: None,
                     bound: None,
                     saved_kind: "record",
+                    saved_elem: None,
                     reader: None,
                     holds_bytes: holds_bytes(schema),
                 });
@@ -3796,6 +3813,7 @@ pub fn lower(
                     bound: var.capacity,
                     saved_kind,
                     saved_type,
+                    saved_elem: None,
                     reader: None,
                     holds_bytes: holds,
                 });
@@ -3843,12 +3861,21 @@ pub fn lower(
                     view: None,
                     read: None,
                     bound: place.bound,
-                    // No saved state holds an optional value before step 6 of
-                    // the ADR ([`holds_an_optional_value`]); the kind names it
-                    // apart from a scalar, which a child's `<param>` seeds and
-                    // an optional value it does not.
+                    // A saved state holds it as `null` or as its present value
+                    // (docs/adr/0055, section 4); the kind names it apart from a
+                    // scalar, which a child's `<param>` seeds and an optional
+                    // value it does not.
                     saved_kind: "optional",
-                    saved_type: place.elem.as_attr(),
+                    // A present value of an enum is saved by the machine's own
+                    // type for it, as a variable of the enum is.
+                    saved_type: match &place.elem {
+                        SceType::Enum(_) => place.present.clone(),
+                        other => other.as_attr(),
+                    },
+                    saved_elem: Some(match place.elem {
+                        SceType::Enum(_) => "enum",
+                        _ => "scalar",
+                    }),
                     reader: None,
                     holds_bytes: false,
                 });
@@ -3890,6 +3917,7 @@ pub fn lower(
                     read: None,
                     bound: None,
                     saved_kind: "enum",
+                    saved_elem: None,
                     reader: None,
                     holds_bytes: false,
                 });
@@ -3932,6 +3960,7 @@ pub fn lower(
                     .flatten(),
                 saved_kind: "scalar",
                 saved_type: ty.as_attr(),
+                saved_elem: None,
                 reader: None,
                 holds_bytes: false,
             });
@@ -4574,6 +4603,7 @@ impl<'t> TypeDeclarations<'t> {
                         )
                         .then_some(f.max_size)
                         .flatten(),
+                        optional: f.sce_type.optional_elem().is_some(),
                     })
                     .collect(),
             });
@@ -4775,14 +4805,20 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<SavedShape> {
         SavedEnumHolder,
     )> = Vec::new();
     for var in &scope.variables {
-        let ty = var
-            .value_type
-            .as_ref()
-            .map_or_else(String::new, |t| t.as_attr());
+        // A variable is named by its shape type, the type its present value is
+        // (docs/adr/0055, section 6): an optional value by the type inside it,
+        // so a variable widened from `T` to `optional<T>` keeps the shape, and
+        // whether a saved `null` may stand in it is the restoring build's to
+        // judge, value by value.
+        let shaped = var.value_type.as_ref().map(shape_type);
+        let ty = shaped.as_ref().map_or_else(
+            String::new,
+            crate::forge::model::AlgorithmValueType::as_attr,
+        );
         let bound = var
             .capacity
             .map_or_else(|| "-".to_string(), |c| c.to_string());
-        let scalar = var.value_type.as_ref().and_then(|t| t.scalar());
+        let scalar = shaped.as_ref().and_then(|t| t.scalar());
         let by_document = match scalar {
             Some(SceType::Enum(reference)) => {
                 enum_type_by_document(model.enum_documents.by_alias.get(&reference.alias), &ty)
@@ -4795,9 +4831,8 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<SavedShape> {
         );
         // A record's fields, whether it is the variable or the element of the
         // list the variable is: what a saved state names of it.
-        let own_record = var.value_type.as_ref().and_then(|t| t.record_alias());
-        let listed_record = var
-            .value_type
+        let own_record = shaped.as_ref().and_then(|t| t.record_alias());
+        let listed_record = shaped
             .as_ref()
             .and_then(|t| t.list_elem().and_then(|e| e.record_alias()));
         let record_alias = own_record.or(listed_record);
@@ -4887,6 +4922,27 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<SavedShape> {
         records: records.into_values().collect(),
         enums: enums.into_values().collect(),
     })
+}
+
+/// The shape type of `value_type` (docs/adr/0055, section 6): the type a
+/// present value of it is. An optional value's is the type inside it, and every
+/// other type's is the type itself, so a value widened from `T` to
+/// `optional<T>` is named in a shape as it was before.
+fn shape_type(
+    value_type: &crate::forge::model::AlgorithmValueType,
+) -> crate::forge::model::AlgorithmValueType {
+    use crate::forge::model::{AlgorithmValueType, OptionalElemType};
+    match value_type {
+        AlgorithmValueType::Optional {
+            elem: OptionalElemType::Scalar(present),
+        } => AlgorithmValueType::Scalar(present.clone()),
+        AlgorithmValueType::Optional {
+            elem: OptionalElemType::Record { alias },
+        } => AlgorithmValueType::Record {
+            alias: alias.clone(),
+        },
+        other => other.clone(),
+    }
 }
 
 /// The text of a document's shape, as each saved-state format names it
@@ -5120,7 +5176,6 @@ fn write_variants(text: &mut String, model: &SCXMLModel, alias: &str, holder: &s
 /// starts a document nobody judged, and answers no as well.
 pub(crate) fn a_tree_can_hold(model: &SCXMLModel) -> bool {
     model.datamodel == crate::model::Datamodel::SceStatic
-        && !holds_an_optional_value(model)
         && !invokes_what_a_restore_cannot_start(model)
         && !delays_a_send_to_another_session(model)
         && model
@@ -5137,12 +5192,9 @@ pub(crate) fn a_tree_can_hold(model: &SCXMLModel) -> bool {
 }
 
 /// Whether the document holds an optional value (docs/adr/0055): a variable of
-/// one, or a field of a schema it holds a record of or reads a payload by. A
-/// saved state holds no optional value before step 6 of the ADR, which writes
-/// `null` into the saved-state schemas and spells an optional value by its shape
-/// type; until then such a machine is one a saved state cannot hold
-/// ([`a_tree_can_hold`]), the same answer on every backend, and is generated
-/// without the save API rather than with one that could not write its values.
+/// one, or a field of a schema it holds a record of or reads a payload by — the
+/// machine whose unit imports the target's optional type, on a target that
+/// imports it by a line of its own.
 fn holds_an_optional_value(model: &SCXMLModel) -> bool {
     let optional_variable = model
         .variables
@@ -11579,11 +11631,13 @@ mod tests {
   <final id="done"/>
 </scxml>"#;
 
-    /// A machine that holds an optional value is one a saved state cannot hold
-    /// before step 6 of docs/adr/0055, on every backend alike, so it declares no
-    /// saved shape; the same machine with the variable of `T` can.
+    /// A machine that holds an optional value is one a saved state holds
+    /// (docs/adr/0055, step 6): it writes the value as `null` or as its present
+    /// value, so holding one takes nothing away from what a saved state holds,
+    /// and the machine declares a saved shape as the same machine without it
+    /// does.
     #[test]
-    fn a_machine_holding_an_optional_value_declares_no_saved_shape() {
+    fn a_machine_holding_an_optional_value_is_one_a_saved_state_holds() {
         let read = |document: &str| {
             let mut model = SCXMLParser::new()
                 .parse_string(document, "m")
@@ -11600,7 +11654,197 @@ mod tests {
         assert!(a_tree_can_hold(&read(COUNTER)));
         assert!(!holds_an_optional_value(&read(COUNTER)));
         assert!(holds_an_optional_value(&read(&optional)));
-        assert!(!a_tree_can_hold(&read(&optional)));
+        assert!(a_tree_can_hold(&read(&optional)));
+        assert!(shape(&optional).is_some(), "the machine declares a shape");
+    }
+
+    /// What a saved state is bound to for the machine of [`marked`].
+    fn marked_shape(variables: &str, fields: &str) -> SavedShape {
+        let (_dir, mut model) = marked(variables, fields);
+        lower_rust(&mut model, "M")
+            .expect("lowers")
+            .saved_shape
+            .expect("a machine of values has a shape")
+    }
+
+    /// A machine whose `<datamodel>` rows are `variables`, beside
+    /// `schema_mark.scxml`, whose rows are `fields`, and `enum_level.scxml`; the
+    /// machine imports the two as `Mark` and `Level`, and the schema the enum as
+    /// `Level`. Read and analysed, with the directory that holds the three.
+    fn marked(variables: &str, fields: &str) -> (tempfile::TempDir, SCXMLModel) {
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        std::fs::write(
+            dir.path().join("enum_level.scxml"),
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="enum" name="level" sce:underlying-type="uint8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="low" value="0"/>
+      <sce:variant name="high" value="1"/>
+    </data>
+  </datamodel>
+</scxml>"#,
+        )
+        .expect("the enum");
+        std::fs::write(
+            dir.path().join("schema_mark.scxml"),
+            format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="schema_mark" sce:event-name="mark.set">
+  <sce:import src="enum_level.scxml" kind="enum" as="Level"/>
+  <datamodel>
+    {fields}
+  </datamodel>
+</scxml>"#
+            ),
+        )
+        .expect("the schema");
+        let statechart = format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="m">
+  <sce:import kind="event-schema" src="schema_mark.scxml" as="Mark"/>
+  <sce:import kind="enum" src="enum_level.scxml" as="Level"/>
+  <datamodel>
+    {variables}
+  </datamodel>
+  <state id="idle"/>
+</scxml>"#
+        );
+        let path = dir.path().join("m.scxml");
+        std::fs::write(&path, statechart).expect("the statechart");
+        let mut model = SCXMLParser::new()
+            .parse_file(path.to_str().expect("a UTF-8 path"))
+            .expect("parses");
+        crate::analyzer::analyze(&mut model, "m.scxml");
+        (dir, model)
+    }
+
+    /// The rows of [`marked_shape`]'s machine with each scalar variable of
+    /// `number`, `string` and `enum:Level` written by `wrap` (the type itself,
+    /// or the optional type over it), and its record and list of records.
+    fn marked_variables(wrap: impl Fn(&str) -> String) -> String {
+        format!(
+            r#"<data id="due" sce:type="{}" expr="0"/>
+    <data id="title" sce:type="{}" sce:capacity="8" expr="'first'"/>
+    <data id="level" sce:type="{}" expr="Level.low"/>
+    <data id="last" sce:type="record:Mark"><sce:set name="due" expr="0"/><sce:set name="level" expr="Level.high"/></data>
+    <data id="seen" sce:type="list&lt;record:Mark&gt;" sce:capacity="2"/>"#,
+            wrap("int64"),
+            wrap("string"),
+            wrap("enum:Level")
+        )
+    }
+
+    /// The rows of [`marked_shape`]'s schema, each field's type written by
+    /// `wrap`.
+    fn marked_fields(wrap: impl Fn(&str) -> String) -> String {
+        format!(
+            r#"<data id="due" sce:type="{}" sce:direction="in"/>
+    <data id="level" sce:type="{}" sce:direction="in"/>"#,
+            wrap("int64"),
+            wrap("enum:Level")
+        )
+    }
+
+    /// docs/adr/0055, section 6 (the owner's answer 6): a saved shape names an
+    /// optional value by the type its present value is, so a variable, a
+    /// record's field and a field of a list's record widened from `T` to
+    /// `optional<T>` keep the shape in both formats, the enums the state holds
+    /// and where, and the records; any other change of type still moves it.
+    #[test]
+    fn a_widening_to_an_optional_value_keeps_the_saved_shape() {
+        let plain = |t: &str| t.to_string();
+        let optional = |t: &str| format!("optional&lt;{t}&gt;");
+        let before = marked_shape(&marked_variables(plain), &marked_fields(plain));
+        let widened = marked_shape(&marked_variables(optional), &marked_fields(optional));
+        assert_eq!(widened.first, before.first);
+        assert_eq!(widened.revised, before.revised);
+        assert_eq!(widened.format2_first, before.format2_first);
+        assert_eq!(widened.format2_revised, before.format2_revised);
+        // What `revisions` and the restore read of each enum and record: the
+        // same holders, so a value is judged where it was before.
+        let json = |shape: &SavedShape| {
+            (
+                serde_json::to_value(&shape.enums).expect("the enums serialise"),
+                serde_json::to_value(&shape.records).expect("the records serialise"),
+            )
+        };
+        assert_eq!(json(&widened), json(&before));
+        // The variables alone, and the fields alone, each keep it too.
+        assert_eq!(
+            marked_shape(&marked_variables(optional), &marked_fields(plain)).first,
+            before.first
+        );
+        assert_eq!(
+            marked_shape(&marked_variables(plain), &marked_fields(optional)).first,
+            before.first
+        );
+        // Another type is another shape, widened or not: a variable or a
+        // field of `int64` taken to `int32`.
+        let narrower = |t: &str| t.replace("int64", "int32");
+        let renumbered = marked_shape(&marked_variables(narrower), &marked_fields(plain));
+        assert_ne!(renumbered.first, before.first);
+        assert_ne!(renumbered.format2_first, before.format2_first);
+        let renumbered_optional = |t: &str| optional(&narrower(t));
+        assert_ne!(
+            marked_shape(
+                &marked_variables(renumbered_optional),
+                &marked_fields(plain)
+            )
+            .first,
+            before.first
+        );
+        assert_ne!(
+            marked_shape(&marked_variables(plain), &marked_fields(narrower)).first,
+            before.first
+        );
+    }
+
+    /// What a backend's template saves an optional variable with
+    /// (docs/adr/0055, step 6): a present value of an enum by the machine's own
+    /// type for it, as a variable of the enum is, and every other one as the
+    /// scalar its `sce:type` names, a text with its bound; and a record's
+    /// optional field is marked so.
+    #[test]
+    fn an_optional_variable_says_how_its_present_value_is_saved() {
+        let optional = |t: &str| format!("optional&lt;{t}&gt;");
+        let (_dir, mut model) = marked(&marked_variables(optional), &marked_fields(optional));
+        let lowered = lower_kotlin(&mut model, "M").expect("Kotlin lowers optional values");
+        let field = |id: &str| {
+            lowered
+                .fields
+                .iter()
+                .find(|f| f.id == id)
+                .unwrap_or_else(|| panic!("a field `{id}`"))
+        };
+        let saved = |id: &str| {
+            let f = field(id);
+            (f.saved_kind, f.saved_type.as_str(), f.saved_elem, f.bound)
+        };
+        assert_eq!(saved("due"), ("optional", "int64", Some("scalar"), None));
+        assert_eq!(
+            saved("title"),
+            ("optional", "string", Some("scalar"), Some(8))
+        );
+        assert_eq!(
+            saved("level"),
+            ("optional", "MLevelEnum", Some("enum"), None)
+        );
+        assert_eq!(saved("last"), ("record", "MMarkRecord", None, None));
+        let record = lowered
+            .records
+            .iter()
+            .find(|r| r.ty == "MMarkRecord")
+            .expect("the record type");
+        let optional_fields: Vec<(&str, bool)> = record
+            .fields
+            .iter()
+            .map(|f| (f.id.as_str(), f.optional))
+            .collect();
+        assert_eq!(optional_fields, [("due", true), ("level", true)]);
     }
 
     /// Go holds an optional value in `optional.Of[T]` and writes the whole value
@@ -11650,8 +11894,8 @@ mod tests {
         assert_eq!(field("title").ty, "optional.Of[string]");
         assert_eq!(field("title").saved_kind, "optional");
         assert!(
-            lowered.saved_shape.is_none(),
-            "no saved shape before step 6"
+            lowered.saved_shape.is_some(),
+            "a saved state holds an optional value (docs/adr/0055, step 6)"
         );
         assert!(
             lowered.imports.contains(&format!(
@@ -11736,8 +11980,8 @@ mod tests {
         assert_eq!(field("title").ty, "Optional[str]");
         assert_eq!(field("title").saved_kind, "optional");
         assert!(
-            lowered.saved_shape.is_none(),
-            "no saved shape before step 6"
+            lowered.saved_shape.is_some(),
+            "a saved state holds an optional value (docs/adr/0055, step 6)"
         );
         let state = model.states.get("s").expect("the state");
         let read = &state.transitions[0].actions[0];
@@ -11812,9 +12056,14 @@ mod tests {
         assert_eq!(field("other").init, "7");
         assert_eq!(field("title").ty, "String?");
         assert_eq!(field("title").saved_kind, "optional");
+        // What the template reads the present value with.
+        assert_eq!(field("title").saved_type, "string");
+        assert_eq!(field("title").saved_elem, Some("scalar"));
+        assert_eq!(field("title").bound, Some(4));
+        assert_eq!(field("days").saved_elem, None);
         assert!(
-            lowered.saved_shape.is_none(),
-            "no saved shape before step 6"
+            lowered.saved_shape.is_some(),
+            "a saved state holds an optional value (docs/adr/0055, step 6)"
         );
         let state = model.states.get("s").expect("the state");
         let read = &state.transitions[0].actions[0];
@@ -11841,11 +12090,12 @@ mod tests {
         assert_eq!(write[2].native_code, "vOther = vDue");
     }
 
-    /// A record whose schema has an optional field holds it as `T?`, and has no
-    /// saved form: a machine that holds one has no saved state before step 6 of
-    /// docs/adr/0055.
+    /// A record whose schema has an optional field holds it as `T?`, and saves
+    /// it as `null` or as its present value, read back absent from `null` and
+    /// otherwise as a present value of the field is, a text held to its bound
+    /// (docs/adr/0055, step 6).
     #[test]
-    fn a_kotlin_record_with_an_optional_field_holds_it_nullable_and_saves_nothing() {
+    fn a_kotlin_record_with_an_optional_field_holds_it_nullable_and_saves_it() {
         let dir = tempfile::tempdir().expect("a temporary directory");
         std::fs::write(
             dir.path().join("schema_due.scxml"),
@@ -11855,6 +12105,7 @@ mod tests {
   <datamodel>
     <data id="id" sce:type="uint32" sce:direction="in"/>
     <data id="due" sce:type="optional&lt;int64&gt;" sce:direction="in"/>
+    <data id="title" sce:type="optional&lt;string&gt;" sce:max-size="8" sce:direction="in"/>
   </datamodel>
 </scxml>"#,
         )
@@ -11870,6 +12121,7 @@ mod tests {
     <data id="item" sce:type="record:Due">
       <sce:set name="id" expr="0"/>
       <sce:set name="due" expr="null"/>
+      <sce:set name="title" expr="null"/>
     </data>
   </datamodel>
   <state id="s">
@@ -11891,17 +12143,50 @@ mod tests {
             .find(|def| def.contains("data class MDueRecord("))
             .unwrap_or_else(|| panic!("the record's class in {:?}", lowered.type_defs));
         assert!(
-            def.contains("data class MDueRecord(val id: UInt, val due: Long?)"),
+            def.contains("data class MDueRecord(val id: UInt, val due: Long?, val title: String?)"),
             "{def}"
         );
-        assert!(!def.contains("toSaved"), "{def}");
-        assert!(!def.contains("fromSaved"), "{def}");
+        // Written: a field of `T` as it always was, an optional one as `null` or
+        // its present value.
+        assert!(
+            def.contains(
+                "fun toSaved(): Any = linkedMapOf(\"id\" to SavedValues.of(id), \
+                 \"due\" to SavedValues.optional(due) { SavedValues.of(it) }, \
+                 \"title\" to SavedValues.optional(title) { SavedValues.of(it) })"
+            ),
+            "{def}"
+        );
+        // Read: the present value by the reader of its type, the text held to
+        // the schema's bound.
+        assert!(
+            def.contains(
+                "due = SavedValues.optional(SavedValues.field(value, what, \"due\"), \"$what.due\") \
+                 { e, w -> SavedValues.int64(e, w) }"
+            ),
+            "{def}"
+        );
+        assert!(
+            def.contains(
+                "title = SavedValues.optional(SavedValues.field(value, what, \"title\"), \
+                 \"$what.title\") { e, w -> SavedValues.string(e, w, 8) }"
+            ),
+            "{def}"
+        );
+        assert!(
+            def.contains(
+                "id = SavedValues.uint32(SavedValues.field(value, what, \"id\"), \"$what.id\")"
+            ),
+            "{def}"
+        );
         let item = lowered
             .fields
             .iter()
             .find(|f| f.id == "item")
             .expect("the record variable");
-        assert_eq!(item.init, "MDueRecord(id = 0.toUInt(), due = null)");
+        assert_eq!(
+            item.init,
+            "MDueRecord(id = 0.toUInt(), due = null, title = null)"
+        );
         let clear = &model.states.get("s").expect("the state").transitions[0].actions[0];
         assert_eq!(clear.native_code, "vItem = vItem.copy(due = null)");
     }
@@ -11954,8 +12239,8 @@ mod tests {
         assert_eq!(field("title").ty, "Option<String>");
         assert_eq!(field("title").saved_kind, "optional");
         assert!(
-            lowered.saved_shape.is_none(),
-            "no saved shape before step 6"
+            lowered.saved_shape.is_some(),
+            "a saved state holds an optional value (docs/adr/0055, step 6)"
         );
         let state = model.states.get("s").expect("the state");
         let read = &state.transitions[0].actions[0];
@@ -13208,8 +13493,8 @@ mod tests {
         assert_eq!(field("other").init, "std::optional<int64_t>(7)");
         assert_eq!(field("title").ty, "std::optional<std::string>");
         assert!(
-            lowered.saved_shape.is_none(),
-            "no saved shape before step 6"
+            lowered.saved_shape.is_some(),
+            "a saved state holds an optional value (docs/adr/0055, step 6)"
         );
         let state = model.states.get("s").expect("the state");
         let read = &state.transitions[0].actions[0];

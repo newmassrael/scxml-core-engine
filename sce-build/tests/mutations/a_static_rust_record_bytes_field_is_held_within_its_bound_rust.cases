@@ -36,14 +36,14 @@ PY
 
 mutation_case "a saved record's bytes are read back unbounded" <<'PY'
 edit("tools/codegen/templates/rust/state_machine.rs.jinja2",
-     "{% if field.bound is not none and field.saved_type == \"bytes\" %}\n            {{ field.name }}: ::sce_rust_runtime::saved_state::record_bounded_bytes(",
-     "{% if false %}\n            {{ field.name }}: ::sce_rust_runtime::saved_state::record_bounded_bytes(")
+     "{% elif field.bound is not none and field.saved_type == \"bytes\" %}\n            {{ field.name }}: ::sce_rust_runtime::saved_state::record_bounded_bytes(",
+     "{% elif false %}\n            {{ field.name }}: ::sce_rust_runtime::saved_state::record_bounded_bytes(")
 PY
 
 mutation_case "a saved record's bytes are written as an array of numbers" <<'PY'
 edit("tools/codegen/templates/rust/state_machine.rs.jinja2",
-     "{% if field.saved_type == \"bytes\" %}\n            (\"{{ field.id }}\".to_string(), ::sce_rust_runtime::saved_state::bytes_to_saved(&self.",
-     "{% if false %}\n            (\"{{ field.id }}\".to_string(), ::sce_rust_runtime::saved_state::bytes_to_saved(&self.")
+     "{% elif field.saved_type == \"bytes\" %}\n            (\"{{ field.id }}\".to_string(), ::sce_rust_runtime::saved_state::bytes_to_saved(&self.",
+     "{% elif false %}\n            (\"{{ field.id }}\".to_string(), ::sce_rust_runtime::saved_state::bytes_to_saved(&self.")
 PY
 
 mutation_case "a saved record's bytes past the bound are read back" <<'PY'

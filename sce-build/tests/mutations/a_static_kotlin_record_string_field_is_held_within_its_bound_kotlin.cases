@@ -28,8 +28,8 @@ mutation_oracles backends/kotlin/tests/src/test/kotlin/com/sce/integration/Stati
 
 mutation_case "a saved record string is read back unbounded" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
-     "                    (SceType::String, Some(bound)) => {\n                        format!(\"{name} = SavedValues.string(",
-     "                    (SceType::String, Some(bound)) if false => {\n                        format!(\"{name} = SavedValues.string(")
+     "                        (SceType::String, Some(bound)) => {\n                            format!(\"SavedValues.string(",
+     "                        (SceType::String, Some(bound)) if false => {\n                            format!(\"SavedValues.string(")
 PY
 
 mutation_case "a record's string field is not held to its bound by an assignment" <<'PY'

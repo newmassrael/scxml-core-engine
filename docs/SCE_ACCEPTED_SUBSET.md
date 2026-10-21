@@ -5644,6 +5644,24 @@ re-parented or re-bounded refuses it. What the shape cannot see — a
 variable of the same name and type whose meaning changed — is the author's to
 avoid until a document can declare a migration.
 
+**A value that may be absent** (docs/adr/0055, section 6). A saved state holds
+an optional value as `null` where it is absent and as its present value writes
+itself otherwise, in a variable, a record's field and a record of a list alike
+(`null` is part of the `value` of both saved-state schemas). The shape names an
+optional value by its shape type, the type its present value is: `optional<int64>`
+is named as `int64` is, and an `optional<enum:Status>` with its variants as
+`enum:Status` is. So a variable or a record's field widened from `T` to
+`optional<T>` keeps the shape, and a state saved before the widening restores into
+the widened build with every value present. What the shape no longer says, the
+restore asks of each value by the restoring build's own types: a `null` is read
+only where the value is optional, and anywhere else the restore is refused,
+naming the variable or the record's field (`'due' is absent (null), and its type
+is not optional`), so a state saved after a widening restores into a build from
+before it only while every value it holds is present. Every other change of type
+still moves the shape. `static_optional.scxml`, and `static_optional_unwidened.scxml`
+— the same machine before the widening — hold this on Rust and Kotlin, with the
+shared instances `saved/static_optional.json` and `saved/format1/static_optional.json`.
+
 **A record schema that grew** (docs/adr/0044). A record variable's fields in the
 shape are those of its schema's FIRST revision, so adding a field to the schema
 a `record:` variable (or a list of records) is of, as "An event schema that

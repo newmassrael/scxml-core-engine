@@ -39,6 +39,13 @@ use sce_rust_tests::integration::static_datamodel::static_list_sm::{
     StaticListDayPickedPayload, StaticListInject, StaticListObserve, StaticListPersist,
     StaticListPolicy, StaticListState,
 };
+use sce_rust_tests::integration::static_datamodel::static_optional_sm::{
+    StaticOptionalDueRecord, StaticOptionalObserve, StaticOptionalPersist, StaticOptionalPolicy,
+    StaticOptionalStatusEnum,
+};
+use sce_rust_tests::integration::static_datamodel::static_optional_unwidened_sm::{
+    StaticOptionalUnwidenedPersist, StaticOptionalUnwidenedPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_overflow_sm::StaticOverflowPolicy;
 use sce_rust_tests::integration::static_datamodel::static_record_bytes_sm::{
     StaticRecordBytesPersist, StaticRecordBytesPolicy,
@@ -1669,4 +1676,174 @@ fn a_waiting_send_naming_an_event_the_document_lacks_is_refused() {
     ));
     assert!(refusal.reason().contains("pending[1]"), "{refusal}");
     assert!(refusal.reason().contains("warp"), "{refusal}");
+}
+
+// ── static_optional: values that may be absent (docs/adr/0055, step 6) ────
+
+const SHARED_OPTIONAL: &str = include_str!(
+    "../../../../sce-build/tests/fixtures/static_datamodel/saved/static_optional.json"
+);
+const FORMAT1_OPTIONAL: &str = include_str!(
+    "../../../../sce-build/tests/fixtures/static_datamodel/saved/format1/static_optional.json"
+);
+
+/// `static_optional` after the run its shared fixture is saved at: `due.set`
+/// with a day and no title or status, then with a title and a status and no
+/// day. Each element stands absent and present in its variables, in its record
+/// and in its list of records.
+fn optional_run() -> Engine<StaticOptionalPolicy> {
+    let mut engine =
+        Engine::new(StaticOptionalPolicy::new_with_session_id(ROOT).expect("an Nmtoken"));
+    engine.initialize();
+    for data in [
+        r#"{"id":1,"due":"12","title":null,"status":null}"#,
+        r#"{"id":2,"due":null,"title":"later","status":"in_progress"}"#,
+    ] {
+        engine.raise_external_by_name("due.set", data);
+        engine.step();
+    }
+    engine
+}
+
+/// The record each delivery of [`optional_run`] wrote, in order.
+fn optional_records() -> [StaticOptionalDueRecord; 2] {
+    [
+        StaticOptionalDueRecord {
+            id: 1,
+            due: Some(12),
+            title: None,
+            status: None,
+        },
+        StaticOptionalDueRecord {
+            id: 2,
+            due: None,
+            title: Some("later".to_string()),
+            status: Some(StaticOptionalStatusEnum::InProgress),
+        },
+    ]
+}
+
+#[test]
+fn a_value_that_may_be_absent_is_saved_as_null_or_as_its_present_value() {
+    // The same run the Kotlin suite makes, which writes the format-1 text.
+    let engine = optional_run();
+    assert_eq!(engine.snapshot().data.due, None);
+    assert_eq!(engine.snapshot().data.items, optional_records().to_vec());
+    assert_eq!(
+        engine.save().expect("saves").to_json(),
+        SHARED_OPTIONAL.trim()
+    );
+}
+
+#[test]
+fn a_saved_absent_value_is_restored_absent_and_a_present_one_present() {
+    for text in [SHARED_OPTIONAL, FORMAT1_OPTIONAL] {
+        let mut restored = Engine::<StaticOptionalPolicy>::restore(
+            StaticOptionalPolicy::new(),
+            &SavedState::from_json(text).expect("reads"),
+        )
+        .expect("restores");
+        let data = restored.snapshot().data;
+        assert_eq!(data.due, None);
+        assert_eq!(data.other, Some(7));
+        assert_eq!(data.title.as_deref(), Some("later"));
+        assert_eq!(data.status, Some(StaticOptionalStatusEnum::InProgress));
+        assert_eq!(data.echo_title, None);
+        assert_eq!(data.echo_status, None);
+        let [first, second] = optional_records();
+        assert_eq!(data.item, second);
+        assert_eq!(data.items, vec![first, second]);
+        // The restored machine carries on: `due.clear` takes `other`, `status`
+        // and the record's day to absent.
+        restored.raise_external_by_name("due.clear", "");
+        restored.step();
+        let data = restored.snapshot().data;
+        assert_eq!((data.other, data.status, data.item.due), (None, None, None));
+    }
+    // What was restored is saved as it was read.
+    let restored = Engine::<StaticOptionalPolicy>::restore(
+        StaticOptionalPolicy::new_with_session_id(ROOT).expect("an Nmtoken"),
+        &SavedState::from_json(SHARED_OPTIONAL).expect("reads"),
+    )
+    .expect("restores");
+    assert_eq!(
+        restored.save().expect("saves").to_json(),
+        SHARED_OPTIONAL.trim()
+    );
+}
+
+/// `static_optional_unwidened`, `static_optional` with each optional value of
+/// the type a present value of it is (docs/adr/0055, section 6), after `keep`
+/// put its record in its list.
+fn unwidened() -> Engine<StaticOptionalUnwidenedPolicy> {
+    let mut engine = Engine::new(StaticOptionalUnwidenedPolicy::new());
+    engine.initialize();
+    engine.raise_external_by_name("keep", "");
+    engine.step();
+    engine
+}
+
+#[test]
+fn a_widened_machine_has_the_shape_of_the_machine_before_the_widening() {
+    // A saved shape names an optional value by the type a present value of it
+    // is, in both formats, so the widening moved neither.
+    let before = <Engine<StaticOptionalUnwidenedPolicy> as StaticOptionalUnwidenedPersist>::SHAPE;
+    let widened = <Engine<StaticOptionalPolicy> as StaticOptionalPersist>::SHAPE;
+    assert_eq!(widened.first, before.first);
+    assert_eq!(widened.revised, before.revised);
+    assert_eq!(widened.format2_first, before.format2_first);
+    assert_eq!(widened.format2_revised, before.format2_revised);
+}
+
+#[test]
+fn a_state_saved_before_the_widening_restores_with_every_value_present() {
+    let saved = through_json(&unwidened().save().expect("saves"));
+    let widened = Engine::<StaticOptionalPolicy>::restore(StaticOptionalPolicy::new(), &saved)
+        .expect("a state saved before the widening restores");
+    let data = widened.snapshot().data;
+    assert_eq!(data.due, Some(12));
+    assert_eq!(data.other, Some(7));
+    assert_eq!(data.title.as_deref(), Some("later"));
+    assert_eq!(data.status, Some(StaticOptionalStatusEnum::InProgress));
+    assert_eq!(data.echo_title.as_deref(), Some("echo"));
+    assert_eq!(data.echo_status, Some(StaticOptionalStatusEnum::Done));
+    let item = StaticOptionalDueRecord {
+        id: 2,
+        due: Some(3),
+        title: Some("first".to_string()),
+        status: Some(StaticOptionalStatusEnum::Open),
+    };
+    assert_eq!(data.items, vec![item.clone()]);
+    assert_eq!(data.item, item);
+}
+
+#[test]
+fn a_saved_null_is_refused_where_the_restoring_type_is_not_optional() {
+    // A state saved after the widening, restored into the build from before
+    // it: refused at its first absent value, `due`, naming it, in both formats.
+    for text in [SHARED_OPTIONAL, FORMAT1_OPTIONAL] {
+        let refusal = refused(Engine::<StaticOptionalUnwidenedPolicy>::restore(
+            StaticOptionalUnwidenedPolicy::new(),
+            &SavedState::from_json(text).expect("reads"),
+        ));
+        assert!(
+            refusal.reason().contains("'due' is absent (null)"),
+            "{refusal}"
+        );
+    }
+    // ... and a record's field, in a state otherwise whole.
+    let whole = unwidened().save().expect("saves").to_json();
+    let text = whole.replace(
+        r#""item":{"id":2,"due":"3""#,
+        r#""item":{"id":2,"due":null"#,
+    );
+    assert_ne!(text, whole, "the record's field is written");
+    let refusal = refused(Engine::<StaticOptionalUnwidenedPolicy>::restore(
+        StaticOptionalUnwidenedPolicy::new(),
+        &SavedState::from_json(&text).expect("reads"),
+    ));
+    assert!(
+        refusal.reason().contains("'item.due' is absent (null)"),
+        "{refusal}"
+    );
 }

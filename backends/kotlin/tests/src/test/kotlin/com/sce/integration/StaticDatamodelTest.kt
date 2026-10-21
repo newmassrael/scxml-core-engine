@@ -36,6 +36,10 @@ import com.sce.integration.static_history.StaticHistoryState
 import com.sce.integration.static_history.StaticHistoryStateMachine
 import com.sce.integration.static_list.StaticListEvent
 import com.sce.integration.static_list.StaticListStateMachine
+import com.sce.integration.static_optional.StaticOptionalDueRecord
+import com.sce.integration.static_optional.StaticOptionalStateMachine
+import com.sce.integration.static_optional.StaticOptionalStatusEnum
+import com.sce.integration.static_optional_unwidened.StaticOptionalUnwidenedStateMachine
 import com.sce.integration.static_overflow.StaticOverflowEvent
 import com.sce.integration.static_overflow.StaticOverflowState
 import com.sce.integration.static_overflow.StaticOverflowStateMachine
@@ -1640,6 +1644,157 @@ class StaticDatamodelTest {
             assertThrows(StateRefusal::class.java) { sm.save() }
         } finally {
             sm.cleanup()
+        }
+    }
+
+    // ── static_optional: values that may be absent (docs/adr/0055, step 6) ──
+
+    /**
+     * `static_optional` after the run its shared fixture is saved at: `due.set`
+     * with a day and no title or status, then with a title and a status and no
+     * day. Each element stands absent and present in its variables, in its record
+     * and in its list of records.
+     */
+    private fun optionalRun(): StaticOptionalStateMachine {
+        val sm = StaticOptionalStateMachine()
+        sm.initialize()
+        for (data in listOf(
+            """{"id":1,"due":"12","title":null,"status":null}""",
+            """{"id":2,"due":null,"title":"later","status":"in_progress"}""",
+        )) {
+            sm.sendEventByName("due.set", EventMetadata(data = data))
+            sm.tick()
+        }
+        return sm
+    }
+
+    /** The record each delivery of [optionalRun] wrote, in order. */
+    private val optionalRecords = listOf(
+        StaticOptionalDueRecord(1u, 12L, null, null),
+        StaticOptionalDueRecord(2u, null, "later", StaticOptionalStatusEnum.IN_PROGRESS),
+    )
+
+    @Test
+    fun aValueThatMayBeAbsentIsSavedAsNullOrAsItsPresentValue() {
+        // The same run the Rust suite makes, which writes the format-2 text.
+        val sm = optionalRun()
+        try {
+            assertEquals(null, sm.due)
+            assertEquals(optionalRecords, sm.items)
+            assertEquals(sharedFixture("static_optional"), sm.save().toJson())
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun aSavedAbsentValueIsRestoredAbsentAndAPresentOnePresent() {
+        val sm = StaticOptionalStateMachine()
+        try {
+            sm.restore(SavedState.fromJson(sharedFixture("static_optional")))
+            assertEquals(null, sm.due)
+            assertEquals(7L, sm.other)
+            assertEquals("later", sm.title)
+            assertEquals(StaticOptionalStatusEnum.IN_PROGRESS, sm.status)
+            assertEquals(null, sm.echoTitle)
+            assertEquals(null, sm.echoStatus)
+            assertEquals(optionalRecords[1], sm.item)
+            assertEquals(optionalRecords, sm.items)
+            // What was restored is saved as it was read.
+            assertEquals(sharedFixture("static_optional"), sm.save().toJson())
+            // The restored machine carries on: `due.clear` takes `other`,
+            // `status` and the record's day to absent.
+            sm.sendEventByName("due.clear")
+            sm.tick()
+            assertEquals(null, sm.other)
+            assertEquals(null, sm.status)
+            assertEquals(null, sm.item.due)
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    /**
+     * `static_optional_unwidened`, `static_optional` with each optional value of
+     * the type a present value of it is (docs/adr/0055, section 6), after `keep`
+     * put its record in its list.
+     */
+    private fun unwidened(): StaticOptionalUnwidenedStateMachine {
+        val sm = StaticOptionalUnwidenedStateMachine()
+        sm.initialize()
+        sm.sendEventByName("keep")
+        sm.tick()
+        return sm
+    }
+
+    @Test
+    fun aWidenedMachineHasTheShapeOfTheMachineBeforeTheWidening() {
+        // A saved shape names an optional value by the type a present value of
+        // it is, in both formats, so the widening moved neither.
+        val before = StaticOptionalUnwidenedStateMachine()
+        val widened = StaticOptionalStateMachine()
+        try {
+            assertEquals(before.savedShape.first, widened.savedShape.first)
+            assertEquals(before.savedShape.revised, widened.savedShape.revised)
+            assertEquals(before.savedShape.format2First, widened.savedShape.format2First)
+            assertEquals(before.savedShape.format2Revised, widened.savedShape.format2Revised)
+        } finally {
+            before.cleanup()
+            widened.cleanup()
+        }
+    }
+
+    @Test
+    fun aStateSavedBeforeTheWideningRestoresWithEveryValuePresent() {
+        val before = unwidened()
+        val widened = StaticOptionalStateMachine()
+        try {
+            widened.restore(throughJson(before.save()))
+            assertEquals(12L, widened.due)
+            assertEquals(7L, widened.other)
+            assertEquals("later", widened.title)
+            assertEquals(StaticOptionalStatusEnum.IN_PROGRESS, widened.status)
+            assertEquals("echo", widened.echoTitle)
+            assertEquals(StaticOptionalStatusEnum.DONE, widened.echoStatus)
+            val item = StaticOptionalDueRecord(2u, 3L, "first", StaticOptionalStatusEnum.OPEN)
+            assertEquals(item, widened.item)
+            assertEquals(listOf(item), widened.items)
+        } finally {
+            before.cleanup()
+            widened.cleanup()
+        }
+    }
+
+    @Test
+    fun aSavedNullIsRefusedWhereTheRestoringTypeIsNotOptional() {
+        // A state saved after the widening, restored into the build from before
+        // it: refused at its first absent value, `due`, naming it.
+        val first = StaticOptionalUnwidenedStateMachine()
+        try {
+            val refusal = assertThrows(StateRefusal::class.java) {
+                first.restore(SavedState.fromJson(sharedFixture("static_optional")))
+            }
+            assertTrue(refusal.message!!.contains("'due' is absent (null)"), refusal.message)
+            // A refused restore leaves the machine as it was: never started.
+            assertThrows(StateRefusal::class.java) { first.save() }
+        } finally {
+            first.cleanup()
+        }
+        // ... and a record's field, in a state otherwise whole.
+        val before = unwidened()
+        val whole = try {
+            before.save().toJson()
+        } finally {
+            before.cleanup()
+        }
+        val text = whole.replace("\"item\":{\"id\":2,\"due\":\"3\"", "\"item\":{\"id\":2,\"due\":null")
+        assertTrue(text != whole, "the record's field is written")
+        val second = StaticOptionalUnwidenedStateMachine()
+        try {
+            val refusal = assertThrows(StateRefusal::class.java) { second.restore(SavedState.fromJson(text)) }
+            assertTrue(refusal.message!!.contains("'item.due' is absent (null)"), refusal.message)
+        } finally {
+            second.cleanup()
         }
     }
 }

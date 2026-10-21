@@ -299,9 +299,17 @@ impl{{ policy_generics_decl }} {{ machine_name }}Observe for Engine<{{ machine_n
 {% set history_type = (machine_name ~ "History") if model.history_states else "::sce_rust_runtime::NoHistory" %}
 {# The value a saved state holds for the variable `field`, read as the field's
    own type — one spelling for the judge of a saved state and for the restore
-   that writes what it read. #}
+   that writes what it read. An optional value held to a bound is read absent
+   from `null` and otherwise as its present value is (docs/adr/0055); one held to
+   none is read by `Option`'s own `SavedValue`. #}
 {% macro saved_read(field) -%}
-{% if field.bound is not none and field.saved_type == "string" -%}
+{% if field.saved_kind == "optional" and field.bound is not none and field.saved_type == "string" -%}
+::sce_rust_runtime::saved_state::optional(saved.variable("{{ field.id }}")?, |present| ::sce_rust_runtime::saved_state::bounded_string(present, "{{ field.id }}", {{ field.bound }}))?
+{%- elif field.saved_kind == "optional" and field.bound is not none and field.saved_type == "bytes" -%}
+::sce_rust_runtime::saved_state::optional(saved.variable("{{ field.id }}")?, |present| ::sce_rust_runtime::saved_state::bounded_bytes(present, "{{ field.id }}", {{ field.bound }}))?
+{%- elif field.saved_kind == "optional" -%}
+::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("{{ field.id }}")?, "{{ field.id }}")?
+{%- elif field.bound is not none and field.saved_type == "string" -%}
 ::sce_rust_runtime::saved_state::bounded_string(saved.variable("{{ field.id }}")?, "{{ field.id }}", {{ field.bound }})?
 {%- elif field.bound is not none and field.saved_type == "bytes" -%}
 ::sce_rust_runtime::saved_state::bounded_bytes(saved.variable("{{ field.id }}")?, "{{ field.id }}", {{ field.bound }})?
@@ -352,7 +360,9 @@ impl ::sce_rust_runtime::saved_state::SavedValue for {{ record.ty }} {
     fn to_saved(&self) -> ::sce_rust_runtime::json::Value {
         ::sce_rust_runtime::json::Value::Object(vec![
 {% for field in record.fields %}
-{% if field.saved_type == "bytes" %}
+{% if field.saved_type == "bytes" and field.optional %}
+            ("{{ field.id }}".to_string(), ::sce_rust_runtime::saved_state::optional_to_saved(self.{{ field.name }}.as_deref(), ::sce_rust_runtime::saved_state::bytes_to_saved)),
+{% elif field.saved_type == "bytes" %}
             ("{{ field.id }}".to_string(), ::sce_rust_runtime::saved_state::bytes_to_saved(&self.{{ field.name }})),
 {% else %}
             ("{{ field.id }}".to_string(), ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.{{ field.name }})),
@@ -367,7 +377,11 @@ impl ::sce_rust_runtime::saved_state::SavedValue for {{ record.ty }} {
     ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
         Ok(Self {
 {% for field in record.fields %}
-{% if field.bound is not none and field.saved_type == "bytes" %}
+{% if field.optional and field.bound is not none and field.saved_type == "bytes" %}
+            {{ field.name }}: ::sce_rust_runtime::saved_state::optional(::sce_rust_runtime::saved_state::record_member(value, what, "{{ field.id }}")?, |present| ::sce_rust_runtime::saved_state::bounded_bytes(present, &format!("{what}.{{ field.id }}"), {{ field.bound }}))?,
+{% elif field.optional and field.bound is not none %}
+            {{ field.name }}: ::sce_rust_runtime::saved_state::optional(::sce_rust_runtime::saved_state::record_member(value, what, "{{ field.id }}")?, |present| ::sce_rust_runtime::saved_state::bounded_string(present, &format!("{what}.{{ field.id }}"), {{ field.bound }}))?,
+{% elif field.bound is not none and field.saved_type == "bytes" %}
             {{ field.name }}: ::sce_rust_runtime::saved_state::record_bounded_bytes(value, what, "{{ field.id }}", {{ field.bound }})?,
 {% elif field.bound is not none %}
             {{ field.name }}: ::sce_rust_runtime::saved_state::record_bounded_string(value, what, "{{ field.id }}", {{ field.bound }})?,
@@ -553,7 +567,9 @@ impl{{ policy_generics_decl }} {{ machine_name }}Persist for Engine<{{ machine_n
             &Self::SHAPE,
             vec![
 {% for field in static_fields %}
-{% if field.saved_type == "bytes" %}
+{% if field.saved_type == "bytes" and field.saved_kind == "optional" %}
+                ("{{ field.id }}".to_string(), ::sce_rust_runtime::saved_state::optional_to_saved(policy.{{ field.name }}.as_deref(), ::sce_rust_runtime::saved_state::bytes_to_saved)),
+{% elif field.saved_type == "bytes" %}
                 ("{{ field.id }}".to_string(), ::sce_rust_runtime::saved_state::bytes_to_saved(&policy.{{ field.name }})),
 {% else %}
                 ("{{ field.id }}".to_string(), ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.{{ field.name }})),
