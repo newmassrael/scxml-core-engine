@@ -4516,17 +4516,17 @@ impl StatePolicy for RecordListPolicy {
 
                             // W3C SCXML 5.9: cond="!spoiled"
                             if !self.spoiled {
-                                for (sce_position_of_earlierAt, earlier) in
+                                for (sce_position_of_earlier_at, earlier) in
                                     self.staged.clone().into_iter().enumerate()
                                 {
-                                    let earlierAt = sce_position_of_earlierAt as u32;
-                                    let _ = (&earlier, &earlierAt);
+                                    let earlier_at = sce_position_of_earlier_at as u32;
+                                    let _ = (&earlier, &earlier_at);
 
-                                    for (sce_position_of_laterAt, later) in
+                                    for (sce_position_of_later_at, later) in
                                         self.staged.clone().into_iter().enumerate()
                                     {
-                                        let laterAt = sce_position_of_laterAt as u32;
-                                        let _ = (&later, &laterAt);
+                                        let later_at = sce_position_of_later_at as u32;
+                                        let _ = (&later, &later_at);
 
                                         // W3C SCXML 5.9: cond="!spoiled && laterAt > earlierAt && earlier.kind !== 2 && later.kind !== 2 && earlier.id === later.id && earlier.field === later.field"
                                         if !self.spoiled
