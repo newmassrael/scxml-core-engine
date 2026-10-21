@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
+// source-hash: 9fab540da93829eaa9159cbc7132fde0b98312062867e02e6e631d43aef759bc
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -221,6 +221,21 @@ func (v StaticSchemaPendingSignalLevelEnum) String() string {
 		return "critical"
 	}
 	return ""
+}
+
+// ToUnderlying is the number the enum document declares for the value.
+func (v StaticSchemaPendingSignalLevelEnum) ToUnderlying() uint8 {
+	return uint8(v)
+}
+
+// StaticSchemaPendingSignalLevelEnumFromUnderlying returns the variant that declares raw, and false for a
+// number no variant declares.
+func StaticSchemaPendingSignalLevelEnumFromUnderlying(raw uint8) (StaticSchemaPendingSignalLevelEnum, bool) {
+	switch raw {
+	case 0, 1, 2:
+		return StaticSchemaPendingSignalLevelEnum(raw), true
+	}
+	return 0, false
 }
 
 // SCE Accepted Subset §2.15: a `record:Signal` datamodel value.

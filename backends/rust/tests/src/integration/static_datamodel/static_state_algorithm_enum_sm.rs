@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
+// source-hash: 9fab540da93829eaa9159cbc7132fde0b98312062867e02e6e631d43aef759bc
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -222,6 +222,27 @@ impl StaticStateAlgorithmEnumStatusEnum {
             Self::Open => "open",
             Self::InProgress => "in_progress",
             Self::Done => "done",
+        }
+    }
+
+    /// The number the enum document declares for this value.
+    #[allow(dead_code)]
+    pub fn to_underlying(self) -> u8 {
+        match self {
+            Self::Open => 2,
+            Self::InProgress => 5,
+            Self::Done => 7,
+        }
+    }
+
+    /// The variant that declares `raw`, or `None` for a number no variant declares.
+    #[allow(dead_code)]
+    pub fn from_underlying(raw: u8) -> Option<Self> {
+        match raw {
+            2 => Some(Self::Open),
+            5 => Some(Self::InProgress),
+            7 => Some(Self::Done),
+            _ => None,
         }
     }
 }

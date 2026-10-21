@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
+// source-hash: 9fab540da93829eaa9159cbc7132fde0b98312062867e02e6e631d43aef759bc
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -699,6 +699,21 @@ func (v RecordListParentRefusalEnum) String() string {
 		return "clockExhausted"
 	}
 	return ""
+}
+
+// ToUnderlying is the number the enum document declares for the value.
+func (v RecordListParentRefusalEnum) ToUnderlying() uint8 {
+	return uint8(v)
+}
+
+// RecordListParentRefusalEnumFromUnderlying returns the variant that declares raw, and false for a
+// number no variant declares.
+func RecordListParentRefusalEnumFromUnderlying(raw uint8) (RecordListParentRefusalEnum, bool) {
+	switch raw {
+	case 1, 2, 3, 4, 5, 6, 7, 8:
+		return RecordListParentRefusalEnum(raw), true
+	}
+	return 0, false
 }
 
 // SCE Accepted Subset §2.15: a `record:Refused` datamodel value.

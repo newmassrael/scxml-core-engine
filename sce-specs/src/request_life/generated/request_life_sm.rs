@@ -335,6 +335,39 @@ impl RequestLifeVerdictEnum {
             Self::LaneFull => "lane_full",
         }
     }
+
+    /// The number the enum document declares for this value.
+    #[allow(dead_code)]
+    pub fn to_underlying(self) -> u8 {
+        match self {
+            Self::Ok => 0,
+            Self::Ended => 1,
+            Self::Held => 2,
+            Self::NotHolder => 3,
+            Self::NotResuming => 4,
+            Self::WrongConnection => 5,
+            Self::Nothing => 6,
+            Self::Unanswered => 7,
+            Self::LaneFull => 8,
+        }
+    }
+
+    /// The variant that declares `raw`, or `None` for a number no variant declares.
+    #[allow(dead_code)]
+    pub fn from_underlying(raw: u8) -> Option<Self> {
+        match raw {
+            0 => Some(Self::Ok),
+            1 => Some(Self::Ended),
+            2 => Some(Self::Held),
+            3 => Some(Self::NotHolder),
+            4 => Some(Self::NotResuming),
+            5 => Some(Self::WrongConnection),
+            6 => Some(Self::Nothing),
+            7 => Some(Self::Unanswered),
+            8 => Some(Self::LaneFull),
+            _ => None,
+        }
+    }
 }
 
 // ── SCE Accepted Subset §2.15: what a host observes of a sce-static machine ──

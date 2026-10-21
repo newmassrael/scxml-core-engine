@@ -197,6 +197,33 @@ impl ImportLifeVerdictEnum {
             Self::Unanswered => "unanswered",
         }
     }
+
+    /// The number the enum document declares for this value.
+    #[allow(dead_code)]
+    pub fn to_underlying(self) -> u8 {
+        match self {
+            Self::Ok => 0,
+            Self::Moved => 1,
+            Self::Undecided => 2,
+            Self::Ended => 3,
+            Self::Nothing => 4,
+            Self::Unanswered => 5,
+        }
+    }
+
+    /// The variant that declares `raw`, or `None` for a number no variant declares.
+    #[allow(dead_code)]
+    pub fn from_underlying(raw: u8) -> Option<Self> {
+        match raw {
+            0 => Some(Self::Ok),
+            1 => Some(Self::Moved),
+            2 => Some(Self::Undecided),
+            3 => Some(Self::Ended),
+            4 => Some(Self::Nothing),
+            5 => Some(Self::Unanswered),
+            _ => None,
+        }
+    }
 }
 
 // ── SCE Accepted Subset §2.15: what a host observes of a sce-static machine ──

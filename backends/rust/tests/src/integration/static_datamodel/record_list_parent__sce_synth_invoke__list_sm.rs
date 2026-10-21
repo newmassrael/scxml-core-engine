@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
+// source-hash: 9fab540da93829eaa9159cbc7132fde0b98312062867e02e6e631d43aef759bc
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -825,6 +825,37 @@ impl RecordListParentSceSynthInvokeListRefusalEnum {
             Self::ChangeTooLarge => "changeTooLarge",
             Self::RegisterNamedTwice => "registerNamedTwice",
             Self::ClockExhausted => "clockExhausted",
+        }
+    }
+
+    /// The number the enum document declares for this value.
+    #[allow(dead_code)]
+    pub fn to_underlying(self) -> u8 {
+        match self {
+            Self::NotWriter => 1,
+            Self::NoRoomForValue => 2,
+            Self::NoRoomForHistory => 3,
+            Self::NoRoomForDigest => 4,
+            Self::TextTooLong => 5,
+            Self::ChangeTooLarge => 6,
+            Self::RegisterNamedTwice => 7,
+            Self::ClockExhausted => 8,
+        }
+    }
+
+    /// The variant that declares `raw`, or `None` for a number no variant declares.
+    #[allow(dead_code)]
+    pub fn from_underlying(raw: u8) -> Option<Self> {
+        match raw {
+            1 => Some(Self::NotWriter),
+            2 => Some(Self::NoRoomForValue),
+            3 => Some(Self::NoRoomForHistory),
+            4 => Some(Self::NoRoomForDigest),
+            5 => Some(Self::TextTooLong),
+            6 => Some(Self::ChangeTooLarge),
+            7 => Some(Self::RegisterNamedTwice),
+            8 => Some(Self::ClockExhausted),
+            _ => None,
         }
     }
 }

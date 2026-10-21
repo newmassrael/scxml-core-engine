@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
+// source-hash: 9fab540da93829eaa9159cbc7132fde0b98312062867e02e6e631d43aef759bc
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/record_list_parent.scxml
@@ -139,6 +139,18 @@ enum class RecordListParentRefusalEnum(val declaredName: String) {
     /** This value as a saved state writes it. */
     fun toSaved(): Any = declaredName
 
+    /** The number the enum document declares for this value. */
+    fun toUnderlying(): UByte = when (this) {
+        NOT_WRITER -> 1u.toUByte()
+        NO_ROOM_FOR_VALUE -> 2u.toUByte()
+        NO_ROOM_FOR_HISTORY -> 3u.toUByte()
+        NO_ROOM_FOR_DIGEST -> 4u.toUByte()
+        TEXT_TOO_LONG -> 5u.toUByte()
+        CHANGE_TOO_LARGE -> 6u.toUByte()
+        REGISTER_NAMED_TWICE -> 7u.toUByte()
+        CLOCK_EXHAUSTED -> 8u.toUByte()
+    }
+
     companion object {
         /** The value a saved state holds, refused unless it is one. */
         fun fromSaved(value: Any?, what: String): RecordListParentRefusalEnum {
@@ -146,6 +158,9 @@ enum class RecordListParentRefusalEnum(val declaredName: String) {
             return entries.firstOrNull { it.declaredName == declared }
                 ?: throw StateRefusal("'$what' ($declared) is not a variant of Refusal")
         }
+
+        /** The variant that declares [raw], or null for a number no variant declares. */
+        fun fromUnderlying(raw: UByte): RecordListParentRefusalEnum? = entries.firstOrNull { it.toUnderlying() == raw }
     }
 }
 /** SCE Accepted Subset §2.15: a `record:Refused` datamodel value. */

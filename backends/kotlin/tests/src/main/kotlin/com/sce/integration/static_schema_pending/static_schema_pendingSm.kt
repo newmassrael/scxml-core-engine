@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
+// source-hash: 9fab540da93829eaa9159cbc7132fde0b98312062867e02e6e631d43aef759bc
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_schema_pending.scxml
@@ -51,6 +51,13 @@ enum class StaticSchemaPendingSignalLevelEnum(val declaredName: String) {
     /** This value as a saved state writes it. */
     fun toSaved(): Any = declaredName
 
+    /** The number the enum document declares for this value. */
+    fun toUnderlying(): UByte = when (this) {
+        LOW -> 0u.toUByte()
+        HIGH -> 1u.toUByte()
+        CRITICAL -> 2u.toUByte()
+    }
+
     companion object {
         /** The value a saved state holds, refused unless it is one. */
         fun fromSaved(value: Any?, what: String): StaticSchemaPendingSignalLevelEnum {
@@ -58,6 +65,9 @@ enum class StaticSchemaPendingSignalLevelEnum(val declaredName: String) {
             return entries.firstOrNull { it.declaredName == declared }
                 ?: throw StateRefusal("'$what' ($declared) is not a variant of SignalLevel")
         }
+
+        /** The variant that declares [raw], or null for a number no variant declares. */
+        fun fromUnderlying(raw: UByte): StaticSchemaPendingSignalLevelEnum? = entries.firstOrNull { it.toUnderlying() == raw }
     }
 }
 /** SCE Accepted Subset §2.15: a `record:Signal` datamodel value. */

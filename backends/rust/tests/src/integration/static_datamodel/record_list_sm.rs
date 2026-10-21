@@ -717,6 +717,37 @@ impl RecordListRefusalEnum {
             Self::ClockExhausted => "clockExhausted",
         }
     }
+
+    /// The number the enum document declares for this value.
+    #[allow(dead_code)]
+    pub fn to_underlying(self) -> u8 {
+        match self {
+            Self::NotWriter => 1,
+            Self::NoRoomForValue => 2,
+            Self::NoRoomForHistory => 3,
+            Self::NoRoomForDigest => 4,
+            Self::TextTooLong => 5,
+            Self::ChangeTooLarge => 6,
+            Self::RegisterNamedTwice => 7,
+            Self::ClockExhausted => 8,
+        }
+    }
+
+    /// The variant that declares `raw`, or `None` for a number no variant declares.
+    #[allow(dead_code)]
+    pub fn from_underlying(raw: u8) -> Option<Self> {
+        match raw {
+            1 => Some(Self::NotWriter),
+            2 => Some(Self::NoRoomForValue),
+            3 => Some(Self::NoRoomForHistory),
+            4 => Some(Self::NoRoomForDigest),
+            5 => Some(Self::TextTooLong),
+            6 => Some(Self::ChangeTooLarge),
+            7 => Some(Self::RegisterNamedTwice),
+            8 => Some(Self::ClockExhausted),
+            _ => None,
+        }
+    }
 }
 
 // ── SCE Accepted Subset §2.15: calls of an algorithm that takes or returns state ──

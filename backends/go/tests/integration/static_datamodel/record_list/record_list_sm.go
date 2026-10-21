@@ -1087,6 +1087,21 @@ func (v RecordListRefusalEnum) String() string {
 	return ""
 }
 
+// ToUnderlying is the number the enum document declares for the value.
+func (v RecordListRefusalEnum) ToUnderlying() uint8 {
+	return uint8(v)
+}
+
+// RecordListRefusalEnumFromUnderlying returns the variant that declares raw, and false for a
+// number no variant declares.
+func RecordListRefusalEnumFromUnderlying(raw uint8) (RecordListRefusalEnum, bool) {
+	switch raw {
+	case 1, 2, 3, 4, 5, 6, 7, 8:
+		return RecordListRefusalEnum(raw), true
+	}
+	return 0, false
+}
+
 // ── SCE Accepted Subset §2.15: what a format-2 saved state of it is bound to ──
 
 // RecordListSavedShapeFormat2 is the shape a format-2 saved state of

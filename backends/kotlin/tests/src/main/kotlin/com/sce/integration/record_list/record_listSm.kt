@@ -254,6 +254,18 @@ enum class RecordListRefusalEnum(val declaredName: String) {
     /** This value as a saved state writes it. */
     fun toSaved(): Any = declaredName
 
+    /** The number the enum document declares for this value. */
+    fun toUnderlying(): UByte = when (this) {
+        NOT_WRITER -> 1u.toUByte()
+        NO_ROOM_FOR_VALUE -> 2u.toUByte()
+        NO_ROOM_FOR_HISTORY -> 3u.toUByte()
+        NO_ROOM_FOR_DIGEST -> 4u.toUByte()
+        TEXT_TOO_LONG -> 5u.toUByte()
+        CHANGE_TOO_LARGE -> 6u.toUByte()
+        REGISTER_NAMED_TWICE -> 7u.toUByte()
+        CLOCK_EXHAUSTED -> 8u.toUByte()
+    }
+
     companion object {
         /** The value a saved state holds, refused unless it is one. */
         fun fromSaved(value: Any?, what: String): RecordListRefusalEnum {
@@ -261,6 +273,9 @@ enum class RecordListRefusalEnum(val declaredName: String) {
             return entries.firstOrNull { it.declaredName == declared }
                 ?: throw StateRefusal("'$what' ($declared) is not a variant of Refusal")
         }
+
+        /** The variant that declares [raw], or null for a number no variant declares. */
+        fun fromUnderlying(raw: UByte): RecordListRefusalEnum? = entries.firstOrNull { it.toUnderlying() == raw }
     }
 }
 // ── SCE Accepted Subset §2.15: calls of an algorithm that takes or returns state ──

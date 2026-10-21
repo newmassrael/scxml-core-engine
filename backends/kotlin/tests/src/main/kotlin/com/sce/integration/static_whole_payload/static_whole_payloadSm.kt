@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
+// source-hash: 9fab540da93829eaa9159cbc7132fde0b98312062867e02e6e631d43aef759bc
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_whole_payload.scxml
@@ -49,6 +49,14 @@ enum class StaticWholePayloadViewModeEnum(val declaredName: String) {
     /** This value as a saved state writes it. */
     fun toSaved(): Any = declaredName
 
+    /** The number the enum document declares for this value. */
+    fun toUnderlying(): UByte = when (this) {
+        MONTH -> 0u.toUByte()
+        WEEK -> 1u.toUByte()
+        DAY -> 2u.toUByte()
+        AGENDA_LIST -> 3u.toUByte()
+    }
+
     companion object {
         /** The value a saved state holds, refused unless it is one. */
         fun fromSaved(value: Any?, what: String): StaticWholePayloadViewModeEnum {
@@ -56,6 +64,9 @@ enum class StaticWholePayloadViewModeEnum(val declaredName: String) {
             return entries.firstOrNull { it.declaredName == declared }
                 ?: throw StateRefusal("'$what' ($declared) is not a variant of ViewMode")
         }
+
+        /** The variant that declares [raw], or null for a number no variant declares. */
+        fun fromUnderlying(raw: UByte): StaticWholePayloadViewModeEnum? = entries.firstOrNull { it.toUnderlying() == raw }
     }
 }
 /** SCE Accepted Subset §2.15: a `record:View` datamodel value. */
