@@ -14,14 +14,20 @@
    run. The flag is named by the <if>'s ordinal so a nested <if> cannot reuse
    its parent's. #}
 {% set if_native_can_fail = action.native_cond_fails or (action.elseif_branches | selectattr("native_cond_fails") | list | length > 0) %}
-{% if if_can_fail %}
-	{
-	ifCondFailed := false
+{# Each branch is a list of its own (`block_flow`, go/entry_exit_actions.go.jinja2).
+   When the <if> has an <else> and every branch ends the block unconditionally,
+   whichever branch the selection reaches ends it — a cond that failed only
+   moves the selection on — so the chain is itself the end of the block: Go
+   reads an `if`/`else` whose branches all end in `return` as terminating, and
+   the flag check that would follow it, and every element after the <if>, is
+   unreachable. `if_flow.ends` records it, and the chain is rendered first
+   (`if_chain`) because the native flag must then be read before the chain,
+   where the check after it no longer reads it. #}
+{% set if_flow = namespace(ends=true) %}
+{% if not action.else_actions %}
+{% set if_flow.ends = false %}
 {% endif %}
-{% if if_native_can_fail %}
-	{
-	var ifCondFailed{{ action.if_ordinal }} bool
-{% endif %}
+{% set if_chain %}
 {% if action.native_cond %}
 	if {{ action.native_cond }} {
 {% elif action.is_pure_in_predicate %}
@@ -32,10 +38,17 @@
 	// W3C SCXML 4.2: cond="{{ action.cond }}" decided at build time
 	if {{ 'true' if action.cond_constant else 'false' }} {
 {% endif %}
+{% with block_flow = namespace(ended=false) %}
 {% for then_action in action.then_actions %}
+{% if not block_flow.ended %}
 		{% with action=then_action %}{% include 'actions/' ~ then_action.type ~ '.go.jinja2' %}{% endwith %}
 
+{% endif %}
 {% endfor %}
+{% if not block_flow.ended %}
+{% set if_flow.ends = false %}
+{% endif %}
+{% endwith %}
 {% for elseif in action.elseif_branches %}
 {% if elseif.native_cond %}
 	} else if {{ elseif.native_cond }} {
@@ -46,26 +59,55 @@
 {% else %}
 	} else if {{ 'true' if elseif.cond_constant else 'false' }} {
 {% endif %}
+{% with block_flow = namespace(ended=false) %}
 {% for elseif_action in elseif.actions %}
+{% if not block_flow.ended %}
 		{% with action=elseif_action %}{% include 'actions/' ~ elseif_action.type ~ '.go.jinja2' %}{% endwith %}
 
+{% endif %}
 {% endfor %}
+{% if not block_flow.ended %}
+{% set if_flow.ends = false %}
+{% endif %}
+{% endwith %}
 {% endfor %}
 {% if action.else_actions %}
 	} else {
+{% with block_flow = namespace(ended=false) %}
 {% for else_action in action.else_actions %}
+{% if not block_flow.ended %}
 		{% with action=else_action %}{% include 'actions/' ~ else_action.type ~ '.go.jinja2' %}{% endwith %}
 
-{% endfor %}
 {% endif %}
-	}
+{% endfor %}
+{% if not block_flow.ended %}
+{% set if_flow.ends = false %}
+{% endif %}
+{% endwith %}
+{% endif %}
+	}{% endset %}
 {% if if_can_fail %}
+	{
+	ifCondFailed := false
+{% endif %}
+{% if if_native_can_fail %}
+	{
+	var ifCondFailed{{ action.if_ordinal }} bool
+{% if if_flow.ends %}
+	_ = ifCondFailed{{ action.if_ordinal }} // every branch ends the block, so no check follows the chain
+{% endif %}
+{% endif %}
+{{ if_chain }}
+{% if if_can_fail %}
+{% if not if_flow.ends %}
 	if ifCondFailed {
 		return // W3C SCXML 4.9: the error ends the block
 	}
+{% endif %}
 	}
 {% endif %}
 {% if if_native_can_fail %}
+{% if not if_flow.ends %}
 {% if in_action_block is defined and in_action_block %}
 	if ifCondFailed{{ action.if_ordinal }} {
 		return // W3C SCXML 4.9: the error ends the block
@@ -73,5 +115,9 @@
 {% else %}
 	_ = ifCondFailed{{ action.if_ordinal }}
 {% endif %}
+{% endif %}
 	}
+{% endif %}
+{% if if_flow.ends %}
+{% set block_flow.ended = true %}
 {% endif %}

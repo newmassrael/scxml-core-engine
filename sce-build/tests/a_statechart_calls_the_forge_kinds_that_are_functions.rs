@@ -114,7 +114,16 @@ fn every_backend() -> Vec<Vec<&'static str>> {
 /// What `generate -l <language>` writes for the machine, every file of it in one
 /// text.
 fn generated(language: &str) -> String {
-    let dir = staged(&[]);
+    generated_files(language, &[])
+        .into_iter()
+        .map(|(_, text)| text)
+        .collect()
+}
+
+/// Every file `generate -l <language>` writes for the machine, with `documents`
+/// written over it or its siblings, each with its file name.
+fn generated_files(language: &str, documents: &[(&str, &str)]) -> Vec<(String, String)> {
+    let dir = staged(documents);
     let out_dir = tempdir().expect("tempdir");
     let out = Command::new(sce_codegen_bin())
         .arg("--workspace-root")
@@ -136,7 +145,7 @@ fn generated(language: &str) -> String {
         "generate -l {language}:\n{}",
         String::from_utf8_lossy(&out.stderr)
     );
-    let mut text = String::new();
+    let mut files = Vec::new();
     let mut pending = vec![out_dir.path().to_path_buf()];
     while let Some(dir) = pending.pop() {
         for entry in std::fs::read_dir(&dir).expect("the output directory") {
@@ -144,11 +153,15 @@ fn generated(language: &str) -> String {
             if path.is_dir() {
                 pending.push(path);
             } else {
-                text.push_str(&std::fs::read_to_string(&path).unwrap_or_default());
+                let name = path
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                files.push((name, std::fs::read_to_string(&path).unwrap_or_default()));
             }
         }
     }
-    text
+    files
 }
 
 /// The machine, with `documents` written over its siblings or itself, is refused
@@ -590,5 +603,46 @@ fn the_interpreter_refuses_the_call_by_its_kind() {
     assert!(
         out.contains("a call of an imported condition has no ecmascript lowering yet"),
         "{out}"
+    );
+}
+
+/// A call written only after an element that always ends its block is not
+/// emitted — the Go templates write nothing after a `return` no condition
+/// guards, which `go vet` reports as unreachable — and Go refuses a package a
+/// file imports and never names, so the import goes with the call. A package a
+/// call the block still reaches names stays imported.
+#[test]
+fn a_go_machine_imports_no_package_only_an_unwritten_call_names() {
+    let machine = fixture(
+        MACHINE,
+        Some((
+            "      <assign location=\"offset\" expr=\"Offset(level)\"/>",
+            "      <send event=\"rise\" delay=\"5\"/>\n      \
+             <assign location=\"offset\" expr=\"Offset(level)\"/>",
+        )),
+    );
+    let files = generated_files("go", &[(MACHINE, &machine)]);
+    let machines: Vec<&String> = files
+        .iter()
+        .filter(|(name, _)| name == "static_forge_calls_sm.go")
+        .map(|(_, text)| text)
+        .collect();
+    assert_eq!(machines.len(), 1, "one Go machine file among {files:?}");
+    let go = machines[0];
+    assert!(
+        go.contains("delay is not a CSS2 time"),
+        "the refused send still raises:\n{go}"
+    );
+    assert!(
+        !go.contains("ComputeOffset("),
+        "the call after the refused send is not written:\n{go}"
+    );
+    assert!(
+        !go.contains("/forge_call_offset\""),
+        "nothing names the transform's package, so nothing imports it:\n{go}"
+    );
+    assert!(
+        go.contains("/forge_call_ratio\"") && go.contains(".LookupRatio("),
+        "a call the block reaches keeps its import:\n{go}"
     );
 }

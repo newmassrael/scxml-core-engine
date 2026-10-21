@@ -4987,6 +4987,346 @@ mod tests {
         assert!(c_src.contains("6.4.1: unsupported `type`"), "c11 raises");
     }
 
+    /// Every list of executable content the Go templates render, each with an
+    /// element the build has already decided will raise, and elements after
+    /// it. The elements raising `never` can never run; `first`, `kept` and
+    /// `looped` stand where the block still reaches them.
+    const ENDED_BLOCKS_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="ecmascript" name="refusals" initial="s0">
+  <datamodel>
+    <data id="n" expr="0"/>
+    <data id="items" expr="[1, 2]"/>
+  </datamodel>
+  <state id="s0">
+    <initial>
+      <transition target="s1">
+        <raise event="first"/>
+        <send event="x" target="!invalid"/>
+        <raise event="never"/>
+      </transition>
+    </initial>
+    <history id="h">
+      <transition target="s1">
+        <send event="x" target="!invalid"/>
+        <raise event="never"/>
+      </transition>
+    </history>
+    <state id="s1">
+      <onentry>
+        <send event="x" delay="5"/>
+        <raise event="never"/>
+      </onentry>
+      <onentry>
+        <assign location="_sessionid" expr="1"/>
+        <raise event="never"/>
+      </onentry>
+      <onentry>
+        <send event="x" type="urn:sce:test:no-such-processor"/>
+        <raise event="never"/>
+      </onentry>
+      <onentry>
+        <send event="x" target="#_nobody"/>
+        <raise event="never"/>
+      </onentry>
+      <onentry>
+        <send event="x" type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"/>
+        <raise event="never"/>
+      </onentry>
+      <onentry>
+        <if cond="n == 1">
+          <send event="x" target="!invalid"/>
+          <raise event="never"/>
+        <elseif cond="n == 2"/>
+          <assign location="_name" expr="1"/>
+          <raise event="never"/>
+        <else/>
+          <assign location="_event" expr="1"/>
+          <raise event="never"/>
+        </if>
+        <raise event="never"/>
+      </onentry>
+      <onentry>
+        <if cond="n == 3">
+          <assign location="_ioprocessors" expr="1"/>
+          <raise event="never"/>
+        </if>
+        <raise event="kept"/>
+      </onentry>
+      <onentry>
+        <foreach array="items" item="item">
+          <assign location="_sessionid" expr="1"/>
+          <raise event="never"/>
+        </foreach>
+        <raise event="looped"/>
+      </onentry>
+      <onexit>
+        <assign location="_sessionid" expr="1"/>
+        <raise event="never"/>
+      </onexit>
+      <transition event="go" target="s0">
+        <send event="x" target="!invalid"/>
+        <raise event="never"/>
+      </transition>
+    </state>
+  </state>
+</scxml>"##;
+
+    /// The statements of a Go source that follow a terminating statement in
+    /// their own list — what `go vet`'s `unreachable` pass reports — as the
+    /// 1-based line and its text.
+    ///
+    /// Read from the code alone: comments, `//line` directives and string
+    /// literals are blanked first (`template_lexing::classify`), so a brace or
+    /// a `return` inside a literal or a raw Lua chunk is not structure. A
+    /// terminating statement is the Go specification's, for the shapes a
+    /// generated machine writes: `return`, a `{ ... }` block that ends in one,
+    /// and an `if` with an `else` whose every branch ends in one. A `case` or
+    /// `default` opens a clause the switch can reach, and a line that starts
+    /// inside an open `(` or `[` continues the statement before it.
+    fn unreachable_go_statements(go: &str) -> Vec<(usize, String)> {
+        use crate::template_lexing::{classify, Class, Syntax};
+
+        enum Opened {
+            Block,
+            If,
+            Other,
+        }
+        struct Frame {
+            opened: Opened,
+            // The bracket depth this list's statements start at.
+            depth: i32,
+            // A statement of this list has ended it.
+            terminated: bool,
+            // An `if` chain: every branch closed so far ended the list.
+            branches_end: bool,
+            // An `if` chain: the branch now open is the `else`.
+            in_else: bool,
+        }
+        impl Frame {
+            fn new(opened: Opened, depth: i32) -> Frame {
+                Frame {
+                    opened,
+                    depth,
+                    terminated: false,
+                    branches_end: true,
+                    in_else: false,
+                }
+            }
+        }
+        fn brackets(code: &str) -> i32 {
+            code.chars()
+                .map(|c| match c {
+                    '(' | '[' => 1,
+                    ')' | ']' => -1,
+                    _ => 0,
+                })
+                .sum()
+        }
+
+        let code: String = go
+            .chars()
+            .zip(classify(go, Syntax::Go))
+            .map(|(c, class)| {
+                if c == '\n' || class == Class::Code {
+                    c
+                } else {
+                    ' '
+                }
+            })
+            .collect();
+        let source: Vec<&str> = go.lines().collect();
+
+        let mut found = Vec::new();
+        let mut depth = 0i32;
+        let mut stack = vec![Frame::new(Opened::Other, 0)];
+        for (index, line) in code.lines().enumerate() {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            if line.starts_with('}') {
+                let mut rest = line;
+                while let Some(after) = rest.strip_prefix('}') {
+                    rest = after.trim_start();
+                    if stack.len() == 1 {
+                        continue;
+                    }
+                    let closed = stack.pop().expect("a list inside the file");
+                    if rest.starts_with("else") && rest.ends_with('{') {
+                        let mut branch = Frame::new(Opened::If, closed.depth);
+                        branch.branches_end = closed.branches_end && closed.terminated;
+                        branch.in_else = rest == "else {";
+                        stack.push(branch);
+                        rest = "";
+                        break;
+                    }
+                    let ends = match closed.opened {
+                        Opened::Block => closed.terminated,
+                        Opened::If => closed.in_else && closed.branches_end && closed.terminated,
+                        Opened::Other => false,
+                    };
+                    if ends && (rest.is_empty() || rest.starts_with('}')) {
+                        if let Some(parent) = stack.last_mut() {
+                            parent.terminated = true;
+                        }
+                    }
+                }
+                // `}()`, `})`, `}, {`: the rest belongs to the statement that
+                // opened the list just closed.
+                depth += brackets(rest);
+                if rest.ends_with('{') {
+                    stack.push(Frame::new(Opened::Other, depth));
+                }
+                continue;
+            }
+            let starts_statement = stack.last().is_some_and(|frame| frame.depth == depth);
+            depth += brackets(line);
+            if starts_statement {
+                if line.starts_with("case ") || line.starts_with("default:") {
+                    if let Some(frame) = stack.last_mut() {
+                        frame.terminated = false;
+                    }
+                    continue;
+                }
+                let ends = line == "return"
+                    || line.starts_with("return ")
+                    || line.starts_with("panic(")
+                    || line.starts_with("goto ");
+                if let Some(frame) = stack.last_mut() {
+                    if frame.terminated {
+                        found.push((index + 1, source[index].to_string()));
+                        frame.terminated = false;
+                    }
+                    if ends {
+                        frame.terminated = true;
+                    }
+                }
+            }
+            if line.ends_with('{') {
+                let opened = if !starts_statement {
+                    Opened::Other
+                } else if line == "{" {
+                    Opened::Block
+                } else if line.starts_with("if ") {
+                    Opened::If
+                } else {
+                    Opened::Other
+                };
+                stack.push(Frame::new(opened, depth));
+            }
+        }
+        found
+    }
+
+    /// The reader above finds a statement after a `return`, after a block
+    /// that ends in one and after an `if`/`else` whose branches all do, and
+    /// nothing in a literal, a raw string, a continued call or a later
+    /// `switch` clause.
+    #[test]
+    fn the_unreachable_statement_reader_finds_what_go_vet_reports() {
+        let go = r#"package p
+
+func f(a bool) {
+    func() {
+        {
+            g("} return {")
+            return
+        }
+        after()
+    }()
+    if a {
+        return
+    } else if !a {
+        return
+    } else {
+        return
+    }
+    later()
+}
+
+func h(a bool) int {
+    switch {
+    case a:
+        return 1
+    default:
+        g(
+            "x",
+        )
+    }
+    if a {
+        return k(
+            1,
+        )
+    }
+    s := `
+return
+}
+`
+    _ = s
+    return 0
+}
+"#;
+        let found: Vec<usize> = unreachable_go_statements(go)
+            .into_iter()
+            .map(|(line, _)| line)
+            .collect();
+        assert_eq!(found, vec![9, 18], "{go}");
+    }
+
+    /// An element the build has already decided will raise ends its block with
+    /// a `return` no condition guards, and the Go list it is rendered into
+    /// emits nothing after it: `go vet` reported every element written there
+    /// as unreachable code (test159, test194, test199, test286, test322,
+    /// test326, test346 and two integration fixtures, measured 2026-10-21).
+    /// What runs is unchanged — each refusal still raises and ends its block,
+    /// what stands before it is still emitted, and an `<if>` or `<foreach>`
+    /// that can be passed over still lets the block go on.
+    #[test]
+    fn go_emits_nothing_after_an_element_that_always_ends_its_block() {
+        let mut model = parse(ENDED_BLOCKS_SCXML);
+        crate::analyzer::analyze(&mut model, "");
+        let go = generate_go(&model, &crate::find_template_base().join("go")).expect("go");
+
+        let unreachable = unreachable_go_statements(&go);
+        assert!(
+            unreachable.is_empty(),
+            "statements after a terminating statement: {unreachable:?}\n{go}"
+        );
+
+        let raises = |event: &str| {
+            go.lines()
+                .filter(|line| line.contains("Raise(") && line.contains(event))
+                .count()
+        };
+        assert_eq!(raises("EventNever)"), 0, "an element after a refusal\n{go}");
+        assert_eq!(raises("EventFirst)"), 1, "an element before one\n{go}");
+        assert_eq!(
+            raises("EventKept)"),
+            1,
+            "after an <if> without <else>\n{go}"
+        );
+        assert_eq!(raises("EventLooped)"), 1, "after a <foreach>\n{go}");
+
+        // Fourteen refusals: two `<send target="!invalid">` in the <initial>
+        // and <history> content, five in the onentry blocks, three in the
+        // <if> whose branches all end, one in the <if> without <else>, one in
+        // the <foreach> body, one in the onexit and one in the transition.
+        let block_ends = go
+            .lines()
+            .map(str::trim)
+            .filter(|line| {
+                line.starts_with("return  //") && line.ends_with("the error ends the block")
+            })
+            .count();
+        assert_eq!(block_ends, 14, "each refusal still ends its block\n{go}");
+
+        // The <if> whose branches all end is the end of its block, so no check
+        // of a failed cond follows it; the one without <else> keeps its check.
+        assert_eq!(go.matches("ifCondFailed := false").count(), 2, "{go}");
+        assert_eq!(go.matches("if ifCondFailed {").count(), 1, "{go}");
+    }
+
     /// `docs/SCE_ACCEPTED_SUBSET.md` §2.12 is the surface a consumer reads to
     /// learn which engines honour the §6.4.1 raise, and nothing was reading
     /// it. The table shipped claiming five AOT backends refuse the document

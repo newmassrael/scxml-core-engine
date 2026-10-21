@@ -15,6 +15,9 @@
 {% endif %}
 {% if in_action_block is defined and in_action_block %}
 	return  // W3C SCXML 4.9: the error ends the block
+{# The `return` is unconditional: the action list emits nothing after it
+   (`block_flow`, go/entry_exit_actions.go.jinja2). #}
+{% set block_flow.ended = true %}
 {% endif %}
 {% else %}
 {% if action.content %}

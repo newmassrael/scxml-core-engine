@@ -151,6 +151,9 @@
 {% endif %}
 {% if in_block %}
 	return  // W3C SCXML 4.9: the error ends the block
+{# The `return` is unconditional: the action list emits nothing after it
+   (`block_flow`, go/entry_exit_actions.go.jinja2). #}
+{% set block_flow.ended = true %}
 {% endif %}
 {% else %}
 {# ── The element's own arguments, evaluated once ──
@@ -405,6 +408,7 @@
 {% endif %}
 {% if in_block %}
 	return  // W3C SCXML 4.9: the error ends the block
+{% set block_flow.ended = true %}
 {% endif %}
 {% elif action.target_unsupported %}
 	// W3C SCXML 6.2.4: "{{ action.target }}" is not a target this processor can
@@ -418,6 +422,7 @@
 {% endif %}
 {% if in_block %}
 	return  // W3C SCXML 4.9: the error ends the block
+{% set block_flow.ended = true %}
 {% endif %}
 {% elif is_http and not action.target and not action.targetexpr and not action.send_type_host_served %}
 	// W3C SCXML C.2 (test 577): BasicHTTP names no target to post to.
@@ -436,6 +441,7 @@
 {% endif %}
 {% if in_block %}
 	return  // W3C SCXML 4.9: the error ends the block
+{% set block_flow.ended = true %}
 {% endif %}
 {% elif names_no_invocation and not action.send_type_host_served %}
 	// W3C SCXML C.1 + 6.4: no invocation of this document is called
@@ -448,6 +454,7 @@
 	}
 {% if in_block %}
 	return  // W3C SCXML 4.9: the error ends the block
+{% set block_flow.ended = true %}
 {% endif %}
 {% else %}
 {# ── Build event data from <param>, namelist, or <content> ── #}
