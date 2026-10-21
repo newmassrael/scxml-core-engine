@@ -1639,7 +1639,7 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
 {% if invoke_info.candidates %}
 {% for candidate in invoke_info.candidates %}
         if !self.pending_done_invoke_{{ invoke_info.field_suffix }} {
-            if let Some(child) = self.child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}.as_mut() {
+            if let Some(child) = self.child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }}.as_mut() {
                 engine.start_owed_child_mesh(&mut **child, "{{ invoke_info.invoke_id }}", "{{ candidate.stem }}");
             }
         }
@@ -1841,7 +1841,7 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
 {% for invoke_info in model.invokes | scxml_family %}
 {% set child_targets = invoke_info.candidates if invoke_info.candidates else [{'stem': none}] %}
 {% for target in child_targets %}
-{% set slot = ('self.child_' ~ invoke_info.field_suffix ~ '_' ~ target.stem) if invoke_info.candidates else ('self.child_' ~ invoke_info.field_suffix) %}
+{% set slot = ('self.child_' ~ (invoke_info.field_suffix | candidate_identifier(target.stem))) if invoke_info.candidates else ('self.child_' ~ invoke_info.field_suffix) %}
         if let Some(ref mut child) = {{ slot }} {
             child.adopt_host_invokers(invokers);
         }
@@ -1861,7 +1861,7 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
 {% for invoke_info in model.invokes | scxml_family %}
 {% set child_targets = invoke_info.candidates if invoke_info.candidates else [{'stem': none}] %}
 {% for target in child_targets %}
-{% set slot = ('self.child_' ~ invoke_info.field_suffix ~ '_' ~ target.stem) if invoke_info.candidates else ('self.child_' ~ invoke_info.field_suffix) %}
+{% set slot = ('self.child_' ~ (invoke_info.field_suffix | candidate_identifier(target.stem))) if invoke_info.candidates else ('self.child_' ~ invoke_info.field_suffix) %}
         if let Some(ref mut child) = {{ slot }} {
             let holds = {
                 let child_id = child.policy().own_session_id();

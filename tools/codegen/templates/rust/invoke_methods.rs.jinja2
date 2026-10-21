@@ -878,7 +878,7 @@
 {% if invoke_info.candidates %}
 {% for candidate in invoke_info.candidates %}
 
-{{ settle_child_fn(invoke_info, "child_" ~ invoke_info.field_suffix ~ "_" ~ candidate.stem) }}
+{{ settle_child_fn(invoke_info, "child_" ~ (invoke_info.field_suffix | candidate_identifier(candidate.stem))) }}
 {% endfor %}
 {% else %}
 
@@ -1014,7 +1014,7 @@
 {% for invoke_info in model.invokes | scxml_family %}
 {% if invoke_info.candidates %}
 {% for candidate in invoke_info.candidates %}
-{{ saved_child(invoke_info, candidate.stem, candidate.child_host_type, "child_" ~ invoke_info.field_suffix ~ "_" ~ candidate.stem) }}
+{{ saved_child(invoke_info, candidate.stem, candidate.child_host_type, "child_" ~ (invoke_info.field_suffix | candidate_identifier(candidate.stem))) }}
 {% endfor %}
 {% else %}
 {{ saved_child(invoke_info, invoke_info.child_name, invoke_info.child_host_type, "child_" ~ invoke_info.field_suffix) }}
@@ -1035,7 +1035,7 @@
 {% for invoke_info in model.invokes | scxml_family %}
 {% if invoke_info.candidates %}
 {% for candidate in invoke_info.candidates %}
-{{ resume_child_arm(invoke_info, candidate, candidate.stem, candidate.child_host_type, "child_" ~ invoke_info.field_suffix ~ "_" ~ candidate.stem, "String::new()", false) }}
+{{ resume_child_arm(invoke_info, candidate, candidate.stem, candidate.child_host_type, "child_" ~ (invoke_info.field_suffix | candidate_identifier(candidate.stem)), "String::new()", false) }}
 {% endfor %}
 {% elif invoke_info.kind == "Hybrid" %}
 {{ resume_child_arm(invoke_info, invoke_info, invoke_info.child_name, invoke_info.child_host_type, "child_" ~ invoke_info.field_suffix, "String::new()", false) }}
