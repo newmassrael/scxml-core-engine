@@ -221,7 +221,7 @@ fn a_variable_holds_each_element_and_is_refused_where_it_is_lowered() {
             "optional<enum:Status>",
         ),
         (
-            r#"<data id="move" sce:type="optional&lt;record:Move&gt;" expr="null"/>"#,
+            r#"<data id="pick" sce:type="optional&lt;record:Move&gt;" expr="null"/>"#,
             "optional<record:Move>",
         ),
     ] {

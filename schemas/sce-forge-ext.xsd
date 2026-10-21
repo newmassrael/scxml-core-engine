@@ -129,12 +129,19 @@
        refuses what v1 does not take — a `string`/`bytes` element, a record
        or enum alias the document does not import — with a diagnostic that
        names the rule rather than an enumeration. A list holds no enum
-       element: the pattern below names none. -->
+       element: the pattern below names none. It also admits `list<optional<E>>`
+       over the elements an optional takes, which the parser refuses by name
+       (docs/adr/0055: a list holds no optional element), for the reason it
+       admits `list<string>`: a type composed of well-formed spellings is
+       refused by the rule it breaks, and only a misspelled keyword is the
+       schema's to refuse. An algorithm's slot admits `optional<T>` for the
+       same reason; the parser refuses it by name until the step of
+       docs/adr/0055 that lets an algorithm hold one. -->
   <xs:simpleType name="algorithmValueType">
-    <xs:union memberTypes="sce:sceTypeOrEnumRef">
+    <xs:union memberTypes="sce:sceTypeOrEnumRef sce:optionalValueType">
       <xs:simpleType>
         <xs:restriction base="xs:string">
-          <xs:pattern value="list&lt;\s*(uint8|uint16|uint32|uint64|int8|int16|int32|int64|float32|float64|bool|string|bytes|record:[A-Za-z_][A-Za-z0-9_]*)\s*&gt;"/>
+          <xs:pattern value="list&lt;\s*(uint8|uint16|uint32|uint64|int8|int16|int32|int64|float32|float64|bool|string|bytes|record:[A-Za-z_][A-Za-z0-9_]*|optional&lt;\s*(uint8|uint16|uint32|uint64|int8|int16|int32|int64|float32|float64|bool|string|bytes|enum:[A-Za-z_][A-Za-z0-9_]*|record:[A-Za-z_][A-Za-z0-9_]*)\s*&gt;)\s*&gt;"/>
         </xs:restriction>
       </xs:simpleType>
       <!-- `record:<alias>` — the struct an imported event-schema declares.
@@ -154,11 +161,15 @@
        Lexical, as the list pattern is: the parser
        (`read_static_value_type`) judges the alias against the document's
        imports, and refuses a nested optional and a list inside one with the
-       set that may stand there. A `sce-static` statechart's variable holds
-       one; every other position's parser refuses it by name. -->
+       set that may stand there. The pattern therefore admits one level of
+       either inside (`optional<optional<E>>`, `optional<list<E>>`): a type
+       composed of well-formed spellings is refused by the rule it breaks, by
+       name, as `list<string>` is, and only a misspelled keyword is the
+       schema's to refuse. A `sce-static` statechart's variable holds one;
+       every other position's parser refuses it by name. -->
   <xs:simpleType name="optionalValueType">
     <xs:restriction base="xs:string">
-      <xs:pattern value="optional&lt;\s*(uint8|uint16|uint32|uint64|int8|int16|int32|int64|float32|float64|bool|string|bytes|enum:[A-Za-z_][A-Za-z0-9_]*|record:[A-Za-z_][A-Za-z0-9_]*)\s*&gt;"/>
+      <xs:pattern value="optional&lt;\s*(uint8|uint16|uint32|uint64|int8|int16|int32|int64|float32|float64|bool|string|bytes|enum:[A-Za-z_][A-Za-z0-9_]*|record:[A-Za-z_][A-Za-z0-9_]*|(optional|list)&lt;\s*(uint8|uint16|uint32|uint64|int8|int16|int32|int64|float32|float64|bool|string|bytes|enum:[A-Za-z_][A-Za-z0-9_]*|record:[A-Za-z_][A-Za-z0-9_]*)\s*&gt;)\s*&gt;"/>
     </xs:restriction>
   </xs:simpleType>
 
@@ -171,7 +182,7 @@
        (`read_type_attr`, `read_algorithm_value_type`,
        `read_static_value_type`). -->
   <xs:simpleType name="dataValueType">
-    <xs:union memberTypes="sce:sceTypeOrEnumRef sce:algorithmValueType sce:optionalValueType"/>
+    <xs:union memberTypes="sce:sceTypeOrEnumRef sce:algorithmValueType"/>
   </xs:simpleType>
 
   <!-- SCE Forge Section 3.3: Data flow direction -->
