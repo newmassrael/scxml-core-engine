@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/shared/record_clear.scxml — a person's word that one field of a row of a shared
+  record list is to hold nothing, as the host or the statechart that invoked the list
+  hands it to a copy (docs/adr/0046): which row (`id`) and which field (`field`), `now`,
+  the host's wall clock in milliseconds, and `more`, whether the change goes on.
+
+  The copy writes over every value it holds in the field and writes none: the values it
+  has seen, and no other. A value someone wrote at the same time without seeing them is
+  not named, and stays (record_list). It is a command of a change as an edit is
+  (record_edit): with `more` it is held with the commands before it, and the first
+  command that does not say `more` ends the change, which is judged, stamped and taken in
+  as one. A field that holds nothing is cleared by nothing, and a change of nothing else
+  stamps and sends nothing.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="record_clear"
+       sce:event-name="record_list.clear">
+  <datamodel>
+    <data id="id" sce:type="uint32" sce:direction="in"/>
+    <data id="field" sce:type="uint16" sce:direction="in"/>
+    <data id="now" sce:type="int64" sce:direction="in"/>
+    <data id="more" sce:type="bool" sce:direction="in"/>
+  </datamodel>
+</scxml>

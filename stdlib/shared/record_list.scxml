@@ -64,6 +64,17 @@
   of its change in with it; a resync takes in every part held, and a settle drops those
   of a change at or before its floor.
 
+  A field can be emptied and a row retired (docs/adr/0046, section 2). `record_list.clear`
+  (record_clear) writes over every value the copy holds in one register and writes none,
+  and `record_list.retire` (record_retire) over every value it holds in any register of a
+  row; each is a command of a change as an edit is. Both write over what the copy has
+  seen and nothing else, the rule a write over a field has always kept: a value written at
+  the same time by someone who had not seen the retire stays, on every copy and in every
+  order, and the row then holds the fields such writes gave it, which a parent is told
+  (an edit not seen wins). What a retire wrote over goes from `values` and `adds` at once,
+  and its tombstones at the settle that passes the dots they name, so a row retired and
+  settled takes no room in any copy.
+
   A copy that has lost changes for good (restarted from an older save, so that what it
   lacks is something its peers believe delivered, and no retry repairs it) finds them with
   a digest and takes only what it lacks. Each copy keeps a merkle digest of its changes
@@ -230,6 +241,8 @@
   <sce:import kind="event-schema" src="sce:std/shared/record_announce.scxml" as="Announce"/>
   <sce:import kind="algorithm" src="sce:std/shared/register_values.scxml" as="RegisterValues"/>
   <sce:import kind="event-schema" src="sce:std/shared/record_part.scxml" as="Part"/>
+  <sce:import kind="event-schema" src="sce:std/shared/record_clear.scxml" as="Clear"/>
+  <sce:import kind="event-schema" src="sce:std/shared/record_retire.scxml" as="Retire"/>
   <datamodel>
     <data id="node" sce:type="uint64" expr="0" sce:direction="out"/>
     <data id="hub" sce:type="bool" expr="false" sce:direction="out"/>
@@ -438,6 +451,48 @@
         <assign location="part.field" expr="_event.data.field"/>
         <assign location="part.value" expr="_event.data.value"/>
         <assign location="part.text" expr="_event.data.text"/>
+        <sce:append target="staged" expr="part"/>
+        <assign location="probing" expr="false"/>
+      </if>
+      <if cond="!holding">
+        <assign location="closingNow" expr="_event.data.now"/>
+        <send target="#_internal" event="record_list.close"/>
+      </if>
+    </transition>
+
+    <!-- A person's word that a field is to hold nothing: a command of a change, staged as
+         an edit is, which writes over every value the copy holds in the field when the
+         change is taken in, and writes none. -->
+    <transition event="record_list.clear" type="internal">
+      <assign location="holding" expr="_event.data.more"/>
+      <if cond="!spoiled">
+        <assign location="probing" expr="true"/>
+        <assign location="part.kind" expr="1"/>
+        <assign location="part.id" expr="_event.data.id"/>
+        <assign location="part.field" expr="_event.data.field"/>
+        <assign location="part.value" expr="0"/>
+        <assign location="part.text" expr="''"/>
+        <sce:append target="staged" expr="part"/>
+        <assign location="probing" expr="false"/>
+      </if>
+      <if cond="!holding">
+        <assign location="closingNow" expr="_event.data.now"/>
+        <send target="#_internal" event="record_list.close"/>
+      </if>
+    </transition>
+
+    <!-- A person's word that a row is gone: a command of a change, staged as an edit is,
+         which writes over every value the copy holds in any field of the row when the
+         change is taken in, and writes none. -->
+    <transition event="record_list.retire" type="internal">
+      <assign location="holding" expr="_event.data.more"/>
+      <if cond="!spoiled">
+        <assign location="probing" expr="true"/>
+        <assign location="part.kind" expr="2"/>
+        <assign location="part.id" expr="_event.data.id"/>
+        <assign location="part.field" expr="0"/>
+        <assign location="part.value" expr="0"/>
+        <assign location="part.text" expr="''"/>
         <sce:append target="staged" expr="part"/>
         <assign location="probing" expr="false"/>
       </if>

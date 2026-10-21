@@ -2234,6 +2234,13 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, AStandardRecordListTakesAChangeAsOneU
     replay("record_list_change", driver);
 }
 
+// A field is emptied and a row retired by writing over what the copy has seen, and a
+// write it had not seen stays (docs/adr/0046).
+TEST(AStaticDatamodelRunsGeneratedCppTest, AStandardRecordListClearsAFieldAndRetiresARow) {
+    auto driver = recordListDriver();
+    replay("record_list_retire", driver);
+}
+
 // A statechart that invokes the standard record list by its library name is told what
 // each register a change moved holds: its count and its values in the order of their
 // dots, a count of 0 when every value was written over, and nothing for a write the

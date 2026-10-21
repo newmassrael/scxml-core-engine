@@ -23,7 +23,9 @@
   first, whatever order they arrived in, and the other value after it; a register
   whose every value is written over reads as a count of 0; a write that is already
   held moves nothing and is told nothing; and an edit that writes over two values and
-  writes its own, three changes inside the list, is told once.
+  writes its own, three changes inside the list, is told once. A retire of a row is told
+  as each of its registers holding nothing, once, and a write to the row its author had
+  not seen brings the field back, which is told as any write is (docs/adr/0046).
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="holding" datamodel="sce-static" name="record_list_parent">
@@ -31,6 +33,8 @@
   <sce:import kind="event-schema" src="sce:std/shared/record_edit.scxml" as="Edit"/>
   <sce:import kind="event-schema" src="sce:std/shared/record_write.scxml" as="Write"/>
   <sce:import kind="event-schema" src="sce:std/shared/record_supersede.scxml" as="Supersede"/>
+  <sce:import kind="event-schema" src="sce:std/shared/record_clear.scxml" as="Clear"/>
+  <sce:import kind="event-schema" src="sce:std/shared/record_retire.scxml" as="Retire"/>
   <!-- The records are named for what the list told, and not `Register`: a generated
        name is spelled from the alias, and `register` is a word of C and C++. -->
   <sce:import kind="event-schema" src="sce:std/shared/record_register.scxml" as="Told"/>
@@ -78,6 +82,22 @@
         <param name="value" expr="_event.data.value"/>
         <param name="text" expr="_event.data.text"/>
         <param name="now" expr="_event.data.now"/>
+        <param name="more" expr="_event.data.more"/>
+      </send>
+    </transition>
+    <transition event="record_list.clear" type="internal">
+      <send target="#_list" event="record_list.clear">
+        <param name="id" expr="_event.data.id"/>
+        <param name="field" expr="_event.data.field"/>
+        <param name="now" expr="_event.data.now"/>
+        <param name="more" expr="_event.data.more"/>
+      </send>
+    </transition>
+    <transition event="record_list.retire" type="internal">
+      <send target="#_list" event="record_list.retire">
+        <param name="id" expr="_event.data.id"/>
+        <param name="now" expr="_event.data.now"/>
+        <param name="more" expr="_event.data.more"/>
       </send>
     </transition>
     <transition event="record_list.write" type="internal">

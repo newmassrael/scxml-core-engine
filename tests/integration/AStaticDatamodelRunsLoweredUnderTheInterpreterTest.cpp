@@ -857,8 +857,8 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheInterpreterDoesWha
     // anything. The statechart that invokes it by its library name is not among them:
     // the lowering rewrites a child where its text stands in its parent, and a standard
     // child has none there, so it is refused as an invoke by `src`.
-    for (const char *copy :
-         {"record_list_person", "record_list_hub", "record_list_alone", "record_list_offline", "record_list_change"}) {
+    for (const char *copy : {"record_list_person", "record_list_hub", "record_list_alone", "record_list_offline",
+                             "record_list_change", "record_list_retire"}) {
         EXPECT_NE(std::find(replayed.begin(), replayed.end(), copy), replayed.end())
             << copy << " was not replayed: the standard shared record list has no lowering for the Interpreter";
     }

@@ -5895,11 +5895,16 @@ person's and then a hub, which keeps every change it makes because what a copy d
 to itself is queued before anything it sends to a peer (docs/adr/0046);
 `record_list_change` is a change of several fields staged with `more` and sent as one
 unit, a change refused whole for a text and for naming a register twice, and a peer's
-change held a part at a time until it is whole, by a person and by the hub; and
-`record_list_parent` is a statechart that invokes it and publishes what
+change held a part at a time until it is whole, by a person and by the hub;
+`record_list_retire` is a field emptied (`record_list.clear`) and a row retired
+(`record_list.retire`), each writing over what the copy holds and nothing else, a write
+the retiring copy had not seen staying, and a settle that forgets what the retire wrote
+over; and `record_list_parent` is a statechart that invokes it and publishes what
 it was told: a register's one value, two values written at once told as a count of 2
 with the earlier dot first, a register written over value by value told as a count of
-0, a write already held told nothing, and the hub's own change told once. The model the
+0, a write already held told nothing, the hub's own change told once, a retired row told
+as each of its registers holding nothing, and a write its author made without seeing
+the retire told as the field coming back. The model the
 expected values come from was first held to every step `todo_peer` took in the world's
 to-do afternoon. The world test replays that afternoon on the standard part's Rust
 machine in its own process, the sends by their routes and an edit that wrote over what

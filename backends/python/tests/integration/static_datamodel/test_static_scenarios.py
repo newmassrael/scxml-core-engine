@@ -791,6 +791,12 @@ def test_a_standard_record_list_takes_a_change_as_one_unit() -> None:
     replay("record_list_change")
 
 
+# A field is emptied and a row retired by writing over what the copy has seen, and a
+# write it had not seen stays (docs/adr/0046).
+def test_a_standard_record_list_clears_a_field_and_retires_a_row() -> None:
+    replay("record_list_retire")
+
+
 # A statechart that invokes the standard record list by its library name is told what
 # each register a change moved holds: its count and its values in the order of their
 # dots, a count of 0 when every value was written over, and nothing for a write the

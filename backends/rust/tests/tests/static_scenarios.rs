@@ -1167,4 +1167,7 @@ a_copy_does_what_it_did_in_the_world! {
     // A change is one unit: staged, stamped once, taken in whole, and sent as parts a
     // copy holds until they are all there (docs/adr/0046).
     record_list_takes_a_change_as_one_unit: record_list_sm::{RecordListPolicy, RecordListPersist} => "static_datamodel/scenarios/record_list_change.json";
+    // A field is emptied and a row retired by writing over what the copy has seen, and
+    // a write it had not seen stays (docs/adr/0046).
+    record_list_clears_a_field_and_retires_a_row: record_list_sm::{RecordListPolicy, RecordListPersist} => "static_datamodel/scenarios/record_list_retire.json";
 }

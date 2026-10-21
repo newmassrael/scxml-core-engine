@@ -1516,6 +1516,13 @@ class StaticScenarioTest {
         replayRecordList(scenario("record_list_change"))
     }
 
+    // A field is emptied and a row retired by writing over what the copy has seen, and a
+    // write it had not seen stays (docs/adr/0046).
+    @Test
+    fun recordListClearsAFieldAndRetiresARow() {
+        replayRecordList(scenario("record_list_retire"))
+    }
+
     /**
      * One run of `record_list`, on a machine of its own whose sends to its peers are
      * recorded, or, for a scenario that gives it no router, that is given none.
