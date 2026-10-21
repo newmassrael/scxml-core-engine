@@ -270,11 +270,42 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecOriginChoiceOwnedVariant<
     /// single `encode`; the owned form deliberately carries no encode of
     /// its own.
     pub fn as_borrowed(&self) -> CodecOriginChoiceVariant<'_> {
+        let mut _out = CodecOriginChoiceVariant::default();
+        self.as_borrowed_into(&mut _out);
+        _out
+    }
+
+    /// [`Self::as_borrowed`] into a destination the caller
+    /// owns: the active arm is installed in `_out` holding its body's default
+    /// and that body is projected where it sits, so the arm body is never
+    /// returned up through the variant wrapper.
+    ///
+    /// A bounded list moves by copying its whole declared capacity, so a
+    /// projection that returns one copies the declared maximum at every layer
+    /// it passes through. A caller on a path where that shows projects into a
+    /// destination it owns. On `Err`, `_out` holds what was projected so far.
+    pub fn as_borrowed_into<'o>(&'o self, _out: &mut CodecOriginChoiceVariant<'o>) {
         match self {
-            CodecOriginChoiceOwnedVariant::CodecOriginLeaf(_b) => CodecOriginChoiceVariant::CodecOriginLeaf(_b.as_borrowed()),
-            CodecOriginChoiceOwnedVariant::CodecOriginScalar(_b) => CodecOriginChoiceVariant::CodecOriginScalar(_b.clone()),
-            CodecOriginChoiceOwnedVariant::Default { tag, body } => CodecOriginChoiceVariant::Default { tag: *tag, body: body.clone() },
+            CodecOriginChoiceOwnedVariant::CodecOriginLeaf(_b) => {
+                *_out = CodecOriginChoiceVariant::CodecOriginLeaf(Default::default());
+                if let CodecOriginChoiceVariant::CodecOriginLeaf(_o) = _out {
+                    _b.as_borrowed_into(_o);
+                }
+            }
+            CodecOriginChoiceOwnedVariant::CodecOriginScalar(_b) => {
+                *_out = CodecOriginChoiceVariant::CodecOriginScalar(Default::default());
+                if let CodecOriginChoiceVariant::CodecOriginScalar(_o) = _out {
+                    *_o = _b.clone();
+                }
+            }
+            CodecOriginChoiceOwnedVariant::Default { tag, body } => {
+                *_out = CodecOriginChoiceVariant::Default { tag: *tag, body: Default::default() };
+                if let CodecOriginChoiceVariant::Default { body: _o, .. } = _out {
+                    *_o = body.clone();
+                }
+            }
         }
+        
     }
 }
 
@@ -313,10 +344,25 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecOriginChoiceOwned<S> {
     /// reaches it via `as_borrowed` then `encode` / `encode_to_vec`.
     /// Each field is projected by reference — a cheap re-borrow, not a copy.
     pub fn as_borrowed(&self) -> CodecOriginChoice<'_> {
-        CodecOriginChoice {
-            tag: self.tag,
-            body: self.body.as_borrowed(),
-        }
+        let mut _out = CodecOriginChoice::default();
+        self.as_borrowed_into(&mut _out);
+        _out
+    }
+
+    /// [`Self::as_borrowed`] into a destination the caller owns, each
+    /// bounded list and embedded body projected in the field where it sits.
+    ///
+    /// A bounded list moves by copying its whole declared capacity, so a
+    /// projection that returns one copies the declared maximum at every layer
+    /// it passes through (the optional wrapper, the borrowed struct, the
+    /// variant, the caller's binding), however few entries the list holds. A
+    /// caller on a path where that shows projects into a destination it owns,
+    /// then encodes from it. On `Err`, `_out` holds what was projected so far
+    /// and is not to be read.
+    pub fn as_borrowed_into<'o>(&'o self, _out: &mut CodecOriginChoice<'o>) {
+        _out.tag = self.tag;
+        self.body.as_borrowed_into(&mut _out.body);
+        
     }
 
     /// Move this value to a different storage profile — growable to inline

@@ -414,16 +414,72 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecTransportEnvelopeOwnedVar
     /// single `encode`; the owned form deliberately carries no encode of
     /// its own.
     pub fn as_borrowed(&self) -> CodecTransportEnvelopeVariant<'_> {
+        let mut _out = CodecTransportEnvelopeVariant::default();
+        self.as_borrowed_into(&mut _out);
+        _out
+    }
+
+    /// [`Self::as_borrowed`] into a destination the caller
+    /// owns: the active arm is installed in `_out` holding its body's default
+    /// and that body is projected where it sits, so the arm body is never
+    /// returned up through the variant wrapper.
+    ///
+    /// A bounded list moves by copying its whole declared capacity, so a
+    /// projection that returns one copies the declared maximum at every layer
+    /// it passes through. A caller on a path where that shows projects into a
+    /// destination it owns. On `Err`, `_out` holds what was projected so far.
+    pub fn as_borrowed_into<'o>(&'o self, _out: &mut CodecTransportEnvelopeVariant<'o>) {
         match self {
-            CodecTransportEnvelopeOwnedVariant::CodecZenohInitBody(_b) => CodecTransportEnvelopeVariant::CodecZenohInitBody(_b.as_borrowed()),
-            CodecTransportEnvelopeOwnedVariant::CodecZenohOpenBody(_b) => CodecTransportEnvelopeVariant::CodecZenohOpenBody(_b.as_borrowed()),
-            CodecTransportEnvelopeOwnedVariant::CodecZenohClose(_b) => CodecTransportEnvelopeVariant::CodecZenohClose(_b.clone()),
-            CodecTransportEnvelopeOwnedVariant::CodecZenohKeepAlive(_b) => CodecTransportEnvelopeVariant::CodecZenohKeepAlive(_b.clone()),
-            CodecTransportEnvelopeOwnedVariant::CodecZenohFrame(_b) => CodecTransportEnvelopeVariant::CodecZenohFrame(_b.as_borrowed()),
-            CodecTransportEnvelopeOwnedVariant::CodecZenohFragment(_b) => CodecTransportEnvelopeVariant::CodecZenohFragment(_b.as_borrowed()),
-            CodecTransportEnvelopeOwnedVariant::CodecZenohJoin(_b) => CodecTransportEnvelopeVariant::CodecZenohJoin(_b.as_borrowed()),
-            CodecTransportEnvelopeOwnedVariant::Default { tag, body } => CodecTransportEnvelopeVariant::Default { tag: *tag, body: body.clone() },
+            CodecTransportEnvelopeOwnedVariant::CodecZenohInitBody(_b) => {
+                *_out = CodecTransportEnvelopeVariant::CodecZenohInitBody(Default::default());
+                if let CodecTransportEnvelopeVariant::CodecZenohInitBody(_o) = _out {
+                    _b.as_borrowed_into(_o);
+                }
+            }
+            CodecTransportEnvelopeOwnedVariant::CodecZenohOpenBody(_b) => {
+                *_out = CodecTransportEnvelopeVariant::CodecZenohOpenBody(Default::default());
+                if let CodecTransportEnvelopeVariant::CodecZenohOpenBody(_o) = _out {
+                    _b.as_borrowed_into(_o);
+                }
+            }
+            CodecTransportEnvelopeOwnedVariant::CodecZenohClose(_b) => {
+                *_out = CodecTransportEnvelopeVariant::CodecZenohClose(Default::default());
+                if let CodecTransportEnvelopeVariant::CodecZenohClose(_o) = _out {
+                    *_o = _b.clone();
+                }
+            }
+            CodecTransportEnvelopeOwnedVariant::CodecZenohKeepAlive(_b) => {
+                *_out = CodecTransportEnvelopeVariant::CodecZenohKeepAlive(Default::default());
+                if let CodecTransportEnvelopeVariant::CodecZenohKeepAlive(_o) = _out {
+                    *_o = _b.clone();
+                }
+            }
+            CodecTransportEnvelopeOwnedVariant::CodecZenohFrame(_b) => {
+                *_out = CodecTransportEnvelopeVariant::CodecZenohFrame(Default::default());
+                if let CodecTransportEnvelopeVariant::CodecZenohFrame(_o) = _out {
+                    _b.as_borrowed_into(_o);
+                }
+            }
+            CodecTransportEnvelopeOwnedVariant::CodecZenohFragment(_b) => {
+                *_out = CodecTransportEnvelopeVariant::CodecZenohFragment(Default::default());
+                if let CodecTransportEnvelopeVariant::CodecZenohFragment(_o) = _out {
+                    _b.as_borrowed_into(_o);
+                }
+            }
+            CodecTransportEnvelopeOwnedVariant::CodecZenohJoin(_b) => {
+                *_out = CodecTransportEnvelopeVariant::CodecZenohJoin(Default::default());
+                if let CodecTransportEnvelopeVariant::CodecZenohJoin(_o) = _out {
+                    _b.as_borrowed_into(_o);
+                }
+            }
+            CodecTransportEnvelopeOwnedVariant::Default { tag, body } => {
+                *_out = CodecTransportEnvelopeVariant::Default { tag: *tag, body: Default::default() };
+                if let CodecTransportEnvelopeVariant::Default { body: _o, .. } = _out {
+                    *_o = body.clone();
+                }
+            }
         }
+        
     }
 }
 
@@ -462,10 +518,25 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecTransportEnvelopeOwned<S>
     /// reaches it via `as_borrowed` then `encode` / `encode_to_vec`.
     /// Each field is projected by reference — a cheap re-borrow, not a copy.
     pub fn as_borrowed(&self) -> CodecTransportEnvelope<'_> {
-        CodecTransportEnvelope {
-            header: self.header,
-            body: self.body.as_borrowed(),
-        }
+        let mut _out = CodecTransportEnvelope::default();
+        self.as_borrowed_into(&mut _out);
+        _out
+    }
+
+    /// [`Self::as_borrowed`] into a destination the caller owns, each
+    /// bounded list and embedded body projected in the field where it sits.
+    ///
+    /// A bounded list moves by copying its whole declared capacity, so a
+    /// projection that returns one copies the declared maximum at every layer
+    /// it passes through (the optional wrapper, the borrowed struct, the
+    /// variant, the caller's binding), however few entries the list holds. A
+    /// caller on a path where that shows projects into a destination it owns,
+    /// then encodes from it. On `Err`, `_out` holds what was projected so far
+    /// and is not to be read.
+    pub fn as_borrowed_into<'o>(&'o self, _out: &mut CodecTransportEnvelope<'o>) {
+        _out.header = self.header;
+        self.body.as_borrowed_into(&mut _out.body);
+        
     }
 
     /// Move this value to a different storage profile — growable to inline

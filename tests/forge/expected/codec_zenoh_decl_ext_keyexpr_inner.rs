@@ -271,11 +271,26 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohDeclExtKeyexprInnerO
     /// reaches it via `as_borrowed` then `encode` / `encode_to_vec`.
     /// Each field is projected by reference — a cheap re-borrow, not a copy.
     pub fn as_borrowed(&self) -> CodecZenohDeclExtKeyexprInner<'_> {
-        CodecZenohDeclExtKeyexprInner {
-            inner_header: self.inner_header,
-            id: self.id,
-            suffix: self.suffix.as_ref().map(::sce_forge_runtime::codec::SceByteBuf::as_slice),
-        }
+        let mut _out = CodecZenohDeclExtKeyexprInner::default();
+        self.as_borrowed_into(&mut _out);
+        _out
+    }
+
+    /// [`Self::as_borrowed`] into a destination the caller owns, each
+    /// bounded list and embedded body projected in the field where it sits.
+    ///
+    /// A bounded list moves by copying its whole declared capacity, so a
+    /// projection that returns one copies the declared maximum at every layer
+    /// it passes through (the optional wrapper, the borrowed struct, the
+    /// variant, the caller's binding), however few entries the list holds. A
+    /// caller on a path where that shows projects into a destination it owns,
+    /// then encodes from it. On `Err`, `_out` holds what was projected so far
+    /// and is not to be read.
+    pub fn as_borrowed_into<'o>(&'o self, _out: &mut CodecZenohDeclExtKeyexprInner<'o>) {
+        _out.inner_header = self.inner_header;
+        _out.id = self.id;
+        _out.suffix = self.suffix.as_ref().map(::sce_forge_runtime::codec::SceByteBuf::as_slice);
+        
     }
 
     /// Move this value to a different storage profile — growable to inline

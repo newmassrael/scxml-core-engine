@@ -5286,19 +5286,25 @@ fn rust_owned_field_keys(
 }
 
 /// Owned→borrowed projection for one codec field — the inverse of
-/// [`rust_owned_field_keys`]'s `into_owned` expr. Returns the expr that
-/// projects `self.<id>` (an `&{Codec}Owned` field) back into the borrowed
-/// view's field, reusing the one `encode` that lives on the borrowed type.
+/// [`rust_owned_field_keys`]'s `into_owned` expr. Returns the statement that
+/// projects `self.<id>` (an `&{Codec}Owned` field) into the borrowed view's
+/// field of the destination (`_out`), reusing the one `encode` that lives on
+/// the borrowed type.
+///
+/// The statement writes the destination field rather than yielding a value:
+/// a bounded list and a body embedded by value move by copying their whole
+/// declared size, so a projection that returns them copies the declared
+/// maximum at every layer it passes through. See `try_project_bounded_into`.
 ///
 /// Asymmetry with `into_owned`: that consumes `self` (move), this borrows
 /// `&self`, so owned-by-value bodies must `clone()` and bounded lists must
 /// re-bound (owned `Vec` -> borrowed `heapless::Vec<_, N>`) via the shared
-/// runtime projector `try_project_bounded`, which raises
+/// runtime projector `try_project_bounded_into`, which raises
 /// `CodecError::TooManyElements` past `N`. Every list field is therefore
-/// fallible (`?`); the enclosing method is `try_as_borrowed -> Result`
+/// fallible (`?`); the enclosing method is `try_as_borrowed_into -> Result`
 /// exactly when [`codec_self_as_borrowed_fallible`] holds, so the `?` here
 /// always lands in a `Result` context. Rust-only.
-fn rust_as_borrowed_field_keys(
+fn rust_as_borrowed_field_into_stmt(
     f: &CodecField,
     imports: &[ImportContext],
     l: &LangCtx,
@@ -5306,6 +5312,7 @@ fn rust_as_borrowed_field_keys(
     let id = l.codec_field_id(&f.id);
     let opt = f.present_if.is_some();
     let self_ref = format!("self.{id}");
+    let out_ref = format!("_out.{id}");
 
     // Bounded list (repeat / tlv-chain): owned `Vec` -> borrowed
     // `heapless::Vec<_, N>`, capacity-fallible via the shared projector.
@@ -5326,17 +5333,24 @@ fn rust_as_borrowed_field_keys(
         } else {
             "Ok(_e.as_borrowed())"
         };
-        let project =
-            |list: &str| format!("{RUNTIME_CODEC}::try_project_bounded({list}, |_e| {elem})");
-        let expr = if opt {
+        let project = |dest: &str, list: &str| {
+            format!("{RUNTIME_CODEC}::try_project_bounded_into({dest}, {list}, |_e| {elem})?")
+        };
+        let stmt = if opt {
             format!(
-                "{self_ref}.as_ref().map(|_l| {}).transpose()?",
-                project("_l")
+                "match &{self_ref} {{\n            \
+                     Some(_l) => {},\n            \
+                     None => {out_ref} = None,\n        \
+                 }}",
+                project(&format!("{out_ref}.insert(Default::default())"), "_l")
             )
         } else {
-            format!("{}?", project(&format!("&{self_ref}")))
+            format!(
+                "{};",
+                project(&format!("&mut {out_ref}"), &format!("&{self_ref}"))
+            )
         };
-        return Ok(expr);
+        return Ok(stmt);
     }
 
     // Embed: single body codec.
@@ -5348,18 +5362,27 @@ fn rust_as_borrowed_field_keys(
         if !import_codec_borrowed(imports, alias) {
             // Non-borrowed body is held by value in both forms; we hold
             // `&self`, so clone. `Option<T>::clone` covers the gated case.
-            return Ok(format!("{self_ref}.clone()"));
+            return Ok(format!("{out_ref} = {self_ref}.clone();"));
         }
+        // The body is projected into the destination field where it will
+        // live, not returned and moved into it.
         let fallible = import_codec_as_borrowed_fallible(imports, alias);
-        let expr = match (opt, fallible) {
-            (false, false) => format!("{self_ref}.as_borrowed()"),
-            (false, true) => format!("{self_ref}.try_as_borrowed()?"),
-            (true, false) => format!("{self_ref}.as_ref().map(|_v| _v.as_borrowed())"),
-            (true, true) => {
-                format!("{self_ref}.as_ref().map(|_v| _v.try_as_borrowed()).transpose()?")
-            }
+        let (call, q) = if fallible {
+            ("try_as_borrowed_into", "?")
+        } else {
+            ("as_borrowed_into", "")
         };
-        return Ok(expr);
+        let stmt = if opt {
+            format!(
+                "match &{self_ref} {{\n            \
+                     Some(_v) => _v.{call}({out_ref}.insert(Default::default())){q},\n            \
+                     None => {out_ref} = None,\n        \
+                 }}"
+            )
+        } else {
+            format!("{self_ref}.{call}(&mut {out_ref}){q};")
+        };
+        return Ok(stmt);
     }
 
     // Scalar. Bytes / String project to their borrowed `&` view through the
@@ -5381,7 +5404,7 @@ fn rust_as_borrowed_field_keys(
         SceType::String => read("SceStr", "as_str"),
         _ => self_ref,
     };
-    Ok(expr)
+    Ok(format!("{out_ref} = {expr};"))
 }
 
 /// The C11 codec's flat-scope identifiers, one spelling for every C11 codec
@@ -6638,8 +6661,11 @@ fn render_codec(
                 // per-field expr that re-borrows `self.<id>` back into the
                 // borrowed view. Consumed by the same owned-projection
                 // template block.
-                let rs_as_borrowed_expr = rust_as_borrowed_field_keys(f, imports, &l)?;
-                obj.insert("rs_as_borrowed_expr".into(), rs_as_borrowed_expr.into());
+                let rs_as_borrowed_into_stmt = rust_as_borrowed_field_into_stmt(f, imports, &l)?;
+                obj.insert(
+                    "rs_as_borrowed_into_stmt".into(),
+                    rs_as_borrowed_into_stmt.into(),
+                );
             }
             Ok(serde_json::Value::Object(obj))
         })
@@ -7198,18 +7224,20 @@ fn render_codec(
                         "owned_body_into_origin".into(),
                         owned_body_into_origin.into(),
                     );
-                    // Inverse projection match-arm expr (`as_borrowed`): the
-                    // arm binds `_b: &Body` (matching `&self`), so a borrowed
-                    // body re-borrows via `(try_)as_borrowed`, a non-borrowed
-                    // body is cloned.
-                    let as_borrowed_body = if !import_codec_borrowed(imports, &arm.body_alias) {
-                        "_b.clone()".to_string()
+                    // Inverse projection statement (`as_borrowed_into`): the
+                    // arm binds `_b: &Body` (matching `&self`) and `_o` is the
+                    // arm's body in the destination, so a borrowed body
+                    // projects into it via `(try_)as_borrowed_into`, a
+                    // non-borrowed body is cloned.
+                    let as_borrowed_into_stmt = if !import_codec_borrowed(imports, &arm.body_alias)
+                    {
+                        "*_o = _b.clone();".to_string()
                     } else if import_codec_as_borrowed_fallible(imports, &arm.body_alias) {
-                        "_b.try_as_borrowed()?".to_string()
+                        "_b.try_as_borrowed_into(_o)?;".to_string()
                     } else {
-                        "_b.as_borrowed()".to_string()
+                        "_b.as_borrowed_into(_o);".to_string()
                     };
-                    obj.insert("as_borrowed_body".into(), as_borrowed_body.into());
+                    obj.insert("as_borrowed_into_stmt".into(), as_borrowed_into_stmt.into());
                 }
                 obj.insert("body_type".into(), body_type.into());
                 // Borrowed zero-copy: type-position `<'a>` suffix when
@@ -7348,19 +7376,22 @@ fn render_codec(
                         "owned_body_into_origin".into(),
                         owned_body_into_origin.into(),
                     );
-                    // Inverse projection field-init fragment (`as_borrowed`).
-                    // The match binds `body: &Body` (matching `&self`); a
-                    // non-borrowed body is cloned (so no `body` shorthand —
-                    // it would move out of `&self`), a borrowed body re-
-                    // borrows via `(try_)as_borrowed`.
-                    let as_borrowed_body = if !import_codec_borrowed(imports, &d.body_alias) {
-                        "body: body.clone()".to_string()
+                    // Inverse projection statement (`as_borrowed_into`). The
+                    // match binds `body: &Body` (matching `&self`) and `_o`
+                    // is the default arm's body in the destination; a
+                    // non-borrowed body is cloned, a borrowed body projects
+                    // into it via `(try_)as_borrowed_into`.
+                    let as_borrowed_into_stmt = if !import_codec_borrowed(imports, &d.body_alias) {
+                        "*_o = body.clone();".to_string()
                     } else if import_codec_as_borrowed_fallible(imports, &d.body_alias) {
-                        "body: body.try_as_borrowed()?".to_string()
+                        "body.try_as_borrowed_into(_o)?;".to_string()
                     } else {
-                        "body: body.as_borrowed()".to_string()
+                        "body.as_borrowed_into(_o);".to_string()
                     };
-                    obj.insert("as_borrowed_body".into(), as_borrowed_body.into());
+                    obj.insert(
+                        "as_borrowed_into_stmt".into(),
+                        as_borrowed_into_stmt.into(),
+                    );
                 }
                 obj.insert("body_type".into(), body_type.into());
                 // Borrowed zero-copy: type-position `<'a>` suffix for the
@@ -7945,15 +7976,51 @@ fn render_codec(
             "as_borrowed_try".into(),
             if struct_fallible { "?" } else { "" }.into(),
         );
-        // The struct's `body` field projection call onto the variant enum.
-        ctx.insert(
-            "variant_as_borrowed_call".into(),
-            if variant_fallible {
-                "try_as_borrowed()?"
+        // The in-place form every projection is built on: the destination is
+        // handed in and filled, so a bounded list or body embedded by value
+        // is never moved back up through the layers above it (see
+        // `try_project_bounded_into`). `as_borrowed` / `try_as_borrowed` are
+        // thin wrappers over it. The `Result`-ness follows the same two
+        // predicates as the wrappers.
+        let into_signature = |fallible: bool| {
+            if fallible {
+                (
+                    "try_as_borrowed_into",
+                    " -> Result<(), CodecError>",
+                    "Ok(())",
+                )
             } else {
-                "as_borrowed()"
+                ("as_borrowed_into", "", "")
             }
+        };
+        let (struct_into_fn, struct_into_ret, struct_into_tail) = into_signature(struct_fallible);
+        ctx.insert("as_borrowed_into_fn".into(), struct_into_fn.into());
+        ctx.insert("as_borrowed_into_ret".into(), struct_into_ret.into());
+        ctx.insert("as_borrowed_into_tail".into(), struct_into_tail.into());
+        let (variant_into_fn, variant_into_ret, variant_into_tail) =
+            into_signature(variant_fallible);
+        ctx.insert("variant_as_borrowed_into_fn".into(), variant_into_fn.into());
+        ctx.insert(
+            "variant_as_borrowed_into_ret".into(),
+            variant_into_ret.into(),
+        );
+        ctx.insert(
+            "variant_as_borrowed_into_tail".into(),
+            variant_into_tail.into(),
+        );
+        // The struct's `body` field projection statement onto the variant enum.
+        ctx.insert(
+            "variant_as_borrowed_into_call".into(),
+            format!(
+                "{variant_into_fn}(&mut _out.body){};",
+                if variant_fallible { "?" } else { "" }
+            )
             .into(),
+        );
+        // The wrapper's own `?` on the in-place call.
+        ctx.insert(
+            "variant_as_borrowed_try".into(),
+            if variant_fallible { "?" } else { "" }.into(),
         );
         ctx.insert(
             "variant_as_borrowed_fn".into(),

@@ -321,16 +321,31 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohJoinOwned<S> {
     /// reaches it via `as_borrowed` then `encode` / `encode_to_vec`.
     /// Each field is projected by reference — a cheap re-borrow, not a copy.
     pub fn as_borrowed(&self) -> CodecZenohJoin<'_> {
-        CodecZenohJoin {
-            version: self.version,
-            cbyte: self.cbyte,
-            zid: ::sce_forge_runtime::codec::SceByteBuf::as_slice(&self.zid),
-            sn_res: self.sn_res,
-            batch_size: self.batch_size,
-            lease: self.lease,
-            next_sn_reliable: self.next_sn_reliable,
-            next_sn_best_effort: self.next_sn_best_effort,
-        }
+        let mut _out = CodecZenohJoin::default();
+        self.as_borrowed_into(&mut _out);
+        _out
+    }
+
+    /// [`Self::as_borrowed`] into a destination the caller owns, each
+    /// bounded list and embedded body projected in the field where it sits.
+    ///
+    /// A bounded list moves by copying its whole declared capacity, so a
+    /// projection that returns one copies the declared maximum at every layer
+    /// it passes through (the optional wrapper, the borrowed struct, the
+    /// variant, the caller's binding), however few entries the list holds. A
+    /// caller on a path where that shows projects into a destination it owns,
+    /// then encodes from it. On `Err`, `_out` holds what was projected so far
+    /// and is not to be read.
+    pub fn as_borrowed_into<'o>(&'o self, _out: &mut CodecZenohJoin<'o>) {
+        _out.version = self.version;
+        _out.cbyte = self.cbyte;
+        _out.zid = ::sce_forge_runtime::codec::SceByteBuf::as_slice(&self.zid);
+        _out.sn_res = self.sn_res;
+        _out.batch_size = self.batch_size;
+        _out.lease = self.lease;
+        _out.next_sn_reliable = self.next_sn_reliable;
+        _out.next_sn_best_effort = self.next_sn_best_effort;
+        
     }
 
     /// Move this value to a different storage profile — growable to inline

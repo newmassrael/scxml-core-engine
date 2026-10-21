@@ -170,8 +170,34 @@ pub enum CodecError {
 /// profile's rather than always inline.
 pub fn try_project_bounded<'s, L, T, U, const N: usize>(
     src: &'s L,
-    mut f: impl FnMut(&'s T) -> Result<U, CodecError>,
+    f: impl FnMut(&'s T) -> Result<U, CodecError>,
 ) -> Result<crate::heapless::Vec<U, N>, CodecError>
+where
+    L: crate::storage::SceList<T>,
+    T: 's,
+{
+    let mut out = crate::heapless::Vec::new();
+    try_project_bounded_into(&mut out, src, f)?;
+    Ok(out)
+}
+
+/// [`try_project_bounded`] into a list the caller already holds, replacing
+/// its contents.
+///
+/// A `heapless::Vec` moves by copying its whole declared capacity, so the
+/// value-returning projector hands the list back through every layer between
+/// the projection and the encode — the `Result`, the optional wrapper, the
+/// borrowed struct, the variant — copying the declared maximum at each,
+/// however few entries the list holds. Filling the destination in place is
+/// what `try_as_borrowed_into` is built on, and the value-returning form is
+/// this one over a fresh list, so the bound semantics stay in one place.
+///
+/// On `Err` the destination holds the entries projected so far.
+pub fn try_project_bounded_into<'s, L, T, U, const N: usize>(
+    out: &mut crate::heapless::Vec<U, N>,
+    src: &'s L,
+    mut f: impl FnMut(&'s T) -> Result<U, CodecError>,
+) -> Result<(), CodecError>
 where
     L: crate::storage::SceList<T>,
     T: 's,
@@ -180,12 +206,12 @@ where
     // to the list's lifetime, so a projected `U` that re-borrows the
     // element (`_e.as_borrowed() -> Body<'s>`) is nameable — the HRTB form
     // cannot express "return type borrows the closure argument".
-    let mut out = crate::heapless::Vec::new();
+    out.clear();
     for item in src.as_slice() {
         out.push(f(item)?)
             .map_err(|_| CodecError::TooManyElements)?;
     }
-    Ok(out)
+    Ok(())
 }
 
 // ── Owned storage profiles ───────────────────────────────────────

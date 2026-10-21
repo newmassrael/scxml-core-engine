@@ -242,10 +242,25 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohExtEnvelopeOwned<S> 
     /// same bound decode enforces. Only a growable profile can hold such a
     /// list; on the inline profile the source is already within bounds.
     pub fn try_as_borrowed(&self) -> Result<CodecZenohExtEnvelope<'_>, CodecError> {
-        Ok(CodecZenohExtEnvelope {
-            header_flags: self.header_flags,
-            extensions: ::sce_forge_runtime::codec::try_project_bounded(&self.extensions, |_e| Ok(_e.as_borrowed()))?,
-        })
+        let mut _out = CodecZenohExtEnvelope::default();
+        self.try_as_borrowed_into(&mut _out)?;
+        Ok(_out)
+    }
+
+    /// [`Self::try_as_borrowed`] into a destination the caller owns, each
+    /// bounded list and embedded body projected in the field where it sits.
+    ///
+    /// A bounded list moves by copying its whole declared capacity, so a
+    /// projection that returns one copies the declared maximum at every layer
+    /// it passes through (the optional wrapper, the borrowed struct, the
+    /// variant, the caller's binding), however few entries the list holds. A
+    /// caller on a path where that shows projects into a destination it owns,
+    /// then encodes from it. On `Err`, `_out` holds what was projected so far
+    /// and is not to be read.
+    pub fn try_as_borrowed_into<'o>(&'o self, _out: &mut CodecZenohExtEnvelope<'o>) -> Result<(), CodecError> {
+        _out.header_flags = self.header_flags;
+        ::sce_forge_runtime::codec::try_project_bounded_into(&mut _out.extensions, &self.extensions, |_e| Ok(_e.as_borrowed()))?;
+        Ok(())
     }
 
     /// Move this value to a different storage profile — growable to inline

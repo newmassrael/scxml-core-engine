@@ -311,15 +311,33 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecOriginEnvelopeOwned<S> {
     /// same bound decode enforces. Only a growable profile can hold such a
     /// list; on the inline profile the source is already within bounds.
     pub fn try_as_borrowed(&self) -> Result<CodecOriginEnvelope<'_>, CodecError> {
-        Ok(CodecOriginEnvelope {
-            hdr: self.hdr,
-            note_len: self.note_len,
-            note: ::sce_forge_runtime::codec::SceStr::as_str(&self.note),
-            m: self.m,
-            required: self.required.as_borrowed(),
-            optional: self.optional.as_ref().map(|_v| _v.as_borrowed()),
-            items: ::sce_forge_runtime::codec::try_project_bounded(&self.items, |_e| Ok(_e.as_borrowed()))?,
-        })
+        let mut _out = CodecOriginEnvelope::default();
+        self.try_as_borrowed_into(&mut _out)?;
+        Ok(_out)
+    }
+
+    /// [`Self::try_as_borrowed`] into a destination the caller owns, each
+    /// bounded list and embedded body projected in the field where it sits.
+    ///
+    /// A bounded list moves by copying its whole declared capacity, so a
+    /// projection that returns one copies the declared maximum at every layer
+    /// it passes through (the optional wrapper, the borrowed struct, the
+    /// variant, the caller's binding), however few entries the list holds. A
+    /// caller on a path where that shows projects into a destination it owns,
+    /// then encodes from it. On `Err`, `_out` holds what was projected so far
+    /// and is not to be read.
+    pub fn try_as_borrowed_into<'o>(&'o self, _out: &mut CodecOriginEnvelope<'o>) -> Result<(), CodecError> {
+        _out.hdr = self.hdr;
+        _out.note_len = self.note_len;
+        _out.note = ::sce_forge_runtime::codec::SceStr::as_str(&self.note);
+        _out.m = self.m;
+        self.required.as_borrowed_into(&mut _out.required);
+        match &self.optional {
+            Some(_v) => _v.as_borrowed_into(_out.optional.insert(Default::default())),
+            None => _out.optional = None,
+        }
+        ::sce_forge_runtime::codec::try_project_bounded_into(&mut _out.items, &self.items, |_e| Ok(_e.as_borrowed()))?;
+        Ok(())
     }
 
     /// Move this value to a different storage profile — growable to inline

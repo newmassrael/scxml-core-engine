@@ -732,14 +732,40 @@ impl{{ variant_owned_generics_impl }} {{ struct_name }}OwnedVariant{{ variant_ow
     /// single `encode`; the owned form deliberately carries no encode of
     /// its own.
     pub fn {{ variant_as_borrowed_fn }}(&self) -> {{ variant_as_borrowed_ret }} {
-        {{ variant_as_borrowed_ok_open }}match self {
+        let mut _out = {{ struct_name }}Variant::default();
+        self.{{ variant_as_borrowed_into_fn }}(&mut _out){{ variant_as_borrowed_try }};
+        {{ variant_as_borrowed_ok_open }}_out{{ variant_as_borrowed_ok_close }}
+    }
+
+    /// [`Self::{{ variant_as_borrowed_fn }}`] into a destination the caller
+    /// owns: the active arm is installed in `_out` holding its body's default
+    /// and that body is projected where it sits, so the arm body is never
+    /// returned up through the variant wrapper.
+    ///
+    /// A bounded list moves by copying its whole declared capacity, so a
+    /// projection that returns one copies the declared maximum at every layer
+    /// it passes through. A caller on a path where that shows projects into a
+    /// destination it owns. On `Err`, `_out` holds what was projected so far.
+    pub fn {{ variant_as_borrowed_into_fn }}<'o>(&'o self, _out: &mut {{ struct_name }}Variant<'o>){{ variant_as_borrowed_into_ret }} {
+        match self {
 {% for arm in variant.arms %}
-            {{ struct_name }}OwnedVariant::{{ arm.variant_name }}(_b) => {{ struct_name }}Variant::{{ arm.variant_name }}({{ arm.as_borrowed_body }}),
+            {{ struct_name }}OwnedVariant::{{ arm.variant_name }}(_b) => {
+                *_out = {{ struct_name }}Variant::{{ arm.variant_name }}(Default::default());
+                if let {{ struct_name }}Variant::{{ arm.variant_name }}(_o) = _out {
+                    {{ arm.as_borrowed_into_stmt }}
+                }
+            }
 {% endfor %}
 {% if variant.default_arm %}
-            {{ struct_name }}OwnedVariant::{{ variant.default_arm.variant_name }} { tag, body } => {{ struct_name }}Variant::{{ variant.default_arm.variant_name }} { tag: *tag, {{ variant.default_arm.as_borrowed_body }} },
+            {{ struct_name }}OwnedVariant::{{ variant.default_arm.variant_name }} { tag, body } => {
+                *_out = {{ struct_name }}Variant::{{ variant.default_arm.variant_name }} { tag: *tag, body: Default::default() };
+                if let {{ struct_name }}Variant::{{ variant.default_arm.variant_name }} { body: _o, .. } = _out {
+                    {{ variant.default_arm.as_borrowed_into_stmt }}
+                }
+            }
 {% endif %}
-        }{{ variant_as_borrowed_ok_close }}
+        }
+        {{ variant_as_borrowed_into_tail }}
     }
 }
 {% endif %}
@@ -789,14 +815,29 @@ impl{{ owned_generics_impl }} {{ struct_name }}Owned{{ owned_generics_args }} {
     /// list; on the inline profile the source is already within bounds.
 {% endif %}
     pub fn {{ as_borrowed_fn }}(&self) -> {{ as_borrowed_ret }} {
-        {{ as_borrowed_ok_open }}{{ struct_name }} {
+        let mut _out = {{ struct_name }}::default();
+        self.{{ as_borrowed_into_fn }}(&mut _out){{ as_borrowed_try }};
+        {{ as_borrowed_ok_open }}_out{{ as_borrowed_ok_close }}
+    }
+
+    /// [`Self::{{ as_borrowed_fn }}`] into a destination the caller owns, each
+    /// bounded list and embedded body projected in the field where it sits.
+    ///
+    /// A bounded list moves by copying its whole declared capacity, so a
+    /// projection that returns one copies the declared maximum at every layer
+    /// it passes through (the optional wrapper, the borrowed struct, the
+    /// variant, the caller's binding), however few entries the list holds. A
+    /// caller on a path where that shows projects into a destination it owns,
+    /// then encodes from it. On `Err`, `_out` holds what was projected so far
+    /// and is not to be read.
+    pub fn {{ as_borrowed_into_fn }}<'o>(&'o self, _out: &mut {{ struct_name }}<'o>){{ as_borrowed_into_ret }} {
 {% for field in fields %}
-            {{ field.id }}: {{ field.rs_as_borrowed_expr }},
+        {{ field.rs_as_borrowed_into_stmt }}
 {% endfor %}
 {% if has_variant %}
-            body: self.body.{{ variant_as_borrowed_call }},
+        self.body.{{ variant_as_borrowed_into_call }}
 {% endif %}
-        }{{ as_borrowed_ok_close }}
+        {{ as_borrowed_into_tail }}
     }
 
     /// Move this value to a different storage profile — growable to inline

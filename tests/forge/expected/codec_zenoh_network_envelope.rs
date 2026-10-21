@@ -341,16 +341,72 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohNetworkEnvelopeOwned
     /// single `encode`; the owned form deliberately carries no encode of
     /// its own.
     pub fn try_as_borrowed(&self) -> Result<CodecZenohNetworkEnvelopeVariant<'_>, CodecError> {
-        Ok(match self {
-            CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohInterest(_b) => CodecZenohNetworkEnvelopeVariant::CodecZenohInterest(_b.try_as_borrowed()?),
-            CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohResponseFinal(_b) => CodecZenohNetworkEnvelopeVariant::CodecZenohResponseFinal(_b.try_as_borrowed()?),
-            CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohResponse(_b) => CodecZenohNetworkEnvelopeVariant::CodecZenohResponse(_b.try_as_borrowed()?),
-            CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohRequest(_b) => CodecZenohNetworkEnvelopeVariant::CodecZenohRequest(_b.try_as_borrowed()?),
-            CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohPush(_b) => CodecZenohNetworkEnvelopeVariant::CodecZenohPush(_b.clone()),
-            CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohDeclare(_b) => CodecZenohNetworkEnvelopeVariant::CodecZenohDeclare(_b.try_as_borrowed()?),
-            CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohOam(_b) => CodecZenohNetworkEnvelopeVariant::CodecZenohOam(_b.try_as_borrowed()?),
-            CodecZenohNetworkEnvelopeOwnedVariant::Default { tag, body } => CodecZenohNetworkEnvelopeVariant::Default { tag: *tag, body: body.try_as_borrowed()? },
-        })
+        let mut _out = CodecZenohNetworkEnvelopeVariant::default();
+        self.try_as_borrowed_into(&mut _out)?;
+        Ok(_out)
+    }
+
+    /// [`Self::try_as_borrowed`] into a destination the caller
+    /// owns: the active arm is installed in `_out` holding its body's default
+    /// and that body is projected where it sits, so the arm body is never
+    /// returned up through the variant wrapper.
+    ///
+    /// A bounded list moves by copying its whole declared capacity, so a
+    /// projection that returns one copies the declared maximum at every layer
+    /// it passes through. A caller on a path where that shows projects into a
+    /// destination it owns. On `Err`, `_out` holds what was projected so far.
+    pub fn try_as_borrowed_into<'o>(&'o self, _out: &mut CodecZenohNetworkEnvelopeVariant<'o>) -> Result<(), CodecError> {
+        match self {
+            CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohInterest(_b) => {
+                *_out = CodecZenohNetworkEnvelopeVariant::CodecZenohInterest(Default::default());
+                if let CodecZenohNetworkEnvelopeVariant::CodecZenohInterest(_o) = _out {
+                    _b.try_as_borrowed_into(_o)?;
+                }
+            }
+            CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohResponseFinal(_b) => {
+                *_out = CodecZenohNetworkEnvelopeVariant::CodecZenohResponseFinal(Default::default());
+                if let CodecZenohNetworkEnvelopeVariant::CodecZenohResponseFinal(_o) = _out {
+                    _b.try_as_borrowed_into(_o)?;
+                }
+            }
+            CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohResponse(_b) => {
+                *_out = CodecZenohNetworkEnvelopeVariant::CodecZenohResponse(Default::default());
+                if let CodecZenohNetworkEnvelopeVariant::CodecZenohResponse(_o) = _out {
+                    _b.try_as_borrowed_into(_o)?;
+                }
+            }
+            CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohRequest(_b) => {
+                *_out = CodecZenohNetworkEnvelopeVariant::CodecZenohRequest(Default::default());
+                if let CodecZenohNetworkEnvelopeVariant::CodecZenohRequest(_o) = _out {
+                    _b.try_as_borrowed_into(_o)?;
+                }
+            }
+            CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohPush(_b) => {
+                *_out = CodecZenohNetworkEnvelopeVariant::CodecZenohPush(Default::default());
+                if let CodecZenohNetworkEnvelopeVariant::CodecZenohPush(_o) = _out {
+                    *_o = _b.clone();
+                }
+            }
+            CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohDeclare(_b) => {
+                *_out = CodecZenohNetworkEnvelopeVariant::CodecZenohDeclare(Default::default());
+                if let CodecZenohNetworkEnvelopeVariant::CodecZenohDeclare(_o) = _out {
+                    _b.try_as_borrowed_into(_o)?;
+                }
+            }
+            CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohOam(_b) => {
+                *_out = CodecZenohNetworkEnvelopeVariant::CodecZenohOam(Default::default());
+                if let CodecZenohNetworkEnvelopeVariant::CodecZenohOam(_o) = _out {
+                    _b.try_as_borrowed_into(_o)?;
+                }
+            }
+            CodecZenohNetworkEnvelopeOwnedVariant::Default { tag, body } => {
+                *_out = CodecZenohNetworkEnvelopeVariant::Default { tag: *tag, body: Default::default() };
+                if let CodecZenohNetworkEnvelopeVariant::Default { body: _o, .. } = _out {
+                    body.try_as_borrowed_into(_o)?;
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -392,9 +448,24 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohNetworkEnvelopeOwned
     /// same bound decode enforces. Only a growable profile can hold such a
     /// list; on the inline profile the source is already within bounds.
     pub fn try_as_borrowed(&self) -> Result<CodecZenohNetworkEnvelope<'_>, CodecError> {
-        Ok(CodecZenohNetworkEnvelope {
-            body: self.body.try_as_borrowed()?,
-        })
+        let mut _out = CodecZenohNetworkEnvelope::default();
+        self.try_as_borrowed_into(&mut _out)?;
+        Ok(_out)
+    }
+
+    /// [`Self::try_as_borrowed`] into a destination the caller owns, each
+    /// bounded list and embedded body projected in the field where it sits.
+    ///
+    /// A bounded list moves by copying its whole declared capacity, so a
+    /// projection that returns one copies the declared maximum at every layer
+    /// it passes through (the optional wrapper, the borrowed struct, the
+    /// variant, the caller's binding), however few entries the list holds. A
+    /// caller on a path where that shows projects into a destination it owns,
+    /// then encodes from it. On `Err`, `_out` holds what was projected so far
+    /// and is not to be read.
+    pub fn try_as_borrowed_into<'o>(&'o self, _out: &mut CodecZenohNetworkEnvelope<'o>) -> Result<(), CodecError> {
+        self.body.try_as_borrowed_into(&mut _out.body)?;
+        Ok(())
     }
 
     /// Move this value to a different storage profile — growable to inline

@@ -453,11 +453,42 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohResponseOwnedVariant
     /// single `encode`; the owned form deliberately carries no encode of
     /// its own.
     pub fn try_as_borrowed(&self) -> Result<CodecZenohResponseVariant<'_>, CodecError> {
-        Ok(match self {
-            CodecZenohResponseOwnedVariant::CodecZenohReply(_b) => CodecZenohResponseVariant::CodecZenohReply(_b.try_as_borrowed()?),
-            CodecZenohResponseOwnedVariant::CodecZenohErr(_b) => CodecZenohResponseVariant::CodecZenohErr(_b.try_as_borrowed()?),
-            CodecZenohResponseOwnedVariant::Default { tag, body } => CodecZenohResponseVariant::Default { tag: *tag, body: body.try_as_borrowed()? },
-        })
+        let mut _out = CodecZenohResponseVariant::default();
+        self.try_as_borrowed_into(&mut _out)?;
+        Ok(_out)
+    }
+
+    /// [`Self::try_as_borrowed`] into a destination the caller
+    /// owns: the active arm is installed in `_out` holding its body's default
+    /// and that body is projected where it sits, so the arm body is never
+    /// returned up through the variant wrapper.
+    ///
+    /// A bounded list moves by copying its whole declared capacity, so a
+    /// projection that returns one copies the declared maximum at every layer
+    /// it passes through. A caller on a path where that shows projects into a
+    /// destination it owns. On `Err`, `_out` holds what was projected so far.
+    pub fn try_as_borrowed_into<'o>(&'o self, _out: &mut CodecZenohResponseVariant<'o>) -> Result<(), CodecError> {
+        match self {
+            CodecZenohResponseOwnedVariant::CodecZenohReply(_b) => {
+                *_out = CodecZenohResponseVariant::CodecZenohReply(Default::default());
+                if let CodecZenohResponseVariant::CodecZenohReply(_o) = _out {
+                    _b.try_as_borrowed_into(_o)?;
+                }
+            }
+            CodecZenohResponseOwnedVariant::CodecZenohErr(_b) => {
+                *_out = CodecZenohResponseVariant::CodecZenohErr(Default::default());
+                if let CodecZenohResponseVariant::CodecZenohErr(_o) = _out {
+                    _b.try_as_borrowed_into(_o)?;
+                }
+            }
+            CodecZenohResponseOwnedVariant::Default { tag, body } => {
+                *_out = CodecZenohResponseVariant::Default { tag: *tag, body: Default::default() };
+                if let CodecZenohResponseVariant::Default { body: _o, .. } = _out {
+                    body.try_as_borrowed_into(_o)?;
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -505,15 +536,33 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohResponseOwned<S> {
     /// same bound decode enforces. Only a growable profile can hold such a
     /// list; on the inline profile the source is already within bounds.
     pub fn try_as_borrowed(&self) -> Result<CodecZenohResponse<'_>, CodecError> {
-        Ok(CodecZenohResponse {
-            header: self.header,
-            request_id: self.request_id,
-            key_id: self.key_id,
-            suffix_len: self.suffix_len,
-            suffix: self.suffix.as_ref().map(::sce_forge_runtime::codec::SceStr::as_str),
-            extensions: self.extensions.as_ref().map(|_l| ::sce_forge_runtime::codec::try_project_bounded(_l, |_e| Ok(_e.as_borrowed()))).transpose()?,
-            body: self.body.try_as_borrowed()?,
-        })
+        let mut _out = CodecZenohResponse::default();
+        self.try_as_borrowed_into(&mut _out)?;
+        Ok(_out)
+    }
+
+    /// [`Self::try_as_borrowed`] into a destination the caller owns, each
+    /// bounded list and embedded body projected in the field where it sits.
+    ///
+    /// A bounded list moves by copying its whole declared capacity, so a
+    /// projection that returns one copies the declared maximum at every layer
+    /// it passes through (the optional wrapper, the borrowed struct, the
+    /// variant, the caller's binding), however few entries the list holds. A
+    /// caller on a path where that shows projects into a destination it owns,
+    /// then encodes from it. On `Err`, `_out` holds what was projected so far
+    /// and is not to be read.
+    pub fn try_as_borrowed_into<'o>(&'o self, _out: &mut CodecZenohResponse<'o>) -> Result<(), CodecError> {
+        _out.header = self.header;
+        _out.request_id = self.request_id;
+        _out.key_id = self.key_id;
+        _out.suffix_len = self.suffix_len;
+        _out.suffix = self.suffix.as_ref().map(::sce_forge_runtime::codec::SceStr::as_str);
+        match &self.extensions {
+            Some(_l) => ::sce_forge_runtime::codec::try_project_bounded_into(_out.extensions.insert(Default::default()), _l, |_e| Ok(_e.as_borrowed()))?,
+            None => _out.extensions = None,
+        }
+        self.body.try_as_borrowed_into(&mut _out.body)?;
+        Ok(())
     }
 
     /// Move this value to a different storage profile — growable to inline

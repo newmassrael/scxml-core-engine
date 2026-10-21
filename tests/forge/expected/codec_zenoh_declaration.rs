@@ -442,18 +442,84 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohDeclarationOwnedVari
     /// single `encode`; the owned form deliberately carries no encode of
     /// its own.
     pub fn as_borrowed(&self) -> CodecZenohDeclarationVariant<'_> {
+        let mut _out = CodecZenohDeclarationVariant::default();
+        self.as_borrowed_into(&mut _out);
+        _out
+    }
+
+    /// [`Self::as_borrowed`] into a destination the caller
+    /// owns: the active arm is installed in `_out` holding its body's default
+    /// and that body is projected where it sits, so the arm body is never
+    /// returned up through the variant wrapper.
+    ///
+    /// A bounded list moves by copying its whole declared capacity, so a
+    /// projection that returns one copies the declared maximum at every layer
+    /// it passes through. A caller on a path where that shows projects into a
+    /// destination it owns. On `Err`, `_out` holds what was projected so far.
+    pub fn as_borrowed_into<'o>(&'o self, _out: &mut CodecZenohDeclarationVariant<'o>) {
         match self {
-            CodecZenohDeclarationOwnedVariant::CodecZenohDeclKexpr(_b) => CodecZenohDeclarationVariant::CodecZenohDeclKexpr(_b.as_borrowed()),
-            CodecZenohDeclarationOwnedVariant::CodecZenohUndeclKexpr(_b) => CodecZenohDeclarationVariant::CodecZenohUndeclKexpr(_b.clone()),
-            CodecZenohDeclarationOwnedVariant::CodecZenohDeclSubscriber(_b) => CodecZenohDeclarationVariant::CodecZenohDeclSubscriber(_b.as_borrowed()),
-            CodecZenohDeclarationOwnedVariant::CodecZenohUndeclSubscriber(_b) => CodecZenohDeclarationVariant::CodecZenohUndeclSubscriber(_b.as_borrowed()),
-            CodecZenohDeclarationOwnedVariant::CodecZenohDeclQueryable(_b) => CodecZenohDeclarationVariant::CodecZenohDeclQueryable(_b.as_borrowed()),
-            CodecZenohDeclarationOwnedVariant::CodecZenohUndeclQueryable(_b) => CodecZenohDeclarationVariant::CodecZenohUndeclQueryable(_b.as_borrowed()),
-            CodecZenohDeclarationOwnedVariant::CodecZenohDeclToken(_b) => CodecZenohDeclarationVariant::CodecZenohDeclToken(_b.as_borrowed()),
-            CodecZenohDeclarationOwnedVariant::CodecZenohUndeclToken(_b) => CodecZenohDeclarationVariant::CodecZenohUndeclToken(_b.as_borrowed()),
-            CodecZenohDeclarationOwnedVariant::CodecZenohDeclFinal(_b) => CodecZenohDeclarationVariant::CodecZenohDeclFinal(_b.clone()),
-            CodecZenohDeclarationOwnedVariant::Default { tag, body } => CodecZenohDeclarationVariant::Default { tag: *tag, body: body.clone() },
+            CodecZenohDeclarationOwnedVariant::CodecZenohDeclKexpr(_b) => {
+                *_out = CodecZenohDeclarationVariant::CodecZenohDeclKexpr(Default::default());
+                if let CodecZenohDeclarationVariant::CodecZenohDeclKexpr(_o) = _out {
+                    _b.as_borrowed_into(_o);
+                }
+            }
+            CodecZenohDeclarationOwnedVariant::CodecZenohUndeclKexpr(_b) => {
+                *_out = CodecZenohDeclarationVariant::CodecZenohUndeclKexpr(Default::default());
+                if let CodecZenohDeclarationVariant::CodecZenohUndeclKexpr(_o) = _out {
+                    *_o = _b.clone();
+                }
+            }
+            CodecZenohDeclarationOwnedVariant::CodecZenohDeclSubscriber(_b) => {
+                *_out = CodecZenohDeclarationVariant::CodecZenohDeclSubscriber(Default::default());
+                if let CodecZenohDeclarationVariant::CodecZenohDeclSubscriber(_o) = _out {
+                    _b.as_borrowed_into(_o);
+                }
+            }
+            CodecZenohDeclarationOwnedVariant::CodecZenohUndeclSubscriber(_b) => {
+                *_out = CodecZenohDeclarationVariant::CodecZenohUndeclSubscriber(Default::default());
+                if let CodecZenohDeclarationVariant::CodecZenohUndeclSubscriber(_o) = _out {
+                    _b.as_borrowed_into(_o);
+                }
+            }
+            CodecZenohDeclarationOwnedVariant::CodecZenohDeclQueryable(_b) => {
+                *_out = CodecZenohDeclarationVariant::CodecZenohDeclQueryable(Default::default());
+                if let CodecZenohDeclarationVariant::CodecZenohDeclQueryable(_o) = _out {
+                    _b.as_borrowed_into(_o);
+                }
+            }
+            CodecZenohDeclarationOwnedVariant::CodecZenohUndeclQueryable(_b) => {
+                *_out = CodecZenohDeclarationVariant::CodecZenohUndeclQueryable(Default::default());
+                if let CodecZenohDeclarationVariant::CodecZenohUndeclQueryable(_o) = _out {
+                    _b.as_borrowed_into(_o);
+                }
+            }
+            CodecZenohDeclarationOwnedVariant::CodecZenohDeclToken(_b) => {
+                *_out = CodecZenohDeclarationVariant::CodecZenohDeclToken(Default::default());
+                if let CodecZenohDeclarationVariant::CodecZenohDeclToken(_o) = _out {
+                    _b.as_borrowed_into(_o);
+                }
+            }
+            CodecZenohDeclarationOwnedVariant::CodecZenohUndeclToken(_b) => {
+                *_out = CodecZenohDeclarationVariant::CodecZenohUndeclToken(Default::default());
+                if let CodecZenohDeclarationVariant::CodecZenohUndeclToken(_o) = _out {
+                    _b.as_borrowed_into(_o);
+                }
+            }
+            CodecZenohDeclarationOwnedVariant::CodecZenohDeclFinal(_b) => {
+                *_out = CodecZenohDeclarationVariant::CodecZenohDeclFinal(Default::default());
+                if let CodecZenohDeclarationVariant::CodecZenohDeclFinal(_o) = _out {
+                    *_o = _b.clone();
+                }
+            }
+            CodecZenohDeclarationOwnedVariant::Default { tag, body } => {
+                *_out = CodecZenohDeclarationVariant::Default { tag: *tag, body: Default::default() };
+                if let CodecZenohDeclarationVariant::Default { body: _o, .. } = _out {
+                    *_o = body.clone();
+                }
+            }
         }
+        
     }
 }
 
@@ -492,10 +558,25 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohDeclarationOwned<S> 
     /// reaches it via `as_borrowed` then `encode` / `encode_to_vec`.
     /// Each field is projected by reference — a cheap re-borrow, not a copy.
     pub fn as_borrowed(&self) -> CodecZenohDeclaration<'_> {
-        CodecZenohDeclaration {
-            header: self.header,
-            body: self.body.as_borrowed(),
-        }
+        let mut _out = CodecZenohDeclaration::default();
+        self.as_borrowed_into(&mut _out);
+        _out
+    }
+
+    /// [`Self::as_borrowed`] into a destination the caller owns, each
+    /// bounded list and embedded body projected in the field where it sits.
+    ///
+    /// A bounded list moves by copying its whole declared capacity, so a
+    /// projection that returns one copies the declared maximum at every layer
+    /// it passes through (the optional wrapper, the borrowed struct, the
+    /// variant, the caller's binding), however few entries the list holds. A
+    /// caller on a path where that shows projects into a destination it owns,
+    /// then encodes from it. On `Err`, `_out` holds what was projected so far
+    /// and is not to be read.
+    pub fn as_borrowed_into<'o>(&'o self, _out: &mut CodecZenohDeclaration<'o>) {
+        _out.header = self.header;
+        self.body.as_borrowed_into(&mut _out.body);
+        
     }
 
     /// Move this value to a different storage profile — growable to inline
