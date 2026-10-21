@@ -3230,7 +3230,7 @@ line of the element or attribute that breaks it:
 | a `<send typeexpr>` that declares no `sce:types`, one written beside a `type` or a `targetexpr`, or a `sce:types` that names a type other than the SCXML or BasicHTTP processor, two entries of one type, no entry, or a send with no `typeexpr` | See **A computed type** below. A `typeexpr` is a string expression; the processors it can take are declared, since a machine with no script engine has nothing to learn them from when the send runs. Refused at the attribute as `scxml/static-datamodel-rule` (the missing declaration and the two types or targets) or where `sce:types` is written (`validation/incompatible-attributes`, `validation/empty-value`) |
 | a `<send targetexpr>` that declares no `sce:targets`, one written beside a `target`, or a `sce:targets` that names a route the SCXML Event I/O Processor cannot address, a Mesh peer, two entries of one route, no entry, a send with no `targetexpr`, or a `type` other than the SCXML processor | See **A computed target** below. A `targetexpr` is a string expression; the routes it can take are declared, since a machine with no script engine has nothing to learn them from when the send runs. Refused at the attribute as `scxml/static-datamodel-rule` (the missing declaration and the two targets) or where `sce:targets` is written (`validation/incompatible-attributes`, `validation/empty-value`) |
 | a hybrid `<invoke>` that declares no `sce:candidates`, one whose `<content expr>` produces the child's document, a candidate that is not a `sce-static` document this build read, a `srcexpr` that is not a string, or an argument no candidate declares a variable for or of another type than the candidate's variable | See **A hybrid `<invoke>`** under §2.13. Refused at the `<invoke>` (or its `<param>`) as `scxml/static-datamodel-rule`: with no declared set there is no finite list of children to lower, and an argument every candidate would drop is refused as a static invoke's is |
-| `<invoke idlocation>` | Refused for want of a reader, not of a form: the id it would store is the one the build already wrote (the `id`, or `<state>.platform_N`), and this model reads no `_event.invokeid` — only `_event.data` — so a stored id has nothing to be compared with. A document that must name its invocation writes `id`, which `done.invoke.<id>` and `error.invoke.<id>` already match |
+| `<invoke idlocation>` on a host-run invocation or a Mesh request | Refused: such an invocation is started under the id the build wrote (the `id`, or `<state>.platform_N`), so there is no generated id to keep; a document that must name it writes `id`, which `done.invoke.<id>` and `error.invoke.<id>` already match. On a child session (`type="scxml"`, in-line, by `src` or hybrid) it is admitted: each start is started under `<state>.<start>.<id>` (docs/adr/0045), the id the child's events carry and a saved tree holds as the child's `invokeid`, and `idlocation` names a string variable the document declares whose `sce:capacity` exceeds the longest such id (the start a count of up to twenty digits), or is refused on its line. Rust writes it; Kotlin, Go, Python, C++ and C11 refuse it by name (`generate/unsupported-feature`) until their format-2 step |
 | a `<param>` or a `namelist` name of an `<invoke type="scxml">` whose child is not a `sce-static` document this build read, does not declare the name as a top-level `<data>`, declares it as a list, a record, an enum or bytes, is handed it twice, or is handed a value not of the variable's type | See **Child sessions** below. Refused at the `<param>` as `scxml/static-datamodel-rule` (a value of the wrong type as the expression's own refusal) rather than accepted and never delivered |
 | a `<finalize>` of an `<invoke type="scxml">` | §6.5 runs it in the invoking machine before a child's event is processed, but the model keeps its body as one script text and the generated code hands that text to a script engine this model never builds (measured 2026-10-01: the Rust body is an empty block, Kotlin finds no engine): the assignment would be accepted and never run. Refused at the `<invoke>` as `scxml/static-datamodel-rule`; the invoking state takes what the child sent in a transition. An EMPTY `<finalize/>` beside a `<param location>` or a `namelist` is the same refusal: §6.5.2 gives it the meaning "update each from the event's data of that name", which the model writes out as that script text. Lowering a body is not the obstacle — a `<finalize>` runs before any child event is processed, to read that event's `_event.data`, and no type rule reaches a payload that arrives from whichever event comes next; a body that reads none has no consumer. Under `ecmascript` the same document runs it |
 | a `<param>` of a `<send>`, of a host-run `<invoke>` or of a `<donedata>` whose value is not a bool, a string, a byte string, an integer, a real or an enum value held by a variable, a field of a record variable or a field of the payload, or reads a payload that is not in scope | See **Params** below. Refused at the `<param>` as `scxml/static-datamodel-rule`. An `<invoke>` typed by `sce:request` is held to its record: a literal where it is written, a computed value by its type (below) |
@@ -5281,6 +5281,31 @@ handed — `src`, `params` (by name; without the engine's own `_sce_deadline_ms`
 for one without a deadline. Nothing the element reads is evaluated again: the
 request is what the document sent, and `job` or `label` may have changed since.
 
+**A child session's host-run invocations** (docs/adr/0045). The set of types a
+host serves is the processor's, not one session's (§scxml-6.4.1), so the invokers
+a host registers on the machine it built serve every session of that machine's
+tree: a parent hands them to each child it starts or resumes, and an invoker
+registered later serves the children already running. Each request names the
+session that made it (`session_id`: the root's id, or a child's
+`<parent>.<invokeid>`), and that is how a host serves a type to part of the tree
+only: it refuses the request of a session it does not serve with the response's
+refusal, which the child takes as the `error.execution` of an invocation that
+could not be started. There is no second registration. A host ends a child's
+invocation through the machine it holds, naming the session and the token the
+request carried (Rust: `complete_host_invoke_in` and `fail_host_invoke_in`); the
+ending is routed down the tree by the session's id, as a send to a child session
+is, and the child takes its `done.invoke` or `error.invoke` when its parent next
+drives it. A child a restore resumed starts the invocations its saved session
+lists again as the root does below, at the top of its own first macrostep, which
+is when its parent first drives it. An ending for a session the tree does not hold, or for a start that
+session is no longer running, is refused with the reason and raises nothing. A
+build declares its invoke types once for the tree: a child written in place is
+generated with its parent's declaration. The Mesh request invoker is not handed
+on: a child's is the router its parent's factory gave it (docs/adr/0043). Rust
+implements this; on Kotlin, Go, Python, C++ and C11 a child's host-run invocation
+raises `error.execution` until each backend's format-2 step, as one no invoker
+serves does.
+
 A restore does not call the host. A Rust host registers its invokers on the
 engine the restore returns, so at that moment nobody could run one, and Kotlin
 does the same so that the two agree: each invocation starts again at the top of
@@ -5701,6 +5726,7 @@ the Interpreter. These are the first three of the six steps of
 | `data` | step | the event's payload as JSON, from which the machine lifts the typed fields its schema names |
 | `dropped` | step | `true` when the step expects the machine to drop the event because none of its events matches the name |
 | `advance_ms` | step | moves the machine's manual clock on by that many milliseconds and runs what came due |
+| `restore` | step | `true`: before the step's event or time, the driver saves the machine, discards it, and restores it from the text on a machine built as the first was, with the driver's own registrations made on it again (docs/adr/0045). A restore is meant to change nothing a scenario can see, so every expected value is the one a run without it holds. The Rust driver runs it; a scenario that holds one drives a machine only Rust lowers until each other backend's format-2 step, and the Interpreter, which does not save, skips such a scenario and counts it |
 | `expect` | step | what the machine holds after the step, below; every step has one |
 | `state` | expect | the atomic state the machine is in |
 | `configuration` | expect | the set of every active state, a compound or a parallel one with the atomic ones below it, by the id the document gives it; the order is not part of the answer |

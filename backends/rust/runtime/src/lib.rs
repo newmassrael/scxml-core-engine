@@ -484,9 +484,10 @@ pub use helpers::microstep::{EnabledTransition, EntryTarget, NoHistory};
 pub use host_processor::{
     is_reserved_type, mesh_event_metadata, parse_host_invoke_deadline_ms, request_bytes_field,
     request_field, request_field_wire, ChildMeshRouter, ChildMeshRouters, HostInvokeCancel,
-    HostInvokeEvent, HostInvokeRequest, HostInvokeResponse, HostSendRequest, HostSendResponse,
-    MeshCall, RequestFieldType, HOST_INVOKE_DEADLINE_PARAM, MESH_ORIGIN_SCHEME,
-    MESH_PROCESSOR_TYPE, MESH_RPC_INVOKE_TYPE, RESERVED_TYPE_PREFIX,
+    HostInvokeEndRefusal, HostInvokeEnding, HostInvokeEvent, HostInvokeRequest, HostInvokeResponse,
+    HostSendRequest, HostSendResponse, MeshCall, RequestFieldType, TreeInvokers,
+    HOST_INVOKE_DEADLINE_PARAM, MESH_ORIGIN_SCHEME, MESH_PROCESSOR_TYPE, MESH_RPC_INVOKE_TYPE,
+    RESERVED_TYPE_PREFIX,
 };
 #[cfg(not(feature = "no_std"))]
 pub use http::{HttpSendRequest, HttpSendResponse};

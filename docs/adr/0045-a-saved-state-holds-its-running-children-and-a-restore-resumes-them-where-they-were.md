@@ -305,6 +305,43 @@ What this means for the events between sessions:
   macrostep was `truncated`, or on Kotlin when the root is driven by its own coroutine, as a single
   machine's is today.
 
+**A child session's host-run invocations are served by the host of the tree.** A child's `<invoke>`
+of a type the host serves (its own, or a standard host feature's) is a host-run invocation like the
+root's, and the tree fixture holds one running. Decided 2026-10-21, over a factory of child
+invokers modelled on ADR 0043's child routers:
+
+- **One registry for the tree.** The set of invocable types is the processor's (§scxml-6.4.1), not
+  a session's, so the invokers a host registers on the machine it built serve every session of its
+  tree. A parent hands its registry to each child as it starts it or resumes it (before the child
+  runs, so a resumed child's re-armed invocations, which start at the top of its first macrostep,
+  find it), and a registration made later serves the children already running. Invokers carry no
+  identity, unlike a Mesh endpoint, which is why ADR 0043 needed a router per child and this does
+  not; the Mesh request invoker stays per session, since a child's is its router's and a parent's
+  would send under the parent's name.
+- **Each request names its session.** `HostInvokeRequest` carries `session_id`, the id of the
+  session that started the invocation. A host that serves a type to part of the tree only refuses
+  the other sessions' requests with the response's refusal (the child's `error.execution` for an
+  invocation that could not start); there is no second registration.
+- **An ending is routed by session id.** The host ends an invocation through the machine it holds,
+  naming the session and the request's token (`complete_host_invoke_in`, `fail_host_invoke_in`);
+  each generated parent hands it to the child that is that session or holds it (a session below a
+  child has the child's id and a dot in front of the rest, the ids being tree paths since answer 2).
+  A session the tree does not hold, or a start it is no longer running, is refused with the reason
+  and raises nothing. The child takes the event when its parent next drives it.
+- **The build declares the types once for the tree.** A child written in place is generated with its
+  parent's `--host-invoker` declaration, and with the standard types it names.
+- **Backends.** Rust implements it with step 3. Kotlin, Go, Python, C++ and C11 keep raising
+  `error.execution` for a child's host-run invocation, as for one no invoker serves, until each
+  one's format-2 step implements this contract.
+
+**An `<invoke idlocation>` of a child session is written under `sce-static`.** Each start is started
+under `<state>.<start>.<id>` (step 2), which the child's events carry as `_event.invokeid` and a saved
+tree holds as the child's `invokeid`, so a stored id now has readers: the document, and the restore,
+which keeps the variable as saved and writes nothing. The variable is a declared string whose bound
+exceeds the longest such id (twenty digits of start count); a host-run invocation or a Mesh request,
+started under the id the build wrote, still refuses it. Rust writes it; the other five backends refuse
+it by name (`generate/unsupported-feature`) until their format-2 step.
+
 **A state written in format 1 is still read.** It holds no child's state, and the build that wrote
 it promised to start each listed child from its beginning; the restoring build does exactly that for
 such a text (the only case in which a child restarts), because the state never held more. A host can

@@ -372,6 +372,9 @@
                 // returned it; the factory is asked for this child then
                 // (`start_owed_child_meshes`), before anything drives it.
                 child_engine.owe_child_mesh();
+                // docs/adr/0045: the tree's host invokers, handed on before the
+                // child's re-armed invocations start at its first drive.
+                engine.share_host_invokers_with(&mut child_engine);
                 self.{{ slot }} = Some(Box::new(child_engine));
                 Ok(())
             }
@@ -431,6 +434,9 @@
                 // and installed before the child initializes, since its first
                 // `<onentry>` may already send to a peer.
                 engine.start_child_mesh(&mut child_engine, "{{ invoke_info.invoke_id }}", "{% if invoke_info.candidates %}{{ child.stem }}{% endif %}");
+                // docs/adr/0045: the tree's host invokers serve the child, whose
+                // host-run invocations name it by its session id.
+                engine.share_host_invokers_with(&mut child_engine);
                 child_engine.initialize();
 
                 self.{{ slot }} = Some(Box::new(child_engine));
@@ -508,6 +514,9 @@
                 // and installed before the child initializes, since its first
                 // `<onentry>` may already send to a peer.
                 engine.start_child_mesh(&mut child_engine, "{{ invoke_info.invoke_id }}", "{% if not invoke_info.src.startswith('#') %}{{ invoke_info.child_name }}{% endif %}");
+                // docs/adr/0045: the tree's host invokers serve the child, whose
+                // host-run invocations name it by its session id.
+                engine.share_host_invokers_with(&mut child_engine);
                 child_engine.initialize();
 
                 // W3C SCXML 6.4: Store child BEFORE draining events so autoforward can find it
@@ -830,6 +839,8 @@
                     token: 0,
                     // A start the document makes is never a restart.
                     restarted: false,
+                    // docs/adr/0045: the engine names the session that starts it.
+                    session_id: String::new(),
                 });
                 if !started {
                     // §scxml-6.4.1: declared but no invoker registered. The

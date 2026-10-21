@@ -6729,6 +6729,18 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
                 .unwrap_or(Path::new("."))
                 .join(format!("{child_stem}.scxml"));
             analyzer::analyze(&mut child_model, &synthetic_path.to_string_lossy());
+            // docs/adr/0045: the host's declaration is the tree's. The host
+            // serves its invoke types to every session its machine starts (the
+            // invokers are handed down the tree, and each request names the
+            // session that made it), so a child's `<invoke type>` naming one is
+            // host-run as the parent's is, and not refused as an undeclared type.
+            if let Err(refused) = sce_build::host_processor_analyzer::declare_host_surfaces(
+                &mut child_model,
+                &host_processor,
+                &host_invoker,
+            ) {
+                cli_exit(refused.into());
+            }
             if analyzer::can_generate_static(&child_model, &synthetic_path.to_string_lossy())
                 .is_err()
             {

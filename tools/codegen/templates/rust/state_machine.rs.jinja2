@@ -1834,6 +1834,52 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
 {% endfor %}
 {% endfor %}
     }
+
+    // docs/adr/0045: the tree's host invokers, handed to each child this
+    // session holds, and by each child to its own.
+    fn adopt_host_invokers_in_children(&mut self, invokers: &::sce_rust_runtime::TreeInvokers) {
+{% for invoke_info in model.invokes | scxml_family %}
+{% set child_targets = invoke_info.candidates if invoke_info.candidates else [{'stem': none}] %}
+{% for target in child_targets %}
+{% set slot = ('self.child_' ~ invoke_info.field_suffix ~ '_' ~ target.stem) if invoke_info.candidates else ('self.child_' ~ invoke_info.field_suffix) %}
+        if let Some(ref mut child) = {{ slot }} {
+            child.adopt_host_invokers(invokers);
+        }
+{% endfor %}
+{% endfor %}
+    }
+
+    // docs/adr/0045: a host's ending of a host-run invocation of session
+    // `session_id`, to the child that is that session or holds it below. A
+    // child's id is `<parent>.<invokeid>`, so a session below a child has the
+    // child's id and a dot in front of the rest.
+    fn route_host_invoke_end_to_child(
+        &mut self,
+        session_id: &str,
+        ending: ::sce_rust_runtime::HostInvokeEnding<'_>,
+    ) -> Option<Result<(), ::sce_rust_runtime::HostInvokeEndRefusal>> {
+{% for invoke_info in model.invokes | scxml_family %}
+{% set child_targets = invoke_info.candidates if invoke_info.candidates else [{'stem': none}] %}
+{% for target in child_targets %}
+{% set slot = ('self.child_' ~ invoke_info.field_suffix ~ '_' ~ target.stem) if invoke_info.candidates else ('self.child_' ~ invoke_info.field_suffix) %}
+        if let Some(ref mut child) = {{ slot }} {
+            let holds = {
+                let child_id = child.policy().own_session_id();
+                session_id == child_id
+                    || session_id
+                        .strip_prefix(child_id)
+                        .is_some_and(|below| below.starts_with('.'))
+            };
+            if holds {
+                if let Some(routed) = child.route_host_invoke_end(session_id, ending) {
+                    return Some(routed);
+                }
+            }
+        }
+{% endfor %}
+{% endfor %}
+        None
+    }
 {% endif %}
 {% if model.invokes | scxml | selectattr('autoforward') | list %}
     // W3C SCXML 6.4.1: Forward external events to autoforward children

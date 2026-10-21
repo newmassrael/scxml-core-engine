@@ -2496,6 +2496,8 @@ fn rearm_host_invokes<P: StatePolicy>(
                 content: host.content.clone(),
                 token: 0,
                 restarted: true,
+                // The engine names the session as the invocation starts again.
+                session_id: String::new(),
             },
             deadline,
         );

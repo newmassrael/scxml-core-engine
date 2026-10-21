@@ -3839,6 +3839,29 @@ impl<P: StatePolicy> Engine<P> {
         self.host_processors.invoker_is_registered(processor_type)
     }
 
+    /// Hand this machine's invokers to `child`, a session it is starting or
+    /// resuming, before the child runs (docs/adr/0045): the types a host
+    /// registers through [`Engine::register_invoker`] serve every session of
+    /// the tree, as the set of invocable types is the processor's
+    /// (§scxml-6.4.1), and each request names the session that made it
+    /// ([`crate::host_processor::HostInvokeRequest::session_id`]). An invoker
+    /// registered afterwards serves the child too. The Mesh request invoker
+    /// is not handed on: a child's is the router its parent's factory gave it
+    /// (docs/adr/0043).
+    #[cfg(not(feature = "no_std"))]
+    pub fn share_host_invokers_with<Q: StatePolicy>(&self, child: &mut Engine<Q>) {
+        child.adopt_host_invokers(self.host_processors.tree_invokers());
+    }
+
+    /// Be served by `invokers`, the tree's, and hand them on to every child
+    /// this machine holds now: a child a restore resumed holds children of its
+    /// own, resumed with it before its parent could hand it anything.
+    #[cfg(not(feature = "no_std"))]
+    pub fn adopt_host_invokers(&mut self, invokers: &crate::host_processor::TreeInvokers) {
+        self.host_processors.adopt_tree_invokers(invokers);
+        self.policy.adopt_host_invokers_in_children(invokers);
+    }
+
     /// §scxml-6.4: start a host-run invocation, and raise
     /// `done.invoke.<invoke_id>` if the host completed it synchronously.
     ///
@@ -3895,9 +3918,12 @@ impl<P: StatePolicy> Engine<P> {
     #[cfg(not(feature = "no_std"))]
     fn start_host_invoke(
         &mut self,
-        request: crate::host_processor::HostInvokeRequest,
+        mut request: crate::host_processor::HostInvokeRequest,
         deadline_at: Option<SchedTimePoint>,
     ) -> bool {
+        // docs/adr/0045: the session that starts it, which the host may serve
+        // or refuse it by, and names again to end it.
+        request.session_id = self.policy.own_session_id().to_string();
         let processor_type = request.processor_type.clone();
         let invoke_id = request.invoke_id.clone();
         let Some((token, response)) = self.host_processors.start_invoke(request) else {
@@ -4164,6 +4190,125 @@ impl<P: StatePolicy> Engine<P> {
             origin,
             origin_type,
         )
+    }
+
+    /// End the host-run invocation of session `session_id` of this machine's
+    /// tree (docs/adr/0045): this machine's own, or a child session's at any
+    /// depth, reached by its id as a send to a child session is
+    /// ([`StatePolicy::route_host_invoke_end_to_child`]). The session's queue
+    /// takes `done.invoke` or `error.invoke` as
+    /// [`complete_host_invoke`](Self::complete_host_invoke) and
+    /// [`fail_host_invoke`](Self::fail_host_invoke) raise them; a child takes it
+    /// when its parent next drives it.
+    ///
+    /// # Errors
+    ///
+    /// No session of that id runs in the tree, or that session is not running
+    /// that start of the invocation (cancelled, ended, or started again since).
+    /// Nothing is raised, and the refusal says which.
+    #[cfg(not(feature = "no_std"))]
+    pub fn end_host_invoke_in(
+        &mut self,
+        session_id: &str,
+        ending: crate::host_processor::HostInvokeEnding<'_>,
+    ) -> Result<(), crate::host_processor::HostInvokeEndRefusal> {
+        self.route_host_invoke_end(session_id, ending)
+            .unwrap_or_else(|| {
+                Err(crate::host_processor::HostInvokeEndRefusal::unknown_session(session_id))
+            })
+    }
+
+    /// [`end_host_invoke_in`](Self::end_host_invoke_in) for a completion:
+    /// `done.invoke.<invoke_id>` with `done_data` as `_event.data`, in the
+    /// session `session_id` names. What a host that serves the whole tree
+    /// calls with the session id and token the request carried.
+    ///
+    /// # Errors
+    ///
+    /// As [`end_host_invoke_in`](Self::end_host_invoke_in).
+    #[cfg(not(feature = "no_std"))]
+    pub fn complete_host_invoke_in(
+        &mut self,
+        session_id: &str,
+        processor_type: &str,
+        invoke_id: &str,
+        token: u64,
+        done_data: &str,
+    ) -> Result<(), crate::host_processor::HostInvokeEndRefusal> {
+        self.end_host_invoke_in(
+            session_id,
+            crate::host_processor::HostInvokeEnding {
+                processor_type,
+                invoke_id,
+                token,
+                done: true,
+                data: done_data,
+            },
+        )
+    }
+
+    /// [`end_host_invoke_in`](Self::end_host_invoke_in) for a failure:
+    /// `error.invoke.<invoke_id>` with `error_data` as `_event.data`.
+    ///
+    /// # Errors
+    ///
+    /// As [`end_host_invoke_in`](Self::end_host_invoke_in).
+    #[cfg(not(feature = "no_std"))]
+    pub fn fail_host_invoke_in(
+        &mut self,
+        session_id: &str,
+        processor_type: &str,
+        invoke_id: &str,
+        token: u64,
+        error_data: &str,
+    ) -> Result<(), crate::host_processor::HostInvokeEndRefusal> {
+        self.end_host_invoke_in(
+            session_id,
+            crate::host_processor::HostInvokeEnding {
+                processor_type,
+                invoke_id,
+                token,
+                done: false,
+                data: error_data,
+            },
+        )
+    }
+
+    /// The ending `ending` for session `session_id`, if that session is this
+    /// machine or one in the tree below it: `None` when it is neither, so the
+    /// generated parent that asked can try another child. Public because a
+    /// generated parent calls it on its children.
+    #[cfg(not(feature = "no_std"))]
+    pub fn route_host_invoke_end(
+        &mut self,
+        session_id: &str,
+        ending: crate::host_processor::HostInvokeEnding<'_>,
+    ) -> Option<Result<(), crate::host_processor::HostInvokeEndRefusal>> {
+        if session_id == self.policy.own_session_id() {
+            let end = if ending.done {
+                HostInvokeEnd::Done
+            } else {
+                HostInvokeEnd::Failed
+            };
+            let ended = self.end_host_invoke(
+                ending.processor_type,
+                ending.invoke_id,
+                ending.token,
+                end,
+                ending.data,
+                "",
+                "",
+            );
+            return Some(if ended {
+                Ok(())
+            } else {
+                Err(crate::host_processor::HostInvokeEndRefusal::not_running(
+                    session_id, &ending,
+                ))
+            });
+        }
+        self.policy
+            .route_host_invoke_end_to_child(session_id, ending)
     }
 
     /// The one body behind a host-run invocation's completion and failure:

@@ -138,9 +138,10 @@ PY
 
 mutation_case "the invoker is never started" <<'PY'
 edit("backends/rust/runtime/src/host_processor.rs",
-     "        let response = handler(HostInvokeEvent::Start(request));",
-     """        let _ = handler;
-        let _ = request;
+     """        let response = self
+            .call_invoker(&processor_type, HostInvokeEvent::Start(request))
+            .flatten();""",
+     """        let _ = (&processor_type, request);
         let response: Option<HostInvokeResponse> = None;""")
 PY
 
@@ -174,12 +175,17 @@ PY
 # Every name the call read stays used, or deny-warnings refuses the tree.
 mutation_case "the invoker is never told to stop" <<'PY'
 edit("backends/rust/runtime/src/host_processor.rs",
-     """        handler(HostInvokeEvent::Cancel(HostInvokeCancel {
-            processor_type: processor_type.to_string(),
-            invoke_id: invoke_id.to_string(),
-            token,
-        }));""",
-     """        let _ = (handler, invoke_id, token);""")
+     """        self.call_invoker(
+            processor_type,
+            HostInvokeEvent::Cancel(HostInvokeCancel {
+                processor_type: processor_type.to_string(),
+                invoke_id: invoke_id.to_string(),
+                token,
+            }),
+        )
+        .is_some()""",
+     """        let _ = (invoke_id, token);
+        self.invoker_is_registered(processor_type)""")
 PY
 
 # ── …and it is accepted once, from its own run ─────────────────────
@@ -241,10 +247,9 @@ PY
 # holds — and a host that registered only another type observes it.
 mutation_case "the invoker registry runs this type on whatever invoker it holds" <<'PY'
 edit("backends/rust/runtime/src/host_processor.rs",
-     "        self.invokers.contains_key(processor_type)",
-     """        let _ = processor_type;
-        !self.invokers.is_empty()""")
+     "            self.tree_invokers.held().contains_key(processor_type)",
+     "            !self.tree_invokers.held().is_empty()")
 edit("backends/rust/runtime/src/host_processor.rs",
-     "        let handler = self.invokers.get_mut(&request.processor_type)?;",
-     "        let handler = self.invokers.values_mut().next()?;")
+     "            let handler = held.get_mut(processor_type)?;",
+     "            let handler = held.values_mut().next()?;")
 PY

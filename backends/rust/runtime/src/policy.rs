@@ -619,6 +619,33 @@ pub trait StatePolicy: Sized + 'static {
     #[cfg(not(feature = "no_std"))]
     fn start_owed_child_meshes(&mut self, _engine: &mut Engine<Self>) {}
 
+    /// Hand `invokers`, the tree's host invokers, to every child this session
+    /// holds ([`Engine::adopt_host_invokers`]; docs/adr/0045).
+    ///
+    /// Generated when the document has an `<invoke type="scxml">`. A policy
+    /// with no children has none to hand them to, which is what the default
+    /// says.
+    #[cfg(not(feature = "no_std"))]
+    fn adopt_host_invokers_in_children(&mut self, _invokers: &crate::host_processor::TreeInvokers) {
+    }
+
+    /// Route `ending`, a host's ending of a host-run invocation of session
+    /// `session_id`, to the child that is that session or holds it in its
+    /// tree ([`Engine::route_host_invoke_end`]; docs/adr/0045). `None` when
+    /// no child is or holds that session.
+    ///
+    /// Generated when the document has an `<invoke type="scxml">`. A policy
+    /// with no children holds no other session, which is what the default
+    /// says.
+    #[cfg(not(feature = "no_std"))]
+    fn route_host_invoke_end_to_child(
+        &mut self,
+        _session_id: &str,
+        _ending: crate::host_processor::HostInvokeEnding<'_>,
+    ) -> Option<Result<(), crate::host_processor::HostInvokeEndRefusal>> {
+        None
+    }
+
     /// Execute `<finalize>` handlers for child events (§scxml-6.5).
     ///
     /// Generated only when `HAS_FINALIZE` is `true`. Called from the engine's

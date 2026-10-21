@@ -390,6 +390,100 @@ pub struct HostInvokeRequest {
     /// it up instead of beginning again. Always `false` for an invocation the
     /// document starts.
     pub restarted: bool,
+    /// The session that started the invocation (`_sessionid`; docs/adr/0045):
+    /// the root the host built, or a child session of it, `<parent>.<invokeid>`.
+    /// The engine fills it as it starts the invocation.
+    ///
+    /// The invokers a host registers serve the whole tree of sessions, as the
+    /// processor's set of invocable types is the processor's and not one
+    /// session's (§scxml-6.4.1). A host that means to serve a type for part of
+    /// the tree only refuses the others by this id
+    /// ([`HostInvokeResponse::refusal`]); there is no second registration. It
+    /// is also the id a host hands back with the token to end the invocation
+    /// ([`Engine::complete_host_invoke_in`]), which reaches the session that
+    /// started it wherever it stands in the tree.
+    ///
+    /// [`Engine::complete_host_invoke_in`]: crate::Engine::complete_host_invoke_in
+    pub session_id: String,
+}
+
+/// How a host ends a host-run invocation of some session of a tree
+/// ([`Engine::end_host_invoke_in`]): the start it ends, and whether it
+/// completed (`done.invoke`) or failed (`error.invoke`), with `data` as the
+/// event's `_event.data`.
+///
+/// [`Engine::end_host_invoke_in`]: crate::Engine::end_host_invoke_in
+#[derive(Debug, Clone, Copy)]
+pub struct HostInvokeEnding<'a> {
+    /// The `type` the request named.
+    pub processor_type: &'a str,
+    /// The invocation's id, as the request named it.
+    pub invoke_id: &'a str,
+    /// The token the request carried.
+    pub token: u64,
+    /// `true` for a completion, `false` for a failure.
+    pub done: bool,
+    /// `_event.data` of the event the ending raises.
+    pub data: &'a str,
+}
+
+/// Why an ending a host reported for some session of a tree was refused
+/// (docs/adr/0045): no session of that id runs in the tree, or that session
+/// is not running that start of the invocation (it was cancelled, ended, or
+/// started again since). Nothing was raised; the reason says which.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostInvokeEndRefusal(String);
+
+impl HostInvokeEndRefusal {
+    /// The session `session_id` is not in the tree.
+    pub fn unknown_session(session_id: &str) -> Self {
+        Self(format!(
+            "no session '{session_id}' runs in this tree: it was never started, or it has ended"
+        ))
+    }
+
+    /// The session `session_id` is not running start `ending.token` of the
+    /// invocation `ending` names.
+    pub fn not_running(session_id: &str, ending: &HostInvokeEnding<'_>) -> Self {
+        Self(format!(
+            "session '{session_id}' is not running start {} of the '{}' invocation '{}': it \
+             was cancelled, has ended, or was started again since",
+            ending.token, ending.processor_type, ending.invoke_id
+        ))
+    }
+
+    /// Why.
+    pub fn reason(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for HostInvokeEndRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for HostInvokeEndRefusal {}
+
+/// The invokers a host registered for the types it serves, shared by every
+/// session of one tree (docs/adr/0045): the engine the host built makes it,
+/// and a parent hands its own to each child it starts or resumes. Opaque: a
+/// host registers through [`Engine::register_invoker`], and the generated
+/// parent only passes it on.
+///
+/// [`Engine::register_invoker`]: crate::Engine::register_invoker
+#[derive(Clone, Default)]
+pub struct TreeInvokers(std::sync::Arc<std::sync::Mutex<HashMap<String, HostInvokeHandler>>>);
+
+impl TreeInvokers {
+    fn held(&self) -> std::sync::MutexGuard<'_, HashMap<String, HostInvokeHandler>> {
+        // A handler that panicked left the map as it was; the registrations
+        // in it are still the host's.
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
 }
 
 /// An `<invoke>` the host was running, at the point its state exited.
@@ -466,7 +560,14 @@ pub(crate) type HostInvokeHandler =
 #[derive(Default)]
 pub(crate) struct HostProcessorRegistry {
     handlers: HashMap<String, HostSendHandler>,
+    /// The invokers of the types SCE serves on a session's behalf
+    /// ([`RESERVED_TYPE_PREFIX`]: a Mesh request), this session's alone: a
+    /// child's are its router's, never its parent's, which would send under
+    /// the parent's name (docs/adr/0043).
     invokers: HashMap<String, HostInvokeHandler>,
+    /// The invokers of the host's own types, shared by the whole tree of
+    /// sessions ([`TreeInvokers`]; docs/adr/0045).
+    tree_invokers: TreeInvokers,
     /// `(processor_type, invoke_id)` → token for every invocation that was
     /// started and has neither completed nor been cancelled.
     ///
@@ -530,14 +631,52 @@ impl HostProcessorRegistry {
         self.handlers.contains_key(processor_type)
     }
 
-    /// Register `handler` as the invoker for `processor_type`.
+    /// Register `handler` as the invoker for `processor_type`: a type SCE
+    /// serves for this session alone, a host's own type for the whole tree.
     pub(crate) fn register_invoker(&mut self, processor_type: &str, handler: HostInvokeHandler) {
-        self.invokers.insert(processor_type.to_string(), handler);
+        if is_reserved_type(processor_type) {
+            self.invokers.insert(processor_type.to_string(), handler);
+        } else {
+            self.tree_invokers
+                .held()
+                .insert(processor_type.to_string(), handler);
+        }
     }
 
     /// Whether an invoker is registered for `processor_type`.
     pub(crate) fn invoker_is_registered(&self, processor_type: &str) -> bool {
-        self.invokers.contains_key(processor_type)
+        if is_reserved_type(processor_type) {
+            self.invokers.contains_key(processor_type)
+        } else {
+            self.tree_invokers.held().contains_key(processor_type)
+        }
+    }
+
+    /// The invokers of the host's own types this session is served by.
+    pub(crate) fn tree_invokers(&self) -> &TreeInvokers {
+        &self.tree_invokers
+    }
+
+    /// Be served by `invokers`, the tree's, in place of this session's own.
+    pub(crate) fn adopt_tree_invokers(&mut self, invokers: &TreeInvokers) {
+        self.tree_invokers = invokers.clone();
+    }
+
+    /// Hand `event` to the invoker of `processor_type`: its answer, or `None`
+    /// when none is registered.
+    fn call_invoker(
+        &mut self,
+        processor_type: &str,
+        event: HostInvokeEvent,
+    ) -> Option<Option<HostInvokeResponse>> {
+        if is_reserved_type(processor_type) {
+            let handler = self.invokers.get_mut(processor_type)?;
+            Some(handler(event))
+        } else {
+            let mut held = self.tree_invokers.held();
+            let handler = held.get_mut(processor_type)?;
+            Some(handler(event))
+        }
     }
 
     /// Start an invocation, recording it so the cancel path can find it.
@@ -555,10 +694,13 @@ impl HostProcessorRegistry {
         &mut self,
         mut request: HostInvokeRequest,
     ) -> Option<(u64, Option<HostInvokeResponse>)> {
-        let handler = self.invokers.get_mut(&request.processor_type)?;
+        if !self.invoker_is_registered(&request.processor_type) {
+            return None;
+        }
         let token = self.next_token;
         self.next_token = self.next_token.wrapping_add(1);
         request.token = token;
+        let processor_type = request.processor_type.clone();
         self.started.insert(
             (request.processor_type.clone(), request.invoke_id.clone()),
             StartedInvoke {
@@ -566,7 +708,9 @@ impl HostProcessorRegistry {
                 request: request.clone(),
             },
         );
-        let response = handler(HostInvokeEvent::Start(request));
+        let response = self
+            .call_invoker(&processor_type, HostInvokeEvent::Start(request))
+            .flatten();
         Some((token, response))
     }
 
@@ -638,15 +782,15 @@ impl HostProcessorRegistry {
     }
 
     fn deliver_cancel(&mut self, processor_type: &str, invoke_id: &str, token: u64) -> bool {
-        let Some(handler) = self.invokers.get_mut(processor_type) else {
-            return false;
-        };
-        handler(HostInvokeEvent::Cancel(HostInvokeCancel {
-            processor_type: processor_type.to_string(),
-            invoke_id: invoke_id.to_string(),
-            token,
-        }));
-        true
+        self.call_invoker(
+            processor_type,
+            HostInvokeEvent::Cancel(HostInvokeCancel {
+                processor_type: processor_type.to_string(),
+                invoke_id: invoke_id.to_string(),
+                token,
+            }),
+        )
+        .is_some()
     }
 }
 

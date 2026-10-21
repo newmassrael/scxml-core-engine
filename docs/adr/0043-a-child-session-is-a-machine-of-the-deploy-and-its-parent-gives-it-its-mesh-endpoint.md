@@ -180,6 +180,11 @@ own for the child's children.
   declared for it. A host with a router of its own answers with its own.
 - The names follow §19's spelling per language and are fixed by the first backend that builds it;
   the registration is one call, with the router and the request invoker, not two.
+- A child resumed by a restore (ADR 0045) is asked for when the host registers the factory on the
+  restored machine, before it drives it: the restore builds the tree before any registration can
+  exist. The invokers of the host's own types are not routers and are not given per child: one
+  registry serves the whole tree, and each request names its session (ADR 0045, section 3). Only
+  the Mesh request invoker stays the child's router's, for the reason above.
 
 ### 4. Inbound: what arrives for a child reaches the child
 

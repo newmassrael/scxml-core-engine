@@ -6,30 +6,47 @@
 
   `working` invokes `worker`, written in place, and forwards it what it is sent
   (autoforward). `worker` takes `go` once: it counts a step, arms a delayed
-  `report` to its parent and enters `second`, whose hybrid invoke `helper`
-  starts the candidate `pick` names (`static_hybrid_watcher`, handed `base` 7,
-  which waits for an 8 it is not handed). `swap`, forwarded, makes `pick` name
-  the other candidate after `helper` started; `arm` arms a delayed
-  `nudge` to the child; `ask` sends `question` to the child at once, which
-  answers its parent at once. `rest` and `back` leave `working` and enter it
-  again, so `worker` is started twice. The parent counts each `answer` and each
-  `report` its child sends it.
+  `report` to its parent and enters `second`. There it asks its host for the
+  time (`sce-host-clock-now`, a host-run invocation of a child session, served
+  by the invokers its parent's host registered) and tells its parent `stamped`
+  when the host answers; and its hybrid invoke, which writes no `id`, starts the
+  candidate `pick` names (`static_hybrid_watcher`, handed `base` 7, which waits
+  for an 8 it is not handed) and keeps the id each start is started under in
+  `helper_id` (`idlocation`). `swap`, forwarded, makes `pick` name the other
+  candidate after the grandchild started; `arm` arms a delayed `nudge` to the
+  child; `ask` sends `question` to the child at once, which answers its parent
+  at once. `rest` and `back` leave `working` and enter it again, so `worker` is
+  started twice. The parent counts each `answer`, `report` and `stamped` its
+  child sends it. The child holds a record of `schema_revised.scxml`, so its
+  saved session names the revision of that schema it was saved at.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="working" datamodel="sce-static" name="static_invoke_tree">
   <datamodel>
     <data id="answers" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="reports" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="stamps" sce:type="uint32" expr="0" sce:direction="out"/>
   </datamodel>
   <state id="working">
     <invoke type="scxml" id="worker" autoforward="true">
       <content>
         <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
                version="1.0" initial="first" datamodel="sce-static">
+          <sce:import kind="event-schema" src="sce:std/host/clock_now_result.scxml" as="ClockNowResult"/>
+          <sce:import kind="event-schema" src="schema_revised.scxml" as="Revised"/>
+          <sce:import kind="enum" src="enum_view_mode.scxml" as="ViewMode"/>
           <datamodel>
+            <!-- A record of a schema at its third revision, so the child's saved
+                 session names the revision it was saved at. -->
+            <data id="last" sce:type="record:Revised">
+              <sce:set name="level" expr="0"/>
+              <sce:set name="layout" expr="ViewMode.month"/>
+              <sce:set name="urgent" expr="false"/>
+            </data>
             <data id="pick" sce:type="string" sce:capacity="48" expr="'static_hybrid_watcher.scxml'"/>
             <data id="base" sce:type="uint32" expr="7"/>
             <data id="steps" sce:type="uint32" expr="0"/>
+            <data id="helper_id" sce:type="string" sce:capacity="64" expr="''"/>
           </datamodel>
           <state id="first">
             <transition event="go" target="second">
@@ -41,10 +58,14 @@
             </transition>
           </state>
           <state id="second">
-            <invoke type="scxml" id="helper" srcexpr="pick"
+            <invoke type="sce-host-clock-now" id="clock" sce:result="ClockNowResult"/>
+            <invoke type="scxml" idlocation="helper_id" srcexpr="pick"
                     sce:candidates="static_hybrid_watcher.scxml static_hybrid_holder.scxml">
               <param name="start" expr="base"/>
             </invoke>
+            <transition event="done.invoke.clock" type="internal">
+              <send event="stamped" target="#_parent"/>
+            </transition>
             <transition event="swap" type="internal">
               <assign location="pick" expr="'static_hybrid_holder.scxml'"/>
             </transition>
@@ -72,6 +93,9 @@
     </transition>
     <transition event="report" type="internal">
       <assign location="reports" expr="reports + 1"/>
+    </transition>
+    <transition event="stamped" type="internal">
+      <assign location="stamps" expr="stamps + 1"/>
     </transition>
     <transition event="rest" target="resting"/>
   </state>
