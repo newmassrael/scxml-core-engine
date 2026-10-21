@@ -128,12 +128,19 @@ Each step is gated on a number, taken the way the existing ones were: the genera
    repeat, a chain, a chain carrying a value from entry to entry, a gated chain, a field gated on `<chain>.has(..)`, an
    embed, a variant, and the Zenoh request and response. Two mutations of the scan (an off-by-one in the bound, the walk
    not carrying the chain's value) are killed. On a 64-bit host the request is 672 bytes and its view 240, the
-   response 472 and 200, a chain bounded at 8 entries 208 and 48. **Not built:** `into_builder` and `XView::encode`
-   (decision 4), which nothing in the gate needs; the numbers on `thumbv7em-none-eabihf` for the generated views are
-   not taken yet.
-   The sweep also found a defect that predates views: the eager decode of a length-referenced field sliced
-   `&raw[a..a + len]` before checking the frame was that long, and panicked on a short frame. It now raises
-   `NeedMoreBytes`; C++, Kotlin, Go and Python index the same way and are not fixed.
+   response 472 and 200, a chain bounded at 8 entries 208 and 48. On `thumbv7em-none-eabihf` (`opt-level = "s"`, fat
+   LTO, `panic = "abort"`), the generated request closure decoding one frame and counting its two extension lists:
+   unused codecs and views link to 52 bytes of text; the job is 4288 bytes of text through `decode_into` and 4192
+   through the view; the job's stack frame is 644 bytes and 244, with 2 and 1 copy calls. These fixtures declare
+   smaller `max-count`s than the downstream consumer's request, whose prototype measured 1792 bytes to 184, so the
+   gain here is the smaller one. **Not built:** `into_builder` and `XView::encode` (decision 4), which nothing in the
+   gate needs.
+   The sweep also found a defect that predates views: the positional decode of a length-referenced field sliced the
+   frame by the length the wire states before checking the frame was that long. Rust panicked; C++ read past the frame
+   (AddressSanitizer: stack-buffer-overflow, 200 bytes), Go panicked or, with spare capacity in the buffer, returned
+   bytes from beyond the frame, Kotlin threw `IndexOutOfBoundsException`, and Python decoded the truncated frame as
+   valid. All five now refuse it (`NeedMoreBytes`, `nullopt`, `null`, `None`); the reject vectors are in
+   `numerical_reference.json`. C11 already checked.
 2. **An in-tree consumer**: the Rust mesh host reads its envelopes through views. Gate: its tests unchanged, and
    no list copied on its decode path.
 3. **The downstream consumer** takes the view and measures. Gate: its footprint check passes without a rebase of its
