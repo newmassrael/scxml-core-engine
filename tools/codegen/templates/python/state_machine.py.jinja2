@@ -677,9 +677,13 @@ class {{ machine_name }}Policy(StatePolicy[{{ machine_name }}State, {{ machine_n
 {% if info.default_actions %}
         if history_id == {{ history_id | py_string_literal }}:
             try:
+{% with block_flow = namespace(ended=false) %}
 {% for action in info.default_actions %}
-{{ actions.emit(action, '                ', machine_name, model) }}
+{% if not block_flow.ended %}
+{{ actions.emit(action, '                ', machine_name, model, block_flow) }}
+{% endif %}
 {% endfor %}
+{% endwith %}
             except _ActionAbort:
                 pass
             return

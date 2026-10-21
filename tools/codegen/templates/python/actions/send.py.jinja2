@@ -69,7 +69,10 @@
 {% endif %}
 {{ indent }}    raise _ActionAbort  # W3C SCXML 4.9: the error ends the block
 {%- endmacro -%}
-{%- macro emit_send(action, indent, machine_name, model) -%}
+{#- `flow`: the list this <send> is emitted into (`emit`, _actions.py.jinja2).
+   A refusal the build decided raises `_ActionAbort` unconditionally, and sets
+   `flow.ended` so the list emits nothing after it. -#}
+{%- macro emit_send(action, indent, machine_name, model, flow=none) -%}
 {% set has_namelist = action.namelist and action.namelist | trim %}
 {% set has_payload = action.params or has_namelist or action.content or action.contentexpr or action.native_content_value %}
 {% set has_delay = action.delayexpr or action.delay_ms > 0 %}
@@ -121,6 +124,7 @@
 {{ indent }}engine.raise_internal({{ machine_name }}Event.{{ 'error.execution' | to_python_const }}, EventMetadata(data="<send> delay is not a CSS2 time", send_id=_sid, event_type="platform"))
 {% endif %}
 {{ indent }}raise _ActionAbort  # W3C SCXML 4.9: the error ends the block
+{% if flow is not none %}{% set flow.ended = true %}{% endif %}
 {% else %}
 {# W3C SCXML 5.7.1 + 4.9: a `<param>` that cannot be read is reported and its
    pair left out, and the message still goes; the error ends the block once
@@ -286,6 +290,7 @@
 {% endif %}
 {% endif %}
 {{ indent }}raise _ActionAbort  # W3C SCXML 4.9: the error ends the block
+{% if flow is not none %}{% set flow.ended = true %}{% endif %}
 {% else %}
 {# ── The payload ── W3C SCXML 5.10: evaluated once, by the helper every arm
    reads. #}

@@ -48,9 +48,15 @@
 {% endif %}
 {% for block in state.on_entry_blocks %}
             try:
+{# `block_flow`: an element that ends the block unconditionally sets it, and
+   nothing after that element is emitted (`emit`, _actions.py.jinja2). #}
+{% with block_flow = namespace(ended=false) %}
 {% for action in block %}
-{{ annot.annotation_block(action, "python", "                ") }}{{ actions.emit(action, '                ', machine_name, model) }}
+{% if not block_flow.ended %}
+{{ annot.annotation_block(action, "python", "                ") }}{{ actions.emit(action, '                ', machine_name, model, block_flow) }}
+{% endif %}
 {% endfor %}
+{% endwith %}
             except _ActionAbort:
                 pass
 {% endfor %}
@@ -64,9 +70,13 @@
             # raises `error.execution` and discards the rest of this block.
             if is_default_entry:
                 try:
+{% with block_flow = namespace(ended=false) %}
 {% for action in state.initial_transition_actions %}
-{{ actions.emit(action, '                    ', machine_name, model) }}
+{% if not block_flow.ended %}
+{{ actions.emit(action, '                    ', machine_name, model, block_flow) }}
+{% endif %}
 {% endfor %}
+{% endwith %}
                 except _ActionAbort:
                     pass
 {% endif %}
@@ -236,9 +246,13 @@
 {% endif %}
 {% for block in state.on_exit_blocks %}
             try:
+{% with block_flow = namespace(ended=false) %}
 {% for action in block %}
-{{ annot.annotation_block(action, "python", "                ") }}{{ actions.emit(action, '                ', machine_name, model) }}
+{% if not block_flow.ended %}
+{{ annot.annotation_block(action, "python", "                ") }}{{ actions.emit(action, '                ', machine_name, model, block_flow) }}
+{% endif %}
 {% endfor %}
+{% endwith %}
             except _ActionAbort:
                 pass
 {% endfor %}

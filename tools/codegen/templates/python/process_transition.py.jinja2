@@ -87,9 +87,15 @@
                     return
 {% endif %}
                 try:
+{# `block_flow`: an element that ends the block unconditionally sets it, and
+   nothing after that element is emitted (`emit`, _actions.py.jinja2). #}
+{% with block_flow = namespace(ended=false) %}
 {% for action in transition.actions %}
-{{ annot.annotation_block(action, "python", "                    ") }}{{ actions.emit(action, '                    ', machine_name, model) }}
+{% if not block_flow.ended %}
+{{ annot.annotation_block(action, "python", "                    ") }}{{ actions.emit(action, '                    ', machine_name, model, block_flow) }}
+{% endif %}
 {% endfor %}
+{% endwith %}
                 except _ActionAbort:
                     pass
                 return

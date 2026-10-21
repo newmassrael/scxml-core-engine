@@ -5429,6 +5429,65 @@ mod tests {
         );
     }
 
+    /// The Python list a refusal is emitted into emits nothing after its
+    /// `raise _ActionAbort`: the statements written there could never run.
+    /// The `<if>` whose branches all end is the end of its block, so no check
+    /// of its failure flag follows it, and the one without `<else>` keeps its
+    /// check. What runs is unchanged — each refusal still raises and ends its
+    /// block, and an `<if>` or `<foreach>` that can be passed over still lets
+    /// the block go on.
+    #[test]
+    fn python_emits_nothing_after_an_element_that_always_ends_its_block() {
+        let mut model = parse(ENDED_BY_A_SEND_SCXML);
+        crate::analyzer::analyze(&mut model, "");
+        let python =
+            generate_python(&model, &crate::find_template_base().join("python")).expect("python");
+
+        let unreachable = crate::unreachable_statements::unreachable_statements(
+            &python,
+            crate::template_lexing::Syntax::Python,
+        );
+        assert!(
+            unreachable.is_empty(),
+            "statements after a terminating statement: {unreachable:?}\n{python}"
+        );
+        let raises = |spelled: &str| raises_of(&python, "raise_internal(", spelled);
+        assert_eq!(
+            raises("Event.NEVER)"),
+            0,
+            "an element after a refusal\n{python}"
+        );
+        assert_eq!(raises("Event.FIRST)"), 1, "an element before one\n{python}");
+        assert_eq!(
+            raises("Event.KEPT)"),
+            1,
+            "after an <if> without <else>\n{python}"
+        );
+        assert_eq!(raises("Event.LOOPED)"), 1, "after a <foreach>\n{python}");
+
+        // Thirteen refusals, each still ending its block.
+        assert_eq!(
+            python
+                .lines()
+                .map(str::trim)
+                .filter(|line| {
+                    line.starts_with("raise _ActionAbort  #")
+                        && line.ends_with("the error ends the block")
+                })
+                .count(),
+            13,
+            "each refusal still ends its block\n{python}"
+        );
+        let flags = |shape: &str| {
+            python
+                .lines()
+                .filter(|line| line.trim_start().starts_with(shape))
+                .count()
+        };
+        assert_eq!(flags("_if_cond_failed_"), 2, "{python}");
+        assert_eq!(flags("if _if_cond_failed_"), 1, "{python}");
+    }
+
     /// `docs/SCE_ACCEPTED_SUBSET.md` §2.12 is the surface a consumer reads to
     /// learn which engines honour the §6.4.1 raise, and nothing was reading
     /// it. The table shipped claiming five AOT backends refuse the document

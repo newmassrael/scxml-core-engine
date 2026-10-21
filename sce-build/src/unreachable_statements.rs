@@ -297,6 +297,38 @@ pub(crate) fn unreachable_python_statements(source: &str) -> Vec<(usize, String)
     let code = code_only(source, Syntax::Python);
     let text: Vec<&str> = source.lines().collect();
 
+    // The logical lines: a line that starts inside an open bracket, or after
+    // a backslash, continues the one before it — so a header written over
+    // several lines still ends in its `:`. Each keeps the index and the
+    // indentation of its first line.
+    let mut logical: Vec<(usize, usize, String)> = Vec::new();
+    let mut depth = 0i32;
+    let mut joined = false;
+    for (index, raw) in code.lines().enumerate() {
+        let line = raw.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let continued = depth > 0 || joined;
+        depth += line
+            .chars()
+            .map(|c| match c {
+                '(' | '[' | '{' => 1,
+                ')' | ']' | '}' => -1,
+                _ => 0,
+            })
+            .sum::<i32>();
+        joined = line.ends_with('\\');
+        let line = line.trim_end_matches('\\').trim_end();
+        match logical.last_mut() {
+            Some((_, _, previous)) if continued => {
+                previous.push(' ');
+                previous.push_str(line);
+            }
+            _ => logical.push((index, raw.len() - raw.trim_start().len(), line.to_string())),
+        }
+    }
+
     let mut found = Vec::new();
     let mut stack = vec![Suite {
         indent: 0,
@@ -305,22 +337,8 @@ pub(crate) fn unreachable_python_statements(source: &str) -> Vec<(usize, String)
         open: None,
     }];
     let mut pending: Option<Body> = None;
-    let mut depth = 0i32;
-    let mut joined = false;
-    for (index, raw) in code.lines().enumerate() {
-        let line = raw.trim();
-        if line.is_empty() {
-            continue;
-        }
-        // A line inside an open bracket, or after a backslash, continues the
-        // statement before it.
-        let continued = depth > 0 || joined;
-        depth += brackets(line);
-        joined = line.ends_with('\\');
-        if continued {
-            continue;
-        }
-        let indent = raw.len() - raw.trim_start().len();
+    for (index, indent, line) in &logical {
+        let (index, indent, line) = (*index, *indent, line.as_str());
 
         if let Some(body) = pending.take() {
             if stack.last().is_some_and(|suite| indent > suite.indent) {
