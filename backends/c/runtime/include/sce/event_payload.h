@@ -532,6 +532,35 @@ SCE_C_UNUSED static inline const char *sce_payload_read_bool(const sce_payload_f
     return SCE_PAYLOAD_REFUSE_NOT_TRUTH;
 }
 
+/* Whether the value at `p` is the keyword `null`, and not a longer word that
+   starts with it. */
+SCE_C_UNUSED static inline bool sce_payload_is_null(const char *p) {
+    if (strncmp(p, "null", 4) != 0) {
+        return false;
+    }
+    const char after = p[4];
+    return after == '\0' || after == ',' || after == '}' || after == ']' || after == ' ' || after == '\t' ||
+           after == '\r' || after == '\n';
+}
+
+/* Whether the field `name` of an optional type (docs/adr/0055) carries a value:
+   `*present` is false for `null`, the one spelling of an absent value, and true
+   for anything else, which the reader of the field's type then reads and holds to
+   that type. A delivery that lacks the key, where no default of a later revision
+   names it either, is refused as missing: a missing key is a sender whose revision
+   does not have the field, never an absent value. A field a later revision added
+   with no default reads the `null` the schema's defaults hold for it, and so is
+   absent. */
+SCE_C_UNUSED static inline const char *sce_payload_read_presence(const sce_payload_fields_t *fields, const char *name,
+                                                                 bool *present) {
+    const char *p = sce_payload_find(fields, name);
+    if (p == NULL) {
+        return SCE_PAYLOAD_REFUSE_MISSING;
+    }
+    *present = !sce_payload_is_null(p);
+    return NULL;
+}
+
 /* Where one JSON string's characters go as they are unescaped. `emit` answers
    false when it has no room left, or when the character has no one-byte
    spelling and the sink is a byte string. */

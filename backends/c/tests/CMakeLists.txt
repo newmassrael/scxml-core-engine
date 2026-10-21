@@ -4602,6 +4602,28 @@ set_tests_properties(c11_unit_forge_wire_bytes PROPERTIES
     LABELS "unit;c11"
 )
 
+# ─── Forge optional unit test ───────────────────────────────────────
+#
+# A value that may be absent (docs/adr/0055): the flag and the value of
+# `sce/forge/optional.h`, built only by its constructors, compared as `===` compares
+# two optional values, and read with a default evaluated only when it is absent; an
+# absent value crosses the wire as `null`, and the payload reader tells a value,
+# `null` and a missing key apart. Header-only code.
+add_executable(sce_c_forge_optional_unit_test unit/forge_optional_test.c)
+target_link_libraries(sce_c_forge_optional_unit_test PRIVATE sce_c_runtime)
+target_include_directories(sce_c_forge_optional_unit_test PRIVATE
+    "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include")
+set_target_properties(sce_c_forge_optional_unit_test PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+add_test(NAME c11_unit_forge_optional COMMAND sce_c_forge_optional_unit_test)
+set_tests_properties(c11_unit_forge_optional PROPERTIES
+    TIMEOUT 10
+    LABELS "unit;c11"
+)
+
 # ─── Duration unit test ─────────────────────────────────────────────
 #
 # The runtime's one `<send>` delay reader, measured against

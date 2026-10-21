@@ -337,7 +337,7 @@ helper for each concern:
 | C++ | `std::optional<T>` | `std::nullopt` | `v` | `has_value()` | `*x` | a runtime helper handed `d` as a lambda | `==` (C++17 defines it over `optional`) |
 | Go | `optional.Of[T]` | `optional.None[T]()` | `optional.Some(v)` | `x.IsPresent()` | `x.Proven()` | a runtime helper handed `d` as a function literal | `x.Equal(y)` |
 | Python | `Optional[T]` | `None` | `v` | `is not None` | `x` | a runtime helper handed `d` as a `lambda` | `==` |
-| C11 | `sce_optional_<elem>_t`, `{ bool present; T value; }` | `SCE_OPTIONAL_NONE` | `SCE_OPTIONAL_SOME(v)` | `.present` | `.value` | decided in its step, under the rule below | `<elem>_optional_eq` |
+| C11 | `sce_optional_<elem>_t`, `{ bool present; T value; }` | `sce_optional_<elem>_none()` | `sce_optional_<elem>_some(v)` | `.present` | `.value` | `SCE_OPTIONAL_VALUE_OR(x, d)`, a conditional over the flag (step 5) | `sce_optional_<elem>_eq` |
 | Interpreter | the JSON value or `null` | `null` | `v` | `!== null` | `x` | `SceStatic.otherwise(x, function () { return d; })` | `===` |
 
 Whatever the spelling, `x ?? d` evaluates `x` once and `d` only when `x` is absent, and a failure
@@ -646,6 +646,19 @@ documents, not observed from a backend.
    `AStaticDatamodelRunsLoweredUnderTheInterpreterTest`, and for C11 a hand-written
    `backends/c/tests/integration/test_static_optional.c`, as the other C scenarios are). The
    committed trees of its backend that its template change reaches are regenerated with it.
+   As built for C11, `sce/forge/optional.h` declares each element's type, its two
+   constructors and its `_eq` through one macro, `SCE_OPTIONAL_DECLARE(elem, T, same)`: the
+   numbers and `bool` in the header (`sce_optional_int64_t`), a text and a byte string of
+   bound N beside their buffers (`SCE_OPTIONAL_DECLARE_STRING(N)`, `sce_optional_string_<N>_t`;
+   `_BYTES(N)`), an enum under its document's guard (`sce_optional_enum_<document>_t`). An
+   absent value is every byte zero. `x ?? d` is `SCE_OPTIONAL_VALUE_OR(x, d)`, the
+   conditional `(x).present ? (x).value : (d)` (`SCE_OPTIONAL_TEXT_OR` for a text,
+   `SCE_OPTIONAL_EITHER` where `d` may be absent too): `d` is evaluated only when `x` is
+   absent, and `x` is read twice, for its flag and its value, since C11 has no portable way
+   to name a value inside an expression (a statement expression is a GNU extension) and a
+   forge expression writes nothing, so the two reads are one value. On the wire an absent
+   value is `sce_forge_wire_null()`, and the lift tells a value, `null` and a missing key
+   apart through `sce_payload_read_presence`.
 6. **The saved state (Rust, Kotlin).** `null` in the two saved-state schemas; the shape type;
    the per-value check of a `null`; `saved/static_optional.json` and
    `saved/format1/static_optional.json` (one absent and one present value of each element),

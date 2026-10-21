@@ -40,7 +40,10 @@ typedef enum {
     SCE_FORGE_WIRE_WIDE_UINT,
     SCE_FORGE_WIRE_REAL,
     SCE_FORGE_WIRE_STRING,
-    SCE_FORGE_WIRE_BYTES
+    SCE_FORGE_WIRE_BYTES,
+    /* An absent value of an optional one (docs/adr/0055): JSON `null`, the one
+     * spelling of absence, never a key left out. */
+    SCE_FORGE_WIRE_NULL
 } sce_forge_wire_kind_t;
 
 /* One value of the data model, as it crosses. */
@@ -126,6 +129,17 @@ static inline sce_forge_wire_value_t sce_forge_wire_bytes(sce_forge_bytes_view_t
     memset(&value, 0, sizeof(value));
     value.kind = SCE_FORGE_WIRE_BYTES;
     value.as.bytes = v;
+    return value;
+}
+
+/* An absent value (docs/adr/0055), which crosses as `null`: a writer always
+ * writes the key, so a reader never takes a sender that knows the field for one
+ * whose revision does not have it. An optional value crosses as this when it is
+ * absent and as the value of its type when it is present (`sce/forge/optional.h`). */
+static inline sce_forge_wire_value_t sce_forge_wire_null(void) {
+    sce_forge_wire_value_t value;
+    memset(&value, 0, sizeof(value));
+    value.kind = SCE_FORGE_WIRE_NULL;
     return value;
 }
 
@@ -275,6 +289,9 @@ static inline void sce_forge_wire_put_value(sce_forge_wire_t *w, sce_forge_wire_
         sce_forge_wire_put_bytes(w, value.as.bytes);
         sce_forge_wire_put(w, "\"", 1u);
         break;
+    case SCE_FORGE_WIRE_NULL:
+        sce_forge_wire_put(w, "null", 4u);
+        break;
     }
 }
 
@@ -405,6 +422,12 @@ static inline bool sce_forge_wire_text(sce_forge_wire_value_t value, char *buf, 
         buf[at] = '\0';
         return true;
     }
+    case SCE_FORGE_WIRE_NULL:
+        /* Text has no spelling for an absent value: the build refuses an optional
+         * value where a request carries text (docs/adr/0055, section 2), so one
+         * that reaches here is refused and not written as some text. */
+        buf[0] = '\0';
+        return false;
     }
     if (written < 0 || (size_t)written >= cap) {
         buf[0] = '\0';
