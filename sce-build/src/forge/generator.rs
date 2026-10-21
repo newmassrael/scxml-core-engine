@@ -5014,6 +5014,7 @@ pub fn build_python_event_payload(
     extra_payload_events: &std::collections::BTreeSet<String>,
     static_enums: &[crate::forge::static_lowering::StaticEnumType],
 ) -> PythonEventPayload {
+    use crate::forge::static_lowering::PYTHON_PRESENT;
     let inactive = || PythonEventPayload {
         defs: String::new(),
         active: false,
@@ -5083,6 +5084,9 @@ pub fn build_python_event_payload(
     // Whether a 64-bit integer field is read, so the module names the marker that
     // reads it from the text of its digits.
     let mut uses_wide = false;
+    // Whether a field is optional (docs/adr/0055), so the module names the
+    // runtime's reader and writer of `null`.
+    let mut uses_optional = false;
 
     let mut first = true;
     for event in &guarded_events {
@@ -5104,10 +5108,20 @@ pub fn build_python_event_payload(
         let mut lift_fields = String::new();
         let mut data_items = String::new();
         for f in &schema.fields {
-            // A schema with an optional field was refused where the machine was
-            // lowered (docs/adr/0055), so each field holds a present value.
+            // An optional field (docs/adr/0055) is held in the one optional type
+            // over its present value's, `None` for absent: the lift reads JSON
+            // `null` as `None` and refuses a missing key (`OptionalOf`), and the
+            // inject seam writes `None` as `null` (`write_optional`).
             let present = f.sce_type.present_type();
-            let ty = l.type_name(present).into_owned();
+            let optional = f.sce_type.optional_elem().is_some();
+            uses_optional |= optional;
+            let present_ty = l.type_name(present).into_owned();
+            let ty = if optional {
+                l.optional_of(&present_ty)
+                    .expect("Python spells an optional value over its present one")
+            } else {
+                present_ty.clone()
+            };
             field_lines.push_str(&format!("    {}: {ty}\n", f.id));
             params.push_str(&format!(", {}: {ty}", f.id));
             if !call_args.is_empty() {
@@ -5120,8 +5134,27 @@ pub fn build_python_event_payload(
             // every engine with a single of its own holds it.
             let single = matches!(present, SceType::Float32);
             uses_single |= single;
+            // What a present value is written as, mapped over an optional one so
+            // that `None` stays `None` (`write_optional`).
+            let present_or_none = |written: &str| {
+                if optional {
+                    format!(
+                        "_write_optional({}, lambda {PYTHON_PRESENT}: {written})",
+                        f.id
+                    )
+                } else {
+                    written.to_string()
+                }
+            };
+            let held = |v: &str| {
+                if optional {
+                    PYTHON_PRESENT.to_string()
+                } else {
+                    v.to_string()
+                }
+            };
             if single {
-                call_args.push_str(&format!("_as_single({})", f.id));
+                call_args.push_str(&present_or_none(&format!("_as_single({})", held(&f.id))));
             } else {
                 call_args.push_str(&f.id);
             }
@@ -5140,25 +5173,33 @@ pub fn build_python_event_payload(
             } else if wide {
                 "_Wide"
             } else {
-                ty.as_str()
+                present_ty.as_str()
             };
-            lift_fields.push_str(&format!("(\"{}\", {declared}{width}), ", f.id));
+            if optional {
+                lift_fields.push_str(&format!("(\"{}\", _OptionalOf({declared}){width}), ", f.id));
+            } else {
+                lift_fields.push_str(&format!("(\"{}\", {declared}{width}), ", f.id));
+            }
             // ⚠ JSON has no byte string, and `json.dumps` REFUSES one, so a
             // `bytes` field rides the wire as its byte-exact Latin-1 text (the
             // lift reads it back the same way). Printable ASCII — what a bytes
             // guard compares — is the same characters either way.
-            if matches!(present, SceType::Bytes) {
-                data_items.push_str(&format!("\"{}\": {}.decode(\"latin-1\")", f.id, f.id));
+            let value = held(&f.id);
+            let written = if matches!(present, SceType::Bytes) {
+                present_or_none(&format!("{value}.decode(\"latin-1\")"))
             } else if matches!(present, SceType::Enum(_)) {
                 // An enum rides as the name its document declares for the value.
-                data_items.push_str(&format!("\"{}\": {}.sce_name", f.id, f.id));
+                present_or_none(&format!("{value}.sce_name"))
             } else if single {
-                data_items.push_str(&format!("\"{}\": _as_single({})", f.id, f.id));
+                present_or_none(&format!("_as_single({value})"))
             } else if wide {
-                data_items.push_str(&format!("\"{}\": str({})", f.id, f.id));
+                present_or_none(&format!("str({value})"))
             } else {
-                data_items.push_str(&format!("\"{}\": {}", f.id, f.id));
-            }
+                // A present value is written as it is, and an absent one as the
+                // `None` it is, which `json.dumps` writes as `null`.
+                f.id.clone()
+            };
+            data_items.push_str(&format!("\"{}\": {written}", f.id));
         }
         data_classes.push_str(&format!(
             "@dataclass\n\
@@ -5234,7 +5275,13 @@ from sce_runtime.event_payload import as_single as _as_single\n"
     } else {
         ""
     };
-    let single_import = format!("{single_import}{wide_import}");
+    let optional_import = if uses_optional {
+        "from sce_runtime.event_payload import OptionalOf as _OptionalOf\n\
+from sce_runtime.event_payload import write_optional as _write_optional\n"
+    } else {
+        ""
+    };
+    let single_import = format!("{single_import}{wide_import}{optional_import}");
     let defs = format!(
         "# NL\u{2192}IR Item C1 Path A (EventSchema MCU native lowering): typed\n\
 # `_event.data` payload dataclasses for the EventSchema-imported events whose\n\
@@ -32849,6 +32896,106 @@ mod tests {
         assert_eq!(spelled(Language::Python).as_deref(), Some("Optional[T]"));
         assert_eq!(spelled(Language::C11), None);
         assert_eq!(spelled(Language::Swift), None);
+    }
+
+    /// The Python payload of a schema with optional fields (docs/adr/0055) holds
+    /// each in `Optional[T]`, lifts it through `OptionalOf`, which reads JSON
+    /// `null` as `None` and refuses a missing key, and writes it into the
+    /// event's data through `write_optional`, so `None` crosses as `null` and a
+    /// present value as its own wire spelling; a field of `T` is as it was.
+    #[test]
+    fn a_python_payload_holds_an_optional_field_as_none_or_its_value() {
+        use crate::forge::model::{Direction, EventSchemaModel, FieldType, SchemaField};
+        let field = |id: &str, sce_type: FieldType, max_size: Option<u32>| SchemaField {
+            id: id.to_string(),
+            sce_type,
+            direction: Direction::In,
+            expr: None,
+            expr_spelling: None,
+            expr_splices: None,
+            quantity: None,
+            max_size,
+            limit: None,
+            default_covers: Vec::new(),
+            retain: None,
+            initial: None,
+            initial_spelling: None,
+            since: None,
+            default: None,
+            default_spelling: None,
+        };
+        let optional = |elem: SceType| FieldType::Optional { elem };
+        let mut model = crate::model::SCXMLModel {
+            name: "due".to_string(),
+            ..Default::default()
+        };
+        model.imported_event_schemas.insert(
+            "due.set".to_string(),
+            EventSchemaModel {
+                name: "schema_due".to_string(),
+                event_name: "due.set".to_string(),
+                fields: vec![
+                    field("id", FieldType::Scalar(SceType::Uint32), None),
+                    field("due", optional(SceType::Int64), None),
+                    field("title", optional(SceType::String), Some(16)),
+                    field("ratio", optional(SceType::Float32), None),
+                ],
+                payload_none: false,
+                datamodel_markers: Vec::new(),
+                revision: None,
+                source_location: None,
+            },
+        );
+        let events: std::collections::BTreeSet<String> =
+            std::iter::once("due.set".to_string()).collect();
+        let payload = build_python_event_payload(&model, &events, &[]);
+        for held in [
+            "    id: int\n",
+            "    due: Optional[int]\n",
+            "    title: Optional[str]\n",
+            "    ratio: Optional[float]\n",
+        ] {
+            assert!(
+                payload.defs.contains(held),
+                "{held:?} in:\n{}",
+                payload.defs
+            );
+        }
+        assert!(
+            payload
+                .defs
+                .contains("from sce_runtime.event_payload import OptionalOf as _OptionalOf\n")
+                && payload.defs.contains(
+                    "from sce_runtime.event_payload import write_optional as _write_optional\n"
+                ),
+            "{}",
+            payload.defs
+        );
+        for lifted in [
+            "(\"id\", int, 0, 4294967295), ",
+            "(\"due\", _OptionalOf(_Wide), ",
+            "(\"title\", _OptionalOf(str)), ",
+            "(\"ratio\", _OptionalOf(_Single)), ",
+        ] {
+            assert!(
+                payload.populate.contains(lifted),
+                "{lifted:?} in:\n{}",
+                payload.populate
+            );
+        }
+        for written in [
+            "_write_optional(ratio, lambda sce_present: _as_single(sce_present))",
+            "\"id\": id, ",
+            "\"due\": _write_optional(due, lambda sce_present: str(sce_present)), ",
+            "\"title\": title, ",
+            "\"ratio\": _write_optional(ratio, lambda sce_present: _as_single(sce_present))",
+        ] {
+            assert!(
+                payload.inject.contains(written),
+                "{written:?} in:\n{}",
+                payload.inject
+            );
+        }
     }
 
     /// The package a Kotlin forge unit declares, the one its importers name

@@ -7182,7 +7182,8 @@ pub fn lower_go(
 /// of the generated module already catches. A statement of such a machine is
 /// therefore a block of lines, not an expression: the templates indent each.
 ///
-/// Lowers scalar, enum, list and record variables, guards, `<assign>`, `<if>`,
+/// Lowers scalar, enum, list and record variables, an optional value of a scalar
+/// held as `Optional[T]` (docs/adr/0055), guards, `<assign>`, `<if>`,
 /// `<foreach>`, `<log>`, `<raise>`, `In()`, a typed payload and a call of an
 /// imported algorithm — a module beside the machine's own, whose failing call
 /// raises the same `AlgorithmFailure` a checked operation does; every construct
@@ -7231,7 +7232,25 @@ impl PythonTarget {
         }
         None
     }
+
+    /// `value`, an optional value, as `absent` where it is `None` and as
+    /// `present` — which reads the present value as [`PYTHON_PRESENT`] — where it
+    /// is not: a `lambda` called at once binds the value, so it is computed once.
+    /// Presence is `is None`, never a truth test: a present `0`, `''` or `False`
+    /// is a value (docs/adr/0055).
+    fn present_or(value: &str, absent: &str, present: &str) -> String {
+        format!(
+            "(lambda {PYTHON_PRESENT}: {absent} if {PYTHON_PRESENT} is None else {present})({value})"
+        )
+    }
 }
+
+/// The name a Python `lambda` binds the present value of an optional value to
+/// ([`StaticTarget::optional_map`], [`StaticTarget::wire_optional`], the payload's
+/// inject seam): under the generator's prefix, which no author's name is spelled
+/// as (`crate::forge::generator::python_local_spelling`), and a variable is an
+/// attribute of the policy.
+pub(crate) const PYTHON_PRESENT: &str = "sce_present";
 
 impl StaticTarget for PythonTarget {
     fn name(&self) -> &'static str {
@@ -7246,6 +7265,41 @@ impl StaticTarget for PythonTarget {
     }
     fn lowers_state_calls(&self) -> bool {
         true
+    }
+    // `Optional[T]` (docs/adr/0055, section 5) is the default spelling of the type
+    // ([`crate::forge::generator::optional_of`]), which the module's `typing`
+    // import already names: an absent value is `None`, and a present one is the
+    // value itself.
+    fn optional_none(&self, _present: &str) -> Option<String> {
+        Some("None".to_string())
+    }
+    fn optional_some(&self, _present: &str, value: &str) -> Option<String> {
+        Some(value.to_string())
+    }
+    // A present text held to its bound, which raises `AlgorithmFailure` in the
+    // statement that writes it; an absent one stays `None`.
+    fn optional_map(
+        &self,
+        value: &str,
+        _present: &str,
+        map: &dyn Fn(&str) -> String,
+    ) -> Option<String> {
+        Some(Self::present_or(value, "None", &map(PYTHON_PRESENT)))
+    }
+    // JSON `null` (`ScriptValue.null()`, which `to_json_literal` writes as
+    // `null`) where the value is absent, and the present value's own wire value
+    // where it is present (docs/adr/0055, section 4).
+    fn wire_optional(
+        &self,
+        value: &str,
+        _present: &str,
+        wire: &dyn Fn(&str) -> String,
+    ) -> Option<String> {
+        Some(Self::present_or(
+            value,
+            "_ScriptValue.null()",
+            &wire(PYTHON_PRESENT),
+        ))
     }
     fn state_argument(&self, _machine: &str, _arg: &StateArg, held: &str) -> String {
         held.to_string()
@@ -7505,9 +7559,17 @@ impl StaticTarget for PythonTarget {
             .fields
             .iter()
             .map(|field| {
-                let field_ty = match field.sce_type.present_type() {
+                let present = match field.sce_type.present_type() {
                     SceType::Enum(reference) => enum_types[&reference.alias].clone(),
                     other => crate::forge::generator::python_type(other).to_string(),
+                };
+                // An optional field is held in the optional type over its
+                // present value's (docs/adr/0055).
+                let field_ty = match field.sce_type {
+                    FieldType::Optional { .. } => self
+                        .optional_type(&present)
+                        .expect("Python spells an optional value over its present one"),
+                    FieldType::Scalar(_) => present,
                 };
                 format!("    {}: {field_ty}\n", self.record_field(&field.id))
             })
@@ -11105,6 +11167,90 @@ mod tests {
             write[1].native_code
         );
         assert_eq!(write[2].native_code, "p.vOther = p.vDue");
+    }
+
+    /// Python holds an optional value in `Optional[T]`, `None` absent and the
+    /// value itself present, and writes the whole value of an optional place by
+    /// the walk's one rule (docs/adr/0055): `null` is `None`, a value of `T` is
+    /// lowered into `T` (a text held to its bound) and is the value, an optional
+    /// value is written as it is. A read under an `<if>` whose condition proves
+    /// the value present is the value, and a `<param>` of an optional value
+    /// crosses as JSON `null` where it is absent.
+    #[test]
+    fn python_writes_an_optional_place_whole_by_the_walks_one_rule() {
+        const OPTIONAL: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="sce-static" name="m">
+  <datamodel>
+    <data id="due" sce:type="optional&lt;int64&gt;" expr="null"/>
+    <data id="other" sce:type="optional&lt;int64&gt;" expr="7"/>
+    <data id="title" sce:type="optional&lt;string&gt;" sce:capacity="4" expr="null"/>
+    <data id="days" sce:type="int64" expr="0"/>
+  </datamodel>
+  <state id="s">
+    <transition event="read" type="internal">
+      <if cond="due !== null">
+        <assign location="days" expr="due.value"/>
+      </if>
+    </transition>
+    <transition event="write" type="internal">
+      <assign location="due" expr="null"/>
+      <assign location="title" expr="'abc'"/>
+      <assign location="other" expr="due"/>
+    </transition>
+    <transition event="relay" type="internal">
+      <send event="sent">
+        <param name="due" expr="due"/>
+      </send>
+    </transition>
+  </state>
+</scxml>"#;
+        let mut model = SCXMLParser::new()
+            .parse_string(OPTIONAL, "m")
+            .expect("parses");
+        crate::analyzer::analyze(&mut model, "m.scxml");
+        let lowered = lower_python(&mut model, "M").expect("Python lowers an optional value");
+        let field = |id: &str| {
+            lowered
+                .fields
+                .iter()
+                .find(|f| f.id == id)
+                .unwrap_or_else(|| panic!("a field `{id}`"))
+        };
+        assert_eq!(field("due").ty, "Optional[int]");
+        assert_eq!(field("due").init, "None");
+        assert_eq!(field("other").init, "7");
+        assert_eq!(field("title").ty, "Optional[str]");
+        assert_eq!(field("title").saved_kind, "optional");
+        assert!(
+            lowered.saved_shape.is_none(),
+            "no saved shape before step 6"
+        );
+        let state = model.states.get("s").expect("the state");
+        let read = &state.transitions[0].actions[0];
+        assert_eq!(read.native_cond, "self.v_due is not None");
+        // Read through the model's one definition of what lies inside an action.
+        let blocks = read.nested_blocks();
+        let then = blocks
+            .iter()
+            .find(|block| block.role == crate::model::BlockRole::Then)
+            .expect("the <if> has a then block");
+        assert_eq!(then.actions[0].native_code, "self.v_days = self.v_due");
+        let write = &state.transitions[1].actions;
+        assert_eq!(write[0].native_code, "self.v_due = None");
+        assert!(
+            write[1]
+                .native_code
+                .contains("self.v_title = sce_algorithm.bounded('abc', 4)"),
+            "{}",
+            write[1].native_code
+        );
+        assert_eq!(write[2].native_code, "self.v_other = self.v_due");
+        let relay = &state.transitions[2].actions[0];
+        assert_eq!(
+            relay.params[0].native_value,
+            "(lambda sce_present: _ScriptValue.null() if sce_present is None else \
+             _ScriptValue.of(str(sce_present)))(self.v_due)"
+        );
     }
 
     fn shape(document: &str) -> Option<String> {

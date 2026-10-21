@@ -56,14 +56,14 @@ PY
 
 mutation_case "the typed seam hands the carrier the number as it was given" <<'PY'
 edit("sce-build/src/forge/generator.rs",
-     "                call_args.push_str(&format!(\"_as_single({})\", f.id));",
+     "                call_args.push_str(&present_or_none(&format!(\"_as_single({})\", held(&f.id))));",
      "                call_args.push_str(&f.id);")
 PY
 
 mutation_case "the seam writes the number as it was given into the data" <<'PY'
 edit("sce-build/src/forge/generator.rs",
-     "                data_items.push_str(&format!(\"\\\"{}\\\": _as_single({})\", f.id, f.id));",
-     "                data_items.push_str(&format!(\"\\\"{}\\\": {}\", f.id, f.id));")
+     "                present_or_none(&format!(\"_as_single({value})\"))",
+     "                present_or_none(&value)")
 PY
 
 mutation_case "the module does not import what the spec names" <<'PY'

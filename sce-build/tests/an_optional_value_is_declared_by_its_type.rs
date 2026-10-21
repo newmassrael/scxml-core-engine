@@ -131,7 +131,7 @@ const NOT_LOWERED: &str = "an optional value has no";
 /// The backends whose step of docs/adr/0055 lowers a statechart's optional value,
 /// by the language `generate -l` names: each generates what the others refuse.
 /// A backend joins in the step that lowers the type on it.
-const LOWERS_OPTIONAL: &[&str] = &["go"];
+const LOWERS_OPTIONAL: &[&str] = &["go", "python"];
 
 /// Whether the backend `args` (one of [`every_backend`]) lowers a statechart's
 /// optional value.
