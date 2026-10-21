@@ -10792,10 +10792,16 @@ fn lower_optional_assign(
         })
     };
     let optional = InferredType::Optional(crate::forge::types::OptionalElem::of(&place.elem));
-    // A present text, held to the bound of the place it is written to.
+    // A present text, held to the bound of the place it is written to, as the
+    // place's present value is held: the buffer of the bound, for a target that
+    // holds a text in one, as a payload's field taken whole into a record is.
     let held = |value: &str| match (&place.elem, place.bound) {
-        (SceType::Bytes, Some(bound)) => target.bounded_bytes(value, bound),
-        (_, Some(bound)) => target.bounded_string(value, bound),
+        (SceType::Bytes, Some(bound)) => {
+            target.record_bytes_runtime(bound, &target.bounded_bytes(value, bound))
+        }
+        (_, Some(bound)) => {
+            target.record_string_runtime(bound, &target.bounded_string(value, bound))
+        }
         (_, None) => value.to_string(),
     };
     let value = if is_null_literal(&action.expr) {
