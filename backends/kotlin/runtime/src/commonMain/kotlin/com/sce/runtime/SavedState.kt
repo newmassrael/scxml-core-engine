@@ -462,6 +462,12 @@ data class SavedRevision(val revision: Int, val fields: String) {
  *   any record schema. A reader that predates revisions knows only the first
  *   shape, so it refuses such a state rather than read it without the fields it
  *   does not know.
+ * @property format2First [first] as a format-2 state names it (docs/adr/0045,
+ *   section 2): each enum-typed variable and record field spelled by its enum's
+ *   document ([EnumLineage.key]) rather than by the alias it is imported under,
+ *   so renaming an alias leaves it as it was. The same as [first] for a
+ *   document that holds no enum.
+ * @property format2Revised [revised] as a format-2 state names it.
  * @property records each record schema a variable is of, by the event it
  *   declares, ordered by it.
  * @property enums each enum a value of the state is of, by its key, ordered by
@@ -470,6 +476,8 @@ data class SavedRevision(val revision: Int, val fields: String) {
 class SavedShape(
     val first: String,
     val revised: String,
+    val format2First: String,
+    val format2Revised: String,
     val records: List<RecordLineage>,
     val enums: List<EnumLineage> = emptyList(),
 )

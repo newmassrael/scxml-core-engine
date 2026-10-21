@@ -110,7 +110,13 @@ private class WaitingMachine : StateMachineEngine<WaitingState, WaitEvent>() {
          * machine with no record variable names no revision, so it writes and
          * judges the first.
          */
-        val SHAPE = SavedShape(first = "shape", revised = "revised shape", records = emptyList())
+        val SHAPE = SavedShape(
+            first = "shape",
+            revised = "revised shape",
+            format2First = "shape",
+            format2Revised = "revised shape",
+            records = emptyList(),
+        )
     }
 }
 

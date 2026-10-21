@@ -1761,4 +1761,144 @@ mod tests {
             [("enum:enum_signal_level.scxml", 2, 1, vec!["critical"])]
         );
     }
+
+    /// The text of the first string literal in `text` after `marker`, which
+    /// must occur: what a generated constant introduced by `marker` holds.
+    fn literal_after(text: &str, marker: &str, language: &str) -> String {
+        let at = text
+            .find(marker)
+            .unwrap_or_else(|| panic!("{language}: no `{marker}` in the generated machine"));
+        let rest = &text[at + marker.len()..];
+        let open = rest.find('"').expect("a string literal follows") + 1;
+        let close = open + rest[open..].find('"').expect("the literal closes");
+        rest[open..close].to_string()
+    }
+
+    /// Every string literal in `text` between `start` and the first `end` after
+    /// it: the elements of a generated list constant.
+    fn literals_between(text: &str, start: &str, end: &str, language: &str) -> Vec<String> {
+        let at = text
+            .find(start)
+            .unwrap_or_else(|| panic!("{language}: no `{start}` in the generated machine"));
+        let rest = &text[at + start.len()..];
+        let region = &rest[..rest.find(end).expect("the list ends")];
+        region
+            .split('"')
+            .skip(1)
+            .step_by(2)
+            .map(str::to_string)
+            .collect()
+    }
+
+    #[test]
+    fn every_backend_declares_the_one_format_2_shape_and_enum_keys_the_generator_computed() {
+        use crate::generator::Language;
+        let statechart = fixtures().join("static_schema_pending.scxml");
+        let mut model = crate::parser::SCXMLParser::new()
+            .parse_file(statechart.to_str().expect("a UTF-8 path"))
+            .unwrap_or_else(|e| panic!("the statechart parses: {e:?}"));
+        crate::analyzer::analyze(&mut model, "static_schema_pending.scxml");
+        let shape = crate::forge::static_lowering::lower_rust(&mut model, "StaticSchemaPending")
+            .expect("lowers")
+            .saved_shape
+            .expect("the machine saves");
+        // The machine holds an enum, so its format-2 shape is not its format-1 one:
+        // a backend that wrote the format-1 text under the format-2 name is seen.
+        assert_ne!(shape.format2_first, shape.first);
+        let expected = (
+            shape.format2_first.clone(),
+            shape.format2_revised.clone(),
+            vec!["enum:enum_signal_level.scxml".to_string()],
+        );
+
+        // Per backend: what introduces the format-2 shape, the revised one, and
+        // the list of enum keys, with what ends that list.
+        type Markers = (&'static str, &'static str, &'static str, &'static str);
+        let markers = |language: Language| -> Markers {
+            match language {
+                Language::Rust => (
+                    "format2_first: ",
+                    "format2_revised: ",
+                    "enums: &[",
+                    "const HISTORIES",
+                ),
+                Language::Kotlin => (
+                    "format2First = ",
+                    "format2Revised = ",
+                    "enums = listOf(",
+                    "fun save(",
+                ),
+                Language::Go => (
+                    "SavedShapeFormat2 ",
+                    "SavedShapeFormat2Revised ",
+                    "SavedEnumKeys = [...]string{",
+                    "}",
+                ),
+                Language::Python => (
+                    "SAVED_SHAPE_FORMAT2 = ",
+                    "SAVED_SHAPE_FORMAT2_REVISED = ",
+                    "SAVED_ENUM_KEYS = (",
+                    ")",
+                ),
+                Language::Cpp => (
+                    "SAVED_SHAPE_FORMAT2 = ",
+                    "SAVED_SHAPE_FORMAT2_REVISED = ",
+                    "SAVED_ENUM_KEYS = {",
+                    "};",
+                ),
+                Language::C11 => (
+                    "_SAVED_SHAPE_FORMAT2 ",
+                    "_SAVED_SHAPE_FORMAT2_REVISED ",
+                    "_SAVED_ENUM_KEY_COUNT",
+                    "\n\n",
+                ),
+            }
+        };
+        let mut declared = 0;
+        for &language in Language::ALL {
+            if !crate::generator::lowers_static_datamodel(language) {
+                continue;
+            }
+            let name = format!("{language:?}");
+            // Go has no bare import form: it asks where the generated packages live.
+            let options = crate::ForgeCompileOptions {
+                go_module_prefix: matches!(language, Language::Go)
+                    .then(|| "example.com/consumer/generated".to_string()),
+                ..crate::ForgeCompileOptions::default()
+            };
+            let outputs = crate::compile_scxml_with_imports(
+                &[statechart.as_path()],
+                &[
+                    fixtures().join("schema_signal.scxml").as_path(),
+                    fixtures().join("enum_signal_level.scxml").as_path(),
+                ],
+                &crate::find_template_dir_for(language),
+                language,
+                &options,
+                None,
+            )
+            .unwrap_or_else(|e| panic!("{name}: the machine generates: {e:?}"));
+            let text: String = outputs
+                .iter()
+                .flat_map(|(_, output)| output.files.iter().map(|(_, content)| content.as_str()))
+                .collect();
+            let (first, revised, keys_start, keys_end) = markers(language);
+            let mut keys: Vec<String> = literals_between(&text, keys_start, keys_end, &name)
+                .into_iter()
+                .filter(|literal| literal.starts_with("enum:"))
+                .collect();
+            keys.dedup();
+            let found = (
+                literal_after(&text, first, &name),
+                literal_after(&text, revised, &name),
+                keys,
+            );
+            assert_eq!(
+                found, expected,
+                "{name}: the format-2 shape and enum keys are not the generator's text"
+            );
+            declared += 1;
+        }
+        assert!(declared >= 6, "only {declared} backends declared the texts");
+    }
 }

@@ -323,6 +323,8 @@ SavedValues.{{ type }}({{ value }}, {{ what }})
     val savedShape: SavedShape = SavedShape(
         first = "{{ static_saved_shape.first }}",
         revised = "{{ static_saved_shape.revised }}",
+        format2First = "{{ static_saved_shape.format2_first }}",
+        format2Revised = "{{ static_saved_shape.format2_revised }}",
         records = listOf(
 {% for record in static_saved_shape.records %}
             RecordLineage(

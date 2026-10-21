@@ -3079,6 +3079,20 @@ fn render_rust(
     tmpl.render(ctx).map_err(render_error)
 }
 
+/// What a format-2 saved state of the machine is bound to and names its enums
+/// by (docs/adr/0045, section 2), for the templates of a backend that declares
+/// these texts as constants of their own rather than reading the whole saved
+/// shape; none for a machine with no saved state. Computed once here, so each
+/// backend's constant is the text every other backend's is.
+fn format2_keys(lowering: &crate::forge::static_lowering::StaticLowering) -> minijinja::Value {
+    minijinja::Value::from_serialize(
+        lowering
+            .saved_shape
+            .as_ref()
+            .map(crate::forge::static_lowering::SavedShape::format2_keys),
+    )
+}
+
 // ── C++ generator ────────────────────────────────────────────────
 
 /// Generate C++ code from an analyzed SCXMLModel (filesystem-based).
@@ -3255,6 +3269,7 @@ fn render_cpp(
         static_type_defs => static_lowering.type_defs.join("\n\n"),
         static_adapter_defs => static_lowering.adapter_defs.join("\n\n"),
         static_imports => &static_lowering.imports,
+        static_format2_shape => format2_keys(&static_lowering),
     };
     let inl_ctx = minijinja::context! {
         model => &model_val,
@@ -3481,6 +3496,7 @@ fn render_c11(
         static_fields => minijinja::Value::from_serialize(&static_lowering.fields),
         static_published => minijinja::Value::from_serialize(&static_published),
         static_type_defs => static_lowering.type_defs.join("\n\n"),
+        static_format2_shape => format2_keys(&static_lowering),
         static_done_data => static_done_data,
         static_datamodel => model.datamodel == crate::model::Datamodel::SceStatic,
     };
@@ -4085,6 +4101,7 @@ fn render_python(env: &mut Environment, model: &SCXMLModel) -> Result<String, Ge
         static_type_defs => static_lowering.type_defs.join("\n\n"),
         static_adapter_defs => static_lowering.adapter_defs.join("\n\n"),
         static_imports => &static_lowering.imports,
+        static_format2_shape => format2_keys(&static_lowering),
     };
     tmpl.render(ctx).map_err(render_error)
 }
@@ -4185,6 +4202,7 @@ fn render_go(
             static_type_defs => static_lowering.type_defs.join("\n\n"),
         static_adapter_defs => static_lowering.adapter_defs.join("\n\n"),
             static_imports => static_imports,
+            static_format2_shape => format2_keys(&static_lowering),
         };
         tmpl.render(ctx).map_err(render_error)
     };

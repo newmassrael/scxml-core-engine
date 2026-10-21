@@ -435,6 +435,8 @@ impl{{ policy_generics_decl }} {{ machine_name }}Persist for Engine<{{ machine_n
     const SHAPE: ::sce_rust_runtime::saved_state::SavedShape = ::sce_rust_runtime::saved_state::SavedShape {
         first: "{{ static_saved_shape.first }}",
         revised: "{{ static_saved_shape.revised }}",
+        format2_first: "{{ static_saved_shape.format2_first }}",
+        format2_revised: "{{ static_saved_shape.format2_revised }}",
         records: &[
 {% for record in static_saved_shape.records %}
             ::sce_rust_runtime::saved_state::RecordLineage {

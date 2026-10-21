@@ -314,6 +314,33 @@ def _coerce_event_data_str(data: Any) -> str:
 
 {{ host_invoker_interface }}
 {% endif %}
+{% if static_format2_shape %}
+# ======================================================================
+# SCE Accepted Subset §2.15: what a format-2 saved state of it is bound to
+# ======================================================================
+
+# The shape a format-2 saved state of this machine names when every record
+# schema it holds is in its first revision, and the one it names when it names a
+# later revision (docs/adr/0045, section 2). The generator computes both once, so
+# they are the texts every backend's constants are.
+SAVED_SHAPE_FORMAT2 = "{{ static_format2_shape.first }}"
+SAVED_SHAPE_FORMAT2_REVISED = "{{ static_format2_shape.revised }}"
+
+# Each enum a value of a saved state of this machine is of, by its document
+# (docs/adr/0044): the key `revisions` names it by, and the format-2 shape spells
+# it by.
+{% if static_format2_shape.enum_keys %}
+SAVED_ENUM_KEYS = (
+{% for key in static_format2_shape.enum_keys %}
+    "{{ key | escape_python }}",
+{% endfor %}
+)
+{% else %}
+SAVED_ENUM_KEYS = ()
+{% endif %}
+
+
+{% endif %}
 {% if static_fields %}
 # ======================================================================
 # SCE Accepted Subset §2.15: the types a `sce-static` datamodel holds

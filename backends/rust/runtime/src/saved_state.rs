@@ -214,6 +214,14 @@ pub struct SavedShape {
     /// refuses such a state rather than read it without the fields it does not
     /// know.
     pub revised: &'static str,
+    /// [`Self::first`] as a format-2 state names it (docs/adr/0045, section 2):
+    /// each enum-typed variable and record field spelled by its enum's
+    /// document ([`EnumLineage::key`]) rather than by the alias it is imported
+    /// under, so renaming an alias leaves it as it was. The same as
+    /// [`Self::first`] for a document that holds no enum.
+    pub format2_first: &'static str,
+    /// [`Self::revised`] as a format-2 state names it.
+    pub format2_revised: &'static str,
     /// Each record schema a variable is of, by the event it declares, ordered by
     /// it.
     pub records: &'static [RecordLineage],
@@ -2300,6 +2308,10 @@ mod tests {
 
     const FIRST_SHAPE: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     const REVISED_SHAPE: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    const FORMAT2_FIRST_SHAPE: &str =
+        "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+    const FORMAT2_REVISED_SHAPE: &str =
+        "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
     const SECOND: &str = "2222222222222222222222222222222222222222222222222222222222222222";
     const THIRD: &str = "3333333333333333333333333333333333333333333333333333333333333333";
 
@@ -2309,6 +2321,9 @@ mod tests {
     const READING_SHAPE: SavedShape = SavedShape {
         first: FIRST_SHAPE,
         revised: REVISED_SHAPE,
+        // It holds no enum, so format 2 names its shape as format 1 does.
+        format2_first: FIRST_SHAPE,
+        format2_revised: REVISED_SHAPE,
         records: &[RecordLineage {
             event: "reading.taken",
             revision: 3,
@@ -2345,6 +2360,8 @@ mod tests {
     const LAYOUT_SHAPE: SavedShape = SavedShape {
         first: FIRST_SHAPE,
         revised: REVISED_SHAPE,
+        format2_first: FORMAT2_FIRST_SHAPE,
+        format2_revised: FORMAT2_REVISED_SHAPE,
         records: &[],
         enums: &[EnumLineage {
             key: "enum:enum_view_mode.scxml",

@@ -194,12 +194,47 @@ pub struct SavedShape {
     /// schema: the digest of the first shape's text and one line more, so a
     /// reader that knows only the first shape refuses it.
     pub revised: String,
+    /// [`Self::first`] as a format-2 saved state names it (docs/adr/0045,
+    /// section 2): the same text with each enum-typed variable and record
+    /// field spelled by its enum's document key, not by the alias it is
+    /// imported under. Equal to [`Self::first`] for a document that holds no
+    /// enum.
+    pub format2_first: String,
+    /// [`Self::revised`] as a format-2 saved state names it.
+    pub format2_revised: String,
     /// Each record schema a variable is of, by the event it declares, ordered
     /// by it.
     pub records: Vec<SavedRecordLineage>,
     /// Each enum a value of the state is of — a variable's, or a record
     /// field's — by its key (`enum:` and its document's key), ordered by it.
     pub enums: Vec<SavedEnumLineage>,
+}
+
+impl SavedShape {
+    /// What a format-2 saved state of the machine is bound to and names its
+    /// enums by ([`SavedFormat2Keys`]).
+    pub fn format2_keys(&self) -> SavedFormat2Keys {
+        SavedFormat2Keys {
+            first: self.format2_first.clone(),
+            revised: self.format2_revised.clone(),
+            enum_keys: self.enums.iter().map(|e| e.key.clone()).collect(),
+        }
+    }
+}
+
+/// The texts a format-2 saved state of a machine is bound to (docs/adr/0045,
+/// section 2), as a backend whose templates do not read the whole
+/// [`SavedShape`] declares them: the two format-2 shapes and the key of each
+/// enum a value of the state is of. The generator computes them once, so every
+/// backend's constant is the same text.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SavedFormat2Keys {
+    /// [`SavedShape::format2_first`].
+    pub first: String,
+    /// [`SavedShape::format2_revised`].
+    pub revised: String,
+    /// [`SavedEnumLineage::key`] of each of [`SavedShape::enums`], in order.
+    pub enum_keys: Vec<String>,
 }
 
 /// An enum a value of a machine's state is of, as a saved state names it.
@@ -3710,14 +3745,12 @@ impl<'t> TypeDeclarations<'t> {
 /// child of this session is not such a send: each is a session or a processor
 /// the tree holds (docs/adr/0045).
 fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<SavedShape> {
-    use sha2::{Digest, Sha256};
     use std::collections::BTreeMap;
-    use std::fmt::Write as _;
 
     if !a_tree_can_hold(model) {
         return None;
     }
-    let mut text = String::from("sce-saved-state-shape 1\n");
+    let mut text = ShapeTexts::new("sce-saved-state-shape 1");
     let mut states: Vec<_> = model.states.values().collect();
     states.sort_by_key(|s| s.document_order);
     for state in states {
@@ -3730,12 +3763,11 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<SavedShape> {
         } else {
             "compound"
         };
-        let _ = writeln!(
-            text,
+        text.line(&format!(
             "state {} {kind} {}",
             state.id,
             state.parent.as_deref().unwrap_or("-")
-        );
+        ));
     }
     // By id: the map is ordered, so the same document hashes the same.
     for (id, history) in &model.history_states {
@@ -3744,7 +3776,7 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<SavedShape> {
         } else {
             "shallow"
         };
-        let _ = writeln!(text, "history {id} {kind} {}", history.parent);
+        text.line(&format!("history {id} {kind} {}", history.parent));
     }
     // By the state that holds each, in document order, so the same document
     // hashes the same.
@@ -3758,29 +3790,27 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<SavedShape> {
         for invoke in &state.invokes {
             match invoke {
                 crate::model::Invoke::Scxml(_) => {
-                    let _ = writeln!(text, "invoke {} {}", invoke.base().invoke_id, state.id);
+                    text.line(&format!("invoke {} {}", invoke.base().invoke_id, state.id));
                 }
                 // Named apart from a child session of the same id: the two are
                 // started differently (a hybrid one by the stem its `srcexpr`
                 // computes), so a saved state of one is not the other's.
                 crate::model::Invoke::Hybrid(_) => {
-                    let _ = writeln!(
-                        text,
+                    text.line(&format!(
                         "hybridinvoke {} {}",
                         invoke.base().invoke_id,
                         state.id
-                    );
+                    ));
                 }
                 // A host-run one is named with the type the host serves, which
                 // is part of what a restore starts it with: the same id under
                 // another type is another invocation. One no host serves is
                 // refused when it starts, so a saved state names nothing of it.
                 crate::model::Invoke::Unsupported(info) if info.host_served => {
-                    let _ = writeln!(
-                        text,
+                    text.line(&format!(
                         "hostinvoke {} {} {}",
                         info.invoke_type, info.base.invoke_id, state.id
-                    );
+                    ));
                 }
                 _ => {}
             }
@@ -3804,7 +3834,17 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<SavedShape> {
         let bound = var
             .capacity
             .map_or_else(|| "-".to_string(), |c| c.to_string());
-        let _ = writeln!(text, "variable {} {ty} {bound}", var.id);
+        let scalar = var.value_type.as_ref().and_then(|t| t.scalar());
+        let by_document = match scalar {
+            Some(SceType::Enum(reference)) => {
+                enum_type_by_document(model.enum_documents.by_alias.get(&reference.alias), &ty)
+            }
+            _ => ty.clone(),
+        };
+        text.spelled(
+            &format!("variable {} {ty} {bound}", var.id),
+            &format!("variable {} {by_document} {bound}", var.id),
+        );
         // A record's fields, whether it is the variable or the element of the
         // list the variable is: what a saved state names of it.
         let own_record = var.value_type.as_ref().and_then(|t| t.record_alias());
@@ -3841,25 +3881,25 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<SavedShape> {
             // The first revision's fields: a later one's are the saved state's
             // `revisions` to name.
             for field in schema.fields.iter().filter(|f| f.since.is_none()) {
-                let _ = writeln!(
-                    text,
-                    "field {}.{} {}",
-                    var.id,
-                    field.id,
-                    field.sce_type.as_attr()
+                let by_alias = field.sce_type.as_attr();
+                let by_document = match &field.sce_type {
+                    SceType::Enum(_) => enum_type_by_document(
+                        field_documents.and_then(|documents| documents.get(&field.id)),
+                        &by_alias,
+                    ),
+                    _ => by_alias.clone(),
+                };
+                text.spelled(
+                    &format!("field {}.{} {by_alias}", var.id, field.id),
+                    &format!("field {}.{} {by_document}", var.id, field.id),
                 );
                 if let SceType::Enum(reference) = &field.sce_type {
-                    write_variants(
-                        &mut text,
-                        model,
-                        &reference.alias,
-                        &format!("{}.{}", var.id, field.id),
-                    );
+                    text.variants(model, &reference.alias, &format!("{}.{}", var.id, field.id));
                 }
             }
         }
-        if let Some(SceType::Enum(reference)) = var.value_type.as_ref().and_then(|t| t.scalar()) {
-            write_variants(&mut text, model, &reference.alias, &var.id);
+        if let Some(SceType::Enum(reference)) = scalar {
+            text.variants(model, &reference.alias, &var.id);
             if let Some(document) = model.enum_documents.by_alias.get(&reference.alias) {
                 enum_holders.push((
                     document,
@@ -3883,18 +3923,89 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<SavedShape> {
             .holders
             .push(holder);
     }
-    let first = format!("{:x}", Sha256::digest(text.as_bytes()));
+    let [first, format2_first] = text.digests();
     // One line more, the same for every document: what makes a reader that
     // knows only the first shape refuse a state that names revisions, instead of
     // reading it without the fields it does not know.
-    text.push_str("revisions\n");
-    let revised = format!("{:x}", Sha256::digest(text.as_bytes()));
+    text.line("revisions");
+    let [revised, format2_revised] = text.digests();
     Some(SavedShape {
         first,
         revised,
+        format2_first,
+        format2_revised,
         records: records.into_values().collect(),
         enums: enums.into_values().collect(),
     })
+}
+
+/// The text of a document's shape, as each saved-state format names it
+/// (docs/adr/0045, section 2): one text per format, line for line the same
+/// except where an enum-typed variable or record field is named, which format 1
+/// spells `enum:<alias>` (the import's alias, as it always has, so a state
+/// already saved restores) and format 2 by the key of the enum's document
+/// ([`enum_type_by_document`]), the key `revisions` names it by.
+struct ShapeTexts {
+    /// The format-1 text.
+    format1: String,
+    /// The format-2 text.
+    format2: String,
+}
+
+impl ShapeTexts {
+    /// Both texts, each beginning with the line `header`.
+    fn new(header: &str) -> Self {
+        let mut texts = Self {
+            format1: String::new(),
+            format2: String::new(),
+        };
+        texts.line(header);
+        texts
+    }
+
+    /// `line` in both texts: a line that names no enum.
+    fn line(&mut self, line: &str) {
+        self.spelled(line, line);
+    }
+
+    /// `format1` in the format-1 text and `format2` in the format-2 one: the
+    /// same line, with an enum named the way each format names it.
+    fn spelled(&mut self, format1: &str, format2: &str) {
+        for (text, line) in [(&mut self.format1, format1), (&mut self.format2, format2)] {
+            text.push_str(line);
+            text.push('\n');
+        }
+    }
+
+    /// The variants of the enum imported as `alias`, under `holder`, in both
+    /// texts ([`write_variants`]): a variant's name is the same in either.
+    fn variants(&mut self, model: &SCXMLModel, alias: &str, holder: &str) {
+        write_variants(&mut self.format1, model, alias, holder);
+        write_variants(&mut self.format2, model, alias, holder);
+    }
+
+    /// The SHA-256 of each text as it stands, as lowercase hex: format 1's,
+    /// then format 2's.
+    fn digests(&self) -> [String; 2] {
+        use sha2::{Digest, Sha256};
+        [&self.format1, &self.format2].map(|text| format!("{:x}", Sha256::digest(text.as_bytes())))
+    }
+}
+
+/// An enum-typed variable's or record field's type as the format-2 shape spells
+/// it: `enum:` and the key of the enum's `document` ([`enum_key`]), the same
+/// text a saved state's `revisions` names the enum by, so renaming the alias it
+/// is imported under leaves it as it was, and moving the enum's file moves it.
+///
+/// `by_alias` (`enum:<alias>`) where the build read no document for the import,
+/// as for a model no file was parsed from: the alias is then the only name the
+/// enum has, and a key made up in its place is one no other build could
+/// compute.
+fn enum_type_by_document(
+    document: Option<&crate::forge::schema_revision::EnumDocument>,
+    by_alias: &str,
+) -> String {
+    document.map_or_else(|| by_alias.to_string(), |d| enum_key(&d.key))
 }
 
 /// What a saved state names of `schema`, a record schema a variable of `model`
@@ -9586,6 +9697,115 @@ mod tests {
         assert_ne!(second.records[0].revisions, retyped.records[0].revisions);
         // Neither moves the first shape, which names the first revision only.
         assert_eq!(second.first, retyped.first);
+    }
+
+    /// What a saved state is bound to for a machine holding `level`, a variable
+    /// of the enum at `enum_path` (relative to the machine's own directory), and
+    /// `last`, a record whose field `level` is of it. The machine and the schema
+    /// both import the enum under `alias`, as a record's enum field requires.
+    fn enum_held_shape(enum_path: &str, alias: &str) -> SavedShape {
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        let enum_file = dir.path().join(enum_path);
+        std::fs::create_dir_all(enum_file.parent().expect("the enum's directory"))
+            .expect("the enum's directory");
+        std::fs::write(
+            &enum_file,
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="enum" name="level" sce:underlying-type="uint8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="low" value="0"/>
+      <sce:variant name="high" value="1"/>
+    </data>
+  </datamodel>
+</scxml>"#,
+        )
+        .expect("the enum");
+        std::fs::write(
+            dir.path().join("schema_mark.scxml"),
+            format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="schema_mark" sce:event-name="mark.set">
+  <sce:import src="{enum_path}" kind="enum" as="{alias}"/>
+  <datamodel>
+    <data id="level" sce:type="enum:{alias}" sce:direction="in"/>
+  </datamodel>
+</scxml>"#
+            ),
+        )
+        .expect("the schema");
+        let statechart = format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="m">
+  <sce:import kind="event-schema" src="schema_mark.scxml" as="Mark"/>
+  <sce:import kind="enum" src="{enum_path}" as="{alias}"/>
+  <datamodel>
+    <data id="level" sce:type="enum:{alias}" expr="{alias}.low"/>
+    <data id="last" sce:type="record:Mark"><sce:set name="level" expr="{alias}.high"/></data>
+  </datamodel>
+  <state id="idle"/>
+</scxml>"#
+        );
+        let path = dir.path().join("m.scxml");
+        std::fs::write(&path, statechart).expect("the statechart");
+        let mut model = SCXMLParser::new()
+            .parse_file(path.to_str().expect("a UTF-8 path"))
+            .expect("parses");
+        crate::analyzer::analyze(&mut model, "m.scxml");
+        lower_rust(&mut model, "M")
+            .expect("lowers")
+            .saved_shape
+            .expect("a machine of an enum and a record has a shape")
+    }
+
+    #[test]
+    fn the_format_2_shape_names_an_enum_by_its_document_and_format_1_by_its_alias() {
+        let level = enum_held_shape("enum_level.scxml", "Level");
+        // docs/adr/0045, section 2: the format-2 shape spells the enum by the
+        // key `revisions` names it by, so the two formats' shapes differ for a
+        // machine that holds an enum.
+        assert_ne!(level.first, level.format2_first);
+        assert_ne!(level.revised, level.format2_revised);
+        let keys: Vec<&str> = level.enums.iter().map(|e| e.key.as_str()).collect();
+        assert_eq!(keys, ["enum:enum_level.scxml"]);
+
+        // The alias renamed, in the machine and in the schema: format 2 names the
+        // same document, so a state saved under the old alias still restores;
+        // format 1 spells the alias, as it always has.
+        let renamed = enum_held_shape("enum_level.scxml", "Grade");
+        assert_eq!(renamed.format2_first, level.format2_first);
+        assert_eq!(renamed.format2_revised, level.format2_revised);
+        assert_ne!(renamed.first, level.first);
+        assert_ne!(renamed.revised, level.revised);
+
+        // The enum's file moved: another document to every reader, so its key
+        // and the format-2 shape move with it. Format 1 names no document, and
+        // stays as it was.
+        let moved = enum_held_shape("kinds/enum_level.scxml", "Level");
+        let keys: Vec<&str> = moved.enums.iter().map(|e| e.key.as_str()).collect();
+        assert_eq!(keys, ["enum:kinds/enum_level.scxml"]);
+        assert_ne!(moved.format2_first, level.format2_first);
+        assert_ne!(moved.format2_revised, level.format2_revised);
+        assert_eq!(moved.first, level.first);
+    }
+
+    #[test]
+    fn a_machine_that_holds_no_enum_has_one_shape_in_both_formats() {
+        let counter = {
+            let mut model = SCXMLParser::new()
+                .parse_string(COUNTER, "m")
+                .expect("parses");
+            crate::analyzer::analyze(&mut model, "m.scxml");
+            lower_rust(&mut model, "M")
+                .expect("lowers")
+                .saved_shape
+                .expect("a machine of fields alone has a shape")
+        };
+        assert_eq!(counter.format2_first, counter.first);
+        assert_eq!(counter.format2_revised, counter.revised);
     }
 
     #[test]

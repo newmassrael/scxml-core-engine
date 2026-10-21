@@ -43,6 +43,8 @@ const DECLARED_TYPE: &str = "x-sce-host";
 const SHAPE: SavedShape = SavedShape {
     first: "shape",
     revised: "shape",
+    format2_first: "shape",
+    format2_revised: "shape",
     records: &[],
     enums: &[],
 };
