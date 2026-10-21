@@ -1782,6 +1782,69 @@ pub struct UnsupportedInvokeInfo {
     pub result_schema_at: Option<SourceLocation>,
 }
 
+/// What an escaped [`invoke_identifier`] begins with: a digit, which no
+/// written id (an XML name) and no generated one begins with.
+pub const ESCAPED_INVOKE_IDENTIFIER_PREFIX: &str = "0z";
+
+/// The identifier every name generated for the `<invoke>` whose id is
+/// `invoke_id` is built from ([`InvokeBase::field_suffix`]). The one
+/// derivation: a template, a host interface and a child's machine name read
+/// it and do not derive their own from the id.
+///
+/// - A generated id (`_invoke_<n>`, `id_generated`) gives `invoke_<n>`, the
+///   spelling it always had.
+/// - A written id in lower snake case — words of lowercase ASCII letters and
+///   digits, each beginning with a letter, joined by single underscores —
+///   gives itself, so the ids documents use keep their names.
+/// - Any other written id (`_x`, `x_`, `a__b`, `invokedChild`, `a-b`, `a_0`,
+///   one that leaves ASCII) gives [`ESCAPED_INVOKE_IDENTIFIER_PREFIX`]
+///   followed by its characters: a lowercase letter but `z`, or a digit, as
+///   itself; `z` as `zz`; an uppercase letter as `zu` and the letter in lower
+///   case; any other character as `z`, its code point in lowercase
+///   hexadecimal, and `z` (`_x` gives `0zz5fzx`).
+///
+/// Distinct ids give distinct identifiers, and stay distinct in every case a
+/// backend writes them in (snake, upper snake, Pascal, camel): a word of the
+/// second kind begins with a lowercase letter, so where Pascal case joins the
+/// words an uppercase letter marks each boundary; the third kind is all
+/// lowercase letters and digits and begins with a digit, which neither of the
+/// others does; and a generated `invoke_<n>`, whose last word is a number, is
+/// no written id of the second kind, while the one written id that would
+/// share its Pascal spelling (`invoke<n>`) is never given to a generated one
+/// (the parser numbers past it). An identifier never begins or ends with an
+/// underscore and never holds two together, so the names built from it are
+/// legal in C and C++ wherever they are, and it is always written after a
+/// fixed prefix (`child_`, `actions_for_`, `start_`, …), so it is never a
+/// keyword of any of the six languages on its own.
+pub fn invoke_identifier(invoke_id: &str, id_generated: bool) -> String {
+    if id_generated {
+        return invoke_id.trim_start_matches('_').to_string();
+    }
+    let lower_snake = !invoke_id.is_empty()
+        && invoke_id.split('_').all(|word| {
+            word.starts_with(|c: char| c.is_ascii_lowercase())
+                && word
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+        });
+    if lower_snake {
+        return invoke_id.to_string();
+    }
+    let mut escaped = String::from(ESCAPED_INVOKE_IDENTIFIER_PREFIX);
+    for c in invoke_id.chars() {
+        match c {
+            'z' => escaped.push_str("zz"),
+            'a'..='y' | '0'..='9' => escaped.push(c),
+            'A'..='Z' => {
+                escaped.push_str("zu");
+                escaped.push(c.to_ascii_lowercase());
+            }
+            other => escaped.push_str(&format!("z{:x}z", u32::from(other))),
+        }
+    }
+    escaped
+}
+
 /// Fields every invoke carries regardless of kind: the W3C identity
 /// (`invoke_id`, `state_name`), the declared `<param>` payload, and the
 /// optional `idlocation` attribute. Sits at the base of the invoke type
@@ -1807,10 +1870,15 @@ pub struct InvokeBase {
     /// mark back, and the GUI structure omits it, as the C++ engine does.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub id_generated: bool,
-    /// Identifier suffix derived from [`Self::invoke_id`] by trimming the
-    /// SCXML auto-id leading underscore. User-supplied ids round-trip
-    /// unchanged. Used by Rust/C++ templates to compose field names like
-    /// `child_{field_suffix}` without producing double underscores.
+    /// The identifier every name generated for this invoke is built from —
+    /// [`invoke_identifier`] of [`Self::invoke_id`], and nothing else: the
+    /// fields, wrappers and counters of each backend (`child_{field_suffix}`,
+    /// `childEngineWrapper…_{Pascal}`), the host operations a child's acts
+    /// take (`actions_for_{field_suffix}`), the typed host-invoke interface,
+    /// and the name of a child the invoke carries
+    /// (`<parent>__sce_synth_invoke__{field_suffix}`). Distinct ids of one
+    /// document have distinct identifiers, in every case each backend writes
+    /// them in.
     pub field_suffix: String,
     pub state_name: String,
     pub params: Vec<Param>,
@@ -5628,5 +5696,102 @@ mod child_duties {
     #[test]
     fn a_machine_with_no_invoke_has_no_duty_child() {
         assert!(!SCXMLModel::default().any_child_states_duties());
+    }
+}
+
+/// [`invoke_identifier`]: distinct ids, distinct identifiers, in every case a
+/// backend writes one in.
+#[cfg(test)]
+mod invoke_identifiers {
+    use super::invoke_identifier;
+    use crate::filters;
+
+    /// Ids that the trimming, the case filters or both used to make one:
+    /// `_x`/`x`/`x_`/`X`, `a_b`/`aB`/`a-b`/`a.b`/`a__b`, `a_0`/`a0`, the
+    /// generated `_invoke_0` beside the written `invoke_0`, and ids that leave
+    /// ASCII or hold the escape letter.
+    const WRITTEN: &[&str] = &[
+        "x",
+        "_x",
+        "__x",
+        "x_",
+        "X",
+        "a_b",
+        "aB",
+        "ab",
+        "a-b",
+        "a.b",
+        "a__b",
+        "a_0",
+        "a0",
+        "invoke_0",
+        "_invoke_0",
+        "z",
+        "zz",
+        "zu",
+        "z5fz",
+        "\u{e9}t\u{e9}",
+        "kid",
+    ];
+
+    fn every_identifier() -> Vec<String> {
+        WRITTEN
+            .iter()
+            .map(|id| invoke_identifier(id, false))
+            .chain(["_invoke_0", "_invoke_1"].map(|id| invoke_identifier(id, true)))
+            .collect()
+    }
+
+    #[test]
+    fn the_ids_that_keep_their_spelling() {
+        assert_eq!(invoke_identifier("_invoke_0", true), "invoke_0");
+        assert_eq!(invoke_identifier("kid", false), "kid");
+        assert_eq!(invoke_identifier("inv_param", false), "inv_param");
+        assert_eq!(invoke_identifier("_x", false), "0zz5fzx");
+        assert_eq!(invoke_identifier("invokedChild", false), "0zinvokedzuchild");
+    }
+
+    #[test]
+    fn distinct_ids_have_distinct_identifiers_in_every_case() {
+        let identifiers = every_identifier();
+        let spellings: [(&str, fn(String) -> String); 6] = [
+            ("as derived", |s| s),
+            ("snake", filters::to_snake_case),
+            ("upper snake", filters::to_upper_snake_case),
+            ("Pascal", filters::to_pascal_case),
+            ("camel", filters::to_camel_case),
+            ("Python constant", filters::to_python_const),
+        ];
+        for (case, spell) in spellings {
+            let mut seen = std::collections::BTreeMap::new();
+            for (id, identifier) in WRITTEN
+                .iter()
+                .chain(&["<generated 0>", "<generated 1>"])
+                .zip(&identifiers)
+            {
+                let spelled = spell(format!("child_{identifier}"));
+                if let Some(other) = seen.insert(spelled.clone(), *id) {
+                    panic!("{case}: `{other}` and `{id}` are both spelled `{spelled}`");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn an_identifier_is_legal_where_it_is_written() {
+        for identifier in every_identifier() {
+            assert!(
+                identifier
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '_'),
+                "`{identifier}` leaves the identifier alphabet"
+            );
+            assert!(
+                !identifier.starts_with('_')
+                    && !identifier.ends_with('_')
+                    && !identifier.contains("__"),
+                "`{identifier}` puts an underscore where C reserves the name"
+            );
+        }
     }
 }

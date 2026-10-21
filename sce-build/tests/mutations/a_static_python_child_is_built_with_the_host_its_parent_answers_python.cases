@@ -27,18 +27,18 @@ mutation_oracles backends/python/tests/integration/static_datamodel/test_a_child
 
 mutation_case "a child is built without the host its parent answers" <<'PY'
 edit("tools/codegen/templates/python/invoke_methods.py.jinja2",
-     "                _child_policy = _child_module_{{ inv.invoke_id | to_python_const }}.Policy({{ inv.child_host_call }})\n",
-     "                _child_policy = _child_module_{{ inv.invoke_id | to_python_const }}.Policy()\n")
+     "                _child_policy = _child_module_{{ inv.field_suffix | to_python_const }}.Policy({{ inv.child_host_call }})\n",
+     "                _child_policy = _child_module_{{ inv.field_suffix | to_python_const }}.Policy()\n")
 PY
 
 mutation_case "a candidate is built without the host its parent answers" <<'PY'
 edit("tools/codegen/templates/python/invoke_methods.py.jinja2",
-     "                    if _child_host_{{ inv.invoke_id | to_python_const }} is not None\n",
+     "                    if _child_host_{{ inv.field_suffix | to_python_const }} is not None\n",
      "                    if False\n")
 PY
 
 mutation_case "the host answered is the first candidate's, whichever the value names" <<'PY'
 edit("tools/codegen/templates/python/invoke_methods.py.jinja2",
-     "                }.get(__sce_selected_{{ inv.invoke_id | to_python_const }})\n                _child_policy = (",
+     "                }.get(__sce_selected_{{ inv.field_suffix | to_python_const }})\n                _child_policy = (",
      "                }.get({{ inv.candidates[0].stem | py_string_literal }})\n                _child_policy = (")
 PY

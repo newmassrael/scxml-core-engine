@@ -1152,38 +1152,30 @@ const IN_LINE_NAME_CLASH: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxm
   </state>
 </scxml>"#;
 
-/// An `<invoke>` whose child is carried in the document may not have an id
-/// holding `sce_synth_invoke`, the word the name of each such child is joined
-/// with: with it, a child beside another could take the name of that one's
-/// child, and the two would be written to one file. The run is refused at the
-/// id, and writes no machine.
+/// An id that holds the infix's word is accepted, and its child named apart:
+/// the name joins the id's identifier, which never holds two underscores
+/// together, so `a__sce_synth_invoke__b` gives an escaped identifier and not
+/// the name of `a`'s own child `b`. Three machines are written, one per child.
+/// (The id was refused here while names joined the id as written.)
 #[test]
-fn an_in_line_invoke_id_holding_the_synthesised_name_word_is_refused() {
+fn an_in_line_invoke_id_holding_the_synthesised_name_word_names_a_child_of_its_own() {
     let scratch = reset_scratch("in_line_name_clash");
     let document = scratch.join("in_line_name_clash.scxml");
     std::fs::write(&document, IN_LINE_NAME_CLASH).expect("write in_line_name_clash");
     let out_dir = scratch.join("out");
-    std::fs::create_dir_all(&out_dir).expect("create out dir");
-    let output = Command::new(sce_codegen_bin())
-        .args(["generate", "-l", "rust", "-o"])
-        .arg(&out_dir)
-        .arg(&document)
-        .current_dir(repo_root())
-        .output()
-        .expect("spawn sce-codegen");
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        !output.status.success(),
-        "a document whose two in-line children share a name was generated\nstderr: {stderr}"
-    );
-    assert!(
-        stderr.contains("invalid id value 'a__sce_synth_invoke__b'"),
-        "the refusal does not stand at the id that holds the word\nstderr: {stderr}"
-    );
-    assert!(
-        find_by_ext(&out_dir, "rs").is_empty(),
-        "a refused run wrote a machine"
-    );
+    generate_into("rust", &document, &out_dir, &[]);
+    for machine in [
+        "in_line_name_clash__sce_synth_invoke__a",
+        "in_line_name_clash__sce_synth_invoke__a__sce_synth_invoke__b",
+        "in_line_name_clash__sce_synth_invoke__0zaz5fzz5fzscez5fzsynthz5fzinvokez5fzz5fzb",
+    ] {
+        assert_eq!(
+            machine_files_of(&out_dir, machine).len(),
+            1,
+            "{machine} was not written once into {}",
+            out_dir.display()
+        );
+    }
 }
 
 /// Two in-line children at one level: the first names no id, the second is
@@ -1212,8 +1204,9 @@ const IN_LINE_GENERATED_BESIDE_AUTHORED: &str = r#"<scxml xmlns="http://www.w3.o
 </scxml>"#;
 
 /// An in-line child that names no id and one whose author named it `invoke_0`
-/// are two machines in one Go package: the id generated for the first is
-/// numbered past the author's, so the two have two names, and every
+/// are two machines in one Go package: the generated `_invoke_0` keeps its
+/// identifier `invoke_0`, and the written `invoke_0`, whose last word is a
+/// number, is given an escaped one, so the two have two names, and every
 /// package-level name of the package is declared once. One file was written
 /// for both, and the parent declared what it holds of each child twice.
 #[test]
@@ -1226,8 +1219,8 @@ fn a_generated_and_an_authored_invoke_id_name_two_in_line_children() {
     assert_eq!(
         file_names,
         [
+            "in_line_ids__sce_synth_invoke__0zinvokez5fz0_sm.go",
             "in_line_ids__sce_synth_invoke__invoke_0_sm.go",
-            "in_line_ids__sce_synth_invoke__invoke_1_sm.go",
             "in_line_ids_sm.go",
         ],
         "each in-line child is a machine of its own"
@@ -1237,6 +1230,118 @@ fn a_generated_and_an_authored_invoke_id_name_two_in_line_children() {
         twice.is_empty(),
         "names declared more than once in the package: {twice:?}"
     );
+}
+
+/// One in-line child of [`in_line_underscore_document`], under the id `{id}`.
+const IN_LINE_UNDERSCORE_CHILD: &str = r#"
+    <invoke type="scxml" id="{id}">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="idle"
+               datamodel="sce-static">
+          <state id="idle"/>
+        </scxml>
+      </content>
+    </invoke>"#;
+
+/// `in_line_underscore`, written into `dir`: one state that starts an in-line
+/// child under each of `ids`.
+fn in_line_underscore_document(dir: &Path, ids: &[&str]) -> PathBuf {
+    std::fs::create_dir_all(dir).expect("create document dir");
+    let invokes: String = ids
+        .iter()
+        .map(|id| IN_LINE_UNDERSCORE_CHILD.replace("{id}", id))
+        .collect();
+    let document = dir.join("in_line_underscore.scxml");
+    std::fs::write(
+        &document,
+        format!(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="running"
+       datamodel="sce-static" name="in_line_underscore">
+  <state id="running">{invokes}
+  </state>
+</scxml>"#
+        ),
+    )
+    .expect("write in_line_underscore");
+    document
+}
+
+/// For each backend that lowers `sce-static`, a name it builds from an invoke's
+/// identifier, as the prefix that comes before the identifier — `child_` and
+/// the identifier in Rust, C++ and C, `child` and its Pascal spelling in Go,
+/// `_invoke_starts_` and the identifier in Python. Kotlin builds none: it
+/// keeps its children under their ids, at run time.
+fn identifier_name(lang: &str, identifier: &str) -> Option<String> {
+    match lang {
+        "rust" | "cpp" | "c11" => Some(format!("child_{identifier}")),
+        "go" => Some(format!(
+            "child{}",
+            sce_build::filters::to_pascal_case(identifier.to_string())
+        )),
+        "python" => Some(format!("_invoke_starts_{identifier}")),
+        _ => None,
+    }
+}
+
+/// A machine that starts one in-line child under `_kid` and another under
+/// `kid`, on every backend that lowers it: each child is a machine of its own,
+/// and the names the parent builds for `kid` appear exactly as often as in a
+/// machine that starts `kid` alone, while `_kid`'s are built from its own
+/// identifier (`0zz5fzkid`) as often again. The leading underscore was
+/// trimmed, so `_kid` and `kid` had one child machine and one set of fields,
+/// wrappers and counters, each declared twice; in Go the package declares
+/// every package-level name once.
+#[test]
+fn an_underscore_does_not_make_two_invoke_ids_one_identifier_on_any_backend() {
+    let scratch = reset_scratch("in_line_underscore");
+    let alone = in_line_underscore_document(&scratch.join("alone"), &["kid"]);
+    let both = in_line_underscore_document(&scratch.join("both"), &["_kid", "kid"]);
+    for lang in STATIC_DATAMODEL_BACKENDS {
+        let extra: &[&str] = if lang == "cpp" { &["--no-format"] } else { &[] };
+        let alone_out = scratch.join("out_alone").join(lang);
+        let both_out = scratch.join("out_both").join(lang);
+        generate_into(lang, &alone, &alone_out, extra);
+        generate_into(lang, &both, &both_out, extra);
+        for child in [
+            "in_line_underscore__sce_synth_invoke__kid",
+            "in_line_underscore__sce_synth_invoke__0zz5fzkid",
+        ] {
+            assert!(
+                !machine_files_of(&both_out, child).is_empty(),
+                "{lang}: {child} was not written into {}",
+                both_out.display()
+            );
+        }
+        let Some(kid) = identifier_name(lang, "kid") else {
+            continue;
+        };
+        let underscore_kid =
+            identifier_name(lang, "0zz5fzkid").expect("the backend names identifiers");
+        let alone_text = read_all(&machine_files_of(&alone_out, "in_line_underscore"));
+        let both_text = read_all(&machine_files_of(&both_out, "in_line_underscore"));
+        let once = alone_text.matches(kid.as_str()).count();
+        assert!(
+            once > 0,
+            "{lang}: the parent names no `{kid}` for its child"
+        );
+        assert_eq!(
+            both_text.matches(kid.as_str()).count(),
+            once,
+            "{lang}: `{kid}` is built for `kid` and for `_kid` alike"
+        );
+        assert_eq!(
+            both_text.matches(underscore_kid.as_str()).count(),
+            once,
+            "{lang}: `_kid` has no names of its own (`{underscore_kid}`)"
+        );
+        if lang == "go" {
+            let twice = declared_more_than_once(&go_package_machines(&both_out));
+            assert!(
+                twice.is_empty(),
+                "names declared more than once in the package: {twice:?}"
+            );
+        }
+    }
 }
 
 /// A document whose in-line child `kid` starts an in-line `kid` of its own and,

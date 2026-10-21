@@ -1007,7 +1007,6 @@ pub fn register_invoke_filters(env: &mut minijinja::Environment) {
     env.add_filter("unsupported", filter_unsupported);
     env.add_filter("unsupported_refused", filter_unsupported_refused);
     env.add_filter("host_invoker", filter_host_invoker);
-    env.add_filter("to_field_suffix", filter_to_field_suffix);
 }
 
 /// Split string on whitespace (replaces Python `.split()` method in templates).
@@ -1067,15 +1066,6 @@ fn filter_callback_lang(s: String) -> String {
         }
     }
     String::new()
-}
-
-/// Strip the SCXML auto-id leading underscore so an invoke id can be embedded
-/// directly in a generated field/variable name without producing a double
-/// underscore (`child_` + `_invoke_0` → `child__invoke_0`). Mirrors the
-/// `field_suffix` derivation in [`crate::parser`] for sites where only the
-/// raw id string is available (e.g., `#_<invokeId>` send targets).
-fn filter_to_field_suffix(s: String) -> String {
-    s.trim_start_matches('_').to_string()
 }
 
 // ── Go filters ──────────────────────────────────────────────────

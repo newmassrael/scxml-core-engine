@@ -36,6 +36,10 @@ pub struct TypedHostInvoke<'m> {
     pub invoke_type: &'m str,
     /// Its `id` — required on a typed invoke, so it is the document's own.
     pub invoke_id: &'m str,
+    /// The identifier every name generated for it is built from
+    /// ([`crate::model::invoke_identifier`]): distinct ids, distinct names.
+    /// [`Self::invoke_id`] is what the host is told at run time.
+    pub field_suffix: &'m str,
     pub request: Option<&'m EventSchemaModel>,
     pub result: Option<&'m EventSchemaModel>,
 }
@@ -49,6 +53,7 @@ pub fn typed_host_invokes(model: &SCXMLModel) -> Vec<TypedHostInvoke<'_>> {
             (request.is_some() || result.is_some()).then_some(TypedHostInvoke {
                 invoke_type: &info.invoke_type,
                 invoke_id: &info.base.invoke_id,
+                field_suffix: &info.base.field_suffix,
                 request,
                 result,
             })
@@ -191,7 +196,7 @@ pub fn render_rust(
     }
     let mut records = String::new();
     for invoke in &typed {
-        let pascal = filters::to_pascal_case(invoke.invoke_id.to_string());
+        let pascal = filters::to_pascal_case(invoke.field_suffix.to_string());
         for (record, what, role) in records_of(invoke) {
             if let Some(schema) = record {
                 records.push_str(&format!(
@@ -225,8 +230,8 @@ pub fn render_rust(
         let mut cancel_arms = String::new();
         for invoke in invokes {
             let id = invoke.invoke_id;
-            let pascal = filters::to_pascal_case(id.to_string());
-            let snake = filters::to_snake_case(id.to_string());
+            let pascal = filters::to_pascal_case(invoke.field_suffix.to_string());
+            let snake = filters::to_snake_case(invoke.field_suffix.to_string());
             let request_param = invoke
                 .request
                 .map(|_| format!("request: {machine_name}{pascal}Request, "))
@@ -379,10 +384,10 @@ pub fn render_go(model: &SCXMLModel, machine_name: &str) -> String {
         return String::new();
     }
     let engine = format!("*sce.Engine[{machine_name}State, {machine_name}Event]");
-    let exported = |id: &str| filters::to_pascal_case(id.to_string());
+    let exported = |suffix: &str| filters::to_pascal_case(suffix.to_string());
     let mut out = String::new();
     for invoke in &typed {
-        let pascal = exported(invoke.invoke_id);
+        let pascal = exported(invoke.field_suffix);
         for (record, what, role) in records_of(invoke) {
             let Some(schema) = record else { continue };
             let name = format!("{machine_name}{pascal}{what}");
@@ -438,7 +443,7 @@ func (r {name}) Wire() string {{\n\treturn sce.PayloadJSON({items})\n}}\n\n",
         let mut completions = String::new();
         for invoke in invokes {
             let id = invoke.invoke_id;
-            let pascal = exported(id);
+            let pascal = exported(invoke.field_suffix);
             let request_param = invoke
                 .request
                 .map(|_| format!("request {machine_name}{pascal}Request, "))
@@ -562,7 +567,7 @@ pub fn render_python(model: &SCXMLModel) -> String {
     };
     let mut out = String::new();
     for invoke in &typed {
-        let pascal = filters::to_pascal_case(invoke.invoke_id.to_string());
+        let pascal = filters::to_pascal_case(invoke.field_suffix.to_string());
         for (record, what, role) in records_of(invoke) {
             let Some(schema) = record else { continue };
             let fields: String = schema
@@ -613,8 +618,8 @@ Subset \u{a7}2.12).\"\"\"\n\n{fields}{wire}\n\n",
         let mut completions = String::new();
         for invoke in invokes {
             let id = invoke.invoke_id;
-            let pascal = filters::to_pascal_case(id.to_string());
-            let snake = filters::to_snake_case(id.to_string());
+            let pascal = filters::to_pascal_case(invoke.field_suffix.to_string());
+            let snake = filters::to_snake_case(invoke.field_suffix.to_string());
             let request_param = invoke
                 .request
                 .map(|_| format!("request: {pascal}Request, "))
@@ -748,7 +753,7 @@ pub fn render_kotlin(model: &SCXMLModel, machine_name: &str) -> KotlinHostInvoke
         return KotlinHostInvokerInterface { defs, members };
     }
     for invoke in &typed {
-        let pascal = filters::to_pascal_case(invoke.invoke_id.to_string());
+        let pascal = filters::to_pascal_case(invoke.field_suffix.to_string());
         for (record, what, role) in records_of(invoke) {
             let Some(schema) = record else { continue };
             let params: Vec<String> = schema
@@ -794,7 +799,7 @@ data class {machine_name}{pascal}{what}(\n{}){body}\n\n",
         let mut cancel_arms = String::new();
         for invoke in invokes {
             let id = invoke.invoke_id;
-            let pascal = filters::to_pascal_case(id.to_string());
+            let pascal = filters::to_pascal_case(invoke.field_suffix.to_string());
             let request_param = invoke
                 .request
                 .map(|_| format!("request: {machine_name}{pascal}Request, "))
@@ -929,7 +934,7 @@ pub fn render_cpp(model: &SCXMLModel) -> CppHostInvokerInterface {
     }
     let cpp_type = |f: &ForgeField| crate::forge::generator::cpp_type(&f.sce_type);
     for invoke in &typed {
-        let pascal = filters::to_pascal_case(invoke.invoke_id.to_string());
+        let pascal = filters::to_pascal_case(invoke.field_suffix.to_string());
         for (record, what, role) in records_of(invoke) {
             let Some(schema) = record else { continue };
             let fields: String = schema
@@ -974,7 +979,7 @@ struct {pascal}{what} {{\n{fields}{wire}\n    bool operator==(const {pascal}{wha
         let mut cancel_arms = String::new();
         for invoke in invokes {
             let id = invoke.invoke_id;
-            let pascal = filters::to_pascal_case(id.to_string());
+            let pascal = filters::to_pascal_case(invoke.field_suffix.to_string());
             let request_param = invoke
                 .request
                 .map(|_| format!("const {pascal}Request &request, "))
@@ -1116,7 +1121,7 @@ pub fn render_c11(model: &SCXMLModel, sm: &str) -> C11HostInvokerInterface {
         return C11HostInvokerInterface { decls, defs };
     }
     for invoke in &typed {
-        let snake = filters::to_snake_case(invoke.invoke_id.to_string());
+        let snake = filters::to_snake_case(invoke.field_suffix.to_string());
         for (record, what, role) in records_of(invoke) {
             let Some(schema) = record else { continue };
             let what_snake = what.to_ascii_lowercase();
@@ -1158,7 +1163,7 @@ return _wire_len >= 0 && (size_t)_wire_len < cap;\n}}\n\n",
         let mut cancel_arms = String::new();
         for invoke in invokes {
             let id = invoke.invoke_id;
-            let snake = filters::to_snake_case(id.to_string());
+            let snake = filters::to_snake_case(invoke.field_suffix.to_string());
             let request_param = invoke
                 .request
                 .map(|_| format!("const {sm}_{snake}_request_t *request, "))

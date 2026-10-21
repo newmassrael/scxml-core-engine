@@ -3678,16 +3678,28 @@ A child written inline may start children inline in turn, to any depth. Each is 
 of the run that generates the document, written beside it in the package or module the
 document's own inline children are written in (the `--parent-stem` one under `--as-child`),
 and named after the machine that starts it: a child's child is
-`<parent>__sce_synth_invoke__<id>__sce_synth_invoke__<id>`. An `<invoke>` whose child is
-carried in the document may not have an id holding `sce_synth_invoke`, the word those names
-are joined with, since such an id could give two children one name; it is refused at the
-id as `validation/attribute-rule-violated`. The same test file holds both.
+`<parent>__sce_synth_invoke__<id>__sce_synth_invoke__<id>`, where each `<id>` is the
+invoke's identifier (below). The same test file holds this.
 
-An id the author wrote is joined to those names as written, `_x` as `_x`. An `<invoke>` that
-names no id is given `_invoke_<n>`, with `<n>` numbered past every id the document's author wrote that is, or is trimmed of its
-leading underscores to, `invoke_<n>`, and is joined as `invoke_<n>`. So no two invokes of one
-document share a child's name, and an author's `_invoke_0` beside an invoke with no id is
-not refused as a duplicate the author never wrote.
+**An invoke's identifier.** Every name generated for an `<invoke>` — a child machine's
+name, each backend's fields, wrappers and counters for it, a child's host operation
+(`actions_for_<id>`), a typed host invoke's records and methods — is built from one
+identifier derived from its id, never from the id itself (`model::invoke_identifier`).
+An id written in lower snake case (words of lowercase letters and digits, each beginning
+with a letter, joined by single underscores: `kid`, `inv_param`) is its own identifier.
+An `<invoke>` that names no id is given `_invoke_<n>`, whose identifier is `invoke_<n>`.
+Any other id is escaped: `0z` and then its characters, a lowercase letter but `z` or a
+digit as itself, `z` as `zz`, an uppercase letter as `zu` and the letter in lower case,
+anything else as `z`, its code point in hexadecimal and `z` — so `_x` is `0zz5fzx`,
+`invokedChild` is `0zinvokedzuchild` and `a_0` is `0zaz5fz0`. Two ids of one document
+never share an identifier, nor a spelling of one in any case a backend writes it in, and
+an identifier is a legal part of a name in all six languages: it never begins or ends with
+an underscore nor holds two together, and is always written after a fixed prefix. The
+`<n>` of a generated id is numbered past every id the document's author wrote that is
+`_invoke_<n>` or whose identifier is `invoke<n>` (Pascal case would spell both
+`Invoke<n>`), so an author's `_invoke_0` beside an invoke with no id is not refused as a
+duplicate the author never wrote. A deployment that names a carried child's machine
+(SCE_MESH.md, rule 3) names it by the identifier.
 
 A child that declares `<sce:action>`s takes the host that performs its acts when it
 is built, because its first `<onentry>` can already perform an act and a host

@@ -782,7 +782,7 @@
 {% if invoke_info.invoke_id == invoke_target_id %}
 	// A child whose session has reached its final state has ended, and is not
 	// there to address.
-	if child := p.child{{ invoke_info.invoke_id | to_pascal_case }}; child != nil && !child.IsInFinalState() {
+	if child := p.child{{ invoke_info.field_suffix | to_pascal_case }}; child != nil && !child.IsInFinalState() {
 {% if action.event or (action.eventexpr and model.needs_script_engine) or action.native_event %}
 {% if delay_go %}
 		// W3C SCXML 6.2: named now, reached when the delay has elapsed — or

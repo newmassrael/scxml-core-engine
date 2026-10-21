@@ -122,7 +122,7 @@
    raises error.execution and starts nothing. #}
                 # §scxml-6.4: the `srcexpr` names the document to start.
                 try:
-                    __sce_selected_{{ inv.invoke_id | to_python_const }} = _document_stem({{ inv.native_src }})
+                    __sce_selected_{{ inv.field_suffix | to_python_const }} = _document_stem({{ inv.native_src }})
                 except sce_algorithm.AlgorithmFailure:
                     self._raise_error_execution(
                         engine,
@@ -150,7 +150,7 @@
                     # dataclass, so stringifying it yields its repr and the
                     # stem below would be cut out of `ScriptValue(kind=...`.
                     # Measured — the fixture reached `fail` on the first run.
-                    __sce_selected_{{ inv.invoke_id | to_python_const }} = _document_stem(
+                    __sce_selected_{{ inv.field_suffix | to_python_const }} = _document_stem(
                         getattr(__sce_value, "string_val", "") or ""
                     )
 {% endif %}
@@ -169,12 +169,12 @@
                 # Interpreter reports when a document will not load — before
                 # any argument is read, as there.
                 import importlib as _importlib
-                _child_module_{{ inv.invoke_id | to_python_const }} = {
+                _child_module_{{ inv.field_suffix | to_python_const }} = {
 {% for candidate in inv.candidates %}
                     {{ candidate.stem | py_string_literal }}: _importlib.import_module(("." if __package__ else "") + {{ (candidate.stem ~ "_sm") | py_string_literal }}, __package__ or None),
 {% endfor %}
-                }.get(__sce_selected_{{ inv.invoke_id | to_python_const }})
-                if _child_module_{{ inv.invoke_id | to_python_const }} is None:
+                }.get(__sce_selected_{{ inv.field_suffix | to_python_const }})
+                if _child_module_{{ inv.field_suffix | to_python_const }} is None:
                     self._raise_error_execution(
                         engine,
                         "<invoke srcexpr{% if inv.srcexpr %}='{{ inv.srcexpr }}'{% endif %}> evaluated to a document it did not declare",
@@ -187,7 +187,7 @@
 {% for candidate in inv.candidates %}
                     {{ candidate.stem | py_string_literal }}: frozenset([{% for cv in candidate.child_datamodel_vars | default([], true) %}{{ cv | py_string_literal }}{{ ", " if not loop.last }}{% endfor %}]),
 {% endfor %}
-                }[__sce_selected_{{ inv.invoke_id | to_python_const }}]
+                }[__sce_selected_{{ inv.field_suffix | to_python_const }}]
 {% endif %}
 {% endif %}
 {% if inv.namelist %}
@@ -223,34 +223,34 @@
 {# docs/adr/0038: a candidate that states a duty is built through the check that
    refuses a host that only simulates, so it is handed the statement the caller
    gave this machine; a candidate that states none takes no such argument. #}
-                _child_opt_in_{{ inv.invoke_id | to_python_const }} = (
+                _child_opt_in_{{ inv.field_suffix | to_python_const }} = (
                     {"accept_simulated_host": self._accept_simulated_host}
-                    if __sce_selected_{{ inv.invoke_id | to_python_const }} in ({% for stem in duty_stems %}{{ stem | py_string_literal }}, {% endfor %})
+                    if __sce_selected_{{ inv.field_suffix | to_python_const }} in ({% for stem in duty_stems %}{{ stem | py_string_literal }}, {% endfor %})
                     else {}
                 )
 {% endif %}
-                _child_host_{{ inv.invoke_id | to_python_const }} = {
+                _child_host_{{ inv.field_suffix | to_python_const }} = {
 {% for candidate in inv.candidates if candidate.child_host_call %}
                     {{ candidate.stem | py_string_literal }}: lambda: {{ candidate.child_host_call }},
 {% endfor %}
-                }.get(__sce_selected_{{ inv.invoke_id | to_python_const }})
+                }.get(__sce_selected_{{ inv.field_suffix | to_python_const }})
                 _child_policy = (
-                    _child_module_{{ inv.invoke_id | to_python_const }}.Policy(
-                        _child_host_{{ inv.invoke_id | to_python_const }}(){% if duty_stems %}, **_child_opt_in_{{ inv.invoke_id | to_python_const }}{% endif %}
+                    _child_module_{{ inv.field_suffix | to_python_const }}.Policy(
+                        _child_host_{{ inv.field_suffix | to_python_const }}(){% if duty_stems %}, **_child_opt_in_{{ inv.field_suffix | to_python_const }}{% endif %}
 
                     )
-                    if _child_host_{{ inv.invoke_id | to_python_const }} is not None
-                    else _child_module_{{ inv.invoke_id | to_python_const }}.Policy()
+                    if _child_host_{{ inv.field_suffix | to_python_const }} is not None
+                    else _child_module_{{ inv.field_suffix | to_python_const }}.Policy()
                 )
 {% else %}
-                _child_policy = _child_module_{{ inv.invoke_id | to_python_const }}.Policy()
+                _child_policy = _child_module_{{ inv.field_suffix | to_python_const }}.Policy()
 {% endif %}
 {% else %}
 {# A child is a sibling of its parent: a module of the parent's own package when
    it has one (a machine that calls an algorithm is one of a package, and its
    child is imported beside it), a top-level module beside it otherwise. #}
                 import importlib as _importlib
-                _child_module_{{ inv.invoke_id | to_python_const }} = _importlib.import_module(
+                _child_module_{{ inv.field_suffix | to_python_const }} = _importlib.import_module(
                     ("." if __package__ else "") + {{ (inv.child_name ~ "_sm") | py_string_literal }},
                     __package__ or None,
                 )
@@ -258,9 +258,9 @@
    the machine's own does, and is asked of the parent's host each time the
    invocation starts (docs/adr/0005, decision 6). #}
 {% if inv.child_declares_host_duties %}
-                _child_policy = _child_module_{{ inv.invoke_id | to_python_const }}.Policy({{ inv.child_host_call }}, accept_simulated_host=self._accept_simulated_host)
+                _child_policy = _child_module_{{ inv.field_suffix | to_python_const }}.Policy({{ inv.child_host_call }}, accept_simulated_host=self._accept_simulated_host)
 {% else %}
-                _child_policy = _child_module_{{ inv.invoke_id | to_python_const }}.Policy({{ inv.child_host_call }})
+                _child_policy = _child_module_{{ inv.field_suffix | to_python_const }}.Policy({{ inv.child_host_call }})
 {% endif %}
 {% endif %}
                 # Engine DI Parity RFC (Path B+): forward the parent's
@@ -281,7 +281,7 @@
 {% set native_seeded = inv.params | selectattr("native_seed") | list | length > 0 %}
 {% if native_seeded %}
                 # W3C SCXML 6.4.1: hand the child its values before it initializes
-                _seed = _child_module_{{ inv.invoke_id | to_python_const }}.InvokeParams()
+                _seed = _child_module_{{ inv.field_suffix | to_python_const }}.InvokeParams()
 {% for param in inv.params %}
 {% if param.native_seed %}
                 try:
@@ -306,10 +306,10 @@
    invoke's whatever the child keeps. #}
 {% for candidate in inv.candidates %}
 {% if candidate.seeds or candidate.unkept %}
-                if __sce_selected_{{ inv.invoke_id | to_python_const }} == {{ candidate.stem | py_string_literal }}:
+                if __sce_selected_{{ inv.field_suffix | to_python_const }} == {{ candidate.stem | py_string_literal }}:
 {% if candidate.seeds %}
                     # W3C SCXML 6.4.1: hand the child its values before it initializes
-                    _seed = _child_module_{{ inv.invoke_id | to_python_const }}.InvokeParams()
+                    _seed = _child_module_{{ inv.field_suffix | to_python_const }}.InvokeParams()
 {% for param in candidate.seeds %}
 {% if param.native_seed %}
                     try:
@@ -451,7 +451,7 @@
                 engine.start_child_mesh(
                     _child_engine,
                     {{ inv.invoke_id | py_string_literal }},
-                    {% if inv.candidates %}__sce_selected_{{ inv.invoke_id | to_python_const }}{% elif inv.src is defined and inv.src and not inv.src.startswith('#') %}{{ inv.child_name | py_string_literal }}{% else %}""{% endif %},
+                    {% if inv.candidates %}__sce_selected_{{ inv.field_suffix | to_python_const }}{% elif inv.src is defined and inv.src and not inv.src.startswith('#') %}{{ inv.child_name | py_string_literal }}{% else %}""{% endif %},
                 )
                 _invoke = ScxmlInvoke(_child_engine, _child_policy._parent_queue)
                 _invoke.start(engine)

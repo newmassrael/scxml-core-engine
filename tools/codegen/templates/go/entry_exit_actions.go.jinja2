@@ -313,15 +313,15 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 		{  {{- annot.annotation_comment(invoke_info, "go", "			") }}
 			// docs/adr/0045: the platform part of the id is the number of this
 			// start, so the id comes from the tree alone.
-			p.invokeStarts{{ invoke_info.invoke_id | to_pascal_case }}++
-			generatedInvokeID := fmt.Sprintf("%s.%d.{{ invoke_info.invoke_id }}", "{{ state_id }}", p.invokeStarts{{ invoke_info.invoke_id | to_pascal_case }})
+			p.invokeStarts{{ invoke_info.field_suffix | to_pascal_case }}++
+			generatedInvokeID := fmt.Sprintf("%s.%d.{{ invoke_info.invoke_id }}", "{{ state_id }}", p.invokeStarts{{ invoke_info.field_suffix | to_pascal_case }})
 {{ defer_with_idlocation(invoke_info, model, machine_name, state_id) }}
 		}
 {% endfor %}
 {% for invoke_info in state.invokes | hybrid %}
 		{  {{- annot.annotation_comment(invoke_info, "go", "			") }}
-			p.invokeStarts{{ invoke_info.invoke_id | to_pascal_case }}++
-			generatedInvokeID := fmt.Sprintf("%s.%d.{{ invoke_info.invoke_id }}", "{{ state_id }}", p.invokeStarts{{ invoke_info.invoke_id | to_pascal_case }})
+			p.invokeStarts{{ invoke_info.field_suffix | to_pascal_case }}++
+			generatedInvokeID := fmt.Sprintf("%s.%d.{{ invoke_info.invoke_id }}", "{{ state_id }}", p.invokeStarts{{ invoke_info.field_suffix | to_pascal_case }})
 {{ defer_with_idlocation(invoke_info, model, machine_name, state_id) }}
 		}
 {% endfor %}
@@ -440,30 +440,30 @@ func (p *{{ machine_name }}Policy) ExecuteExitActions(state {{ machine_name }}St
 		engine.CancelHostInvoke("{{ invoke_info.invoke_type | escape_go }}", "{{ invoke_info.invoke_id }}")
 {% endfor %}
 {% for invoke_info in state.invokes | scxml %}
-		if p.child{{ invoke_info.invoke_id | to_pascal_case }} != nil {
+		if p.child{{ invoke_info.field_suffix | to_pascal_case }} != nil {
 			// §scxml-D-exitInterpreter: a cancelled session is exited -- its
 			// states' <onexit> run -- before it is dropped; what that exit
 			// sends to #_parent is dropped with it (§scxml-6.4, test252).
-			p.child{{ invoke_info.invoke_id | to_pascal_case }}.Stop()
+			p.child{{ invoke_info.field_suffix | to_pascal_case }}.Stop()
 			// Child sessions in Mesh (SCE_MESH.md): the session ended, after the
 			// child stopped, so what it sent while stopping was handed over first.
-			p.child{{ invoke_info.invoke_id | to_pascal_case }}.DetachMesh()
-			p.child{{ invoke_info.invoke_id | to_pascal_case }} = nil
+			p.child{{ invoke_info.field_suffix | to_pascal_case }}.DetachMesh()
+			p.child{{ invoke_info.field_suffix | to_pascal_case }} = nil
 		}
 		delete(p.activeInvokes, "{{ invoke_info.invoke_id }}")
-		p.pendingDoneInvoke{{ invoke_info.invoke_id | to_pascal_case }} = false
+		p.pendingDoneInvoke{{ invoke_info.field_suffix | to_pascal_case }} = false
 {% endfor %}
 {% for invoke_info in state.invokes | hybrid %}
-		if p.child{{ invoke_info.invoke_id | to_pascal_case }} != nil {
+		if p.child{{ invoke_info.field_suffix | to_pascal_case }} != nil {
 			// A cancelled candidate is exited as a static child is, which
 			// cancels its own children first; then its Mesh router is told the
 			// session ended (SCE_MESH.md, Child Sessions in Mesh).
-			p.child{{ invoke_info.invoke_id | to_pascal_case }}.Stop()
-			p.child{{ invoke_info.invoke_id | to_pascal_case }}.DetachMesh()
-			p.child{{ invoke_info.invoke_id | to_pascal_case }} = nil
+			p.child{{ invoke_info.field_suffix | to_pascal_case }}.Stop()
+			p.child{{ invoke_info.field_suffix | to_pascal_case }}.DetachMesh()
+			p.child{{ invoke_info.field_suffix | to_pascal_case }} = nil
 		}
 		delete(p.activeInvokes, "{{ invoke_info.invoke_id }}")
-		p.pendingDoneInvoke{{ invoke_info.invoke_id | to_pascal_case }} = false
+		p.pendingDoneInvoke{{ invoke_info.field_suffix | to_pascal_case }} = false
 {% endfor %}
 {% endif %}
 {% endfor %}

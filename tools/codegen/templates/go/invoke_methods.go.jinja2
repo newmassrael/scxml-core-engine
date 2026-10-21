@@ -228,12 +228,12 @@
 			childEngine.Initialize()
 
 			wrapper := &{{ wrapper_type }}{engine: childEngine, policy: &childPolicy}
-			p.child{{ invoke_info.invoke_id | to_pascal_case }} = wrapper
+			p.child{{ invoke_info.field_suffix | to_pascal_case }} = wrapper
 
 			sce.DrainAndRaiseChildEvents(wrapper, p.activeInvokes, "{{ invoke_info.invoke_id }}", engine)
 
 			if wrapper.IsInFinalState() {
-				p.pendingDoneInvoke{{ invoke_info.invoke_id | to_pascal_case }} = true
+				p.pendingDoneInvoke{{ invoke_info.field_suffix | to_pascal_case }} = true
 				// The session ended: its Mesh router is told so.
 				wrapper.DetachMesh()
 				// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
@@ -345,15 +345,15 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 			childEngine.Initialize()
 
 			// W3C SCXML 6.4: Store child and create wrapper
-			wrapper := &childEngineWrapper{{ machine_name }}_{{ invoke_info.invoke_id | to_pascal_case }}{engine: childEngine, policy: &childPolicy}
-			p.child{{ invoke_info.invoke_id | to_pascal_case }} = wrapper
+			wrapper := &childEngineWrapper{{ machine_name }}_{{ invoke_info.field_suffix | to_pascal_case }}{engine: childEngine, policy: &childPolicy}
+			p.child{{ invoke_info.field_suffix | to_pascal_case }} = wrapper
 
 			// W3C SCXML 6.4: Drain child-to-parent events raised during initialize
 			sce.DrainAndRaiseChildEvents(wrapper, p.activeInvokes, "{{ invoke_info.invoke_id }}", engine)
 
 			// W3C SCXML 6.4: Check if child completed during initialize
 			if wrapper.IsInFinalState() {
-				p.pendingDoneInvoke{{ invoke_info.invoke_id | to_pascal_case }} = true
+				p.pendingDoneInvoke{{ invoke_info.field_suffix | to_pascal_case }} = true
 				// The session ended: its Mesh router is told so.
 				wrapper.DetachMesh()
 				// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
@@ -632,13 +632,13 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 			// the construction differs per candidate.
 {% for candidate in invoke_info.candidates %}
 			if __sceSelected == "{{ candidate.stem }}" {
-{{ hybrid_child_start(invoke_info, candidate, candidate.stem, 'childEngineWrapper' ~ machine_name ~ '_' ~ (invoke_info.invoke_id | to_pascal_case) ~ (candidate.stem | to_pascal_case), model, machine_name) }}
+{{ hybrid_child_start(invoke_info, candidate, candidate.stem, 'childEngineWrapper' ~ machine_name ~ '_' ~ (invoke_info.field_suffix | to_pascal_case) ~ (candidate.stem | to_pascal_case), model, machine_name) }}
 				continue
 			}
 {% endfor %}
 			continue
 {% else %}
-{{ hybrid_child_start(invoke_info, invoke_info, invoke_info.child_name, 'childEngineWrapper' ~ machine_name ~ '_' ~ (invoke_info.invoke_id | to_pascal_case), model, machine_name) }}
+{{ hybrid_child_start(invoke_info, invoke_info, invoke_info.child_name, 'childEngineWrapper' ~ machine_name ~ '_' ~ (invoke_info.field_suffix | to_pascal_case), model, machine_name) }}
 			continue
 {% endif %}
 		}
@@ -652,16 +652,16 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 // Port of Rust do_tick_children().
 func (p *{{ machine_name }}Policy) TickChildren(engine *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event]) {
 {% for invoke_info in model.invokes | scxml %}
-	if !p.pendingDoneInvoke{{ invoke_info.invoke_id | to_pascal_case }} && p.child{{ invoke_info.invoke_id | to_pascal_case }} != nil {
-		child := p.child{{ invoke_info.invoke_id | to_pascal_case }}
+	if !p.pendingDoneInvoke{{ invoke_info.field_suffix | to_pascal_case }} && p.child{{ invoke_info.field_suffix | to_pascal_case }} != nil {
+		child := p.child{{ invoke_info.field_suffix | to_pascal_case }}
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "{{ invoke_info.invoke_id }}", engine)
 		// Child sessions in Mesh (SCE_MESH.md): what arrived for the child on
 		// the router it was given, before its macrostep.
 		child.ApplyMeshCalls()
 		child.Tick()
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "{{ invoke_info.invoke_id }}", engine)
-		if child.IsInFinalState() && !p.pendingDoneInvoke{{ invoke_info.invoke_id | to_pascal_case }} {
-			p.pendingDoneInvoke{{ invoke_info.invoke_id | to_pascal_case }} = true
+		if child.IsInFinalState() && !p.pendingDoneInvoke{{ invoke_info.field_suffix | to_pascal_case }} {
+			p.pendingDoneInvoke{{ invoke_info.field_suffix | to_pascal_case }} = true
 			// The session ended: its Mesh router is told so.
 			child.DetachMesh()
 			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
@@ -671,16 +671,16 @@ func (p *{{ machine_name }}Policy) TickChildren(engine *sce.Engine[{{ machine_na
 	}
 {% endfor %}
 {% for invoke_info in model.invokes | hybrid %}
-	if !p.pendingDoneInvoke{{ invoke_info.invoke_id | to_pascal_case }} && p.child{{ invoke_info.invoke_id | to_pascal_case }} != nil {
-		child := p.child{{ invoke_info.invoke_id | to_pascal_case }}
+	if !p.pendingDoneInvoke{{ invoke_info.field_suffix | to_pascal_case }} && p.child{{ invoke_info.field_suffix | to_pascal_case }} != nil {
+		child := p.child{{ invoke_info.field_suffix | to_pascal_case }}
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "{{ invoke_info.invoke_id }}", engine)
 		// Child sessions in Mesh (SCE_MESH.md): what arrived for the child on
 		// the router it was given, before its macrostep.
 		child.ApplyMeshCalls()
 		child.Tick()
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "{{ invoke_info.invoke_id }}", engine)
-		if child.IsInFinalState() && !p.pendingDoneInvoke{{ invoke_info.invoke_id | to_pascal_case }} {
-			p.pendingDoneInvoke{{ invoke_info.invoke_id | to_pascal_case }} = true
+		if child.IsInFinalState() && !p.pendingDoneInvoke{{ invoke_info.field_suffix | to_pascal_case }} {
+			p.pendingDoneInvoke{{ invoke_info.field_suffix | to_pascal_case }} = true
 			// The session ended: its Mesh router is told so.
 			child.DetachMesh()
 			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
@@ -700,15 +700,15 @@ func (p *{{ machine_name }}Policy) NextChildDeadline() (time.Duration, bool) {
 	var soonest time.Duration
 	found := false
 {% for invoke_info in model.invokes | scxml %}
-	if !p.pendingDoneInvoke{{ invoke_info.invoke_id | to_pascal_case }} && p.child{{ invoke_info.invoke_id | to_pascal_case }} != nil {
-		if due, ok := p.child{{ invoke_info.invoke_id | to_pascal_case }}.TimeUntilNextScheduled(); ok && (!found || due < soonest) {
+	if !p.pendingDoneInvoke{{ invoke_info.field_suffix | to_pascal_case }} && p.child{{ invoke_info.field_suffix | to_pascal_case }} != nil {
+		if due, ok := p.child{{ invoke_info.field_suffix | to_pascal_case }}.TimeUntilNextScheduled(); ok && (!found || due < soonest) {
 			soonest, found = due, true
 		}
 	}
 {% endfor %}
 {% for invoke_info in model.invokes | hybrid %}
-	if !p.pendingDoneInvoke{{ invoke_info.invoke_id | to_pascal_case }} && p.child{{ invoke_info.invoke_id | to_pascal_case }} != nil {
-		if due, ok := p.child{{ invoke_info.invoke_id | to_pascal_case }}.TimeUntilNextScheduled(); ok && (!found || due < soonest) {
+	if !p.pendingDoneInvoke{{ invoke_info.field_suffix | to_pascal_case }} && p.child{{ invoke_info.field_suffix | to_pascal_case }} != nil {
+		if due, ok := p.child{{ invoke_info.field_suffix | to_pascal_case }}.TimeUntilNextScheduled(); ok && (!found || due < soonest) {
 			soonest, found = due, true
 		}
 	}
@@ -734,8 +734,8 @@ func (p *{{ machine_name }}Policy) NextChildDeadline() (time.Duration, bool) {
 func (p *{{ machine_name }}Policy) ForwardToAutoforwardChildren(eventName string, metadata sce.EventMetadata, engine *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event]) {
 {% for invoke_info in autoforward_invokes %}
 	if cs, ok := p.activeInvokes["{{ invoke_info.invoke_id }}"]; ok && cs.Autoforward {
-		if p.child{{ invoke_info.invoke_id | to_pascal_case }} != nil {
-			p.child{{ invoke_info.invoke_id | to_pascal_case }}.RaiseExternalByNameWithMeta(eventName, metadata)
+		if p.child{{ invoke_info.field_suffix | to_pascal_case }} != nil {
+			p.child{{ invoke_info.field_suffix | to_pascal_case }}.RaiseExternalByNameWithMeta(eventName, metadata)
 		}
 	}
 {% endfor %}
@@ -750,7 +750,7 @@ func (p *{{ machine_name }}Policy) ForwardToAutoforwardChildren(eventName string
 func (p *{{ machine_name }}Policy) DeliverToInvocation(invokeID, eventName, eventData, sendID string) bool {
 {% for invoke_info in model.invokes | scxml_family %}
 	if invokeID == "{{ invoke_info.invoke_id }}" {
-		if child := p.child{{ invoke_info.invoke_id | to_pascal_case }}; child != nil && !child.IsInFinalState() {
+		if child := p.child{{ invoke_info.field_suffix | to_pascal_case }}; child != nil && !child.IsInFinalState() {
 			sce.DeliverToChild(child, eventName, eventData)
 			return true
 		}
@@ -766,7 +766,7 @@ func (p *{{ machine_name }}Policy) DeliverToInvocation(invokeID, eventName, even
 func (p *{{ machine_name }}Policy) IsInvocationRunning(invokeID string) bool {
 {% for invoke_info in model.invokes | scxml_family %}
 	if invokeID == "{{ invoke_info.invoke_id }}" {
-		child := p.child{{ invoke_info.invoke_id | to_pascal_case }}
+		child := p.child{{ invoke_info.field_suffix | to_pascal_case }}
 		return child != nil && !child.IsInFinalState()
 	}
 {% endfor %}
@@ -783,7 +783,7 @@ func (p *{{ machine_name }}Policy) IsChildSessionRunning(childSessionID string) 
 	}
 {% for invoke_info in model.invokes | scxml %}
 	if cs, ok := p.activeInvokes["{{ invoke_info.invoke_id }}"]; ok && cs.SessionID == childSessionID {
-		child := p.child{{ invoke_info.invoke_id | to_pascal_case }}
+		child := p.child{{ invoke_info.field_suffix | to_pascal_case }}
 		return child != nil && !child.IsInFinalState()
 	}
 {% endfor %}
@@ -805,7 +805,7 @@ func (p *{{ machine_name }}Policy) DeliverToChildSession(childSessionID, eventNa
 	}
 {% for invoke_info in model.invokes | scxml %}
 	if cs, ok := p.activeInvokes["{{ invoke_info.invoke_id }}"]; ok && cs.SessionID == childSessionID {
-		sce.DeliverToChild(p.child{{ invoke_info.invoke_id | to_pascal_case }}, eventName, eventData)
+		sce.DeliverToChild(p.child{{ invoke_info.field_suffix | to_pascal_case }}, eventName, eventData)
 		return true
 	}
 {% endfor %}
@@ -873,23 +873,23 @@ func (p *{{ machine_name }}Policy) ExecuteFinalizeForChildEvent(eventWithMeta *s
 // ── Child engine wrappers (implement sce.ChildEngine interface) ──
 
 {% for invoke_info in model.invokes | scxml %}
-type childEngineWrapper{{ machine_name }}_{{ invoke_info.invoke_id | to_pascal_case }} struct {
+type childEngineWrapper{{ machine_name }}_{{ invoke_info.field_suffix | to_pascal_case }} struct {
 	engine *sce.Engine[{{ invoke_info.child_name | to_machine_name }}State, {{ invoke_info.child_name | to_machine_name }}Event]
 	policy *{{ invoke_info.child_name | to_machine_name }}Policy
 }
-func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.invoke_id | to_pascal_case }}) Initialize() { w.engine.Initialize() }
-func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.invoke_id | to_pascal_case }}) Tick() { w.engine.Tick() }
-func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.invoke_id | to_pascal_case }}) Step() { w.engine.Step() }
-func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.invoke_id | to_pascal_case }}) Stop() { w.engine.Stop() }
-func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.invoke_id | to_pascal_case }}) IsInFinalState() bool { return w.engine.IsInFinalState() }
-func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.invoke_id | to_pascal_case }}) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
-func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.invoke_id | to_pascal_case }}) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
-func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.invoke_id | to_pascal_case }}) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.invoke_id | to_pascal_case }}) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
-func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.invoke_id | to_pascal_case }}) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
-func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.invoke_id | to_pascal_case }}) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
-func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.invoke_id | to_pascal_case }}) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
-func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.invoke_id | to_pascal_case }}) DetachMesh() { w.engine.DetachMesh() }
+func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.field_suffix | to_pascal_case }}) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.field_suffix | to_pascal_case }}) Tick() { w.engine.Tick() }
+func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.field_suffix | to_pascal_case }}) Step() { w.engine.Step() }
+func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.field_suffix | to_pascal_case }}) Stop() { w.engine.Stop() }
+func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.field_suffix | to_pascal_case }}) IsInFinalState() bool { return w.engine.IsInFinalState() }
+func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.field_suffix | to_pascal_case }}) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
+func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.field_suffix | to_pascal_case }}) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
+func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.field_suffix | to_pascal_case }}) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
+func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.field_suffix | to_pascal_case }}) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.field_suffix | to_pascal_case }}) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.field_suffix | to_pascal_case }}) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.field_suffix | to_pascal_case }}) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.field_suffix | to_pascal_case }}) DetachMesh() { w.engine.DetachMesh() }
 {% endfor %}
 {% for invoke_info in model.invokes | hybrid %}
 {#- §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: with candidates declared the
@@ -899,7 +899,7 @@ func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.invoke_id | to_pasc
     C++ and Rust hold a concrete one and need a slot each. -#}
 {% set wrapper_targets = invoke_info.candidates if invoke_info.candidates else [{'stem': invoke_info.child_name}] %}
 {% for target in wrapper_targets %}
-{% set wrapper = 'childEngineWrapper' ~ machine_name ~ '_' ~ (invoke_info.invoke_id | to_pascal_case) ~ ((target.stem | to_pascal_case) if invoke_info.candidates else '') %}
+{% set wrapper = 'childEngineWrapper' ~ machine_name ~ '_' ~ (invoke_info.field_suffix | to_pascal_case) ~ ((target.stem | to_pascal_case) if invoke_info.candidates else '') %}
 type {{ wrapper }} struct {
 	engine *sce.Engine[{{ target.stem | to_machine_name }}State, {{ target.stem | to_machine_name }}Event]
 	policy *{{ target.stem | to_machine_name }}Policy
