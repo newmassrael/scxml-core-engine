@@ -6,7 +6,7 @@
 // Generator: SCE Kotlin Code Generator v1.0
 // SCE-MAP: static_mesh_relay__sce_synth_invoke__inner.scxml:3 :: _machine
 
-package com.sce.integration.static_mesh_relay
+package com.sce.integration.static_child_mesh
 
 import com.sce.runtime.*
 

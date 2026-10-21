@@ -22,7 +22,7 @@
 
 // SCE-MAP: static_mesh_relay__sce_synth_invoke__inner.scxml:3 :: _machine
 
-package static_mesh_relay
+package static_child_mesh
 
 import (
 	"fmt"
