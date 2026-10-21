@@ -5857,7 +5857,8 @@ the to-do list without its schedule and its host's time zones, its events named
 (`record_write`, `record_edit`, `record_settled`, `record_roster`, `register_values`
 and the rest), and every bound a `sce:limit` that defaults to the to-do list's number
 (`merge_entries`, `merge_values`, `merge_digest`, `merge_text`, `shared_typed_text`,
-`shared_roster`, `shared_answers`, `shared_moved`). It names no peer: a person's copy
+`shared_roster`, `shared_answers`, `shared_moved`, and `shared_staged` and
+`shared_parts` for a change of several commands, docs/adr/0046). It names no peer: a person's copy
 sends to the route `#hub`, and the hub, the copy `record_list.join` names the hub, sends
 to the route `#people`, which a deployment binds to a key every person's copy listens
 on, so that one send reaches them all, the author of the change included (who holds it
@@ -5868,7 +5869,12 @@ from then on the list tells its parent, once for each change it takes in, each r
 the change moved: its count and first value in the order of the dots
 (`record_list.register`) and each further value (`record_list.value`), as the register
 stands when the change is whole, so a change that writes over two values and writes
-its own is told once. A list a host started keeps `announce` false and tells no one:
+its own is told once. A change is a unit (docs/adr/0046): the commands of one, each but
+the last saying `more`, are judged whole, stamped once and taken in at once, and a
+change of more than one operation travels as that many messages carrying `parts`
+(a write-over also the change's stamp, `atWallTime` and `atCounter`), which a copy
+holds until it holds them all and takes in together, so a parent is told it once on
+every copy. A list a host started keeps `announce` false and tells no one:
 `#_parent` names no session at the top level, and the send names it by an expression
 among its declared `sce:targets`, so the machine keeps the entry a host starts it by.
 Its scenarios name it by its library name (`"machine": "sce:std/shared/record_list"`),
@@ -5886,15 +5892,19 @@ a settle counted to its end and a differing answer told the last floor, the walk
 `record_list_alone` is the list a host started, which tells no parent and fails at
 nothing; `record_list_offline` is a copy given no Mesh router (`"router": false`), a
 person's and then a hub, which keeps every change it makes because what a copy does
-to itself is queued before anything it sends to a peer (docs/adr/0046); and
+to itself is queued before anything it sends to a peer (docs/adr/0046);
+`record_list_change` is a change of several fields staged with `more` and sent as one
+unit, a change refused whole for a text and for naming a register twice, and a peer's
+change held a part at a time until it is whole, by a person and by the hub; and
 `record_list_parent` is a statechart that invokes it and publishes what
 it was told: a register's one value, two values written at once told as a count of 2
 with the earlier dot first, a register written over value by value told as a count of
 0, a write already held told nothing, and the hub's own change told once. The model the
 expected values come from was first held to every step `todo_peer` took in the world's
 to-do afternoon. The world test replays that afternoon on the standard part's Rust
-machine in its own process, the sends by their routes, and writes no file of it. The
-Interpreter replays all but the parent, which it refuses as an invoke by `src`.
+machine in its own process, the sends by their routes and an edit that wrote over what
+it saw as one unit, and writes no file of it. The Interpreter replays all but the
+parent, which it refuses as an invoke by `src`.
 
 A copy need not be a Rust machine. `World::add_external` hosts one in another
 process behind the Mesh endpoint the world keeps for it, driven over a

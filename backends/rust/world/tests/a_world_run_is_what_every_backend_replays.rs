@@ -201,7 +201,9 @@ fn record_list_route(target: &str) -> &str {
 /// goes by its route, and where the to-do hub sent one change to each person in turn
 /// the list sends it once to them all: the same send twice over is once. A list started
 /// by a host, as the world starts each copy, tells no parent anything, so a step holds
-/// exactly what the to-do list's did.
+/// exactly what the to-do list's did, but for the one thing the list does that the to-do
+/// list does not: an edit that wrote over values it had seen is one change of several
+/// operations, sent as one unit (docs/adr/0046, [`as_one_change`]).
 fn record_list_scenario(about: &str, record: &[Taken]) -> String {
     let steps: Vec<Value> = record
         .iter()
@@ -231,6 +233,7 @@ fn record_list_scenario(about: &str, record: &[Taken]) -> String {
                 }
                 step["event"] = json!(named);
             }
+            let edit = step["event"] == "record_list.edit";
             if let Some(sent) = step["expect"]["sent"].as_array_mut() {
                 for entry in sent.iter_mut() {
                     let named =
@@ -242,11 +245,58 @@ fn record_list_scenario(about: &str, record: &[Taken]) -> String {
                     entry["target"] = json!(route);
                 }
                 sent.dedup();
+                if edit {
+                    as_one_change(sent);
+                }
             }
             step
         })
         .collect();
     scenario_text("sce:std/shared/record_list", about, &steps)
+}
+
+/// The messages of a to-do edit as the standard list sends them. The to-do list sends
+/// each write-over and the write of an edit alone; the standard list sends a change of
+/// more than one operation as one unit (docs/adr/0046, section 3): every message carries
+/// how many operations the change has (`parts`), and a write-over the change's stamp
+/// (`atWallTime`, `atCounter`), which is the stamp of the change's write. An edit that
+/// wrote over nothing is one write, sent as the to-do list sends it.
+fn as_one_change(sent: &mut [Value]) {
+    let operations: Vec<usize> = sent
+        .iter()
+        .enumerate()
+        .filter(|(_, entry)| {
+            matches!(
+                entry["event"].as_str(),
+                Some("record_list.write" | "record_list.supersede")
+            )
+        })
+        .map(|(at, _)| at)
+        .collect();
+    if operations.len() < 2 {
+        return;
+    }
+    let (wall_time, counter) = sent
+        .iter()
+        .find(|entry| entry["event"] == "record_list.write")
+        .map(|entry| {
+            (
+                entry["data"]["wallTime"].clone(),
+                entry["data"]["counter"].clone(),
+            )
+        })
+        .expect("an edit's change ends in its write");
+    for &at in &operations {
+        let supersede = sent[at]["event"] == "record_list.supersede";
+        let data = sent[at]["data"]
+            .as_object_mut()
+            .expect("a change's message carries data");
+        data.insert("parts".into(), json!(operations.len()));
+        if supersede {
+            data.insert("atWallTime".into(), wall_time.clone());
+            data.insert("atCounter".into(), counter.clone());
+        }
+    }
 }
 
 /// Hold the committed scenario `name` to `text`, or write it when the run is asked to.
@@ -629,9 +679,10 @@ fn an_afternoon_of_the_shared_todo_list_is_three_scenarios() {
         // which is this list without its schedule (docs/adr/0042): it is replayed on
         // the standard part's committed Rust machine here, in this process, so the two
         // copies of the protocol are held to one run until the to-do list is built on
-        // the standard part. It is written to no file: the scenarios every backend
-        // replays of the standard part are its own, short and written by hand
-        // (`record_list_person`, `record_list_hub`).
+        // the standard part, the one thing the standard part does that the to-do list
+        // does not mapped by `as_one_change` (docs/adr/0046). It is written to no file:
+        // the scenarios every backend replays of the standard part are its own, short
+        // and written by hand (`record_list_person`, `record_list_hub`).
         let derived = record_list_scenario(
             &format!(
                 "{} The steps of the schedule and of the host's time zones are left out, which change nothing the standard shared record list (sce:std/shared/record_list.scxml) holds, every event is named as that list names it, and every send goes by its route.",

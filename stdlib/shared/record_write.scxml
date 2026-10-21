@@ -23,13 +23,21 @@
   A person writes at most what record_edit holds; the rest is room for what a host puts
   there instead of the text when it keeps the content from the hub, such as the sealed
   content.
+
+  `parts`, added by the second revision, is how many operations the change the write
+  belongs to has (docs/adr/0046): a change of one operation is one write, which carries
+  no `parts` and is read as 1, and a change of more is that many messages, every write
+  of it stamped with the change's one stamp, which is the dot it is known by. A copy
+  holds such a write until it holds every part of its change, and takes them in
+  together.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        version="1.0"
        sce:kind="event-schema"
        name="record_write"
-       sce:event-name="record_list.write">
+       sce:event-name="record_list.write"
+       sce:revision="2">
   <datamodel>
     <data id="id" sce:type="uint32" sce:direction="in"/>
     <data id="field" sce:type="uint16" sce:direction="in"/>
@@ -38,5 +46,6 @@
     <data id="wallTime" sce:type="int64" sce:direction="in"/>
     <data id="counter" sce:type="uint32" sce:direction="in"/>
     <data id="nodeId" sce:type="uint64" sce:direction="in"/>
+    <data id="parts" sce:type="uint32" sce:direction="in" sce:since="2" sce:default="1"/>
   </datamodel>
 </scxml>

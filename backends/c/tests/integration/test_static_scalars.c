@@ -2966,6 +2966,7 @@ int main(void) {
     bad |= record_list_scenario("record_list_hub", 21);
     bad |= record_list_scenario("record_list_alone", 5);
     bad |= record_list_unrouted_scenario("record_list_offline", 8);
+    bad |= record_list_scenario("record_list_change", 26);
     bad |= record_list_parent_scenario("record_list_parent", 11);
     bad |= sheet_peer_scenario("sheet_peer_alice", 24);
     bad |= sheet_peer_scenario("sheet_peer_bob", 26);

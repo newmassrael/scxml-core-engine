@@ -138,7 +138,7 @@ takes in alone. A change of **n > 1** operations is n messages, each a **part**:
   (since 2, default 0): the stamp of the change it is part of, whose node is the `by` it already
   carries.
 
-A copy that is sent a part **holds** it (`pending`, at most `shared_parts` parts of changes not
+A copy that is sent a part **holds** it (`waiting`, at most `shared_parts` parts of changes not
 yet whole) and takes nothing of it in until it holds every part of that change: then it takes them
 all in within one macrostep, and its parent is told the change once. The hub passes each part on
 to `#people` as it comes (it relays, and holds nothing back from the people) and takes the change
@@ -157,13 +157,14 @@ A unit is what a link delivers whole or in part. What repairs a part that never 
   already, and holding the rest back would hold it forever;
 - **a settle.** Parts of a change stamped at or before a floor a copy accepts are dropped (every
   copy held the same up to the floor, so what the copy holds of it is held already); a write-over
-  part of such a change that arrives later is let go, as a write at or before the floor is.
+  part of such a change that arrives later is let go, and counted in `late`, as a write at or before
+  the floor is.
 
-What this leaves: a change made only of write-overs (a clear or a retire) one operation of which
-reached a copy alone by a peer's walk before its other parts arrived waits until that copy's own
-next resync.
+What this leaves: a change one operation of which reached a copy alone, by a peer's walk, before
+its other parts arrived, and whose part for that operation never arrives, waits in `waiting` until
+that copy's own next resync.
 
-Every bound of a unit is a build's: a part past `pending` is `error.execution` and is lost on
+Every bound of a unit is a build's: a part past `waiting` is `error.execution` and is lost on
 that copy (and, on the hub, not passed on), which the walk repairs. A deployment sizes
 `shared_parts` for the changes its people make at once.
 
@@ -242,7 +243,7 @@ does (docs/SCE_ACCEPTED_SUBSET.md, "An event schema that grows").
   64, 169 for 96), so such a deployment keeps `merge_text` at least that.
 - **`shared_staged`, 32 by default**: the commands one change stages.
 - **`shared_parts`, 64 by default**: the operations one change may have, and the parts of changes
-  not yet whole a copy holds (`taking`, `passing` and `pending` are each this long).
+  not yet whole a copy holds (`taking`, `passing`, `waiting` and `kept` are each this long).
 - **`shared_moved`, 64 by default** (16 before): the registers one change moves before they are
   told. A change of n operations moves at most n registers, so a build keeps `shared_moved` at
   least `shared_parts`, and no telling runs out of room.
@@ -262,7 +263,7 @@ unit (`parts`, and on each write-over the write's stamp as `atWallTime` and `atC
 
 **The list's saved shape changes, deliberately, as a new revision of the part.** The shape names
 every variable (docs/adr/0045, "The shape of a tree"), and this decision adds the variables of a
-change (`staged`, `taking`, `passing`, `pending` and what a change is judged by), drops `fresh` and
+change (`staged`, `taking`, `passing`, `waiting` and what a change is judged by), drops `fresh` and
 `blocked`, and widens `moved`. ADR 0044 cannot make that a revision of one shape: it grows record
 schemas, and a saved list holds no record of a schema that grew. It is made now because no saved
 state that holds the list can exist yet: ADR 0045 has not landed a format-2 save of a running

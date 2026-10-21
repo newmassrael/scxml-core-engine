@@ -178,6 +178,7 @@ scenarios! {
     "presence_peer_bob" => presence_peer_sm::{PresencePeerPolicy, PresencePeerPersist} @ Manual;
     "presence_peer_server" => presence_peer_sm::{PresencePeerPolicy, PresencePeerPersist} @ Manual;
     "record_list_alone" => record_list_sm::{RecordListPolicy, RecordListPersist};
+    "record_list_change" => record_list_sm::{RecordListPolicy, RecordListPersist};
     "record_list_hub" => record_list_sm::{RecordListPolicy, RecordListPersist};
     "record_list_offline" => record_list_sm::{RecordListPolicy, RecordListPersist};
     "record_list_parent" => record_list_parent_sm::{RecordListParentPolicy, RecordListParentPersist};

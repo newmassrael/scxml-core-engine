@@ -2052,6 +2052,7 @@ func TestACopyOfTheStandardRecordListIsReplayedAsEachPeerSawIt(t *testing.T) {
 	t.Run("the hub", func(t *testing.T) { replay(t, "record_list_hub", recordListCopy()) })
 	t.Run("alone", func(t *testing.T) { replay(t, "record_list_alone", recordListCopy()) })
 	t.Run("offline", func(t *testing.T) { replay(t, "record_list_offline", recordListMachine(false)) })
+	t.Run("a change", func(t *testing.T) { replay(t, "record_list_change", recordListCopy()) })
 }
 
 // registerRecord is a `record:Register` (sce:std/shared/record_register) as a host

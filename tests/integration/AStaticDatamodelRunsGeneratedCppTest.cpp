@@ -2227,6 +2227,13 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, AStandardRecordListWithNoRouterKeepsI
     replay("record_list_offline", driver);
 }
 
+// A change is one unit: staged, stamped once, taken in whole, and sent as parts a copy
+// holds until they are all there (docs/adr/0046).
+TEST(AStaticDatamodelRunsGeneratedCppTest, AStandardRecordListTakesAChangeAsOneUnit) {
+    auto driver = recordListDriver();
+    replay("record_list_change", driver);
+}
+
 // A statechart that invokes the standard record list by its library name is told what
 // each register a change moved holds: its count and its values in the order of their
 // dots, a count of 0 when every value was written over, and nothing for a write the

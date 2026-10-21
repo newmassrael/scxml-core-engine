@@ -1509,6 +1509,13 @@ class StaticScenarioTest {
         replayRecordList(scenario("record_list_offline"))
     }
 
+    // A change is one unit: staged, stamped once, taken in whole, and sent as parts a
+    // copy holds until they are all there (docs/adr/0046).
+    @Test
+    fun recordListTakesAChangeAsOneUnit() {
+        replayRecordList(scenario("record_list_change"))
+    }
+
     /**
      * One run of `record_list`, on a machine of its own whose sends to its peers are
      * recorded, or, for a scenario that gives it no router, that is given none.

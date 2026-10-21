@@ -44,6 +44,26 @@
   The clock is moved by what a copy sees as well as by what it does: a change made after
   reading someone else's sorts after it.
 
+  A change is a unit (docs/adr/0046). It is the commands a copy is given from the first
+  after the last change ended up to the first that does not say `more` (record_edit):
+  each command with `more` is held in `staged`, and the one that ends the change closes it
+  (`record_list.close`), where the change is judged whole (the copy's member may write,
+  no register is written twice, the room, the size), stamped once, and turned into its
+  operations: a write-over of every value the copy holds in a register the change names,
+  then a write of every register it edits, all at the change's one stamp. A change that
+  fails a test is refused whole, with nothing stamped, sent or taken in. An operation is
+  taken in by `record_list.take` and sent on by `record_list.pass`, two events with no
+  data that each read the next operation of their own queue (`taking`, `passing`), so
+  every operation of a change is taken in before any is sent. A change of one operation
+  is sent as one write or one supersede, as the first revision of the list sent it; a
+  change of more is as many messages, each carrying `parts` (and a write-over the
+  change's stamp as `atWallTime` and `atCounter`), and a copy holds such a part in
+  `pending` until it holds every part of its change, then takes them in together, so a
+  parent is told the change once (`record_list.arrive`). The hub passes each part on as
+  it comes. A part already taken in is not held again, and takes the other parts held
+  of its change in with it; a resync takes in every part held, and a settle drops those
+  of a change at or before its floor.
+
   A copy that has lost changes for good (restarted from an older save, so that what it
   lacks is something its peers believe delivered, and no retry repairs it) finds them with
   a digest and takes only what it lacks. Each copy keeps a merkle digest of its changes
@@ -97,9 +117,12 @@
   would pass it fails half way, which no copy can undo. The host therefore gives a list
   less room than the build holds (`record_list.room`), and a copy refuses a change of its
   own whole when it holds as much as it was given: before it stamps or sends anything,
-  counted in `full`. What lifts it is a settle, which forgets tombstones. A change that is
-  a person's own is the one judged, and what a person sent is taken in as it is, so the
-  room is kept below the build's by what the people of one list can write at once.
+  counted in `full`. A change is refused for the values when the values it would leave
+  pass the room (one that writes no more than it writes over never is), and for the
+  tombstones or the digest when the copy holds as many as it was let. What lifts it is a
+  settle, which forgets tombstones. A change that is a person's own is the one judged,
+  and what a person sent is taken in as it is, so the room is kept below the build's by
+  what the people of one list can write at once.
 
   Every bound of the list is a name a build may give another number (the limit option
   of sce-codegen, docs/SCE_ACCEPTED_SUBSET.md, "A bound a deployment chooses"), and a
@@ -107,10 +130,14 @@
   adds, tombstones and the lists a change is judged by), `merge_values` (512 values),
   `merge_digest` (2048 nodes of the digest), `merge_text` (the 96 bytes of text a write
   carries and a value keeps), `shared_typed_text` (the 32 bytes of text a person types,
-  record_edit), `shared_roster` (64 members), `shared_answers` (512 answers to a settle)
-  and `shared_moved` (16 registers a change moves before they are told). Each name is
-  carried by the standard algorithms and schemas the list reads through, so the machine
-  and what it calls move together. Every copy of one list is built with the same numbers.
+  record_edit; a build that raises it keeps `merge_text` at least as large),
+  `shared_roster` (64 members), `shared_answers` (512 answers to a settle),
+  `shared_staged` (32 commands one change stages), `shared_parts` (64 operations of one
+  change, and parts of changes not yet whole a copy holds) and `shared_moved` (64
+  registers a change moves before they are told, at least `shared_parts`, since a change
+  of n operations moves at most n). Each name is carried by the standard algorithms and
+  schemas the list reads through, so the machine and what it calls move together. Every
+  copy of one list is built with the same numbers.
 
   What the list tells its parent. A statechart that invokes the list hands it `announce`
   (`<param name="announce" expr="true"/>`), and from then on the list tells it, once for
@@ -120,13 +147,14 @@
   (`count`, 0 when every value was written over) and the first of them in the order of
   their dots (register_values), then `record_list.value` (record_value) for each further
   one, with its place in that order (`ordinal`, from 1). A settle and a compact change no
-  value and are not told. A write or supersede that moves a register names it to the
-  list itself (`record_list.announce`, record_announce), which keeps the registers named
-  in `moved` and, for the first of them, raises `record_list.tell`; every event the change
-  raised is already waiting before that, so the telling is made once, after the whole
-  change: a person's edit, a supersede of each value it saw and then a write, is told as
-  the one register it moved, as it stands after the write. A parent may name a register
-  itself by sending the list `record_list.announce`, to be told what it holds.
+  value and are not told. An operation that moves a register names it to the list itself
+  (`record_list.announce`, record_announce), which keeps the registers named in `moved`
+  and, for the first of them, raises `record_list.tell`; every operation of the change is
+  already waiting before that, so the telling is made once, after the whole change: a
+  person's edit, a write-over of each value it saw and then a write, is told as the one
+  register it moved, as it stands after the write, and a change of several fields as
+  each of them once. A parent may name a register itself by sending the list
+  `record_list.announce`, to be told what it holds.
 
   A list a host started has no parent, and `#_parent` names no session there: `announce`
   keeps the value its <data> gives it, false, and the list tells no one. The condition is
@@ -201,6 +229,7 @@
   <sce:import kind="algorithm" src="sce:std/shared/record_roster.scxml" as="RecordRoster"/>
   <sce:import kind="event-schema" src="sce:std/shared/record_announce.scxml" as="Announce"/>
   <sce:import kind="algorithm" src="sce:std/shared/register_values.scxml" as="RegisterValues"/>
+  <sce:import kind="event-schema" src="sce:std/shared/record_part.scxml" as="Part"/>
   <datamodel>
     <data id="node" sce:type="uint64" expr="0" sce:direction="out"/>
     <data id="hub" sce:type="bool" expr="false" sce:direction="out"/>
@@ -273,16 +302,12 @@
       <sce:set name="hash" expr="0"/>
     </data>
     <data id="agreed" sce:type="uint32" expr="0"/>
-    <!-- How much the host lets this copy hold (record_list.room), 0 for no limit; the
-         changes a person made that were refused for it (`full`); and what the change in
-         hand is judged by: whether it is to a register that holds no value yet, and
-         whether the copy is full. -->
+    <!-- How much the host lets this copy hold (record_list.room), 0 for no limit, and
+         the changes a person made that were refused for it (`full`). -->
     <data id="roomValues" sce:type="uint32" expr="0"/>
     <data id="roomHistory" sce:type="uint32" expr="0"/>
     <data id="roomDigest" sce:type="uint32" expr="0"/>
     <data id="full" sce:type="uint32" expr="0" sce:direction="out"/>
-    <data id="fresh" sce:type="bool" expr="false"/>
-    <data id="blocked" sce:type="bool" expr="false"/>
     <!-- What the host lets each member do (record_list.role), the changes that were
          refused for it (`denied`) and what the change in hand is judged by: whether its
          author may write. -->
@@ -298,7 +323,7 @@
     <data id="announced" sce:type="uint32" expr="0" sce:direction="out"/>
     <!-- The registers the change in hand moved, by their element, kept until the change
          is told, and whether the one named now is among them already. -->
-    <data id="moved" sce:type="list&lt;uint64&gt;" sce:capacity="16" sce:limit="shared_moved"/>
+    <data id="moved" sce:type="list&lt;uint64&gt;" sce:capacity="64" sce:limit="shared_moved"/>
     <data id="listed" sce:type="bool" expr="false"/>
     <data id="live" sce:type="list&lt;record:Value&gt;" sce:capacity="512" sce:limit="merge_values"/>
     <data id="ordinal" sce:type="uint32" expr="0"/>
@@ -313,6 +338,65 @@
       <sce:set name="counter" expr="0"/>
       <sce:set name="nodeId" expr="0"/>
     </data>
+    <!-- A change (docs/adr/0046): the commands of the change in hand (`staged`), whether
+         the command in hand says the change goes on (`holding`), the `now` of the one that
+         ends it, whether the change is refused (`spoiled`), and whether the statement in
+         hand is one whose failure refuses it (`probing`): a text past its bound and a
+         list past its room fail as an assignment does, ending the block, and
+         error.execution is where the change is then refused. What a change is judged by:
+         the values it writes over (`gone`), the registers it writes (`writes`), and
+         whether the value in hand is in a register it names (`covered`). -->
+    <data id="staged" sce:type="list&lt;record:Part&gt;" sce:capacity="32" sce:limit="shared_staged"/>
+    <data id="holding" sce:type="bool" expr="false"/>
+    <data id="closingNow" sce:type="int64" expr="0"/>
+    <data id="spoiled" sce:type="bool" expr="false"/>
+    <data id="probing" sce:type="bool" expr="false"/>
+    <data id="gone" sce:type="uint32" expr="0"/>
+    <data id="writes" sce:type="uint32" expr="0"/>
+    <data id="covered" sce:type="bool" expr="false"/>
+    <!-- The operations to take in (`taking`, the next at `took`) and to send on
+         (`passing`, the next at `passed`), each read by an event of its own that carries
+         no data; the parts of changes not yet whole (`waiting`), and a list the parts
+         kept are gathered in while the others are taken out (`kept`); the part in hand,
+         a peer's operation as it arrived (`part`), and the operation in hand (`op`); and
+         what a part is judged by: whether the copy holds it already (`already`) and how
+         many parts of its change the copy holds (`count`). -->
+    <data id="taking" sce:type="list&lt;record:Part&gt;" sce:capacity="64" sce:limit="shared_parts"/>
+    <data id="took" sce:type="uint32" expr="0"/>
+    <data id="passing" sce:type="list&lt;record:Part&gt;" sce:capacity="64" sce:limit="shared_parts"/>
+    <data id="passed" sce:type="uint32" expr="0"/>
+    <data id="waiting" sce:type="list&lt;record:Part&gt;" sce:capacity="64" sce:limit="shared_parts"/>
+    <data id="kept" sce:type="list&lt;record:Part&gt;" sce:capacity="64" sce:limit="shared_parts"/>
+    <data id="part" sce:type="record:Part">
+      <sce:set name="kind" expr="0"/>
+      <sce:set name="id" expr="0"/>
+      <sce:set name="field" expr="0"/>
+      <sce:set name="value" expr="0"/>
+      <sce:set name="text" expr="''"/>
+      <sce:set name="wallTime" expr="0"/>
+      <sce:set name="counter" expr="0"/>
+      <sce:set name="nodeId" expr="0"/>
+      <sce:set name="by" expr="0"/>
+      <sce:set name="atWallTime" expr="0"/>
+      <sce:set name="atCounter" expr="0"/>
+      <sce:set name="parts" expr="1"/>
+    </data>
+    <data id="op" sce:type="record:Part">
+      <sce:set name="kind" expr="0"/>
+      <sce:set name="id" expr="0"/>
+      <sce:set name="field" expr="0"/>
+      <sce:set name="value" expr="0"/>
+      <sce:set name="text" expr="''"/>
+      <sce:set name="wallTime" expr="0"/>
+      <sce:set name="counter" expr="0"/>
+      <sce:set name="nodeId" expr="0"/>
+      <sce:set name="by" expr="0"/>
+      <sce:set name="atWallTime" expr="0"/>
+      <sce:set name="atCounter" expr="0"/>
+      <sce:set name="parts" expr="1"/>
+    </data>
+    <data id="already" sce:type="bool" expr="false"/>
+    <data id="count" sce:type="uint32" expr="0"/>
   </datamodel>
   <state id="open">
     <transition event="record_list.join" type="internal">
@@ -337,105 +421,400 @@
       <assign location="roster" expr="RecordRoster(roster, _event.data.node, _event.data.role)"/>
     </transition>
 
-    <!-- A person's change: stamped, then handled as any write is, and sent to the hub.
-         The values the person has seen in the field are the ones it writes over: each
-         is named in a supersede, here and at the hub, before the write itself.
-
-         A copy that holds as much as the host let it (record_list.room) refuses the
-         change whole, as it refuses a text that does not fit: before the clock moves and
-         before anything is sent, so that no copy holds half of it, and counts it in
-         `full` for the host to say that the list is full. A change to a register that
-         already has a value adds none and is not refused for the values; a change when
-         the tombstones or the digest are as many as allowed is, since each adds to them,
-         and what lets it through is a settle. -->
+    <!-- A person's edit of one field: a command of a change (docs/adr/0046). It is
+         staged, and the command that does not say `more` ends the change, which
+         `record_list.close` judges, stamps and takes in whole. The text is read first,
+         into a place nothing else reads: a text past what a person writes is an
+         assignment that fails and ends the block, and error.execution refuses the
+         change, as a change past the room of `staged` is. Nothing is stamped or sent
+         here. A change already refused stages nothing more, and is ended all the same. -->
     <transition event="record_list.edit" type="internal">
-      <!-- The text is read first, into a place nothing else reads: a text past its bound
-           is an assignment that fails and ends the block, so the change is refused
-           whole, with the clock where it was and nothing sent. The bound a person's text
-           has is the one `typed` holds, and the one a write has is wider. -->
-      <assign location="typed" expr="_event.data.text"/>
-      <assign location="held.text" expr="_event.data.text"/>
-      <assign location="entry.element" expr="_event.data.id"/>
-      <assign location="entry.element" expr="entry.element * 65536 + _event.data.field"/>
-      <assign location="fresh" expr="true"/>
-      <foreach array="adds" item="o">
-        <if cond="o.element === entry.element">
-          <assign location="fresh" expr="false"/>
-        </if>
-      </foreach>
-      <!-- Whether the host let this copy's member write (record_list.role): with no
-           roster set, anyone; with one, a member whose role is a writer's. A change it may
-           not make is refused as one that does not fit is, before the clock moves, and
-           counted in `denied`. -->
-      <assign location="forbidden" expr="false"/>
-      <if cond="len(roster) &gt; 0">
+      <assign location="holding" expr="_event.data.more"/>
+      <if cond="!spoiled">
+        <assign location="probing" expr="true"/>
+        <assign location="typed" expr="_event.data.text"/>
+        <assign location="part.kind" expr="0"/>
+        <assign location="part.id" expr="_event.data.id"/>
+        <assign location="part.field" expr="_event.data.field"/>
+        <assign location="part.value" expr="_event.data.value"/>
+        <assign location="part.text" expr="_event.data.text"/>
+        <sce:append target="staged" expr="part"/>
+        <assign location="probing" expr="false"/>
+      </if>
+      <if cond="!holding">
+        <assign location="closingNow" expr="_event.data.now"/>
+        <send target="#_internal" event="record_list.close"/>
+      </if>
+    </transition>
+
+    <!-- The change in hand is ended: judged whole, and taken in, or refused whole.
+
+         It is refused when the copy's member may not write (record_list.role: with no
+         roster set, anyone may; with one, a member whose role is a writer's), counted in
+         `denied`; when two of its commands write or clear one register, since the order
+         of a change's commands means nothing; and when it would pass the room the host
+         gave the copy (record_list.room), counted in `full`: the values it would leave
+         past `values` (a change that writes no more values than it writes over adds
+         none), or the copy holds as many tombstones or digest nodes as it was let, since
+         each change adds to them and what lets it through is a settle. A change that
+         names nothing the copy holds and writes nothing is no change.
+
+         A change that passes is stamped once, with the `now` of the command that ended
+         it, and turned into its operations in `taking`: a write-over of each value the
+         copy holds in a register the change names, in the order of `adds`, then a write of
+         each register it edits, in the order of its commands, every one at the change's
+         stamp and carrying how many there are. A change of more operations than
+         `taking` holds is refused whole, by error.execution, before the clock moves. Then
+         every operation is queued to be taken in here, and after them every one to be
+         sent on: the copy holds the change before it sends any of it. -->
+    <transition event="record_list.close" type="internal">
+      <if cond="!spoiled &amp;&amp; len(roster) &gt; 0">
         <assign location="forbidden" expr="true"/>
         <foreach array="roster" item="m">
           <if cond="m.node === node &amp;&amp; m.role &gt;= 2">
             <assign location="forbidden" expr="false"/>
           </if>
         </foreach>
+        <if cond="forbidden">
+          <assign location="denied" expr="denied + 1"/>
+          <assign location="spoiled" expr="true"/>
+        </if>
       </if>
-      <assign location="blocked" expr="!forbidden &amp;&amp; ((roomValues &gt; 0 &amp;&amp; fresh &amp;&amp; len(values) &gt;= roomValues) || (roomHistory &gt; 0 &amp;&amp; len(tombstones) &gt;= roomHistory) || (roomDigest &gt; 0 &amp;&amp; len(digest) &gt;= roomDigest))"/>
-      <if cond="forbidden">
-        <assign location="denied" expr="denied + 1"/>
-      </if>
-      <if cond="blocked">
-        <assign location="full" expr="full + 1"/>
-      </if>
-      <if cond="!blocked &amp;&amp; !forbidden">
-        <assign location="clock" expr="HlcSend(clock, _event.data.now, node)"/>
-        <!-- What the copy does to itself is queued before anything is sent to a peer
-             (docs/adr/0046, section 4): a send to the hub that fails where it is made
-             (a copy with no Mesh router) ends the block, and must find the change
-             taken in here already. -->
-        <foreach array="adds" item="o">
-          <if cond="o.element === entry.element">
-            <send target="#_internal" event="record_list.supersede">
-              <param name="id" expr="_event.data.id"/>
-              <param name="field" expr="_event.data.field"/>
-              <param name="wallTime" expr="o.wallTime"/>
-              <param name="counter" expr="o.counter"/>
-              <param name="nodeId" expr="o.nodeId"/>
-              <param name="by" expr="node"/>
-            </send>
-          </if>
-        </foreach>
-        <send target="#_internal" event="record_list.write">
-          <param name="id" expr="_event.data.id"/>
-          <param name="field" expr="_event.data.field"/>
-          <param name="value" expr="_event.data.value"/>
-          <param name="text" expr="_event.data.text"/>
-          <param name="wallTime" expr="clock.wallTime"/>
-          <param name="counter" expr="clock.counter"/>
-          <param name="nodeId" expr="node"/>
-        </send>
-        <!-- A person's change goes to the hub, each value it wrote over and then the
-             write; the hub's own is relayed to the people by the write and the
-             supersedes it takes in here, as any change is. -->
-        <if cond="!hub">
-          <foreach array="adds" item="o">
-            <if cond="o.element === entry.element">
-              <send target="#hub" event="record_list.supersede">
-                <param name="id" expr="_event.data.id"/>
-                <param name="field" expr="_event.data.field"/>
-                <param name="wallTime" expr="o.wallTime"/>
-                <param name="counter" expr="o.counter"/>
-                <param name="nodeId" expr="o.nodeId"/>
-                <param name="by" expr="node"/>
-              </send>
+      <if cond="!spoiled">
+        <foreach array="staged" item="earlier" index="earlierAt">
+          <foreach array="staged" item="later" index="laterAt">
+            <if cond="laterAt &gt; earlierAt &amp;&amp; earlier.kind !== 2 &amp;&amp; later.kind !== 2 &amp;&amp; earlier.id === later.id &amp;&amp; earlier.field === later.field">
+              <assign location="spoiled" expr="true"/>
             </if>
           </foreach>
-          <send target="#hub" event="record_list.write">
-            <param name="id" expr="_event.data.id"/>
-            <param name="field" expr="_event.data.field"/>
-            <param name="value" expr="_event.data.value"/>
-            <param name="text" expr="_event.data.text"/>
-            <param name="wallTime" expr="clock.wallTime"/>
-            <param name="counter" expr="clock.counter"/>
-            <param name="nodeId" expr="node"/>
+        </foreach>
+      </if>
+      <assign location="gone" expr="0"/>
+      <assign location="writes" expr="0"/>
+      <if cond="!spoiled">
+        <foreach array="adds" item="a">
+          <assign location="covered" expr="false"/>
+          <foreach array="staged" item="s">
+            <if cond="a.element / 65536 === s.id &amp;&amp; (s.kind === 2 || a.element % 65536 === s.field)">
+              <assign location="covered" expr="true"/>
+            </if>
+          </foreach>
+          <if cond="covered">
+            <assign location="gone" expr="gone + 1"/>
+          </if>
+        </foreach>
+        <foreach array="staged" item="s">
+          <if cond="s.kind === 0">
+            <assign location="writes" expr="writes + 1"/>
+          </if>
+        </foreach>
+      </if>
+      <if cond="!spoiled &amp;&amp; gone + writes &gt; 0 &amp;&amp; ((roomValues &gt; 0 &amp;&amp; writes &gt; gone &amp;&amp; len(values) + writes &gt; roomValues + gone) || (roomHistory &gt; 0 &amp;&amp; len(tombstones) &gt;= roomHistory) || (roomDigest &gt; 0 &amp;&amp; len(digest) &gt;= roomDigest))">
+        <assign location="full" expr="full + 1"/>
+        <assign location="spoiled" expr="true"/>
+      </if>
+      <if cond="!spoiled &amp;&amp; gone + writes &gt; 0">
+        <assign location="probing" expr="true"/>
+        <assign location="stamp" expr="HlcSend(clock, closingNow, node)"/>
+        <sce:clear target="taking"/>
+        <assign location="took" expr="0"/>
+        <foreach array="adds" item="a">
+          <assign location="covered" expr="false"/>
+          <foreach array="staged" item="s">
+            <if cond="a.element / 65536 === s.id &amp;&amp; (s.kind === 2 || a.element % 65536 === s.field)">
+              <assign location="covered" expr="true"/>
+            </if>
+          </foreach>
+          <if cond="covered">
+            <assign location="part.kind" expr="1"/>
+            <assign location="part.id" expr="a.element / 65536"/>
+            <assign location="part.field" expr="a.element % 65536"/>
+            <assign location="part.value" expr="0"/>
+            <assign location="part.text" expr="''"/>
+            <assign location="part.wallTime" expr="a.wallTime"/>
+            <assign location="part.counter" expr="a.counter"/>
+            <assign location="part.nodeId" expr="a.nodeId"/>
+            <assign location="part.by" expr="node"/>
+            <assign location="part.atWallTime" expr="stamp.wallTime"/>
+            <assign location="part.atCounter" expr="stamp.counter"/>
+            <assign location="part.parts" expr="gone + writes"/>
+            <sce:append target="taking" expr="part"/>
+          </if>
+        </foreach>
+        <foreach array="staged" item="s">
+          <if cond="s.kind === 0">
+            <assign location="part.kind" expr="0"/>
+            <assign location="part.id" expr="s.id"/>
+            <assign location="part.field" expr="s.field"/>
+            <assign location="part.value" expr="s.value"/>
+            <assign location="part.text" expr="s.text"/>
+            <assign location="part.wallTime" expr="stamp.wallTime"/>
+            <assign location="part.counter" expr="stamp.counter"/>
+            <assign location="part.nodeId" expr="node"/>
+            <assign location="part.by" expr="node"/>
+            <assign location="part.atWallTime" expr="stamp.wallTime"/>
+            <assign location="part.atCounter" expr="stamp.counter"/>
+            <assign location="part.parts" expr="gone + writes"/>
+            <sce:append target="taking" expr="part"/>
+          </if>
+        </foreach>
+        <assign location="probing" expr="false"/>
+        <sce:clear target="staged"/>
+        <assign location="clock" expr="stamp"/>
+        <sce:clear target="passing"/>
+        <assign location="passed" expr="0"/>
+        <foreach array="taking" item="t">
+          <sce:append target="passing" expr="t"/>
+        </foreach>
+        <foreach array="taking" item="t">
+          <send target="#_internal" event="record_list.take"/>
+        </foreach>
+        <foreach array="passing" item="t">
+          <send target="#_internal" event="record_list.pass"/>
+        </foreach>
+      </if>
+      <if cond="!spoiled &amp;&amp; gone + writes === 0">
+        <sce:clear target="staged"/>
+      </if>
+      <if cond="spoiled">
+        <sce:clear target="staged"/>
+        <assign location="spoiled" expr="false"/>
+      </if>
+    </transition>
+
+    <!-- The next operation of `taking`, taken in: a write gives its register one more
+         value, once, and a write-over takes the value it names out. This is where every
+         operation is merged, a copy's own and a peer's alike. -->
+    <transition event="record_list.take" type="internal">
+      <assign location="op" expr="taking[took]"/>
+      <assign location="took" expr="took + 1"/>
+      <!-- A write: one more value, once. The text is read into the value it is kept in.
+           A peer's write moves the clock up to it; a write this copy made and no longer
+           holds, which a peer sends back when the copy has been restarted from an older
+           save, is taken in with the clock moved up to it, so that what the copy writes
+           next is stamped after it and never with a dot it has already used. A write made
+           here that the clock already stands at (every one, as it is first taken in)
+           moves nothing. Whether the write is live: no tombstone names it. One a person
+           wrote over before it arrived is not taken in, and only a live one is added. And
+           whether its value is already held, which a write that arrives twice is. A
+           write that gives the register a value it did not hold is told to the parent
+           (record_list.announce). -->
+      <if cond="op.kind === 0">
+        <assign location="held.text" expr="op.text"/>
+        <if cond="op.nodeId !== node">
+          <assign location="stamp.wallTime" expr="op.wallTime"/>
+          <assign location="stamp.counter" expr="op.counter"/>
+          <assign location="stamp.nodeId" expr="op.nodeId"/>
+          <assign location="clock" expr="HlcReceive(clock, stamp, clock.wallTime, node)"/>
+        </if>
+        <if cond="op.nodeId === node &amp;&amp; (op.wallTime &gt; clock.wallTime || (op.wallTime === clock.wallTime &amp;&amp; op.counter &gt; clock.counter))">
+          <assign location="clock.wallTime" expr="op.wallTime"/>
+          <assign location="clock.counter" expr="op.counter"/>
+        </if>
+        <assign location="entry.element" expr="op.id"/>
+        <assign location="entry.element" expr="entry.element * 65536 + op.field"/>
+        <assign location="entry.wallTime" expr="op.wallTime"/>
+        <assign location="entry.counter" expr="op.counter"/>
+        <assign location="entry.nodeId" expr="op.nodeId"/>
+        <assign location="isLive" expr="true"/>
+        <foreach array="tombstones" item="t">
+          <if cond="t.element === entry.element &amp;&amp; t.wallTime === entry.wallTime &amp;&amp; t.counter === entry.counter &amp;&amp; t.nodeId === entry.nodeId">
+            <assign location="isLive" expr="false"/>
+          </if>
+        </foreach>
+        <if cond="isLive">
+          <sce:clear target="one"/>
+          <sce:append target="one" expr="entry"/>
+          <assign location="adds" expr="OrsetUnion(adds, one)"/>
+        </if>
+        <assign location="held.id" expr="op.id"/>
+        <assign location="held.field" expr="op.field"/>
+        <assign location="held.value" expr="op.value"/>
+        <assign location="held.wallTime" expr="op.wallTime"/>
+        <assign location="held.counter" expr="op.counter"/>
+        <assign location="held.nodeId" expr="op.nodeId"/>
+        <assign location="present" expr="MvValueHolds(values, held)"/>
+        <if cond="isLive &amp;&amp; !present">
+          <assign location="values" expr="MvValueKeep(values, held)"/>
+          <send target="#_internal" event="record_list.keep">
+            <param name="kind" expr="0"/>
+            <param name="element" expr="entry.element"/>
+            <param name="wallTime" expr="op.wallTime"/>
+            <param name="counter" expr="op.counter"/>
+            <param name="nodeId" expr="op.nodeId"/>
           </send>
         </if>
+        <if cond="isLive &amp;&amp; !present &amp;&amp; announce">
+          <send target="#_internal" event="record_list.announce">
+            <param name="id" expr="op.id"/>
+            <param name="field" expr="op.field"/>
+          </send>
+        </if>
+      </if>
+      <!-- A write-over: the add it names is named by a tombstone, and its value, if
+           held, is taken out. A peer's write-over that is part of a change carries the
+           change's stamp, which moves the clock up to it as a write does. Whether the
+           tombstone is new, which one that arrives twice is not; the add it names is no
+           longer live and leaves `adds` (a tombstone that is not new leaves nothing to
+           take out); and whether the write it names is held, which is when its add leaves
+           the digest as the tombstone enters it. A value taken out is told to the parent
+           (record_list.announce). -->
+      <if cond="op.kind === 1">
+        <if cond="op.atWallTime &gt; 0 &amp;&amp; op.by !== node">
+          <assign location="stamp.wallTime" expr="op.atWallTime"/>
+          <assign location="stamp.counter" expr="op.atCounter"/>
+          <assign location="stamp.nodeId" expr="op.by"/>
+          <assign location="clock" expr="HlcReceive(clock, stamp, clock.wallTime, node)"/>
+        </if>
+        <assign location="entry.element" expr="op.id"/>
+        <assign location="entry.element" expr="entry.element * 65536 + op.field"/>
+        <assign location="entry.wallTime" expr="op.wallTime"/>
+        <assign location="entry.counter" expr="op.counter"/>
+        <assign location="entry.nodeId" expr="op.nodeId"/>
+        <assign location="known" expr="false"/>
+        <foreach array="tombstones" item="t">
+          <if cond="t.element === entry.element &amp;&amp; t.wallTime === entry.wallTime &amp;&amp; t.counter === entry.counter &amp;&amp; t.nodeId === entry.nodeId">
+            <assign location="known" expr="true"/>
+          </if>
+        </foreach>
+        <sce:clear target="one"/>
+        <sce:append target="one" expr="entry"/>
+        <assign location="tombstones" expr="OrsetUnion(tombstones, one)"/>
+        <assign location="adds" expr="OrsetLive(adds, one)"/>
+        <assign location="held.id" expr="op.id"/>
+        <assign location="held.field" expr="op.field"/>
+        <assign location="held.wallTime" expr="op.wallTime"/>
+        <assign location="held.counter" expr="op.counter"/>
+        <assign location="held.nodeId" expr="op.nodeId"/>
+        <assign location="wasLive" expr="MvValueHolds(values, held)"/>
+        <assign location="values" expr="MvValueDrop(values, held)"/>
+        <if cond="!known">
+          <send target="#_internal" event="record_list.keep">
+            <param name="kind" expr="1"/>
+            <param name="element" expr="entry.element"/>
+            <param name="wallTime" expr="op.wallTime"/>
+            <param name="counter" expr="op.counter"/>
+            <param name="nodeId" expr="op.nodeId"/>
+          </send>
+        </if>
+        <if cond="wasLive">
+          <send target="#_internal" event="record_list.keep">
+            <param name="kind" expr="0"/>
+            <param name="element" expr="entry.element"/>
+            <param name="wallTime" expr="op.wallTime"/>
+            <param name="counter" expr="op.counter"/>
+            <param name="nodeId" expr="op.nodeId"/>
+          </send>
+        </if>
+        <if cond="wasLive &amp;&amp; announce">
+          <send target="#_internal" event="record_list.announce">
+            <param name="id" expr="op.id"/>
+            <param name="field" expr="op.field"/>
+          </send>
+        </if>
+      </if>
+    </transition>
+
+    <!-- The next operation of `passing`, sent on: a person's copy sends to the hub, and
+         the hub to every person's copy, its own changes and what it relays alike. An
+         operation of a change of one is sent as the first revision of the list sent it;
+         one of a change of more carries how many parts the change has, and a write-over
+         the change's stamp (a write is stamped with it already). The send is the whole of
+         the block, so one that fails where it is made fails alone. -->
+    <transition event="record_list.pass" type="internal">
+      <assign location="op" expr="passing[passed]"/>
+      <assign location="passed" expr="passed + 1"/>
+      <if cond="op.kind === 0 &amp;&amp; op.parts &lt;= 1 &amp;&amp; !hub">
+        <send target="#hub" event="record_list.write">
+          <param name="id" expr="op.id"/>
+          <param name="field" expr="op.field"/>
+          <param name="value" expr="op.value"/>
+          <param name="text" expr="op.text"/>
+          <param name="wallTime" expr="op.wallTime"/>
+          <param name="counter" expr="op.counter"/>
+          <param name="nodeId" expr="op.nodeId"/>
+        </send>
+      </if>
+      <if cond="op.kind === 0 &amp;&amp; op.parts &gt; 1 &amp;&amp; !hub">
+        <send target="#hub" event="record_list.write">
+          <param name="id" expr="op.id"/>
+          <param name="field" expr="op.field"/>
+          <param name="value" expr="op.value"/>
+          <param name="text" expr="op.text"/>
+          <param name="wallTime" expr="op.wallTime"/>
+          <param name="counter" expr="op.counter"/>
+          <param name="nodeId" expr="op.nodeId"/>
+          <param name="parts" expr="op.parts"/>
+        </send>
+      </if>
+      <if cond="op.kind === 0 &amp;&amp; op.parts &lt;= 1 &amp;&amp; hub">
+        <send target="#people" event="record_list.write">
+          <param name="id" expr="op.id"/>
+          <param name="field" expr="op.field"/>
+          <param name="value" expr="op.value"/>
+          <param name="text" expr="op.text"/>
+          <param name="wallTime" expr="op.wallTime"/>
+          <param name="counter" expr="op.counter"/>
+          <param name="nodeId" expr="op.nodeId"/>
+        </send>
+      </if>
+      <if cond="op.kind === 0 &amp;&amp; op.parts &gt; 1 &amp;&amp; hub">
+        <send target="#people" event="record_list.write">
+          <param name="id" expr="op.id"/>
+          <param name="field" expr="op.field"/>
+          <param name="value" expr="op.value"/>
+          <param name="text" expr="op.text"/>
+          <param name="wallTime" expr="op.wallTime"/>
+          <param name="counter" expr="op.counter"/>
+          <param name="nodeId" expr="op.nodeId"/>
+          <param name="parts" expr="op.parts"/>
+        </send>
+      </if>
+      <if cond="op.kind === 1 &amp;&amp; op.parts &lt;= 1 &amp;&amp; !hub">
+        <send target="#hub" event="record_list.supersede">
+          <param name="id" expr="op.id"/>
+          <param name="field" expr="op.field"/>
+          <param name="wallTime" expr="op.wallTime"/>
+          <param name="counter" expr="op.counter"/>
+          <param name="nodeId" expr="op.nodeId"/>
+          <param name="by" expr="op.by"/>
+        </send>
+      </if>
+      <if cond="op.kind === 1 &amp;&amp; op.parts &gt; 1 &amp;&amp; !hub">
+        <send target="#hub" event="record_list.supersede">
+          <param name="id" expr="op.id"/>
+          <param name="field" expr="op.field"/>
+          <param name="wallTime" expr="op.wallTime"/>
+          <param name="counter" expr="op.counter"/>
+          <param name="nodeId" expr="op.nodeId"/>
+          <param name="by" expr="op.by"/>
+          <param name="parts" expr="op.parts"/>
+          <param name="atWallTime" expr="op.atWallTime"/>
+          <param name="atCounter" expr="op.atCounter"/>
+        </send>
+      </if>
+      <if cond="op.kind === 1 &amp;&amp; op.parts &lt;= 1 &amp;&amp; hub">
+        <send target="#people" event="record_list.supersede">
+          <param name="id" expr="op.id"/>
+          <param name="field" expr="op.field"/>
+          <param name="wallTime" expr="op.wallTime"/>
+          <param name="counter" expr="op.counter"/>
+          <param name="nodeId" expr="op.nodeId"/>
+          <param name="by" expr="op.by"/>
+        </send>
+      </if>
+      <if cond="op.kind === 1 &amp;&amp; op.parts &gt; 1 &amp;&amp; hub">
+        <send target="#people" event="record_list.supersede">
+          <param name="id" expr="op.id"/>
+          <param name="field" expr="op.field"/>
+          <param name="wallTime" expr="op.wallTime"/>
+          <param name="counter" expr="op.counter"/>
+          <param name="nodeId" expr="op.nodeId"/>
+          <param name="by" expr="op.by"/>
+          <param name="parts" expr="op.parts"/>
+          <param name="atWallTime" expr="op.atWallTime"/>
+          <param name="atCounter" expr="op.atCounter"/>
+        </send>
       </if>
     </transition>
 
@@ -460,12 +839,14 @@
       </if>
     </transition>
 
-    <!-- A write to a field, from a person here or from elsewhere: one more value, once.
-         The hub takes it only from a member the host let write (record_list.role): a
-         write whose author is not on a roster that is set, or is on it with less than a
-         writer's role, is dropped whole and counted in `denied`, as a change a person's
-         copy was not let make is. A write that gives the register a value it did not hold
-         is told to the parent (record_list.announce). -->
+    <!-- A write a peer sent (or the host gave): judged here, and handed on to
+         `record_list.arrive` as the part in hand. The hub takes it only from a member the
+         host let write (record_list.role): a write whose author is not on a roster that
+         is set, or is on it with less than a writer's role, is dropped whole and counted
+         in `denied`, as a change a person's copy was not let make is. One whose text does
+         not fit changes nothing here and is passed on to no one, rather than being merged
+         in part. The change a write is part of is known by its own dot, which is the
+         change's stamp. -->
     <transition event="record_list.write" type="internal">
       <assign location="authorized" expr="true"/>
       <if cond="hub &amp;&amp; len(roster) &gt; 0">
@@ -480,87 +861,34 @@
         <assign location="denied" expr="denied + 1"/>
       </if>
       <if cond="authorized">
-        <!-- The same, for a write that arrives: one whose text does not fit changes
-             nothing here and is passed on to no one, rather than being merged in part. -->
-        <assign location="held.text" expr="_event.data.text"/>
-        <if cond="_event.data.nodeId !== node">
-          <assign location="stamp.wallTime" expr="_event.data.wallTime"/>
-          <assign location="stamp.counter" expr="_event.data.counter"/>
-          <assign location="stamp.nodeId" expr="_event.data.nodeId"/>
-          <assign location="clock" expr="HlcReceive(clock, stamp, clock.wallTime, node)"/>
-        </if>
-        <!-- A write this copy made and no longer holds, which a peer sends back when the
-             copy has been restarted from an older save, is taken in with the clock moved
-             up to it, so that what the copy writes next is stamped after it and never with
-             a dot it has already used. A write made here that the clock already stands at
-             (every one, as it is first handled) moves nothing. -->
-        <if cond="_event.data.nodeId === node &amp;&amp; (_event.data.wallTime &gt; clock.wallTime || (_event.data.wallTime === clock.wallTime &amp;&amp; _event.data.counter &gt; clock.counter))">
-          <assign location="clock.wallTime" expr="_event.data.wallTime"/>
-          <assign location="clock.counter" expr="_event.data.counter"/>
-        </if>
-        <assign location="entry.element" expr="_event.data.id"/>
-        <assign location="entry.element" expr="entry.element * 65536 + _event.data.field"/>
-        <assign location="entry.wallTime" expr="_event.data.wallTime"/>
-        <assign location="entry.counter" expr="_event.data.counter"/>
-        <assign location="entry.nodeId" expr="_event.data.nodeId"/>
-        <!-- Whether the write is live: no tombstone names it. One a person wrote over
-             before it arrived is not taken in, and only a live one is added. And whether
-             its value is already held, which a write that arrives twice is. -->
-        <assign location="isLive" expr="true"/>
-        <foreach array="tombstones" item="t">
-          <if cond="t.element === entry.element &amp;&amp; t.wallTime === entry.wallTime &amp;&amp; t.counter === entry.counter &amp;&amp; t.nodeId === entry.nodeId">
-            <assign location="isLive" expr="false"/>
-          </if>
-        </foreach>
-        <if cond="isLive">
-          <sce:clear target="one"/>
-          <sce:append target="one" expr="entry"/>
-          <assign location="adds" expr="OrsetUnion(adds, one)"/>
-        </if>
-        <assign location="held.id" expr="_event.data.id"/>
-        <assign location="held.field" expr="_event.data.field"/>
-        <assign location="held.value" expr="_event.data.value"/>
-        <assign location="held.wallTime" expr="_event.data.wallTime"/>
-        <assign location="held.counter" expr="_event.data.counter"/>
-        <assign location="held.nodeId" expr="_event.data.nodeId"/>
-        <assign location="present" expr="MvValueHolds(values, held)"/>
-        <if cond="isLive &amp;&amp; !present">
-          <assign location="values" expr="MvValueKeep(values, held)"/>
-          <send target="#_internal" event="record_list.keep">
-            <param name="kind" expr="0"/>
-            <param name="element" expr="entry.element"/>
-            <param name="wallTime" expr="_event.data.wallTime"/>
-            <param name="counter" expr="_event.data.counter"/>
-            <param name="nodeId" expr="_event.data.nodeId"/>
-          </send>
-        </if>
-        <if cond="isLive &amp;&amp; !present &amp;&amp; announce">
-          <send target="#_internal" event="record_list.announce">
-            <param name="id" expr="_event.data.id"/>
-            <param name="field" expr="_event.data.field"/>
-          </send>
-        </if>
-
-        <!-- The hub passes it on to every person's copy, its author's included, which
-             holds it already and takes nothing from it. -->
-        <if cond="hub">
-          <send target="#people" event="record_list.write">
-            <param name="id" expr="_event.data.id"/>
-            <param name="field" expr="_event.data.field"/>
-            <param name="value" expr="_event.data.value"/>
-            <param name="text" expr="_event.data.text"/>
-            <param name="wallTime" expr="_event.data.wallTime"/>
-            <param name="counter" expr="_event.data.counter"/>
-            <param name="nodeId" expr="_event.data.nodeId"/>
-          </send>
-        </if>
+        <assign location="part.text" expr="_event.data.text"/>
+        <assign location="part.kind" expr="0"/>
+        <assign location="part.id" expr="_event.data.id"/>
+        <assign location="part.field" expr="_event.data.field"/>
+        <assign location="part.value" expr="_event.data.value"/>
+        <assign location="part.wallTime" expr="_event.data.wallTime"/>
+        <assign location="part.counter" expr="_event.data.counter"/>
+        <assign location="part.nodeId" expr="_event.data.nodeId"/>
+        <assign location="part.by" expr="_event.data.nodeId"/>
+        <assign location="part.atWallTime" expr="_event.data.wallTime"/>
+        <assign location="part.atCounter" expr="_event.data.counter"/>
+        <assign location="part.parts" expr="_event.data.parts"/>
+        <send target="#_internal" event="record_list.arrive"/>
       </if>
     </transition>
 
-    <!-- A value someone wrote over, from a person here or from elsewhere: its add is
-         named by a tombstone, and its value, if held, is taken out. The hub takes it only
-         from a member the host let write, as it takes a write (`by` is who wrote over).
-         A value taken out is told to the parent (record_list.announce). -->
+    <!-- A write-over that is part of a change stamped at or before the floor is let go,
+         and counted in `late`, as a write of that time is: every copy held the same up to
+         the floor when it was settled, and what this copy does not hold of it, it forgot.
+         A write-over that is a change of its own carries no stamp, and is taken as it
+         always was. -->
+    <transition event="record_list.supersede" cond="floor &gt; 0 &amp;&amp; _event.data.parts &gt; 1 &amp;&amp; _event.data.atWallTime &lt;= floor" type="internal">
+      <assign location="late" expr="late + 1"/>
+    </transition>
+
+    <!-- A value someone wrote over, as a peer sent it (or the host gave it): judged here
+         and handed on to `record_list.arrive` as the part in hand. The hub takes it only
+         from a member the host let write, as it takes a write (`by` is who wrote over). -->
     <transition event="record_list.supersede" type="internal">
       <assign location="authorized" expr="true"/>
       <if cond="hub &amp;&amp; len(roster) &gt; 0">
@@ -575,69 +903,103 @@
         <assign location="denied" expr="denied + 1"/>
       </if>
       <if cond="authorized">
-        <assign location="entry.element" expr="_event.data.id"/>
-        <assign location="entry.element" expr="entry.element * 65536 + _event.data.field"/>
-        <assign location="entry.wallTime" expr="_event.data.wallTime"/>
-        <assign location="entry.counter" expr="_event.data.counter"/>
-        <assign location="entry.nodeId" expr="_event.data.nodeId"/>
-        <!-- Whether the tombstone is new, which one that arrives twice is not. -->
-        <assign location="known" expr="false"/>
+        <assign location="part.kind" expr="1"/>
+        <assign location="part.id" expr="_event.data.id"/>
+        <assign location="part.field" expr="_event.data.field"/>
+        <assign location="part.value" expr="0"/>
+        <assign location="part.text" expr="''"/>
+        <assign location="part.wallTime" expr="_event.data.wallTime"/>
+        <assign location="part.counter" expr="_event.data.counter"/>
+        <assign location="part.nodeId" expr="_event.data.nodeId"/>
+        <assign location="part.by" expr="_event.data.by"/>
+        <assign location="part.atWallTime" expr="_event.data.atWallTime"/>
+        <assign location="part.atCounter" expr="_event.data.atCounter"/>
+        <assign location="part.parts" expr="_event.data.parts"/>
+        <send target="#_internal" event="record_list.arrive"/>
+      </if>
+    </transition>
+
+    <!-- The part in hand, as a peer sent it. One that is a change of its own is taken
+         in. One of a change of more parts is held in `waiting` until the copy holds every
+         part of its change, and then all of them are taken in together, so the change is
+         merged, and told, as one: unless the copy holds it already (a write it holds or a
+         tombstone names, a tombstone it has), which is not held again; and then every part
+         the copy holds of the same change is taken in at once, since the change has
+         reached it in pieces already. A part already waiting is not held twice. Last, the
+         hub passes it on to every person's copy as it came, its author's included, which
+         holds it already and takes nothing from it: the hub holds nothing back from the
+         people while a part of a change is late. -->
+    <transition event="record_list.arrive" type="internal">
+      <if cond="part.parts &gt; 1">
+        <assign location="entry.element" expr="part.id"/>
+        <assign location="entry.element" expr="entry.element * 65536 + part.field"/>
+        <assign location="entry.wallTime" expr="part.wallTime"/>
+        <assign location="entry.counter" expr="part.counter"/>
+        <assign location="entry.nodeId" expr="part.nodeId"/>
+        <assign location="already" expr="false"/>
         <foreach array="tombstones" item="t">
           <if cond="t.element === entry.element &amp;&amp; t.wallTime === entry.wallTime &amp;&amp; t.counter === entry.counter &amp;&amp; t.nodeId === entry.nodeId">
-            <assign location="known" expr="true"/>
+            <assign location="already" expr="true"/>
           </if>
         </foreach>
-        <sce:clear target="one"/>
-        <sce:append target="one" expr="entry"/>
-        <assign location="tombstones" expr="OrsetUnion(tombstones, one)"/>
-        <!-- The add it names is no longer live: it leaves `adds` (a tombstone that is
-             not new leaves nothing to take out). -->
-        <assign location="adds" expr="OrsetLive(adds, one)"/>
-
-        <!-- And whether the write it names is held, which is when its add leaves the
-             digest as the tombstone enters it. -->
-        <assign location="held.id" expr="_event.data.id"/>
-        <assign location="held.field" expr="_event.data.field"/>
-        <assign location="held.wallTime" expr="_event.data.wallTime"/>
-        <assign location="held.counter" expr="_event.data.counter"/>
-        <assign location="held.nodeId" expr="_event.data.nodeId"/>
-        <assign location="wasLive" expr="MvValueHolds(values, held)"/>
-        <assign location="values" expr="MvValueDrop(values, held)"/>
-        <if cond="!known">
-          <send target="#_internal" event="record_list.keep">
-            <param name="kind" expr="1"/>
-            <param name="element" expr="entry.element"/>
-            <param name="wallTime" expr="_event.data.wallTime"/>
-            <param name="counter" expr="_event.data.counter"/>
-            <param name="nodeId" expr="_event.data.nodeId"/>
-          </send>
+        <if cond="part.kind === 0">
+          <assign location="held.id" expr="part.id"/>
+          <assign location="held.field" expr="part.field"/>
+          <assign location="held.wallTime" expr="part.wallTime"/>
+          <assign location="held.counter" expr="part.counter"/>
+          <assign location="held.nodeId" expr="part.nodeId"/>
+          <assign location="present" expr="MvValueHolds(values, held)"/>
+          <if cond="present">
+            <assign location="already" expr="true"/>
+          </if>
         </if>
-        <if cond="wasLive">
-          <send target="#_internal" event="record_list.keep">
-            <param name="kind" expr="0"/>
-            <param name="element" expr="entry.element"/>
-            <param name="wallTime" expr="_event.data.wallTime"/>
-            <param name="counter" expr="_event.data.counter"/>
-            <param name="nodeId" expr="_event.data.nodeId"/>
-          </send>
+        <assign location="listed" expr="false"/>
+        <foreach array="waiting" item="w">
+          <if cond="w.kind === part.kind &amp;&amp; w.id === part.id &amp;&amp; w.field === part.field &amp;&amp; w.wallTime === part.wallTime &amp;&amp; w.counter === part.counter &amp;&amp; w.nodeId === part.nodeId">
+            <assign location="listed" expr="true"/>
+          </if>
+        </foreach>
+        <if cond="!already &amp;&amp; !listed">
+          <sce:append target="waiting" expr="part"/>
         </if>
-        <if cond="wasLive &amp;&amp; announce">
-          <send target="#_internal" event="record_list.announce">
-            <param name="id" expr="_event.data.id"/>
-            <param name="field" expr="_event.data.field"/>
-          </send>
+        <assign location="count" expr="0"/>
+        <foreach array="waiting" item="w">
+          <if cond="w.atWallTime === part.atWallTime &amp;&amp; w.atCounter === part.atCounter &amp;&amp; w.by === part.by">
+            <assign location="count" expr="count + 1"/>
+          </if>
+        </foreach>
+        <if cond="already || count &gt;= part.parts">
+          <sce:clear target="taking"/>
+          <assign location="took" expr="0"/>
+          <sce:clear target="kept"/>
+          <foreach array="waiting" item="w">
+            <if cond="w.atWallTime === part.atWallTime &amp;&amp; w.atCounter === part.atCounter &amp;&amp; w.by === part.by">
+              <sce:append target="taking" expr="w"/>
+            </if>
+            <if cond="w.atWallTime !== part.atWallTime || w.atCounter !== part.atCounter || w.by !== part.by">
+              <sce:append target="kept" expr="w"/>
+            </if>
+          </foreach>
+          <sce:clear target="waiting"/>
+          <foreach array="kept" item="k">
+            <sce:append target="waiting" expr="k"/>
+          </foreach>
+          <foreach array="taking" item="t">
+            <send target="#_internal" event="record_list.take"/>
+          </foreach>
         </if>
-
-        <if cond="hub">
-          <send target="#people" event="record_list.supersede">
-            <param name="id" expr="_event.data.id"/>
-            <param name="field" expr="_event.data.field"/>
-            <param name="wallTime" expr="_event.data.wallTime"/>
-            <param name="counter" expr="_event.data.counter"/>
-            <param name="nodeId" expr="_event.data.nodeId"/>
-            <param name="by" expr="_event.data.by"/>
-          </send>
-        </if>
+      </if>
+      <if cond="part.parts &lt;= 1">
+        <sce:clear target="taking"/>
+        <assign location="took" expr="0"/>
+        <sce:append target="taking" expr="part"/>
+        <send target="#_internal" event="record_list.take"/>
+      </if>
+      <if cond="hub">
+        <sce:clear target="passing"/>
+        <assign location="passed" expr="0"/>
+        <sce:append target="passing" expr="part"/>
+        <send target="#_internal" event="record_list.pass"/>
       </if>
     </transition>
 
@@ -755,6 +1117,19 @@
       <if cond="_event.data.before &gt; floor">
         <assign location="floor" expr="_event.data.before"/>
       </if>
+      <!-- A part the copy holds of a change stamped at or before the instant is dropped:
+           what is settled the copy holds whole already, or it is a copy the host will
+           start again. -->
+      <sce:clear target="kept"/>
+      <foreach array="waiting" item="w">
+        <if cond="w.atWallTime &gt; _event.data.before">
+          <sce:append target="kept" expr="w"/>
+        </if>
+      </foreach>
+      <sce:clear target="waiting"/>
+      <foreach array="kept" item="k">
+        <sce:append target="waiting" expr="k"/>
+      </foreach>
     </transition>
 
     <!-- The host asks the hub to settle what is stamped at or before an instant, so that
@@ -903,6 +1278,18 @@
           <assign location="agreed" expr="_event.data.hash"/>
           <assign location="stale" expr="false"/>
           <assign location="frozenFor" expr="-1"/>
+          <!-- A part it holds of a change stamped at or before the instant is dropped:
+               every copy held the same up to it, so the copy holds that change already. -->
+          <sce:clear target="kept"/>
+          <foreach array="waiting" item="w">
+            <if cond="w.atWallTime &gt; _event.data.before">
+              <sce:append target="kept" expr="w"/>
+            </if>
+          </foreach>
+          <sce:clear target="waiting"/>
+          <foreach array="kept" item="k">
+            <sce:append target="waiting" expr="k"/>
+          </foreach>
         </if>
         <if cond="frozenHash !== _event.data.hash">
           <assign location="stale" expr="true"/>
@@ -910,10 +1297,21 @@
       </if>
     </transition>
 
-    <!-- The host's word that this copy's link is back: it shows its peers the root of
-         its digest. A person's copy has only the hub to show it to; the hub shows every
+    <!-- The host's word that this copy's link is back: it takes in every part it holds of
+         a change not yet whole, each alone, since what a link lost of them the walk
+         gives back one operation at a time, and it shows its peers the root of its
+         digest. A person's copy has only the hub to show it to; the hub shows every
          person (to 0), however many the host has. -->
     <transition event="record_list.resync" type="internal">
+      <sce:clear target="taking"/>
+      <assign location="took" expr="0"/>
+      <foreach array="waiting" item="w">
+        <sce:append target="taking" expr="w"/>
+      </foreach>
+      <sce:clear target="waiting"/>
+      <foreach array="taking" item="t">
+        <send target="#_internal" event="record_list.take"/>
+      </foreach>
       <send target="#_internal" event="record_list.visit">
         <param name="to" expr="0"/>
         <param name="depth" expr="0"/>
@@ -1067,8 +1465,20 @@
       </foreach>
     </transition>
 
+    <!-- Every failure is counted. One a command or the end of a change met while it was
+         staging the change or turning it into its operations (`probing`) refuses the
+         change: a text past what a person writes, a change past the room of `staged` or
+         of `taking`. The block it stood in has ended, so a command that ended the change
+         has its end raised here, where the change is refused whole. -->
     <transition event="error.execution" type="internal">
       <assign location="refusals" expr="refusals + 1"/>
+      <if cond="probing">
+        <assign location="probing" expr="false"/>
+        <assign location="spoiled" expr="true"/>
+        <if cond="!holding">
+          <send target="#_internal" event="record_list.close"/>
+        </if>
+      </if>
     </transition>
   </state>
 </scxml>

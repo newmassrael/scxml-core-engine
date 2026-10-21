@@ -1164,4 +1164,7 @@ a_copy_does_what_it_did_in_the_world! {
     // A copy given no Mesh router (`"router": false`) keeps every change it makes:
     // what it does to itself is queued before a send to a peer fails (docs/adr/0046).
     record_list_holds_its_changes_with_no_router: record_list_sm::{RecordListPolicy, RecordListPersist} => "static_datamodel/scenarios/record_list_offline.json";
+    // A change is one unit: staged, stamped once, taken in whole, and sent as parts a
+    // copy holds until they are all there (docs/adr/0046).
+    record_list_takes_a_change_as_one_unit: record_list_sm::{RecordListPolicy, RecordListPersist} => "static_datamodel/scenarios/record_list_change.json";
 }

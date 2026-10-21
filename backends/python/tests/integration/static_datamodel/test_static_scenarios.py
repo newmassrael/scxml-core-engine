@@ -785,6 +785,12 @@ def test_a_standard_record_list_with_no_router_keeps_its_changes() -> None:
     replay("record_list_offline")
 
 
+# A change is one unit: staged, stamped once, taken in whole, and sent as parts a copy
+# holds until they are all there (docs/adr/0046).
+def test_a_standard_record_list_takes_a_change_as_one_unit() -> None:
+    replay("record_list_change")
+
+
 # A statechart that invokes the standard record list by its library name is told what
 # each register a change moved holds: its count and its values in the order of their
 # dots, a count of 0 when every value was written over, and nothing for a write the

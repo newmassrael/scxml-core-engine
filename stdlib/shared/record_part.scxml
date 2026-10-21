@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/shared/record_part.scxml — one part of a change to a shared record list
+  (record_list, docs/adr/0046), as a copy keeps it in its own lists: the record type of
+  the commands a change stages, of the operations a copy takes in and passes on, and of
+  the parts of changes it holds until they are whole. It travels in no message (the
+  event it names is never sent); the messages are record_write and record_supersede.
+
+  `kind` says what it is. Of a command a change stages: 0 an edit (the register `id`,
+  `field` given `value` or `text`), 1 a clear (the register written over and given
+  nothing) and 2 a retire (every register of the row `id` written over). Of an
+  operation: 0 a write (of `value` and `text`, at the dot `wallTime`, `counter`,
+  `nodeId`) and 1 a write-over of the value of that dot. `by` is the node whose change it
+  is, `atWallTime` and `atCounter` the change's stamp, and `parts` how many operations
+  the change has; a write of a change is stamped with the change's stamp, which is its
+  dot.
+
+  `text` is bounded as a write's is, `merge_text`, so a write's text is kept here whole.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="record_part"
+       sce:event-name="record_list.part">
+  <datamodel>
+    <data id="kind" sce:type="uint8" sce:direction="in"/>
+    <data id="id" sce:type="uint32" sce:direction="in"/>
+    <data id="field" sce:type="uint16" sce:direction="in"/>
+    <data id="value" sce:type="int64" sce:direction="in"/>
+    <data id="text" sce:type="string" sce:max-size="96" sce:limit="merge_text" sce:direction="in"/>
+    <data id="wallTime" sce:type="int64" sce:direction="in"/>
+    <data id="counter" sce:type="uint32" sce:direction="in"/>
+    <data id="nodeId" sce:type="uint64" sce:direction="in"/>
+    <data id="by" sce:type="uint64" sce:direction="in"/>
+    <data id="atWallTime" sce:type="int64" sce:direction="in"/>
+    <data id="atCounter" sce:type="uint32" sce:direction="in"/>
+    <data id="parts" sce:type="uint32" sce:direction="in"/>
+  </datamodel>
+</scxml>

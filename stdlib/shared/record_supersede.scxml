@@ -9,13 +9,20 @@
   not erase a value it has not seen, so each copy takes the writes that were seen out one
   by one, and a value written at the same time by someone who had not seen it is not named
   here and stays (record_list).
+
+  The second revision adds what a change of more than one operation needs
+  (docs/adr/0046): `parts`, how many operations the change has (1 for a change that is
+  this supersede alone, which carries none of the three), and `atWallTime` and
+  `atCounter`, the stamp of the change, whose node is `by`. A copy holds such a
+  supersede until it holds every part of its change, and takes them in together.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        version="1.0"
        sce:kind="event-schema"
        name="record_supersede"
-       sce:event-name="record_list.supersede">
+       sce:event-name="record_list.supersede"
+       sce:revision="2">
   <datamodel>
     <data id="id" sce:type="uint32" sce:direction="in"/>
     <data id="field" sce:type="uint16" sce:direction="in"/>
@@ -23,5 +30,8 @@
     <data id="counter" sce:type="uint32" sce:direction="in"/>
     <data id="nodeId" sce:type="uint64" sce:direction="in"/>
     <data id="by" sce:type="uint64" sce:direction="in"/>
+    <data id="parts" sce:type="uint32" sce:direction="in" sce:since="2" sce:default="1"/>
+    <data id="atWallTime" sce:type="int64" sce:direction="in" sce:since="2" sce:default="0"/>
+    <data id="atCounter" sce:type="uint32" sce:direction="in" sce:since="2" sce:default="0"/>
   </datamodel>
 </scxml>

@@ -12,18 +12,26 @@
   moves by giving the limit `shared_typed_text` another number, and the copy holds a
   text past it to the same bound and refuses the change whole. A write carries more
   (record_write), for what a host puts there in place of the text.
+
+  `more`, added by the second revision, says that the change goes on: the edit is held
+  with the commands before it, and the first command that does not say `more` ends the
+  change, which the copy then judges, stamps and takes in as one (docs/adr/0046). An
+  edit that does not carry it, as every edit of the first revision, is a change of its
+  own.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        version="1.0"
        sce:kind="event-schema"
        name="record_edit"
-       sce:event-name="record_list.edit">
+       sce:event-name="record_list.edit"
+       sce:revision="2">
   <datamodel>
     <data id="id" sce:type="uint32" sce:direction="in"/>
     <data id="field" sce:type="uint16" sce:direction="in"/>
     <data id="value" sce:type="int64" sce:direction="in"/>
     <data id="text" sce:type="string" sce:max-size="32" sce:limit="shared_typed_text" sce:direction="in"/>
     <data id="now" sce:type="int64" sce:direction="in"/>
+    <data id="more" sce:type="bool" sce:direction="in" sce:since="2" sce:default="false"/>
   </datamodel>
 </scxml>
