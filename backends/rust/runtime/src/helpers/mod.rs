@@ -38,6 +38,7 @@
 //!   set, entry set (`MicrostepAlgorithms` / `EntrySetAlgorithms`)
 //! - [`scxml_constants`]: W3C URIs and string literals
 //! - [`send`]: Send action helpers (static-target subset)
+//! - [`session_id`]: a root session's `_sessionid`, given by the host or drawn
 //! - [`state_policy_concepts`]: Rust trait bounds replacing C++20 concepts
 //! - [`unique_id_generator`]: Session/send/invoke/event ID generation
 //! - `url_encoding` (std-only): RFC 3986 URL encoding/decoding
