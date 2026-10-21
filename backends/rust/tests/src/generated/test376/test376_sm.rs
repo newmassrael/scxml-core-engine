@@ -701,8 +701,8 @@ impl StatePolicy for Test376Policy {
                             err_meta.metadata.send_id = send_id.clone();
                             engine.raise(err_meta);
                         }
+                        let _ = send_id; // the refusal may carry no error event to name it
                         break 'action_block;
-                        let _ = send_id; // suppress unused warning when no send operation
                     }
                 }
                 // W3C SCXML 3.8: onentry block 2/2

@@ -422,11 +422,6 @@ class Test159StateMachine(
                 // processed ends the block.
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-
-
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), com.sce.runtime.ScriptSource.lua("_scxml_add(Var1, 1)", "Var1 + 1"))) {
-                return@run
-            }
                 }
             }
         }

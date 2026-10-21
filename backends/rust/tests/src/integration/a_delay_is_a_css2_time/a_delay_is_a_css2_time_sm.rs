@@ -879,29 +879,6 @@ impl StatePolicy for ADelayIsACss2TimePolicy {
                         let _ = send_id; // the refusal may carry no error event to name it
                         break 'action_block; // W3C SCXML 4.9: the error ends the block
                     }
-
-                    {
-                        // W3C SCXML 5.3: <assign location="after">
-                        self.ensure_script_engine();
-                        let sid = self.session_id.as_ref().unwrap().clone();
-                        let se = self.script_engine.clone();
-                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                        let expr = "_scxml_add(after, 1)";
-                        // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-                        // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-                        // through evaluate_expression + set_variable would round-trip through ScriptValue
-                        // and create a fresh table, breaking reference equality.
-                        let assign_script = format!("{} = {}", "after", expr);
-                        if let Err(e) = se.execute_script(&sid, &assign_script) {
-                            ::sce_rust_runtime::sce_log_error!("Assign failed for 'after': {}", e);
-                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                                ADelayIsACss2TimeEvent::ErrorExecution,
-                                "<assign> to 'after' failed",
-                            ));
-                            // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
-                            break 'action_block;
-                        }
-                    }
                 }
                 // W3C SCXML 3.8: onentry block 2/3
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)

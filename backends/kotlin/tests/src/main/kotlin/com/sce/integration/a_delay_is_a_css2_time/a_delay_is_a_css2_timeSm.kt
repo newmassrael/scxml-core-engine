@@ -536,11 +536,6 @@ class ADelayIsACss2TimeStateMachine(
                 // processed ends the block.
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-
-
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("after", "after"), com.sce.runtime.ScriptSource.lua("_scxml_add(after, 1)", "after + 1"))) {
-                return@run
-            }
                 }
                 // W3C SCXML 3.8: Onentry block 2/3
                 run {

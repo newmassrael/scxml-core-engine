@@ -701,11 +701,6 @@ class ASendReachesOnlyWhatItsTargetNamesStateMachine(
                 // processed ends the block.
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-
-
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("afterRefused", "afterRefused"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
-                return@run
-            }
                 }
                 // W3C SCXML 3.8: Onentry block 2/7
                 run {
@@ -721,11 +716,6 @@ class ASendReachesOnlyWhatItsTargetNamesStateMachine(
                 // processed ends the block.
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-
-
-            if (!executeAssign(com.sce.runtime.ScriptSource.lua("afterNobody", "afterNobody"), com.sce.runtime.ScriptSource.lua("1", "1"))) {
-                return@run
-            }
                 }
                 // W3C SCXML 3.8: Onentry block 3/7
                 run {

@@ -863,8 +863,8 @@ impl StatePolicy for StaticSendTypePolicy {
                                         let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StaticSendTypeEvent::ErrorExecution, "<send type='sce:undeclared-type'> names a processor this platform does not support");
                                         engine.raise(err_meta);
                                     }
+                                    let _ = send_id; // the refusal may carry no error event to name it
                                     break 'action_block;
-                                    let _ = send_id; // suppress unused warning when no send operation
                                 }
                             }
                         }

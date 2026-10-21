@@ -414,32 +414,8 @@ impl StatePolicy for Test199Policy {
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(Test199Event::ErrorExecution, "<send type='unsupported_type'> names a processor this platform does not support");
                             engine.raise(err_meta);
                         }
+                        let _ = send_id; // the refusal may carry no error event to name it
                         break 'action_block;
-                        let _ = send_id; // suppress unused warning when no send operation
-                    }
-
-                    {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_1");
-
-                        let event_data: &str = "";
-
-                        // W3C SCXML 6.2: Default send (no target = external event)
-                        {
-                            let mut meta =
-                                sce_rust_runtime::EventWithMetadata::new(Test199Event::Timeout);
-                            // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
-                            meta.metadata = sce_rust_runtime::EventMetadata::external(
-                                send_id.clone(),
-                                ::sce_rust_runtime::sce_string_from_str(
-                                    self.session_id.as_deref().unwrap_or(""),
-                                ),
-                            );
-                            meta.set_event_data(event_data);
-                            engine.raise_external_with_meta(meta);
-                        }
-
-                        let _ = event_data; // suppress unused warning in branches that skip dispatch
-                        let _ = send_id; // suppress unused warning when no send operation
                     }
                 }
             }

@@ -700,11 +700,6 @@ impl StatePolicy for Test346Policy {
                         // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
                         break 'action_block;
                     }
-
-                    // W3C SCXML 4.2: <raise event="event1">
-                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                        Test346Event::Event1,
-                    ));
                 }
             }
             Test346State::S1 => {
@@ -729,11 +724,6 @@ impl StatePolicy for Test346Policy {
                         // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
                         break 'action_block;
                     }
-
-                    // W3C SCXML 4.2: <raise event="event2">
-                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                        Test346Event::Event2,
-                    ));
                 }
             }
             Test346State::S2 => {
@@ -758,11 +748,6 @@ impl StatePolicy for Test346Policy {
                         // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
                         break 'action_block;
                     }
-
-                    // W3C SCXML 4.2: <raise event="event3">
-                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                        Test346Event::Event3,
-                    ));
                 }
             }
             Test346State::S3 => {
@@ -787,11 +772,6 @@ impl StatePolicy for Test346Policy {
                         // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
                         break 'action_block;
                     }
-
-                    // W3C SCXML 4.2: <raise event="event4">
-                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                        Test346Event::Event4,
-                    ));
                 }
             }
             _ => {}

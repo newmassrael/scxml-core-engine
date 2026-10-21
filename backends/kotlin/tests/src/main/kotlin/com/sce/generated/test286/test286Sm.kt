@@ -403,8 +403,6 @@ class Test286StateMachine(
             }) {
                 return@run
             }
-
-            raiseInternal(Test286Event.Foo)
                 }
             }
         }

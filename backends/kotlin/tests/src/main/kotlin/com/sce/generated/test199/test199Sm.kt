@@ -175,18 +175,6 @@ class Test199StateMachine(
                 // processed ends the block.
                 return@run
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-
-
-            if (run send@{
-            val sendData = ""
-            // W3C SCXML 6.2: send to this session's external queue
-            send(Test199Event.Timeout, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: "", data = sendData))
-            false
-            }) {
-                // W3C SCXML 4.9: an error raised while this element was
-                // processed ends the block.
-                return@run
-            } // end of run send@ (W3C SCXML 6.2: a discarded message)
                 }
             }
         }

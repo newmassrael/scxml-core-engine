@@ -723,9 +723,9 @@ impl StatePolicy for Test332Policy {
                                 err_meta.metadata.send_id = send_id.clone();
                                 engine.raise(err_meta);
                             }
+                            let _ = send_id; // the refusal may carry no error event to name it
                             break 'action_block;
                         } // end of the prologue's discard (W3C SCXML 6.2: an argument error sends nothing)
-                        let _ = send_id; // suppress unused warning when no send operation
                     }
                 }
             }

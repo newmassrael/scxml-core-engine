@@ -715,9 +715,6 @@ impl StatePolicy for Test322Policy {
                         // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
                         break 'action_block;
                     }
-
-                    // W3C SCXML 4.2: <raise event="foo">
-                    engine.raise(sce_rust_runtime::EventWithMetadata::new(Test322Event::Foo));
                 }
             }
             _ => {}
