@@ -5200,6 +5200,166 @@ mod tests {
         assert_eq!(rust.matches("if if_cond_failed {").count(), 1, "{rust}");
     }
 
+    /// Three `<foreach>`es over one array: two whose body ends its block on
+    /// every path — after a `<raise>` that still runs — one with an `index`
+    /// and one without, and one whose body can reach a second item.
+    const FOREACH_BODY_ENDS_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="ecmascript" name="foreach_ends" initial="s0">
+  <datamodel>
+    <data id="items" expr="[1, 2]"/>
+  </datamodel>
+  <state id="s0">
+    <onentry>
+      <foreach array="items" item="item" index="at">
+        <raise event="body"/>
+        <send event="x" target="!invalid"/>
+        <raise event="never"/>
+      </foreach>
+      <raise event="looped"/>
+    </onentry>
+    <onentry>
+      <foreach array="items" item="item">
+        <raise event="body"/>
+        <assign location="_sessionid" expr="1"/>
+        <raise event="never"/>
+      </foreach>
+      <raise event="looped"/>
+    </onentry>
+    <onentry>
+      <foreach array="items" item="item">
+        <raise event="walked"/>
+      </foreach>
+    </onentry>
+  </state>
+</scxml>"##;
+
+    /// A Rust `<foreach>` body that ends its block on every path never reaches
+    /// a second item, and clippy refuses a loop around it (`never_loop`), so it
+    /// runs under an `if let` over the array's first item instead: the item
+    /// and the index are assigned before it, an empty array runs nothing, and
+    /// an array that is not one is still error.execution. A body that can
+    /// reach a second item keeps its loop.
+    #[test]
+    fn rust_runs_a_foreach_body_that_always_ends_its_block_for_the_first_item_only() {
+        let mut model = parse(FOREACH_BODY_ENDS_SCXML);
+        crate::analyzer::analyze(&mut model, "");
+        let rust =
+            generate(&model, &crate::find_template_base().join("rust"), false).expect("rust");
+
+        let unreachable = crate::unreachable_statements::unreachable_statements(
+            &rust,
+            crate::template_lexing::Syntax::Rust,
+        );
+        assert!(
+            unreachable.is_empty(),
+            "statements after a terminating statement: {unreachable:?}\n{rust}"
+        );
+        assert_eq!(
+            rust.matches("for (_idx, item_val) in arr.into_iter().enumerate() {")
+                .count(),
+            1,
+            "only the body that can reach a second item loops\n{rust}"
+        );
+        assert_eq!(
+            rust.matches("if let Some(item_val) = arr.into_iter().next() {")
+                .count(),
+            2,
+            "each body that ends runs for the first item\n{rust}"
+        );
+        assert!(
+            rust.contains("\"at\", sce_rust_runtime::ScriptValue::Int(0))"),
+            "the first item's index is assigned before its body\n{rust}"
+        );
+        assert_eq!(
+            rust.matches("\"<foreach array='items'> is not an array\"")
+                .count(),
+            3,
+            "an array that is not one is still error.execution\n{rust}"
+        );
+
+        let raises = |spelled: &str| raises_of(&rust, "EventWithMetadata::new(", spelled);
+        assert_eq!(raises("Event::Body)"), 2, "what precedes the end\n{rust}");
+        assert_eq!(raises("Event::Never)"), 0, "what follows it\n{rust}");
+        assert_eq!(raises("Event::Looped)"), 2, "after the <foreach>\n{rust}");
+        assert_eq!(raises("Event::Walked)"), 1, "a body that loops\n{rust}");
+    }
+
+    /// The same two shapes in a `sce-static` document, whose `<foreach>` is a
+    /// native loop over a list variable: one body that ends its block, with an
+    /// `index` and without, and one that can reach a second element.
+    const STATIC_FOREACH_BODY_ENDS_SCXML: &str = r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="sce-static" name="static_foreach_ends">
+  <datamodel>
+    <data id="picked" sce:type="list&lt;uint8&gt;" sce:capacity="4"/>
+    <data id="total" sce:type="uint32" expr="0"/>
+  </datamodel>
+  <state id="s">
+    <onentry>
+      <foreach array="picked" item="v" index="i">
+        <assign location="total" expr="total + i"/>
+        <send event="x" target="!invalid"/>
+        <raise event="never"/>
+      </foreach>
+      <foreach array="picked" item="v">
+        <send event="x" target="!invalid"/>
+      </foreach>
+      <foreach array="picked" item="v">
+        <assign location="total" expr="total + v"/>
+      </foreach>
+      <raise event="looped"/>
+    </onentry>
+  </state>
+</scxml>"##;
+
+    /// The native loop of a `sce-static` `<foreach>` whose body ends its block
+    /// on every path is the head the lowering gave for the first element
+    /// (`Action::native_loop_first`), not a `for` clippy refuses as one that
+    /// never loops; a body that can reach a second element keeps its `for`.
+    #[test]
+    fn rust_runs_a_native_foreach_body_that_always_ends_its_block_for_the_first_element_only() {
+        let mut model = parse(STATIC_FOREACH_BODY_ENDS_SCXML);
+        crate::analyzer::analyze(&mut model, "");
+        let rust =
+            generate(&model, &crate::find_template_base().join("rust"), false).expect("rust");
+
+        let unreachable = crate::unreachable_statements::unreachable_statements(
+            &rust,
+            crate::template_lexing::Syntax::Rust,
+        );
+        assert!(
+            unreachable.is_empty(),
+            "statements after a terminating statement: {unreachable:?}\n{rust}"
+        );
+        assert_eq!(
+            rust.matches(".clone().into_iter().enumerate().next() {")
+                .count(),
+            1,
+            "the indexed body that ends runs for the first element\n{rust}"
+        );
+        assert_eq!(
+            rust.matches(".clone().into_iter().enumerate() {").count(),
+            0,
+            "and is not walked by a loop\n{rust}"
+        );
+        assert_eq!(
+            rust.matches(".clone().into_iter().next() {").count(),
+            1,
+            "the body without an index that ends runs for the first element\n{rust}"
+        );
+        assert_eq!(
+            rust.lines()
+                .map(str::trim)
+                .filter(|line| line.starts_with("for ") && line.ends_with(".clone() {"))
+                .count(),
+            1,
+            "the body that can reach a second element keeps its loop\n{rust}"
+        );
+        let raises = |spelled: &str| raises_of(&rust, "EventWithMetadata::new(", spelled);
+        assert_eq!(raises("Event::Never)"), 0, "what follows the end\n{rust}");
+        assert_eq!(raises("Event::Looped)"), 1, "after the <foreach>\n{rust}");
+    }
+
     /// A machine whose entry sends to its parent, with elements before and
     /// after the `<send>`.
     const SEND_TO_PARENT_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>

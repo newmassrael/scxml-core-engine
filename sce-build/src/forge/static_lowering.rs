@@ -1296,6 +1296,16 @@ pub trait StaticTarget {
     ) -> Option<(String, String)> {
         None
     }
+    /// The head of a statement that runs a `<foreach>` body for the first
+    /// element of the same copy [`Self::foreach_loop`] walks, binding the same
+    /// loop variables, and runs nothing for an empty list: what a body that
+    /// ends its block on every path is emitted under, since it never reaches
+    /// a second element. Each iteration is opened by the prologue
+    /// [`Self::foreach_loop`] gives. `None` for a target whose templates keep
+    /// the loop for such a body.
+    fn foreach_first(&self, _list: &str, _item: &str, _index: Option<&str>) -> Option<String> {
+        None
+    }
     /// Raise `error.execution` with `message` (§scxml-3.12.2).
     fn raise_execution_error(&self, machine: &str, message: &str) -> String;
     /// `statement`, whose expressions can fail (SCE_FORGE.md §3.4.1), as an
@@ -2155,6 +2165,12 @@ impl RustTarget {
             .collect::<Vec<_>>()
             .join("\n")
     }
+
+    /// The local a `<foreach>` binds an element's position to before the
+    /// prologue reads it as the `uint32` index: `enumerate` counts in `usize`.
+    fn loop_position(index: &str) -> String {
+        format!("sce_position_of_{index}")
+    }
 }
 
 impl StaticTarget for RustTarget {
@@ -2765,12 +2781,24 @@ impl StaticTarget for RustTarget {
                 format!("let _ = &{item};"),
             ),
             Some(index) => {
-                let position = format!("sce_position_of_{index}");
+                let position = Self::loop_position(index);
                 (
                     format!("for ({position}, {item}) in {list}.clone().into_iter().enumerate()"),
                     format!("let {index} = {position} as u32; let _ = (&{item}, &{index});"),
                 )
             }
+        })
+    }
+    // The first element of the copy the loop above walks, bound by the same
+    // patterns, so the prologue it gives opens this one too: clippy reads a
+    // loop whose body always leaves it as one that never loops.
+    fn foreach_first(&self, list: &str, item: &str, index: Option<&str>) -> Option<String> {
+        Some(match index {
+            None => format!("if let Some({item}) = {list}.clone().into_iter().next()"),
+            Some(index) => format!(
+                "if let Some(({}, {item})) = {list}.clone().into_iter().enumerate().next()",
+                Self::loop_position(index)
+            ),
         })
     }
     fn raise_execution_error(&self, machine: &str, message: &str) -> String {
@@ -9460,6 +9488,9 @@ fn lower_action(
             ) {
                 action.native_loop = head;
                 action.native_loop_prologue = prologue;
+                action.native_loop_first = target
+                    .foreach_first(name, &item_local, index_local.as_deref())
+                    .unwrap_or_default();
             }
             // A record item is a record a `<send>` of the body may take whole.
             let holds_a_record = match elem {
@@ -10256,6 +10287,67 @@ mod tests {
 </scxml>"#,
             fields.join("\n    ")
         )
+    }
+
+    /// A Rust `<foreach>` is lowered to its loop and, beside it, to the head
+    /// that runs its body for the first element only: the same copy of the
+    /// list, bound by the same patterns, so the one prologue opens both.
+    #[test]
+    fn a_rust_foreach_is_given_the_head_of_its_first_element() {
+        let document = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="sce-static" name="m">
+  <datamodel>
+    <data id="picked" sce:type="list&lt;uint8&gt;" sce:capacity="4"/>
+    <data id="total" sce:type="uint32" expr="0"/>
+  </datamodel>
+  <state id="s">
+    <onentry>
+      <foreach array="picked" item="v">
+        <assign location="total" expr="total + v"/>
+      </foreach>
+      <foreach array="picked" item="v" index="i">
+        <assign location="total" expr="total + i"/>
+      </foreach>
+    </onentry>
+  </state>
+</scxml>"#;
+        let mut model = SCXMLParser::new()
+            .parse_string(document, "m")
+            .expect("parses");
+        crate::analyzer::analyze(&mut model, "m.scxml");
+        lower_rust(&mut model, "M").expect("lowers");
+        let heads: Vec<(String, String)> = model.states["s"].on_entry_blocks[0]
+            .iter()
+            .map(|action| (action.native_loop.clone(), action.native_loop_first.clone()))
+            .collect();
+        assert_eq!(heads.len(), 2, "{heads:?}");
+
+        let (walk, first) = &heads[0];
+        let (pattern, copy) = walk
+            .strip_prefix("for ")
+            .and_then(|rest| rest.split_once(" in "))
+            .unwrap_or_else(|| panic!("a loop head: {walk}"));
+        assert!(copy.ends_with(".clone()"), "the loop walks a copy: {walk}");
+        assert_eq!(
+            first,
+            &format!("if let Some({pattern}) = {copy}.into_iter().next()"),
+            "the first element of the same copy, by the same pattern"
+        );
+
+        let (walk, first) = &heads[1];
+        let (pattern, elements) = walk
+            .strip_prefix("for ")
+            .and_then(|rest| rest.split_once(" in "))
+            .unwrap_or_else(|| panic!("a loop head: {walk}"));
+        assert!(
+            pattern.starts_with("(sce_position_of_") && elements.ends_with(".enumerate()"),
+            "the indexed loop binds the position: {walk}"
+        );
+        assert_eq!(
+            first,
+            &format!("if let Some({pattern}) = {elements}.next()"),
+            "the first position and element, by the same pattern"
+        );
     }
 
     const LEVEL: &str = r#"<data id="level" sce:type="uint8" sce:direction="in"/>"#;

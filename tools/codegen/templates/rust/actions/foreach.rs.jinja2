@@ -19,14 +19,17 @@
    error leaves the enclosing `'action_block` from inside the loop, which ends
    the block that holds the <foreach> as §scxml-4.9 asks. #}
 {% if action.native_loop %}
-{{ action.native_loop }} {
-{% if action.native_loop_prologue %}
-    {{ action.native_loop_prologue }}
-{% endif %}
 {# The body is a list of its own (`block_flow`, rust/entry_exit_actions.rs.jinja2):
    an element in it that ends the block unconditionally ends what the body
-   emits, and not the list the <foreach> is in — the loop may run no times. #}
+   emits, and not the list the <foreach> is in — the loop may run no times.
+   The body is rendered before the head is written, so that the head knows:
+   a body that ends its block on every path never reaches a second element,
+   and clippy reads a loop around it as one that never loops (`never_loop`).
+   That body runs under the head the lowering gave for the first element
+   (`native_loop_first`), which binds the same loop variables and runs
+   nothing for an empty list. #}
 {% with block_flow = namespace(ended=false) %}
+{% set foreach_body %}
 {% for body_action in action.actions %}
 {% if not block_flow.ended %}
     {% with action=body_action %}
@@ -34,7 +37,12 @@
     {% endwith %}
 {% endif %}
 {% endfor %}
-{% endwith %}
+{% endset %}
+{{ action.native_loop_first if block_flow.ended else action.native_loop }} {
+{% if action.native_loop_prologue %}
+    {{ action.native_loop_prologue }}
+{% endif %}
+{{ foreach_body }}{% endwith %}
 }
 {% else %}
 {
@@ -76,6 +84,46 @@
         // Evaluate array expression
         match se.evaluate_expression(&sid, "{{ action.array | default("") | to_lua_expr | escape_rust }}") {
             Ok(sce_rust_runtime::ScriptValue::Array(arr)) => {
+{# The body is a list of its own (`block_flow`), rendered before the code
+   around it is written so that the code knows: a body that ends its block on
+   every path (an element in it the build has already refused) never reaches
+   a second item, and clippy reads a loop around it as one that never loops
+   (`never_loop`). That body runs for the first item only, under an `if let`
+   that runs nothing for an empty array; the item and the index are assigned
+   before it either way. #}
+{% with block_flow = namespace(ended=false) %}
+{% set foreach_body %}
+{% if action.actions and action.actions | length > 0 %}
+                    // W3C SCXML 4.6: Execute body actions. A failing one raises its
+                    // own error and leaves the enclosing block from here.
+{% for body_action in action.actions %}
+{% if not block_flow.ended %}
+                    {% with action=body_action %}
+                    {% include 'actions/' ~ body_action.type ~ '.rs.jinja2' %}
+                    {% endwith %}
+{% endif %}
+{% endfor %}
+{% endif %}
+{% endset %}
+{% if block_flow.ended %}
+                // W3C SCXML 4.6: the body ends the block on every path, so it
+                // runs for the first item at most, and for none of an empty array.
+                let mut foreach_success = true;
+                if let Some(item_val) = arr.into_iter().next() {
+                    // Set item variable
+                    if let Err(e) = se.set_variable(&sid, item_name, item_val) {
+                        ::sce_rust_runtime::sce_log_error!("Foreach: failed to set item '{}': {}", item_name, e);
+                        foreach_success = false;
+{% if action.index %}
+                    // Set index variable: the first item's position
+                    } else if let Err(e) = se.set_variable(&sid, "{{ action.index | to_lua_location | escape_rust }}", sce_rust_runtime::ScriptValue::Int(0)) {
+                        ::sce_rust_runtime::sce_log_error!("Foreach: failed to set index '{{ action.index }}': {}", e);
+                        foreach_success = false;
+{% endif %}
+                    } else {
+{{ foreach_body }}                    }
+                }
+{% else %}
                 // W3C SCXML 4.6: Execute foreach loop with error handling
                 let mut foreach_success = true;
                 for (_idx, item_val) in arr.into_iter().enumerate() {
@@ -93,20 +141,9 @@
                         break;
                     }
 {% endif %}
-{% if action.actions and action.actions | length > 0 %}
-                    // W3C SCXML 4.6: Execute body actions. A failing one raises its
-                    // own error and leaves the enclosing block from here.
-{% with block_flow = namespace(ended=false) %}
-{% for body_action in action.actions %}
-{% if not block_flow.ended %}
-                    {% with action=body_action %}
-                    {% include 'actions/' ~ body_action.type ~ '.rs.jinja2' %}
-                    {% endwith %}
+{{ foreach_body }}                }
 {% endif %}
-{% endfor %}
 {% endwith %}
-{% endif %}
-                }
                 if !foreach_success {
 {% if 'error.execution' in model.events %}
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<foreach> could not set its loop variable"));

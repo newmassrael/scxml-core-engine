@@ -567,6 +567,17 @@ pub struct Action {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     #[cfg_attr(test, schemars(skip))]
     pub native_loop_prologue: String,
+    /// Codegen-internal: the head that runs the body of [`Self::native_loop`]
+    /// for the list's first element only, binding the same loop variables
+    /// (and opened by the same [`Self::native_loop_prologue`]). A body that
+    /// ends its block on every path never reaches a second element, so the
+    /// backend's `<foreach>` template emits this head for it in place of a
+    /// loop that would never loop. Empty for a target whose templates keep the
+    /// loop. Transient and outside the AST contract, as [`Self::native_loop`]
+    /// is.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(test, schemars(skip))]
+    pub native_loop_first: String,
     /// Codegen-internal: the event data of a `<send>` carrying a literal
     /// `<content>` in a `sce-static` document, as the wire text
     /// ([`crate::filters::static_content_wire`]) — the JSON string the text
