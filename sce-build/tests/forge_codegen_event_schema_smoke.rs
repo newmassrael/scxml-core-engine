@@ -758,14 +758,7 @@ const IN_LINE_IMPORTS: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" 
 #[test]
 fn an_in_line_childs_imports_resolve_as_its_parents_do_on_every_backend() {
     let scratch = reset_scratch("in_line_imports");
-    let parent = scratch.join("in_line_imports.scxml");
-    std::fs::write(&parent, IN_LINE_IMPORTS).expect("write in_line_imports");
-    std::fs::copy(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/fixtures/static_datamodel/algorithm_days_in_month.scxml"),
-        scratch.join("algorithm_days_in_month.scxml"),
-    )
-    .expect("copy the algorithm beside the document");
+    let parent = in_line_imports_document(&scratch);
     for lang in STATIC_DATAMODEL_BACKENDS {
         let out_dir = scratch.join("out").join(lang);
         let extra: &[&str] = if lang == "cpp" { &["--no-format"] } else { &[] };
@@ -782,6 +775,78 @@ fn an_in_line_childs_imports_resolve_as_its_parents_do_on_every_backend() {
         assert!(
             spelling_free(&read_all(&child_files)).contains("daysinmonth"),
             "{lang}: the in-line child's machine does not name the algorithm it calls"
+        );
+    }
+}
+
+/// [`IN_LINE_IMPORTS`], written into `dir` as `in_line_imports.scxml`, with the
+/// algorithm its in-line child imports by a relative `src` beside it.
+fn in_line_imports_document(dir: &Path) -> PathBuf {
+    let parent = dir.join("in_line_imports.scxml");
+    std::fs::write(&parent, IN_LINE_IMPORTS).expect("write in_line_imports");
+    std::fs::copy(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/static_datamodel/algorithm_days_in_month.scxml"),
+        dir.join("algorithm_days_in_month.scxml"),
+    )
+    .expect("copy the algorithm beside the document");
+    parent
+}
+
+/// The staged flow of the integration regeneration scripts: the document is
+/// copied into a stage directory and generated there with `--input-root`
+/// naming the directory it was copied from, and the in-line child the run
+/// writes beside it (`<parent>__sce_synth_invoke__<id>.scxml`) is generated
+/// again from there `--as-child --parent-stem`. Neither copy has the algorithm
+/// its child imports beside it, and both runs read the import from the stage
+/// directory and were refused. A staged document's relative imports that are
+/// not beside it are read from the input root, the directory its author wrote
+/// them from and the one the `source-hash` covers; both runs succeed, and the
+/// child's machine is in the parent's package.
+#[test]
+fn a_staged_copy_reads_its_relative_imports_from_the_input_root() {
+    let scratch = reset_scratch("in_line_imports_staged");
+    let source_dir = scratch.join("source");
+    std::fs::create_dir_all(&source_dir).expect("create source dir");
+    let source = in_line_imports_document(&source_dir);
+    let stage = scratch.join("stage");
+    std::fs::create_dir_all(&stage).expect("create stage dir");
+    let staged = stage.join("in_line_imports.scxml");
+    std::fs::copy(&source, &staged).expect("stage the document");
+    let input_root = source_dir.to_string_lossy().into_owned();
+    generate_go_into(&staged, &stage, &["--input-root", &input_root]);
+    let child = stage.join("in_line_imports__sce_synth_invoke__kid.scxml");
+    assert!(
+        child.is_file(),
+        "the run did not write its in-line child's document beside its output"
+    );
+    generate_go_into(
+        &child,
+        &stage,
+        &[
+            "--as-child",
+            "--parent-stem",
+            "in_line_imports",
+            "--input-root",
+            &input_root,
+        ],
+    );
+    let machines = go_package_machines(&stage);
+    let file_names: Vec<&str> = machines.iter().map(|(name, _)| name.as_str()).collect();
+    assert_eq!(
+        file_names,
+        [
+            "in_line_imports__sce_synth_invoke__kid_sm.go",
+            "in_line_imports_sm.go"
+        ],
+        "the staged parent and its in-line child are generated into the stage"
+    );
+    for file_name in file_names {
+        let src = std::fs::read_to_string(stage.join(file_name)).expect("read go");
+        assert_eq!(
+            package_clause(&src),
+            Some("in_line_imports"),
+            "{file_name} is not in the parent's package"
         );
     }
 }

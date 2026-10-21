@@ -3667,6 +3667,12 @@ document whose `<content>` holds it: its `<sce:import>`s resolve as that documen
 library name (`sce:std/...`) from the library and any other `src` beside the document that
 holds it, on every route that reads the document (`generate`, `check`, the Interpreter's
 lowering). `sce-build/tests/forge_codegen_event_schema_smoke.rs` holds this on every backend.
+A copy staged away from the directory its author wrote it in — the parent a build copies
+into its output tree, or an inline child a run wrote to `-o` as its own document and a
+later `--as-child` run reads from there — has its relative imports read from the
+`--input-root` when they are not beside it: that is the directory they were written from,
+and the one the `source-hash` covers. Only a run whose imports are not beside the document
+reads them there; one whose imports are beside it reads them as before.
 
 A child written inline may start children inline in turn, to any depth. Each is a machine
 of the run that generates the document, written beside it in the package or module the

@@ -129,6 +129,9 @@ pub struct SCXMLParser {
     /// copy of the document has only that copy beside it, and the candidates
     /// arrive there after the parse — so without this every candidate reads
     /// as unreadable, declares nothing, and is given no argument at all.
+    /// The same directories are where a staged copy's relative
+    /// `<sce:import>`s are read from when they are not beside it
+    /// ([`SCXMLParser::import_dir`]).
     candidate_roots: Vec<PathBuf>,
 }
 
@@ -2314,6 +2317,38 @@ impl SCXMLParser {
             .with_candidate_roots(self.candidate_roots.clone())
     }
 
+    /// The directory the relative `<sce:import>`s of `model`, read from
+    /// `base_dir`, are resolved against: `base_dir` when it holds each of them,
+    /// else the first of the input roots ([`Self::with_candidate_roots`]) that
+    /// does, else `base_dir`, where a missing one is then reported.
+    ///
+    /// A document whose imports are not beside it is a copy staged away from
+    /// the directory its author wrote it in: the parent a build copies into its
+    /// output tree, or a child written in-line that a run wrote to `-o` as
+    /// `<parent>__sce_synth_invoke__<id>.scxml` and a later `--as-child` pass
+    /// reads from there. The input root is that directory — the caller names
+    /// it so the `source-hash` covers the documents there — so it is where
+    /// those references were written from and where the hash says the inputs
+    /// are. A standard (`sce:std/...`) import is read from the library from
+    /// any directory and decides nothing. One directory for the whole
+    /// document, so each reader of its imports reads the same documents.
+    fn import_dir(&self, model: &SCXMLModel, base_dir: &Path) -> PathBuf {
+        let holds_every_import = |dir: &Path| {
+            model.forge_imports.iter().all(|import| {
+                let path = crate::forge::stdlib::resolve(dir, &import.src);
+                crate::forge::stdlib::names_standard(&path) || crate::confine::exists(&path)
+            })
+        };
+        if holds_every_import(base_dir) {
+            return base_dir.to_path_buf();
+        }
+        self.candidate_roots
+            .iter()
+            .find(|root| holds_every_import(root))
+            .cloned()
+            .unwrap_or_else(|| base_dir.to_path_buf())
+    }
+
     /// The id of an `<invoke>` that names none (§scxml-6.4.1): `_invoke_<n>`,
     /// with `n` the next number whose `invoke_<n>` is not the trimmed form of
     /// an id the document's author wrote ([`Self::authored_invoke_suffixes`]).
@@ -2994,7 +3029,11 @@ impl SCXMLParser {
         // compile error in the *generated* code with nothing pointing back
         // at the offending `cond`. Any future entry point that parses a
         // document is now validated by construction.
-        let imported_enums = if let Some(dir) = base_dir {
+        //
+        // Every reader below takes the one directory `import_dir` chooses, so
+        // they cannot disagree about where a relative `src` points.
+        let import_dir = base_dir.map(|dir| self.import_dir(&model, dir));
+        let imported_enums = if let Some(dir) = import_dir.as_deref() {
             let (schemas_by_stem, enums_by_stem) =
                 Self::parse_imported_forge_siblings(&model, dir, diag_label)?;
             model.imported_event_schemas =
