@@ -5512,13 +5512,15 @@ pub enum GenerateError {
     CodegenMcuClassKindOnNonMcuLanguage { kind: String, language: String },
 
     /// SCE Protocol-Synthesis RFC §synth-5-J-5: a generic-class kind expected to
-    /// emit on every backend per the parity matrix is missing its
+    /// emit on every backend that emits per the parity matrix is missing its
     /// per-kind Jinja2 template for the requested language. Template
-    /// absence is an SCE bug, not a downstream concern. Producer:
-    /// the codegen matrix walker in `forge::codegen_matrix`.
+    /// absence on an emitting backend is an SCE bug, not a downstream
+    /// concern; a backend that emits nothing yet is refused with the same
+    /// code for every kind. Producer: the codegen matrix walker in
+    /// `forge::codegen_matrix`.
     #[error(
         "generic-class kind '{kind}': template missing for language '{language}' \
-         (SCE Protocol-Synthesis RFC §5.J.4 expects all six backends to emit)"
+         (SCE Protocol-Synthesis RFC §5.J.4 expects every backend that emits to ship one)"
     )]
     CodegenGenericKindBackendEmitMissing { kind: String, language: String },
 

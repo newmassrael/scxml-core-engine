@@ -92,7 +92,10 @@ fn manifest(run: &Run) -> serde_json::Value {
 /// so a previous run's artifacts are sitting in it — and a test that asserts
 /// a file was NOT written reads yesterday's answer if they are left there.
 fn out_dir(tag: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("sce-host-processor-{tag}"));
+    // Under the test target's own temp directory, not the shared `/tmp`: a
+    // fixed name there belongs to whichever account ran the suite first, and
+    // the next account's run is refused with `Permission denied`.
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!("sce-host-processor-{tag}"));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("scratch output directory");
     dir

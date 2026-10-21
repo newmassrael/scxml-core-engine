@@ -45,7 +45,10 @@ fn codegen_bin() -> PathBuf {
 }
 
 fn out_dir(tag: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("sce-invoke-expr-wording-{tag}"));
+    // The test target's own temp directory, not the shared `/tmp`, where a
+    // fixed name belongs to whichever account ran the suite first.
+    let dir =
+        PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!("sce-invoke-expr-wording-{tag}"));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("scratch output directory");
     dir

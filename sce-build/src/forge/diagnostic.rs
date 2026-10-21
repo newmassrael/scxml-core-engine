@@ -13779,7 +13779,7 @@ mod tests {
                     language: "python".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:d54c90195c019259","code":"codegen/generic-kind-backend-emit-missing","stage":"generate","message":"generic-class kind 'algorithm': template missing for language 'python' (SCE Protocol-Synthesis RFC §5.J.4 expects all six backends to emit)"}"#,
+                r#"{"v":1,"id":"fnv1a:d54c90195c019259","code":"codegen/generic-kind-backend-emit-missing","stage":"generate","message":"generic-class kind 'algorithm': template missing for language 'python' (SCE Protocol-Synthesis RFC §5.J.4 expects every backend that emits to ship one)"}"#,
             ),
             // ── §synth-5-P Queue kind ──
             (
