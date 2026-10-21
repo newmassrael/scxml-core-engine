@@ -73,6 +73,15 @@
    emits exactly what it emits at function scope, because `#line`,
    `//line` and comments are all valid mid-body.
 
+   Go reads `//line` as a directive only at column 1 (cmd/compile
+   "Line directives"); indented, it is an ordinary comment the
+   compiler ignores, and positions stay counted from the directive
+   above the function. A Go call site therefore writes the marker
+   unindented, `| trim` taking off the newline this macro leads with,
+   whatever the depth of the arm it marks. The directive gives the
+   next line the marked element's line, and lines after it count on
+   from there until the next directive.
+
    Statement-level markers are what make the per-symbol attribution
    real. A marker above `execute_entry_actions` can only name one
    location for a function every state shares, which is why every
@@ -119,7 +128,7 @@
     stack traces + `go vet` output. Like C/Cpp `#line`, file-scope
     placement would shift every subsequent file position. Use the
     comment form at module level; per-function emission switches
-    to `//line`. -#}
+    to `//line`, which the call site places at column 1. -#}
 {%- if module_level %}
 // SCE-MAP: {{ loc.file }}:{{ range_part }}{{ sym_suffix }}
 {%- else %}

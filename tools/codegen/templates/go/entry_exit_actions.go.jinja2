@@ -79,7 +79,7 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 {% if state.on_entry_blocks or state.initial_transition_actions or (state.is_final and state.parent) or (state.is_final and state.donedata) or (state.datamodel and model.binding == 'late') or state.invokes | scxml or state.invokes | hybrid or state.invokes | unsupported %}
 	case {{ machine_name }}State{{ state_id | to_state_variant }}:{{ annot.annotation_comment(state, "go", "		") }}
 {% if state.source_location %}
-		{{ sce_map.source_marker(state.source_location, "go", stmt_level=true, symbol_state=state_id, symbol_artifact=sce_artifact.state_body) | trim }}
+{{ sce_map.source_marker(state.source_location, "go", stmt_level=true, symbol_state=state_id, symbol_artifact=sce_artifact.state_body) | trim }}
 {% endif %}
 {% if state.datamodel and model.binding == 'late' %}
 		// §scxml-D-enterStates, late binding: the state's <data> is bound on
@@ -421,7 +421,7 @@ func (p *{{ machine_name }}Policy) ExecuteExitActions(state {{ machine_name }}St
 {% if state.on_exit_blocks %}
 	case {{ machine_name }}State{{ state_id | to_state_variant }}:{{ annot.annotation_comment(state, "go", "		") }}
 {% if state.source_location %}
-		{{ sce_map.source_marker(state.source_location, "go", stmt_level=true, symbol_state=state_id, symbol_artifact=sce_artifact.state_body) | trim }}
+{{ sce_map.source_marker(state.source_location, "go", stmt_level=true, symbol_state=state_id, symbol_artifact=sce_artifact.state_body) | trim }}
 {% endif %}
 {% for block in state.on_exit_blocks %}
 		// W3C SCXML 3.9 + 4.9: onexit block {{ loop.index0 }}, its own function so an

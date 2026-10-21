@@ -286,6 +286,109 @@ fn go_statechart_emits_per_function_markers() {
     );
 }
 
+/// Statechart whose Go rendering writes a `//line` directive at every
+/// depth the templates write one: above each function, inside `s1`'s
+/// arm of the entry and of the exit `switch`, and inside the arm of the
+/// `go` transition's content, which is why that transition carries an
+/// action where [`STATECHART_FIXTURE`]'s does not.
+const GO_DIRECTIVE_FIXTURE: &str = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       initial="s1" datamodel="ecmascript">
+  <state id="s1">
+    <onentry>
+      <log expr="'entering s1'"/>
+    </onentry>
+    <onexit>
+      <log expr="'leaving s1'"/>
+    </onexit>
+    <transition event="go" target="s2">
+      <log expr="'taking go'"/>
+    </transition>
+  </state>
+  <final id="s2"/>
+</scxml>
+"#;
+
+/// Every `//line` directive the Go backend writes begins its line.
+///
+/// Go reads `//line` as a directive only at column 1 (cmd/compile, "Line
+/// directives"); indented, it is a comment the compiler ignores, and
+/// `go vet` and panic traces count positions on from the directive above
+/// the function, naming the wrong SCXML line. The directives inside a
+/// `switch` arm were written indented to the arm's depth, so the
+/// per-state and per-transition attribution never reached the toolchain.
+///
+/// A directive gives the line after it the line it names, so a directive
+/// inside a body must sit directly under the `case` it marks: what it
+/// positions is then that arm's own content.
+#[test]
+fn go_line_directives_begin_their_line() {
+    let artifacts = generate("go_directive_probe", GO_DIRECTIVE_FIXTURE, "go");
+    let sources: Vec<&PathBuf> = artifacts
+        .iter()
+        .filter(|p| p.extension().is_some_and(|e| e == "go"))
+        .collect();
+    assert!(!sources.is_empty(), "no `.go` artifact among {artifacts:?}");
+
+    let mut indented: Vec<String> = Vec::new();
+    let mut misplaced: Vec<String> = Vec::new();
+    let mut above_a_function = 0usize;
+    let mut inside_an_arm = 0usize;
+    for path in sources {
+        let body = std::fs::read_to_string(path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        let lines: Vec<&str> = body.lines().collect();
+        for (idx, line) in lines.iter().enumerate() {
+            if !line.trim_start().starts_with("//line ") {
+                continue;
+            }
+            let at = format!("{}:{}", path.display(), idx + 1);
+            if !line.starts_with("//line ") {
+                indented.push(format!("{at}: {line:?}"));
+                continue;
+            }
+            let next = lines.get(idx + 1).copied().unwrap_or("");
+            if next.starts_with("func ") {
+                above_a_function += 1;
+                continue;
+            }
+            inside_an_arm += 1;
+            let previous = if idx == 0 { "" } else { lines[idx - 1] };
+            if !previous.trim_start().starts_with("case ") {
+                misplaced.push(format!("{at}: follows {previous:?}"));
+            }
+        }
+    }
+
+    assert!(
+        indented.is_empty(),
+        "{} Go `//line` directive(s) do not begin their line, so the compiler \
+         reads them as comments:\n{}",
+        indented.len(),
+        indented.join("\n"),
+    );
+    assert!(
+        misplaced.is_empty(),
+        "a `//line` directive inside a function does not sit directly under \
+         the `case` it marks:\n{}",
+        misplaced.join("\n"),
+    );
+    // Six functions open with one: ExecuteEntryActions,
+    // ExecuteHistoryDefaultContent, ExecuteExitActions, BindCurrentEvent,
+    // FirstEnabledTransition and ExecuteTransitionContent.
+    assert!(
+        above_a_function >= 6,
+        "only {above_a_function} `//line` directive(s) above a function, expected >=6",
+    );
+    // `s1`'s entry arm, its exit arm, and the arm of the `go` transition.
+    assert!(
+        inside_an_arm >= 3,
+        "only {inside_an_arm} `//line` directive(s) inside a `switch` arm, \
+         expected >=3: the probe stopped reaching the per-state and \
+         per-transition sites",
+    );
+}
+
 // ── Forge per-kind body markers ────────────────────────────────
 
 #[test]
