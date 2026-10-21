@@ -58,6 +58,7 @@ pub enum Syntax {
     Kotlin,
     Python,
     Rust,
+    Swift,
 }
 
 impl Syntax {
@@ -69,6 +70,7 @@ impl Syntax {
             Language::Kotlin => Syntax::Kotlin,
             Language::Go => Syntax::Go,
             Language::Python => Syntax::Python,
+            Language::Swift => Syntax::Swift,
         }
     }
 
@@ -94,6 +96,7 @@ impl Syntax {
             Some("go") => Syntax::Go,
             Some("kt" | "kts") => Syntax::Kotlin,
             Some("py") => Syntax::Python,
+            Some("swift") => Syntax::Swift,
             Some("c" | "h" | "cc" | "cpp" | "hpp" | "inl" | "ld") => Syntax::CFamily,
             _ => Syntax::of_language(backend),
         }
@@ -106,6 +109,7 @@ impl Syntax {
             Syntax::Kotlin => Rules::kotlin(),
             Syntax::Python => Rules::python(),
             Syntax::Rust => Rules::rust(),
+            Syntax::Swift => Rules::swift(),
         }
     }
 }
@@ -578,6 +582,11 @@ struct Rules {
     /// `c` — the reading that put an interpolation's context two classes
     /// away from the truth.
     rust_raw: bool,
+    /// Swift raw strings: `#"…"#`, `##"…"##`, `#"""…"""#`. The `#` count is part
+    /// of the closing delimiter, as it is for Rust's, but nothing precedes the
+    /// first `#`: a `#` is also the start of a compiler directive
+    /// (`#sourceLocation`), told apart by what follows the run of them.
+    swift_raw: bool,
     /// Whether a backslash immediately before a line break joins the next line
     /// to this one, comments included. C and C++ splice lines before they look
     /// for comments at all, so `// note \` makes the NEXT line a comment too —
@@ -655,6 +664,7 @@ const PYTHON_STRINGS: &[StringDelim] = &[
     escaped("'"),
 ];
 const RUST_STRINGS: &[StringDelim] = &[escaped("\"")];
+const SWIFT_STRINGS: &[StringDelim] = &[escaped("\"\"\""), escaped("\"")];
 
 impl Rules {
     fn c_family() -> Self {
@@ -668,6 +678,7 @@ impl Rules {
             prose_when_line_initial: &[],
             cpp_raw: true,
             rust_raw: false,
+            swift_raw: false,
             line_splices: true,
             opaque: &[],
         }
@@ -683,6 +694,7 @@ impl Rules {
             prose_when_line_initial: &[],
             cpp_raw: false,
             rust_raw: false,
+            swift_raw: false,
             line_splices: false,
             opaque: &[],
         }
@@ -702,6 +714,7 @@ impl Rules {
             prose_when_line_initial: &[],
             cpp_raw: false,
             rust_raw: false,
+            swift_raw: false,
             line_splices: false,
             opaque: &[],
         }
@@ -717,6 +730,7 @@ impl Rules {
             prose_when_line_initial: &["\"\"\"", "'''"],
             cpp_raw: false,
             rust_raw: false,
+            swift_raw: false,
             line_splices: false,
             opaque: &[],
         }
@@ -735,6 +749,27 @@ impl Rules {
             prose_when_line_initial: &[],
             cpp_raw: false,
             rust_raw: true,
+            swift_raw: false,
+            line_splices: false,
+            opaque: &[],
+        }
+    }
+    /// Swift as a template emits it. A `"""` string is multi-line and processes
+    /// its escapes, so a value written into one is escaped as for `"`; the
+    /// `#`-delimited forms process none and are read as raw. Swift has no
+    /// character literal, and its block comments nest.
+    fn swift() -> Self {
+        Rules {
+            line: &["//"],
+            line_directives: &[],
+            block: &[("/*", "*/")],
+            nests: true,
+            strings: SWIFT_STRINGS,
+            char_literals: false,
+            prose_when_line_initial: &[],
+            cpp_raw: false,
+            rust_raw: false,
+            swift_raw: true,
             line_splices: false,
             opaque: &[],
         }
@@ -752,6 +787,7 @@ impl Rules {
             prose_when_line_initial: &[],
             cpp_raw: false,
             rust_raw: false,
+            swift_raw: false,
             line_splices: false,
             opaque: &[],
         }
@@ -778,6 +814,13 @@ fn classify_chars(s: &[char], rules: &Rules) -> Vec<Class> {
         // first quote the author's text contains.
         if rules.rust_raw {
             if let Some(end) = end_of_rust_raw_string(s, i) {
+                mark(&mut class, i, end, Class::RawLiteral);
+                i = end;
+                continue;
+            }
+        }
+        if rules.swift_raw {
+            if let Some(end) = end_of_swift_raw_string(s, i) {
                 mark(&mut class, i, end, Class::RawLiteral);
                 i = end;
                 continue;
@@ -976,6 +1019,44 @@ fn end_of_rust_raw_string(s: &[char], at: usize) -> Option<usize> {
     Some(s.len())
 }
 
+/// Where a Swift raw string `#"`, `##"`, `#"""` … opening at `at` ends, if one
+/// does.
+///
+/// The closing delimiter is the opening quote — one or three — followed by the
+/// same number of `#`, so nothing inside ends it early. A `#` that is not the
+/// first of a run (`x##"`), or a run not followed by a quote (`#if`,
+/// `#sourceLocation`), opens nothing here.
+fn end_of_swift_raw_string(s: &[char], at: usize) -> Option<usize> {
+    if s[at] != '#' || (at > 0 && s[at - 1] == '#') {
+        return None;
+    }
+    let mut j = at;
+    let mut hashes = 0usize;
+    while j < s.len() && s[j] == '#' {
+        hashes += 1;
+        j += 1;
+    }
+    let quote = if starts_with(s, j, "\"\"\"") {
+        "\"\"\""
+    } else if starts_with(s, j, "\"") {
+        "\""
+    } else {
+        return None;
+    };
+    let closing: String = quote
+        .chars()
+        .chain(std::iter::repeat_n('#', hashes))
+        .collect();
+    let mut k = j + quote.chars().count();
+    while k < s.len() {
+        if starts_with(s, k, &closing) {
+            return Some(k + closing.chars().count());
+        }
+        k += 1;
+    }
+    Some(s.len())
+}
+
 /// One past a character literal opening at `at` — one character between
 /// quotes (`'"'`), or an escape (`'\''`, `'\\'`, `'\x41'`, `'\u{1F600}'`) —
 /// or `None` when no literal opens there.
@@ -1111,6 +1192,9 @@ mod tests {
             (Syntax::Rust, "let x = r#\"{{ v }}\"#;\n"),
             (Syntax::CFamily, "auto x = R\"xml({{ v }})xml\";\n"),
             (Syntax::Kotlin, "val x = \"\"\"{{ v }}\"\"\"\n"),
+            (Syntax::Swift, "let x = #\"{{ v }}\"#\n"),
+            (Syntax::Swift, "let x = ##\"{{ v }}\"##\n"),
+            (Syntax::Swift, "let x = #\"\"\"\n{{ v }}\n\"\"\"#\n"),
         ] {
             let found = contexts(template, syntax);
             assert_eq!(
@@ -1135,6 +1219,52 @@ mod tests {
             vec![
                 ("{{ v }}".to_string(), Class::RawLiteral),
                 ("{{ w }}".to_string(), Class::Code),
+            ]
+        );
+    }
+
+    /// A Swift raw string ends at its own closing quote and `#`s, not at a
+    /// quote its content carries, and the same words in a plain string do not
+    /// make it one.
+    #[test]
+    fn a_swift_raw_string_is_not_ended_by_a_quote_it_contains() {
+        let t = "let x = #\"<a b=\"c\">{{ v }}</a>\"#\nlet y = {{ w }}\n";
+        assert_eq!(
+            contexts(t, Syntax::Swift),
+            vec![
+                ("{{ v }}".to_string(), Class::RawLiteral),
+                ("{{ w }}".to_string(), Class::Code),
+            ]
+        );
+        // One `#` closes nothing opened with two.
+        let two = "let x = ##\"a\"#{{ v }}\"##\nlet y = {{ w }}\n";
+        assert_eq!(
+            contexts(two, Syntax::Swift),
+            vec![
+                ("{{ v }}".to_string(), Class::RawLiteral),
+                ("{{ w }}".to_string(), Class::Code),
+            ]
+        );
+    }
+
+    /// A Swift `"""` string is multi-line and processes its escapes, so it is an
+    /// escapable literal; a compiler directive is code, not a raw string; a block
+    /// comment nests; and `'` opens nothing.
+    #[test]
+    fn swift_reads_its_strings_comments_and_directives() {
+        let t = "let a = \"\"\"\n{{ a }}\n\"\"\"\n\
+                 #sourceLocation(file: \"x\", line: 1)\n{{ b }}\n\
+                 /* one /* two {{ c }} */ still {{ d }} */ {{ e }}\n\
+                 let s = \"it's {{ f }}\"\n";
+        assert_eq!(
+            contexts(t, Syntax::Swift),
+            vec![
+                ("{{ a }}".to_string(), Class::Literal),
+                ("{{ b }}".to_string(), Class::Code),
+                ("{{ c }}".to_string(), Class::Comment),
+                ("{{ d }}".to_string(), Class::Comment),
+                ("{{ e }}".to_string(), Class::Code),
+                ("{{ f }}".to_string(), Class::Literal),
             ]
         );
     }
@@ -1212,6 +1342,10 @@ mod tests {
         assert_eq!(
             Syntax::of_template("forge/c/buffer_pool.ld.jinja2", Language::C11),
             Syntax::CFamily
+        );
+        assert_eq!(
+            Syntax::of_template("state_machine.swift.jinja2", Language::Cpp),
+            Syntax::Swift
         );
     }
 

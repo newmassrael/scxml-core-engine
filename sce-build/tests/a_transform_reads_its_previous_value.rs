@@ -22,6 +22,8 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use sce_build::forge::codegen_matrix::emitting;
+use sce_build::forge::model::ForgeKind;
 use sce_build::generator::Language;
 use sce_build::toolchain;
 
@@ -240,10 +242,11 @@ fn delayed(sce_type: &str) -> String {
     )
 }
 
+/// Every backend that emits a transform, by its `--language` spelling. A
+/// backend that emits nothing yet is refused instead
+/// (`a_backend_with_no_emitter_is_refused`).
 fn languages() -> impl Iterator<Item = &'static str> {
-    Language::ALL
-        .iter()
-        .map(|language| language.canonical_name())
+    emitting(ForgeKind::Transform).map(|language| language.canonical_name())
 }
 
 #[test]
@@ -325,11 +328,10 @@ fn a_string_cell_is_lowered_where_the_holder_owns_the_string() {
     let t = Tmp::new("string");
     let text = delayed("string");
     let doc = t.write("delayed.scxml", &text);
-    for lang in Language::ALL
-        .iter()
+    for lang in emitting(ForgeKind::Transform)
         // C11 is asserted below: it keeps a string as a pointer into the
         // caller's buffer, so it refuses the cell.
-        .filter(|language| **language != Language::C11)
+        .filter(|language| *language != Language::C11)
         .map(|language| language.canonical_name())
     {
         generated(&doc, &t.dir(lang), lang);

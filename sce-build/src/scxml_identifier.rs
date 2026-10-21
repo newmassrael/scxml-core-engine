@@ -448,7 +448,11 @@ fn python_declaration(
 /// How each backend spells the name `node`'s attribute `attr` declares, for
 /// the reserved-word check — the folds a keyword could equal, in
 /// [`crate::generator::Language::ALL`] order (Rust, C++, Kotlin, Go,
-/// Python, C11).
+/// Python, C11, Swift). Swift has no emitter yet, so its column states the
+/// spelling its templates will give each declaration (the API Design
+/// Guidelines: lowerCamelCase for values and cases), which is what a name is
+/// refused against now so that a document accepted today is not refused the
+/// day Swift generates.
 ///
 /// Measured from the forge generator and its templates, 2026-09-26, one row
 /// per declaration; a form that adds to the name (`alias_`, `set_<name>`,
@@ -472,12 +476,21 @@ fn spellings_of(
         &[Verbatim, Pascal],
         &[Verbatim, Snake, Pascal],
         &[Verbatim, Snake, Pascal],
+        &[Verbatim, Camel, Pascal],
     ];
     // Rust and Kotlin lower an `sce-static` statechart (a Rust field and its
     // accessor snake_case, a Kotlin property camelCase); the rest refuse it.
-    const STATIC_DATA: Spellings = [&[Snake], &[], &[Camel], &[], &[], &[]];
-    const IMPORT_AS: Spellings = [&[Verbatim], &[], &[Verbatim], &[Pascal], &[Verbatim], &[]];
-    const CONTEXT_ID: Spellings = [&[], &[Verbatim], &[Camel], &[], &[], &[]];
+    const STATIC_DATA: Spellings = [&[Snake], &[], &[Camel], &[], &[], &[], &[]];
+    const IMPORT_AS: Spellings = [
+        &[Verbatim],
+        &[],
+        &[Verbatim],
+        &[Pascal],
+        &[Verbatim],
+        &[],
+        &[Verbatim],
+    ];
+    const CONTEXT_ID: Spellings = [&[], &[Verbatim], &[Camel], &[], &[], &[], &[Camel]];
     const CODEC_FIELD: Spellings = [
         &[Snake],
         &[Verbatim],
@@ -485,10 +498,37 @@ fn spellings_of(
         &[Pascal],
         &[Snake],
         &[Snake],
+        &[Verbatim, Camel],
     ];
-    const FLAG: Spellings = [&[Snake], &[Snake], &[Camel], &[Pascal], &[Snake], &[]];
-    const FLAG_INPUT: Spellings = [&[Snake], &[Snake], &[Camel], &[Camel], &[Snake], &[Snake]];
-    const VARIANT: Spellings = [&[Pascal], &[Pascal], &[UpperSnake], &[], &[UpperSnake], &[]];
+    const FLAG: Spellings = [
+        &[Snake],
+        &[Snake],
+        &[Camel],
+        &[Pascal],
+        &[Snake],
+        &[],
+        &[Camel],
+    ];
+    const FLAG_INPUT: Spellings = [
+        &[Snake],
+        &[Snake],
+        &[Camel],
+        &[Camel],
+        &[Snake],
+        &[Snake],
+        &[Camel],
+    ];
+    // Swift names an enum case in lowerCamelCase, so `internal` and `init` are
+    // refused where they are declared (the reserved-word rule, not an escape).
+    const VARIANT: Spellings = [
+        &[Pascal],
+        &[Pascal],
+        &[UpperSnake],
+        &[],
+        &[UpperSnake],
+        &[],
+        &[Camel],
+    ];
     const VAR: Spellings = [
         &[Snake],
         &[Verbatim],
@@ -496,7 +536,9 @@ fn spellings_of(
         &[Verbatim],
         &[Snake],
         &[Snake],
+        &[Verbatim],
     ];
+    // Swift writes a constant in lowerCamelCase, not in capitals.
     const CONST: Spellings = [
         &[UpperSnake],
         &[UpperSnake],
@@ -504,6 +546,7 @@ fn spellings_of(
         &[UpperSnake],
         &[UpperSnake],
         &[UpperSnake],
+        &[Camel],
     ];
     // Python writes a helper where it is called (`compute_key(seed)`), so the
     // name reaches source there as it does in the rest, even though a procedure
@@ -515,16 +558,43 @@ fn spellings_of(
         &[Verbatim],
         &[Snake],
         &[Snake],
+        &[Verbatim],
     ];
     // A procedure's states are the members of one enum, spelled Pascal in Rust,
     // C++, Kotlin and Python (`procedure-state` in `forge::declared_names`); Go
     // and C11 write one under a prefix, so no keyword can be one there. A state
     // called `false` is the member `False` in Python, which cannot be assigned.
-    const STATE: Spellings = [&[Pascal], &[Pascal], &[Pascal], &[], &[Pascal], &[]];
-    // Go, Kotlin and Python refuse `<sce:extern>`.
-    const EXTERN: Spellings = [&[Verbatim], &[Verbatim], &[], &[], &[], &[Verbatim]];
-    const ACTION: Spellings = [&[Snake], &[Camel], &[Camel], &[Pascal], &[Snake], &[Snake]];
-    const ARG: Spellings = [&[Snake], &[Camel], &[Camel], &[Camel], &[Snake], &[Snake]];
+    // Swift's members are lowerCamelCase like every Swift enum case, so a state
+    // called `init` is the case `init`, which Swift reads as the initializer.
+    const STATE: Spellings = [
+        &[Pascal],
+        &[Pascal],
+        &[Pascal],
+        &[],
+        &[Pascal],
+        &[],
+        &[Camel],
+    ];
+    // Go, Kotlin, Python and Swift refuse `<sce:extern>`.
+    const EXTERN: Spellings = [&[Verbatim], &[Verbatim], &[], &[], &[], &[Verbatim], &[]];
+    const ACTION: Spellings = [
+        &[Snake],
+        &[Camel],
+        &[Camel],
+        &[Pascal],
+        &[Snake],
+        &[Snake],
+        &[Camel],
+    ];
+    const ARG: Spellings = [
+        &[Snake],
+        &[Camel],
+        &[Camel],
+        &[Camel],
+        &[Snake],
+        &[Snake],
+        &[Camel],
+    ];
 
     let element = node.tag_name().name();
     match node.tag_name().namespace() {

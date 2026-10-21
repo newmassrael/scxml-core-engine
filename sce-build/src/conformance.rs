@@ -1745,6 +1745,15 @@ pub fn harness_layout(language: Language) -> HarnessLayout {
             template_subdir: "forge/c/conformance",
             template_filename: "harness.c.jinja2",
         },
+        // The harness template is written with the Swift forge emitters. A run
+        // with `--language swift` is refused before this layout is read
+        // (`codegen_matrix::template_ships`), and one that reached it would
+        // fail at template-load naming the file, as C11's did.
+        Language::Swift => HarnessLayout {
+            output_filename: "NumericalConformanceTests.swift",
+            template_subdir: "forge/swift/conformance",
+            template_filename: "harness.swift.jinja2",
+        },
     }
 }
 
@@ -1817,6 +1826,7 @@ pub fn lang_supports_fixture(
             | crate::generator::Language::Kotlin
             | crate::generator::Language::Go
             | crate::generator::Language::Python
+            | crate::generator::Language::Swift
     );
     if is_non_mcu && matches!(fixture.spec, FixtureSpec::Codec { .. }) {
         let scxml_path = fixture.document_path(resource_dir);
@@ -3696,7 +3706,12 @@ mod tests {
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../tools/codegen/templates");
         let resource_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/resources");
 
-        for &lang in Language::ALL {
+        // Every backend that emits anything has a harness; one that emits
+        // nothing yet has no template directory to render.
+        for &lang in Language::ALL
+            .iter()
+            .filter(|lang| crate::forge::codegen_matrix::emits_anything(**lang))
+        {
             let result = render_harness(&manifest, lang, &template_base, &resource_dir);
             match result {
                 Ok(rendered) => {
@@ -3749,7 +3764,7 @@ mod tests {
         let template_base =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../tools/codegen/templates");
 
-        for &lang in Language::ALL {
+        for lang in crate::forge::codegen_matrix::emitting(crate::forge::model::ForgeKind::Enum) {
             let rendered = render_harness(&manifest, lang, &template_base, &resource_dir)
                 .unwrap_or_else(|e| panic!("{lang:?}: render failed: {e}"));
             for variant in ["readOnly", "readWrite"] {

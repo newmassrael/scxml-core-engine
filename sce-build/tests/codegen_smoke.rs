@@ -28,7 +28,8 @@
 // See `memory/codegen_template_strategy.md` for the rationale against
 // an AST emitter migration — this harness is the chosen gate instead.
 
-use sce_build::generator::Language;
+use sce_build::forge::codegen_matrix::emitting;
+use sce_build::forge::model::ForgeKind;
 use sce_build::toolchain;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -192,7 +193,7 @@ fn try_generate(lang: &str, out_dir: &Path, fixture: &str) -> bool {
 /// of which toolchains the host has: it runs everywhere, including
 /// images with no C compiler at all, and it covers backends whose
 /// compile-checks skip. A backend added later is covered the moment it
-/// joins `Language::ALL`.
+/// starts emitting a machine.
 #[test]
 fn every_generated_artefact_ends_with_a_newline() {
     // Collected rather than asserted per file: stopping at the first
@@ -200,11 +201,8 @@ fn every_generated_artefact_ends_with_a_newline() {
     // later backends unproven whenever an earlier one fails.
     let mut violations: Vec<String> = Vec::new();
 
-    // Every `generator::Language` variant, by its `--lang` value.
-    for lang in Language::ALL
-        .iter()
-        .map(|language| language.canonical_name())
-    {
+    // Every backend that emits a machine, by its `--lang` value.
+    for lang in emitting(ForgeKind::Statechart).map(|language| language.canonical_name()) {
         let scratch = reset_scratch(&format!("trailing_newline_{lang}"));
         let mut generated = 0usize;
         let mut checked = 0usize;

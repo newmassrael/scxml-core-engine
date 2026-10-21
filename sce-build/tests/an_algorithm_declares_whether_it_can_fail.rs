@@ -11,8 +11,9 @@
 //! than emitting an unchecked body behind a signature that promises a
 //! failure channel.
 
+use sce_build::forge::codegen_matrix::emitting;
 use sce_build::forge::generator::lowers_may_fail;
-use sce_build::forge::model::{AlgorithmModel, ForgeDocument};
+use sce_build::forge::model::{AlgorithmModel, ForgeDocument, ForgeKind};
 use sce_build::forge::parser::parse_forge;
 use sce_build::forge::unpseudo;
 use sce_build::generator::Language;
@@ -144,7 +145,7 @@ fn only_a_backend_with_the_checked_lowering_accepts_the_algorithm() {
         lowers_may_fail(Language::Rust),
         "Rust lowers may-fail since the checked lowering landed"
     );
-    for &lang in Language::ALL {
+    for lang in emitting(ForgeKind::Algorithm) {
         let outcome = generate(
             "probe_may_fail",
             &document(r#" may-fail="true""#),
@@ -200,7 +201,9 @@ fn an_undeclared_operation_that_can_fail_is_refused_where_it_is_written() {
         );
     }
     std::fs::write(&path, guarded_document()).expect("write document");
-    for &lang in Language::ALL {
+    // Accepted wherever an algorithm is emitted at all; a backend with no
+    // emitter refuses every algorithm, guarded or not.
+    for lang in emitting(ForgeKind::Algorithm) {
         if let Err(err) =
             sce_build::compile_forge_file(&path, lang, &[], &ForgeCompileOptions::default())
         {
@@ -385,7 +388,7 @@ fn a_precondition_reads_back_from_the_page() {
 #[test]
 fn every_backend_returns_a_precondition_failure() {
     let text = precondition_document(r#" may-fail="true""#);
-    for &lang in Language::ALL {
+    for lang in emitting(ForgeKind::Algorithm) {
         let out =
             generate("probe_require", &text, &[], lang).unwrap_or_else(|e| panic!("{lang:?}: {e}"));
         let failure = match lang {
@@ -397,6 +400,7 @@ fn every_backend_returns_a_precondition_failure() {
             Language::C11 => "SCE_FORGE_ALGORITHM_PRECONDITION",
             Language::Go => "scealgorithm.Precondition",
             Language::Python => "sce_algorithm.AlgorithmError.PRECONDITION",
+            Language::Swift => unreachable!("swift emits no algorithm, so it is not iterated"),
         };
         assert_eq!(
             out.matches(failure).count(),
@@ -432,7 +436,7 @@ fn a_may_fail_caller_passes_the_failure_on_from_every_call() {
         go_module_prefix: Some("github.com/acme/project/generated".into()),
         ..ForgeCompileOptions::default()
     };
-    for &lang in Language::ALL {
+    for lang in emitting(ForgeKind::Algorithm) {
         let out = sce_build::compile_forge_file(&path, lang, &[], &options)
             .unwrap_or_else(|e| panic!("{lang:?}: {e}"));
         let code = &out.files[0].1;
@@ -444,6 +448,7 @@ fn a_may_fail_caller_passes_the_failure_on_from_every_call() {
             Language::Go => "scealgorithm.Take[int32](&sceFailure)(",
             // Python's exception passes itself on.
             Language::Python => "algorithm_checked_arith.algorithm_checked_arith(",
+            Language::Swift => unreachable!("swift emits no algorithm, so it is not iterated"),
         };
         assert_eq!(
             code.matches(passed_on).count(),

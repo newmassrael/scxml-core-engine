@@ -17,6 +17,14 @@
 // does not is a part the port is missing, or a part it has and does not say
 // it has; either way it is not yet the same structure.
 //
+// The comparison is of the backends that have code to compare. A backend that
+// is in `Language::ALL` before it has a runtime or a template (`emitting`) has
+// no citations, and recording every section of the reference as missing for it
+// would be a list that says only "not started"; that is the backend parity
+// check's record (`a_backend_holds_what_the_other_backends_hold`), which names
+// each capability the backend lacks. A backend joins this comparison in the
+// commit that gives it an emitter, and from then on every section is held.
+//
 // A backend's code is its runtime and its templates: the C11 backend writes
 // most of its algorithm into the code it generates, and a comparison of
 // runtimes alone measured it at 19 sections against the reference's 65. Its
@@ -38,7 +46,14 @@ mod common;
 use std::collections::{BTreeMap, BTreeSet};
 use std::process::Command;
 
+use sce_build::forge::codegen_matrix::emitting;
+use sce_build::forge::model::ForgeKind;
 use sce_build::generator::Language;
+
+/// The backends with code to compare, in `Language::ALL` order.
+fn compared() -> Vec<Language> {
+    emitting(ForgeKind::Statechart).collect()
+}
 
 /// The backend the others port.
 const REFERENCE: Language = Language::Rust;
@@ -86,7 +101,7 @@ fn cited_by_backend() -> Cited {
         .as_object()
         .expect("the report carries a `files` object");
 
-    let mut cited: Cited = Language::ALL
+    let mut cited: Cited = compared()
         .iter()
         .map(|l| (l.canonical_name(), BTreeSet::new()))
         .collect();
@@ -97,14 +112,12 @@ fn cited_by_backend() -> Cited {
             .iter()
             .map(|id| id.as_str().expect("a section id is text").to_string());
         let owners: Vec<Language> = match path.strip_prefix("tools/codegen/templates/") {
-            Some(name) => Language::ALL
-                .iter()
-                .copied()
+            Some(name) => compared()
+                .into_iter()
                 .filter(|l| l.authors_template(name))
                 .collect(),
-            None => Language::ALL
-                .iter()
-                .copied()
+            None => compared()
+                .into_iter()
                 .filter(|l| path.starts_with(&format!("{}/", l.runtime_tree())))
                 .collect(),
         };
@@ -195,7 +208,7 @@ fn every_backend_has_an_enrolled_runtime() {
     let root = common::repository::root();
     let toml = std::fs::read_to_string(root.join("docs/spec/scxml/mnemosyne.toml"))
         .expect("read the ledger's mnemosyne.toml");
-    let unenrolled: Vec<&str> = Language::ALL
+    let unenrolled: Vec<&str> = compared()
         .iter()
         .filter(|l| !toml.contains(&format!("\"{}/", l.runtime_tree())))
         .map(|l| l.canonical_name())

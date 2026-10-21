@@ -142,6 +142,7 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
             | Language::Go
             | Language::Python
             | Language::C11 => true,
+            Language::Swift => false,
         },
         // RFC §synth-5-A Algorithm: closed across all six backends.
         // Item A3 landed Rust + Cpp; item A5 closed C11 (RFC §synth-7
@@ -154,6 +155,7 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
             | Language::Go
             | Language::Kotlin
             | Language::Python => true,
+            Language::Swift => false,
         },
         // RFC §synth-5-C Link: rust and c11 templates ship.
         // cpp/kotlin/go/python are MCU-class-rejected by `kind_class`
@@ -162,7 +164,11 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
         // shipped template" without falsely claiming emission.
         ForgeKind::Link => match lang {
             Language::Rust | Language::C11 => true,
-            Language::Cpp | Language::Kotlin | Language::Go | Language::Python => false,
+            Language::Cpp
+            | Language::Kotlin
+            | Language::Go
+            | Language::Python
+            | Language::Swift => false,
         },
         // RFC §synth-5-E BufferPool: rust and c11 templates ship (c11:
         // `__attribute__((section, aligned))` storage table +
@@ -172,7 +178,11 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
         // template" without falsely claiming emission.
         ForgeKind::BufferPool => match lang {
             Language::Rust | Language::C11 => true,
-            Language::Cpp | Language::Kotlin | Language::Go | Language::Python => false,
+            Language::Cpp
+            | Language::Kotlin
+            | Language::Go
+            | Language::Python
+            | Language::Swift => false,
         },
         // RFC §synth-5-D Worker: dual-emit codegen on Rust + C11. The worker's
         // inbox is the queue it imports (`<sce:inbox ref>`, RFC §synth-5-P
@@ -183,7 +193,11 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
         // MCU-class-rejected by `kind_class` ahead of this lookup.
         ForgeKind::Worker => match lang {
             Language::Rust | Language::C11 => true,
-            Language::Cpp | Language::Kotlin | Language::Go | Language::Python => false,
+            Language::Cpp
+            | Language::Kotlin
+            | Language::Go
+            | Language::Python
+            | Language::Swift => false,
         },
         // RFC §synth-5-L BoundedCollection: the 6-backend codegen matrix is
         // closed per spec lines 2571-2581. `Rust` ships (heapless::Vec
@@ -199,15 +213,32 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
         // generation[N] + bitmap[(N+31)/32] + count with snake_case
         // _insert/_remove/_get/_find_by_index/_foreach API per spec
         // lines 2573-2575). All 6 backends emit; the §synth-5-L matrix is
-        // entirely closed.
-        ForgeKind::BoundedCollection => true,
+        // entirely closed. Swift has no emitter yet.
+        ForgeKind::BoundedCollection => match lang {
+            Language::Rust
+            | Language::Cpp
+            | Language::Kotlin
+            | Language::Go
+            | Language::Python
+            | Language::C11 => true,
+            Language::Swift => false,
+        },
         // Enum ships on all 6 backends
         // via `tools/codegen/templates/forge/<lang>/enum.<ext>.jinja2`
         // — `generator.rs::render_enum` lowers `EnumModel` to a typed
         // backend-native enum. Matches the
         // §synth-5-J-4 Generic-class contract; matrix dispatch lets every
-        // `(Enum, lang)` pair through to the per-language render arm.
-        ForgeKind::Enum => true,
+        // `(Enum, lang)` pair through to the per-language render arm. Swift
+        // has no emitter yet.
+        ForgeKind::Enum => match lang {
+            Language::Rust
+            | Language::Cpp
+            | Language::Kotlin
+            | Language::Go
+            | Language::Python
+            | Language::C11 => true,
+            Language::Swift => false,
+        },
         // EventSchema ships on all 6
         // backends via `tools/codegen/templates/forge/<lang>/event_schema.<ext>.jinja2`
         // — `generator.rs::render_event_schema` lowers
@@ -216,8 +247,17 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
         // `@dataclass` / `typedef struct ... <Schema>Payload_t`).
         // Matches the §synth-5-J-4 Generic-class contract; matrix dispatch
         // lets every `(EventSchema, lang)`
-        // pair through to the per-language render arm.
-        ForgeKind::EventSchema => true,
+        // pair through to the per-language render arm. Swift has no emitter
+        // yet.
+        ForgeKind::EventSchema => match lang {
+            Language::Rust
+            | Language::Cpp
+            | Language::Kotlin
+            | Language::Go
+            | Language::Python
+            | Language::C11 => true,
+            Language::Swift => false,
+        },
         // RFC §synth-5-P Queue: the algorithms live once per language in
         // that language's forge runtime (SCE_FORGE.md §2.1), so a backend
         // can emit a queue only once its runtime has them. Rust's has
@@ -228,7 +268,8 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
         // (`sce_forge_runtime.queue`: one ring under one lock, `blocking`) and
         // C11's (`sce/forge/queue.h`: the Lamport ring and SCQ over 64-bit and
         // 32-bit entries, and `queue_irq.h` for a target with no
-        // read-modify-write atomic). Every backend has one.
+        // read-modify-write atomic). Swift has no forge runtime yet, so it has
+        // none either.
         ForgeKind::Queue => match lang {
             Language::Rust
             | Language::Cpp
@@ -236,6 +277,7 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
             | Language::Kotlin
             | Language::Python
             | Language::C11 => true,
+            Language::Swift => false,
         },
     }
 }
@@ -253,9 +295,11 @@ pub const fn lookup(kind: ForgeKind, lang: Language) -> EmitOutcome {
                     EmitOutcome::TemplateMissing
                 }
             }
-            Language::Cpp | Language::Kotlin | Language::Go | Language::Python => {
-                EmitOutcome::McuClassOnNonMcuLanguage
-            }
+            Language::Cpp
+            | Language::Kotlin
+            | Language::Go
+            | Language::Python
+            | Language::Swift => EmitOutcome::McuClassOnNonMcuLanguage,
         },
         KindClass::Generic => {
             if template_ships(kind, lang) {
@@ -267,6 +311,31 @@ pub const fn lookup(kind: ForgeKind, lang: Language) -> EmitOutcome {
     }
 }
 
+/// The backends that emit `kind`, in [`Language::ALL`] order: the ones
+/// [`lookup`] answers [`EmitOutcome::Emit`] for.
+///
+/// A check that holds every backend to what one of them writes iterates this,
+/// not [`Language::ALL`]: a backend with no emitter yet is not one of the
+/// backends that write it, and is refused by [`check`] instead, which is a
+/// check of its own over the backends this leaves out.
+pub fn emitting(kind: ForgeKind) -> impl Iterator<Item = Language> {
+    Language::ALL
+        .iter()
+        .copied()
+        .filter(move |lang| matches!(lookup(kind, *lang), EmitOutcome::Emit))
+}
+
+/// Whether `lang` emits at least one kind: the backends a run that sweeps "every
+/// backend" means, in [`Language::ALL`] order, as opposed to the ones that are
+/// known and render nothing yet.
+pub fn emits_anything(lang: Language) -> bool {
+    emitting(ForgeKind::Statechart).any(|emits| emits == lang)
+        || ForgeKind::ALL_ATTR_NAMES
+            .iter()
+            .filter_map(|name| ForgeKind::from_attr(name))
+            .any(|kind| matches!(lookup(kind, lang), EmitOutcome::Emit))
+}
+
 /// Reject `(kind, lang)` with the matching `GenerateError` if the
 /// matrix walker says the pair is unreachable; return `Ok(())` when
 /// emit-eligible. Dispatch sites in `forge/generator.rs` call this
@@ -274,10 +343,7 @@ pub const fn lookup(kind: ForgeKind, lang: Language) -> EmitOutcome {
 pub fn check(kind: ForgeKind, lang: Language) -> Result<(), GenerateError> {
     match lookup(kind, lang) {
         EmitOutcome::Emit => Ok(()),
-        EmitOutcome::TemplateMissing => Err(GenerateError::CodegenGenericKindBackendEmitMissing {
-            kind: kind.to_string(),
-            language: language_wire_name(lang).to_string(),
-        }),
+        EmitOutcome::TemplateMissing => Err(emit_missing(kind, lang)),
         EmitOutcome::McuClassOnNonMcuLanguage => {
             Err(GenerateError::CodegenMcuClassKindOnNonMcuLanguage {
                 kind: kind.to_string(),
@@ -285,6 +351,40 @@ pub fn check(kind: ForgeKind, lang: Language) -> Result<(), GenerateError> {
             })
         }
     }
+}
+
+/// The refusal a dispatch site answers with for a backend that has no emitter
+/// for `kind` at all: `codegen/generic-kind-backend-emit-missing`.
+///
+/// [`check`] builds it from the matrix. A dispatch `match` over `Language`
+/// whose arm for a backend with no emitter yet has nothing to route to builds
+/// it here instead, so the refusal is the diagnostic the matrix gives and not a
+/// panic; the arm is replaced by the real route in the commit that makes
+/// [`template_ships`] answer `true` for the pair.
+pub fn emit_missing(kind: ForgeKind, lang: Language) -> GenerateError {
+    GenerateError::CodegenGenericKindBackendEmitMissing {
+        kind: kind.to_string(),
+        language: language_wire_name(lang).to_string(),
+    }
+}
+
+/// What an arm for Swift inside a renderer's helper answers.
+///
+/// Swift has no emitter for any kind yet ([`template_ships`] is `false` for
+/// every kind), and [`check`] refuses each of them at the dispatch site before
+/// a renderer, a type mapping or a name rule that matches on [`Language`] is
+/// reached. Those helpers are therefore never handed Swift, but each is a
+/// `match` the compiler makes name the backend, so the arm exists and says
+/// why it is not a route. A helper that is handed Swift is a dispatch site that
+/// skipped [`check`], and the panic names it.
+///
+/// The arms are replaced by real ones as the Swift emitters land, one kind at a
+/// time; [`template_ships`] turning `true` for a kind is the cue.
+pub(crate) fn no_swift_emitter(site: &str) -> ! {
+    unreachable!(
+        "{site}: swift has no emitter for any forge kind, and codegen_matrix::check refuses \
+         every kind for it before a renderer runs"
+    )
 }
 
 /// SCE Protocol-Synthesis RFC §5.2 MCU section-attribute reject: when
@@ -377,6 +477,7 @@ pub const fn language_wire_name(lang: Language) -> &'static str {
         Language::Go => "go",
         Language::Python => "python",
         Language::C11 => "c11",
+        Language::Swift => "swift",
     }
 }
 
@@ -420,7 +521,10 @@ pub const fn queue_progress_ceiling(
             ),
             _ => (QueueProgress::WaitFree, ""),
         },
-        Language::Rust | Language::Cpp | Language::Kotlin | Language::Go => {
+        // Swift emits no queue yet (`template_ships`), so this answer is never
+        // read for it; it stays with the backends that take nothing from the
+        // platform until the Swift runtime's atomics decide it.
+        Language::Rust | Language::Cpp | Language::Kotlin | Language::Go | Language::Swift => {
             (QueueProgress::WaitFree, "")
         }
     }
@@ -487,11 +591,14 @@ mod tests {
         }
     }
 
-    /// All 11 baseline kinds × all 6 backends emit at `758aea3f`.
+    /// All 11 baseline kinds emit on every backend that emits any of them
+    /// (all six at `758aea3f`). A backend ships the baseline whole or not at
+    /// all: one that emitted some kinds and not others would be a half-shipped
+    /// backend, and is the shape this refuses.
     #[test]
     fn baseline_kinds_emit_on_all_backends() {
-        // `Language::ALL` rather than a local restatement: a seventh
-        // backend must widen this coverage claim automatically.
+        // `Language::ALL` rather than a local restatement: a new backend
+        // joins this coverage claim automatically.
         const ALL_LANGS: &[Language] = Language::ALL;
         const BASELINE_KINDS: &[ForgeKind] = &[
             ForgeKind::Statechart,
@@ -508,20 +615,37 @@ mod tests {
         ];
         for &k in BASELINE_KINDS {
             assert_eq!(kind_class(k), KindClass::Generic, "kind {k:?} class");
-            for &l in ALL_LANGS {
-                assert_eq!(lookup(k, l), EmitOutcome::Emit, "({k:?}, {l:?})");
-                assert!(check(k, l).is_ok(), "check({k:?}, {l:?})");
-            }
         }
+        let mut whole = 0usize;
+        for &l in ALL_LANGS {
+            let emits: Vec<bool> = BASELINE_KINDS
+                .iter()
+                .map(|&k| lookup(k, l) == EmitOutcome::Emit)
+                .collect();
+            assert!(
+                emits.iter().all(|e| *e) || emits.iter().all(|e| !*e),
+                "{l:?} emits only some of the baseline kinds: {emits:?}"
+            );
+            for &k in BASELINE_KINDS {
+                if emits[0] {
+                    assert!(check(k, l).is_ok(), "check({k:?}, {l:?})");
+                } else {
+                    assert!(check(k, l).is_err(), "check({k:?}, {l:?}) admitted");
+                }
+            }
+            whole += usize::from(emits[0]);
+        }
+        assert!(whole > 0, "no backend emits the baseline");
     }
 
-    /// RFC §synth-5-A §synth-5-J-4 matrix closure: Algorithm ships on all six
-    /// backends after the post-A6 Go / Kotlin / Python follow-up trio.
-    /// No backend remains gated by `codegen/generic-kind-backend-emit-missing`.
+    /// RFC §synth-5-A §synth-5-J-4 matrix closure: Algorithm ships on every
+    /// backend that emits a machine, after the post-A6 Go / Kotlin / Python
+    /// follow-up trio. No such backend remains gated by
+    /// `codegen/generic-kind-backend-emit-missing`.
     #[test]
     fn algorithm_kind_ships_on_all_backends() {
         assert_eq!(kind_class(ForgeKind::Algorithm), KindClass::Generic);
-        for &lang in Language::ALL {
+        for lang in emitting(ForgeKind::Statechart) {
             assert_eq!(
                 lookup(ForgeKind::Algorithm, lang),
                 EmitOutcome::Emit,
@@ -548,6 +672,7 @@ mod tests {
             (Language::Go, "go"),
             (Language::Python, "python"),
             (Language::C11, "c11"),
+            (Language::Swift, "swift"),
         ];
         for (lang, name) in cases {
             assert_eq!(language_wire_name(lang), name);

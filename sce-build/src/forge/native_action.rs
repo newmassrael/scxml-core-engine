@@ -41,6 +41,7 @@
 //! definition*, so it never degrades to a runtime fallback.
 
 use crate::filters;
+use crate::forge::codegen_matrix::no_swift_emitter;
 use crate::forge::error::{
     ForgeError, Located, RelatedRole, RelatedSite, SourceLocation, ValidationError,
 };
@@ -965,6 +966,7 @@ fn realization_member(lang: Language) -> &'static str {
         Language::Python => "    realization: \"ActionRealization\"\n\n",
         Language::Cpp => "    virtual SCE::ActionRealization realization() const = 0;\n",
         Language::C11 => "    sce_action_realization_t realization;\n",
+        Language::Swift => no_swift_emitter("realization_member"),
     }
 }
 
@@ -1007,6 +1009,7 @@ fn method_name(lang: Language, name: &str) -> String {
         }
         Language::Go => filters::to_pascal_case(name.to_string()),
         Language::Cpp | Language::Kotlin => filters::to_camel_case(name.to_string()),
+        Language::Swift => no_swift_emitter("method_name"),
     }
 }
 
@@ -1017,6 +1020,7 @@ fn param_ident(lang: Language, name: &str) -> String {
             filters::to_snake_case(name.to_string())
         }
         Language::Go | Language::Kotlin | Language::Cpp => filters::to_camel_case(name.to_string()),
+        Language::Swift => no_swift_emitter("param_ident"),
     }
 }
 
@@ -1035,6 +1039,7 @@ fn receiver(lang: Language) -> &'static str {
         Language::Kotlin => "actions.",
         Language::Python => "self._actions.",
         Language::C11 => "sm->actions.",
+        Language::Swift => no_swift_emitter("receiver"),
     }
 }
 
@@ -1049,6 +1054,7 @@ fn call(lang: Language, name: &str, args: &[String]) -> String {
     match lang {
         Language::Rust | Language::Cpp | Language::C11 => format!("{expression};"),
         Language::Go | Language::Kotlin | Language::Python => expression,
+        Language::Swift => no_swift_emitter("call"),
     }
 }
 
@@ -1086,6 +1092,7 @@ fn params_for(lang: Language, pname: &str, ty: &SceType) -> Vec<String> {
         (Language::Cpp | Language::C11, _) => {
             vec![format!("{} {ident}", host_param_type(lang, ty))]
         }
+        (Language::Swift, _) => no_swift_emitter("params_for"),
     }
 }
 
@@ -1112,6 +1119,7 @@ fn args_for(lang: Language, accessor: &str, field: &str, ty: &SceType) -> Vec<St
             | Language::C11,
             _,
         ) => vec![format!("{accessor}.{field}")],
+        (Language::Swift, _) => no_swift_emitter("args_for"),
     }
 }
 
@@ -1123,6 +1131,7 @@ pub fn interface_name(lang: Language, machine_name: &str) -> String {
         Language::Rust | Language::Cpp | Language::Kotlin | Language::Go | Language::Python => {
             format!("{machine_name}Actions")
         }
+        Language::Swift => no_swift_emitter("interface_name"),
     }
 }
 
@@ -1314,6 +1323,7 @@ fn machine_token(lang: Language, child_name: &str) -> String {
         Language::Rust | Language::Cpp | Language::Kotlin | Language::Go | Language::Python => {
             filters::to_pascal_case(child_name.to_string())
         }
+        Language::Swift => no_swift_emitter("machine_token"),
     }
 }
 
@@ -1329,6 +1339,7 @@ fn child_interface_type(lang: Language, child_name: &str, namespace_prefix: &str
         // starts (`super::<child>_sm::<Child>Policy`).
         Language::Rust => format!("super::{child_name}_sm::{bare}"),
         Language::Kotlin | Language::Go | Language::Python | Language::C11 => bare,
+        Language::Swift => no_swift_emitter("child_interface_type"),
     }
 }
 
@@ -1357,6 +1368,7 @@ fn lower_child_hosts(
             Language::Cpp | Language::Kotlin | Language::Go | Language::Python | Language::C11 => {
                 String::new()
             }
+            Language::Swift => no_swift_emitter("lower_child_hosts"),
         };
         hosts.entry(operation).or_insert(host);
         (call, host_type)
@@ -1577,6 +1589,7 @@ fn payload_accessor(lang: Language, event: &str) -> String {
             "sm->pending_payload.as.{}",
             event.replace(['.', '-'], "_").to_lowercase()
         ),
+        Language::Swift => no_swift_emitter("payload_accessor"),
     }
 }
 
@@ -1748,6 +1761,7 @@ fn guard_payload(
                  {{\n    {stmt}\n}}{otherwise}"
             )
         }
+        Language::Swift => no_swift_emitter("guard_payload"),
     }
 }
 
@@ -1958,6 +1972,7 @@ fn build_interface(
                 doc("   ")
             )
         }
+        Language::Swift => no_swift_emitter("build_interface"),
     }
 }
 
@@ -2541,7 +2556,7 @@ mod tests {
 
     #[test]
     fn the_realization_is_declared_only_where_the_machine_has_a_duty() {
-        for &lang in Language::ALL {
+        for lang in crate::forge::codegen_matrix::emitting(ForgeKind::Statechart) {
             let with = build_interface(lang, "MActions", &BTreeMap::new(), &[], true);
             let without = build_interface(lang, "MActions", &BTreeMap::new(), &[], false);
             let member = realization_member(lang);

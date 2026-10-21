@@ -125,6 +125,7 @@ fn accessor_names(field_id: &str, lang: Language) -> (String, String) {
         }
         Language::Kotlin => (format!("{camel}Phys"), format!("set{pascal}Phys")),
         Language::Go => (format!("{pascal}Phys"), format!("Set{pascal}Phys")),
+        Language::Swift => crate::forge::codegen_matrix::no_swift_emitter("accessor_names"),
     }
 }
 
@@ -147,6 +148,7 @@ fn phys_type_token(lang: Language) -> &'static str {
         Language::Kotlin => "Double",
         Language::Go => "float64",
         Language::Python => "float",
+        Language::Swift => crate::forge::codegen_matrix::no_swift_emitter("phys_type_token"),
     }
 }
 
@@ -183,6 +185,7 @@ fn raw_to_phys_expr(raw_member: &str, scale_lit: &str, offset_lit: &str, lang: L
         // Python: `float(...)` to be defensive even though the
         // arithmetic already promotes.
         Language::Python => format!("float({raw_member}) * {scale_lit} + {offset_lit}"),
+        Language::Swift => crate::forge::codegen_matrix::no_swift_emitter("raw_to_phys_expr"),
     }
 }
 
@@ -230,6 +233,7 @@ fn phys_to_raw_expr(
                 format!("float({inverse})")
             }
         }
+        Language::Swift => crate::forge::codegen_matrix::no_swift_emitter("phys_to_raw_expr"),
     }
 }
 

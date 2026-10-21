@@ -33,6 +33,8 @@ use std::path::{Path, PathBuf};
 use tempfile::tempdir;
 
 use sce_build::compile_scxml_with_imports;
+use sce_build::forge::codegen_matrix::emitting;
+use sce_build::forge::model::ForgeKind;
 use sce_build::generator::{GeneratedOutput, Language};
 use sce_build::ForgeCompileOptions;
 
@@ -287,13 +289,16 @@ fn get_by_slot_emits_on_all_six_backends() {
     // foundation contract above. A regression that drops the method
     // on one backend would fail this guard before the foreach-BC
     // lowering tests catch the missing dispatch target.
-    for &lang in Language::ALL {
+    for lang in emitting(ForgeKind::BoundedCollection) {
         let code = compile_bc_for(lang);
         let needle = match lang {
             Language::Go => "GetBySlot",
             Language::Kotlin => "getBySlot",
             // Rust / Cpp / Python / C11 share the snake_case form.
             Language::Rust | Language::Cpp | Language::Python | Language::C11 => "get_by_slot",
+            Language::Swift => {
+                unreachable!("swift emits no bounded collection, so it is not iterated")
+            }
         };
         assert!(
             code.contains(needle),
@@ -310,11 +315,14 @@ fn get_by_slot_does_not_disturb_existing_get_handle_path() {
     // Drift guard: introducing `get_by_slot` must NOT alter the
     // existing Handle-based `get(handle)` emit. Catches a refactor
     // regression that accidentally folded the two methods.
-    for &lang in Language::ALL {
+    for lang in emitting(ForgeKind::BoundedCollection) {
         let code = compile_bc_for(lang);
         // Each backend's Handle-based get still emits with its
         // generation check inline (the use-after-remove guard).
         let gen_needle = match lang {
+            Language::Swift => {
+                unreachable!("swift emits no bounded collection, so it is not iterated")
+            }
             Language::Rust => "self.generation[slot] != handle.generation()",
             Language::Cpp => "generation_[slot] != handle.generation()",
             Language::Kotlin => "(generation[slotIdx].toUInt() and GEN_MASK) != handle.generation",

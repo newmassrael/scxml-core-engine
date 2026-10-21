@@ -5895,6 +5895,9 @@
         },
         "rust": {
           "type": "string"
+        },
+        "swift": {
+          "type": "string"
         }
       },
       "required": [
@@ -5903,7 +5906,8 @@
         "go",
         "kotlin",
         "python",
-        "rust"
+        "rust",
+        "swift"
       ],
       "type": "object"
     },

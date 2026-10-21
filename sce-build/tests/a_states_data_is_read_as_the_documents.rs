@@ -20,7 +20,9 @@
 use std::path::Path;
 use std::process::Command;
 
+use sce_build::forge::codegen_matrix::emitting;
 use sce_build::forge::diagnostic::{DiagnosticCode, ToDiagnostics};
+use sce_build::forge::model::ForgeKind;
 use sce_build::model::SCXMLModel;
 use sce_build::parser::SCXMLParser;
 
@@ -134,7 +136,7 @@ fn every_backend_initialises_the_states_value_and_emits_its_kind() {
     let input = dir.path().join("scoped_data.scxml");
     std::fs::write(&input, DOCUMENT).expect("write the document");
 
-    for language in sce_build::generator::Language::ALL {
+    for language in emitting(ForgeKind::Statechart) {
         let out_dir = dir.path().join(language.canonical_name());
         std::fs::create_dir_all(&out_dir).expect("output dir");
         // The text is read as the generator writes it: an external formatter

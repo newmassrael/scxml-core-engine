@@ -65,16 +65,19 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use sce_build::forge::codegen_matrix::emitting;
+use sce_build::forge::model::ForgeKind;
 use sce_build::generator::Language;
 use tempfile::TempDir;
 
-/// Every backend, so a defect present on one is not hidden by five
-/// passing. Defect 3 above was invisible on `cpp` / `c11`, whose loader
+/// Every backend that emits, so a defect present on one is not hidden by
+/// five passing. Defect 3 above was invisible on `cpp` / `c11`, whose loader
 /// scope is the whole tree, and live on the other four. Each is the
-/// `--lang` value the CLI takes for that backend.
+/// `--lang` value the CLI takes for that backend. A backend that emits
+/// nothing yet has no depfile to probe and is refused instead
+/// (`a_backend_with_no_emitter_is_refused`).
 fn languages() -> Vec<&'static str> {
-    Language::ALL
-        .iter()
+    emitting(ForgeKind::Statechart)
         .map(|language| language.canonical_name())
         .collect()
 }
@@ -89,7 +92,9 @@ const MIN_PRUNED_PER_PROBE: usize = 100;
 /// One probe per (backend, pipeline). Pinned exactly: a scenario that
 /// stops being generated must fail here rather than quietly shrink the
 /// matrix.
-const EXPECTED_PROBES: usize = Language::ALL.len() * 2;
+fn expected_probes() -> usize {
+    languages().len() * 2
+}
 
 fn codegen_bin() -> &'static str {
     env!("CARGO_BIN_EXE_sce-codegen")
@@ -631,9 +636,10 @@ fn every_declared_depfile_names_the_templates_its_render_reads() {
         }
     }
 
+    let expected = expected_probes();
     assert_eq!(
-        probes, EXPECTED_PROBES,
-        "ran {probes} probes, expected {EXPECTED_PROBES} — the matrix shrank, so a green \
+        probes, expected,
+        "ran {probes} probes, expected {expected} — the matrix shrank, so a green \
          result covers less than it claims",
     );
     assert!(
@@ -723,7 +729,7 @@ fn forge_imports_are_declared_prerequisites() {
         }
     }
 
-    let expected = Language::ALL.len() * CHAIN_DOCS.len();
+    let expected = languages().len() * CHAIN_DOCS.len();
     assert_eq!(
         probes, expected,
         "ran {probes} probes, expected {expected} — the chain shrank, and a chain of one \
@@ -849,9 +855,9 @@ fn a_depfile_never_names_a_file_the_run_wrote() {
 
     assert_eq!(
         probes,
-        Language::ALL.len(),
+        languages().len(),
         "ran {probes} probes, expected {} — a backend stopped being covered",
-        Language::ALL.len(),
+        languages().len(),
     );
     // Without a write, the disjointness above holds vacuously on every
     // backend and the gate reports green having compared nothing.
@@ -1075,9 +1081,9 @@ fn a_rejected_document_still_writes_its_depfile() {
 
     assert_eq!(
         probes,
-        Language::ALL.len(),
+        languages().len(),
         "ran {probes} probes, expected {} — a backend stopped being covered",
-        Language::ALL.len(),
+        languages().len(),
     );
     assert!(
         violations.is_empty(),
@@ -1177,9 +1183,10 @@ fn source_set_members_are_declared_prerequisites() {
         }
     }
 
+    let expected = expected_probes();
     assert_eq!(
-        probes, EXPECTED_PROBES,
-        "ran {probes} probes, expected {EXPECTED_PROBES} — the matrix shrank, so a green \
+        probes, expected,
+        "ran {probes} probes, expected {expected} — the matrix shrank, so a green \
          result covers less than it claims",
     );
     assert!(
@@ -1270,10 +1277,10 @@ fn the_oracle_is_declared_only_where_it_is_read() {
         violations.join("\n\n"),
     );
     assert!(
-        stripped_total >= Language::ALL.len(),
+        stripped_total >= languages().len(),
         "stripped {stripped_total} reject arrays across {} probes — under one per probe \
          means a probe ran against an unmodified catalog",
-        Language::ALL.len(),
+        languages().len(),
     );
 }
 
@@ -1487,9 +1494,9 @@ fn the_conformance_harness_declares_the_inputs_it_reads() {
 
     assert_eq!(
         probes,
-        Language::ALL.len(),
+        languages().len(),
         "ran {probes} probes, expected {} — a backend stopped being covered",
-        Language::ALL.len(),
+        languages().len(),
     );
     assert!(
         violations.is_empty(),

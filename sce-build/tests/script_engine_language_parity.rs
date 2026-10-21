@@ -45,6 +45,8 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use sce_build::forge::codegen_matrix::emitting;
+use sce_build::forge::model::ForgeKind;
 use sce_build::generator::{Language, ScriptEngineTarget};
 use sce_build::manifest::{
     SCRIPT_ENGINE_LANGUAGES, SCRIPT_ENGINE_LANGUAGE_ECMASCRIPT, SCRIPT_ENGINE_LANGUAGE_LUA,
@@ -224,7 +226,9 @@ fn the_targets_a_backend_claims_are_the_targets_it_generates_for() {
     let mut emitted = 0usize;
     let mut refused = 0usize;
 
-    for lang in Language::ALL {
+    // A backend with no emitter refuses every engine, which says nothing about
+    // an engine; the sweep is of the backends that emit a machine.
+    for lang in emitting(ForgeKind::Statechart) {
         let name = lang.canonical_name();
         // `ScriptEngineTarget::ALL`, not the two spelled out: this sweep is
         // one of the places a third engine language must reach on the day it
@@ -328,7 +332,7 @@ fn the_reported_engine_language_matches_what_the_artifact_carries() {
     let mut source_side = 0usize;
     let mut lowered_side = 0usize;
 
-    for lang in Language::ALL {
+    for lang in emitting(ForgeKind::Statechart) {
         let name = lang.canonical_name();
         let (text, manifest) = emit(name, "script_engine_language_parity");
         let carries_lowered_lua = text.contains(LOWERED_MARKER);
@@ -447,16 +451,19 @@ fn the_seam_table_and_the_derived_answer_agree() {
         rows.push((cells[0].trim_matches('`').to_string(), side));
     }
 
+    // A row for every backend that emits a machine: a backend with no emitter
+    // yet has no engine to name, and a row for it would state one nothing
+    // generates.
     assert_eq!(
         rows.len(),
-        Language::ALL.len(),
+        emitting(ForgeKind::Statechart).count(),
         "the seam table has {} row(s) for {} backends. Every backend needs a row: a missing \
          one is a backend whose engine a reader has to infer.\nrows: {rows:?}",
         rows.len(),
-        Language::ALL.len()
+        emitting(ForgeKind::Statechart).count()
     );
 
-    for lang in Language::ALL {
+    for lang in emitting(ForgeKind::Statechart) {
         let name = lang.canonical_name();
         let (_, documented) = rows
             .iter()

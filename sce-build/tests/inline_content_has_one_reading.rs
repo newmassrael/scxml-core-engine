@@ -40,7 +40,16 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use sce_build::forge::codegen_matrix::emitting;
+use sce_build::forge::model::ForgeKind;
 use sce_build::generator::Language;
+
+/// Every backend that generates a machine, by its `--language` spelling. A
+/// backend that emits nothing yet has no reading to compare and is refused
+/// instead (`a_backend_with_no_emitter_is_refused`).
+fn served() -> impl Iterator<Item = &'static str> {
+    emitting(ForgeKind::Statechart).map(Language::canonical_name)
+}
 
 fn sce_codegen_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_sce-codegen"))
@@ -249,16 +258,16 @@ fn unread_form(authored: &str) -> String {
 /// The comparison spans every backend the tool serves.
 ///
 /// A loop cannot see its own list shrink, so the list is derived from
-/// `Language::ALL` and the derivation is what gets asserted. Written
+/// the matrix and the derivation is what gets asserted. Written
 /// after a mutation restricted one of the loops below to a single
 /// backend and nothing went red: the other five were simply not
 /// compared, which is the state this whole file exists to end.
 #[test]
 fn every_backend_the_tool_serves_is_compared() {
-    let probed: Vec<&str> = Language::ALL.iter().map(|l| l.canonical_name()).collect();
+    let probed: Vec<&str> = served().collect();
     assert_eq!(
         probed.len(),
-        Language::ALL.len(),
+        emitting(ForgeKind::Statechart).count(),
         "the comparison does not span every backend: {probed:?}"
     );
     for name in &probed {
@@ -287,7 +296,7 @@ fn every_backend_the_tool_serves_is_compared() {
 /// the text being present.
 #[test]
 fn every_backend_reads_an_expression_the_same_way() {
-    for language in Language::ALL.iter().map(|l| l.canonical_name()) {
+    for language in served() {
         let text = emitted("t.length", language);
         let [spelling] = expected_spellings(language);
         assert!(
@@ -315,7 +324,7 @@ fn every_backend_reads_an_expression_the_same_way() {
 /// as an expression binds nothing while the clause says it is the text.
 #[test]
 fn every_backend_reads_prose_as_the_string() {
-    for language in Language::ALL.iter().map(|l| l.canonical_name()) {
+    for language in served() {
         for (content, quoted) in [("inline payload", "inline payload"), ("Date", "Date")] {
             let text = emitted(content, language);
             let quoted_forms = [
@@ -377,7 +386,7 @@ fn send_side_evidence(language: &str) -> &'static [&'static str] {
 
 #[test]
 fn the_send_path_no_longer_searches_for_the_reading() {
-    for language in Language::ALL.iter().map(|l| l.canonical_name()) {
+    for language in served() {
         // Comments first: the emitted sources explain what they replaced,
         // and a scan that read those would report the very searches their
         // removal is the subject of. This assertion caught its own
@@ -428,7 +437,7 @@ fn the_send_path_no_longer_searches_for_the_reading() {
 /// through unread still compiles and still runs.
 #[test]
 fn every_backend_reads_an_assign_expression_the_same_way() {
-    for language in Language::ALL.iter().map(|l| l.canonical_name()) {
+    for language in served() {
         let text = assign_emitted("t.length", language);
         let [spelling] = expected_spellings(language);
         assert!(
@@ -453,7 +462,7 @@ fn every_backend_reads_an_assign_expression_the_same_way() {
 /// Text that is not an expression is the string, on every backend.
 #[test]
 fn every_backend_reads_assigned_prose_as_the_string() {
-    for language in Language::ALL.iter().map(|l| l.canonical_name()) {
+    for language in served() {
         for content in ["inline payload", "Date"] {
             let text = assign_emitted(content, language);
             let quoted_forms = [

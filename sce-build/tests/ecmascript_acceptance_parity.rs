@@ -189,9 +189,10 @@ fn render(model: &SCXMLModel, lang: Language, stem: &str) -> Option<String> {
         // this file cannot check the very claim it exists for.
         //
         // The arm names the backends it stands for (C++ hands the author's
-        // source to its engine and lowers nothing), so a backend added to
-        // `Language` is a compile error here before it is a panic.
-        other @ Language::Cpp => panic!(
+        // source to its engine and lowers nothing, and Swift has no template
+        // to lower into), so a backend added to `Language` is a compile error
+        // here before it is a panic.
+        other @ (Language::Cpp | Language::Swift) => panic!(
             "{other:?} is in the lowering population and this test cannot \
              render it. Add its arm — skipping it would leave the population \
              larger than the coverage, which is the shape a `_ => None` hides."

@@ -138,6 +138,7 @@ pub enum Language {
     Go,
     Python,
     C11,
+    Swift,
 }
 
 impl Language {
@@ -156,6 +157,7 @@ impl Language {
         Language::Go,
         Language::Python,
         Language::C11,
+        Language::Swift,
     ];
 
     /// Subdirectory of `tools/codegen/templates/` holding this
@@ -179,6 +181,7 @@ impl Language {
             Language::Go => "go",
             Language::Python => "python",
             Language::C11 => "",
+            Language::Swift => "swift",
         }
     }
 
@@ -206,6 +209,7 @@ impl Language {
             Language::Go => Some("go"),
             Language::Python => Some("python"),
             Language::C11 => Some("c"),
+            Language::Swift => Some("swift"),
         }
     }
 
@@ -225,6 +229,7 @@ impl Language {
             Language::Go => "backends/go",
             Language::Python => "backends/python",
             Language::C11 => "backends/c",
+            Language::Swift => "backends/swift",
         }
     }
 
@@ -262,6 +267,7 @@ impl Language {
             Language::Go => "go",
             Language::Python => "python",
             Language::C11 => "c",
+            Language::Swift => "swift",
         }
     }
 
@@ -274,8 +280,12 @@ impl Language {
     /// and `c/` were added nothing updated it, so a C++ build declared a
     /// dependency on 18 templates it cannot render and a C11 build on
     /// 65 — meaning a Rust template edit regenerated every C11 output.
+    ///
+    /// Read from [`Language::ALL`], not from the languages the dispatcher can
+    /// generate: a backend whose templates have not landed owns the directory
+    /// they will land in, and a C++ build must not claim it in the meantime.
     pub fn foreign_template_prefixes(self) -> Vec<&'static str> {
-        crate::template_registry::SUPPORTED_LANGUAGES
+        Language::ALL
             .iter()
             .filter(|other| **other != self)
             .filter_map(|other| other.template_owned_subdir())
@@ -297,6 +307,7 @@ impl Language {
             Language::Go => "go",
             Language::Python => "python",
             Language::C11 => "c11",
+            Language::Swift => "swift",
         }
     }
 
@@ -400,12 +411,14 @@ impl Language {
         match self {
             Language::Kotlin => ScriptEngineTarget::Lua,
             Language::Cpp => ScriptEngineTarget::EcmaScript,
-            Language::Rust | Language::Go | Language::Python | Language::C11 => unreachable!(
-                "{self:?} carries BOTH arms now — it can emit the author's text and it can \
+            Language::Rust | Language::Go | Language::Python | Language::C11 | Language::Swift => {
+                unreachable!(
+                    "{self:?} carries BOTH arms now — it can emit the author's text and it can \
                  be asked to lower — so its default stopped being forced and became a \
                  choice. Give it an arm here naming the host fact that decides it; falling \
                  through to another backend's answer would make the choice by accident."
-            ),
+                )
+            }
         }
     }
 
@@ -427,9 +440,21 @@ impl Language {
     /// of "both lists are empty" would be free to disagree about what
     /// migrated means, and the default would then offer a language the
     /// refusal was still withholding.
+    ///
+    /// A backend with no template has no site that could be unmigrated, which
+    /// would make this vacuously true: a backend that renders nothing is not
+    /// one that can be asked for Lua. It owns a template, or the answer is no.
     pub fn can_lower_expressions_on_request(self) -> bool {
-        self.unmigrated_expression_sites().is_empty()
+        self.owns_a_template()
+            && self.unmigrated_expression_sites().is_empty()
             && self.unclassified_expression_sites().is_empty()
+    }
+
+    /// Whether any template in the embedded tree is this backend's.
+    fn owns_a_template(self) -> bool {
+        crate::template_registry::EMBEDDED_TEMPLATES
+            .iter()
+            .any(|(name, _)| self.owns_template(name))
     }
 
     /// Whether this backend's templates lower expressions through the
@@ -660,7 +685,9 @@ impl Language {
     fn owns_template(self, name: &str) -> bool {
         match self.template_owned_subdir() {
             Some(dir) => name.starts_with(&format!("{dir}/")),
-            None => crate::template_registry::SUPPORTED_LANGUAGES
+            // The complement of every other backend's directory, Swift's
+            // included before it has a template in it.
+            None => Language::ALL
                 .iter()
                 .filter_map(|other| other.template_owned_subdir())
                 .all(|dir| !name.starts_with(&format!("{dir}/"))),
@@ -679,6 +706,7 @@ impl std::str::FromStr for Language {
             "go" | "golang" => Ok(Language::Go),
             "python" | "py" => Ok(Language::Python),
             "c11" | "c" => Ok(Language::C11),
+            "swift" => Ok(Language::Swift),
             _ => Err(format!("Unknown language: {s}")),
         }
     }
@@ -2408,6 +2436,14 @@ pub fn transition_function_files(
     if !model.transition_function_declared || model.emitted_transition_function.is_none() {
         return Ok(Vec::new());
     }
+    // The function is a file of the machine's own backend; Swift has no machine
+    // template yet, so a document that declares one is refused as the machine is.
+    if language == Language::Swift {
+        return Err(crate::forge::codegen_matrix::emit_missing(
+            crate::forge::model::ForgeKind::Statechart,
+            language,
+        ));
+    }
     let target = TransitionFunctionTarget::of(model, input_stem, language, naming);
     let mut env = new_env();
     templates.load(&mut env, language)?;
@@ -2419,6 +2455,9 @@ pub fn transition_function_files(
         Language::Go => filters::register_go_filters(&mut env, &scope),
         Language::Kotlin => filters::register_kotlin_filters(&mut env, &scope),
         Language::Python => filters::register_python_filters(&mut env, &scope),
+        Language::Swift => {
+            crate::forge::codegen_matrix::no_swift_emitter("transition_function_files")
+        }
     }
     let code = render_transition_function(&mut env, model, &target)?;
     Ok(vec![(target.file, code)])
@@ -2459,6 +2498,11 @@ pub(crate) fn transition_function_template(language: Language) -> &'static str {
         Language::Go => "transition_function.go.jinja2",
         Language::Kotlin => "transition_function.kt.jinja2",
         Language::Python => "transition_function.py.jinja2",
+        // Named by the convention the others follow. No such template exists
+        // yet: [`crate::reader_names`] asks every backend which template is its
+        // transition function's, to leave it out of the machine's members, and
+        // a name no template carries leaves nothing out.
+        Language::Swift => "transition_function.swift.jinja2",
     }
 }
 
@@ -2551,6 +2595,9 @@ impl TransitionFunctionTarget {
                 file: format!("{input_stem}_transition_function.py"),
                 names: minijinja::context! {},
             },
+            Language::Swift => {
+                crate::forge::codegen_matrix::no_swift_emitter("TransitionFunctionTarget::of")
+            }
         }
     }
 }
@@ -2704,6 +2751,11 @@ pub fn generate_with_templates(
 /// never emitted costs one reader, while one missed is generated code that
 /// does not compile.
 pub fn emitted_beside_templates(model: &SCXMLModel, language: Language) -> String {
+    // Swift has no emitter, so nothing is written for it beside templates that
+    // do not exist; the Swift builders join the match below with its emitter.
+    if language == Language::Swift {
+        return String::new();
+    }
     // A declaration is per `type`, so it serves the type's untyped invokes
     // too — which is what gives the adapter its fallback.
     let mut model = model.clone();
@@ -2854,6 +2906,9 @@ pub fn emitted_beside_templates(model: &SCXMLModel, language: Language) -> Strin
                 out.push_str(&part);
             }
             out.push_str(&crate::forge::host_invoker_interface::render_python(&model));
+        }
+        Language::Swift => {
+            crate::forge::codegen_matrix::no_swift_emitter("emitted_beside_templates")
         }
     }
     out
@@ -4872,6 +4927,7 @@ mod tests {
                 Language::Go => "Go",
                 Language::Python => "Python",
                 Language::C11 => "C11",
+                Language::Swift => "Swift",
             }
         }
 
@@ -4894,7 +4950,9 @@ mod tests {
              backends across rows — they all lower the same raise. Rows: {aot_rows:?}"
         );
 
-        for &language in Language::ALL {
+        for language in
+            crate::forge::codegen_matrix::emitting(crate::forge::model::ForgeKind::Statechart)
+        {
             assert!(
                 aot_rows[0].contains(label(language)),
                 "§2.12's AOT row does not name {}, yet the generator lowers the \
@@ -5818,7 +5876,9 @@ mod tests {
     fn every_backend_writes_the_function_when_the_run_built_it() {
         let without = transition_function_model(true, false);
         let hash = "ef".repeat(32);
-        for &language in Language::ALL {
+        for language in
+            crate::forge::codegen_matrix::emitting(crate::forge::model::ForgeKind::Statechart)
+        {
             assert!(
                 function_files(&without, language)
                     .expect("nothing to refuse")
@@ -5832,10 +5892,37 @@ mod tests {
                 Language::Go => "lamp_transition_function/lamp_transition_function.go",
                 Language::Kotlin => "lampTransitionFunction.kt",
                 Language::Python => "lamp_transition_function.py",
+                Language::Swift => unreachable!("swift emits no machine, so it is not iterated"),
             };
             assert_eq!(name, expected_name, "{language:?}");
             assert!(code.contains(&hash), "{language:?}: no hash in:\n{code}");
         }
+    }
+
+    /// A backend with no machine template refuses a declared function as it
+    /// refuses the machine, by the diagnostic the codegen matrix gives, and
+    /// writes nothing where the run built none.
+    #[test]
+    fn a_backend_with_no_emitter_refuses_the_function_it_cannot_write() {
+        use crate::forge::codegen_matrix::{emit_missing, emitting};
+        use crate::forge::model::ForgeKind;
+        let declared = transition_function_model(true, true);
+        let mut refused = 0usize;
+        for &language in Language::ALL {
+            if emitting(ForgeKind::Statechart).any(|emits| emits == language) {
+                continue;
+            }
+            let error =
+                named_function_files(&declared, language, TransitionFunctionNaming::default())
+                    .expect_err("a backend with no emitter wrote a function");
+            assert_eq!(
+                error.to_string(),
+                emit_missing(ForgeKind::Statechart, language).to_string(),
+                "{language:?}"
+            );
+            refused += 1;
+        }
+        assert!(refused > 0, "every backend emits, so this measures nothing");
     }
 
     /// C++: a header in a namespace nested in the machine's, `constexpr`

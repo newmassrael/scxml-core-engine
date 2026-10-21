@@ -31,6 +31,8 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use sce_build::forge::codegen_matrix::emitting;
+use sce_build::forge::model::ForgeKind;
 use sce_build::generator::Language;
 
 fn repo_root() -> PathBuf {
@@ -958,9 +960,7 @@ fn a_declared_type_emits_a_dispatch_for_kotlin() {
 /// outright for some unrelated reason.
 #[test]
 fn those_backends_accept_the_same_document_undeclared() {
-    for lang in Language::ALL
-        .iter()
-        .copied()
+    for lang in emitting(ForgeKind::Statechart)
         // Rust: its undeclared run is
         // `without_a_declaration_the_build_names_the_unserved_send`; the
         // backends here are the ones with an
@@ -1035,9 +1035,7 @@ fn the_manifest_says_when_the_host_must_register_a_mesh_router() {
         assert_eq!(r.exit, Some(0), "{lang}: {}", r.stderr);
         manifest(&r)["needs_mesh_router"].clone()
     };
-    for lang in Language::ALL
-        .iter()
-        .copied()
+    for lang in emitting(ForgeKind::Statechart)
         // C++: generates its own Mesh router, so it needs none from the host.
         .filter(|language| *language != Language::Cpp)
         .map(Language::canonical_name)

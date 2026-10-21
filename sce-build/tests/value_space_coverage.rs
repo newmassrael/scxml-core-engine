@@ -22,6 +22,8 @@
 
 use std::process::Command;
 
+use sce_build::forge::codegen_matrix::emitting;
+use sce_build::forge::model::ForgeKind;
 use sce_build::generator::Language;
 
 fn bin() -> String {
@@ -364,7 +366,7 @@ fn an_enum_typed_input_generates_instead_of_panicking() {
     // writes as a module-qualified import and so refuses without the module
     // path. The path is given to every backend, as other generate tests do;
     // the rest ignore it.
-    for lang in Language::ALL.iter().copied().map(Language::canonical_name) {
+    for lang in emitting(ForgeKind::Statechart).map(Language::canonical_name) {
         let out = t.0.join(format!("out_{lang}"));
         std::fs::create_dir_all(&out).expect("create output dir");
         let run = Command::new(bin())

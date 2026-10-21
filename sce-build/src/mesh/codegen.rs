@@ -1217,7 +1217,7 @@ fn mesh_backend(language: Language) -> Option<MeshBackend> {
         Language::Cpp => Some(generate_cpp_mesh),
         Language::Rust => Some(generate_rust_mesh),
         Language::Kotlin => Some(generate_kotlin_mesh),
-        Language::Go | Language::Python | Language::C11 => None,
+        Language::Go | Language::Python | Language::C11 | Language::Swift => None,
     }
 }
 
@@ -2195,7 +2195,8 @@ fn host_peer_table_template(language: crate::generator::Language) -> Option<&'st
         crate::generator::Language::Cpp
         | crate::generator::Language::Go
         | crate::generator::Language::Python
-        | crate::generator::Language::C11 => None,
+        | crate::generator::Language::C11
+        | crate::generator::Language::Swift => None,
     }
 }
 
@@ -2213,7 +2214,8 @@ fn host_peer_table_file(machine_name: &str, language: crate::generator::Language
         | crate::generator::Language::Cpp
         | crate::generator::Language::Go
         | crate::generator::Language::Python
-        | crate::generator::Language::C11 => format!("{machine_name}_mesh_peers.rs"),
+        | crate::generator::Language::C11
+        | crate::generator::Language::Swift => format!("{machine_name}_mesh_peers.rs"),
     }
 }
 

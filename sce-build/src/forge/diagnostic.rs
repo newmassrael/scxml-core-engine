@@ -16544,7 +16544,7 @@ mod tests {
                     lang: "c11".into(),
                     route: crate::cli_language::LanguageRoute::GenerateW3c,
                 },
-                r#"{"v":1,"id":"fnv1a:d4ef6ce0e63e47bc","code":"cli/unsupported-language","stage":"cli","message":"`generate-w3c` does not target c11. It takes rust, cpp, kotlin, go, python — C11 is absent because no C11 W3C statechart emitter exists yet (RFC §5.J.1); single-document `generate -l c11` uses a different emitter and does work","actual":"c11","fix":{"kind":"replace_one_of","candidates":["rust","cpp","kotlin","go","python"]}}"#,
+                r#"{"v":1,"id":"fnv1a:d4ef6ce0e63e47bc","code":"cli/unsupported-language","stage":"cli","message":"`generate-w3c` does not target c11. It takes rust, cpp, kotlin, go, python — C11 is absent because no C11 W3C statechart emitter exists yet (RFC §5.J.1); single-document `generate -l c11` uses a different emitter and does work. A backend that emits nothing yet is absent too","actual":"c11","fix":{"kind":"replace_one_of","candidates":["rust","cpp","kotlin","go","python"]}}"#,
             ),
             (
                 "cli/unknown-script-engine",

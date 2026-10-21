@@ -99,7 +99,7 @@
           "type": "array",
           "minItems": 1,
           "uniqueItems": true,
-          "items": { "enum": ["rust", "cpp", "kotlin", "go", "python", "c11"] }
+          "items": { "enum": ["rust", "cpp", "kotlin", "go", "python", "c11", "swift"] }
         },
         "example": {
           "description": "A checked-in document of the kind that `check --lint` accepts and `pseudo` renders, with its path in the SCE tree and its full text; or, when no single document of the kind passes check, why.",

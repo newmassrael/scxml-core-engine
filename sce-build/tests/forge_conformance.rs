@@ -1409,7 +1409,7 @@ fn forge_const_integer_failure_refuses_an_overflowing_fold() {
     let scxml_path = resource_dir().join("algorithm_const_integer_failure.scxml");
     let content = std::fs::read_to_string(&scxml_path).expect("read fixture");
 
-    for &lang in sce_build::generator::Language::ALL {
+    for lang in emitting_backends() {
         let err = match sce_build::compile_forge_with_imports(
             &content,
             sce_build::DocumentLabel::symmetric("algorithm_const_integer_failure"),
@@ -10652,13 +10652,13 @@ fn an_observer_importing_a_stateful_kind_is_refused_in_every_backend() {
           sce:on-enter="raiseAlarm" sce:on-leave="clearAlarm"/>
   </datamodel>
 </scxml>"#;
-    for lang in sce_build::generator::Language::ALL {
+    for lang in emitting_backends() {
         let refusal = match sce_build::compile_forge_with_imports(
             document,
             sce_build::DocumentLabel::symmetric("observer_with_a_filter"),
-            *lang,
+            lang,
             &resource_dir(),
-            &golden_options(*lang),
+            &golden_options(lang),
         ) {
             Ok(_) => panic!("{lang:?}: an observer cannot hold a filter's state"),
             Err(refusal) => refusal,
@@ -11348,14 +11348,20 @@ fn assert_crossfile_codegen_languages(
     }
 }
 
+/// Every backend that emits a machine: the ones the cross-file rows run on.
+/// A backend that emits nothing yet is refused at the entry point instead
+/// (`a_backend_with_no_emitter_is_refused`).
+fn emitting_backends() -> Vec<sce_build::generator::Language> {
+    sce_build::forge::codegen_matrix::emitting(sce_build::forge::model::ForgeKind::Statechart)
+        .collect()
+}
+
 /// Every backend that supports the importing kind. The rows for kinds
 /// whose C11 import lowering exists (procedure/validator) take every
-/// backend, `Language::ALL`; filter/observer rows take this list, which
-/// omits C11.
+/// emitting backend; filter/observer rows take this list, which omits C11.
 fn backends_lowering_filter_and_observer_imports() -> Vec<sce_build::generator::Language> {
-    sce_build::generator::Language::ALL
-        .iter()
-        .copied()
+    emitting_backends()
+        .into_iter()
         // C11: no C11 import lowering for the filter and observer kinds.
         .filter(|lang| *lang != sce_build::generator::Language::C11)
         .collect()
@@ -11364,41 +11370,29 @@ fn backends_lowering_filter_and_observer_imports() -> Vec<sce_build::generator::
 /// Existing golden-backed combos, verified here as codegen-all-languages too.
 #[test]
 fn crossfile_matrix_procedure_codec() {
-    assert_crossfile_codegen_languages(
-        "crossfile_procedure_codec",
-        sce_build::generator::Language::ALL,
-    );
+    assert_crossfile_codegen_languages("crossfile_procedure_codec", &emitting_backends());
 }
 
 #[test]
 fn crossfile_matrix_procedure_codec_mutate() {
-    assert_crossfile_codegen_languages(
-        "crossfile_procedure_codec_mutate",
-        sce_build::generator::Language::ALL,
-    );
+    assert_crossfile_codegen_languages("crossfile_procedure_codec_mutate", &emitting_backends());
 }
 
 #[test]
 fn crossfile_matrix_procedure_filter() {
-    assert_crossfile_codegen_languages(
-        "crossfile_procedure_filter",
-        sce_build::generator::Language::ALL,
-    );
+    assert_crossfile_codegen_languages("crossfile_procedure_filter", &emitting_backends());
 }
 
 #[test]
 fn crossfile_matrix_validator_transform() {
-    assert_crossfile_codegen_languages(
-        "crossfile_validator_transform",
-        sce_build::generator::Language::ALL,
-    );
+    assert_crossfile_codegen_languages("crossfile_validator_transform", &emitting_backends());
 }
 
 #[test]
 fn crossfile_matrix_validator_transform_widening() {
     assert_crossfile_codegen_languages(
         "crossfile_validator_transform_widening",
-        sce_build::generator::Language::ALL,
+        &emitting_backends(),
     );
 }
 
@@ -11420,42 +11414,27 @@ fn crossfile_matrix_observer_condition() {
 
 #[test]
 fn crossfile_matrix_validator_codec() {
-    assert_crossfile_codegen_languages(
-        "crossfile_validator_codec",
-        sce_build::generator::Language::ALL,
-    );
+    assert_crossfile_codegen_languages("crossfile_validator_codec", &emitting_backends());
 }
 
 #[test]
 fn crossfile_matrix_validator_filter() {
-    assert_crossfile_codegen_languages(
-        "crossfile_validator_filter",
-        sce_build::generator::Language::ALL,
-    );
+    assert_crossfile_codegen_languages("crossfile_validator_filter", &emitting_backends());
 }
 
 #[test]
 fn crossfile_matrix_validator_condition() {
-    assert_crossfile_codegen_languages(
-        "crossfile_validator_condition",
-        sce_build::generator::Language::ALL,
-    );
+    assert_crossfile_codegen_languages("crossfile_validator_condition", &emitting_backends());
 }
 
 #[test]
 fn crossfile_matrix_validator_lookup() {
-    assert_crossfile_codegen_languages(
-        "crossfile_validator_lookup",
-        sce_build::generator::Language::ALL,
-    );
+    assert_crossfile_codegen_languages("crossfile_validator_lookup", &emitting_backends());
 }
 
 #[test]
 fn crossfile_matrix_validator_interpolation() {
-    assert_crossfile_codegen_languages(
-        "crossfile_validator_interpolation",
-        sce_build::generator::Language::ALL,
-    );
+    assert_crossfile_codegen_languages("crossfile_validator_interpolation", &emitting_backends());
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -12435,9 +12414,8 @@ fn forge_parent_tag_inversion_beta_emits_caller_tag_signature() {
     // β leaf must compile on all 6 backends to satisfy the
     // 5-backend parity contract — smoke each language so a
     // single-language regression doesn't slip through.
-    for lang in sce_build::generator::Language::ALL
-        .iter()
-        .copied()
+    for lang in emitting_backends()
+        .into_iter()
         // Rust: compiled outside this loop, the parent above and the leaf
         // below, where its output is asserted on.
         .filter(|lang| *lang != sce_build::generator::Language::Rust)
@@ -19986,7 +19964,7 @@ fn flag_inversion_emits_typed_param_and_predicate_consumption() {
 
     // Compile-smoke on all 6 backends so a single-language regression
     // surfaces here rather than via the conformance compile-gate.
-    for lang in sce_build::generator::Language::ALL.iter().copied() {
+    for lang in emitting_backends() {
         let mut opts = sce_build::ForgeCompileOptions::default();
         if matches!(lang, sce_build::generator::Language::Go) {
             opts.go_module_prefix = Some("github.com/test/codec".to_string());
@@ -20145,7 +20123,7 @@ fn flag_inversion_variant_arm_flag_bind_threading() {
     // Compile-smoke on all 6 backends so a single-language regression
     // surfaces immediately rather than via the per-language conformance
     // golden tests.
-    for lang in sce_build::generator::Language::ALL.iter().copied() {
+    for lang in emitting_backends() {
         let mut opts = sce_build::ForgeCompileOptions::default();
         if matches!(lang, sce_build::generator::Language::Go) {
             opts.go_module_prefix = Some("github.com/test/codec".to_string());
@@ -22344,9 +22322,12 @@ fn validator_integer_extremes_keep_only_the_bounds_inside_the_range() {
 }
 
 /// SCE Protocol-Synthesis RFC §synth-5-L: the index type is resolved in the element document's
-/// namespace, then compiled with the element and enum on every backend.
+/// namespace, then compiled with the element and enum on every backend that
+/// emits a bounded collection.
 #[test]
 fn bounded_collection_enum_index_compiles_on_every_backend() {
+    use sce_build::forge::codegen_matrix::emitting;
+    use sce_build::forge::model::ForgeKind;
     use sce_build::generator::Language;
     let dir = tempfile::tempdir().unwrap();
     let documents = [
@@ -22383,7 +22364,7 @@ fn bounded_collection_enum_index_compiles_on_every_backend() {
         .collect();
     let refs: Vec<_> = paths.iter().map(|p| p.as_path()).collect();
     let mut failures = Vec::new();
-    for &language in Language::ALL {
+    for language in emitting(ForgeKind::BoundedCollection) {
         let result = std::panic::catch_unwind(|| {
             let outputs = sce_build::compile_scxml_with_imports(
                 &[],
@@ -22400,6 +22381,7 @@ fn bounded_collection_enum_index_compiles_on_every_backend() {
                 .collect();
             let id = "bounded_collection_enum_index";
             match language {
+                Language::Swift => unreachable!("swift emits no bounded collection"),
                 Language::Cpp => compile_generated_set_cpp(files, id),
                 Language::C11 => compile_generated_set_c11(files, id),
                 Language::Go => compile_generated_set_go(files, id),

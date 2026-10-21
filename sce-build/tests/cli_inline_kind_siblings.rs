@@ -14,11 +14,14 @@
 //! alone means the feature does not ship.
 //!
 //! The population is derived, never listed: the ids come out of the
-//! fixture, and the languages out of `Language::ALL`. A list would
-//! answer for the languages someone remembered to type.
+//! fixture, and the languages out of the codegen matrix (`emitting`). A list
+//! would answer for the languages someone remembered to type.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+use sce_build::forge::codegen_matrix::emitting;
+use sce_build::forge::model::ForgeKind;
 
 /// The sce: extension namespace, as the fixtures and the parser spell it.
 const SCE_EXT_NAMESPACE: &str = "http://sce.dev/ext";
@@ -82,7 +85,7 @@ fn the_command_emits_a_sibling_for_every_kind_declared_in_place() {
     );
 
     let out_root = tempfile::tempdir().expect("tempdir");
-    for language in sce_build::generator::Language::ALL {
+    for language in emitting(ForgeKind::Statechart) {
         let out_dir = out_root.path().join(format!("{language:?}"));
         std::fs::create_dir_all(&out_dir).expect("output dir");
         let run = Command::new(env!("CARGO_BIN_EXE_sce-codegen"))
@@ -150,7 +153,7 @@ fn check_and_generate_refuse_an_invalid_inline_expression() {
     </scxml>"#,
     )
     .unwrap();
-    for language in sce_build::generator::Language::ALL {
+    for language in emitting(ForgeKind::Statechart) {
         let mut refusals = Vec::new();
         for command in ["check", "generate"] {
             let mut run = Command::new(env!("CARGO_BIN_EXE_sce-codegen"));
@@ -186,7 +189,7 @@ fn check_and_generate_refuse_an_invalid_inline_expression() {
 fn in_memory_compilation_keeps_the_inline_artifacts() {
     let fixture = repo_root().join("tests/forge/resources/inline_mixed.scxml");
     let source = std::fs::read_to_string(&fixture).unwrap();
-    for &language in sce_build::generator::Language::ALL {
+    for language in emitting(ForgeKind::Statechart) {
         let templates = sce_build::template_registry::embedded_templates_for(language);
         let memory = sce_build::compile_from_string_lang_typed(
             &source,

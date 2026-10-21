@@ -103,6 +103,7 @@ pub fn register_literal_escaper(
         Syntax::Kotlin => env.add_filter("escape_kotlin", escape_kotlin),
         Syntax::Python => env.add_filter("escape_python", escape_python),
         Syntax::Rust => env.add_filter("escape_rust", escape_rust),
+        Syntax::Swift => env.add_filter("escape_swift", escape_swift),
     }
 }
 
@@ -1926,6 +1927,34 @@ pub(crate) fn escape_kotlin(text: String) -> String {
         .replace('$', "\\$")
 }
 
+/// Escape the author's text for the BODY of a Swift string literal.
+///
+/// Both forms Swift writes with escapes — `"…"` and `"""…"""` — read the same
+/// ones, so one escaper serves both; the `#`-delimited raw forms read none and
+/// are written by `crate::literal_text`'s raw rule instead. The backslash is
+/// what opens an escape and, before `(`, an interpolation, so doubling it is
+/// what keeps a value from running as code. `"` is escaped for the single-line
+/// form (it is harmless in the multi-line one), and every other control
+/// character is written `\u{…}`, which is the one numeric form Swift has.
+pub(crate) fn escape_swift(text: String) -> String {
+    let mut out = String::with_capacity(text.len());
+    for ch in text.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            '\0' => out.push_str("\\0"),
+            c if (c as u32) < 0x20 || c as u32 == 0x7F => {
+                out.push_str(&format!("\\u{{{:x}}}", c as u32))
+            }
+            c => out.push(c),
+        }
+    }
+    out
+}
+
 /// Convert SCXML string expression to Kotlin string expression.
 fn to_kotlin_string_expr(expr: String) -> String {
     if expr.is_empty() {
@@ -2140,6 +2169,7 @@ mod literal_escaper_census {
         ("escape_lua", escape_lua),
         ("escape_python", escape_python),
         ("escape_rust", escape_rust),
+        ("escape_swift", escape_swift),
     ];
 
     /// Text that a STRING-LITERAL escaper must change and an identifier
@@ -2183,6 +2213,21 @@ mod literal_escaper_census {
                 }
             );
         }
+    }
+
+    /// What `escape_swift` writes is what a Swift compiler reads back as the
+    /// value, in both literal forms that process escapes. The expected text
+    /// is the one compiled with Swift 6.4.0 as `"…"` and as `"""…"""` and
+    /// compared byte for byte with the original.
+    #[test]
+    fn escape_swift_writes_what_swift_reads_back() {
+        let value = "a\"b\\c\n\r\t\0\u{1}\u{7f}(x)\\(y) \u{1F600} é";
+        assert_eq!(
+            escape_swift(value.to_string()),
+            "a\\\"b\\\\c\\n\\r\\t\\0\\u{1}\\u{7f}(x)\\\\(y) \u{1F600} é"
+        );
+        // A backslash before `(` is doubled, so nothing interpolates.
+        assert_eq!(escape_swift("\\(1)".to_string()), "\\\\(1)");
     }
 
     /// The table above names every `escape_*` filter this module registers.

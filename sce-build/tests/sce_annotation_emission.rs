@@ -20,15 +20,16 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use sce_build::forge::codegen_matrix::emitting;
+use sce_build::forge::model::ForgeKind;
 use sce_build::generator::Language;
 use sce_build::provenance::SpecProvenance;
 
-/// The backends this gate speaks for, by their `--lang` values. Taken
-/// from `Language::ALL` so a backend added there is covered here without
-/// anyone remembering to list it.
+/// The backends this gate speaks for, by their `--lang` values: every one that
+/// emits a machine, taken from the codegen matrix so a backend that gains an
+/// emitter is covered here without anyone remembering to list it.
 fn backends() -> Vec<&'static str> {
-    Language::ALL
-        .iter()
+    emitting(ForgeKind::Statechart)
         .map(|language| language.canonical_name())
         .collect()
 }
@@ -406,7 +407,7 @@ fn comment_violations(lang: &str, text: &str) -> Vec<String> {
     let opener = match language {
         Language::Python => "#",
         Language::C11 => "/*",
-        Language::Rust | Language::Cpp | Language::Kotlin | Language::Go => "//",
+        Language::Rust | Language::Cpp | Language::Kotlin | Language::Go | Language::Swift => "//",
     };
     text.lines()
         .filter(|line| HOSTILE_MARKERS.iter().any(|m| line.contains(m)))

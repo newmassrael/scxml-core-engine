@@ -21,11 +21,13 @@
 //! The roster lives in exactly one place — §9.5's table — and this file
 //! binds it in every direction:
 //!
-//! 1. The table names every backend, once.
+//! 1. The table names every backend that emits a machine, once. A backend
+//!    that emits nothing yet refuses the document before the invoke is
+//!    reached and has no route to name.
 //! 2. Its `generated` rows are exactly the tracked template directories, and
 //!    its `host` rows exactly the backends the lowering routes through the
 //!    host. A backend on both routes, or on neither, is a red.
-//! 3. The CLI agrees with the table on all six. Every backend generates the
+//! 3. The CLI agrees with the table on every row. Every backend generates the
 //!    fixture; a `host` row must also tell its host to register a router
 //!    (`needs_mesh_router`) and carry the type in its output, so a request
 //!    the lowering lost cannot pass as one it served.
@@ -36,8 +38,15 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use sce_build::forge::codegen_matrix::emitting;
+use sce_build::forge::model::ForgeKind;
 use sce_build::generator::Language;
 use sce_build::host_processor_analyzer::routes_mesh_through_host;
+
+/// The backends §9.5's table has to name: those that emit a machine.
+fn roster() -> Vec<Language> {
+    emitting(ForgeKind::Statechart).collect()
+}
 
 /// The contract document, and the anchor that opens its table. Named rather
 /// than searched for by shape: a second table in this file must not be able
@@ -97,8 +106,8 @@ struct Row {
 
 impl Row {
     fn language(&self) -> Language {
-        *Language::ALL
-            .iter()
+        roster()
+            .into_iter()
             .find(|l| l.canonical_name() == self.lang)
             .unwrap_or_else(|| panic!("§9.5 row `{}` names no backend", self.lang))
     }
@@ -220,12 +229,12 @@ fn rows_or_panic() -> Vec<Row> {
     let rows = contract_rows();
     assert_eq!(
         rows.len(),
-        Language::ALL.len(),
-        "§9.5's backend table has {} rows for {} backends. Every backend needs a row \
-         — an absent row is how a backend ends up with no stated route at all.\n\
-         rows: {rows:?}",
+        roster().len(),
+        "§9.5's backend table has {} rows for {} backends. Every backend that emits a \
+         machine needs a row — an absent row is how a backend ends up with no stated \
+         route at all.\nrows: {rows:?}",
         rows.len(),
-        Language::ALL.len()
+        roster().len()
     );
     rows
 }
@@ -242,10 +251,10 @@ fn the_contract_names_every_backend_exactly_once() {
          disagree, and then the contract has no answer.\nrows: {rows:?}"
     );
 
-    let expected: BTreeSet<&str> = Language::ALL.iter().map(|l| l.canonical_name()).collect();
+    let expected: BTreeSet<&str> = roster().into_iter().map(|l| l.canonical_name()).collect();
     assert_eq!(
         named, expected,
-        "§9.5's backend table and `Language::ALL` name different backends. A backend \
+        "§9.5's backend table and the emitting backends name different backends. A backend \
          this table forgot is one whose mesh-rpc route is written nowhere; a spelling \
          it invents is one no `--lang` accepts."
     );

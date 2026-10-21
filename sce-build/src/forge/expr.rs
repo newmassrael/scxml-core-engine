@@ -124,6 +124,13 @@ impl ExprTarget {
     /// the moment one backend's emitter can fail where another cannot
     /// (e.g. an unrepresentable `bytes` form). Kept exhaustive by
     /// `expr_target_all_contains_every_variant`.
+    ///
+    /// Swift is not on it, and cannot be until it has an expression emitter:
+    /// a target that refuses every expression makes "lowers natively on all
+    /// backends" false for every guard and payload read, which would move the
+    /// analysis (`select_native_typed_guards`, `typed_inject_events`) of all
+    /// the other backends' documents. The target joins this list, and
+    /// [`ExprTarget::language`], in the commit that writes its emitter.
     pub(crate) const ALL: [ExprTarget; 6] = [
         ExprTarget::Cpp,
         ExprTarget::Kotlin,
@@ -1242,7 +1249,9 @@ pub(crate) const C_INT64_MIN: &str = "(-9223372036854775807LL - 1)";
 const KOTLIN_LONG_MIN: &str = "Long.MIN_VALUE";
 
 /// `wide`, whose unsigned value is written `raw`, as `lang` spells it; `None`
-/// for a backend whose bare literal already carries it (Rust, Go, Python).
+/// for a backend whose bare literal already carries it (Rust, Go, Python,
+/// Swift: `let b: UInt64 = 18446744073709551615` and
+/// `let a: Int64 = -9223372036854775808` both compile as written).
 pub(crate) fn wide_literal_spelling(
     lang: crate::generator::Language,
     wide: WideLiteral,
@@ -1254,7 +1263,7 @@ pub(crate) fn wide_literal_spelling(
         (Language::C11 | Language::Cpp, WideLiteral::Int64Min) => Some(C_INT64_MIN.to_string()),
         (Language::Kotlin, WideLiteral::Unsigned) => Some(format!("{raw}uL")),
         (Language::Kotlin, WideLiteral::Int64Min) => Some(KOTLIN_LONG_MIN.to_string()),
-        (Language::Rust | Language::Go | Language::Python, _) => None,
+        (Language::Rust | Language::Go | Language::Python | Language::Swift, _) => None,
     }
 }
 

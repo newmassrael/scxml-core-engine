@@ -46,7 +46,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use sce_build::generator::Language;
+use sce_build::forge::codegen_matrix::emitting;
+use sce_build::forge::model::ForgeKind;
 
 fn sce_codegen_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_sce-codegen"))
@@ -85,8 +86,7 @@ impl Drop for ScratchDir {
 
 /// Every backend, by its `--lang` value: the templates of each bind `_name`.
 fn backends() -> Vec<&'static str> {
-    Language::ALL
-        .iter()
+    emitting(ForgeKind::Statechart)
         .map(|language| language.canonical_name())
         .collect()
 }

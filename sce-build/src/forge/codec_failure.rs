@@ -159,6 +159,7 @@ impl CodecFailure {
                 Language::Go => "return nil, codec.ErrTlvChainOverflow",
                 Language::Python if truncated => "raise NeedMoreBytes()",
                 Language::Python => "raise TlvChainOverflow()",
+                Language::Swift => crate::forge::codegen_matrix::no_swift_emitter("raise_stmt"),
             }),
             CodecFailure::CborMalformed
             | CodecFailure::CborRequiredKeyMissing
@@ -238,7 +239,8 @@ impl CodecFailure {
             (Language::C11, CodecFailure::LineBadEscape) => Some("SCE_FORGE_CODEC_LINE_BAD_ESCAPE"),
             (Language::C11, CodecFailure::LineBadValue) => Some("SCE_FORGE_CODEC_LINE_BAD_VALUE"),
             // Cpp / Kotlin / Python: refusal is observable, its name is not.
-            (Language::Cpp | Language::Kotlin | Language::Python, _) => None,
+            // Swift writes no codec yet, so there is no refusal to observe.
+            (Language::Cpp | Language::Kotlin | Language::Python | Language::Swift, _) => None,
         }
     }
 }
@@ -283,7 +285,8 @@ mod tests {
     /// never produces.
     #[test]
     fn an_observable_symbol_is_the_one_the_emit_raises() {
-        for &lang in Language::ALL {
+        // Only a backend that emits a codec raises anything.
+        for lang in crate::forge::codegen_matrix::emitting(crate::forge::model::ForgeKind::Codec) {
             for f in CodecFailure::ALL {
                 if let (Some(symbol), Some(raise)) = (f.observable_symbol(lang), f.raise_stmt(lang))
                 {
@@ -300,7 +303,7 @@ mod tests {
     /// backend, and a CBOR or content-line one by none — the reader returns it.
     #[test]
     fn only_a_positional_failure_has_a_raise_statement() {
-        for &lang in Language::ALL {
+        for lang in crate::forge::codegen_matrix::emitting(crate::forge::model::ForgeKind::Codec) {
             for f in CodecFailure::ALL {
                 assert_eq!(
                     f.raise_stmt(lang).is_some(),

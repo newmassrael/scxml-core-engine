@@ -1287,9 +1287,17 @@ mod tests {
             matches!(lower_mesh_sends(&model, Language::Cpp), Cow::Borrowed(_)),
             "C++ keeps its own route"
         );
-        // Every backend is on one side of this rule above, and a backend added
-        // to `Language` stops here so its side is decided deliberately.
-        assert_eq!(Language::ALL.len(), 6);
+        // Every backend is on one side of this rule above: C++ alone keeps its
+        // own route, and every other, a backend with no emitter yet included,
+        // is served by the host. A backend with a router of its own would have
+        // to be taken out of the loop above and named beside C++.
+        for language in Language::ALL {
+            assert_eq!(
+                matches!(lower_mesh_sends(&model, *language), Cow::Borrowed(_)),
+                *language == Language::Cpp,
+                "{language:?}"
+            );
+        }
     }
 
     #[test]

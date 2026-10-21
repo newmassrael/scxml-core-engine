@@ -30,7 +30,9 @@ use std::path::{Path, PathBuf};
 use tempfile::tempdir;
 
 use sce_build::compile_scxml_with_imports;
+use sce_build::forge::codegen_matrix::emitting;
 use sce_build::forge::error::{ForgeError, Located, ValidationError};
+use sce_build::forge::model::ForgeKind;
 use sce_build::generator::{GeneratedOutput, Language};
 use sce_build::ForgeCompileOptions;
 
@@ -419,11 +421,12 @@ fn c7_lowering_emits_on_all_six_backends() {
     // that drops the dispatch on one backend would be caught here
     // before `c7_keyexpr_fixture.rs` exercises the full
     // exemplar.
-    for &lang in Language::ALL {
+    for lang in emitting(ForgeKind::Algorithm) {
         let code = compile_algo_for(lang);
         let slot_marker = match lang {
             Language::Kotlin | Language::Go => "sceSlotIdx",
             Language::Rust | Language::Cpp | Language::Python | Language::C11 => "sce_slot_idx",
+            Language::Swift => unreachable!("swift emits no algorithm, so it is not iterated"),
         };
         assert!(
             code.contains(slot_marker),
@@ -433,6 +436,7 @@ fn c7_lowering_emits_on_all_six_backends() {
             Language::Kotlin => "getBySlot",
             Language::Go => "GetBySlot",
             Language::Rust | Language::Cpp | Language::Python | Language::C11 => "get_by_slot",
+            Language::Swift => unreachable!("swift emits no algorithm, so it is not iterated"),
         };
         assert!(
             code.contains(dispatch_marker),

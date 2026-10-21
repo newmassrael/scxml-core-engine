@@ -23,7 +23,9 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use sce_build::generator::{loader_template_files, Language};
+use sce_build::forge::codegen_matrix::emitting;
+use sce_build::forge::model::ForgeKind;
+use sce_build::generator::loader_template_files;
 use sce_build::template_lexing::Syntax;
 
 /// Where the template tree lives, relative to the workspace root.
@@ -41,7 +43,8 @@ pub const TEMPLATE_ROOT: &str = "tools/codegen/templates";
 pub fn registrations(root: &Path) -> BTreeMap<(PathBuf, Syntax), String> {
     let templates = root.join(TEMPLATE_ROOT);
     let mut out = BTreeMap::new();
-    for &language in Language::ALL {
+    // A backend with no emitter has no loader and so registers nothing.
+    for language in emitting(ForgeKind::Statechart) {
         let dir = templates.join(language.template_subdir());
         for (name, path) in loader_template_files(&dir) {
             let syntax = Syntax::of_template(&name, language);

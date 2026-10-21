@@ -250,6 +250,12 @@ impl SuiteIdentity {
                              configures, so sce-codegen emits nothing that names a suite",
                 })
             }
+            Language::Swift => {
+                return Err(SuiteIdentityError::NotApplicable {
+                    language,
+                    reason: "it has no emitter yet, so no conformance suite is generated for it",
+                })
+            }
         };
         Ok(Self {
             language,
@@ -283,7 +289,7 @@ impl SuiteIdentity {
             Language::Go => validate_go_module(name).map_err(malformed)?,
             Language::Kotlin => validate_kotlin_package_root(name).map_err(malformed)?,
             // `for_language` above already refused these.
-            Language::Python | Language::Cpp | Language::C11 => unreachable!(),
+            Language::Python | Language::Cpp | Language::C11 | Language::Swift => unreachable!(),
         }
 
         Ok(Self {

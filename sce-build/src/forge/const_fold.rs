@@ -335,6 +335,7 @@ pub(crate) fn serialize_scalar_literal(
             | crate::generator::Language::Kotlin
             | crate::generator::Language::Go
             | crate::generator::Language::Python
+            | crate::generator::Language::Swift
             | crate::generator::Language::C11,
         ) => serialize_array_literal_body(std::slice::from_ref(value), lang),
     }
@@ -393,12 +394,17 @@ impl std::fmt::Display for FormatValue {
             // `(N).toByte()` / `(N).toShort()` wrappers when an entry
             // exceeds the destination's positive range; we wrap
             // unconditionally for stability across input ranges.
+            //
+            // Swift is with the plain ones: `let t: [UInt8] = [0, 255]` takes
+            // each element's width from the declared type, at every bound of
+            // every integer type (compiled with Swift 6.4.0).
             ConstValue::U8(v) => match self.lang {
                 Language::Kotlin => write!(f, "({v}).toUByte()"),
                 Language::Rust
                 | Language::Cpp
                 | Language::Go
                 | Language::Python
+                | Language::Swift
                 | Language::C11 => write!(f, "{v}"),
             },
             ConstValue::U16(v) => match self.lang {
@@ -407,6 +413,7 @@ impl std::fmt::Display for FormatValue {
                 | Language::Cpp
                 | Language::Go
                 | Language::Python
+                | Language::Swift
                 | Language::C11 => write!(f, "{v}"),
             },
             ConstValue::U32(v) => match self.lang {
@@ -415,6 +422,7 @@ impl std::fmt::Display for FormatValue {
                 | Language::Cpp
                 | Language::Go
                 | Language::Python
+                | Language::Swift
                 | Language::C11 => write!(f, "{v}"),
             },
             // A value past `i64::MAX`, or `i64::MIN` below, is spelled the
@@ -431,6 +439,7 @@ impl std::fmt::Display for FormatValue {
                     | Language::Cpp
                     | Language::Go
                     | Language::Python
+                    | Language::Swift
                     | Language::C11 => write!(f, "{v}"),
                 },
             },
@@ -440,6 +449,7 @@ impl std::fmt::Display for FormatValue {
                 | Language::Cpp
                 | Language::Go
                 | Language::Python
+                | Language::Swift
                 | Language::C11 => write!(f, "{v}"),
             },
             ConstValue::I16(v) => match self.lang {
@@ -448,6 +458,7 @@ impl std::fmt::Display for FormatValue {
                 | Language::Cpp
                 | Language::Go
                 | Language::Python
+                | Language::Swift
                 | Language::C11 => write!(f, "{v}"),
             },
             ConstValue::I32(v) => write!(f, "{v}"),
@@ -461,6 +472,7 @@ impl std::fmt::Display for FormatValue {
                     | Language::Cpp
                     | Language::Go
                     | Language::Python
+                    | Language::Swift
                     | Language::C11 => write!(f, "{v}"),
                 },
             },
@@ -472,6 +484,7 @@ impl std::fmt::Display for FormatValue {
                 | Language::Cpp
                 | Language::Kotlin
                 | Language::Go
+                | Language::Swift
                 | Language::C11 => write!(f, "{v}"),
             },
         }
@@ -494,7 +507,9 @@ fn format_float_lit(
         (false, Language::Rust) => write!(f, "{body}f64"),
         (true, Language::Cpp | Language::C11) => write!(f, "{body}f"),
         (false, Language::Cpp | Language::C11)
-        | (_, Language::Kotlin | Language::Go | Language::Python) => write!(f, "{body}"),
+        | (_, Language::Kotlin | Language::Go | Language::Python | Language::Swift) => {
+            write!(f, "{body}")
+        }
     }
 }
 

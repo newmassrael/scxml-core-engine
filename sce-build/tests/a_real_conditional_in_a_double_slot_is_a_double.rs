@@ -16,7 +16,8 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use sce_build::generator::Language;
+use sce_build::forge::codegen_matrix::emitting;
+use sce_build::forge::model::ForgeKind;
 use tempfile::tempdir;
 
 fn sce_codegen_bin() -> PathBuf {
@@ -91,10 +92,7 @@ fn lines_with_the_literal(language: &str) -> Vec<String> {
 
 #[test]
 fn a_conditional_that_lands_in_a_double_is_made_as_a_double_in_every_language() {
-    for language in Language::ALL
-        .iter()
-        .map(|language| language.canonical_name())
-    {
+    for language in emitting(ForgeKind::Statechart).map(|language| language.canonical_name()) {
         let lines = lines_with_the_literal(language);
         assert!(
             lines.len() >= 4,

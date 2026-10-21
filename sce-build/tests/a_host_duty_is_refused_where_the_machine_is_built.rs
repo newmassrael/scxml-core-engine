@@ -19,7 +19,8 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use sce_build::generator::Language;
+use sce_build::forge::codegen_matrix::emitting;
+use sce_build::forge::model::ForgeKind;
 
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -204,10 +205,7 @@ fn rust_refuses_a_simulating_host_while_it_compiles() {
 
 #[test]
 fn a_machine_of_notices_carries_no_realization_refusal_or_opt_in() {
-    for lang in Language::ALL
-        .iter()
-        .map(|language| language.canonical_name())
-    {
+    for lang in emitting(ForgeKind::Statechart).map(|language| language.canonical_name()) {
         let text = generate(NOTICES, lang, "host_duty_notices_only");
         for word in ["ealization", "imulated", "REALIZATION"] {
             assert!(

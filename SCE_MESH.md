@@ -1527,7 +1527,7 @@ The remaining `Unsupported` entries are structural rather than pending work. `lo
 
 **Backend coverage — two routes, one per backend.**
 
-Every backend serves `sce:mesh-rpc`, by exactly one of two routes:
+Every backend that emits a machine serves `sce:mesh-rpc`, by exactly one of two routes. A backend that emits nothing yet (Swift) refuses the document before the invoke is reached, so it has no row:
 
 - **generated** — the backend's embedded tree carries `tools/codegen/templates/mesh/<dir>/`, which generates the machine's own `TransportRouter`; the invoke lowers into that router's `performMeshInvoke`.
 - **host** — the build lowers the invoke to a host-served `<invoke type="sce:mesh-rpc">` (§mesh-19, `host_processor_analyzer::lower_mesh`), which the host's Mesh router runs through the runtime's dedicated mesh-rpc door. The reserved `_mesh_event` and `_mesh_deadline_ms` travel to the router as literal `<param>`s ahead of the author's own; the target travels as `src`, or as `srcexpr` evaluated when the invocation starts. The manifest reports `needs_mesh_router: true`.

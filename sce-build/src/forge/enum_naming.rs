@@ -59,6 +59,13 @@ pub fn variant_ident(lang: Language, enum_name: &str, variant: &str) -> String {
         // Kotlin / Python also scope members under the type; their
         // convention for a constant member is SCREAMING_SNAKE.
         Language::Kotlin | Language::Python => to_upper_snake(variant),
+        // Swift scopes members under the type too, and names them in
+        // lowerCamelCase (the API Design Guidelines). A word the language
+        // reserves is refused where the name is declared, not escaped here:
+        // `case internal` is rejected, and `case init` is read as the
+        // initializer where a leading dot or a `switch` names it
+        // (`reader_names::is_reserved_word`).
+        Language::Swift => filters::to_camel_case(variant.to_string()),
         // Go has no member scoping: an exported constant is a
         // package-level PascalCase identifier, prefixed by its type.
         Language::Go => format!(
@@ -108,7 +115,9 @@ pub fn variant_ref(lang: Language, qualified_type: &str, enum_name: &str, varian
         // Kotlin's generated import is a wildcard, so `qualified_type`
         // IS the bare class name — joining it is correct and joining
         // anything more would produce `X.X.ERROR`.
-        Language::Python | Language::Kotlin => format!("{qualified_type}.{ident}"),
+        Language::Python | Language::Kotlin | Language::Swift => {
+            format!("{qualified_type}.{ident}")
+        }
         // Go: `qualified_type` is `pkg.Type` but the constant is
         // `pkg.TypeVariant`, so only the package part qualifies —
         // `ident` already carries the type name. A bare type is the
@@ -158,7 +167,7 @@ mod tests {
                 let qualified = match lang {
                     Language::Cpp => format!("SCE::Generated::{enum_name}::{enum_name}"),
                     Language::C11 => format!("{enum_name}_t"),
-                    Language::Kotlin => enum_name.to_string(),
+                    Language::Kotlin | Language::Swift => enum_name.to_string(),
                     Language::Rust | Language::Go | Language::Python => {
                         format!("m.{enum_name}")
                     }
@@ -185,6 +194,7 @@ mod tests {
             (Language::Kotlin, "ERROR"),
             (Language::Go, "ResultError"),
             (Language::C11, "RESULT_ERROR"),
+            (Language::Swift, "error"),
         ] {
             assert_eq!(
                 variant_ident(lang, "Result", "error"),

@@ -29,15 +29,15 @@ use crate::generator::Language;
 /// generator's refusal and the conformance harness's schedule both read, so a
 /// fixture is run exactly where the generator admits it.
 pub fn lowers(lang: Language) -> bool {
-    matches!(
-        lang,
+    match lang {
         Language::Rust
-            | Language::Kotlin
-            | Language::Cpp
-            | Language::Go
-            | Language::Python
-            | Language::C11
-    )
+        | Language::Kotlin
+        | Language::Cpp
+        | Language::Go
+        | Language::Python
+        | Language::C11 => true,
+        Language::Swift => false,
+    }
 }
 
 /// Why `lang` does not generate the content-line codec `m`, or `None` when it
@@ -76,6 +76,7 @@ pub fn render(
         Language::Go => render_go(env, m, imports),
         Language::Python => render_python(env, m, imports),
         Language::C11 => render_c(env, m, imports),
+        Language::Swift => unreachable!("`lowers` is false for swift, so `refusal` returned above"),
     }
 }
 

@@ -31,6 +31,8 @@ use std::process::{Command, Stdio};
 use tempfile::tempdir;
 
 use sce_build::compile_scxml_with_imports;
+use sce_build::forge::codegen_matrix::emitting;
+use sce_build::forge::model::ForgeKind;
 use sce_build::generator::{GeneratedOutput, Language};
 use sce_build::ForgeCompileOptions;
 
@@ -186,10 +188,11 @@ fn kotlin_field_match_projects_string_field_to_byte_array() {
 
 #[test]
 fn field_match_projects_on_all_six_backends() {
-    for &lang in Language::ALL {
+    for lang in emitting(ForgeKind::Algorithm) {
         let code = compile_field_match_for(lang);
         // The bounded-string element field is projected to a byte view.
         let projection_marker = match lang {
+            Language::Swift => unreachable!("swift emits no algorithm, so it is not iterated"),
             Language::Rust => "entry.pattern.as_bytes()",
             Language::C11 => "(const uint8_t *)entry.pattern, entry.pattern_len",
             Language::Cpp => "reinterpret_cast<const std::uint8_t*>(entry.pattern.data())",

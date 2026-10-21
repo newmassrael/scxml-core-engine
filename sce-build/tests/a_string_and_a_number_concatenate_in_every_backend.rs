@@ -24,10 +24,11 @@
 //!
 //! # What is measured
 //!
-//! * Every backend in [`Language::ALL`] generates the document, and no
+//! * Every backend that emits an algorithm generates the document, and no
 //!   generated line adds a number to a string literal as written. The set of
-//!   backends is derived, so a seventh one is asked the same question without
-//!   anyone remembering to add it here.
+//!   backends is derived from the codegen matrix, so a backend that starts
+//!   emitting is asked the same question without anyone remembering to add it
+//!   here.
 //! * Each backend that lowers it spells the integer's decimal digits the way
 //!   its language does, and the pieces are in the order they were written.
 //! * A string held in a conditional is parenthesised where the language's
@@ -44,6 +45,8 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use sce_build::forge::codegen_matrix::emitting;
+use sce_build::forge::model::ForgeKind;
 use sce_build::generator::Language;
 use sce_build::{compile_forge_with_imports, DocumentLabel, ForgeCompileOptions};
 
@@ -194,7 +197,7 @@ fn lines_naming_the_base(source: &str) -> Vec<String> {
 fn no_backend_spells_a_string_plus_a_number_as_written() {
     let mut wrong = Vec::new();
     let mut refused = Vec::new();
-    for &language in Language::ALL {
+    for language in emitting(ForgeKind::Algorithm) {
         match generate(language) {
             Outcome::Generated(source) => {
                 if let Some(line) = adds_a_number_to_a_literal(&source) {
@@ -245,7 +248,7 @@ fn each_backend_converts_the_integer_to_its_decimal_digits() {
     // joins it is asked about, and a backend that is neither spelled above nor
     // C is a seventh nobody taught this test.
     let known: Vec<Language> = spellings.iter().map(|(l, _)| *l).collect();
-    for &language in Language::ALL {
+    for language in emitting(ForgeKind::Algorithm) {
         assert!(
             known.contains(&language) || language == Language::C11,
             "{language:?} has no spelling in this test: say how it joins a string to an integer"
@@ -319,7 +322,7 @@ fn an_operand_whose_text_differs_between_languages_is_refused_by_name() {
         // `c_names_that_it_has_no_storage_for_the_joined_text`), so it has no
         // opinion about the operand: the five backends that can lower a
         // concatenation are the ones asked which operands they will carry.
-        for &language in Language::ALL.iter().filter(|l| **l != Language::C11) {
+        for language in emitting(ForgeKind::Algorithm).filter(|l| *l != Language::C11) {
             match generate_document(&document, language) {
                 Outcome::Refused(why) => assert!(
                     why.contains("concatenation") && why.contains(what),

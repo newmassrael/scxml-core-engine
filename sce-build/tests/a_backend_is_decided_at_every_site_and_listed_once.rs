@@ -390,17 +390,17 @@ fn the_scanners_tell_a_decision_from_a_fall_through() {
         fn unrelated(x: Option<u8>) -> u8 { match x { Some(v) => v, _ => 0 } }
         impl Language { fn inner(self) -> u8 { match self { Self::Go => 1, _ => 0 } } }
         fn lists() {
-            for l in ["rust", "cpp", "kotlin", "go", "python", "c"] {}
-            assert_eq!(x, ["rust", "cpp", "kotlin", "go", "python"]);
-            let typed = vec![Language::Rust, Language::Cpp, Language::Kotlin, Language::Go, Language::Python, Language::C11];
+            for l in ["rust", "cpp", "kotlin", "go", "python", "c", "swift"] {}
+            assert_eq!(x, ["rust", "cpp", "kotlin", "go", "python", "swift"]);
+            let typed = vec![Language::Rust, Language::Cpp, Language::Kotlin, Language::Go, Language::Python, Language::C11, Language::Swift];
             for l in ["rust", "kotlin"] {}
             let words = ["a", "b", "c"];
         }
         /// A backend joins this set in the commit that teaches it the capability.
-        const REGISTRY: &[Language] = &[Language::Rust, Language::Cpp, Language::Kotlin, Language::Go, Language::Python, Language::C11];
-        const UNDOCUMENTED: &[Language] = &[Language::Rust, Language::Cpp, Language::Kotlin, Language::Go, Language::Python, Language::C11];
+        const REGISTRY: &[Language] = &[Language::Rust, Language::Cpp, Language::Kotlin, Language::Go, Language::Python, Language::C11, Language::Swift];
+        const UNDOCUMENTED: &[Language] = &[Language::Rust, Language::Cpp, Language::Kotlin, Language::Go, Language::Python, Language::C11, Language::Swift];
         /// Documented, but a list of names rather than of backends.
-        const NAMES: &[&str] = &["rust", "cpp", "kotlin", "go", "python", "c11"];
+        const NAMES: &[&str] = &["rust", "cpp", "kotlin", "go", "python", "c11", "swift"];
     "#;
     let (fall_throughs, hand_lists) = scan_text(sample);
     assert_eq!(
@@ -419,13 +419,13 @@ fn the_scanners_tell_a_decision_from_a_fall_through() {
     assert_eq!(
         hand_lists,
         [
-            "sample.rs :: lists [c11, cpp, go, kotlin, python, rust]",
-            "sample.rs :: lists [cpp, go, kotlin, python, rust]",
-            "sample.rs :: lists [c11, cpp, go, kotlin, python, rust]",
-            "sample.rs :: (item level) [c11, cpp, go, kotlin, python, rust]",
-            "sample.rs :: (item level) [c11, cpp, go, kotlin, python, rust]",
+            "sample.rs :: lists [c11, cpp, go, kotlin, python, rust, swift]",
+            "sample.rs :: lists [cpp, go, kotlin, python, rust, swift]",
+            "sample.rs :: lists [c11, cpp, go, kotlin, python, rust, swift]",
+            "sample.rs :: (item level) [c11, cpp, go, kotlin, python, rust, swift]",
+            "sample.rs :: (item level) [c11, cpp, go, kotlin, python, rust, swift]",
         ],
-        "the list scanner must flag the six-name list, the five-name list inside a macro, the \
+        "the list scanner must flag the seven-name list, the six-name list inside a macro, the \
          typed `vec!`, the undocumented registry and the documented list of names; and leave the \
          two-name list, the unrelated words and the documented `Language` registry alone"
     );

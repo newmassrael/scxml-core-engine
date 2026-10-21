@@ -400,7 +400,96 @@ const ACCEPTED: &[(Language, &str, Why)] = &[
         "save and restore",
         Why::NotYet("the E17 extension built it for Rust and Kotlin"),
     ),
+    // Swift, which is decided at every site that decides per backend and emits
+    // nothing yet. Every entry below closes as its emitter lands, and the stale
+    // check removes it then; the list is what is left of the backend.
+    //
+    // The CLI routes that write files serve the backends that emit something.
+    (Language::Swift, "`generate` route", Why::NotYet(SWIFT_NO_EMITTER)),
+    (Language::Swift, "`orchestrate` route", Why::NotYet(SWIFT_NO_EMITTER)),
+    (Language::Swift, "`generate-w3c` route", Why::NotYet(SWIFT_NO_EMITTER)),
+    (Language::Swift, "`generate-integration` route", Why::NotYet(SWIFT_NO_EMITTER)),
+    (Language::Swift, "`generate-conformance` route", Why::NotYet(SWIFT_NO_EMITTER)),
+    // The kind matrix.
+    (Language::Swift, "forge kind `statechart`", Why::NotYet(SWIFT_NO_EMITTER)),
+    (Language::Swift, "forge kind `transform`", Why::NotYet(SWIFT_NO_FORGE)),
+    (Language::Swift, "forge kind `lookup`", Why::NotYet(SWIFT_NO_FORGE)),
+    (Language::Swift, "forge kind `condition`", Why::NotYet(SWIFT_NO_FORGE)),
+    (Language::Swift, "forge kind `codec`", Why::NotYet(SWIFT_NO_FORGE)),
+    (Language::Swift, "forge kind `procedure`", Why::NotYet(SWIFT_NO_FORGE)),
+    (Language::Swift, "forge kind `validator`", Why::NotYet(SWIFT_NO_FORGE)),
+    (Language::Swift, "forge kind `filter`", Why::NotYet(SWIFT_NO_FORGE)),
+    (Language::Swift, "forge kind `interpolation`", Why::NotYet(SWIFT_NO_FORGE)),
+    (Language::Swift, "forge kind `timer`", Why::NotYet(SWIFT_NO_FORGE)),
+    (Language::Swift, "forge kind `observer`", Why::NotYet(SWIFT_NO_FORGE)),
+    (Language::Swift, "forge kind `algorithm`", Why::NotYet(SWIFT_NO_FORGE)),
+    (Language::Swift, "forge kind `bounded-collection`", Why::NotYet(SWIFT_NO_FORGE)),
+    (Language::Swift, "forge kind `enum`", Why::NotYet(SWIFT_NO_FORGE)),
+    (Language::Swift, "forge kind `event-schema`", Why::NotYet(SWIFT_NO_FORGE)),
+    (
+        Language::Swift,
+        "forge kind `queue`",
+        Why::NotYet("a queue needs the 64-bit compare-and-swap rows and a ThreadSanitizer lane, which are built after the other kinds"),
+    ),
+    // What the emitters carry, once they exist.
+    (Language::Swift, "sce-static data model", Why::NotYet(SWIFT_NO_EMITTER)),
+    (Language::Swift, "may-fail algorithm bodies", Why::NotYet(SWIFT_NO_FORGE)),
+    (Language::Swift, "embedded template registry", Why::NotYet(SWIFT_NO_EMITTER)),
+    (Language::Swift, "CBOR codec", Why::NotYet(SWIFT_NO_FORGE)),
+    (Language::Swift, "content-line codec", Why::NotYet(SWIFT_NO_FORGE)),
+    (
+        Language::Swift,
+        "save and restore",
+        Why::NotYet("the saved-state surface is built for Swift after its machine emitter and runtime"),
+    ),
+    // The script engine.
+    (
+        Language::Swift,
+        "artifact for the lua engine",
+        Why::NotYet("it has no emitter, so no artifact; its Lua target is built with the W3C lane"),
+    ),
+    (
+        Language::Swift,
+        "ECMA-262 lowered-artifact gate",
+        Why::NotYet("it has no emitter, so no lowered artifact for the gate to read"),
+    ),
+    // The numerical conformance harness and its kind fragments.
+    (Language::Swift, "numerical conformance harness", Why::NotYet(SWIFT_NO_FORGE)),
+    (Language::Swift, "conformance fragment `algorithm`", Why::NotYet(SWIFT_NO_FORGE)),
+    (Language::Swift, "conformance fragment `codec`", Why::NotYet(SWIFT_NO_FORGE)),
+    (Language::Swift, "conformance fragment `codec_content_line`", Why::NotYet(SWIFT_NO_FORGE)),
+    (Language::Swift, "conformance fragment `condition`", Why::NotYet(SWIFT_NO_FORGE)),
+    (Language::Swift, "conformance fragment `enum`", Why::NotYet(SWIFT_NO_FORGE)),
+    (Language::Swift, "conformance fragment `event-schema`", Why::NotYet(SWIFT_NO_FORGE)),
+    (Language::Swift, "conformance fragment `filter`", Why::NotYet(SWIFT_NO_FORGE)),
+    (Language::Swift, "conformance fragment `interpolation`", Why::NotYet(SWIFT_NO_FORGE)),
+    (Language::Swift, "conformance fragment `lookup`", Why::NotYet(SWIFT_NO_FORGE)),
+    (Language::Swift, "conformance fragment `observer`", Why::NotYet(SWIFT_NO_FORGE)),
+    (Language::Swift, "conformance fragment `procedure`", Why::NotYet(SWIFT_NO_FORGE)),
+    (Language::Swift, "conformance fragment `timer`", Why::NotYet(SWIFT_NO_FORGE)),
+    (Language::Swift, "conformance fragment `transform`", Why::NotYet(SWIFT_NO_FORGE)),
+    (Language::Swift, "conformance fragment `validator`", Why::NotYet(SWIFT_NO_FORGE)),
+    // The gates, which run what an emitter writes.
+    (Language::Swift, "W3C gate", Why::NotYet(SWIFT_NO_EMITTER)),
+    (Language::Swift, "Forge conformance gate", Why::NotYet(SWIFT_NO_FORGE)),
+    (Language::Swift, "integration channel", Why::NotYet(SWIFT_NO_EMITTER)),
+    // Mesh (SCE_MESH.md §mesh-19, §mesh-20).
+    (Language::Swift, "Mesh emitter", Why::NotYet(SWIFT_NO_MESH)),
+    (Language::Swift, "host Mesh core over `wss`", Why::NotYet(SWIFT_NO_MESH)),
+    (Language::Swift, "host Mesh core over `zenoh_inbox`", Why::NotYet(SWIFT_NO_MESH)),
 ];
+
+/// Swift has no statechart emitter, so nothing that reads one exists for it.
+const SWIFT_NO_EMITTER: &str =
+    "Swift emits nothing yet; the statechart emitter is the first thing built for it";
+
+/// Swift's Forge emitters are built after its statechart emitter and runtime.
+const SWIFT_NO_FORGE: &str =
+    "Swift's Forge emitters are built after its statechart emitter and runtime";
+
+/// Swift has no host Mesh core, as Go, Python and C11 have none.
+const SWIFT_NO_MESH: &str =
+    "no host Mesh core for this backend; its core and wss adapter are built after the runtime";
 
 /// What the comparison found: gaps with no entry, and entries whose gap is
 /// not there.

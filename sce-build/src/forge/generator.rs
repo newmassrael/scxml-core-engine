@@ -7,6 +7,7 @@
 // language. Type mappings live here (not in the model) to preserve SRP.
 
 use crate::filters;
+use crate::forge::codegen_matrix::no_swift_emitter;
 use crate::forge::error::{ForgeError, GenerateError, RelatedRole};
 // `select_native_typed_guards` (+ its `NativeTypedGuard`) live in
 // `event_schema_check` next to the `guard_is_native_lowerable` eligibility
@@ -572,6 +573,7 @@ pub(crate) fn forge_import_identity(
     let pascal = filters::to_pascal_case(canonical.to_string());
     let snake = filters::to_snake_case(canonical.to_string());
     match lang {
+        Language::Swift => no_swift_emitter("forge_import_identity"),
         // RFC §synth-5-A: free function / struct in `namespace SCE::Generated::<Pascal>`.
         Language::Cpp => ImportIdentity {
             include_stmt: format!("#include \"{snake}.h\""),
@@ -790,6 +792,7 @@ fn resolve_single_import(
     // Alias-derived instance field name: Cpp / C11 suffix the alias with
     // `_`; Go exports a PascalCase field; the rest use the bare alias.
     let member_name = match lang {
+        crate::generator::Language::Swift => no_swift_emitter("resolve_single_import"),
         crate::generator::Language::Cpp | crate::generator::Language::C11 => {
             format!("{}_", imp.alias)
         }
@@ -1767,6 +1770,7 @@ fn transform_holder_context(
     };
     let self_name = fresh(
         match lang {
+            crate::generator::Language::Swift => no_swift_emitter("transform_holder_context"),
             crate::generator::Language::Python => "self",
             crate::generator::Language::Rust
             | crate::generator::Language::Cpp
@@ -1894,6 +1898,7 @@ fn render_lookup(
     // The enum is declared in the file that also writes the input's own type
     // (`UByte`), so a Kotlin enum is kept off the standard type names.
     let enum_name = match lang {
+        Language::Swift => no_swift_emitter("render_lookup"),
         Language::Kotlin => kotlin_declared_type_name(&enum_name),
         Language::Rust | Language::Cpp | Language::Go | Language::Python | Language::C11 => {
             enum_name
@@ -1910,6 +1915,7 @@ fn render_lookup(
     // the body that reads the input, so an input under the enum's name would
     // hide them; `local_id` shifts it like any other local.
     let input_id = match lang {
+        Language::Swift => no_swift_emitter("render_lookup"),
         Language::Go if output_is_string => {
             go_local_spelling_beside(&m.input.id, &[enum_name.as_str()])
         }
@@ -1926,6 +1932,7 @@ fn render_lookup(
         let raw_ebv = m.entries_by_value();
 
         let ebv: Vec<serde_json::Value> = match lang {
+            Language::Swift => no_swift_emitter("render_lookup"),
             Language::Python => {
                 // Python template expects a `condition` expression per group.
                 raw_ebv.into_iter().map(|(value, keys)| {
@@ -1950,6 +1957,7 @@ fn render_lookup(
         };
 
         let uv: Vec<String> = match lang {
+            Language::Swift => no_swift_emitter("render_lookup"),
             Language::Rust => m
                 .unique_values()
                 .into_iter()
@@ -1962,6 +1970,7 @@ fn render_lookup(
 
         let dv = match &m.miss_policy {
             MissPolicy::Default(s) => match lang {
+                Language::Swift => no_swift_emitter("render_lookup"),
                 Language::Rust => to_rust_variant(s),
                 Language::Cpp
                 | Language::Kotlin
@@ -2179,6 +2188,7 @@ fn render_enum(
     // knows it — leaving a second copy here is how the two drift.
 
     let underlying_type: String = match lang {
+        Language::Swift => no_swift_emitter("render_enum"),
         Language::Cpp => cpp_type(&m.underlying_type).to_string(),
         Language::C11 => c_type(&m.underlying_type).to_string(),
         Language::Rust => rust_type(&m.underlying_type).to_string(),
@@ -2211,6 +2221,7 @@ fn render_enum(
                 | Language::Go
                 | Language::Python
                 | Language::C11 => value_text,
+                Language::Swift => no_swift_emitter("render_enum"),
             };
             // `declared` is the variant's name as the document wrote it
             // (`sce:variant name`), which every backend returns from its
@@ -2326,6 +2337,7 @@ pub(crate) fn event_schema_field_ident(id: &str, lang: crate::generator::Languag
         Language::Go => filters::to_pascal_case(id.to_string()),
         Language::Rust => filters::to_snake_case(id.to_string()),
         Language::Cpp | Language::C11 | Language::Kotlin | Language::Python => id.to_string(),
+        Language::Swift => no_swift_emitter("event_schema_field_ident"),
     }
 }
 
@@ -2347,6 +2359,7 @@ pub(crate) fn event_schema_payload_type(
         Language::Go => format!("{}.{pascal}Payload", go_package_alias(&snake)),
         Language::Python => format!("{}.{pascal}Payload", python_module_alias(&snake)),
         Language::C11 => format!("{pascal}Payload_t"),
+        Language::Swift => no_swift_emitter("event_schema_payload_type"),
     }
 }
 
@@ -2360,6 +2373,7 @@ pub(crate) fn enum_qualified_type(enum_name: &str, lang: crate::generator::Langu
     let pascal = filters::to_pascal_case(enum_name.to_string());
     let snake = filters::to_snake_case(enum_name.to_string());
     match lang {
+        Language::Swift => no_swift_emitter("enum_qualified_type"),
         Language::Cpp => format!("SCE::Generated::{pascal}::{pascal}"),
         Language::Rust => format!("{snake}::{pascal}"),
         // The `import com.sce.generated.<snake>.*` wildcard an import writes
@@ -5002,6 +5016,7 @@ fn rust_codec_body_lifetime(
 /// the two never diverge.
 fn codec_scalar_type(l: &LangCtx, ty: &SceType) -> String {
     match (l.lang, ty) {
+        (crate::generator::Language::Swift, _) => no_swift_emitter("codec_scalar_type"),
         (crate::generator::Language::Rust, SceType::Bytes) => "&'a [u8]".to_string(),
         (crate::generator::Language::Rust, SceType::String) => "&'a str".to_string(),
         (
@@ -5453,7 +5468,8 @@ fn render_codec(
             crate::generator::Language::Cpp
             | crate::generator::Language::Kotlin
             | crate::generator::Language::Go
-            | crate::generator::Language::Python => {
+            | crate::generator::Language::Python
+            | crate::generator::Language::Swift => {
                 return Err(ForgeError::from(
                     crate::forge::error::GenerateError::CodegenMcuClassKindOnNonMcuLanguage {
                         kind: format!("codec '{}' (MCU-only sub-features)", m.name),
@@ -5462,6 +5478,7 @@ fn render_codec(
                             crate::generator::Language::Kotlin => "kotlin",
                             crate::generator::Language::Go => "go",
                             crate::generator::Language::Python => "python",
+                            crate::generator::Language::Swift => "swift",
                             crate::generator::Language::Rust | crate::generator::Language::C11 => {
                                 unreachable!()
                             }
@@ -5781,6 +5798,7 @@ fn render_codec(
                     // the C-side `_len`). Predicate=None codecs keep the
                     // bare list type for back-compat with item B2 goldens.
                     let bare = match lang {
+                        crate::generator::Language::Swift => no_swift_emitter("render_codec"),
                         // RFC §synth-5-B B2: no-alloc bounded inline list — Rust
                         // mirrors the C11 `T elems[MAX]; len` shape via
                         // `heapless::Vec<T, MAX_COUNT>` (re-exported as
@@ -5825,6 +5843,7 @@ fn render_codec(
                     };
                     let wrapped = if f.present_if.is_some() {
                         match lang {
+                            crate::generator::Language::Swift => no_swift_emitter("render_codec"),
                             crate::generator::Language::Rust => format!("Option<{bare}>"),
                             crate::generator::Language::Cpp => format!("std::optional<{bare}>"),
                             crate::generator::Language::Kotlin => format!("{bare}?"),
@@ -5944,6 +5963,7 @@ fn render_codec(
                     // as-truth — `_len = 0` signals absent).
                     let gated = f.present_if.is_some();
                     let wrapped = match (lang, gated) {
+                        (crate::generator::Language::Swift, _) => no_swift_emitter("render_codec"),
                         // RFC §synth-5-B B3: no-alloc bounded inline TLV chain —
                         // `heapless::Vec<Entry, MAX_DEPTH>` (re-exported as
                         // `HeaplessVec`), the Rust mirror of the C11
@@ -6109,6 +6129,7 @@ fn render_codec(
                     let body_type_ty = format!("{body_type}{body_lt}");
                     let host_type = if f.present_if.is_some() {
                         match lang {
+                            crate::generator::Language::Swift => no_swift_emitter("render_codec"),
                             crate::generator::Language::Rust => format!("Option<{body_type_ty}>"),
                             crate::generator::Language::Cpp => format!("std::optional<{body_type}>"),
                             crate::generator::Language::Kotlin => format!("{body_type}?"),
@@ -6508,6 +6529,7 @@ fn render_codec(
                     // wrap becomes `Option<&'a [u8]>` / `Option<&'a str>`.
                     let inner = codec_scalar_type(&l, &f.sce_type);
                     let wrapped = match lang {
+                        crate::generator::Language::Swift => no_swift_emitter("render_codec"),
                         crate::generator::Language::Rust => {
                             format!("Option<{inner}>")
                         }
@@ -6900,6 +6922,7 @@ fn render_codec(
     let has_caller_tag = m.variant.as_ref().is_some_and(|v| v.tag_field.is_none());
     let (dispatch_tag_param_decl, dispatch_tag_param_first) = if has_caller_tag {
         match lang {
+            crate::generator::Language::Swift => no_swift_emitter("render_codec"),
             crate::generator::Language::Rust => (", tag: u8", "tag: u8"),
             crate::generator::Language::Cpp => (", std::uint8_t tag", "std::uint8_t tag"),
             crate::generator::Language::Kotlin => (", tag: UByte", "tag: UByte"),
@@ -7071,6 +7094,7 @@ fn render_codec(
         };
         let tag_native = l.type_name(&tag_type).to_string();
         let arm_value_suffix = match (lang, &tag_type) {
+            (crate::generator::Language::Swift, _) => no_swift_emitter("render_codec"),
             (crate::generator::Language::Rust, SceType::Uint8) => "u8",
             (crate::generator::Language::Rust, SceType::Uint16) => "u16",
             (crate::generator::Language::Rust, SceType::Uint32) => "u32",
@@ -7411,6 +7435,7 @@ fn render_codec(
         // from bare locals/parameters.
         let c11_carrier_qualifier = if peek_mode || caller_tag { "" } else { "out->" };
         let (tag_match_expr, tag_store_expr) = match (&tag_flag_def, lang) {
+            (_, crate::generator::Language::Swift) => no_swift_emitter("render_codec"),
             // ── Whole-field (back-compat) ──────────────────────
             (None, crate::generator::Language::Rust) => (carrier_id.clone(), carrier_id.clone()),
             (None, crate::generator::Language::Cpp) => (carrier_id.clone(), carrier_id.clone()),
@@ -7455,6 +7480,7 @@ fn render_codec(
                 let value_hex_digits = (result_bits as usize) / 4;
                 let value_mask_lit = format!("0x{:0width$X}", value_mask, width = value_hex_digits);
                 match lang_ {
+                    crate::generator::Language::Swift => no_swift_emitter("render_codec"),
                     crate::generator::Language::Rust => {
                         let result_ty = format!("u{result_bits}");
                         // SSOT minimal bit-extract: `(carrier >> bit) & mask`,
@@ -7592,6 +7618,7 @@ fn render_codec(
         // peek statement).
         let peek_byte_decode_stmt = if peek_mode {
             match lang {
+                crate::generator::Language::Swift => no_swift_emitter("render_codec"),
                 crate::generator::Language::Rust => {
                     "let _peek = cursor.peek_slice(1)?[0];".to_string()
                 }
@@ -7977,6 +8004,7 @@ fn resolve_variant_arm_body_type(
         ));
     }
     Ok(match lang {
+        crate::generator::Language::Swift => no_swift_emitter("resolve_variant_arm_body_type"),
         crate::generator::Language::Rust => imp.type_name.clone(),
         crate::generator::Language::Cpp => imp.member_type.clone(),
         // (Kotlin / Go arms below; C11 / Python remain gated.)
@@ -9316,6 +9344,7 @@ fn validate_one_arm_inner_mid(
 
 fn resolve_variant_arm_decoder(body_alias: &str, lang: crate::generator::Language) -> String {
     match lang {
+        crate::generator::Language::Swift => no_swift_emitter("resolve_variant_arm_decoder"),
         crate::generator::Language::Go => {
             let snake = filters::to_snake_case(body_alias.to_string());
             let pascal = filters::to_pascal_case(body_alias.to_string());
@@ -9348,6 +9377,7 @@ fn resolve_variant_arm_decoder(body_alias: &str, lang: crate::generator::Languag
 /// because they call `.encode()` on the body value directly.
 fn resolve_variant_arm_encoder(body_alias: &str, lang: crate::generator::Language) -> String {
     match lang {
+        crate::generator::Language::Swift => no_swift_emitter("resolve_variant_arm_encoder"),
         crate::generator::Language::C11 => {
             let snake = filters::to_snake_case(body_alias.to_string());
             format!("{snake}_encode")
@@ -9394,6 +9424,7 @@ fn resolve_repeat_body_type(
         ));
     }
     Ok(match lang {
+        crate::generator::Language::Swift => no_swift_emitter("resolve_repeat_body_type"),
         crate::generator::Language::Rust => imp.type_name.clone(),
         crate::generator::Language::Cpp => imp.member_type.clone(),
         // Kotlin: each imported codec lives in its own sibling
@@ -9508,6 +9539,7 @@ fn repeat_streaming_decode_stmt(ctx: RepeatDecode<'_>) -> String {
     }
 
     match (lang, count_ref) {
+        (Language::Swift, _) => no_swift_emitter("repeat_streaming_decode_stmt"),
         // Rust: no-alloc bounded inline `heapless::Vec<T, MAX_COUNT>`
         // (re-exported as `HeaplessVec`). `push` returns `Result<(), T>`
         // when the fixed capacity is exceeded, surfaced as the typed
@@ -9734,6 +9766,7 @@ fn repeat_streaming_encode_block(
         );
     }
     match lang {
+        Language::Swift => no_swift_emitter("repeat_streaming_encode_block"),
         Language::Rust => {
             format!("        for _e in &self.{id} {{\n            _e.encode(w{encode_arg})?;\n        }}")
         }
@@ -9848,10 +9881,12 @@ fn embed_streaming_decode_stmt(
             Language::Go => filters::to_pascal_case(sibling.to_string()),
             Language::C11 => format!("out->{}", filters::to_snake_case(sibling.to_string())),
             Language::Python => python_field_local(sibling),
+            Language::Swift => no_swift_emitter("embed_streaming_decode_stmt"),
         })
     };
 
     match lang {
+        Language::Swift => no_swift_emitter("embed_streaming_decode_stmt"),
         Language::Rust => match (&test_lit, len_expr(Language::Rust)) {
             (None, None) => format!(
                 "let {id} = {body_type}::decode(cursor{thread_arg})?;"
@@ -10181,6 +10216,7 @@ fn embed_streaming_encode_block(
     let has_present_if = field.present_if.is_some();
     let thread_arg_norm = thread_arg.trim_start_matches(", ");
     match lang {
+        Language::Swift => no_swift_emitter("embed_streaming_encode_block"),
         Language::Rust => {
             if !has_present_if {
                 format!("        self.{id}.encode(w{thread_arg})?;")
@@ -10433,6 +10469,7 @@ fn embed_flag_bind_thread_args_supplying(
                 };
                 let mask: u64 = (1u64 << width) - 1;
                 let (decode_arg, encode_arg) = match lang {
+                    Language::Swift => no_swift_emitter("embed_flag_bind_thread_args_supplying"),
                     Language::Rust => {
                         // Rust struct field + decode local are both
                         // snake_cased (see codec_field_id). Carrier
@@ -10504,6 +10541,7 @@ fn embed_flag_bind_thread_args_supplying(
                     Language::Kotlin | Language::Go => {
                         format!(", {}", filters::to_camel_case(name.clone()))
                     }
+                    Language::Swift => no_swift_emitter("embed_flag_bind_thread_args_supplying"),
                 };
                 decode_out.push_str(&arg);
                 encode_out.push_str(&arg);
@@ -10572,6 +10610,7 @@ fn compute_flag_input_unused_suppress(
         return String::new();
     }
     match lang {
+        Language::Swift => no_swift_emitter("compute_flag_input_unused_suppress"),
         Language::Rust => inputs
             .iter()
             .map(|fi| {
@@ -10630,6 +10669,7 @@ fn compute_flag_input_param_fragments(
             Language::Go => format!("{} byte", filters::to_camel_case(fi.name.clone())),
             Language::C11 => format!("uint8_t {}", filters::to_snake_case(fi.name.clone())),
             Language::Python => format!("{}: int", filters::to_snake_case(fi.name.clone())),
+            Language::Swift => no_swift_emitter("compute_flag_input_param_fragments"),
         })
         .collect();
     let first = parts.join(", ");
@@ -10657,6 +10697,7 @@ fn compute_flag_input_call_args(
             }
             Language::Cpp => filters::to_snake_case(fi.name.clone()),
             Language::Kotlin | Language::Go => filters::to_camel_case(fi.name.clone()),
+            Language::Swift => no_swift_emitter("compute_flag_input_call_args"),
         })
         .collect();
     format!(", {}", parts.join(", "))
@@ -10694,6 +10735,7 @@ fn caller_tag_arg_decode(
                     let width = flag_def.width.max(1);
                     let mask: u64 = (1u64 << width) - 1;
                     return match lang {
+                        Language::Swift => no_swift_emitter("caller_tag_arg_decode"),
                         Language::Rust => {
                             // Decode-site local is snake_cased per
                             // codec_field_id; carrier ref must match. uint8
@@ -10736,6 +10778,7 @@ fn caller_tag_arg_decode(
     if let Some(arms) = imp.codec_variant_arms_for_inversion.as_ref() {
         if let Some((_, default_value, _)) = arms.iter().find(|(_, _, is_default)| *is_default) {
             return match lang {
+                Language::Swift => no_swift_emitter("caller_tag_arg_decode"),
                 Language::Rust => format!(", 0x{default_value:X}u8"),
                 Language::Cpp => format!(", static_cast<std::uint8_t>(0x{default_value:X})"),
                 Language::Kotlin => format!(", 0x{default_value:X}.toUByte()"),
@@ -10819,6 +10862,7 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
     };
 
     match (lang, count_ref) {
+        (Language::Swift, _) => no_swift_emitter("repeat_streaming_decode_stmt_gated"),
         // Rust: bind `_n` from the count source inside the True arm —
         // single read site keeps the loop bound and capacity hint in sync.
         // Co-gated count is `Option<_>` (unwrap via `.expect`); unconditional
@@ -11068,6 +11112,7 @@ fn repeat_streaming_encode_block_gated(
     let id_owned = codec_field_local_name(&field.id, lang);
     let id = id_owned.as_str();
     match lang {
+        Language::Swift => no_swift_emitter("repeat_streaming_encode_block_gated"),
         // Rust: `if let Some(_list) = &self.<id>` mirrors item B2 tail
         // present-if encode (line 5217). Carrier bit isn't tested —
         // trust contract: author keeps Option::is_some() in sync with
@@ -11209,6 +11254,7 @@ fn chain_cursor_empty(lang: crate::generator::Language) -> &'static str {
         Language::Rust | Language::Cpp | Language::Kotlin | Language::Python => {
             "cursor.remaining() == 0"
         }
+        Language::Swift => no_swift_emitter("chain_cursor_empty"),
     }
 }
 
@@ -11221,6 +11267,7 @@ fn chain_cursor_nonempty(lang: crate::generator::Language) -> &'static str {
         Language::Rust | Language::Cpp | Language::Kotlin | Language::Python => {
             "cursor.remaining() > 0"
         }
+        Language::Swift => no_swift_emitter("chain_cursor_nonempty"),
     }
 }
 
@@ -11240,6 +11287,7 @@ fn chain_guard_if(
         Language::Rust => format!("\n{indent}if {cond} {{\n{indent}    {bail}\n{indent}}}"),
         Language::Go => format!("\n{indent}if {cond} {{\n{indent}\t{bail}\n{indent}}}"),
         Language::Python => format!("\n{indent}if {cond}:\n{indent}    {bail}"),
+        Language::Swift => no_swift_emitter("chain_guard_if"),
     }
 }
 
@@ -11255,6 +11303,7 @@ fn tlv_chain_more_decl(lang: crate::generator::Language) -> &'static str {
         Language::Kotlin => "var _more = false",
         Language::Go => "_more := false",
         Language::Python => "_more = False",
+        Language::Swift => no_swift_emitter("tlv_chain_more_decl"),
     }
 }
 
@@ -11380,6 +11429,7 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
         TlvTerminateStrategy::EntryFlag { flag_name } => Some(flag_getter_name(flag_name, lang)),
     };
     match lang {
+        Language::Swift => no_swift_emitter("tlv_chain_streaming_decode_stmt"),
         // Rust: bounded loop over `max_depth`; each iteration peeks at
         // cursor.remaining() to break cleanly when the chain ends, then
         // decodes the next entry. The post-loop guards come from
@@ -11707,6 +11757,7 @@ fn tlv_chain_streaming_encode_block(
     let id_owned = codec_field_local_name(&field.id, lang);
     let id = id_owned.as_str();
     match lang {
+        Language::Swift => no_swift_emitter("tlv_chain_streaming_encode_block"),
         Language::Rust => {
             let decls = entry_binds.decls(lang, "        ");
             let updates = chain_encode_updates(entry_binds, field, "_e", lang, "            ");
@@ -11866,6 +11917,7 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
     };
 
     match lang {
+        Language::Swift => no_swift_emitter("tlv_chain_streaming_decode_stmt_gated"),
         Language::Rust => {
             // Loop body one level in from the `let`s that precede it, and the
             // guard back out at their level — the gated arm used to indent
@@ -12148,6 +12200,7 @@ fn tlv_chain_streaming_encode_block_gated(
         .expect("tlv_chain_streaming_encode_block_gated: caller guarantees present_if is Some");
     let test = present_if_test_literal_encode(fields, pred, lang);
     match lang {
+        Language::Swift => no_swift_emitter("tlv_chain_streaming_encode_block_gated"),
         Language::Rust => {
             let decls = entry_binds.decls(lang, "            ");
             let updates = chain_encode_updates(entry_binds, field, "_e", lang, "                ");
@@ -12327,6 +12380,7 @@ fn flag_getter_name(flag_name: &str, lang: crate::generator::Language) -> String
             }
         }
         Language::Rust | Language::Cpp | Language::Python => snake,
+        Language::Swift => no_swift_emitter("flag_getter_name"),
     }
 }
 
@@ -12382,6 +12436,7 @@ fn build_flag_ctx(
                 Language::Rust | Language::Cpp | Language::Python | Language::C11 => {
                     format!("set_{snake}")
                 }
+                Language::Swift => no_swift_emitter("build_flag_ctx"),
             };
             // Per-language result type for multi-bit accessors.
             // Single-bit returns bool — the `result_type_*` field is
@@ -12389,6 +12444,7 @@ fn build_flag_ctx(
             // bool branch in each template ignores it.
             let result_type = if !multi_bit {
                 match lang {
+                    Language::Swift => no_swift_emitter("build_flag_ctx"),
                     Language::Rust => "bool".to_string(),
                     Language::Cpp => "bool".to_string(),
                     Language::Kotlin => "Boolean".to_string(),
@@ -12409,6 +12465,7 @@ fn build_flag_ctx(
                     Language::Go => format!("uint{result_bits}"),
                     Language::C11 => format!("uint{result_bits}_t"),
                     Language::Python => "int".to_string(),
+                    Language::Swift => no_swift_emitter("build_flag_ctx"),
                 }
             };
             // Rust multi-bit getter body, emitted through the shared
@@ -12465,6 +12522,7 @@ fn codec_field_local_name(id: &str, lang: crate::generator::Language) -> String 
         Language::Go => filters::to_pascal_case(id.to_string()),
         Language::Rust | Language::Python | Language::C11 => filters::to_snake_case(id.to_string()),
         Language::Cpp | Language::Kotlin => id.to_string(),
+        Language::Swift => no_swift_emitter("codec_field_local_name"),
     }
 }
 
@@ -12509,6 +12567,7 @@ fn codec_field_decode_local(id: &str, lang: crate::generator::Language) -> Strin
         | crate::generator::Language::Kotlin
         | crate::generator::Language::Go
         | crate::generator::Language::C11 => codec_field_local_name(id, lang),
+        crate::generator::Language::Swift => no_swift_emitter("codec_field_decode_local"),
     }
 }
 
@@ -12582,6 +12641,7 @@ fn streaming_fixed_enum_conversion(
         return (String::new(), format!("{from}({carrier_read})"));
     }
     match l.lang {
+        Language::Swift => no_swift_emitter("streaming_fixed_enum_conversion"),
         Language::Rust => (
             String::new(),
             format!("{from}({carrier_read}).ok_or(CodecError::UndeclaredEnumValue)?"),
@@ -12665,6 +12725,7 @@ fn present_if_decode_fixed(
     let id_owned = codec_field_decode_local(&field.id, lang);
     let id = id_owned.as_str();
     match (lang, &field.present_if) {
+        (Language::Swift, _) => no_swift_emitter("present_if_decode_fixed"),
         (Language::Rust, None) => format!(
             "let {id} = {{\n            \
                  let raw = cursor.peek_slice({n})?;\n            \
@@ -12877,6 +12938,7 @@ fn present_if_decode_tail(
     let id_owned = codec_field_decode_local(&field.id, lang);
     let id = id_owned.as_str();
     match (lang, &field.present_if) {
+        (Language::Swift, _) => no_swift_emitter("present_if_decode_tail"),
         (Language::Rust, None) => format!(
             "let {id} = {{\n            \
                  let _n = cursor.remaining();\n            \
@@ -13124,6 +13186,7 @@ fn present_if_decode_length_ref(
     let n_python = compute_n_python(len_field, fields, sibling_gated, arith);
     let n_c11 = compute_n_c11(len_field, fields, sibling_gated, arith);
     match (lang, &field.present_if) {
+        (Language::Swift, _) => no_swift_emitter("present_if_decode_length_ref"),
         (Language::Rust, None) => format!(
             "let {id} = {{\n            \
                  let _n = {n_rust};\n            \
@@ -13317,6 +13380,7 @@ fn present_if_decode_string_length_ref(
     let id_owned = codec_field_decode_local(&field.id, lang);
     let id = id_owned.as_str();
     match (lang, &field.present_if) {
+        (Language::Swift, _) => no_swift_emitter("present_if_decode_string_length_ref"),
         (Language::Rust, None) => {
             let n_rust = compute_n_rust(len_field, fields, sibling_gated, arith);
             format!(
@@ -13823,6 +13887,7 @@ fn present_if_decode_vle(
             // `id` is already the decode local.
             Language::Python => id.to_string(),
             Language::Cpp | Language::Kotlin => id.to_string(),
+            Language::Swift => no_swift_emitter("present_if_decode_vle"),
         };
         // C11: the present-if-style streaming branch writes results
         // directly into `out->{id}` (mirrors `present_if_decode_fixed`'s
@@ -13845,6 +13910,7 @@ fn present_if_decode_vle(
     let body_id = "_v".to_string();
     let inner = vle_decode_stmt(&body_id, width_bits, lang);
     match lang {
+        Language::Swift => no_swift_emitter("present_if_decode_vle"),
         // Rust: `_v` is bound by `vle_decode_stmt` as a `let _v: u<W>`
         // statement; wrap with an `if predicate { ... Some(_v) } else
         // { None }` block. The inner `vle_decode_stmt` already emits
@@ -13977,6 +14043,7 @@ fn present_if_encode_fixed(
     let id_owned = codec_field_local_name(&field.id, lang);
     let id = id_owned.as_str();
     match (lang, field.present_if.is_some()) {
+        (Language::Swift, _) => no_swift_emitter("present_if_encode_fixed"),
         (Language::Rust, false) => streaming_fixed_field_encode_rust(l, field, default_endian, n),
         (Language::Rust, true) => {
             let inner = streaming_fixed_field_encode_rust_from_local(l, field, default_endian, n);
@@ -14083,6 +14150,7 @@ fn present_if_encode_tail(
     let id_owned = codec_field_local_name(&field.id, lang);
     let id = id_owned.as_str();
     match (lang, field.present_if.is_some()) {
+        (Language::Swift, _) => no_swift_emitter("present_if_encode_tail"),
         // `self.<id>` is the borrowed `&'a [u8]` view — pass it directly;
         // `&self.<id>` would be `&&[u8]` (clippy::needless_borrow).
         (Language::Rust, false) => format!("        w.write_bytes(self.{id})?;"),
@@ -14185,6 +14253,7 @@ fn present_if_encode_string_length_ref(
     let id_owned = codec_field_local_name(&field.id, lang);
     let id = id_owned.as_str();
     match (lang, &field.present_if) {
+        (Language::Swift, _) => no_swift_emitter("present_if_encode_string_length_ref"),
         (Language::Rust, None) => format!("        w.write_bytes(self.{id}.as_bytes())?;"),
         // Gated String encode on Rust:
         // `Option<String>::as_ref()` borrows the inner String so
@@ -14340,6 +14409,7 @@ fn present_if_encode_length_ref(
         return present_if_encode_string_length_ref(field, fields, lang);
     }
     match (lang, field.present_if.is_some()) {
+        (Language::Swift, _) => no_swift_emitter("present_if_encode_length_ref"),
         // `self.<id>` is the borrowed `&'a [u8]` view — pass it directly;
         // `&self.<id>` would be `&&[u8]` (clippy::needless_borrow).
         (Language::Rust, false) => format!("        w.write_bytes(self.{id})?;"),
@@ -14468,11 +14538,13 @@ fn present_if_encode_vle(
             // Cpp / Kotlin: encode lives inside a member function so
             // member access resolves implicitly without a prefix.
             Language::Cpp | Language::Kotlin => id.to_string(),
+            Language::Swift => no_swift_emitter("present_if_encode_vle"),
         };
         return vle_encode_block(&value_expr, width_bits, lang);
     }
     let p = field.present_if.as_ref().expect("guarded by branch above");
     match lang {
+        Language::Swift => no_swift_emitter("present_if_encode_vle"),
         // Rust: gated optional. `if let Some(_v) = self.<id> { ... }`
         // wraps a per-byte VLE emit loop that operates on the
         // unwrapped `_v` value. `vle_encode_block` reads `self.<id>`
@@ -14586,6 +14658,7 @@ fn streaming_fixed_field_body(
             Language::Rust | Language::Cpp | Language::Go | Language::Python | Language::C11 => {
                 "raw[0]".into()
             }
+            Language::Swift => no_swift_emitter("streaming_fixed_field_body"),
         };
     }
 
@@ -14626,6 +14699,7 @@ fn encode_multibyte_unified(
             .map(|i| {
                 let shift = if le { i * 8 } else { (n - 1 - i) * 8 };
                 match lang {
+                    Language::Swift => no_swift_emitter("encode_multibyte_unified"),
                     Language::Rust => {
                         if shift == 0 {
                             format!("({value_ref} & 0xFF) as u8")
@@ -15094,6 +15168,7 @@ fn present_if_test_literal_at(
                 | Language::Kotlin
                 | Language::Go
                 | Language::C11 => " || ",
+                Language::Swift => no_swift_emitter("present_if_test_literal_at"),
             };
             format!("{head}{join}{rest}")
         }
@@ -15136,6 +15211,7 @@ fn present_if_test_literal_clause(
     // computed once here and substituted into per-language formats.
     let op = if pred.negate { "==" } else { "!=" };
     match lang {
+        Language::Swift => no_swift_emitter("present_if_test_literal_clause"),
         Language::Rust => {
             let suffix = match &carrier_type {
                 SceType::Uint8 => "u8",
@@ -15360,6 +15436,7 @@ fn present_if_chain_clause(pred: &PresentIfPredicate, lang: crate::generator::La
             | crate::generator::Language::Go
             | crate::generator::Language::C11,
         ) => format!("!{has}"),
+        (_, crate::generator::Language::Swift) => no_swift_emitter("present_if_chain_clause"),
     }
 }
 
@@ -15414,6 +15491,7 @@ fn chain_entry_identifier(
         Language::Go => format!("uint64({raw})"),
         Language::Python => raw,
         Language::C11 => format!("(uint64_t)({raw})"),
+        Language::Swift => no_swift_emitter("chain_entry_identifier"),
     };
     let Some(mask) = mask else {
         return whole;
@@ -15424,6 +15502,7 @@ fn chain_entry_identifier(
         Language::Rust | Language::Cpp | Language::Go | Language::Python | Language::C11 => {
             format!("({whole} & {mask})")
         }
+        Language::Swift => no_swift_emitter("chain_entry_identifier"),
     }
 }
 
@@ -15435,6 +15514,7 @@ fn chain_identifier_literal(value: u64, lang: crate::generator::Language) -> Str
         Language::Cpp | Language::C11 => format!("{value}ULL"),
         Language::Kotlin => format!("{value}UL"),
         Language::Go | Language::Python => value.to_string(),
+        Language::Swift => no_swift_emitter("chain_identifier_literal"),
     }
 }
 
@@ -15531,6 +15611,7 @@ impl ChainEntryBinds {
                     Language::Go => format!("var {local} byte"),
                     Language::Python => format!("{local} = 0"),
                     Language::C11 => format!("uint8_t {local} = 0;"),
+                    Language::Swift => no_swift_emitter("decls"),
                 };
                 format!("{decl}\n{indent}")
             })
@@ -15570,6 +15651,7 @@ impl ChainEntryBinds {
                 }
                 Language::Python => format!("{local} = 1 if {test} else 0"),
                 Language::C11 => format!("{local} = (uint8_t)(({test}) ? 1 : 0);"),
+                Language::Swift => no_swift_emitter("update_lines"),
             });
         }
         lines
@@ -15713,6 +15795,7 @@ fn chain_has_decl_lines(
                 "}".to_string(),
             ]
         }
+        Language::Swift => no_swift_emitter("chain_has_decl_lines"),
     }
 }
 
@@ -15725,6 +15808,7 @@ fn chain_decode_indent(lang: crate::generator::Language) -> &'static str {
         Language::Kotlin | Language::Python => "            ",
         Language::Go => "\t",
         Language::C11 => "    ",
+        Language::Swift => no_swift_emitter("chain_decode_indent"),
     }
 }
 
@@ -15735,6 +15819,7 @@ fn encode_body_indent(lang: crate::generator::Language) -> &'static str {
         Language::Rust | Language::Cpp | Language::Kotlin | Language::Python => "        ",
         Language::Go => "\t",
         Language::C11 => "    ",
+        Language::Swift => no_swift_emitter("encode_body_indent"),
     }
 }
 
@@ -15758,6 +15843,7 @@ fn gated_field_presence(field: &CodecField, lang: crate::generator::Language) ->
             format!("self.{id} is None"),
         ),
         Language::C11 => unreachable!("C11 has no wrapper that says a field was given"),
+        Language::Swift => no_swift_emitter("gated_field_presence"),
     }
 }
 
@@ -15804,6 +15890,7 @@ fn present_if_mismatch_check(
             format!("    {refuse}"),
         ],
         Language::C11 => unreachable!("C11 has no wrapper that says a field was given"),
+        Language::Swift => no_swift_emitter("present_if_mismatch_check"),
     }
 }
 
@@ -15818,6 +15905,7 @@ fn present_if_mismatch_stmt(field_id: &str, lang: crate::generator::Language) ->
         Language::Go => "return codec.ErrPresentIfMismatch".to_string(),
         Language::Python => format!("raise PresentIfMismatch(\"{field_id}\")"),
         Language::C11 => unreachable!("C11 has no wrapper that says a field was given"),
+        Language::Swift => no_swift_emitter("present_if_mismatch_stmt"),
     }
 }
 
@@ -15952,6 +16040,7 @@ fn vle_decode_stmt(field_id: &str, width_bits: u32, lang: crate::generator::Lang
         (Language::Rust | Language::Kotlin | Language::Go, w) => {
             format!("/* unsupported vle_u{w} on {lang:?} */")
         }
+        (Language::Swift, _) => no_swift_emitter("vle_decode_stmt"),
     }
 }
 
@@ -15991,6 +16080,7 @@ fn vle_encode_block(value_expr: &str, width_bits: u32, lang: crate::generator::L
             "\tif err := codec.WriteVLEU{width_bits}(w, uint{width_bits}({value_expr})); err != nil {{\n\t\treturn err\n\t}}"
         ),
         Language::Python => format!("        w.write_vle_u{width_bits}({value_expr})"),
+        Language::Swift => no_swift_emitter("vle_encode_block"),
     }
 }
 
@@ -16040,6 +16130,7 @@ fn generate_decode_expr(
                     Language::Rust | Language::Go | Language::Python => {
                         format!("(raw[{byte_off}] >> {bit_off}) & 0x{mask:02X}")
                     }
+                    Language::Swift => no_swift_emitter("generate_decode_expr"),
                 }
             } else {
                 match bits {
@@ -16050,6 +16141,7 @@ fn generate_decode_expr(
                         | Language::Go
                         | Language::Python
                         | Language::C11 => format!("raw[{byte_off}]"),
+                        Language::Swift => no_swift_emitter("generate_decode_expr"),
                     },
                     16 => decode_multibyte_unified(byte_off, 2, endian, lang),
                     24 => decode_multibyte_unified(byte_off, 3, endian, lang),
@@ -16061,6 +16153,7 @@ fn generate_decode_expr(
                         | Language::Kotlin
                         | Language::Go
                         | Language::C11 => format!("/* unsupported {bits}-bit decode */"),
+                        Language::Swift => no_swift_emitter("generate_decode_expr"),
                     },
                 }
             }
@@ -16079,6 +16172,7 @@ fn generate_decode_expr(
             // branches on `field.is_variable` and emits a block instead
             // of consuming this single-rhs `decode_expr`.
             Language::C11 => String::new(),
+            Language::Swift => no_swift_emitter("generate_decode_expr"),
         },
         BitSize::LengthRef => {
             // Per-field let-binding emit: the sibling length-source is
@@ -16163,6 +16257,7 @@ fn generate_decode_expr(
                 Language::Python =>
                     format!("raw[{byte_off}:{byte_off} + {len_value_python}{suffix_signed}]"),
                 Language::C11 => String::new(),
+                Language::Swift => no_swift_emitter("generate_decode_expr"),
             }
         }
         BitSize::Vle { .. } => {
@@ -16265,6 +16360,7 @@ fn decode_multibyte_unified(
                             format!("(({target})raw[{off}] << {shift})")
                         }
                     }
+                    Language::Swift => no_swift_emitter("decode_multibyte_unified"),
                 }
             })
             .collect()
@@ -16278,6 +16374,7 @@ fn decode_multibyte_unified(
     let sep = match lang {
         Language::Kotlin => " or ",
         Language::Rust | Language::Cpp | Language::Go | Language::Python | Language::C11 => " | ",
+        Language::Swift => no_swift_emitter("decode_multibyte_unified"),
     };
 
     let joined = shifts.join(sep);
@@ -16535,6 +16632,7 @@ fn parent_tag_derivation_local_for_carrier(
             }
             block
         }
+        Language::Swift => no_swift_emitter("parent_tag_derivation_local_for_carrier"),
     }
 }
 
@@ -16777,6 +16875,7 @@ fn parent_tag_carrier_or_suffix_map(
             }
             Language::Kotlin => format!(" or _derived{pascal}"),
             Language::Go => format!(" | _derived{pascal}"),
+            Language::Swift => no_swift_emitter("parent_tag_carrier_or_suffix_map"),
         };
         out.insert(d.carrier_field_id.clone(), suffix);
     }
@@ -16850,6 +16949,7 @@ fn inject_parent_tag_carrier_suffix(
             let replacement = format!("w.write_u8((self.{snake}{or_suffix}) & 0xFF)");
             block.replace(&needle, &replacement)
         }
+        Language::Swift => no_swift_emitter("inject_parent_tag_carrier_suffix"),
     }
 }
 
@@ -16907,6 +17007,7 @@ fn parent_tag_apply_simple_path_suffix(
         Language::Rust | Language::Cpp | Language::Go | Language::Python | Language::C11 => {
             format!("{expr}{suffix}")
         }
+        Language::Swift => no_swift_emitter("parent_tag_apply_simple_path_suffix"),
     }
 }
 
@@ -16973,6 +17074,7 @@ fn generate_encode_exprs(
                     crate::generator::Language::Go | crate::generator::Language::Python => {
                         parts.push(format!("({field_ref} & 0x{mask:02X}) << {bit_off}"))
                     }
+                    crate::generator::Language::Swift => no_swift_emitter("generate_encode_exprs"),
                 }
             }
             let sep = match lang {
@@ -16982,6 +17084,7 @@ fn generate_encode_exprs(
                 | crate::generator::Language::Go
                 | crate::generator::Language::Python
                 | crate::generator::Language::C11 => " | ",
+                crate::generator::Language::Swift => no_swift_emitter("generate_encode_exprs"),
             };
             let merged = parts.join(sep);
             exprs.push(l.codec_to_byte(&merged));
@@ -17018,6 +17121,7 @@ fn encode_single_field_unified(
                 // C11 (return-by-value encode shape): field_ref already includes `self->`,
                 // and the value is a uint8_t so no width cast is required.
                 Language::C11 => exprs.push(field_ref),
+                Language::Swift => no_swift_emitter("encode_single_field_unified"),
             }
         }
         Some(bits) if bits < 8 || bit_off > 0 => {
@@ -17032,6 +17136,7 @@ fn encode_single_field_unified(
                 | Language::Go
                 | Language::Python
                 | Language::C11 => format!("({field_ref} & 0x{mask:02X}) << {bit_off}"),
+                Language::Swift => no_swift_emitter("encode_single_field_unified"),
             };
             exprs.push(l.codec_to_byte(&inner));
         }
@@ -17299,6 +17404,7 @@ fn render_validator(
             Language::Rust | Language::Python => Some(format!("self.{}", imp.member_name)),
             Language::Go => Some(format!("{GO_FORGE_RECEIVER}.{}", imp.member_name)),
             Language::Kotlin | Language::C11 => None,
+            Language::Swift => no_swift_emitter("render_validator"),
         };
         if let Some(exp) = alias_expansion {
             owned_renames.insert(imp.alias.as_str(), exp);
@@ -18045,7 +18151,8 @@ pub fn render_machine_concurrency_artifacts(
         crate::generator::Language::Cpp
         | crate::generator::Language::Kotlin
         | crate::generator::Language::Go
-        | crate::generator::Language::Python => {
+        | crate::generator::Language::Python
+        | crate::generator::Language::Swift => {
             // Backends without `link.*.jinja2` today
             // silent-skip per the listener-pair footprint precedent.
         }
@@ -18121,7 +18228,8 @@ pub fn render_machine_session_runtime_artifacts(
         | crate::generator::Language::Kotlin
         | crate::generator::Language::Go
         | crate::generator::Language::Python
-        | crate::generator::Language::C11 => Ok(Vec::new()),
+        | crate::generator::Language::C11
+        | crate::generator::Language::Swift => Ok(Vec::new()),
     }
 }
 
@@ -19377,6 +19485,9 @@ fn resolve_queue_render_inputs(
             QueueAlgorithm::Lscq,
             _,
         ) => "Lscq",
+        (crate::generator::Language::Swift, _, _) => {
+            no_swift_emitter("resolve_queue_render_inputs")
+        }
     };
     // What each operation gives on this target. Mutual exclusion makes every
     // row `blocking`, whatever the table would give.
@@ -19423,6 +19534,9 @@ fn resolve_queue_render_inputs(
             | crate::generator::Language::C11,
             _,
         ) => selection.algorithm.name(),
+        (_, crate::generator::Language::Swift, _) => {
+            no_swift_emitter("resolve_queue_render_inputs")
+        }
     };
     let progress = |p: QueueProgress| match p {
         QueueProgress::WaitFree => "wait-free",
@@ -22542,6 +22656,7 @@ fn stateful_import_method_renames(
                 // stale entries that would silently shadow a future
                 // bare-Member usage (e.g. taking a method's address).
                 generator::Language::C11 => continue,
+                generator::Language::Swift => no_swift_emitter("stateful_import_method_renames"),
             };
             out.push((qualified_key, expansion));
         }
@@ -22610,6 +22725,7 @@ fn stateful_import_field_renames(
                     let snake_field = filters::to_snake_case(field.to_string());
                     format!("_st->{}.{}", imp.member_name, snake_field)
                 }
+                generator::Language::Swift => no_swift_emitter("stateful_import_field_renames"),
             };
             out.push((qualified_key.clone(), expansion));
         }
@@ -24308,6 +24424,7 @@ impl LangCtx {
             crate::generator::Language::C11 => {
                 format!("{}_to_underlying({value})", imported.snake)
             }
+            crate::generator::Language::Swift => no_swift_emitter("LangCtx::codec_carrier_expr"),
         }
     }
 
@@ -24354,6 +24471,7 @@ impl LangCtx {
                 format!("{namespace}::from_underlying")
             }
             Language::C11 => format!("{}_from_underlying", imported.snake),
+            Language::Swift => no_swift_emitter("LangCtx::enum_from_underlying"),
         }
     }
 
@@ -24403,7 +24521,8 @@ impl LangCtx {
             crate::generator::Language::Python => python_default(ty).to_string(),
             other @ (crate::generator::Language::Cpp
             | crate::generator::Language::Go
-            | crate::generator::Language::C11) => unreachable!(
+            | crate::generator::Language::C11
+            | crate::generator::Language::Swift) => unreachable!(
                 "LangCtx::default_expr called for {other:?} — only the backends \
                  that spell a per-field default have one"
             ),
@@ -24423,6 +24542,7 @@ impl LangCtx {
             crate::generator::Language::Go => go_type(ty),
             crate::generator::Language::Python => python_type(ty),
             crate::generator::Language::C11 => c_type(ty),
+            crate::generator::Language::Swift => no_swift_emitter("LangCtx::type_name"),
         })
     }
 
@@ -24442,6 +24562,7 @@ impl LangCtx {
             crate::generator::Language::Kotlin
             | crate::generator::Language::Go
             | crate::generator::Language::Python => self.type_name(ty).into_owned(),
+            crate::generator::Language::Swift => no_swift_emitter("LangCtx::param_type"),
         }
     }
 
@@ -24480,6 +24601,7 @@ impl LangCtx {
             crate::generator::Language::Go
             | crate::generator::Language::Python
             | crate::generator::Language::C11 => "",
+            crate::generator::Language::Swift => no_swift_emitter("LangCtx::unread_param_prefix"),
         }
     }
 
@@ -24515,6 +24637,7 @@ impl LangCtx {
             crate::generator::Language::Python => {
                 format!("{}: {ty}", python_local_spelling(id))
             }
+            crate::generator::Language::Swift => no_swift_emitter("LangCtx::place_param"),
         }
     }
 
@@ -24537,6 +24660,7 @@ impl LangCtx {
             // the `.c` half. Until then this arm is unreachable because
             // generate_c11(...) does not exist.
             crate::generator::Language::C11 => "h",
+            crate::generator::Language::Swift => no_swift_emitter("LangCtx::template_ext"),
         }
     }
 
@@ -24548,6 +24672,8 @@ impl LangCtx {
             crate::generator::Language::Go => ExprTarget::Go,
             crate::generator::Language::Python => ExprTarget::Python,
             crate::generator::Language::C11 => ExprTarget::C,
+            // `ExprTarget` has no Swift until its expression emitter exists.
+            crate::generator::Language::Swift => no_swift_emitter("LangCtx::expr_target"),
         }
     }
 
@@ -24586,6 +24712,7 @@ impl LangCtx {
                 );
             }
             crate::generator::Language::Rust | crate::generator::Language::Python => {}
+            crate::generator::Language::Swift => no_swift_emitter("LangCtx::base_context"),
         }
         m
     }
@@ -24599,6 +24726,7 @@ impl LangCtx {
             | crate::generator::Language::Kotlin
             | crate::generator::Language::Python
             | crate::generator::Language::C11 => to_upper_snake(s),
+            crate::generator::Language::Swift => no_swift_emitter("LangCtx::event_name"),
         }
     }
 
@@ -24622,6 +24750,7 @@ impl LangCtx {
             crate::generator::Language::Go => go_literal(val, ty),
             crate::generator::Language::Python => python_literal(val, ty),
             crate::generator::Language::C11 => c_literal(val, ty),
+            crate::generator::Language::Swift => no_swift_emitter("LangCtx::literal"),
         }
     }
 
@@ -24673,6 +24802,9 @@ impl LangCtx {
                         | crate::generator::Language::C11,
                         false,
                     ) => "false".into(),
+                    (crate::generator::Language::Swift, _) => {
+                        no_swift_emitter("LangCtx::initial_expr")
+                    }
                 }
             }
             ty if ty.is_numeric() => {
@@ -24732,6 +24864,7 @@ impl LangCtx {
                 let value = minijinja::Value::from_serialize(&ctx);
                 return Ok(tmpl.render(value).map_err(generator::render_error)?);
             }
+            crate::generator::Language::Swift => no_swift_emitter("forge render"),
         };
         // Go refuses a file that names a package it does not import and a
         // file that imports one it never names; a C++ file that names
@@ -24838,6 +24971,7 @@ impl LangCtx {
             crate::generator::Language::Go => "go_type",
             crate::generator::Language::Python => "py_type",
             crate::generator::Language::C11 => "c_type",
+            crate::generator::Language::Swift => no_swift_emitter("LangCtx::codec_type_key"),
         }
     }
 
@@ -24849,6 +24983,7 @@ impl LangCtx {
             | crate::generator::Language::Python
             | crate::generator::Language::C11 => filters::to_snake_case(id.to_string()),
             crate::generator::Language::Cpp | crate::generator::Language::Kotlin => id.to_string(),
+            crate::generator::Language::Swift => no_swift_emitter("LangCtx::codec_field_id"),
         }
     }
 
@@ -24872,6 +25007,7 @@ impl LangCtx {
             crate::generator::Language::Cpp | crate::generator::Language::Kotlin => {
                 name.to_string()
             }
+            crate::generator::Language::Swift => no_swift_emitter("LangCtx::codec_field_ref"),
         }
     }
 
@@ -24887,6 +25023,7 @@ impl LangCtx {
             crate::generator::Language::Go => format!("byte({expr})"),
             crate::generator::Language::Python => format!("({expr}) & 0xFF"),
             crate::generator::Language::C11 => format!("(uint8_t)({expr})"),
+            crate::generator::Language::Swift => no_swift_emitter("LangCtx::codec_to_byte"),
         }
     }
 
@@ -24899,6 +25036,7 @@ impl LangCtx {
             | crate::generator::Language::Kotlin
             | crate::generator::Language::Go
             | crate::generator::Language::C11 => format!("/* {text} */"),
+            crate::generator::Language::Swift => no_swift_emitter("LangCtx::codec_comment"),
         }
     }
 
@@ -24919,6 +25057,7 @@ impl LangCtx {
             crate::generator::Language::Cpp | crate::generator::Language::Go => {
                 format!("prev{}", filters::to_pascal_case(self.local_id(id)))
             }
+            crate::generator::Language::Swift => no_swift_emitter("LangCtx::prev_name"),
         }
     }
 }
@@ -24970,6 +25109,7 @@ fn render_filter(
         crate::generator::Language::Cpp => cpp_local_spelling(&m.input.id),
         crate::generator::Language::Kotlin => kotlin_local_spelling(&m.input.id),
         crate::generator::Language::Python | crate::generator::Language::C11 => m.input.id.clone(),
+        crate::generator::Language::Swift => no_swift_emitter("render_filter"),
     };
     ctx.insert("input_id".into(), input_id_emit.into());
     ctx.insert("input_type".into(), l.type_name(&m.input.sce_type).into());
@@ -25040,6 +25180,7 @@ fn render_interpolation(
                 | crate::generator::Language::C11 => {
                     format!("AXIS_{}", a.input_id.to_uppercase())
                 }
+                crate::generator::Language::Swift => no_swift_emitter("render_interpolation"),
             };
             serde_json::json!({
                 "input_id": a.input_id,
@@ -25280,6 +25421,7 @@ fn render_observer(
                 | crate::generator::Language::C11 => {
                     format!("{}_active", filters::to_snake_case(mon.id.clone()))
                 }
+                crate::generator::Language::Swift => no_swift_emitter("render_observer"),
             };
 
             // The struct field this monitor is. Go keeps it off the struct's own
@@ -25297,6 +25439,7 @@ fn render_observer(
                 crate::generator::Language::Cpp
                 | crate::generator::Language::Python
                 | crate::generator::Language::C11 => mon.id.clone(),
+                crate::generator::Language::Swift => no_swift_emitter("render_observer"),
             };
 
             Ok(serde_json::json!({
@@ -25446,6 +25589,7 @@ fn algorithm_param_type(l: &LangCtx, ty: &SceType) -> String {
             | Language::C11,
             _,
         ) => l.param_type(ty),
+        (Language::Swift, _) => no_swift_emitter("algorithm_param_type"),
     }
 }
 
@@ -25486,6 +25630,7 @@ fn algorithm_format_bc_import_param(
         // C11: const pointer to the typedef'd struct (`<snake>_t`).
         // No namespace concept — `member_type` already carries `_t`.
         Language::C11 => format!("const {} *{}", imp.member_type, alias),
+        Language::Swift => no_swift_emitter("algorithm_format_bc_import_param"),
     }
 }
 
@@ -25643,6 +25788,7 @@ fn record_text_operand(lang: crate::generator::Language, member: &str) -> String
         Language::Rust => format!("{member}.as_str()"),
         Language::C11 => format!("{member}.data"),
         Language::Cpp | Language::Go | Language::Python | Language::Kotlin => member.to_string(),
+        Language::Swift => no_swift_emitter("record_text_operand"),
     }
 }
 
@@ -25809,6 +25955,7 @@ fn lower_text_write(
                     crate::forge::static_lowering::c_string_storage_of(bound)
                 ),
                 Language::Cpp | Language::Go | Language::Python | Language::Kotlin => literal,
+                Language::Swift => no_swift_emitter("lower_text_write"),
             }
         }
         TextSource::Field { record, field } => {
@@ -25826,6 +25973,7 @@ fn lower_text_write(
                     crate::forge::static_lowering::c_string_storage_of(bound)
                 ),
                 Language::Cpp | Language::Go | Language::Python | Language::Kotlin => member,
+                Language::Swift => no_swift_emitter("lower_text_write"),
             }
         }
     })
@@ -26110,6 +26258,7 @@ impl<'a> ListSpelling<'a> {
             Language::Python => format!("list[{t}]"),
             Language::Kotlin if self.is_record() => format!("List<{t}>"),
             Language::Kotlin => self.kotlin_array_type().to_string(),
+            Language::Swift => no_swift_emitter("ListSpelling::param_type"),
         }
     }
 
@@ -26128,6 +26277,7 @@ impl<'a> ListSpelling<'a> {
             Language::Python => format!("list[{t}]"),
             Language::Kotlin if self.is_record() => format!("List<{t}>"),
             Language::Kotlin => self.kotlin_array_type().to_string(),
+            Language::Swift => no_swift_emitter("ListSpelling::return_type"),
         }
     }
 
@@ -26171,6 +26321,7 @@ impl<'a> ListSpelling<'a> {
                 format!("{pad}val {local} = ArrayList<{t}>({cap})\n")
             }
             Language::Kotlin => format!("{pad}val {local} = SceListBuf({cap})\n"),
+            Language::Swift => no_swift_emitter("ListSpelling::declare"),
         }
     }
 
@@ -26202,6 +26353,7 @@ impl<'a> ListSpelling<'a> {
             Language::Go => format!("{pad}{local} = append({local}, {t}({e}))\n"),
             Language::Python => format!("{pad}{local}.append({e})\n"),
             Language::Kotlin => format!("{pad}{local}.add({e})\n"),
+            Language::Swift => no_swift_emitter("ListSpelling::push"),
         }
     }
 
@@ -26221,6 +26373,7 @@ impl<'a> ListSpelling<'a> {
             | Language::C11
             | Language::Go
             | Language::Python => local.to_string(),
+            Language::Swift => no_swift_emitter("ListSpelling::return_value"),
         }
     }
 
@@ -26586,6 +26739,7 @@ fn lower_algorithm_stmt(
                         | Language::Kotlin
                         | Language::Go
                         | Language::Python => "",
+                        Language::Swift => no_swift_emitter("lower_algorithm_stmt"),
                     };
                     out.push_str(
                         &ListSpelling::new(l, elem, imports)?
@@ -26620,6 +26774,7 @@ fn lower_algorithm_stmt(
                     Language::Kotlin => {
                         format!("{pad}val {local} = SceByteBuf({cap})\n")
                     }
+                    Language::Swift => no_swift_emitter("lower_algorithm_stmt"),
                 };
                 out.push_str(&line);
                 return Ok(());
@@ -26689,6 +26844,7 @@ fn lower_algorithm_stmt(
                     "{pad}{local}: {ty} = {init_lowered}\n",
                     ty = l.type_name(sce_type)
                 ),
+                Language::Swift => no_swift_emitter("lower_algorithm_stmt"),
             };
             out.push_str(&line);
         }
@@ -26774,6 +26930,7 @@ fn lower_algorithm_stmt(
                 Language::Go => format!("{pad}{local} := {ty}{{{}}}\n", joined(": ")),
                 Language::Python => format!("{pad}{local} = {ty}({})\n", joined("=")),
                 Language::Kotlin => format!("{pad}var {local} = {ty}({})\n", joined(" = ")),
+                Language::Swift => no_swift_emitter("lower_algorithm_stmt"),
             };
             out.push_str(&line);
         }
@@ -26816,6 +26973,7 @@ fn lower_algorithm_stmt(
                 Language::Go => format!("{pad}{local} := {value}\n"),
                 Language::Python => format!("{pad}{local} = {value}\n"),
                 Language::Kotlin => format!("{pad}var {local}: {ty} = {value}\n"),
+                Language::Swift => no_swift_emitter("lower_algorithm_stmt"),
             };
             out.push_str(&line);
         }
@@ -26864,6 +27022,7 @@ fn lower_algorithm_stmt(
                     Language::Rust | Language::Cpp | Language::C11 | Language::Go => {
                         format!("{pad}{local}.{member} = {value};\n")
                     }
+                    Language::Swift => no_swift_emitter("lower_algorithm_stmt"),
                 });
                 return Ok(());
             }
@@ -27052,6 +27211,7 @@ fn lower_algorithm_stmt(
                              {pad}}}\n"
                         )
                     }
+                    Language::Swift => no_swift_emitter("lower_algorithm_stmt"),
                 }
             } else {
                 let e = expr::transpile_typed(
@@ -27080,6 +27240,7 @@ fn lower_algorithm_stmt(
                             channel.c11_capacity_exceeded(&local)
                         )
                     }
+                    Language::Swift => no_swift_emitter("lower_algorithm_stmt"),
                 }
             };
             out.push_str(&line);
@@ -27142,6 +27303,7 @@ fn lower_algorithm_stmt(
                     out.push_str(&format!("{if_pad}}}\n"));
                     out.push_str(&block_close);
                 }
+                Language::Swift => no_swift_emitter("lower_algorithm_stmt"),
             }
         }
         // SCE_FORGE.md §3.4.1: an `if` on the negated condition whose one
@@ -27176,6 +27338,7 @@ fn lower_algorithm_stmt(
                     out.push_str(&format!("{if_pad}}}\n"));
                     out.push_str(&block_close);
                 }
+                Language::Swift => no_swift_emitter("lower_algorithm_stmt"),
             }
         }
         AlgorithmStmt::While {
@@ -27220,6 +27383,7 @@ fn lower_algorithm_stmt(
                         Language::Cpp | Language::Kotlin | Language::Python | Language::C11 => {
                             format!("{pad}while ({cond_lowered}) {{\n")
                         }
+                        Language::Swift => no_swift_emitter("lower_algorithm_stmt"),
                     };
                     out.push_str(&header_open);
                     let inner_pad = "    ".repeat(indent + 1);
@@ -27228,6 +27392,7 @@ fn lower_algorithm_stmt(
                     }
                     out.push_str(&format!("{pad}}}\n"));
                 }
+                Language::Swift => no_swift_emitter("lower_algorithm_stmt"),
             }
         }
         AlgorithmStmt::Foreach {
@@ -27307,6 +27472,7 @@ fn lower_algorithm_stmt(
                 let body_inner_indent = match lang {
                     Language::Rust | Language::Cpp | Language::C11 => indent + 2,
                     Language::Kotlin | Language::Go | Language::Python => indent + 1,
+                    Language::Swift => no_swift_emitter("lower_algorithm_stmt"),
                 };
                 let inner_pad = "    ".repeat(body_inner_indent);
                 match lang {
@@ -27425,6 +27591,7 @@ fn lower_algorithm_stmt(
                         out.push_str(&format!("{pad}    if {it} is None:\n"));
                         out.push_str(&format!("{pad}        continue\n"));
                     }
+                    Language::Swift => no_swift_emitter("lower_algorithm_stmt"),
                 }
                 for st in body {
                     lower_algorithm_stmt_and_check(st, ctx, &inner_pad, body_inner_indent, out)?;
@@ -27442,6 +27609,7 @@ fn lower_algorithm_stmt(
                         out.push_str(&format!("{pad}}}\n"));
                     }
                     Language::Python => {}
+                    Language::Swift => no_swift_emitter("lower_algorithm_stmt"),
                 }
             } else {
                 // Bytes iteration — RFC §synth-5-A v1. Item is a `u8`. Source
@@ -27542,6 +27710,7 @@ fn lower_algorithm_stmt(
                     Language::Kotlin => format!("{pad}for ({it} in {src_lowered}) {{\n"),
                     Language::Go => format!("{pad}for _, {it} := range {src_lowered} {{\n"),
                     Language::Python => format!("{pad}for {it} in {src_lowered}:\n"),
+                    Language::Swift => no_swift_emitter("lower_algorithm_stmt"),
                 };
                 out.push_str(&header);
                 let inner_indent = indent + 1;
@@ -27657,6 +27826,7 @@ fn lower_algorithm_stmt(
                         Language::Python => format!("bytes({buffer})"),
                         Language::Kotlin => format!("{buffer}.toByteArray()"),
                         Language::Rust | Language::Cpp | Language::C11 | Language::Go => buffer,
+                        Language::Swift => no_swift_emitter("lower_algorithm_stmt"),
                     };
                     channel.value(pad, &value, true)
                 }
@@ -27679,6 +27849,7 @@ fn lower_algorithm_stmt(
                     Language::Rust | Language::Cpp | Language::Go | Language::C11 => {
                         format!("{pad}return;\n")
                     }
+                    Language::Swift => no_swift_emitter("lower_algorithm_stmt"),
                 },
             };
             out.push_str(&line);
@@ -27988,6 +28159,7 @@ fn collection_method_call(
         Language::Rust | Language::Cpp | Language::Kotlin | Language::Python => {
             format!("{alias}.{method}({})", args.join(", "))
         }
+        Language::Swift => no_swift_emitter("collection_method_call"),
     }
 }
 
@@ -28016,6 +28188,7 @@ pub(crate) fn forge_algorithm_symbol(name: &str, language: crate::generator::Lan
         }
         Language::Kotlin => filters::to_camel_case(name.to_string()),
         Language::Go => filters::to_pascal_case(name.to_string()),
+        Language::Swift => no_swift_emitter("forge_algorithm_symbol"),
     }
 }
 
@@ -28049,6 +28222,7 @@ pub(crate) fn forge_stateless_def_symbol(
         | crate::generator::Language::Kotlin
         | crate::generator::Language::Go
         | crate::generator::Language::Python => base.to_string(),
+        crate::generator::Language::Swift => no_swift_emitter("forge_stateless_def_symbol"),
     }
 }
 
@@ -28067,6 +28241,7 @@ pub(crate) fn forge_condition_symbol(name: &str, language: crate::generator::Lan
         Language::Rust | Language::Python => filters::to_snake_case(name.to_string()),
         Language::Cpp | Language::Kotlin => filters::to_camel_case(name.to_string()),
         Language::C11 => "check".to_string(),
+        Language::Swift => no_swift_emitter("forge_condition_symbol"),
     }
 }
 
@@ -28088,6 +28263,7 @@ pub(crate) fn forge_lookup_symbol(output_id: &str, language: crate::generator::L
             format!("lookup_{}", filters::to_snake_case(output_id.to_string()))
         }
         Language::C11 => filters::to_snake_case(output_id.to_string()),
+        Language::Swift => no_swift_emitter("forge_lookup_symbol"),
     }
 }
 
@@ -28109,6 +28285,7 @@ pub(crate) fn forge_transform_symbol(
         Language::Rust | Language::Python | Language::C11 => {
             format!("compute_{}", filters::to_snake_case(output_id.to_string()))
         }
+        Language::Swift => no_swift_emitter("forge_transform_symbol"),
     }
 }
 
@@ -28192,6 +28369,7 @@ pub(crate) fn forge_transform_holder_symbols(
             restored: restored("restored".to_string()),
             holder: pascal,
         },
+        Language::Swift => no_swift_emitter("forge_transform_holder_symbols"),
     }
 }
 
@@ -28205,6 +28383,7 @@ pub(crate) fn forge_local_id(id: &str, language: crate::generator::Language) -> 
         Language::Go => go_local_spelling(id),
         Language::Cpp => cpp_local_spelling(id),
         Language::Kotlin => kotlin_local_spelling(id),
+        Language::Swift => no_swift_emitter("forge_local_id"),
     }
 }
 
@@ -28600,6 +28779,7 @@ pub(crate) fn forge_transform_output_field(
         | crate::generator::Language::Cpp
         | crate::generator::Language::Kotlin
         | crate::generator::Language::C11 => forge_local_id(output_id, language),
+        crate::generator::Language::Swift => no_swift_emitter("forge_transform_output_field"),
     }
 }
 
@@ -28618,6 +28798,7 @@ pub(crate) fn forge_interpolation_symbol(language: crate::generator::Language) -
         | crate::generator::Language::Kotlin
         | crate::generator::Language::Python
         | crate::generator::Language::C11 => "lookup".to_string(),
+        crate::generator::Language::Swift => no_swift_emitter("forge_interpolation_symbol"),
     }
 }
 
@@ -28797,6 +28978,7 @@ impl ReturnChannel<'_> {
             ),
             Language::Python | Language::Kotlin | Language::Go => format!("{pad}return {value}\n"),
             Language::Rust | Language::Cpp | Language::C11 => format!("{pad}return {value};\n"),
+            Language::Swift => no_swift_emitter("ReturnChannel::value"),
         }
     }
 
@@ -28826,6 +29008,7 @@ impl ReturnChannel<'_> {
             | Language::Go
             | Language::Python
             | Language::C11 => String::new(),
+            Language::Swift => no_swift_emitter("ReturnChannel::check"),
         }
     }
 
@@ -28928,6 +29111,7 @@ impl ReturnChannel<'_> {
             Language::Cpp | Language::Kotlin | Language::Go | Language::Python | Language::C11 => {
                 (format!("{pad}if ({cond}) {{\n"), String::new(), indent)
             }
+            Language::Swift => no_swift_emitter("ReturnChannel::braced_if_header"),
         }
     }
 
@@ -28957,6 +29141,7 @@ impl ReturnChannel<'_> {
             Language::Python => format!(
                 "{pad}raise sce_algorithm.AlgorithmFailure(sce_algorithm.AlgorithmError.PRECONDITION)\n"
             ),
+            Language::Swift => no_swift_emitter("ReturnChannel::precondition_failed"),
         }
     }
 }
@@ -29715,6 +29900,7 @@ fn render_algorithm(
                 Language::Go => "[]byte".to_string(),
                 Language::Python => "bytes".to_string(),
                 Language::Kotlin => "ByteArray".to_string(),
+                Language::Swift => no_swift_emitter("render_algorithm"),
             }
         }
         (
@@ -29731,6 +29917,7 @@ fn render_algorithm(
         (None, Language::Go) => String::new(),
         (None, Language::Kotlin) => "Unit".to_string(),
         (None, Language::Python) => "None".to_string(),
+        (_, Language::Swift) => no_swift_emitter("render_algorithm"),
     };
     // SCE_FORGE.md §3.4.1: a `may-fail` Rust algorithm's value rides in a
     // `Result` — a buffer return's already does, with the error widened
@@ -29765,6 +29952,7 @@ fn render_algorithm(
         | Language::Go
         | Language::Python
         | Language::C11 => return_type,
+        Language::Swift => no_swift_emitter("render_algorithm"),
     };
 
     // SCE byte-buffer-build (§4.12): per-buffer capacity table (for the C11
@@ -29782,6 +29970,7 @@ fn render_algorithm(
         | Language::Go
         | Language::Python
         | Language::C11 => None,
+        Language::Swift => no_swift_emitter("render_algorithm"),
     };
     // SCE byte-buffer-build (§4.12): the C++ buffer/return lower to
     // `std::vector`, which needs `<vector>`. Gate the include so algorithms
@@ -29842,6 +30031,7 @@ fn render_algorithm(
                     }
                 ),
                 Language::Cpp | Language::Go | Language::Python => String::new(),
+                Language::Swift => no_swift_emitter("render_algorithm"),
             }
         }
         (Some(SceType::Bytes), Language::Rust) if may_fail => {
@@ -29879,6 +30069,7 @@ fn render_algorithm(
             | Language::Python
             | Language::C11,
         ) => String::new(),
+        (_, Language::Swift) => no_swift_emitter("render_algorithm"),
     };
     // C11 views of the read-only lists of records the algorithm takes, one
     // per record type ([`c11_record_view_typedef`]).
@@ -30126,7 +30317,7 @@ fn render_externs_sidecar(
             String::new(),
         ),
         // Defensive — already filtered above.
-        Language::Kotlin | Language::Go | Language::Python => return Ok(None),
+        Language::Kotlin | Language::Go | Language::Python | Language::Swift => return Ok(None),
     };
 
     let template = env
@@ -30504,6 +30695,7 @@ fn render_algorithm_test_vector_sidecar(
         Language::Go => format!("{snake}_test.go"),
         Language::Python => format!("{snake}_test.py"),
         Language::Kotlin => format!("{}TestVectors.kt", filters::to_pascal_case(m.name.clone())),
+        Language::Swift => no_swift_emitter("render_algorithm_test_vector_sidecar"),
     };
     Ok(Some((filename, code)))
 }
@@ -30715,7 +30907,7 @@ fn render_codec_test_vector_sidecar(
         Language::Rust => format!("{snake}_test.rs"),
         Language::C11 => format!("{snake}_test.h"),
         // The trunk gate above already rejected the other backends.
-        Language::Cpp | Language::Kotlin | Language::Go | Language::Python => {
+        Language::Cpp | Language::Kotlin | Language::Go | Language::Python | Language::Swift => {
             unreachable!("trunk gate rejects non-Rust/C11 languages")
         }
     };
@@ -30950,6 +31142,7 @@ fn emit_array_const(
         ),
         Language::Go => format!("var {name} = [{len}]{elem_name}{{ {body} }}\n\n"),
         Language::Python => format!("{name}: tuple = ({body},)\n\n"),
+        Language::Swift => no_swift_emitter("emit_array_const"),
     }
 }
 
@@ -30971,6 +31164,7 @@ fn emit_scalar_const(
         Language::Kotlin => format!("const val {name}: {ty_name} = {lit}\n\n"),
         Language::Go => format!("const {name} {ty_name} = {lit}\n\n"),
         Language::Python => format!("{name}: {ty_name} = {lit}\n\n"),
+        Language::Swift => no_swift_emitter("emit_scalar_const"),
     }
 }
 
@@ -31433,7 +31627,7 @@ mod tests {
             SceType::String,
             SceType::Bytes,
         ];
-        for &lang in crate::generator::Language::ALL {
+        for lang in crate::forge::codegen_matrix::emitting(ForgeKind::Transform) {
             let l = LangCtx::new(lang, &[]);
             for ty in cases {
                 let bare = match lang {
@@ -31443,6 +31637,9 @@ mod tests {
                     crate::generator::Language::Rust => rust_type(ty),
                     crate::generator::Language::Go => go_type(ty),
                     crate::generator::Language::Python => python_type(ty),
+                    crate::generator::Language::Swift => {
+                        unreachable!("swift emits no transform, so it is not iterated")
+                    }
                 };
                 assert_eq!(l.type_name(ty), bare, "{lang:?}/{ty:?}");
             }

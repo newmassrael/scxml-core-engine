@@ -483,7 +483,7 @@
         "language": {
           "description": "The first backend whose spelling could not be used. Absent for the two reasons about the document rather than a language.",
           "type": "string",
-          "enum": ["rust", "cpp", "kotlin", "go", "python", "c11"]
+          "enum": ["rust", "cpp", "kotlin", "go", "python", "c11", "swift"]
         },
         "spelling": {
           "description": "The refused spelling in that backend.",
@@ -603,7 +603,7 @@
         "language": {
           "description": "Backend the verdict applies to. Kept in lockstep with the Rust Language enum's wire names.",
           "type": "string",
-          "enum": ["rust", "cpp", "kotlin", "go", "python", "c11"]
+          "enum": ["rust", "cpp", "kotlin", "go", "python", "c11", "swift"]
         },
         "status": {
           "description": "\"ok\" when this backend would generate the document, \"rejected\" when it would refuse.",

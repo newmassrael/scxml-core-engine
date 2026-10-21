@@ -35,7 +35,9 @@ use std::process::{Command, Output};
 
 use regex::Regex;
 use sce_build::filters;
+use sce_build::forge::codegen_matrix::emitting;
 use sce_build::forge::diagnostic::ToDiagnostics;
+use sce_build::forge::model::ForgeKind;
 use sce_build::generator::Language;
 use sce_build::model::{EmittedTransitionFunction, TransitionFunction};
 use sce_build::parser::SCXMLParser;
@@ -45,10 +47,11 @@ use sce_build::toolchain;
 /// lifecycle that reaches every selection rule.
 const FIXTURES: [&str; 2] = ["flat_lifecycle", "nested_lifecycle"];
 
-/// Every backend, by the identifier `generate -l` takes.
+/// Every backend that emits a machine, by the identifier `generate -l` takes.
+/// A backend that emits nothing yet is refused instead
+/// (`a_backend_with_no_emitter_is_refused`).
 fn backends() -> Vec<&'static str> {
-    Language::ALL
-        .iter()
+    emitting(ForgeKind::Statechart)
         .map(|language| language.canonical_name())
         .collect()
 }
@@ -2308,7 +2311,11 @@ fn every_backend_accepts_the_declaration() {
     for verdict in verdicts {
         assert_eq!(verdict["status"], "ok", "{verdict}");
     }
-    assert_eq!(verdicts.len(), Language::ALL.len(), "{manifest}");
+    assert_eq!(
+        verdicts.len(),
+        emitting(ForgeKind::Statechart).count(),
+        "{manifest}"
+    );
 }
 
 /// The declaration has one value; any other is refused with the attribute's

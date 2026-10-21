@@ -61,6 +61,7 @@ pub struct ReaderNames {
     /// The suffix after `<prefix><machine>_`; C11 readers are free
     /// functions, so this is the part the variable contributes.
     pub c11: String,
+    pub swift: String,
 }
 
 impl ReaderNames {
@@ -73,6 +74,7 @@ impl ReaderNames {
             Language::Go => &self.go,
             Language::Python => &self.python,
             Language::C11 => &self.c11,
+            Language::Swift => &self.swift,
         }
     }
 }
@@ -152,6 +154,80 @@ const KOTLIN_HARD_KEYWORDS: &[&str] = &[
     "val",
     "var",
     "when",
+    "while",
+];
+
+/// The words Swift 6.4.0 rejects as a plain, unescaped name: each failed to
+/// compile as an enum case, a stored property, a method, a parameter or a local
+/// (measured by compiling one declaration per word and context), plus `Type` and
+/// `Protocol`, which an enum case or a property of that name declares and a
+/// qualified use (`E.Type`) then reads as the metatype. The contextual keywords
+/// (`open`, `some`, `any`, `package`, `get`, `set`, `async`, `none`, `optional`,
+/// `required`, `prefix`, `left`, ...) compile in every one of those places and are
+/// absent, as Kotlin's soft keywords are. `await` is absent for the same reason: it
+/// parses as the operator only where an expression is expected.
+///
+/// A name written in backticks declares any of these as a property or a method,
+/// and an access through the instance reads it back (measured for all of them,
+/// `self`, `init`, `Type` and `Protocol` included), so a reader is escaped
+/// ([`spell`]). A code identifier a generated type declares where the escape does
+/// not reach is refused instead ([`is_reserved_word`]): an enum case `init` is read
+/// as the initializer where a leading dot or a `switch` names it.
+const SWIFT_RESERVED: &[&str] = &[
+    "Any",
+    "Protocol",
+    "Self",
+    "Type",
+    "as",
+    "associatedtype",
+    "break",
+    "case",
+    "catch",
+    "class",
+    "continue",
+    "default",
+    "defer",
+    "deinit",
+    "do",
+    "else",
+    "enum",
+    "extension",
+    "fallthrough",
+    "false",
+    "fileprivate",
+    "for",
+    "func",
+    "guard",
+    "if",
+    "import",
+    "in",
+    "init",
+    "inout",
+    "internal",
+    "is",
+    "let",
+    "nil",
+    "operator",
+    "precedencegroup",
+    "private",
+    "protocol",
+    "public",
+    "repeat",
+    "rethrows",
+    "return",
+    "self",
+    "static",
+    "struct",
+    "subscript",
+    "super",
+    "switch",
+    "throw",
+    "throws",
+    "true",
+    "try",
+    "typealias",
+    "var",
+    "where",
     "while",
 ];
 
@@ -432,10 +508,16 @@ const C_ONLY_KEYWORDS: &[&str] = &[
 /// reader spelling above and by the forge code-identifier rule.
 pub(crate) fn is_reserved_word(language: Language, spelled: &str) -> bool {
     // `_` is not a name in Rust (the wildcard pattern: a parameter of that name
-    // is not read back), Kotlin (an unnamed parameter) or Go (the blank
-    // identifier, which discards what it is given), though each takes it where
-    // an identifier is written: a keyword list cannot say so.
-    if spelled == "_" && matches!(language, Language::Rust | Language::Kotlin | Language::Go) {
+    // is not read back), Kotlin (an unnamed parameter), Go (the blank
+    // identifier, which discards what it is given) or Swift (the wildcard, which
+    // binds nothing and cannot be read), though each takes it where an
+    // identifier is written: a keyword list cannot say so.
+    if spelled == "_"
+        && matches!(
+            language,
+            Language::Rust | Language::Kotlin | Language::Go | Language::Swift
+        )
+    {
         return true;
     }
     // A `__x__` name is Python's own: `__debug__` cannot be assigned, and
@@ -455,6 +537,7 @@ pub(crate) fn is_reserved_word(language: Language, spelled: &str) -> bool {
         Language::Go => filters::GO_KEYWORDS.contains(&spelled),
         Language::Cpp => CPP_RESERVED.contains(&spelled),
         Language::C11 => CPP_RESERVED.contains(&spelled) || C_ONLY_KEYWORDS.contains(&spelled),
+        Language::Swift => SWIFT_RESERVED.contains(&spelled),
     }
 }
 
@@ -507,11 +590,11 @@ impl Case {
 /// [`Case`] it applies, in [`Language::ALL`] order. An empty entry is a
 /// backend that emits no identifier from the name at all — it never
 /// reaches source, or reaches it only with something added.
-pub type Spellings = [&'static [Case]; 6];
+pub type Spellings = [&'static [Case]; 7];
 
 /// A name no backend declares: a reference to a name declared elsewhere,
 /// which is refused where it is declared, or one used only at build time.
-pub const NOT_DECLARED: Spellings = [&[], &[], &[], &[], &[], &[]];
+pub const NOT_DECLARED: Spellings = [&[], &[], &[], &[], &[], &[], &[]];
 
 /// The first backend, in [`Language::ALL`] order, that reserves the code
 /// identifier `name` as `spellings` says it spells it, with that spelling.
@@ -608,9 +691,11 @@ fn backend_templates(language: Language) -> Vec<&'static str> {
             // Both load the whole tree; C++ owns the root files and C11 `c/`.
             Language::Cpp => !name.contains('/'),
             Language::C11 => name.starts_with("c/"),
-            Language::Rust | Language::Kotlin | Language::Go | Language::Python => {
-                !name.starts_with("_macros/")
-            }
+            Language::Rust
+            | Language::Kotlin
+            | Language::Go
+            | Language::Python
+            | Language::Swift => !name.starts_with("_macros/"),
         })
         .map(|(_, content)| content)
         .collect()
@@ -656,6 +741,10 @@ fn member_patterns(language: Language) -> Vec<Regex> {
             regex(r"\b([A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)*_)(?:[^A-Za-z0-9_]|\{\{)"),
         ],
         Language::Kotlin => vec![regex(r"\bfun\s+(?:<[^>]*>\s*)?([A-Za-z_][A-Za-z0-9_]*)")],
+        // Methods. Swift keeps a type's properties and methods in one
+        // namespace, so the properties the Swift templates declare are scanned
+        // for here once they exist; there is no Swift template to read yet.
+        Language::Swift => vec![regex(r"\bfunc\s+(?:<[^>]*>\s*)?`?([A-Za-z_][A-Za-z0-9_]*)")],
         // Methods; the policy struct's fields are read from its body alone
         // (`GO_POLICY_FIELD`), because a package-level constant shares no
         // namespace with a method and the same line shape declares one.
@@ -727,7 +816,7 @@ fn scan_template(language: Language, template: &str, into: &mut Reserved) {
                 into.machine_suffixes.insert(caps[1].to_string());
             }
         }
-        Language::Rust | Language::Kotlin | Language::Go | Language::Python => {
+        Language::Rust | Language::Kotlin | Language::Go | Language::Python | Language::Swift => {
             scan_code(language, &code, into)
         }
     }
@@ -763,7 +852,10 @@ fn scan_runtime(language: Language, reserved: &mut Reserved) {
         Language::Kotlin => KOTLIN_RUNTIME_ENGINE,
         Language::Python => PYTHON_RUNTIME_POLICY,
         Language::Cpp => CPP_RUNTIME_ENGINE,
-        Language::Go | Language::C11 => return,
+        // Go's policy fields are read from its templates (`GO_POLICY_STRUCT`),
+        // C11 spells its names through the template tags, and Swift has no
+        // runtime type for a machine to extend yet.
+        Language::Go | Language::C11 | Language::Swift => return,
     };
     let syntax = crate::template_lexing::Syntax::of_language(language);
     let code = code_only(runtime, &crate::template_lexing::classify(runtime, syntax));
@@ -883,7 +975,7 @@ fn spell(id: &str, language: Language) -> Spelling {
     let base = match language {
         Language::Rust | Language::Python | Language::C11 => filters::to_snake_case(id.to_string()),
         Language::Go => filters::to_pascal_case(id.to_string()),
-        Language::Kotlin => filters::to_camel_case(id.to_string()),
+        Language::Kotlin | Language::Swift => filters::to_camel_case(id.to_string()),
         // C++ keeps the author's spelling, as it always has; only the two
         // delimiters an XML name allows and an identifier does not change.
         Language::Cpp => id.replace(['.', '-'], "_"),
@@ -901,6 +993,9 @@ fn spell(id: &str, language: Language) -> Spelling {
         Language::Kotlin if KOTLIN_HARD_KEYWORDS.contains(&base.as_str()) => {
             Spelling::Name(format!("`{base}`"))
         }
+        Language::Swift if SWIFT_RESERVED.contains(&base.as_str()) => {
+            Spelling::Name(format!("`{base}`"))
+        }
         Language::Python if PYTHON_KEYWORDS.contains(&base.as_str()) => {
             Spelling::Name(format!("{base}_"))
         }
@@ -912,7 +1007,8 @@ fn spell(id: &str, language: Language) -> Spelling {
         | Language::Kotlin
         | Language::Go
         | Language::Python
-        | Language::C11 => Spelling::Name(base),
+        | Language::C11
+        | Language::Swift => Spelling::Name(base),
     }
 }
 
@@ -998,6 +1094,7 @@ pub fn assign(
             go: take(&mut spellings, Language::Go),
             python: take(&mut spellings, Language::Python),
             c11: take(&mut spellings, Language::C11),
+            swift: take(&mut spellings, Language::Swift),
         };
         named.push((var, names));
     }
@@ -1052,6 +1149,9 @@ mod tests {
         );
         assert_eq!(name("pass", Language::Python).as_deref(), Some("pass_"));
         assert_eq!(name("box", Language::Cpp).as_deref(), Some("box"));
+        assert_eq!(name("class", Language::Swift).as_deref(), Some("`class`"));
+        // `open` is a contextual keyword: it declares a name as it stands.
+        assert_eq!(name("open", Language::Swift).as_deref(), Some("open"));
     }
 
     #[test]
@@ -1099,7 +1199,11 @@ mod tests {
     fn a_transition_functions_names_are_not_the_machines_members() {
         let m = "machine";
         let mut held = 0usize;
-        for language in Language::ALL.iter() {
+        for language in
+            crate::forge::codegen_matrix::emitting(crate::forge::model::ForgeKind::Statechart)
+                .collect::<Vec<_>>()
+                .iter()
+        {
             if *language == Language::C11 {
                 continue;
             }

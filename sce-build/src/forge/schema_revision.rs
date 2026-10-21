@@ -1563,6 +1563,9 @@ mod tests {
                 Language::Cpp => "EventPayloadFields::decode(meta.data, ",
                 Language::Kotlin => "EventPayload.decode(metadata.data, ",
                 Language::Python => "_lift_typed_payload(",
+                Language::Swift => {
+                    unreachable!("swift lowers no sce-static, so it is skipped above")
+                }
             };
             // Go has no bare import form: it asks where the generated packages live.
             let options = crate::ForgeCompileOptions {

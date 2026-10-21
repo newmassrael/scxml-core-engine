@@ -909,6 +909,30 @@ fn cli_exit(err: CliError) -> ! {
     current_error_format().emit_and_exit(&err, "")
 }
 
+/// Read a `--language` value for `route`: a name no backend answers to is
+/// `UnknownLanguage`, and a backend that exists but that the route does not
+/// serve — one that emits nothing yet, for a route that writes files — is
+/// `UnsupportedLanguage`, which names the route's menu and why the backend is
+/// not on it.
+///
+/// Both outcomes are the route's own table speaking ([`LanguageRoute::serves`]),
+/// so the menu a refusal prints and the set a run accepts cannot differ.
+fn parse_served_language(route: LanguageRoute, name: &str) -> Language {
+    let lang: Language = name.parse().unwrap_or_else(|_| {
+        cli_exit(CliError::UnknownLanguage {
+            lang: name.to_string(),
+            route,
+        })
+    });
+    if !route.serves(lang) {
+        cli_exit(CliError::UnsupportedLanguage {
+            lang: lang.canonical_name().to_string(),
+            route,
+        });
+    }
+    lang
+}
+
 // ── Path arithmetic ────────────────────────────────────────────
 //
 // `Path::parent` answers a lexical question, not a filesystem one:
@@ -4068,15 +4092,7 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
     if let Some(dir) = emit_ast_dir {
         emit_orchestrate_asts(scxml_paths, forge_paths, dir, &include_dirs, error_format);
     }
-    let lang: Language = language.parse().unwrap_or_else(|_| {
-        error_format.emit_and_exit(
-            &CliError::UnknownLanguage {
-                lang: language.to_string(),
-                route: LanguageRoute::Orchestrate,
-            },
-            "",
-        )
-    });
+    let lang = parse_served_language(LanguageRoute::Orchestrate, language);
     // Resolved at the first C++ file there is to write — see `CppFormatterSlot`.
     let cpp_formatter = CppFormatterSlot::new(lang, format_style.as_deref(), no_format);
 
@@ -4397,7 +4413,16 @@ fn requested_backends(language: &[String], error_format: ErrorFormat) -> (bool, 
             })
             .collect()
     } else {
-        Language::ALL.to_vec()
+        // "Every backend" is every one that emits something: a sweep that
+        // included a backend with no emitter yet would end each document's
+        // verdict list with a refusal that says nothing about the document.
+        // Naming one (`--language swift`) still asks the question and is
+        // refused by name, fatally, as any named backend's refusal is.
+        Language::ALL
+            .iter()
+            .copied()
+            .filter(|language| sce_build::forge::codegen_matrix::emits_anything(*language))
+            .collect()
     };
     (explicit, langs)
 }
@@ -5537,8 +5562,11 @@ fn rewrite_child_package(
         ),
         // The other four backends carry no package header to re-address:
         // C++ and C11 scope by namespace/prefix argument, Rust by module
-        // path at the consuming crate, Python by file location.
-        Language::Rust | Language::Cpp | Language::Python | Language::C11 => return,
+        // path at the consuming crate, Python by file location. Swift writes
+        // no machine yet, so there is no file to re-address.
+        Language::Rust | Language::Cpp | Language::Python | Language::C11 | Language::Swift => {
+            return
+        }
     };
     for (name, code) in output.files.iter_mut() {
         if *name == machine_file {
@@ -5764,15 +5792,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
     let c_symbol_prefix = c_symbol_prefix.as_deref();
     let include_dirs: &[String] = &include_dir;
 
-    let lang: Language = language.parse().unwrap_or_else(|_| {
-        error_format.emit_and_exit(
-            &CliError::UnknownLanguage {
-                lang: language.to_string(),
-                route: LanguageRoute::Generate,
-            },
-            "",
-        )
-    });
+    let lang = parse_served_language(LanguageRoute::Generate, language);
 
     // Every stdout artifact, the `needs_script_engine` verdict, and
     // any W3C rejection are collected here and flushed as a single
@@ -6209,6 +6229,17 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
         // contradicting SCE_ERROR_CONTRACT.md §10.1, which defines the
         // field as every file written during the run.
         let stubs: Vec<(String, String)> = match lang {
+            // A backend with no emitter has no stub to write; the document is
+            // refused as an accepted one would be.
+            Language::Swift => error_format.emit_forge_and_exit(&Located::new(
+                ForgeError::from(sce_build::forge::codegen_matrix::emit_missing(
+                    sce_build::forge::model::ForgeKind::Statechart,
+                    lang,
+                )),
+                scxml_path,
+                None,
+                None,
+            )),
             Language::Cpp => {
                 let header = format!(
                     "// W3C SCXML 5.8: Document rejected\n\
@@ -7475,8 +7506,8 @@ fn cmd_generate_w3c(args: GenerateW3cArgs) {
         // it: `actual` on the wire then means the same kind of value
         // here as on every other language refusal, and the reason the
         // route excludes it rides the route's own exclusion note.
-        Language::C11 => cli_exit(CliError::UnsupportedLanguage {
-            lang: Language::C11.canonical_name().to_string(),
+        Language::C11 | Language::Swift => cli_exit(CliError::UnsupportedLanguage {
+            lang: lang.canonical_name().to_string(),
             route: LanguageRoute::GenerateW3c,
         }),
     };
@@ -11703,7 +11734,7 @@ fn cmd_generate_integration(
         Language::Kotlin => "_kotlin",
         Language::Go => "_go",
         Language::Python => "_python",
-        Language::Cpp | Language::C11 => error_format.emit_and_exit(
+        Language::Cpp | Language::C11 | Language::Swift => error_format.emit_and_exit(
             &CliError::UnsupportedLanguage {
                 lang: lang.canonical_name().to_string(),
                 route: LanguageRoute::GenerateIntegration,
@@ -11821,12 +11852,7 @@ fn cmd_generate_conformance(
     output_dir: &str,
     depfile_path: Option<&str>,
 ) {
-    let lang: Language = language.parse().unwrap_or_else(|_| {
-        cli_exit(CliError::UnknownLanguage {
-            lang: language.to_string(),
-            route: LanguageRoute::GenerateConformance,
-        })
-    });
+    let lang = parse_served_language(LanguageRoute::GenerateConformance, language);
 
     let manifest =
         sce_build::conformance::Manifest::load(Path::new(manifest_path)).unwrap_or_else(|e| {

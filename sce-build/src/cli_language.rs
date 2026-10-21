@@ -102,18 +102,28 @@ impl LanguageRoute {
     /// them without an edit, and only the routes that genuinely restrict
     /// their set carry a list to keep current.
     pub fn languages(self) -> &'static [Language] {
+        // A route that writes files serves the backends that emit something;
+        // one that only judges a document or lists fixtures serves every
+        // backend, since the verdict on a backend with no emitter yet is itself
+        // an answer (and a refusal naming it).
+        static EMITTING: LazyLock<Vec<Language>> = LazyLock::new(|| {
+            Language::ALL
+                .iter()
+                .copied()
+                .filter(|language| crate::forge::codegen_matrix::emits_anything(*language))
+                .collect()
+        });
         match self {
+            LanguageRoute::Check | LanguageRoute::ListFixtures => Language::ALL,
             LanguageRoute::Generate
-            | LanguageRoute::Check
             | LanguageRoute::Orchestrate
-            | LanguageRoute::GenerateConformance
-            | LanguageRoute::ListFixtures => Language::ALL,
+            | LanguageRoute::GenerateConformance => EMITTING.as_slice(),
             // Every backend but the ones the batch suite has no emitter
             // for, so a backend added to `Language` is served here until
             // a reason to leave it out is written beside the filter.
             LanguageRoute::GenerateW3c => {
                 static SERVED: LazyLock<Vec<Language>> = LazyLock::new(|| {
-                    Language::ALL
+                    EMITTING
                         .iter()
                         .copied()
                         // No C11 statechart emitter exists for the batch
@@ -155,14 +165,21 @@ impl LanguageRoute {
         match self {
             LanguageRoute::GenerateW3c => Some(
                 "C11 is absent because no C11 W3C statechart emitter exists yet (RFC §5.J.1); \
-                 single-document `generate -l c11` uses a different emitter and does work",
+                 single-document `generate -l c11` uses a different emitter and does work. A \
+                 backend that emits nothing yet is absent too",
             ),
             LanguageRoute::GenerateIntegration => Some(
                 "cpp and c11 are absent because their integration fixtures emit at CMake build \
                  time through `sce_generate_static_integration_test`, leaving no committed tree \
-                 for this subcommand to regenerate",
+                 for this subcommand to regenerate. A backend that emits nothing yet is absent \
+                 too",
             ),
-            _ => None,
+            LanguageRoute::Generate
+            | LanguageRoute::Orchestrate
+            | LanguageRoute::GenerateConformance => {
+                Some("a backend that emits nothing yet is absent")
+            }
+            LanguageRoute::Check | LanguageRoute::ListFixtures => None,
         }
     }
 

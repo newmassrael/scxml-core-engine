@@ -62,23 +62,28 @@ fn every_copied_lua_asset_is_byte_identical_to_its_source() {
 /// One arm per backend, no catch-all: a backend added to `Language::ALL` does
 /// not compile here until its loader is named, so it cannot be the one engine
 /// this test never looked at.
-fn loader_of(language: Language) -> (&'static str, &'static str) {
+///
+/// `None` is a backend with no Lua engine at all, which has nothing to load
+/// the file. Swift is that until its Lua target lands, and the arm is replaced
+/// by the loader's path in the same commit.
+fn loader_of(language: Language) -> Option<(&'static str, &'static str)> {
     match language {
-        Language::Rust => ("backends/rust/lua/src/lib.rs", "ecma_semantics.lua"),
-        Language::Cpp => ("sce/src/scripting/LuaEngine.cpp", "ECMA_SEMANTICS_LUA"),
-        Language::Kotlin => (
+        Language::Rust => Some(("backends/rust/lua/src/lib.rs", "ecma_semantics.lua")),
+        Language::Cpp => Some(("sce/src/scripting/LuaEngine.cpp", "ECMA_SEMANTICS_LUA")),
+        Language::Kotlin => Some((
             "backends/kotlin/lua/src/main/kotlin/com/sce/scripting/lua/LuaScriptEngine.kt",
             "loadEcmaSemantics()",
-        ),
-        Language::Go => ("backends/go/lua/lua_engine.go", "ecmaSemanticsLua"),
-        Language::Python => (
+        )),
+        Language::Go => Some(("backends/go/lua/lua_engine.go", "ecmaSemanticsLua")),
+        Language::Python => Some((
             "backends/python/runtime/sce_runtime/scripting/lua_engine.py",
             "ecma_semantics.lua",
-        ),
-        Language::C11 => (
+        )),
+        Language::C11 => Some((
             "tools/codegen/templates/c/scriptengine.jinja2",
             "ecma_semantics_lua_c",
-        ),
+        )),
+        Language::Swift => None,
     }
 }
 
@@ -92,7 +97,10 @@ fn loader_of(language: Language) -> (&'static str, &'static str) {
 #[test]
 fn every_lua_engine_loads_the_shared_semantics() {
     let mut missing = Vec::new();
-    for (file, token) in Language::ALL.iter().map(|language| loader_of(*language)) {
+    for (file, token) in Language::ALL
+        .iter()
+        .filter_map(|language| loader_of(*language))
+    {
         let path = repo_root().join(file);
         let text = std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));

@@ -23,7 +23,9 @@ use std::path::{Path, PathBuf};
 use regex::Regex;
 use tempfile::tempdir;
 
+use sce_build::forge::codegen_matrix::emitting;
 use sce_build::forge::error::ForgeError;
+use sce_build::forge::model::ForgeKind;
 use sce_build::generator::Language;
 use sce_build::member_names::{Clash, Enumeration};
 use sce_build::scxml_semantic::ScxmlSemanticError;
@@ -86,11 +88,15 @@ fn refusal(body: &str) -> (Enumeration, String, Clash, Vec<&'static str>) {
     seen.expect("six backends")
 }
 
-/// Every backend, as a refusal names them: by canonical name, in
-/// `Language::ALL` order.
+/// Every backend that declares members, as a refusal names them: by canonical
+/// name, in `Language::ALL` order.
+///
+/// The refusal is asked of every backend ([`refusal`]) and is the same for all
+/// of them, but it names the backends that FOLD the pair, and a backend folds
+/// only names it declares. One with no template declares none, so it is
+/// neither in this list nor absent from the refusal.
 fn every_backend() -> Vec<&'static str> {
-    Language::ALL
-        .iter()
+    emitting(ForgeKind::Statechart)
         .map(|language| language.canonical_name())
         .collect()
 }
@@ -154,9 +160,7 @@ fn a_dotted_and_an_underscored_event_are_refused_where_they_fold() {
         (name.as_str(), clash),
         ("door_open", Clash::Name("door.open".into()))
     );
-    let folding: Vec<&str> = Language::ALL
-        .iter()
-        .copied()
+    let folding: Vec<&str> = emitting(ForgeKind::Statechart)
         // Kotlin: keeps the dotted and the underscored event apart.
         .filter(|language| *language != Language::Kotlin)
         .map(Language::canonical_name)
@@ -334,7 +338,8 @@ fn rendered(language: Language, label: &str, files: &[(String, String)]) -> BTre
             | Language::Kotlin
             | Language::Go
             | Language::Python
-            | Language::C11,
+            | Language::C11
+            | Language::Swift,
             _,
         ) => panic!("no reader for {other:?}: add one beside the family"),
     }
@@ -357,12 +362,12 @@ fn every_member_a_backend_declares_is_the_spelling_the_refusal_asks() {
     let declared = sce_build::member_names::declared(&model);
     // Every backend has at least its state family here, so a language whose
     // families vanished from the table would not pass by having none.
-    for &language in Language::ALL {
+    for language in emitting(ForgeKind::Statechart) {
         assert!(declared
             .iter()
             .any(|d| d.language == language && d.label == "State"));
     }
-    for &language in Language::ALL {
+    for language in emitting(ForgeKind::Statechart) {
         let output = compile_scxml_lang_typed(path_str, &find_template_dir_for(language), language)
             .unwrap_or_else(|e| panic!("{language:?} refused the conformance document: {e:?}"));
         for family in declared.iter().filter(|d| d.language == language) {

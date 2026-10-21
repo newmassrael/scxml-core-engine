@@ -59,6 +59,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use sce_build::forge::codegen_matrix::emitting;
+use sce_build::forge::model::ForgeKind;
 use sce_build::generator::Language;
 
 fn sce_codegen_bin() -> PathBuf {
@@ -759,10 +761,9 @@ fn a_native_cond_is_refused_by_every_backend_but_its_own() {
         accepted.stderr
     );
 
-    for language in Language::ALL
-        .iter()
+    for language in emitting(ForgeKind::Statechart)
         // C++ owns `cpp:` and lowers it, as asserted above.
-        .filter(|language| **language != Language::Cpp)
+        .filter(|language| *language != Language::Cpp)
         .map(|language| language.canonical_name())
     {
         let out = ScratchDir::new(&format!("native-cond-{language}"));
@@ -822,10 +823,7 @@ fn a_call_on_an_event_field_is_refused_by_every_backend() {
     let document = out.path().join("event_field_call.scxml");
     std::fs::write(&document, EVENT_FIELD_CALL_DOCUMENT).expect("write document");
 
-    for language in Language::ALL
-        .iter()
-        .map(|language| language.canonical_name())
-    {
+    for language in emitting(ForgeKind::Statechart).map(|language| language.canonical_name()) {
         let generated = ScratchDir::new(&format!("event-field-call-{language}"));
         let run = run(&[
             "generate",

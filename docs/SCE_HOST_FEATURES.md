@@ -322,9 +322,10 @@ Three things differ by lane and are not hidden:
 
 These are not built, and nothing here stands in for them:
 
-- **Swift and iOS.** There is no Swift toolchain on the build machines, so there is
-  no iOS host, no Swift generated interface for these types, and no
-  `UserNotifications` binding.
+- **Swift and iOS.** The build machines carry a Swift toolchain, and `Language`
+  names the backend, but it emits nothing yet: every kind is refused for it with
+  `codegen/generic-kind-backend-emit-missing`. So there is no iOS host, no Swift
+  generated interface for these types, and no `UserNotifications` binding.
 - **Android.** No `NotificationManager` host, no Android key-value store
   (`SharedPreferences` or DataStore) and no Android HTTP stack. The Kotlin
   reference host keeps its semantics in common code and the JVM's clock and HTTP

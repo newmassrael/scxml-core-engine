@@ -98,7 +98,13 @@ pub struct Slot {
     /// backend that does not put this declaration in the scope's namespace:
     /// it emits nothing for it, writes it as written, or emits it somewhere
     /// the rest of the scope is not.
-    pub cases: [Option<Case>; 6],
+    ///
+    /// Swift is the last column and `None` throughout: it emits nothing yet,
+    /// so there is no spelling to measure. The measuring test holds each
+    /// spelling to the generated source, and a column of guesses would be a
+    /// column nothing checks; it is filled with Swift's templates, from what
+    /// that test reads back.
+    pub cases: [Option<Case>; 7],
 }
 
 /// The declarations the generated code puts in one namespace.
@@ -263,21 +269,21 @@ pub const SCOPES: &[Scope] = &[
                     "validator",
                 ],
                 direction: Some("in"),
-                cases: [S, N, N, N, S, S],
+                cases: [S, N, N, N, S, S, N],
             },
             Slot {
                 noun: "data id",
                 rows: &[DATA_ID],
                 kinds: &["filter"],
                 direction: Some("in"),
-                cases: [S, N, N, N, N, S],
+                cases: [S, N, N, N, N, S, N],
             },
             Slot {
                 noun: "data id",
                 rows: &[DATA_ID],
                 kinds: &["event-schema"],
                 direction: Some("in"),
-                cases: [S, N, N, N, N, N],
+                cases: [S, N, N, N, N, N, N],
             },
             // An algorithm's parameter list.
             Slot {
@@ -285,7 +291,7 @@ pub const SCOPES: &[Scope] = &[
                 rows: &[PARAM_NAME],
                 kinds: &["algorithm"],
                 direction: None,
-                cases: [S, N, N, N, S, S],
+                cases: [S, N, N, N, S, S, N],
             },
         ],
     },
@@ -302,14 +308,14 @@ pub const SCOPES: &[Scope] = &[
                 rows: CODEC_MEMBER_ROWS,
                 kinds: ANY,
                 direction: None,
-                cases: [S, N, N, P, S, S],
+                cases: [S, N, N, P, S, S, N],
             },
             Slot {
                 noun: "codec member",
                 rows: &[DATA_ID],
                 kinds: &["codec"],
                 direction: None,
-                cases: [S, N, N, P, S, S],
+                cases: [S, N, N, P, S, S, N],
             },
         ],
     },
@@ -321,7 +327,7 @@ pub const SCOPES: &[Scope] = &[
             rows: FLAG_ROWS,
             kinds: ANY,
             direction: None,
-            cases: [S, S, C, P, S, N],
+            cases: [S, S, C, P, S, N, N],
         }],
     },
     // A flag-input is a parameter of the generated `decode` and `encode`.
@@ -332,7 +338,7 @@ pub const SCOPES: &[Scope] = &[
             rows: FLAG_INPUT_ROWS,
             kinds: ANY,
             direction: None,
-            cases: [S, S, C, C, S, S],
+            cases: [S, S, C, C, S, S, N],
         }],
     },
     // A const is a module-level name, upper-snake in every backend.
@@ -343,7 +349,7 @@ pub const SCOPES: &[Scope] = &[
             rows: CONST_ROWS,
             kinds: ANY,
             direction: None,
-            cases: [U, U, U, U, U, U],
+            cases: [U, U, U, U, U, U, N],
         }],
     },
     // A procedure keeps its data and its helpers as members of one record: a
@@ -361,14 +367,14 @@ pub const SCOPES: &[Scope] = &[
                 rows: &[DATA_ID],
                 kinds: &["procedure"],
                 direction: None,
-                cases: [S, N, N, N, S, S],
+                cases: [S, N, N, N, S, S, N],
             },
             Slot {
                 noun: "helper",
                 rows: HELPER_ROWS,
                 kinds: &["procedure"],
                 direction: None,
-                cases: [S, N, N, N, S, S],
+                cases: [S, N, N, N, S, S, N],
             },
         ],
     },
@@ -385,7 +391,7 @@ pub const SCOPES: &[Scope] = &[
             rows: STATE_ROWS,
             kinds: &["procedure"],
             direction: None,
-            cases: [P, P, P, N, P, N],
+            cases: [P, P, P, N, P, N, N],
         }],
     },
     // An observer's monitor is a field of its struct. Rust writes it snake_case,
@@ -402,7 +408,7 @@ pub const SCOPES: &[Scope] = &[
             rows: &[DATA_ID],
             kinds: &["observer"],
             direction: Some(NO_DIRECTION),
-            cases: [S, N, N, N, N, N],
+            cases: [S, N, N, N, N, N, N],
         }],
     },
     // In C++, Go and Python a member and a method of one name are one name:
@@ -416,7 +422,7 @@ pub const SCOPES: &[Scope] = &[
                 rows: CODEC_MEMBER_ROWS_BUT_EMBED,
                 kinds: ANY,
                 direction: None,
-                cases: [N, V, N, P, S, N],
+                cases: [N, V, N, P, S, N, N],
             },
             // An embed is a Python attribute like the rest; C++ is left out.
             Slot {
@@ -424,21 +430,21 @@ pub const SCOPES: &[Scope] = &[
                 rows: &[EMBED_ROW],
                 kinds: ANY,
                 direction: None,
-                cases: [N, N, N, N, S, N],
+                cases: [N, N, N, N, S, N, N],
             },
             Slot {
                 noun: "codec member",
                 rows: &[DATA_ID],
                 kinds: &["codec"],
                 direction: None,
-                cases: [N, V, N, P, S, N],
+                cases: [N, V, N, P, S, N, N],
             },
             Slot {
                 noun: "flag",
                 rows: FLAG_ROWS,
                 kinds: ANY,
                 direction: None,
-                cases: [N, S, N, P, S, N],
+                cases: [N, S, N, P, S, N, N],
             },
         ],
     },

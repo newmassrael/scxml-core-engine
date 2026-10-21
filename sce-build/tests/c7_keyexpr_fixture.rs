@@ -27,6 +27,8 @@ use std::path::{Path, PathBuf};
 use tempfile::tempdir;
 
 use sce_build::compile_scxml_with_imports;
+use sce_build::forge::codegen_matrix::emitting;
+use sce_build::forge::model::ForgeKind;
 use sce_build::generator::{GeneratedOutput, Language};
 use sce_build::ForgeCompileOptions;
 
@@ -299,12 +301,13 @@ fn keyexpr_match_first_emits_on_all_six_backends() {
     // downstream-side C8 / C12 fixtures (which author their own
     // keyexpr_intersect variants against this v1 contract) exercise
     // the full pattern.
-    for &lang in Language::ALL {
+    for lang in emitting(ForgeKind::Algorithm) {
         let code = compile_match_first_for(lang);
         // Axis 1: BC iteration surfaces.
         let slot_marker = match lang {
             Language::Kotlin | Language::Go => "sceSlotIdx",
             Language::Rust | Language::Cpp | Language::Python | Language::C11 => "sce_slot_idx",
+            Language::Swift => unreachable!("swift emits no algorithm, so it is not iterated"),
         };
         assert!(
             code.contains(slot_marker),
@@ -314,6 +317,7 @@ fn keyexpr_match_first_emits_on_all_six_backends() {
             Language::Kotlin => "getBySlot",
             Language::Go => "GetBySlot",
             Language::Rust | Language::Cpp | Language::Python | Language::C11 => "get_by_slot",
+            Language::Swift => unreachable!("swift emits no algorithm, so it is not iterated"),
         };
         assert!(
             code.contains(dispatch_marker),
@@ -334,6 +338,7 @@ fn keyexpr_match_first_emits_on_all_six_backends() {
             Language::Cpp => "KeyexprIntersect::keyexpr_intersect(",
             Language::Python => "keyexpr_intersect.keyexpr_intersect(",
             Language::Rust => "keyexpr_intersect::keyexpr_intersect(",
+            Language::Swift => unreachable!("swift emits no algorithm, so it is not iterated"),
         };
         assert!(
             code.contains(cross_call_marker),

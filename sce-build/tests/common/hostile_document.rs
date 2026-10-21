@@ -32,17 +32,20 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use sce_build::generator::Language;
+use sce_build::forge::codegen_matrix::emitting;
+use sce_build::forge::model::ForgeKind;
 
 use super::source_lexing::{structure_mask, Lang};
 
 /// Every backend `sce-codegen` generates for, by its `--lang` value.
 ///
 /// All of them, because an encoding rule is per-language and a sweep over
-/// five proves nothing about the sixth.
+/// five proves nothing about the sixth. "Generates for" is read off the codegen
+/// matrix, so a backend that is named in `Language` and emits nothing yet is
+/// not in a sweep that needs its output, and joins it in the commit that gives
+/// it an emitter.
 pub fn backends() -> Vec<&'static str> {
-    Language::ALL
-        .iter()
+    emitting(ForgeKind::Statechart)
         .map(|language| language.canonical_name())
         .collect()
 }

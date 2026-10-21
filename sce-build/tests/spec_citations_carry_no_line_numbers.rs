@@ -52,6 +52,7 @@ fn backend_source_extensions(language: Language) -> &'static [&'static str] {
         Language::Go => &["go"],
         Language::Python => &["py"],
         Language::C11 => &["c", "h"],
+        Language::Swift => &["swift"],
     }
 }
 

@@ -7916,6 +7916,10 @@ pub(crate) fn target_for(lang: Language) -> Option<&'static dyn StaticTarget> {
         // asked of it from outside the walk is a host action's arguments, which
         // count and name nothing.
         Language::C11 => Some(&C_ARGUMENTS),
+        // No `StaticTarget` for Swift yet: `STATIC_DATAMODEL_BACKENDS` does not
+        // list it, so a `sce-static` document is refused for it before a walk
+        // asks for the target.
+        Language::Swift => None,
     }
 }
 
@@ -10029,7 +10033,11 @@ mod tests {
         let lowering = match lang {
             Language::Rust => lower_rust(&mut model, "M"),
             Language::Kotlin => lower_kotlin(&mut model, "M"),
-            other @ (Language::Cpp | Language::Go | Language::Python | Language::C11) => {
+            other @ (Language::Cpp
+            | Language::Go
+            | Language::Python
+            | Language::C11
+            | Language::Swift) => {
                 panic!("{other:?} does not lower sce-static")
             }
         }
@@ -10102,7 +10110,7 @@ mod tests {
             Language::Rust => lower_rust(&mut model, "M"),
             Language::Kotlin => lower_kotlin(&mut model, "M"),
             Language::C11 => lower_c11(&mut model, ""),
-            other @ (Language::Cpp | Language::Go | Language::Python) => {
+            other @ (Language::Cpp | Language::Go | Language::Python | Language::Swift) => {
                 panic!("{other:?} does not lower sce-static")
             }
         }
@@ -10225,7 +10233,7 @@ mod tests {
             Language::Kotlin => lower_kotlin(&mut model, "M"),
             Language::Python => lower_python(&mut model, "M"),
             Language::C11 => lower_c11(&mut model, ""),
-            other @ (Language::Rust | Language::Cpp | Language::Go) => {
+            other @ (Language::Rust | Language::Cpp | Language::Go | Language::Swift) => {
                 panic!("{other:?} is not lowered by this test")
             }
         }

@@ -274,12 +274,14 @@ const CASES: &[Pair] = &[
         document: procedure_with_datum_and_helper,
         noun: "helper",
     },
-    // `init` and `init__` are both the enum member `Init`, which Python refuses
-    // at import and the other three declare twice.
+    // `start` and `start__` are both the enum member `Start`, which Python
+    // refuses at import and the other three declare twice. The pair is not
+    // `init`, which Swift reserves: a reserved word is refused as such before
+    // two names can collide.
     Pair {
         scope: "procedure-state",
-        first: "init",
-        second: "init__",
+        first: "start",
+        second: "start__",
         document: procedure_with_two_states,
         noun: "state",
     },

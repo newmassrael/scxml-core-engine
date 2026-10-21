@@ -111,6 +111,7 @@ pub const ALREADY_FIT_FOR_A_LITERAL: &[&str] = &[
     "escape_lua",
     "escape_python",
     "escape_rust",
+    "escape_swift",
     // Return a complete expression, delimiters included.
     "py_string_literal",
     "to_go_literal",
@@ -143,6 +144,7 @@ pub fn escaper_for(syntax: Syntax) -> &'static str {
         Syntax::Kotlin => "escape_kotlin",
         Syntax::Python => "escape_python",
         Syntax::Rust => "escape_rust",
+        Syntax::Swift => "escape_swift",
     }
 }
 
@@ -206,6 +208,7 @@ impl fmt::Display for RawLiteralSite {
                 Syntax::Kotlin => "\"…\" rather than \"\"\"…\"\"\"",
                 Syntax::Go => "\"…\" rather than `…`",
                 Syntax::Python => "\"…\"",
+                Syntax::Swift => "\"…\" rather than #\"…\"#",
             }
         )
     }

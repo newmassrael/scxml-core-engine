@@ -296,7 +296,7 @@ fn render(model: &SCXMLModel, lang: Language, stem: &str) -> String {
                     .collect::<Vec<_>>()
                     .join("\n")
             }),
-        other @ (Language::Cpp | Language::Kotlin) => {
+        other @ (Language::Cpp | Language::Kotlin | Language::Swift) => {
             panic!("{other:?} does not lower authored ECMAScript here")
         }
     };

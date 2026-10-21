@@ -1442,6 +1442,11 @@ pub fn compile_from_string_lang_typed(
             generator::generate_c11_with_templates(&model, templates, scxml_name)
                 .map_err(|e| locate_codegen_error(e, scxml_name, &model))
         }
+        generator::Language::Swift => Err(locate_codegen_error(
+            forge::codegen_matrix::emit_missing(forge::model::ForgeKind::Statechart, language),
+            scxml_name,
+            &model,
+        )),
     }?;
     // The same seam as the file entry's, under the default roots the machine
     // above is generated under too: this entry takes no naming prefix.
@@ -1794,6 +1799,13 @@ pub fn emit_model_artifacts(
             generator::generate_c11(model, template_dir, input_stem, options.c_symbol_prefix)
                 .map_err(|e| locate_codegen_error(e, source_name, model))?
         }
+        generator::Language::Swift => {
+            return Err(locate_codegen_error(
+                forge::codegen_matrix::emit_missing(forge::model::ForgeKind::Statechart, language),
+                source_name,
+                model,
+            ));
+        }
     };
     // The transition function a document may declare (SCE Accepted Subset
     // §2.21) is a file beside the machine's, emitted at this one site for the
@@ -2083,6 +2095,9 @@ pub fn compile_forge_from_string(
         generator::Language::Go => forge::generator::generate_go(&doc, &template_base),
         generator::Language::Python => forge::generator::generate_python(&doc, &template_base),
         generator::Language::C11 => forge::generator::generate_c11(&doc, &template_base),
+        generator::Language::Swift => Err(forge::error::ForgeError::from(
+            forge::codegen_matrix::emit_missing(doc.kind(), language),
+        )),
     }
     .map_err(|e| Located::in_file(e, label.diagnostic_label))?;
     Ok(output)
@@ -2625,6 +2640,12 @@ pub fn compile_forge_with_deploy(
     // missing — re-wiring closes the gap.
     validate_worker_cross_refs(&doc, &parsed.imports, label.diagnostic_label)?;
 
+    // A backend with no emitter for the kind is refused here, before any step
+    // below reads `language`: the import resolution is per-backend and has no
+    // arm for a backend that renders nothing.
+    forge::codegen_matrix::check(doc.kind(), language)
+        .map_err(|e| Located::in_file(forge::error::ForgeError::from(e), label.diagnostic_label))?;
+
     let template_base = find_template_base();
 
     // RFC §synth-5-I — `<sce:extern>` rejected on
@@ -2709,6 +2730,9 @@ pub fn compile_forge_with_deploy(
             &extern_decls,
             &options,
         ),
+        generator::Language::Swift => {
+            forge::codegen_matrix::no_swift_emitter("compile_forge_with_deploy")
+        }
     }
     .map_err(|e| Located::in_file(e, label.diagnostic_label))?;
 
@@ -2737,7 +2761,8 @@ pub fn compile_forge_with_deploy(
                             generator::Language::Cpp
                             | generator::Language::Kotlin
                             | generator::Language::Go
-                            | generator::Language::Python => unreachable!(),
+                            | generator::Language::Python
+                            | generator::Language::Swift => unreachable!(),
                         };
                         let primary = output.files.first().map_or("", |(_, src)| src.as_str());
                         if !primary.contains("sce_dcache_invalidate_by_addr") {
@@ -3258,6 +3283,12 @@ pub fn compile_forge_from_parsed(
     // module which fields are read that way.
     forge::previous_value::check(parsed, label.diagnostic_label)?;
 
+    // A backend with no emitter for the kind is refused before any step below
+    // reads `language`: the checks and the import resolution that follow are
+    // per-backend and have no arm for a backend that renders nothing.
+    forge::codegen_matrix::check(parsed.document.kind(), language)
+        .map_err(|e| Located::in_file(forge::error::ForgeError::from(e), label.diagnostic_label))?;
+
     // ⚠ Every backend lowers `previous()` of a number, a bool or an enum.
     // The cells it does not lower are refused here, once, named — never left
     // to a renderer, where they would either not compile or keep a pointer
@@ -3279,7 +3310,8 @@ pub fn compile_forge_from_parsed(
                     | generator::Language::Kotlin
                     | generator::Language::Go
                     | generator::Language::Python
-                    | generator::Language::C11,
+                    | generator::Language::C11
+                    | generator::Language::Swift,
                 ) => {
                     "a `bytes` field is not lowered for `previous()`: a buffer kept between \
                      activations needs a capacity, and no cell declares one"
@@ -3296,7 +3328,8 @@ pub fn compile_forge_from_parsed(
                     | generator::Language::Kotlin
                     | generator::Language::Go
                     | generator::Language::Python
-                    | generator::Language::C11,
+                    | generator::Language::C11
+                    | generator::Language::Swift,
                 ) => continue,
             };
             // A cell exists only because an output reads it, so the read is
@@ -3495,6 +3528,9 @@ pub fn compile_forge_from_parsed(
             &parsed.externs,
             options,
         ),
+        generator::Language::Swift => {
+            forge::codegen_matrix::no_swift_emitter("compile_forge_from_parsed")
+        }
     }
     .map_err(|e| Located::in_file(e, label.diagnostic_label))?;
     // The forge backends render from the AST and know nothing about the
@@ -4178,7 +4214,14 @@ fn compile_document_set(
     // layer reads `bounded_collection_resolutions[bc.name]` and surfaces
     // a clear `InvalidConfig` if a needed key is absent.
     let mut bc_resolutions = std::collections::HashMap::new();
-    for (_label, bc) in &bounded_collections_for_xref {
+    for (label, bc) in &bounded_collections_for_xref {
+        // Refused here, before the enum import below is resolved: resolving an
+        // import is per-backend, and a backend that emits no bounded
+        // collection has nothing to resolve it for.
+        forge::codegen_matrix::check(forge::model::ForgeKind::BoundedCollection, language)
+            .map_err(|error| {
+                Located::new(forge::error::ForgeError::from(error), label, None, None)
+            })?;
         let capacity = match &bc.capacity {
             forge::model::CapacitySource::CompileConst { value } => *value,
             forge::model::CapacitySource::DeployKey { .. } => continue,
@@ -6879,6 +6922,9 @@ fn discover_primary_function(
                 generator::Language::Go
                 | generator::Language::Python
                 | generator::Language::C11 => base,
+                generator::Language::Swift => {
+                    forge::codegen_matrix::no_swift_emitter("discover_primary_function")
+                }
             })
         }
         // Stateful kinds (Codec, Validator, Procedure, Filter, Observer, Timer, Link)
@@ -6965,6 +7011,9 @@ pub(crate) fn build_qualified_call(
         // `forge_c11_flat` so the definition sites and this callsite flatten
         // identically (`namespace` is already snake — the op is idempotent).
         generator::Language::C11 => forge::generator::forge_c11_flat(namespace, func_name),
+        generator::Language::Swift => {
+            forge::codegen_matrix::no_swift_emitter("build_qualified_call")
+        }
     }
 }
 
@@ -11554,6 +11603,7 @@ topology:
                     | generator::Language::Kotlin
                     | generator::Language::Go
                     | generator::Language::Python
+                    | generator::Language::Swift
                     | generator::Language::C11 => format!("SCE_SLOT_{}", st.c_enum_suffix()),
                 };
                 assert!(

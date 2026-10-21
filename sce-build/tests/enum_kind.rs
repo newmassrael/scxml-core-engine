@@ -63,13 +63,14 @@ fn forge_kind_enum_count_is_nineteen() {
 
 #[test]
 fn enum_template_ships_on_all_six_backends() {
-    use sce_build::forge::codegen_matrix::template_ships;
-    use sce_build::generator::Language;
+    use sce_build::forge::codegen_matrix::{emitting, template_ships};
     // NL→IR Item C1 Path A acceptance gate per design RFC §5.2:
     // Enum lowers to a backend-native typed enum on every Generic-class
-    // backend; the matrix flips in lockstep with the 6
+    // backend that emits a machine; the matrix flips in lockstep with the 6
     // templates under `tools/codegen/templates/forge/<lang>/enum.<ext>.jinja2`.
-    for lang in Language::ALL.iter().copied() {
+    // A backend that emits nothing yet ships none of them and is refused
+    // (`a_backend_with_no_emitter_is_refused`).
+    for lang in emitting(ForgeKind::Statechart) {
         assert!(
             template_ships(ForgeKind::Enum, lang),
             "Enum codegen expects template_ships(Enum, {lang:?}) = true; \
@@ -400,7 +401,6 @@ fn signed_enum_reaches_every_backend_with_negative_values() {
 #[test]
 fn strict_variants_defaults_to_strict_and_reaches_every_backend() {
     use sce_build::compile_forge_from_string;
-    use sce_build::generator::Language;
 
     const SHARED_LABEL: DocumentLabel<'static> = DocumentLabel {
         identifier: "result",
@@ -439,7 +439,7 @@ fn strict_variants_defaults_to_strict_and_reaches_every_backend() {
     let explicit_strict = enum_doc(Some("true"));
     let explicit_open = enum_doc(Some("false"));
 
-    for lang in Language::ALL.iter().copied() {
+    for lang in sce_build::forge::codegen_matrix::emitting(ForgeKind::Enum) {
         let a = compile_forge_from_string(&implicit, SHARED_LABEL, lang)
             .unwrap_or_else(|e| panic!("{lang:?} compile (implicit): {e:?}"));
         let b = compile_forge_from_string(&explicit_strict, SHARED_LABEL, lang)

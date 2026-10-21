@@ -19,14 +19,19 @@
 // disagree about which entry point the machine needs". Nothing measured that:
 // the emitted code did not carry the answer at all.
 //
-// These tests are that measurement, and they run over `Language::ALL` so a
-// seventh backend cannot join by being skipped.
+// These tests are that measurement, and they run over every backend that emits
+// a machine (`codegen_matrix::emitting`) so an eighth cannot join by being
+// skipped. A backend that emits none is refused by `check`, which
+// `sce-build/tests/a_backend_with_no_emitter_is_refused.rs` holds to a
+// diagnostic.
 
 use std::fs;
 use std::path::Path;
 
 use tempfile::tempdir;
 
+use sce_build::forge::codegen_matrix::emitting;
+use sce_build::forge::model::ForgeKind;
 use sce_build::generator::{GeneratedOutput, Language};
 use sce_build::{compile_scxml_lang_typed, find_template_dir_for};
 
@@ -152,6 +157,7 @@ fn declares_scheduler_requirement(lang: Language, source: &str, name: &str) -> b
             let tick_decl = format!("void {name}_tick(");
             return text.contains(&tick_decl);
         }
+        Language::Swift => unreachable!("swift emits no machine, so it is not iterated"),
     };
     match literal.as_str() {
         "true" | "True" => true,
@@ -166,7 +172,7 @@ fn declares_scheduler_requirement(lang: Language, source: &str, name: &str) -> b
 /// every language rather than of one.
 #[test]
 fn every_backend_declares_which_entry_point_the_machine_needs() {
-    for &lang in Language::ALL {
+    for lang in emitting(ForgeKind::Statechart) {
         assert!(
             declares_scheduler_requirement(lang, OWN_DELAY, "own_delay"),
             "{lang:?}: a `<send delay>` puts events somewhere only tick-driving reaches",
@@ -186,9 +192,7 @@ fn every_backend_declares_which_entry_point_the_machine_needs() {
 /// plain-macrostep sibling does not. C11 is deliberately absent — see
 /// [`c11_drives_an_invoked_child_from_the_macrostep_itself`].
 fn child_needs_the_parent_ticked() -> Vec<Language> {
-    Language::ALL
-        .iter()
-        .copied()
+    emitting(ForgeKind::Statechart)
         // C11: its parent drives an invoked child from its own macrostep.
         .filter(|lang| *lang != Language::C11)
         .collect()

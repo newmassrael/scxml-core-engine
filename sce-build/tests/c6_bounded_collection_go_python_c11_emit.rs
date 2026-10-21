@@ -894,9 +894,12 @@ fn template_ships_matrix_fully_closed() {
     // matrix is fully closed. A regression that flips any backend
     // back to `false` would fail this guard before any emit fixture
     // catches the broken-template fallout.
-    use sce_build::forge::codegen_matrix::{lookup, EmitOutcome};
+    use sce_build::forge::codegen_matrix::{emitting, lookup, EmitOutcome};
     use sce_build::forge::model::ForgeKind;
-    for &lang in Language::ALL {
+    // Every backend that emits a machine emits a bounded collection; one that
+    // emits nothing yet is held to the refusal instead
+    // (`a_backend_with_no_emitter_is_refused`).
+    for lang in emitting(ForgeKind::Statechart) {
         assert_eq!(
             lookup(ForgeKind::BoundedCollection, lang),
             EmitOutcome::Emit,

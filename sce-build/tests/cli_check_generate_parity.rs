@@ -37,7 +37,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use sce_build::generator::Language;
+use sce_build::forge::codegen_matrix::emitting;
+use sce_build::forge::model::ForgeKind;
 
 fn sce_codegen_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_sce-codegen"))
@@ -508,11 +509,11 @@ const HOST_FIXTURE: &str =
 const DECLARED_TYPE: &str = "x-sce-host";
 
 /// Every backend `generate` and `check` both route to, as `--language` names
-/// it.
+/// it. A backend that emits nothing yet is served by `check` alone, which
+/// refuses it, so there is no `generate` verdict to compare it with
+/// (`a_backend_with_no_emitter_is_refused`).
 fn backends() -> impl Iterator<Item = &'static str> {
-    Language::ALL
-        .iter()
-        .map(|language| language.canonical_name())
+    emitting(ForgeKind::Statechart).map(|language| language.canonical_name())
 }
 
 /// Enough flags must reach the comparison for a clean result to mean
@@ -936,7 +937,7 @@ fn check_and_generate_agree_about_a_host_declaration() {
     // by then the manifest agreement above and the per-backend dispatch
     // channels are what hold the seam.
     assert!(
-        refused_with_declaration > 0 || Language::ALL.len() == count_backends_with_registry(),
+        refused_with_declaration > 0 || backends().count() == count_backends_with_registry(),
         "no backend refused the declaration, and not every backend has a \
          registry either — the flag stopped reaching the backends",
     );
