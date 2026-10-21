@@ -79,7 +79,8 @@ done
 # previous artefact orphaned beside the new one. The hand-authored
 # `test_ai_loop_aot.py` next to the generated files is outside this glob.
 mkdir -p "$GENERATED_DIR"
-find "$GENERATED_DIR" -maxdepth 1 -name '*_sm.py' -delete
+source "$REPO_ROOT/scripts/lib/sce_generated_tree.sh"
+sce_generated_tree_clear "$GENERATED_DIR"
 
 # Normalise the `# From:` comment so the committed output points at the tracked
 # example rather than the transient $TMP path — the comment half of what

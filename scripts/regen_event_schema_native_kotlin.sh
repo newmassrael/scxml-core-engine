@@ -75,9 +75,8 @@ trap 'rm -rf "$TMP"' EXIT
     --kotlin-package-prefix "$PACKAGE_PREFIX"
 
 mkdir -p "$GENERATED_DIR" "$BYTES_DIR" "$LIFTED_DIR"
-find "$GENERATED_DIR" -maxdepth 1 -name '*Sm.kt' -delete
-find "$BYTES_DIR" -maxdepth 1 -name '*Sm.kt' -delete
-find "$LIFTED_DIR" -maxdepth 1 -name '*Sm.kt' -delete
+source "$REPO_ROOT/scripts/lib/sce_generated_tree.sh"
+sce_generated_tree_clear "$GENERATED_DIR" "$BYTES_DIR" "$LIFTED_DIR"
 for src in "$TMP"/minimal/*Sm.kt; do
     [[ -f "$src" ]] || continue
     sed -i "s|// Source: ${TMP}/minimal/|// Source: ${INPUT_ROOT}/|g" "$src"

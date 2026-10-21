@@ -37,7 +37,8 @@ trap 'rm -rf "$TMP"' EXIT
 "$CODEGEN" generate "$FIXTURE" -l rust -o "$TMP/"
 
 mkdir -p "$GENERATED_DIR"
-find "$GENERATED_DIR" -maxdepth 1 -name '*_sm.rs' -delete
+source "$REPO_ROOT/scripts/lib/sce_generated_tree.sh"
+sce_generated_tree_clear "$GENERATED_DIR"
 cp "$TMP"/*.rs "$GENERATED_DIR/"
 
 # The inline child is emitted beside its parent (`<stem>__sce_synth_invoke__<id>_sm.rs`),

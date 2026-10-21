@@ -52,7 +52,8 @@ trap 'rm -rf "$TMP"' EXIT
     --host-processor "$HOST_PROCESSOR"
 
 mkdir -p "$GENERATED_DIR"
-find "$GENERATED_DIR" -maxdepth 1 -name '*Sm.kt' -delete
+source "$REPO_ROOT/scripts/lib/sce_generated_tree.sh"
+sce_generated_tree_clear "$GENERATED_DIR"
 for src in "$TMP"/*Sm.kt; do
     [[ -f "$src" ]] || continue
     sed -i "s|// Source: ${TMP}/|// Source: ${INPUT_ROOT}/|g" "$src"
@@ -77,7 +78,7 @@ trap 'rm -rf "$TMP" "$DELAYED_TMP"' EXIT
     --host-processor "$HOST_PROCESSOR"
 
 mkdir -p "$DELAYED_DIR"
-find "$DELAYED_DIR" -maxdepth 1 -name '*Sm.kt' -delete
+sce_generated_tree_clear "$DELAYED_DIR"
 for src in "$DELAYED_TMP"/*Sm.kt; do
     [[ -f "$src" ]] || continue
     sed -i "s|// Source: ${DELAYED_TMP}/|// Source: ${INPUT_ROOT}/|g" "$src"
@@ -99,7 +100,7 @@ trap 'rm -rf "$TMP" "$DELAYED_TMP" "$INVOKER_TMP"' EXIT
     --host-invoker "$HOST_PROCESSOR"
 
 mkdir -p "$INVOKER_DIR"
-find "$INVOKER_DIR" -maxdepth 1 -name '*Sm.kt' -delete
+sce_generated_tree_clear "$INVOKER_DIR"
 for src in "$INVOKER_TMP"/*Sm.kt; do
     [[ -f "$src" ]] || continue
     sed -i "s|// Source: ${INVOKER_TMP}/|// Source: ${INPUT_ROOT}/|g" "$src"
@@ -122,7 +123,7 @@ trap 'rm -rf "$TMP" "$DELAYED_TMP" "$INVOKER_TMP" "$STATIC_PARAMS_TMP"' EXIT
     --host-invoker "$HOST_PROCESSOR"
 
 mkdir -p "$STATIC_PARAMS_DIR"
-find "$STATIC_PARAMS_DIR" -maxdepth 1 -name '*Sm.kt' -delete
+sce_generated_tree_clear "$STATIC_PARAMS_DIR"
 for src in "$STATIC_PARAMS_TMP"/*Sm.kt; do
     [[ -f "$src" ]] || continue
     sed -i "s|// Source: ${STATIC_PARAMS_TMP}/|// Source: ${INPUT_ROOT}/|g" "$src"
@@ -144,7 +145,7 @@ trap 'rm -rf "$TMP" "$DELAYED_TMP" "$INVOKER_TMP" "$STATIC_PARAMS_TMP" "$STATIC_
     --host-invoker "$HOST_PROCESSOR"
 
 mkdir -p "$STATIC_INVOKE_DIR"
-find "$STATIC_INVOKE_DIR" -maxdepth 1 -name '*Sm.kt' -delete
+sce_generated_tree_clear "$STATIC_INVOKE_DIR"
 for src in "$STATIC_INVOKE_TMP"/*Sm.kt; do
     [[ -f "$src" ]] || continue
     sed -i "s|// Source: ${STATIC_INVOKE_TMP}/|// Source: ${INPUT_ROOT}/|g" "$src"
@@ -166,7 +167,7 @@ trap 'rm -rf "$TMP" "$DELAYED_TMP" "$INVOKER_TMP" "$STATIC_PARAMS_TMP" "$STATIC_
     --host-processor "$HOST_PROCESSOR"
 
 mkdir -p "$STATIC_DELAYED_SEND_DIR"
-find "$STATIC_DELAYED_SEND_DIR" -maxdepth 1 -name '*Sm.kt' -delete
+sce_generated_tree_clear "$STATIC_DELAYED_SEND_DIR"
 for src in "$STATIC_DELAYED_SEND_TMP"/*Sm.kt; do
     [[ -f "$src" ]] || continue
     sed -i "s|// Source: ${STATIC_DELAYED_SEND_TMP}/|// Source: ${INPUT_ROOT}/|g" "$src"
@@ -187,7 +188,7 @@ trap 'rm -rf "$TMP" "$DELAYED_TMP" "$INVOKER_TMP" "$STATIC_PARAMS_TMP" "$STATIC_
     --kotlin-package-prefix "$PACKAGE_PREFIX"
 
 mkdir -p "$STATIC_MESH_REQUEST_DIR"
-find "$STATIC_MESH_REQUEST_DIR" -maxdepth 1 -name '*Sm.kt' -delete
+sce_generated_tree_clear "$STATIC_MESH_REQUEST_DIR"
 for src in "$STATIC_MESH_REQUEST_TMP"/*Sm.kt; do
     [[ -f "$src" ]] || continue
     sed -i "s|// Source: ${STATIC_MESH_REQUEST_TMP}/|// Source: ${INPUT_ROOT}/|g" "$src"

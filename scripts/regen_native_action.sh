@@ -46,7 +46,8 @@ trap 'rm -rf "$TMP"' EXIT
 "$CODEGEN" generate "$FIXTURE" -l rust -o "$TMP/"
 
 mkdir -p "$GENERATED_DIR"
-find "$GENERATED_DIR" -maxdepth 1 -name '*_sm.rs' -delete
+source "$REPO_ROOT/scripts/lib/sce_generated_tree.sh"
+sce_generated_tree_clear "$GENERATED_DIR"
 cp "$TMP"/*_sm.rs "$GENERATED_DIR/"
 
 MODRS="$GENERATED_DIR/mod.rs"
@@ -76,7 +77,7 @@ trap 'rm -rf "$TMP" "$GO_TMP"' EXIT
 "$CODEGEN" generate "$FIXTURE" -l go -o "$GO_TMP/" --input-root "$INPUT_ROOT"
 
 mkdir -p "$GO_GENERATED_DIR"
-find "$GO_GENERATED_DIR" -maxdepth 1 -name '*_sm.go' -delete
+sce_generated_tree_clear "$GO_GENERATED_DIR"
 for src in "$GO_TMP"/*_sm.go; do
     [[ -f "$src" ]] || continue
     sed -i "s|// From: ${GO_TMP}/|// From: ${INPUT_ROOT}/|g" "$src"
@@ -95,7 +96,7 @@ trap 'rm -rf "$TMP" "$GO_TMP" "$KT_TMP"' EXIT
     --kotlin-package-prefix "$KT_PACKAGE_PREFIX"
 
 mkdir -p "$KT_GENERATED_DIR"
-find "$KT_GENERATED_DIR" -maxdepth 1 -name '*Sm.kt' -delete
+sce_generated_tree_clear "$KT_GENERATED_DIR"
 for src in "$KT_TMP"/*Sm.kt; do
     [[ -f "$src" ]] || continue
     sed -i "s|// Source: ${KT_TMP}/|// Source: ${INPUT_ROOT}/|g" "$src"

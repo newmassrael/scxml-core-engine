@@ -64,9 +64,8 @@ trap 'rm -rf "$TMP"' EXIT
 "$CODEGEN" generate "$LIFTED_FIXTURE" -l go -o "$TMP/lifted/" --input-root "$INPUT_ROOT"
 
 mkdir -p "$GENERATED_DIR" "$BYTES_DIR" "$LIFTED_DIR"
-find "$GENERATED_DIR" -maxdepth 1 -name '*_sm.go' -delete
-find "$BYTES_DIR" -maxdepth 1 -name '*_sm.go' -delete
-find "$LIFTED_DIR" -maxdepth 1 -name '*_sm.go' -delete
+source "$REPO_ROOT/scripts/lib/sce_generated_tree.sh"
+sce_generated_tree_clear "$GENERATED_DIR" "$BYTES_DIR" "$LIFTED_DIR"
 for src in "$TMP"/minimal/*_sm.go; do
     [[ -f "$src" ]] || continue
     sed -i "s|// From: ${TMP}/minimal/|// From: ${INPUT_ROOT}/|g" "$src"

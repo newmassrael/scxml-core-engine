@@ -213,7 +213,10 @@ for i in "${!ENUMS[@]}"; do
 done
 
 mkdir -p "$GENERATED_DIR"
-find "$GENERATED_DIR" -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} +
+# Every package below is generated, and the tests beside them are not: clearing
+# by what each file says it is takes the first and leaves the second, at any depth.
+source "$REPO_ROOT/scripts/lib/sce_generated_tree.sh"
+sce_generated_tree_clear --recursive "$GENERATED_DIR"
 for machine in "${MACHINES[@]}"; do
     mkdir -p "$GENERATED_DIR/$machine"
     cp "$TMP/$machine"/*_sm.go "$GENERATED_DIR/$machine/"

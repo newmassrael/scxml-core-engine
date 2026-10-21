@@ -107,7 +107,8 @@ trap 'rm -rf "$TMP"' EXIT
 "$CODEGEN" generate "$STATIC_MESH_REQUEST_FIXTURE" -l rust -o "$TMP/"
 
 mkdir -p "$GENERATED_DIR"
-find "$GENERATED_DIR" -maxdepth 1 -name '*_sm.rs' -delete
+source "$REPO_ROOT/scripts/lib/sce_generated_tree.sh"
+sce_generated_tree_clear "$GENERATED_DIR"
 cp "$TMP"/*_sm.rs "$GENERATED_DIR/"
 
 MODRS="$GENERATED_DIR/mod.rs"
@@ -153,7 +154,7 @@ trap 'rm -rf "$TMP" "$GO_TMP"' EXIT
 "$CODEGEN" generate "$FIXTURE" -l go -o "$GO_TMP/" --host-processor "$HOST_PROCESSOR"
 
 mkdir -p "$GO_GENERATED_DIR"
-find "$GO_GENERATED_DIR" -maxdepth 1 -name '*_sm.go' -delete
+sce_generated_tree_clear "$GO_GENERATED_DIR"
 for src in "$GO_TMP"/*_sm.go; do
     [[ -f "$src" ]] || continue
     sed -i "s|// From: ${GO_TMP}/|// From: $(dirname "$FIXTURE")/|g" "$src"
@@ -174,7 +175,7 @@ trap 'rm -rf "$TMP" "$GO_TMP" "$GO_DELAYED_TMP" "$GO_INVOKER_TMP"' EXIT
 "$CODEGEN" generate "$INVOKER_FIXTURE" -l go -o "$GO_INVOKER_TMP/" --host-invoker "$HOST_INVOKER"
 
 mkdir -p "$GO_INVOKER_DIR"
-find "$GO_INVOKER_DIR" -maxdepth 1 -name '*_sm.go' -delete
+sce_generated_tree_clear "$GO_INVOKER_DIR"
 for src in "$GO_INVOKER_TMP"/*_sm.go; do
     [[ -f "$src" ]] || continue
     sed -i "s|// From: ${GO_INVOKER_TMP}/|// From: $(dirname "$INVOKER_FIXTURE")/|g" "$src"
@@ -184,7 +185,7 @@ cp "$GO_INVOKER_TMP"/*_sm.go "$GO_INVOKER_DIR/"
 "$CODEGEN" generate "$DELAYED_FIXTURE" -l go -o "$GO_DELAYED_TMP/" --host-processor "$HOST_PROCESSOR"
 
 mkdir -p "$GO_DELAYED_DIR"
-find "$GO_DELAYED_DIR" -maxdepth 1 -name '*_sm.go' -delete
+sce_generated_tree_clear "$GO_DELAYED_DIR"
 for src in "$GO_DELAYED_TMP"/*_sm.go; do
     [[ -f "$src" ]] || continue
     sed -i "s|// From: ${GO_DELAYED_TMP}/|// From: $(dirname "$DELAYED_FIXTURE")/|g" "$src"
@@ -203,7 +204,7 @@ trap 'rm -rf "$TMP" "$GO_TMP" "$GO_DELAYED_TMP" "$GO_INVOKER_TMP" "$GO_STATIC_PA
     --host-processor "$HOST_PROCESSOR" --host-invoker "$HOST_INVOKER"
 
 mkdir -p "$GO_STATIC_PARAMS_DIR"
-find "$GO_STATIC_PARAMS_DIR" -maxdepth 1 -name '*_sm.go' -delete
+sce_generated_tree_clear "$GO_STATIC_PARAMS_DIR"
 for src in "$GO_STATIC_PARAMS_TMP"/*_sm.go; do
     [[ -f "$src" ]] || continue
     sed -i "s|// From: ${GO_STATIC_PARAMS_TMP}/|// From: $(dirname "$STATIC_PARAMS_FIXTURE")/|g" "$src"
@@ -219,7 +220,7 @@ trap 'rm -rf "$TMP" "$GO_TMP" "$GO_DELAYED_TMP" "$GO_INVOKER_TMP" "$GO_STATIC_PA
 "$CODEGEN" generate "$STATIC_MESH_REQUEST_FIXTURE" -l go -o "$GO_STATIC_MESH_TMP/"
 
 mkdir -p "$GO_STATIC_MESH_DIR"
-find "$GO_STATIC_MESH_DIR" -maxdepth 1 -name '*_sm.go' -delete
+sce_generated_tree_clear "$GO_STATIC_MESH_DIR"
 for src in "$GO_STATIC_MESH_TMP"/*_sm.go; do
     [[ -f "$src" ]] || continue
     sed -i "s|// From: ${GO_STATIC_MESH_TMP}/|// From: $(dirname "$STATIC_MESH_REQUEST_FIXTURE")/|g" "$src"

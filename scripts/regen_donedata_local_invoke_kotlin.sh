@@ -78,7 +78,8 @@ done
 # renamed synth-invoke (e.g. when the fixture's invoke `id` changes)
 # doesn't leave the previous artefact orphaned next to the new one.
 mkdir -p "$GENERATED_DIR"
-find "$GENERATED_DIR" -maxdepth 1 -name '*Sm.kt' -delete
+source "$REPO_ROOT/scripts/lib/sce_generated_tree.sh"
+sce_generated_tree_clear "$GENERATED_DIR"
 
 # Step 6: copy only the Kotlin artefacts back into the tracked
 # generated tree. Normalize the `// Source:` comment so the tracked

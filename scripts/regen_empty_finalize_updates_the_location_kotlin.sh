@@ -45,7 +45,8 @@ for child in "$TMP"/"${STEM}"__sce_synth_invoke__*.scxml; do
 done
 
 mkdir -p "$GENERATED_DIR"
-find "$GENERATED_DIR" -maxdepth 1 -name '*Sm.kt' -delete
+source "$REPO_ROOT/scripts/lib/sce_generated_tree.sh"
+sce_generated_tree_clear "$GENERATED_DIR"
 
 for src in "$TMP"/*Sm.kt; do
     [[ -f "$src" ]] || continue

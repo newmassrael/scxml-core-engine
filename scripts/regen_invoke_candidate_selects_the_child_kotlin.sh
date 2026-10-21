@@ -53,7 +53,8 @@ for child in "$TMP"/*.scxml; do
 done
 
 mkdir -p "$GENERATED_DIR"
-find "$GENERATED_DIR" -maxdepth 1 -name '*Sm.kt' -delete
+source "$REPO_ROOT/scripts/lib/sce_generated_tree.sh"
+sce_generated_tree_clear "$GENERATED_DIR"
 cp "$TMP"/*Sm.kt "$GENERATED_DIR/"
 
 echo "Regenerated: $GENERATED_DIR/ from $FIXTURE"

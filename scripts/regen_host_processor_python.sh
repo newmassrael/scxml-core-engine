@@ -89,7 +89,8 @@ STATIC_MESH_REQUEST_FIXTURE="sce-build/tests/fixtures/host_processor/statechart_
     --input-root "$INPUT_ROOT"
 
 mkdir -p "$GENERATED_DIR"
-find "$GENERATED_DIR" -maxdepth 1 -name '*_sm.py' -delete
+source "$REPO_ROOT/scripts/lib/sce_generated_tree.sh"
+sce_generated_tree_clear "$GENERATED_DIR"
 for src in "$TMP"/*_sm.py; do
     [[ -f "$src" ]] || continue
     sed -i "s|# From: ${TMP}/|# From: ${INPUT_ROOT}/|g" "$src"

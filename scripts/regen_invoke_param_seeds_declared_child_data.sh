@@ -42,7 +42,8 @@ trap 'rm -rf "$TMP"' EXIT
 "$CODEGEN" generate "$FIXTURE" -l rust -o "$TMP/"
 
 mkdir -p "$GENERATED_DIR"
-find "$GENERATED_DIR" -maxdepth 1 -name '*_sm.rs' -delete
+source "$REPO_ROOT/scripts/lib/sce_generated_tree.sh"
+sce_generated_tree_clear "$GENERATED_DIR"
 cp "$TMP"/*.rs "$GENERATED_DIR/"
 
 # Rebuild mod.rs from the actual `_sm.rs` filenames the regen produced.

@@ -41,7 +41,8 @@ trap 'rm -rf "$TMP"' EXIT
 "$CODEGEN" generate "$FIXTURE" -l python -o "$TMP/"
 
 mkdir -p "$GENERATED_DIR"
-find "$GENERATED_DIR" -maxdepth 1 -name '*_sm.py' -delete
+source "$REPO_ROOT/scripts/lib/sce_generated_tree.sh"
+sce_generated_tree_clear "$GENERATED_DIR"
 cp "$TMP"/*_sm.py "$GENERATED_DIR/"
 
 echo "Regenerated: $GENERATED_DIR/ from $FIXTURE"

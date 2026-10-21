@@ -193,7 +193,8 @@ done
 # as a forge kind imports another, so the machines and the algorithms are one
 # package.
 mkdir -p "$GENERATED_DIR"
-find "$GENERATED_DIR" -maxdepth 1 -name '*.py' ! -name '__init__.py' ! -name 'test_*.py' -delete
+source "$REPO_ROOT/scripts/lib/sce_generated_tree.sh"
+sce_generated_tree_clear "$GENERATED_DIR"
 for machine in "${MACHINES[@]}"; do
     cp "$TMP/$machine"/*_sm.py "$GENERATED_DIR/"
 done

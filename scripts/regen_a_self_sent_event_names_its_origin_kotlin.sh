@@ -40,7 +40,8 @@ cp "$FIXTURE" "$TMP/$STEM.scxml"
     --kotlin-package-prefix "$PACKAGE_PREFIX"
 
 mkdir -p "$GENERATED_DIR"
-find "$GENERATED_DIR" -maxdepth 1 -name '*Sm.kt' -delete
+source "$REPO_ROOT/scripts/lib/sce_generated_tree.sh"
+sce_generated_tree_clear "$GENERATED_DIR"
 
 # Normalize the `// Source:` comment to the canonical fixture directory.
 for src in "$TMP"/*Sm.kt; do

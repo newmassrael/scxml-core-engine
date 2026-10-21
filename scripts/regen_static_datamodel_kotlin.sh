@@ -94,6 +94,8 @@ MACHINES=("${STANDALONE[@]}")
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
+source "$REPO_ROOT/scripts/lib/sce_generated_tree.sh"
+
 for machine in "${MACHINES[@]}"; do
     "$CODEGEN" generate "$INPUT_ROOT/$machine.scxml" -l kotlin -o "$TMP/$machine/" \
         --input-root "$INPUT_ROOT" \
@@ -112,7 +114,7 @@ for machine in "${MACHINES[@]}"; do
     done < <(grep -ho 'sce:candidates="[^"]*"' "$INPUT_ROOT/$machine.scxml" | cut -d'"' -f2 | tr ' ' '\n' | sed 's|.*/||' | sort -u)
     dir="$GENERATED_ROOT/$machine"
     mkdir -p "$dir"
-    find "$dir" -maxdepth 1 -name '*Sm.kt' -delete
+    sce_generated_tree_clear "$dir"
     for src in "$TMP/$machine"/*Sm.kt; do
         [[ -f "$src" ]] || continue
         sed -i "s|// Source: ${TMP}/${machine}/|// Source: ${INPUT_ROOT}/|g" "$src"
@@ -132,7 +134,7 @@ for standard in "${STANDARD_MACHINES[@]}"; do
         --kotlin-package-prefix "$PACKAGE_PREFIX"
     dir="$GENERATED_ROOT/$machine"
     mkdir -p "$dir"
-    find "$dir" -maxdepth 1 -name '*Sm.kt' -delete
+    sce_generated_tree_clear "$dir"
     cp "$TMP/$machine"/*Sm.kt "$dir/"
 done
 
@@ -253,7 +255,7 @@ install_generated() {
         fi
         dir="$ALGORITHM_ROOT/$package"
         mkdir -p "$dir"
-        find "$dir" -maxdepth 1 -name '*.kt' -delete
+        sce_generated_tree_clear "$dir"
         cp "$generated" "$dir/"
         PACKAGES+=("$package")
     done

@@ -50,7 +50,8 @@ cp "$FIXTURE" "$TMP/$STEM.scxml"
 # Step 4: clear the generated modules of the last run, so a renamed artefact
 # does not leave the previous one orphaned next to the new one.
 mkdir -p "$GENERATED_DIR"
-find "$GENERATED_DIR" -maxdepth 1 \( -name '*_sm.py' -o -name '*_transition_function.py' \) -delete
+source "$REPO_ROOT/scripts/lib/sce_generated_tree.sh"
+sce_generated_tree_clear "$GENERATED_DIR"
 
 # Step 5: copy both modules into the tracked dir and normalize the embedded
 # `# From: ${TMP}/...` comment back to the canonical fixture path.

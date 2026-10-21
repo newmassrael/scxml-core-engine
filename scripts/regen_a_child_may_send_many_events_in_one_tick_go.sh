@@ -60,7 +60,8 @@ done
 # Step 5: clear stale `*_sm.go` files so a renamed synth-invoke does not
 # leave the previous artefact orphaned next to the new one.
 mkdir -p "$GENERATED_DIR"
-find "$GENERATED_DIR" -maxdepth 1 -name '*_sm.go' -delete
+source "$REPO_ROOT/scripts/lib/sce_generated_tree.sh"
+sce_generated_tree_clear "$GENERATED_DIR"
 
 # Step 6: copy only the `*_sm.go` artefacts back, normalizing the
 # `// From:` comment to the canonical fixture directory.
