@@ -341,7 +341,8 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
 // asked of them, each since it was last asked, or is NULL for a machine with none.
 // DELIVER hands a step's `invoke` event to the running child of that path through
 // the Mesh router the driver gave it, or is NULL for a machine whose children are
-// given none.
+// given none. No machine here holds a value that may be absent, so none is asked
+// whether one is present.
 #define STATIC_SCENARIO_CORE(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, DONE, REAL, REAL_LIST, RECORD_REAL, INIT,     \
                              ADVANCE, HOST_CALLS, SENT, CHILD_HOSTS, DELIVER)                                          \
     static bool M##_read_record_field(void *sm, const char *name, size_t index, const char *field, int64_t *out) {     \
@@ -445,7 +446,8 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
                                               HOST_CALLS,                                                              \
                                               sent,                                                                    \
                                               CHILD_HOSTS,                                                             \
-                                              DELIVER};                                                                \
+                                              DELIVER,                                                                 \
+                                              NULL};                                                                   \
         char path[512];                                                                                                \
         (void)snprintf(path, sizeof(path), "%s/%s.json", SCE_STATIC_SCENARIO_DIR, scenario);                           \
         int replayed = 0;                                                                                              \

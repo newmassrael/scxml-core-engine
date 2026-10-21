@@ -149,6 +149,14 @@ typedef struct {
     // gives children no routers, and a step that states `invoke` then fails. A
     // child's sends reach `sent` with the path and the start of the child.
     bool (*deliver)(void *sm, const char *path, const char *event, const char *data);
+    // Whether a value that may be absent (docs/adr/0055) is present: the variable
+    // `name` when `field` is NULL, and otherwise the field `field` of a record,
+    // addressed as `record_field` is. 1 when it is present, 0 when it is absent, and
+    // -1 for a place that holds no optional value. A scenario states an absent value
+    // as `null`, and a present one as the value its type is read as, through the
+    // reader of that type. A driver whose machine holds no optional value may leave
+    // this unset: a step that states `null` then fails.
+    int (*presence)(void *sm, const char *name, size_t index, const char *field);
 } sce_scenario_driver_t;
 
 // `index` of a record that is a variable of its own, not an element of a list.
@@ -558,21 +566,87 @@ static int sce_scenario_fail(const sce_scenario_driver_t *d, int step, const cha
     return 1;
 }
 
-// One value of a flat JSON object: a bool or an integer, or a string.
+// Whether the cursor is at the keyword `null`, the one spelling of an absent value
+// (docs/adr/0055), and not at a longer word that starts with it.
+static bool sce_scenario_at_null(sce_scenario_cursor_t *c) {
+    sce_scenario_space(c);
+    if (strncmp(c->at, "null", 4) != 0) {
+        return false;
+    }
+    const char after = c->at[4];
+    return after == '\0' || after == ',' || after == '}' || after == ']' || after == ' ' || after == '\n' ||
+           after == '\r' || after == '\t';
+}
+
+// One value of a flat JSON object: a bool or an integer, a string, or `null`.
 typedef struct {
     bool is_text;
+    bool is_null;
     int64_t number;
     char text[128];
 } sce_scenario_value_t;
 
 static bool sce_scenario_read_value(sce_scenario_cursor_t *c, sce_scenario_value_t *value) {
     sce_scenario_space(c);
+    value->is_null = false;
+    if (sce_scenario_at_null(c)) {
+        c->at += 4;
+        value->is_text = false;
+        value->is_null = true;
+        value->number = 0;
+        return true;
+    }
     if (*c->at == '"') {
         value->is_text = true;
         return sce_scenario_string(c, value->text, sizeof(value->text));
     }
     value->is_text = false;
     return sce_scenario_number(c, &value->number);
+}
+
+// Whether two values of a flat object are the same: `null` only with `null`, a
+// string only with the same text, and a bool or an integer only with the same one.
+static bool sce_scenario_same_value(const sce_scenario_value_t *have, const sce_scenario_value_t *want) {
+    if (have->is_null || want->is_null) {
+        return have->is_null && want->is_null;
+    }
+    if (have->is_text != want->is_text) {
+        return false;
+    }
+    return want->is_text ? strcmp(have->text, want->text) == 0 : have->number == want->number;
+}
+
+// What a step states of a place that may hold an optional value (docs/adr/0055):
+// `null`, which the place must be absent for, and any other value, which it must be
+// present for and is then read as the value its type is. `where` names the place in
+// a failure; `name`, `index` and `field` address it as `presence` does. `*judged`
+// is set when the value at `c` was read here, a `null` or the value of a place that
+// is absent; otherwise the caller reads it as the value of its type.
+static int sce_scenario_expect_presence(sce_scenario_cursor_t *c, const sce_scenario_driver_t *d, int step,
+                                        const char *where, const char *name, size_t index, const char *field,
+                                        bool *judged) {
+    char message[256];
+    const int presence = d->presence == NULL ? -1 : d->presence(d->sm, name, index, field);
+    *judged = false;
+    if (sce_scenario_at_null(c)) {
+        c->at += 4;
+        *judged = true;
+        if (presence == 0) {
+            return 0;
+        }
+        (void)snprintf(message, sizeof(message), "%s is %s, want null", where,
+                       presence < 0 ? "no optional value the machine publishes" : "present");
+        return sce_scenario_fail(d, step, message);
+    }
+    if (presence != 0) {
+        return 0;
+    }
+    *judged = true;
+    if (!sce_scenario_skip_value(c)) {
+        return sce_scenario_fail(d, step, "a value is not well formed");
+    }
+    (void)snprintf(message, sizeof(message), "%s is absent, want a value", where);
+    return sce_scenario_fail(d, step, message);
 }
 
 // The member `key` of the flat object `json` — one of bools, integers and strings,
@@ -612,7 +686,8 @@ static bool sce_scenario_find_member(const char *json, const char *key, sce_scen
 // What a step states of the done event's data, against what the machine's final
 // wrote: one value — the string an inline `<content>` spells, or the bool, integer
 // or string a `<content expr>` names — or the pairs of a `<donedata>`, each stated
-// pair there and equal and nothing else.
+// pair there and equal and nothing else. An absent value is `null`, a pair the
+// final writes with its key (docs/adr/0055).
 static int sce_scenario_expect_done_data(sce_scenario_cursor_t *c, const sce_scenario_driver_t *d, int step) {
     int bad = 0;
     char key[64];
@@ -630,8 +705,7 @@ static int sce_scenario_expect_done_data(sce_scenario_cursor_t *c, const sce_sce
         if (got == NULL) {
             return sce_scenario_fail(d, step, "the machine publishes no done data");
         }
-        if (!sce_scenario_read_value(&written, &have) || have.is_text != want.is_text ||
-            (want.is_text ? strcmp(have.text, want.text) != 0 : have.number != want.number)) {
+        if (!sce_scenario_read_value(&written, &have) || !sce_scenario_same_value(&have, &want)) {
             (void)snprintf(message, sizeof(message), "the done data `%s` is not the value the step states", got);
             bad |= sce_scenario_fail(d, step, message);
         }
@@ -650,15 +724,14 @@ static int sce_scenario_expect_done_data(sce_scenario_cursor_t *c, const sce_sce
             size_t members = 0;
             if (!sce_scenario_string(c, key, sizeof(key)) || !sce_scenario_take(c, ':') ||
                 !sce_scenario_read_value(c, &want)) {
-                return sce_scenario_fail(d, step, "a done-data pair is not a bool, an integer or a string");
+                return sce_scenario_fail(d, step, "a done-data pair is not a bool, an integer, a string or null");
             }
             ++stated;
             if (got != NULL) {
                 if (!sce_scenario_find_member(got, key, &have, &members)) {
                     (void)snprintf(message, sizeof(message), "the done data `%s` has no `%s`", got, key);
                     bad |= sce_scenario_fail(d, step, message);
-                } else if (have.is_text != want.is_text ||
-                           (want.is_text ? strcmp(have.text, want.text) != 0 : have.number != want.number)) {
+                } else if (!sce_scenario_same_value(&have, &want)) {
                     (void)snprintf(message, sizeof(message), "the done data `%s` holds a different `%s`", got, key);
                     bad |= sce_scenario_fail(d, step, message);
                 }
@@ -714,7 +787,13 @@ static int sce_scenario_expect_record(sce_scenario_cursor_t *c, const sce_scenar
             (void)snprintf(where, sizeof(where), "`%s`[%zu].%s", name, index, field);
         }
         sce_scenario_space(c);
-        if (*c->at == '"') {
+        // An optional field stated `null` is absent, and one stated as a value is
+        // present before it is read as that value.
+        bool judged = false;
+        bad |= sce_scenario_expect_presence(c, d, step, where, name, index, field, &judged);
+        if (judged) {
+            // Read above: a `null`, or the value of a field that is absent.
+        } else if (*c->at == '"') {
             // An enum field is stated as the name its document declares.
             if (!sce_scenario_string(c, want_text, sizeof(want_text))) {
                 return sce_scenario_fail(d, step, "a record field's name is not a string");
@@ -1076,6 +1155,21 @@ static int sce_scenario_expect(sce_scenario_cursor_t *c, const sce_scenario_driv
                                 }
                             }
                         }
+                        if (sce_scenario_take(c, '}')) {
+                            break;
+                        }
+                        if (!sce_scenario_take(c, ',')) {
+                            return sce_scenario_fail(d, step, "`variables` is not well formed");
+                        }
+                        continue;
+                    }
+                    // An optional variable stated `null` is absent, and one stated as a
+                    // value is present before it is read as that value.
+                    char where[96];
+                    bool judged = false;
+                    (void)snprintf(where, sizeof(where), "`%s`", name);
+                    bad |= sce_scenario_expect_presence(c, d, step, where, name, SCE_SCENARIO_WHOLE, NULL, &judged);
+                    if (judged) {
                         if (sce_scenario_take(c, '}')) {
                             break;
                         }
