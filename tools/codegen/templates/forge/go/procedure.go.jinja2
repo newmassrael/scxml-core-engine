@@ -21,6 +21,8 @@
 
 package {{ package }}
 
+{# `std_imports` and `uses_scealgorithm` are read off the emitted text by the
+   render door: an enum-valued conditional lowers to `scealgorithm.Choose`. #}
 import (
 {% for imp in all_imports %}
 {{ imp.include_stmt }}
@@ -31,6 +33,9 @@ import (
 {% for pkg in std_imports %}
 	"{{ pkg }}"
 {% endfor %}
+{% if uses_scealgorithm %}
+	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
+{% endif %}
 	"github.com/newmassrael/sce-forge-runtime/forge"
 )
 

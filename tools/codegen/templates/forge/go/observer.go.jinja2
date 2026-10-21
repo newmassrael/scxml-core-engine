@@ -10,11 +10,16 @@
 
 package {{ package }}
 
-{% if std_imports or all_imports %}
+{# `std_imports` and `uses_scealgorithm` are read off the emitted text by the
+   render door: an enum-valued conditional lowers to `scealgorithm.Choose`. #}
+{% if std_imports or uses_scealgorithm or all_imports %}
 import (
 {% for pkg in std_imports %}
 	"{{ pkg }}"
 {% endfor %}
+{% if uses_scealgorithm %}
+	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
+{% endif %}
 {% for imp in all_imports %}
 {{ imp.include_stmt }}
 {% endfor %}

@@ -11,13 +11,18 @@
 package {{ package }}
 {# A condition compares strings too, and a string joined to an integer inside
    the comparison reaches for `strconv`; `std_imports` is read off the emitted
-   text by the render door, so no template restates which functions need which. #}
-{% if all_imports or std_imports %}
+   text by the render door, so no template restates which functions need which.
+   `uses_scealgorithm` is the same fact for the forge runtime: an enum-valued
+   conditional inside the comparison lowers to `scealgorithm.Choose`. #}
+{% if all_imports or uses_scealgorithm or std_imports %}
 
 import (
 {% for pkg in std_imports %}
 	"{{ pkg }}"
 {% endfor %}
+{% if uses_scealgorithm %}
+	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
+{% endif %}
 {% for imp in all_imports %}
 {{ imp.include_stmt }}
 {% endfor %}

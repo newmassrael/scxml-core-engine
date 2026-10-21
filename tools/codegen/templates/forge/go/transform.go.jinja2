@@ -21,13 +21,17 @@ package {{ package }}
    which it did. `std_imports` is what the render door (`LangCtx::render`)
    read off the text: a package used as a package, with literals and comments
    skipped, so this form cannot fall behind `real_to_int_builtin` or the
-   concatenation emitter. #}
-{% if all_imports or std_imports %}
+   concatenation emitter. `uses_scealgorithm` is the same fact for the forge
+   runtime: an enum-valued conditional lowers to `scealgorithm.Choose`. #}
+{% if all_imports or uses_scealgorithm or std_imports %}
 
 import (
 {% for pkg in std_imports %}
 	"{{ pkg }}"
 {% endfor %}
+{% if uses_scealgorithm %}
+	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
+{% endif %}
 {% for imp in all_imports %}
 {{ imp.include_stmt }}
 {% endfor %}

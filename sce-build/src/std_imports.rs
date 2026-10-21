@@ -269,6 +269,44 @@ mod tests {
         assert!(!go_uses_forge_runtime(""));
     }
 
+    /// The render door reads both import facts off the same text, so a Go
+    /// template that lists the standard packages the text uses lists the
+    /// runtime the text uses too. Each kind that left it out built until a
+    /// document of that kind held an enum-valued conditional: `algorithm`
+    /// (2026-10-07), then `transform` (2026-10-21).
+    #[test]
+    fn a_go_forge_template_that_reads_its_packages_reads_the_runtime_too() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../tools/codegen/templates/forge/go");
+        let mut reading = Vec::new();
+        for entry in std::fs::read_dir(&dir).expect("read the Go forge templates") {
+            let path = entry.expect("read a directory entry").path();
+            if path.extension().and_then(|e| e.to_str()) != Some("jinja2") {
+                continue;
+            }
+            let text = std::fs::read_to_string(&path).expect("read a template");
+            if !text.contains("std_imports") {
+                continue;
+            }
+            let name = path.file_name().unwrap().to_string_lossy().into_owned();
+            assert!(
+                text.contains("{% if uses_scealgorithm %}")
+                    && text.contains(super::GO_FORGE_RUNTIME_PATH),
+                "{name} lists `std_imports` but not `uses_scealgorithm`: a body of its kind \
+                 that names `{}` is refused at generation",
+                super::GO_FORGE_RUNTIME_ALIAS
+            );
+            reading.push(name);
+        }
+        reading.sort();
+        for kind in ["algorithm", "condition", "transform"] {
+            assert!(
+                reading.contains(&format!("{kind}.go.jinja2")),
+                "read {reading:?}, which does not hold the {kind} template"
+            );
+        }
+    }
+
     #[test]
     fn a_go_package_a_file_already_imports_is_not_missing() {
         let imported = "import (\n\t\"strconv\"\n)\nvar s = strconv.Itoa(1) + math.Pi";
