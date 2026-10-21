@@ -30,6 +30,8 @@
 //   - every backend that lowers `sce-static` generates the design;
 //   - a child an `<invoke src>` names by its file is generated into its
 //     parent's package, and not as a machine of its own;
+//   - `--write-deps` writes one depfile for the run, declaring what every
+//     document read and none of what the run wrote;
 //   - `orchestrate --document` takes a standard document by its library name.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -605,6 +607,55 @@ fn a_child_an_invoke_names_by_its_file_is_generated_into_its_parents_package() {
         child.contains("package com.acme.app.parent_machine"),
         "the child declares its parent's package"
     );
+}
+
+#[test]
+fn one_depfile_declares_what_every_document_of_the_run_read() {
+    let tmp = project();
+    let out = tmp.path().join("out");
+    let depfile = tmp.path().join("run.d");
+    let depfile_arg = depfile.display().to_string();
+    let run = generate(tmp.path(), &out, "rust", &["--write-deps", &depfile_arg]);
+    succeeded(&run, "the run asked for a depfile");
+    let written = artifacts(&run, &out);
+
+    let text = fs::read_to_string(&depfile).expect("the run wrote its depfile");
+    let (target, rest) = text
+        .split_once(": ")
+        .expect("a `target: prerequisites` line");
+    assert_eq!(
+        relative(Path::new(target), &out),
+        written[0],
+        "the target is the first file the run wrote"
+    );
+    let prerequisites: Vec<&str> = rest
+        .split_whitespace()
+        .filter(|token| *token != "\\")
+        .collect();
+    assert!(
+        prerequisites
+            .iter()
+            .any(|p| p.ends_with("algorithm_inner.scxml")),
+        "a document the run reached is declared: {prerequisites:?}"
+    );
+    assert!(
+        prerequisites
+            .iter()
+            .any(|p| p.replace('\\', "/").contains("/forge/rust/")),
+        "the forge templates the imported documents were rendered from are declared, \
+         which only the members' entries name: {prerequisites:?}"
+    );
+    assert!(
+        !prerequisites.iter().any(|p| p.starts_with("sce:std/")),
+        "a standard document is in the generator, not on disk: {prerequisites:?}"
+    );
+    for path in &written {
+        let full = out.join(path).display().to_string();
+        assert!(
+            !prerequisites.contains(&full.as_str()),
+            "{path} is written by the run and declared as its prerequisite"
+        );
+    }
 }
 
 #[test]

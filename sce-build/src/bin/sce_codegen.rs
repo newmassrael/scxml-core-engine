@@ -1108,6 +1108,11 @@ struct GenerateReport {
     /// The formatter that shaped this run's artefacts — see
     /// `Manifest::formatter`. `None` when nothing was formatted.
     formatter: Option<sce_build::manifest::FormatterInfo>,
+    /// What the run's `--write-deps` depfile says, when one was asked for:
+    /// held here and written by the caller of [`cmd_generate`], once per run,
+    /// so a `--with-imports` run writes one depfile for every document it
+    /// generated rather than each document's over the last.
+    depfile: Option<DepfileEntry>,
 }
 
 impl GenerateReport {
@@ -1172,6 +1177,12 @@ impl GenerateReport {
         }
         if self.formatter.is_none() {
             self.formatter = member.formatter;
+        }
+        if let Some(theirs) = member.depfile {
+            match self.depfile.as_mut() {
+                Some(ours) => ours.absorb(theirs),
+                None => self.depfile = Some(theirs),
+            }
         }
     }
 }
@@ -1911,12 +1922,16 @@ struct GenerateArgs {
     /// `--input-root` roots the source hash of the caller's documents; a
     /// standard document keeps the library's.
     ///
-    /// Not with `--as-child`, `--parent-stem`, `--emit-ast` or `--write-deps`,
-    /// which describe one document's output, nor with `--deploy`: a deployment
-    /// is a set's question, which `orchestrate --deploy` answers.
+    /// `--write-deps` writes one depfile for the run: its target the first
+    /// file written, its prerequisites what every document read, less what
+    /// any of them wrote.
+    ///
+    /// Not with `--as-child`, `--parent-stem` or `--emit-ast`, which describe
+    /// one document's output, nor with `--deploy`: a deployment is a set's
+    /// question, which `orchestrate --deploy` answers.
     #[arg(
         long,
-        conflicts_with_all = ["as_child", "parent_stem", "write_deps", "emit_ast", "deploy"]
+        conflicts_with_all = ["as_child", "parent_stem", "emit_ast", "deploy"]
     )]
     with_imports: bool,
 }
@@ -5496,8 +5511,18 @@ fn run_generate(args: GenerateArgs, error_format: ErrorFormat) {
             ),
         });
     }
+    let depfile = args.write_deps.clone();
     let report = cmd_generate(args, error_format);
+    write_run_depfile(depfile.as_deref(), &report);
     emit_generate_manifest(&report);
+}
+
+/// Write the one depfile a `generate` run was asked for (`--write-deps`), from
+/// what its documents recorded.
+fn write_run_depfile(depfile_path: Option<&str>, report: &GenerateReport) {
+    if let (Some(path), Some(entry)) = (depfile_path, report.depfile.as_ref()) {
+        write_depfile_entry(path, entry);
+    }
 }
 
 /// `generate --with-imports`: every document the named ones reach
@@ -5607,6 +5632,10 @@ fn cmd_generate_with_imports(args: GenerateArgs, error_format: ErrorFormat) {
         set_reached_from(Vec::new());
         set.absorb(report);
     }
+    // One depfile for the run: its target the first file the run wrote, its
+    // prerequisites every document and template any member read, less every
+    // file any member wrote.
+    write_run_depfile(args.write_deps.as_deref(), &set);
     emit_generate_manifest(&set);
 }
 
@@ -5908,8 +5937,8 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
                         write_drift_aware(&path, code, &drift_ctx);
                         report.artifacts.push(path.clone());
                     }
-                    if let Some(dep_path) = depfile_path {
-                        // Through `write_depfile`, not a local
+                    if depfile_path.is_some() {
+                        // Through `write_depfile`'s entry, not a local
                         // `format!`. The inline version this replaced
                         // named the input `.scxml` and nothing else — no
                         // templates on any of the six backends, and no
@@ -5940,18 +5969,15 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
                         let forge_template_dir = sce_build::find_template_base()
                             .join("forge")
                             .join(lang.forge_template_subdir());
-                        write_depfile(
-                            dep_path,
-                            DepfileInputs {
-                                output_paths: &targets,
-                                template_dir: &forge_template_dir,
-                                lang,
-                                scxml_input: Path::new(scxml_path),
-                                preprocessor_deps: &import_deps,
-                                source_set: &drift_ctx.sources,
-                                self_written: &[],
-                            },
-                        );
+                        report.depfile = Some(depfile_entry(DepfileInputs {
+                            output_paths: &targets,
+                            template_dir: &forge_template_dir,
+                            lang,
+                            scxml_input: Path::new(scxml_path),
+                            preprocessor_deps: &import_deps,
+                            source_set: &drift_ctx.sources,
+                            self_written: &[],
+                        }));
                     }
                     report.needs_script_engine = Some(false);
                     report.needs_event_scheduler = Some(false);
@@ -6240,19 +6266,16 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
         // which hid it). A stub is not rendered from a template, but the
         // templates stay declared anyway — the depfile has one shape, and a
         // template edit costs a stub regeneration that changes nothing.
-        if let Some(depfile) = depfile_path {
-            write_depfile(
-                depfile,
-                DepfileInputs {
-                    output_paths: &report.artifacts,
-                    template_dir: &template_dir,
-                    lang,
-                    scxml_input: Path::new(scxml_path),
-                    preprocessor_deps: parser.preprocessor_deps(),
-                    source_set: &drift_ctx.sources,
-                    self_written: &[],
-                },
-            );
+        if depfile_path.is_some() {
+            report.depfile = Some(depfile_entry(DepfileInputs {
+                output_paths: &report.artifacts,
+                template_dir: &template_dir,
+                lang,
+                scxml_input: Path::new(scxml_path),
+                preprocessor_deps: parser.preprocessor_deps(),
+                source_set: &drift_ctx.sources,
+                self_written: &[],
+            }));
         }
         report.needs_script_engine = Some(false);
         report.needs_event_scheduler = Some(false);
@@ -6785,19 +6808,16 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
     // correctly invalidates `<case>_sm.{h,inl}` artifacts on the next
     // ninja/make run. tc8-harness's CMake glob workaround can be
     // retired once consumers pick up this flag.
-    if let Some(depfile) = depfile_path {
-        write_depfile(
-            depfile,
-            DepfileInputs {
-                output_paths: &output_paths,
-                template_dir: &template_dir,
-                lang,
-                scxml_input: Path::new(scxml_path),
-                preprocessor_deps: &artifact_deps,
-                source_set: &drift_ctx.sources,
-                self_written: &self_written,
-            },
-        );
+    if depfile_path.is_some() {
+        report.depfile = Some(depfile_entry(DepfileInputs {
+            output_paths: &output_paths,
+            template_dir: &template_dir,
+            lang,
+            scxml_input: Path::new(scxml_path),
+            preprocessor_deps: &artifact_deps,
+            source_set: &drift_ctx.sources,
+            self_written: &self_written,
+        }));
     }
 
     // §synth-5-O ownership-boundary walker. Every
@@ -7045,9 +7065,39 @@ struct DepfileInputs<'a> {
 /// and a run that writes nothing is not a build step. A `--plan` run is the
 /// same: it is asked for the files a build step would produce, and is not one.
 fn write_depfile(depfile_path: &str, inputs: DepfileInputs<'_>) {
-    if output_mode().holds_in_memory() {
-        return;
+    write_depfile_entry(depfile_path, &depfile_entry(inputs));
+}
+
+/// What one generation contributes to a depfile: the files it produced —
+/// its artefacts first, the first of them the depfile's target — the files
+/// it wrote beside them, and every file it read, before the produced ones are
+/// taken back out.
+///
+/// Kept apart from the write because a `generate --with-imports` run writes
+/// ONE depfile for every document it generates: each document's entry is
+/// taken in ([`DepfileEntry::absorb`]), and only the whole run's produced
+/// files are subtracted, so a document one member reads and another member
+/// writes — none, today, but the subtraction is where a cycle would hide —
+/// is not declared as a prerequisite of the edge that writes it.
+#[derive(Debug, Default)]
+struct DepfileEntry {
+    outputs: Vec<PathBuf>,
+    self_written: Vec<PathBuf>,
+    prerequisites: Vec<PathBuf>,
+}
+
+impl DepfileEntry {
+    /// Take in another generation of the same run.
+    fn absorb(&mut self, other: DepfileEntry) {
+        self.outputs.extend(other.outputs);
+        self.self_written.extend(other.self_written);
+        self.prerequisites.extend(other.prerequisites);
     }
+}
+
+/// The entry one generation's `inputs` describe — see [`write_depfile`] for
+/// why each family is a prerequisite.
+fn depfile_entry(inputs: DepfileInputs<'_>) -> DepfileEntry {
     let DepfileInputs {
         output_paths,
         template_dir,
@@ -7139,13 +7189,33 @@ fn write_depfile(depfile_path: &str, inputs: DepfileInputs<'_>) {
         }
     }
 
+    DepfileEntry {
+        outputs: output_paths.to_vec(),
+        self_written: self_written.to_vec(),
+        prerequisites: deps,
+    }
+}
+
+/// Write the depfile `entry` describes at `depfile_path`.
+///
+/// An `--assert-unchanged` run writes no depfile and compares none: a
+/// depfile describes what a build read, not what the generator produced,
+/// and a run that writes nothing is not a build step. A `--plan` run is the
+/// same: it is asked for the files a build step would produce, and is not one.
+fn write_depfile_entry(depfile_path: &str, entry: &DepfileEntry) {
+    if output_mode().holds_in_memory() {
+        return;
+    }
+    let mut deps = entry.prerequisites.clone();
+
     // Drop anything this invocation wrote. Its own artefacts as well as
     // the side-effect writes: both are outputs of this build edge, and
     // an edge that lists its own output as a prerequisite is a cycle,
     // not a dependency.
-    let produced: std::collections::HashSet<PathBuf> = output_paths
+    let produced: std::collections::HashSet<PathBuf> = entry
+        .outputs
         .iter()
-        .chain(self_written.iter())
+        .chain(entry.self_written.iter())
         .map(|p| depfile_identity(p))
         .collect();
     deps.retain(|p| !produced.contains(&depfile_identity(p)));
@@ -7185,7 +7255,7 @@ fn write_depfile(depfile_path: &str, inputs: DepfileInputs<'_>) {
     // reason. What the edge still owes ninja is that this target be its
     // FIRST output; otherwise ninja reads the depfile as describing some
     // other edge and re-runs this one every time.
-    if let Some(primary) = output_paths.first() {
+    if let Some(primary) = entry.outputs.first() {
         let mut content = format!("{}: ", primary.display());
         for (i, dep) in deps.iter().enumerate() {
             if i > 0 {
