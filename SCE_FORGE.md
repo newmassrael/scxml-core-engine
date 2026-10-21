@@ -2167,6 +2167,30 @@ subject to **Kind Reference Resolution** above.
 
 The library holds statecharts as well as algorithms and schemas: `sce:std/shared/record_list.scxml` is one copy of a shared list of records (docs/adr/0042), which a statechart invokes as a child session by the same kind of name (`<invoke type="scxml" src="sce:std/shared/record_list.scxml">`, docs/SCE_ACCEPTED_SUBSET.md, "Child sessions") and `sce-codegen generate` generates by it. The library is embedded in `sce-codegen` and is never looked up on disk: a search path would let two machines resolve one name to two documents. Which version of a standard document a machine was generated against is therefore decided by the generator that generated it, and the `stdlib/` tree is part of that generator's source witness (`sce-codegen verify-generator`). A build that generates the importing document lists the standard document in its input set by the same name, the way it lists a sibling file. A relative `src` inside a standard document resolves inside the library. A name the library does not hold is refused as a missing import, naming the library as where it looked. A standard document's name keeps its meaning once published; a changed meaning is a new name.
 
+**Generating a design with what it imports**: `sce-codegen generate` generates the one document it is given; an imported forge kind is a unit of its own, which the importer's code names by package and does not contain. `generate --with-imports` generates the documents named and every document they reach, each once, in one run:
+
+```bash
+sce-codegen generate src/door.scxml --with-imports -l kotlin \
+    --kotlin-package-prefix com.acme.door --output-dir build/generated/kotlin
+sce-codegen generate src/door.scxml --with-imports -l go \
+    --go-module-prefix example.com/acme/door/generated --output-dir generated
+sce-codegen generate src/door.scxml --with-imports -l rust --output-dir src/generated
+```
+
+What a run reaches: every `<sce:import>`, transitively (a relative `src` beside the document that imports it, an `sce:std/...` name from the library this generator embeds, and an import a standard document makes inside the library); every document a hybrid `<invoke>` declares in `sce:candidates`, generated as that statechart's child into its package, as `generate --as-child --parent-stem` generates one; and what a standard statechart started by `<invoke src="sce:std/...">` imports (the child itself is generated in-line with its parent, as always). Several documents may be named; one reached twice is generated once. Each is generated exactly as `generate` generates it alone, with the same flags, below `--output-dir`, which is the root of the tree, at the directory its package requires:
+
+| Language | A forge kind | A statechart |
+|---|---|---|
+| Kotlin | `com/sce/generated/<snake>/`, the package `import com.sce.generated.<snake>.*` names, whatever the machine's prefix | its package: `--kotlin-package-prefix` (default `com.sce.generated`) and the stem, one directory per segment |
+| Go | `<snake>/`, imported as `<--go-module-prefix>/<snake>` (so the prefix names the module path of the output root) | `<snake of the stem>/` |
+| Rust, Python, C++, C11 | the root, beside the others (`use super::<snake>`, `from . import <snake>`, `#include "<snake>.h"`) | the root |
+
+`<snake>` is the document's own name (an algorithm's `name=` when it sets one), snake-cased, not its file's. The directories come from the generator's own rule for the import line, so a tree it writes is one its import lines resolve in. `--assert-unchanged` compares the whole tree (a build's drift check), and `--plan` lists every file of it (what a build declares as outputs). `--input-root` roots the source hash of the project's own documents; a standard document keeps the library's. The flags that describe one document's output (`--as-child`, `--parent-stem`, `--emit-ast`, `--write-deps`) are refused with it, and so is `--deploy`: a deployment is a set's question, which `orchestrate --deploy` answers.
+
+A reference that names no document is refused before anything is written, where the reference is written, as the importing document's own generation would refuse it. Every refusal raised while generating a document the run reached carries the references that brought it in, as related sites of role `reached-from` (SCE_ERROR_CONTRACT.md §2.4), the document named on the command line first, so an import three documents down is reported with the route to it. The run prints one manifest, as a document set does: every file written, no `document_kind`, and the facts a set answers as a union.
+
+`orchestrate --document` (and `--scxml`, `--forge`) takes a standard document by its library name too, read as `generate` reads one.
+
 ### 5.5 Generated Code (Composition)
 
 The codegen produces inline helpers from inline kinds and references standalone kinds. The statechart orchestrates both.

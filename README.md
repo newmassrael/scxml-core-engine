@@ -205,6 +205,11 @@ engine.start()
 # Generate Rust code from SCXML
 sce-codegen generate traffic_light.scxml -o ./generated/ -l rust
 
+# Generate it with every document it imports (its own and sce:std/...),
+# each once, where its import lines look for it (SCE_FORGE.md, "Generating a
+# design with what it imports")
+sce-codegen generate traffic_light.scxml --with-imports -o ./generated/ -l rust
+
 # Run W3C conformance tests
 cargo test --release -p sce-rust-tests
 ```
