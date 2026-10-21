@@ -8,42 +8,53 @@
 //! it is an XML Nmtoken: another session addresses this one as
 //! `#_scxml_<id>`, and every child's id is its parent's and the id the child
 //! was started under, `<parent>.<invokeid>`. So a root's id is never empty.
-//! The host may give it when it creates the machine ([`given`]), and is told
-//! when what it gives is not an Nmtoken rather than having it replaced; where
-//! it gives none the runtime draws one ([`drawn`]), a UUID version 4 in
-//! lowercase hexadecimal with hyphens, the one spelling every backend draws,
-//! so no reader can tell which backend drew it. A restore binds the saved id
-//! instead of either, since the session carries on.
+//! The host may give it when it creates the machine ([`checked`], and
+//! `given` where there is an allocator), and is told when what it gives is
+//! not an Nmtoken rather than having it replaced; where it gives none the
+//! runtime draws one (`drawn`), a UUID version 4 in lowercase hexadecimal
+//! with hyphens, the one spelling every backend draws, so no reader can tell
+//! which backend drew it. A restore binds the saved id instead of either,
+//! since the session carries on.
 //!
 //! A target with no source of randomness the runtime can read
-//! (`wasm32-unknown-unknown`, a bare-metal one) draws nothing: its host gives
-//! the id, as it gives such a target the wall clock.
+//! (`wasm32-unknown-unknown`, a bare-metal one, any `no_std` build) draws
+//! nothing: the generated machine there has no constructor that does not take
+//! the id, so its host gives it, as it gives such a target the wall clock.
 
 use core::fmt;
 
 /// Why an id a host gave for a session was refused.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SessionIdRefusal(String);
-
-impl SessionIdRefusal {
-    /// Why.
-    pub fn reason(&self) -> &str {
-        &self.0
-    }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SessionIdRefusal {
+    /// The empty text: a session id is one name character or more.
+    Empty,
+    /// The id holds this character, which is not an XML name character.
+    NotANameCharacter(char),
 }
 
 impl fmt::Display for SessionIdRefusal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
+        match self {
+            Self::Empty => f.write_str(
+                "the session id is empty, and a session id is one name character or more \
+                 (an XML Nmtoken)",
+            ),
+            Self::NotANameCharacter(c) => write!(
+                f,
+                "the session id holds {c:?}, which is not a name character: a session id is \
+                 an XML Nmtoken (letters, digits, '.', '-', '_', ':')"
+            ),
+        }
     }
 }
 
+#[cfg(not(feature = "no_std"))]
 impl std::error::Error for SessionIdRefusal {}
 
 /// Whether `id` is an XML 1.0 Nmtoken: one name character or more
 /// (production `Nmtoken`, fifth edition).
 pub fn is_nmtoken(id: &str) -> bool {
-    !id.is_empty() && id.chars().all(is_name_char)
+    checked(id).is_ok()
 }
 
 /// XML 1.0 `NameStartChar`.
@@ -79,50 +90,49 @@ fn is_name_char(c: char) -> bool {
 
 /// `id`, given by a host for a session it creates, if it is an Nmtoken; the
 /// refusal that says why it is not one otherwise. Nothing replaces an id
-/// refused: the host that gave it is told.
-pub fn given(id: &str) -> Result<String, SessionIdRefusal> {
+/// refused: the host that gave it is told. Allocates nothing, so a `no_std`
+/// machine holds the very text its host gave.
+pub fn checked(id: &str) -> Result<&str, SessionIdRefusal> {
     if id.is_empty() {
-        return Err(SessionIdRefusal(
-            "the session id is empty, and a session id is one name character or more \
-             (an XML Nmtoken)"
-                .to_string(),
-        ));
+        return Err(SessionIdRefusal::Empty);
     }
     match id.chars().find(|c| !is_name_char(*c)) {
-        None => Ok(id.to_string()),
-        Some(c) => Err(SessionIdRefusal(format!(
-            "the session id '{id}' holds {c:?}, which is not a name character: a session id \
-             is an XML Nmtoken (letters, digits, '.', '-', '_', ':')"
-        ))),
+        None => Ok(id),
+        Some(c) => Err(SessionIdRefusal::NotANameCharacter(c)),
     }
 }
 
+/// [`checked`], owned: the id a machine with an allocator holds.
+#[cfg(not(feature = "no_std"))]
+pub fn given(id: &str) -> Result<String, SessionIdRefusal> {
+    checked(id).map(str::to_string)
+}
+
 /// A session id drawn from the operating system's randomness, a UUID version
-/// 4, for a session whose host gave none. `None` on a target with no source
-/// of randomness the runtime reads, whose host gives the id.
+/// 4, for a session whose host gave none. Compiled only where there is a
+/// source of randomness the runtime reads; the generated `new` that calls it
+/// is compiled under the same predicate.
 ///
 /// # Panics
 ///
 /// When the operating system gives no randomness at all, which a target that
 /// has a source does not do: an id made up in its place could be one another
 /// session already holds.
-pub fn drawn() -> Option<String> {
-    #[cfg(not(any(target_os = "none", all(target_arch = "wasm32", target_os = "unknown"))))]
-    {
-        let mut bytes = [0u8; 16];
-        getrandom::getrandom(&mut bytes)
-            .expect("the operating system gave no randomness to draw a session id from");
-        Some(uuid_v4(bytes))
-    }
-    #[cfg(any(target_os = "none", all(target_arch = "wasm32", target_os = "unknown")))]
-    {
-        None
-    }
+#[cfg(all(
+    not(feature = "no_std"),
+    not(any(target_os = "none", all(target_arch = "wasm32", target_os = "unknown")))
+))]
+pub fn drawn() -> String {
+    let mut bytes = [0u8; 16];
+    getrandom::getrandom(&mut bytes)
+        .expect("the operating system gave no randomness to draw a session id from");
+    uuid_v4(bytes)
 }
 
 /// `bytes` as a UUID version 4 (RFC 9562, section 5.4): the version in the
 /// high half of the seventh byte, the variant in the top two bits of the
 /// ninth, written in lowercase hexadecimal in groups of 8, 4, 4, 4 and 12.
+#[cfg(not(feature = "no_std"))]
 #[cfg_attr(
     any(target_os = "none", all(target_arch = "wasm32", target_os = "unknown")),
     allow(dead_code)
@@ -141,7 +151,7 @@ fn uuid_v4(mut bytes: [u8; 16]) -> String {
     text
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "no_std")))]
 mod tests {
     use super::*;
 
@@ -156,20 +166,31 @@ mod tests {
             "s.working.worker.2",
         ] {
             assert!(is_nmtoken(id), "{id:?}");
+            assert_eq!(checked(id), Ok(id));
             assert_eq!(given(id).as_deref(), Ok(id));
         }
         for id in ["", "a b", "a#b", "a/b", "<a>", "a\u{d7}b", "tab\t"] {
             assert!(!is_nmtoken(id), "{id:?}");
+            assert!(checked(id).is_err(), "{id:?} was taken");
             assert!(given(id).is_err(), "{id:?} was given");
         }
     }
 
     #[test]
     fn a_refusal_says_what_is_wrong_with_the_id() {
-        let empty = given("").expect_err("the empty id");
-        assert!(empty.reason().contains("empty"), "{empty}");
-        let spaced = given("planner 1").expect_err("an id with a space");
-        assert!(spaced.reason().contains("' '"), "{spaced}");
+        assert_eq!(checked(""), Err(SessionIdRefusal::Empty));
+        assert!(SessionIdRefusal::Empty.to_string().contains("empty"));
+        let spaced = checked("planner 1").expect_err("an id with a space");
+        assert_eq!(spaced, SessionIdRefusal::NotANameCharacter(' '));
+        assert!(spaced.to_string().contains("' '"), "{spaced}");
+        assert!(spaced.to_string().contains("Nmtoken"), "{spaced}");
+    }
+
+    #[test]
+    fn a_checked_id_is_the_text_given_not_a_copy() {
+        let id: &'static str = "device-7";
+        let held = checked(id).expect("an Nmtoken");
+        assert!(core::ptr::eq(held, id));
     }
 
     #[test]
@@ -182,8 +203,8 @@ mod tests {
     #[cfg(not(any(target_os = "none", all(target_arch = "wasm32", target_os = "unknown"))))]
     #[test]
     fn a_drawn_id_is_a_uuid_v4_and_two_draws_differ() {
-        let one = drawn().expect("this target has a source of randomness");
-        let two = drawn().expect("this target has a source of randomness");
+        let one = drawn();
+        let two = drawn();
         assert_ne!(one, two);
         for id in [&one, &two] {
             assert_eq!(id.len(), 36, "{id}");

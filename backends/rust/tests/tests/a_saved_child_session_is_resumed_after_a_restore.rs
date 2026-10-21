@@ -40,11 +40,8 @@ const ROOT: &str = "fixture-root";
 const SAVED_AT_MS: u64 = 1_700_000_000_000;
 
 fn started() -> Engine<StaticInvokePolicy> {
-    let mut engine = Engine::new(
-        StaticInvokePolicy::new()
-            .with_session_id(ROOT)
-            .expect("an Nmtoken"),
-    );
+    let mut engine =
+        Engine::new(StaticInvokePolicy::new_with_session_id(ROOT).expect("an Nmtoken"));
     engine.set_clock(SceClock::Manual(0));
     engine.initialize();
     engine

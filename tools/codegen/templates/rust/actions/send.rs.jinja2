@@ -991,7 +991,7 @@
     // it too (test 190). Any other is not reachable: error.communication,
     // nothing delivered, the block ended (W3C SCXML 4.9).
 {% if static_target != '#_scxml_' %}
-    if {% if no_std %}true{% else %}self.session_id.as_deref() != Some("{{ static_target | slice_from(8) | escape_rust }}"){% endif %} {
+    if {% if no_std %}self.session_id != "{{ static_target | slice_from(8) | escape_rust }}"{% else %}self.session_id.as_deref() != Some("{{ static_target | slice_from(8) | escape_rust }}"){% endif %} {
         let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.communication' | to_event_variant }}, "<send target='{{ static_target | escape_rust }}'> names a session this processor cannot reach");
         {% if model.needs_script_engine %}err_meta.metadata.send_id = send_id.clone();{% endif %}
         engine.raise(err_meta);

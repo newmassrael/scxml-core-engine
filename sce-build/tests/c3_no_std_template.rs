@@ -409,6 +409,82 @@ fn rust_template_emits_parent_external_queue_field_under_default_std() {
     );
 }
 
+/// The predicate the runtime compiles `helpers::session_id::drawn` under: the
+/// targets with a source of randomness it reads.
+const DRAWS: &str =
+    r#"#[cfg(not(any(target_os = "none", all(target_arch = "wasm32", target_os = "unknown"))))]"#;
+
+/// The line above the first line of `code` that starts (after indentation)
+/// with `item`, trimmed.
+fn line_above(code: &str, item: &str) -> String {
+    let lines: Vec<&str> = code.lines().collect();
+    let at = lines
+        .iter()
+        .position(|line| line.trim_start().starts_with(item))
+        .unwrap_or_else(|| panic!("`{item}` is emitted:\n{code}"));
+    assert!(at > 0, "`{item}` is the first line");
+    lines[at - 1].trim().to_string()
+}
+
+#[test]
+fn a_no_std_machine_is_built_only_under_a_session_id_its_host_gives() {
+    // docs/adr/0045, "Questions the owner answered" 2: a `no_std` target has no
+    // source of randomness, so its host gives the session id as a required
+    // argument of the one constructor there is, held to the Nmtoken rule there
+    // with nothing allocated, and held by the policy as the text it was given.
+    let model = parse(PLAIN_FSM, "plain_nostd_session_id");
+    let code = generate(&model, &template_dir(), true).expect("template render must succeed");
+    assert!(
+        code.contains("pub fn new_with_session_id(session_id: &'static str"),
+        "the no_std constructor takes the id:\n{code}"
+    );
+    assert!(
+        code.contains("::sce_rust_runtime::helpers::session_id::checked(session_id)?"),
+        "the id is held to the rule where the machine is built:\n{code}"
+    );
+    assert!(
+        code.contains("pub session_id: &'static str,"),
+        "the policy holds the text it was given:\n{code}"
+    );
+    for absent in [
+        "pub fn new(",
+        "impl Default for",
+        "helpers::session_id::drawn",
+    ] {
+        assert!(
+            !code.contains(absent),
+            "a no_std machine has no way to be built without an id, so `{absent}` \
+             is not emitted:\n{code}"
+        );
+    }
+}
+
+#[test]
+fn a_std_machine_draws_its_session_id_only_where_the_target_can() {
+    // On a std target the host may give the id or have one drawn; `new`, which
+    // draws, and the `Default` that calls it are compiled only where the runtime
+    // has a source of randomness, so on `wasm32-unknown-unknown` the machine is
+    // built through `new_with_session_id` alone.
+    let model = parse(PLAIN_FSM, "plain_std_session_id");
+    let code = generate(&model, &template_dir(), false).expect("template render must succeed");
+    assert!(
+        code.contains("pub fn new_with_session_id(session_id: &str"),
+        "a std host may give the id:\n{code}"
+    );
+    assert!(
+        code.contains("::sce_rust_runtime::helpers::session_id::given(session_id)?"),
+        "the id given is held to the rule where the machine is built:\n{code}"
+    );
+    assert_eq!(line_above(&code, "pub fn new("), DRAWS);
+    if code.contains("impl Default for") {
+        assert_eq!(line_above(&code, "impl Default for"), DRAWS);
+    }
+    assert!(
+        !code.contains("pub fn with_session_id("),
+        "an id is given where the machine is built, not bound afterwards:\n{code}"
+    );
+}
+
 #[test]
 fn rust_template_omits_std_collections_hashset_under_no_std_with_capacity() {
     let model = parse(FSM_WITH_CAPACITY, "cap_nostd");

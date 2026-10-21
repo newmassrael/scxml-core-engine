@@ -39,6 +39,12 @@ fn on_panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
+/// The session id the host gives the machine where it builds it, as a `no_std`
+/// host must: there is no source of randomness to draw one from
+/// (docs/adr/0045). Its check is part of what building a machine costs, so it
+/// is weighed with the rest.
+const PROBE_SESSION_ID: &str = "footprint-probe";
+
 /// `Engine::step` — the synchronous driving call, and the one whose inlined
 /// body carries `run_main_event_loop`.
 ///
@@ -46,7 +52,10 @@ fn on_panic(_info: &core::panic::PanicInfo) -> ! {
 /// having no observable result.
 #[no_mangle]
 pub extern "C" fn sce_footprint_step() -> bool {
-    let mut engine = Engine::new(ParallelHistoryProbePolicy::new());
+    let Ok(policy) = ParallelHistoryProbePolicy::new_with_session_id(PROBE_SESSION_ID) else {
+        return false;
+    };
+    let mut engine = Engine::new(policy);
     engine.initialize();
     engine.step();
     engine.is_running()
@@ -57,7 +66,10 @@ pub extern "C" fn sce_footprint_step() -> bool {
 /// from an interrupt handler uses.
 #[no_mangle]
 pub extern "C" fn sce_footprint_process_event() -> bool {
-    let mut engine = Engine::new(ParallelHistoryProbePolicy::new());
+    let Ok(policy) = ParallelHistoryProbePolicy::new_with_session_id(PROBE_SESSION_ID) else {
+        return false;
+    };
+    let mut engine = Engine::new(policy);
     engine.initialize();
     engine.process_event(ParallelHistoryProbeEvent::E1);
     engine.is_running()
@@ -75,7 +87,10 @@ pub extern "C" fn sce_footprint_process_event() -> bool {
 #[cfg(not(feature = "no_macrostep_diagnostics"))]
 #[no_mangle]
 pub extern "C" fn sce_footprint_diagnostics() -> u32 {
-    let mut engine = Engine::new(ParallelHistoryProbePolicy::new());
+    let Ok(policy) = ParallelHistoryProbePolicy::new_with_session_id(PROBE_SESSION_ID) else {
+        return 0;
+    };
+    let mut engine = Engine::new(policy);
     engine.initialize();
     engine.step();
     engine.truncated_macrosteps()

@@ -38,7 +38,7 @@ const SAVED_AT_MS: u64 = 1_700_000_000_000;
 
 /// A machine that has run `arm` once, on a clock the test owns.
 fn armed() -> Engine<Policy> {
-    let mut engine = Engine::new(Policy::new().with_session_id(ROOT).expect("an Nmtoken"));
+    let mut engine = Engine::new(Policy::new_with_session_id(ROOT).expect("an Nmtoken"));
     engine.set_clock(SceClock::Manual(0));
     engine.initialize();
     send(&mut engine, "arm");

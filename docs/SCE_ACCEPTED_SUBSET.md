@@ -5206,9 +5206,14 @@ restore every backend moves to.
   the saved id, so the session carries on under the address its peers know
   (docs/adr/0045, "Questions the owner answered" 2). Each backend moves to this with
   its format-2 step. Rust draws the id when the policy is built (`Policy::new`) and
-  takes one from the host through `with_session_id`; on `wasm32-unknown-unknown` it
-  draws none, and a machine there whose host gave none refuses to save. Until its
-  step a `sce-static` root on Kotlin has the empty id.
+  takes one from the host where it builds it (`Policy::new_with_session_id`, which
+  refuses an id that is not an Nmtoken and builds nothing). On
+  `wasm32-unknown-unknown` and in a `no_std` build, which have no source of
+  randomness the runtime reads, `new` is not compiled and `new_with_session_id`
+  is the only constructor, so no machine there is built without an id; a `no_std`
+  policy holds the `&'static str` its host gave, a pointer and a length (8 bytes on
+  `thumbv7em-none-eabihf`). A parent builds each child under the id the tree gives
+  it. Until its step a `sce-static` root on Kotlin has the empty id.
 - **The shape of a tree.** Each session carries the shape of its own document,
   computed as today, and is judged against the document its parent's `<invoke>`
   names there, with its own `revisions` (docs/adr/0044). A session of another shape

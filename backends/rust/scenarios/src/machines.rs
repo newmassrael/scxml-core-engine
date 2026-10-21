@@ -11,35 +11,32 @@ use sce_rust_runtime::{Engine, SceClock};
 /// The session id every replayed machine is given (docs/adr/0045, "Questions the
 /// owner answered" 2). A replay reads the machine through its saved state, which
 /// names the session, and `wasm32-unknown-unknown` has no source of randomness to
-/// draw one from, so its host gives it, as every host there does.
+/// draw one from, so its host gives it where it builds the machine, as every host
+/// there does (a machine there has no constructor that does not take one).
 const REPLAY_SESSION_ID: &str = "replay";
 
 /// The machine's policy as a row builds it: a machine with `<sce:action>`s takes
 /// the host that records them, and a machine whose children are given hosts takes
 /// the host `hosts::<builder>` makes, which writes each child's into the book.
-/// Each is given [`REPLAY_SESSION_ID`].
+/// Each is built under [`REPLAY_SESSION_ID`].
 macro_rules! policy {
     ($policy:ident) => {
-        $policy::new()
-            .with_session_id(REPLAY_SESSION_ID)
+        $policy::new_with_session_id(REPLAY_SESSION_ID)
             .expect("the replay's session id is an Nmtoken")
     };
     ($policy:ident, host $host:ident) => {
-        $policy::new($host::default())
-            .with_session_id(REPLAY_SESSION_ID)
+        $policy::new_with_session_id(REPLAY_SESSION_ID, $host::default())
             .expect("the replay's session id is an Nmtoken")
     };
     // A machine that states a duty refuses a host that only simulates it, and the
     // recording host simulates, so a replay that drives one with it says so
     // (docs/adr/0038).
     ($policy:ident, simulated $host:ident) => {
-        $policy::new_simulated($host::default())
-            .with_session_id(REPLAY_SESSION_ID)
+        $policy::new_simulated_with_session_id(REPLAY_SESSION_ID, $host::default())
             .expect("the replay's session id is an Nmtoken")
     };
     ($policy:ident, children $builder:ident, $book:ident) => {
-        $policy::new(hosts::$builder(&$book))
-            .with_session_id(REPLAY_SESSION_ID)
+        $policy::new_with_session_id(REPLAY_SESSION_ID, hosts::$builder(&$book))
             .expect("the replay's session id is an Nmtoken")
     };
 }

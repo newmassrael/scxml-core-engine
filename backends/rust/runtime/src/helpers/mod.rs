@@ -99,7 +99,8 @@ pub mod logger;
 pub mod microstep;
 pub mod scxml_constants;
 pub mod send;
-#[cfg(not(feature = "no_std"))]
+// docs/adr/0045: ungated — a `no_std` machine is given its session id too, and
+// holds it to the same rule with nothing allocated.
 pub mod session_id;
 pub mod state_policy_concepts;
 pub mod unique_id_generator;

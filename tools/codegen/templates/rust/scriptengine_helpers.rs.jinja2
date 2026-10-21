@@ -35,26 +35,13 @@
 {% endif -%}
 {% endmacro %}
 {% if model.needs_script_engine %}
-    // W3C SCXML 5.10: the session's id, which the script engine's session is
-    // named by. It is bound when the policy is built (docs/adr/0045): drawn,
-    // given by the host, or given by the parent. Only a machine on a target
-    // with no source of randomness whose host gave none reaches the counter
-    // here, which names the script session and is no address another process
-    // could know.
-    fn ensure_session_id(&mut self) {
-        if self.session_id.is_none() {
-            static SESSION_COUNTER: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
-            let id = SESSION_COUNTER.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-            self.session_id = Some(format!("session_{}", id));
-        }
-    }
-
-    // W3C SCXML 5.2: Lazy script engine initialization
+    // W3C SCXML 5.2: Lazy script engine initialization. The script engine's
+    // session is named by the session's id (W3C SCXML 5.10), which every
+    // constructor bound when the policy was built (docs/adr/0045).
     fn ensure_script_engine(&mut self) {
         if self.script_engine_initialized {
             return;
         }
-        self.ensure_session_id();
         let sid = self.session_id.as_ref().unwrap().clone();
         let se = self.script_engine.clone();
         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -104,7 +91,6 @@
         if self.script_engine_initialized {
             return;
         }
-        self.ensure_session_id();
         let sid = self.session_id.as_ref().unwrap().clone();
         let se = self.script_engine.clone();
         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;

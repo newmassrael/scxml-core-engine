@@ -399,9 +399,9 @@ pub trait {{ machine_name }}Persist: Sized {
     /// as the moment it comes due on the wall clock whose reading now is
     /// `wall_now_ms`, in milliseconds since the Unix epoch, and each running
     /// child saved inside it with its own whole state (docs/adr/0045). Refused
-    /// for a machine that is not running, for one whose last macrostep, or a
-    /// child's, stopped at the microstep ceiling, and for one with no session
-    /// id (`with_session_id`).
+    /// for a machine that is not running, and for one whose last macrostep, or
+    /// a child's, stopped at the microstep ceiling. The session id it writes is
+    /// the one the machine was built under, or the one a restore bound.
     fn save_at(&self, wall_now_ms: u64) -> Result<::sce_rust_runtime::saved_state::SavedState, ::sce_rust_runtime::saved_state::StateRefusal>;
 
     /// [`save_at`](Self::save_at) at the host's wall clock now.
@@ -753,13 +753,16 @@ pub struct {{ machine_name }}Policy{{ policy_generics_decl }} {
     /// W3C SCXML 5.2: the `{{ field.id }}` datamodel variable{% if field.published %}, published (`sce:direction="out"`){% endif %}.
     {{ field.name }}: {{ field.ty }},
 {% endfor %}
-{% if not no_std %}
-    // W3C SCXML 5.10: Session ID (script engine + invoke tracking).
-    //
-    // SCE Protocol-Synthesis RFC §synth-5-J-2: gated to !no_std. Under `--no-std` both the
-    // script engine (`codegen/no-std-script-not-supported`) and `<invoke>`
-    // (`codegen/no-std-invoke-not-supported`) are codegen-rejected, so no
-    // session identity is ever tracked and the alloc-coupled `String` is omitted.
+{% if no_std %}
+    // W3C SCXML 5.10: the session's id, bound when the machine is built and
+    // never empty (docs/adr/0045). SCE Protocol-Synthesis RFC §synth-5-J-2:
+    // under `--no-std` it is the text the host gave, held rather than copied,
+    // so it costs the policy a pointer and a length and no allocator.
+    pub session_id: &'static str,
+{% else %}
+    // W3C SCXML 5.10: the session's id (script engine, invoke tracking, the
+    // saved state), bound when the machine is built and never empty
+    // (docs/adr/0045): drawn, given by the host, or given by the parent.
     pub session_id: Option<String>,
 {% endif %}
 {% if model.needs_script_engine %}
@@ -833,6 +836,21 @@ pub struct {{ machine_name }}Policy{{ policy_generics_decl }} {
 {% endif %}
 }
 
+{# What every constructor takes beside the session id, and passes on to
+   `build`: the host of the `<sce:action>`s, then the script engine. #}
+{% set ctor_params = ("actions: A" if has_native_actions else "") ~ (", " if has_native_actions and model.needs_script_engine else "") ~ ("script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>" if model.needs_script_engine else "") %}
+{% set ctor_args = ("actions" if has_native_actions else "") ~ (", " if has_native_actions and model.needs_script_engine else "") ~ ("script_engine" if model.needs_script_engine else "") %}
+{% set ctor_rest_params = (", " ~ ctor_params) if ctor_params else "" %}
+{% set ctor_rest_args = (", " ~ ctor_args) if ctor_args else "" %}
+{# docs/adr/0045: the session id `build` takes, the id a host gives, and that
+   id held to the Nmtoken rule. #}
+{% set session_id_param_type = "&'static str" if no_std else "String" %}
+{% set given_param_type = "&'static str" if no_std else "&str" %}
+{% set given_session_id = "::sce_rust_runtime::helpers::session_id::checked(session_id)?" if no_std else "::sce_rust_runtime::helpers::session_id::given(session_id)?" %}
+{# The targets with a source of randomness the runtime reads, where `new`
+   draws a session id: the predicate `helpers::session_id::drawn` is compiled
+   under. #}
+{% set draws_cfg = '#[cfg(not(any(target_os = "none", all(target_arch = "wasm32", target_os = "unknown"))))]' %}
 impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }} {
 {% if model.needs_script_engine %}
 {# Looked up rather than spelled as a ternary chain: a chain's last arm is a
@@ -871,18 +889,17 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
         self.basic_http_access_uri = access_uri.into();
     }
 
-{# docs/adr/0038: a machine that states a duty is built through `new`, which
-   refuses a host that only simulates, or `new_simulated`, which is the caller
-   saying so on purpose. Both reach this one constructor. A machine with no
-   duty keeps `new` as it was. #}
-    {% if has_native_duties %}fn construct{% else %}pub fn new{% endif %}({% if has_native_actions %}actions: A, {% endif %}script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>) -> Self {
+{# The one body every constructor reaches (`new`, `new_with_session_id`, their
+   `_simulated` twins for a machine that states a duty, and `for_child`), given
+   the session id each of them bound (docs/adr/0045). #}
+    fn build(session_id: {{ session_id_param_type }}{{ ctor_rest_params }}) -> Self {
         Self {
 {% if has_native_actions %}
             actions,
 {% endif %}
             script_engine,
 {% else %}
-    {% if has_native_duties %}fn construct{% else %}pub fn new{% endif %}({% if has_native_actions %}actions: A{% endif %}) -> Self {
+    fn build(session_id: {{ session_id_param_type }}{{ ctor_rest_params }}) -> Self {
 {# SCE Accepted Subset §2.15: each sce-static variable's initial value, in
    declaration order — an initial value reads the variables declared before
    it by these names. #}
@@ -930,11 +947,10 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
 {% for field in static_fields %}
             {{ field.name }},
 {% endfor %}
-{% if not no_std %}
-            // docs/adr/0045: an id bound at load, drawn where the target has a
-            // source of randomness; the host gives one with `with_session_id`,
-            // and a parent gives its child `<parent>.<invokeid>`.
-            session_id: ::sce_rust_runtime::helpers::session_id::drawn(),
+{% if no_std %}
+            session_id,
+{% else %}
+            session_id: Some(session_id),
 {% endif %}
 {% if model.needs_script_engine %}
             script_engine_initialized: false,
@@ -977,61 +993,102 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
     /// docs/adr/0038: the compile-time refusal of a host that only simulates the
     /// duties this machine states. Evaluated where a machine is built with a
     /// host type, so a recorder or a test double does not reach production
-    /// by accident; build one on purpose with [`Self::new_simulated`].
+    /// by accident; build one on purpose with
+    /// [`Self::new_simulated_with_session_id`]{% if not no_std %} or `new_simulated`{% endif %}.
     const HOST_PERFORMS_DUTIES: () = assert!(
         A::REALIZATION.is_performing(),
         "this machine states a duty and its host declares REALIZATION = Simulates: \
-         build it with `new_simulated` to run it on a test double on purpose"
+         build it with a `_simulated` constructor to run it on a test double on purpose"
     );
 
-    /// Build the machine with a host that performs its duties. A host whose
-    /// `REALIZATION` is `Simulates` does not compile here.
-{% if model.needs_script_engine %}
-    pub fn new(actions: A, script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>) -> Self {
-        let () = Self::HOST_PERFORMS_DUTIES;
-        Self::construct(actions, script_engine)
-    }
-
-    /// Build the machine with a host that only simulates its duties — a
-    /// recorder, a test double — as the caller's statement that it means to.
-    pub fn new_simulated(actions: A, script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>) -> Self {
-        Self::construct(actions, script_engine)
-    }
-{% else %}
-    pub fn new(actions: A) -> Self {
-        let () = Self::HOST_PERFORMS_DUTIES;
-        Self::construct(actions)
-    }
-
-    /// Build the machine with a host that only simulates its duties — a
-    /// recorder, a test double — as the caller's statement that it means to.
-    pub fn new_simulated(actions: A) -> Self {
-        Self::construct(actions)
-    }
 {% endif %}
-{% endif %}
+{#
+    docs/adr/0045, "Questions the owner answered" 2: a session's id is bound
+    when its machine is built and is never empty. Where the target has a source
+    of randomness the runtime reads, `new` draws it; everywhere, the host may
+    give it instead (`new_with_session_id`), and on a target with no such
+    source (`wasm32-unknown-unknown`, a `no_std` build) that is the only way a
+    machine is built, so a host there cannot forget to. A machine that states a
+    duty has a `_simulated` twin of each (docs/adr/0038). A parent builds its
+    child under the id the tree gives it (`for_child`).
+#}
 {% if not no_std %}
 
-    /// This session's id given by its host, in place of the one drawn when the
-    /// machine was built (docs/adr/0045, "Questions the owner answered" 2): the
-    /// host's own name for the machine, say, or a fixed id a test holds a saved
-    /// text to. Called before the machine starts, since `_sessionid` is bound
-    /// at load and kept until the session ends.
+    /// Build the machine under a session id drawn from the operating system's
+    /// randomness, a UUID version 4 (docs/adr/0045).{% if has_native_duties %} A host whose
+    /// `REALIZATION` is `Simulates` does not compile here.{% endif %}
     ///
-    /// On a target with no source of randomness (`wasm32-unknown-unknown`) no
-    /// id is drawn, and the host gives one here: a machine there that is given
-    /// none has no id to save or to be addressed by.
+    /// Absent on a target with no source of randomness the runtime reads
+    /// (`wasm32-unknown-unknown`): a host there gives the id, through
+    /// [`new_with_session_id`](Self::new_with_session_id).
+    {{ draws_cfg }}
+    pub fn new({{ ctor_params }}) -> Self {
+{% if has_native_duties %}
+        let () = Self::HOST_PERFORMS_DUTIES;
+{% endif %}
+        Self::build(::sce_rust_runtime::helpers::session_id::drawn(){{ ctor_rest_args }})
+    }
+{% if has_native_duties %}
+
+    /// [`new`](Self::new) with a host that only simulates its duties — a
+    /// recorder, a test double — as the caller's statement that it means to.
+    {{ draws_cfg }}
+    pub fn new_simulated({{ ctor_params }}) -> Self {
+        Self::build(::sce_rust_runtime::helpers::session_id::drawn(){{ ctor_rest_args }})
+    }
+{% endif %}
+{% endif %}
+
+    /// Build the machine under the session id its host gives: the host's own
+    /// name for the machine, say, or a fixed id a test holds a saved text to
+    /// (docs/adr/0045, "Questions the owner answered" 2). `_sessionid` is bound
+    /// here and kept until the session ends; a restore binds the saved id in
+    /// its place, since the session carries on.{% if has_native_duties %} A host whose
+    /// `REALIZATION` is `Simulates` does not compile here.{% endif %}
+    ///
+{% if no_std %}
+    /// The one way this machine is built: a `no_std` target has no source of
+    /// randomness the runtime reads, and takes the id from its host as it
+    /// takes the time. The id is held, not copied.
+{% else %}
+    /// The one way this machine is built on `wasm32-unknown-unknown`, which has
+    /// no source of randomness the runtime reads.
+{% endif %}
     ///
     /// # Errors
     ///
     /// An id that is not an XML Nmtoken (the empty text, a space, a `#`) is
-    /// refused with the reason, and nothing replaces it.
-    pub fn with_session_id(
-        mut self,
-        session_id: &str,
-    ) -> Result<Self, ::sce_rust_runtime::helpers::session_id::SessionIdRefusal> {
-        self.session_id = Some(::sce_rust_runtime::helpers::session_id::given(session_id)?);
-        Ok(self)
+    /// refused with the reason, and no machine is built.
+    pub fn new_with_session_id(session_id: {{ given_param_type }}{{ ctor_rest_params }}) -> Result<Self, ::sce_rust_runtime::helpers::session_id::SessionIdRefusal> {
+{% if has_native_duties %}
+        let () = Self::HOST_PERFORMS_DUTIES;
+{% endif %}
+        Ok(Self::build({{ given_session_id }}{{ ctor_rest_args }}))
+    }
+{% if has_native_duties %}
+
+    /// [`new_with_session_id`](Self::new_with_session_id) with a host that only
+    /// simulates its duties — a recorder, a test double — as the caller's
+    /// statement that it means to.
+    ///
+    /// # Errors
+    ///
+    /// As [`new_with_session_id`](Self::new_with_session_id).
+    pub fn new_simulated_with_session_id(session_id: {{ given_param_type }}{{ ctor_rest_params }}) -> Result<Self, ::sce_rust_runtime::helpers::session_id::SessionIdRefusal> {
+        Ok(Self::build({{ given_session_id }}{{ ctor_rest_args }}))
+    }
+{% endif %}
+{% if not no_std %}
+
+    /// The policy of a child its parent invokes, under the id the tree gives it,
+    /// `<parent>.<invokeid>` (docs/adr/0045): formed by the parent from its own
+    /// id and the invoke id, both held to the rule already, so it is not
+    /// judged again.
+    pub(crate) fn for_child(session_id: String{{ ctor_rest_params }}) -> Self {
+{% if has_native_duties %}
+        let () = Self::HOST_PERFORMS_DUTIES;
+{% endif %}
+        Self::build(session_id{{ ctor_rest_args }})
     }
 {% endif %}
 {% if has_native_actions %}
@@ -1070,7 +1127,10 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
 {% include 'invoke_methods.rs.jinja2' %}
 }
 
-{% if not model.needs_script_engine and not has_native_actions %}
+{% if not model.needs_script_engine and not has_native_actions and not no_std %}
+// docs/adr/0045: a machine built with no arguments draws its session id, so it
+// has a default only where `new` can draw one.
+{{ draws_cfg }}
 impl Default for {{ machine_name }}Policy {
     fn default() -> Self {
         Self::new()
@@ -1709,6 +1769,12 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
     // docs/adr/0045: a restored session carries on under its saved id.
     fn bind_session_id(&mut self, session_id: &str) {
         self.session_id = Some(session_id.to_string());
+    }
+{% else %}
+
+    // docs/adr/0045: this session's own id, the one its host gave.
+    fn own_session_id(&self) -> &str {
+        self.session_id
     }
 {% endif %}
 {% if model.invokes | scxml or model.invokes | hybrid %}

@@ -794,8 +794,9 @@ pub trait StatePolicy: Sized + 'static {
 
     /// This session's own id (`_sessionid`; docs/adr/0045): the one its host
     /// gave or the runtime drew when it was created, the one its parent gave a
-    /// child, or the one a restore bound. The empty text for a session that has
-    /// none bound, which a `no_std` policy never has.
+    /// child, or the one a restore bound. Every generated policy has one from
+    /// its construction on, a `no_std` one included; the empty text is the
+    /// default of a policy written by hand that binds none.
     fn own_session_id(&self) -> &str {
         ""
     }

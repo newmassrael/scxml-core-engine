@@ -285,27 +285,25 @@
                 // W3C SCXML 6.4: Create child state machine
                 // Engine DI Parity RFC: forward parent's script engine to child when the
                 // child Policy was generated with `model.needs_script_engine = true`.
+                //
+                // W3C SCXML C.1: the child is built under the id its parent
+                // recorded for it. The parent mints `parentSession.invokeId` and
+                // keys `active_invokes` on it, so an event from this child
+                // reaches the parent carrying that id as its origin; had the
+                // child an id of its own, the location it publishes in
+                // `_ioprocessors` and the origin the parent sees would be two
+                // names for one session that can never be compared — which is
+                // exactly what C.1 requires of them. A child's id comes from the
+                // tree alone, and nothing is drawn for it (docs/adr/0045).
 {% if child.child_needs_script_engine %}
-                let mut child_policy = super::{{ child_mod }}::{{ child_policy_type }}Policy::new({% if child.child_host_call %}{{ child.child_host_call }}, {% endif %}self.script_engine.clone());
+                let mut child_policy = super::{{ child_mod }}::{{ child_policy_type }}Policy::for_child(child_session_id.clone(), {% if child.child_host_call %}{{ child.child_host_call }}, {% endif %}self.script_engine.clone());
 {% else %}
-                let mut child_policy = super::{{ child_mod }}::{{ child_policy_type }}Policy::new({{ child.child_host_call }});
+                let mut child_policy = super::{{ child_mod }}::{{ child_policy_type }}Policy::for_child(child_session_id.clone(){% if child.child_host_call %}, {{ child.child_host_call }}{% endif %});
 {% endif %}
                 // W3C SCXML 6.4: Pass parent session info to child for #_parent routing
                 child_policy.parent_external_queue = Some(engine.get_external_queue_handle());
                 child_policy.invoke_id = {{ started_under }}.clone();
                 child_policy.child_session_id = child_session_id.clone();
-
-                // W3C SCXML C.1: the child adopts the id its parent recorded
-                // for it. The parent mints `parentSession.invokeId` and keys
-                // `active_invokes` on it, so an event from this child reaches
-                // the parent carrying that id as its origin; if the child also
-                // minted an id of its own, the location it publishes in
-                // `_ioprocessors` and the origin the parent sees would be two
-                // names for one session that can never be compared — which is
-                // exactly what C.1 requires of them. It replaces the id drawn
-                // when the child's policy was built (docs/adr/0045): a child's
-                // id comes from the tree alone.
-                child_policy.session_id = Some(child_session_id.clone());
 {% endmacro %}
 {# §scxml-6.5: the `<finalize>` body of the static invoke `invoke_info`, as
    the expression `track_child` stores. It is AUTHORED content and reaches the

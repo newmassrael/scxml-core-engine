@@ -15,6 +15,7 @@
 // The assertions are the Kotlin test's: one document means one behaviour on
 // both backends.
 
+use sce_rust_runtime::helpers::session_id::SessionIdRefusal;
 use sce_rust_runtime::saved_state::{wall_clock_ms, SavedState, StateRefusal};
 use sce_rust_runtime::{Engine, SceClock};
 use sce_rust_tests::integration::static_datamodel::static_bytes_sm::{
@@ -237,11 +238,8 @@ fn day(year: u16, month: u8, day_of_month: u8) -> StaticRecordDayRecord {
 }
 
 fn record() -> Engine<StaticRecordPolicy> {
-    let mut engine = Engine::new(
-        StaticRecordPolicy::new()
-            .with_session_id(ROOT)
-            .expect("an Nmtoken"),
-    );
+    let mut engine =
+        Engine::new(StaticRecordPolicy::new_with_session_id(ROOT).expect("an Nmtoken"));
     engine.initialize();
     engine
 }
@@ -334,11 +332,7 @@ fn a_delivery_without_the_payload_runs_none_of_the_content() {
 // ── static_list: a list variable, appended to, cleared, held to its bound ──
 
 fn list() -> Engine<StaticListPolicy> {
-    let mut engine = Engine::new(
-        StaticListPolicy::new()
-            .with_session_id(ROOT)
-            .expect("an Nmtoken"),
-    );
+    let mut engine = Engine::new(StaticListPolicy::new_with_session_id(ROOT).expect("an Nmtoken"));
     engine.initialize();
     engine
 }
@@ -678,9 +672,7 @@ fn a_restored_machine_carries_on_under_the_session_id_it_was_saved_with() {
     assert_eq!(restored.save().expect("saves").session_id, ROOT);
 
     let restored = Engine::<StaticListPolicy>::restore(
-        StaticListPolicy::new()
-            .with_session_id("another-host")
-            .expect("an Nmtoken"),
+        StaticListPolicy::new_with_session_id("another-host").expect("an Nmtoken"),
         &SavedState::from_json(FORMAT1_LIST).expect("reads"),
     )
     .expect("restores");
@@ -700,13 +692,28 @@ fn a_machine_a_host_creates_draws_a_session_id_and_one_it_gives_is_held_to_the_r
     other.initialize();
     assert_ne!(other.save().expect("saves").session_id, drawn);
 
-    // An id a host gives is an Nmtoken, refused with the reason otherwise.
-    for bad in ["", "two words", "a#b"] {
-        let refusal = StaticListPolicy::new()
-            .with_session_id(bad)
+    // An id a host gives where it builds the machine is the one the session
+    // runs and saves under.
+    let mut given =
+        Engine::new(StaticListPolicy::new_with_session_id("planner-1").expect("an Nmtoken"));
+    given.initialize();
+    assert_eq!(given.save().expect("saves").session_id, "planner-1");
+
+    // One that is not an Nmtoken is refused where the machine is built, with
+    // the reason, and no machine is built under another.
+    for (bad, refusal_wanted) in [
+        ("", SessionIdRefusal::Empty),
+        ("two words", SessionIdRefusal::NotANameCharacter(' ')),
+        ("a#b", SessionIdRefusal::NotANameCharacter('#')),
+    ] {
+        let refusal = StaticListPolicy::new_with_session_id(bad)
             .err()
             .unwrap_or_else(|| panic!("{bad:?} was taken as a session id"));
-        assert!(refusal.reason().contains("Nmtoken"), "{bad:?}: {refusal}");
+        assert_eq!(refusal, refusal_wanted, "{bad:?}");
+        assert!(
+            refusal.to_string().contains("Nmtoken"),
+            "{bad:?}: {refusal}"
+        );
     }
 }
 
@@ -739,9 +746,7 @@ const SHARED_REVISED_FIRST_QUEUED: &str = include_str!(
 /// which holds no id, saves again as the shared format-2 text does.
 fn revised_restored(text: &str) -> Engine<StaticSchemaRevisionPolicy> {
     Engine::<StaticSchemaRevisionPolicy>::restore(
-        StaticSchemaRevisionPolicy::new()
-            .with_session_id(ROOT)
-            .expect("an Nmtoken"),
+        StaticSchemaRevisionPolicy::new_with_session_id(ROOT).expect("an Nmtoken"),
         &SavedState::from_json(text).expect("reads"),
     )
     .expect("restores")
@@ -765,11 +770,8 @@ fn json_value(text: &str) -> sce_rust_runtime::json::Value {
 fn a_record_of_a_schema_that_grew_saves_the_text_every_backend_saves() {
     // A delivery of the first revision, as the scenario's first step: the
     // machine is at the third, so it names that revision and the revised shape.
-    let mut engine = Engine::new(
-        StaticSchemaRevisionPolicy::new()
-            .with_session_id(ROOT)
-            .expect("an Nmtoken"),
-    );
+    let mut engine =
+        Engine::new(StaticSchemaRevisionPolicy::new_with_session_id(ROOT).expect("an Nmtoken"));
     engine.initialize();
     engine.raise_external_by_name("reading.revised", r#"{"level":4}"#);
     engine.step();
@@ -962,11 +964,7 @@ const FORMAT1_ENUM: &str = include_str!(
 );
 
 fn layouts() -> Engine<StaticEnumPolicy> {
-    let mut engine = Engine::new(
-        StaticEnumPolicy::new()
-            .with_session_id(ROOT)
-            .expect("an Nmtoken"),
-    );
+    let mut engine = Engine::new(StaticEnumPolicy::new_with_session_id(ROOT).expect("an Nmtoken"));
     engine.initialize();
     engine
 }
@@ -1285,11 +1283,8 @@ const HISTORY_RUN: [&str; 7] = [
 ];
 
 fn history_machine() -> Engine<StaticHistoryPolicy> {
-    let mut engine = Engine::new(
-        StaticHistoryPolicy::new()
-            .with_session_id(ROOT)
-            .expect("an Nmtoken"),
-    );
+    let mut engine =
+        Engine::new(StaticHistoryPolicy::new_with_session_id(ROOT).expect("an Nmtoken"));
     engine.initialize();
     engine
 }
@@ -1513,11 +1508,8 @@ const SHARED_TIMERS_MIDWAY: &str = include_str!(
 const SAVED_AT_MS: u64 = 1_700_000_000_000;
 
 fn timers() -> Engine<StaticTimersPolicy> {
-    let mut engine = Engine::new(
-        StaticTimersPolicy::new()
-            .with_session_id(ROOT)
-            .expect("an Nmtoken"),
-    );
+    let mut engine =
+        Engine::new(StaticTimersPolicy::new_with_session_id(ROOT).expect("an Nmtoken"));
     engine.set_clock(SceClock::Manual(0));
     engine.initialize();
     engine

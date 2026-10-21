@@ -748,28 +748,28 @@ Each step lands with a test that fails without it.
    before anything is built, binds the saved root id, carries the counts on, and resumes each child
    as its start builds it (`do_resume_child`, sharing `build_child_policy` and `track_child` with
    the start) in place of initializing it; a format-1 state still starts its children again. The
-   root's id is drawn when the policy is built (`helpers::session_id`, `getrandom`) or given
-   through `with_session_id`, refused when it is not an Nmtoken. The shared texts moved to
+   root's id is drawn when the policy is built (`new`; `helpers::session_id`, `getrandom`) or
+   given where it is built (`new_with_session_id`), refused there when it is not an Nmtoken; on
+   `wasm32-unknown-unknown` and `no_std`, which have no source of randomness, `new` is not
+   compiled, so the host gives the id as a required argument, and a `no_std` policy holds the
+   `&'static str` it was given (8 bytes of RAM on `thumbv7em-none-eabihf`; the nostd-mcu footprint
+   budget weighs the constructor's check); a parent builds each child under its tree id
+   (`for_child`), and nothing names a session by a counter any more. The shared texts moved to
    `saved/format1/` and `saved/` holds the format-2 texts Rust writes, each root given
    `fixture-root`; the loss tests are turned around (`a_saved_child_session_is_resumed_after_a_restore.rs`,
    `a_static_hybrid_invoke_is_started_again_by_a_restore.rs`, the child's host and params tests),
-   with format 1 kept as the one case a child restarts. Open: the tree fixture
+   with format 1 kept as the one case a child restarts. A child's replies to a drive of it, a
+   delivery included, reach its parent within the drive (section 3), and
+   `nothing_is_in_transit_when_a_tree_is_saved.rs` holds that a save after any host call never
+   meets the transit refusal. Open: the tree fixture
    (`static_invoke_tree.scxml` with a grandchild, the sends and queued events both ways, a
    candidate whose `srcexpr` changed, a start counted twice) and its byte-for-byte text, which
    the refusal tests of a grandchild of another shape and of a child of a later schema revision
    read; two of its items are not yet expressible, an `idlocation` on an `<invoke>` of a
    `sce-static` document (the Rust template reaches a script engine for it) and a host-run
    invocation in a child (the child has no host invoker of its own); the scenario step `restore`;
-   the test that the transit check is never reached, together with draining a child's `#_parent`
-   buffer after a parent delivers to it at once (`deliver_by_name` leaves the child's reply in the
-   buffer until the parent's next `tick`, so a host that calls `step` and saves meets the refusal);
-   the Mesh router of a resumed child, which a restore asks of a parent that has no factory yet;
-   the root id on a target with no source of randomness, where answer 2 has the constructor take it
-   as a required argument: on `wasm32-unknown-unknown` the Rust constructor keeps its signature and
-   draws nothing, so a host that gives no id through `with_session_id` is told at the save and not
-   when it builds the machine (a parent builds its children through the same constructor, so the
-   required form needs a constructor of its own for a child); and a `no_std` build, which holds no
-   session id today and has nothing that reads one (the footprint gate measures the change).
+   and the Mesh router of a resumed child, which a restore asks of a parent that has no factory
+   yet.
 4. **Kotlin.** The same over `SavedState.kt` and `StateMachineEngine`, the root's id included.
    *Exit:* Kotlin saves the tree fixture byte for byte as Rust does, Kotlin restores the text Rust
    saved, and Rust the text Kotlin saved.

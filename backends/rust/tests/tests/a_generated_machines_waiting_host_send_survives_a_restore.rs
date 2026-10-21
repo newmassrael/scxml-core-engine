@@ -101,7 +101,7 @@ fn drive(engine: &mut Engine<Policy>, event: &str) {
 /// A machine that armed its send with `job` 7, saw `bump`, and has waited
 /// `WAITED_MS` of the `WAIT_MS`.
 fn waiting() -> Engine<Policy> {
-    let mut engine = Engine::new(Policy::new().with_session_id(ROOT).expect("an Nmtoken"));
+    let mut engine = Engine::new(Policy::new_with_session_id(ROOT).expect("an Nmtoken"));
     engine.set_clock(SceClock::Manual(0));
     engine.register_event_processor(DECLARED_TYPE, |_| Vec::new());
     engine.initialize();

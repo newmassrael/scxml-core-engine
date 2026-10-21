@@ -86,11 +86,7 @@ fn starts(log: &Log) -> Vec<HostInvokeRequest> {
 /// the session id the shared format-2 fixtures name their root by.
 fn working() -> (Engine<Policy>, Log) {
     let log = Log::default();
-    let mut engine = Engine::new(
-        Policy::new()
-            .with_session_id("fixture-root")
-            .expect("an Nmtoken"),
-    );
+    let mut engine = Engine::new(Policy::new_with_session_id("fixture-root").expect("an Nmtoken"));
     engine.set_clock(SceClock::Manual(0));
     register(&mut engine, &log);
     engine.initialize();
