@@ -778,9 +778,21 @@
             "record"
           ],
           "type": "object"
+        },
+        {
+          "description": "`optional<T>` — a value that is either absent or a value of `T` (docs/adr/0055), over a scalar or a record ([`OptionalElemType`]). Absent is a value of this type and of no other.",
+          "properties": {
+            "optional": {
+              "$ref": "#/definitions/OptionalElemType"
+            }
+          },
+          "required": [
+            "optional"
+          ],
+          "type": "object"
         }
       ],
-      "description": "The type of an algorithm parameter, local or return: a scalar, a record, or a bounded list of either.\n\n⚠ A list is deliberately NOT a [`SceType`] variant. `SceType` is the type of a codec field, an event-schema field, a validator input — surfaces that are scalar-only by contract (see [`AlgorithmConstType`], which keeps its build-time `array<T, N>` out of `SceType` for the same reason). Adding the variant there would hand every one of those surfaces a case to refuse. The algorithm kind is the one place a runtime-length sequence is computed and returned, so the widening lives here.\n\nSerialized untagged: a scalar stays the bare string it always was (`\"int64\"`), so the forge-AST wire is byte-identical for every document that declares no list; a list serializes as `{\"list\": \"int64\"}`."
+      "description": "The type of an algorithm parameter, local or return: a scalar, a record, or a bounded list of either.\n\n⚠ A list is deliberately NOT a [`SceType`] variant. `SceType` is the type of a codec field, an event-schema field, a validator input — surfaces that are scalar-only by contract (see [`AlgorithmConstType`], which keeps its build-time `array<T, N>` out of `SceType` for the same reason). Adding the variant there would hand every one of those surfaces a case to refuse. The algorithm kind is the one place a runtime-length sequence is computed and returned, so the widening lives here.\n\nSerialized untagged: a scalar stays the bare string it always was (`\"int64\"`), so the forge-AST wire is byte-identical for every document that declares no list; a list serializes as `{\"list\": \"int64\"}`.\n\nAn optional value, `optional<T>` (docs/adr/0055), is a constructor of this type for the same reason: a scalar surface never meets a case it would only have to refuse. It serializes as `{\"optional\": \"int64\"}`."
     },
     "BackpressurePolicy": {
       "description": "`<sce:backpressure>` policy — RFC §synth-5-C body. All three policies parse, and the rust template lowers them uniformly (the policy threading into the runtime crate is an implementation concern of `sce-link-runtime`).",
@@ -5205,6 +5217,31 @@
         "link"
       ],
       "type": "object"
+    },
+    "OptionalElemType": {
+      "anyOf": [
+        {
+          "allOf": [
+            {
+              "$ref": "#/definitions/SceType"
+            }
+          ],
+          "description": "A scalar: a fixed-width number, `bool`, `string`, `bytes` or a value of an enum."
+        },
+        {
+          "description": "`record:<alias>` — a value of the struct the aliased event-schema import declares.",
+          "properties": {
+            "record": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "record"
+          ],
+          "type": "object"
+        }
+      ],
+      "description": "The element of an `optional<T>` (docs/adr/0055): a scalar, or a record named by its event-schema import alias.\n\nA list is no element: a list is a variable and never a value, and its resting state, empty, is its own. An optional value is no element either: the carriers that spell absence as one value (JSON's and ECMAScript's `null`, Python's `None`, Kotlin's `T?`) would hold two absences as one.\n\nSerialized untagged, as [`ListElemType`] is: a scalar element stays the bare string (`{\"optional\": \"int64\"}`), and a record one takes the record type's own shape (`{\"optional\": {\"record\": \"Item\"}}`)."
     },
     "OutOfBounds": {
       "description": "Out-of-bounds handling for interpolation.",

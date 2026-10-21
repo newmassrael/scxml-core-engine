@@ -1070,10 +1070,16 @@ fn reject_buffers_as_values(expr: &TypedExpr, source: &str) -> Result<(), Refusa
 /// ⚠ Nothing refused a real there before 2026-09-24: a real assigned to a
 /// `uint16` local generated on every backend, and Rust then assigned an
 /// `f32` to a `u16`, which rustc refuses.
+///
+/// `null` stands only where an optional value is declared (docs/adr/0055), and
+/// no slot this lattice types is one, so a slot that declares a type takes no
+/// `null`. Until 2026-10-21 it was admitted as an unknown value is, and
+/// `<data sce:type="int64" expr="null"/>` was judged fit.
 pub(crate) fn slot_admits(slot: InferredType, got: InferredType) -> bool {
     use InferredType as T;
     match (slot, got) {
-        (T::Unknown | T::Null, _) | (_, T::Unknown | T::Null) => true,
+        (T::Unknown | T::Null, _) | (_, T::Unknown) => true,
+        (_, T::Null) => false,
         (slot, got) if slot.is_integer_like() => got.is_integer_like(),
         (slot, got) if slot.is_numeric() => got.is_numeric(),
         (T::Bool, got) => got == T::Bool,

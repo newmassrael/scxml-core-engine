@@ -3925,6 +3925,28 @@ names a field of generated code, so it is held to the code identifier
 grammar of §2.14, as a forge document's is. A `<data sce:kind>` declares
 a kind, not a variable, and keeps its own rules.
 
+**Optional variables** (docs/adr/0055). `sce:type="optional<T>"` (in XML
+`optional&lt;T&gt;`) declares a variable that is either absent or a value of `T`:
+a scalar, a value of an enum the document imports (`optional<enum:Status>`) or a
+record of an event schema it imports (`optional<record:Item>`). It declares its
+initial value as every variable does, `null` for absent; an optional `string` or
+`bytes` declares its `sce:capacity`, the bound of the value it holds when present.
+What may stand inside is that closed set, so a nested optional, a list inside one
+and an alias the document does not import are refused on the `sce:type` as
+`validation/invalid-attribute`, naming the set; a list holds no optional element
+(`list<optional<T>>` is `validation/attribute-rule-violated`). Every other position
+— an event schema's field, an algorithm's slot, a codec's entry — refuses
+`optional<…>` by name as `validation/attribute-rule-violated` until the step of the
+ADR that admits it there. The model carries the type (`{"optional": "int64"}` in the
+forge AST), and no backend lowers it yet: each of the six and the Interpreter's
+lowering refuses a document that declares one, by name, as
+`generate/unsupported-feature` ("an optional value has no <language> lowering
+yet"), and nothing about the value is judged until then. `null` stands only where an
+optional value is declared: `<data sce:type="int64" expr="null"/>` and an
+`<assign>` of `null` to an `int64` are `expression/type-mismatch`, where until
+2026-10-21 they were judged fit. `sce-build/tests/an_optional_value_is_declared_by_its_type.rs`
+holds this.
+
 **Record variables.** `sce:type="record:<alias>"` holds a variable in the
 event-schema the document imports as `<alias>` — the record an algorithm's
 local is held in (SCE_FORGE.md §4.12), by the same rules. It is built whole

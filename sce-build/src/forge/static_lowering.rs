@@ -664,6 +664,14 @@ pub trait StaticTarget {
     fn lowers_state_calls(&self) -> bool {
         false
     }
+    /// Whether this target lowers a variable that holds an optional value
+    /// (docs/adr/0055). A target that does not refuses the document that
+    /// declares one, by name, rather than generate a machine whose variable has
+    /// no type that can hold absence. Each target answers `true` in the step that
+    /// lowers the type on it.
+    fn lowers_optional(&self) -> bool {
+        false
+    }
     /// How the state argument `arg` is handed to the adapter of its call, given
     /// `held`: how this target spells the variable, payload or loop item that
     /// holds it — the field a variable renames to, the payload accessor, the
@@ -2997,6 +3005,26 @@ pub fn lower(
         return Ok(StaticLowering::default());
     };
     let lang = target.name();
+    // An optional value (docs/adr/0055) is refused before anything reads the
+    // variables' types, on every target that does not lower it yet.
+    if !target.lowers_optional() {
+        if let Some(variable) = scope.variables.iter().find(|v| {
+            v.value_type
+                .as_ref()
+                .and_then(crate::forge::model::AlgorithmValueType::optional_elem)
+                .is_some()
+        }) {
+            return Err(GenerateError::unsupported(format!(
+                "<data id=\"{}\" sce:type=\"{}\">: an optional value has no {lang} lowering yet",
+                variable.id,
+                variable
+                    .value_type
+                    .as_ref()
+                    .map(crate::forge::model::AlgorithmValueType::as_attr)
+                    .unwrap_or_default()
+            )));
+        }
+    }
     let variables = &scope.variables;
     let schemas = model.imported_event_schemas.clone();
     let records = model.imported_records.clone();

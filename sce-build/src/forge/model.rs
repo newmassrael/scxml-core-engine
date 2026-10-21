@@ -3826,6 +3826,10 @@ pub struct InlineKind {
 /// Serialized untagged: a scalar stays the bare string it always was
 /// (`"int64"`), so the forge-AST wire is byte-identical for every document
 /// that declares no list; a list serializes as `{"list": "int64"}`.
+///
+/// An optional value, `optional<T>` (docs/adr/0055), is a constructor of this
+/// type for the same reason: a scalar surface never meets a case it would only
+/// have to refuse. It serializes as `{"optional": "int64"}`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(untagged)]
@@ -3850,31 +3854,62 @@ pub enum AlgorithmValueType {
         #[serde(rename = "record")]
         alias: String,
     },
+    /// `optional<T>` — a value that is either absent or a value of `T`
+    /// (docs/adr/0055), over a scalar or a record ([`OptionalElemType`]).
+    /// Absent is a value of this type and of no other.
+    Optional {
+        #[serde(rename = "optional")]
+        elem: OptionalElemType,
+    },
 }
 
 impl AlgorithmValueType {
-    /// The scalar type, or `None` for a list or a record.
+    /// The scalar type, or `None` for a list, a record or an optional value.
+    /// An optional scalar is not a scalar: a value of it may be absent.
     pub fn scalar(&self) -> Option<&SceType> {
         match self {
             Self::Scalar(t) => Some(t),
-            Self::List { .. } | Self::Record { .. } => None,
+            Self::List { .. } | Self::Record { .. } | Self::Optional { .. } => None,
         }
     }
 
-    /// The element type of a list, or `None` for a scalar or a record.
+    /// The element type of a list, or `None` for a scalar, a record or an
+    /// optional value.
     pub fn list_elem(&self) -> Option<&ListElemType> {
         match self {
             Self::List { elem } => Some(elem),
-            Self::Scalar(_) | Self::Record { .. } => None,
+            Self::Scalar(_) | Self::Record { .. } | Self::Optional { .. } => None,
         }
     }
 
-    /// The import alias a record names, or `None` for a scalar or a list.
+    /// The import alias a record names, or `None` for a scalar, a list or an
+    /// optional value. An optional record is not a record: it may be absent.
     pub fn record_alias(&self) -> Option<&str> {
         match self {
             Self::Record { alias } => Some(alias),
-            Self::Scalar(_) | Self::List { .. } => None,
+            Self::Scalar(_) | Self::List { .. } | Self::Optional { .. } => None,
         }
+    }
+
+    /// The element of an optional value, or `None` for any other type.
+    pub fn optional_elem(&self) -> Option<&OptionalElemType> {
+        match self {
+            Self::Optional { elem } => Some(elem),
+            Self::Scalar(_) | Self::List { .. } | Self::Record { .. } => None,
+        }
+    }
+
+    /// The prefix of an optional type's spelling, `optional<T>`.
+    pub const OPTIONAL_PREFIX: &'static str = "optional<";
+
+    /// What stands inside `optional<…>` in `text`, untrimmed, or `None` when
+    /// `text` is not written as an optional type. The one reading of the
+    /// spelling, so the parser, the statechart's rules and [`Self::from_attr`]
+    /// cannot disagree about what is written as one.
+    pub fn optional_inner(text: &str) -> Option<&str> {
+        text.trim()
+            .strip_prefix(Self::OPTIONAL_PREFIX)
+            .and_then(|t| t.strip_suffix('>'))
     }
 
     /// Whether a list may hold `elem`. Fixed-width numbers and `bool` only:
@@ -3898,12 +3933,17 @@ impl AlgorithmValueType {
     }
 
     /// Read the `type=` spelling [`Self::as_attr`] writes: a scalar
-    /// [`SceType`] keyword, or `list<T>` over an admitted element. `None` for
-    /// anything else. The document parser reads the same grammar through
-    /// `parser::read_algorithm_value_type`, which adds the refusal a document
-    /// needs; this is the plain inverse for text SCE wrote itself.
+    /// [`SceType`] keyword, `list<T>` over an admitted element, `record:<alias>`
+    /// or `optional<T>` over a scalar or a record. `None` for anything else.
+    /// The document parser reads the same grammar through
+    /// `parser::read_algorithm_value_type` and `parser::read_static_value_type`,
+    /// which add the refusals a document needs; this is the plain inverse for
+    /// text SCE wrote itself.
     pub fn from_attr(s: &str) -> Option<Self> {
         let s = s.trim();
+        if let Some(inner) = Self::optional_inner(s) {
+            return OptionalElemType::from_attr(inner).map(|elem| Self::Optional { elem });
+        }
         if let Some(alias) = s.strip_prefix(Self::RECORD_PREFIX) {
             let alias = alias.trim();
             return (!alias.is_empty()).then(|| Self::Record {
@@ -3932,13 +3972,80 @@ impl AlgorithmValueType {
         matches!(self, Self::Scalar(SceType::Bytes) | Self::List { .. })
     }
 
-    /// The `type=` attribute spelling: `int64`, `list<int64>`, or
-    /// `record:<alias>`.
+    /// The `type=` attribute spelling: `int64`, `list<int64>`,
+    /// `record:<alias>`, or `optional<int64>`.
     pub fn as_attr(&self) -> String {
         match self {
             Self::Scalar(t) => t.as_attr().to_string(),
             Self::List { elem } => format!("{}{}>", Self::LIST_PREFIX, elem.as_attr()),
             Self::Record { alias } => format!("{}{alias}", Self::RECORD_PREFIX),
+            Self::Optional { elem } => format!("{}{}>", Self::OPTIONAL_PREFIX, elem.as_attr()),
+        }
+    }
+}
+
+/// The element of an `optional<T>` (docs/adr/0055): a scalar, or a record
+/// named by its event-schema import alias.
+///
+/// A list is no element: a list is a variable and never a value, and its
+/// resting state, empty, is its own. An optional value is no element either:
+/// the carriers that spell absence as one value (JSON's and ECMAScript's
+/// `null`, Python's `None`, Kotlin's `T?`) would hold two absences as one.
+///
+/// Serialized untagged, as [`ListElemType`] is: a scalar element stays the
+/// bare string (`{"optional": "int64"}`), and a record one takes the record
+/// type's own shape (`{"optional": {"record": "Item"}}`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(untagged)]
+pub enum OptionalElemType {
+    /// A scalar: a fixed-width number, `bool`, `string`, `bytes` or a value of
+    /// an enum.
+    Scalar(SceType),
+    /// `record:<alias>` — a value of the struct the aliased event-schema
+    /// import declares.
+    Record {
+        #[serde(rename = "record")]
+        alias: String,
+    },
+}
+
+impl OptionalElemType {
+    /// Read an element spelling — a scalar keyword, `enum:<alias>` or
+    /// `record:<alias>`. `None` for anything else, a list and an optional
+    /// value among them.
+    pub fn from_attr(s: &str) -> Option<Self> {
+        let s = s.trim();
+        if let Some(alias) = s.strip_prefix(AlgorithmValueType::RECORD_PREFIX) {
+            let alias = alias.trim();
+            return (!alias.is_empty()).then(|| Self::Record {
+                alias: alias.to_string(),
+            });
+        }
+        SceType::from_attr(s).map(Self::Scalar)
+    }
+
+    /// The element spelling inside `optional<…>`.
+    pub fn as_attr(&self) -> String {
+        match self {
+            Self::Scalar(t) => t.as_attr(),
+            Self::Record { alias } => format!("{}{alias}", AlgorithmValueType::RECORD_PREFIX),
+        }
+    }
+
+    /// The scalar element, or `None` for a record one.
+    pub fn scalar(&self) -> Option<&SceType> {
+        match self {
+            Self::Scalar(t) => Some(t),
+            Self::Record { .. } => None,
+        }
+    }
+
+    /// The import alias of a record element, or `None` for a scalar one.
+    pub fn record_alias(&self) -> Option<&str> {
+        match self {
+            Self::Record { alias } => Some(alias),
+            Self::Scalar(_) => None,
         }
     }
 }

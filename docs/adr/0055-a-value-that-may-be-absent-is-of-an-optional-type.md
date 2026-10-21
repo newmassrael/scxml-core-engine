@@ -538,9 +538,9 @@ Each step lands alone, refuses by name what it does not yet lower (`generate/uns
 by), and carries the tests that hold it. Expected values in every scenario are derived from the
 documents, not observed from a backend.
 
-1. **The type in the model and the grammar** (implemented with this ADR). `AlgorithmValueType::
-   Optional` over `OptionalElemType`; the statechart variable's reader (`read_optional_value_type`)
-   with the element and nesting rules; every other position refusing `optional<…>` by name
+1. **The type in the model and the grammar** (implemented with this ADR).
+   `AlgorithmValueType::Optional` over `OptionalElemType`; the statechart variable's reader
+   (`read_static_value_type`) with the element and nesting rules; every other position refusing `optional<…>` by name
    (`read_type_attr`), a list of optional elements refused in `read_algorithm_value_type`; an
    optional `string` or `bytes` variable bounded by `sce:capacity`; the `optionalValueType` of
    `schemas/sce-forge-ext.xsd`; the forge-AST shape (`apis/forge-ast.v1.schema.json`); every

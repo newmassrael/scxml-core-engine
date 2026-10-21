@@ -306,6 +306,14 @@ fn value_signature(
             AlgorithmValueType::List {
                 elem: ListElemType::Record { alias },
             } => Ok(StaticSlot::RecordList(record(alias)?)),
+            // The algorithm's own reader refuses an optional slot until a
+            // statechart can hand one over (docs/adr/0055), so an algorithm that
+            // declares one never reaches here; were it to, it is refused by name.
+            AlgorithmValueType::Optional { .. } => Err(format!(
+                "its {name} is of type {}, and an optional value is not handed to or from an \
+                 algorithm yet (docs/adr/0055)",
+                ty.as_attr()
+            )),
         }
     };
     let params = signature

@@ -798,6 +798,8 @@ fn holds(ty: &AlgorithmValueType) -> bool {
             elem: ListElemType::Record { .. },
         }
         | AlgorithmValueType::Record { .. } => true,
+        // An optional value has no lowering here yet (docs/adr/0055).
+        AlgorithmValueType::Optional { .. } => false,
     }
 }
 
@@ -859,8 +861,12 @@ pub(crate) fn lower(m: &AlgorithmModel, imports: &Imports) -> Result<String, Gen
             ))
         }
         Some(AlgorithmValueType::Scalar(scalar)) => InferredType::from_sce_type(scalar),
-        // A list or a record is returned by name, never judged as an operand.
-        Some(AlgorithmValueType::List { .. }) => InferredType::Unknown,
+        // A list or a record is returned by name, never judged as an operand. An
+        // optional return is refused above (`holds`), and is named here only so
+        // the reading stays whole.
+        Some(AlgorithmValueType::List { .. } | AlgorithmValueType::Optional { .. }) => {
+            InferredType::Unknown
+        }
         Some(AlgorithmValueType::Record { alias }) => {
             let Some(record) = imports.record(alias) else {
                 return Err(refuse(

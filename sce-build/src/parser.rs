@@ -1015,7 +1015,14 @@ fn enforce_static_datamodel(
             //
             // A byte string is bounded the same way, in bytes (docs/adr/0005,
             // decision 2): no default stands in for a bound the author left out.
-            let bounded = match crate::sce_attr::read(&node, "type").map(str::trim) {
+            //
+            // An optional text or byte string (docs/adr/0055) is bounded as the
+            // value it holds when present is.
+            let bounded = match crate::sce_attr::read(&node, "type").map(|written| {
+                crate::forge::model::AlgorithmValueType::optional_inner(written)
+                    .unwrap_or(written)
+                    .trim()
+            }) {
                 Some("string") => Some(("string", "UTF-8 bytes")),
                 Some("bytes") => Some(("bytes", "bytes")),
                 _ => None,
@@ -3285,34 +3292,21 @@ impl SCXMLParser {
         // read by the value-type reader that judges the alias against this
         // document's event-schema imports, and is built whole from its
         // `<sce:set>` children. A `list<T>` variable (E8's list) is read by the
-        // same reader, which holds its element to the types a list admits.
+        // same reader, which holds its element to the types a list admits, and so
+        // is an `optional<T>` variable (docs/adr/0055), which holds what may
+        // stand inside it to the scalars and the enums and records the document
+        // imports.
         let element = format!("<data id=\"{id}\">");
         let value_type = crate::sce_attr::read(data, "type")
             .filter(|_| model.datamodel == Datamodel::SceStatic)
             .map(|text| {
-                let text_trimmed = text.trim();
-                if text_trimmed.starts_with(crate::forge::model::AlgorithmValueType::RECORD_PREFIX)
-                    || text_trimmed
-                        .starts_with(crate::forge::model::AlgorithmValueType::LIST_PREFIX)
-                {
-                    crate::forge::parser::read_algorithm_value_type(
-                        data,
-                        source_name,
-                        element.clone(),
-                        "sce:type",
-                        text,
-                    )
-                } else {
-                    crate::forge::parser::read_type_attr(
-                        data,
-                        source_name,
-                        crate::forge::parser::TypeGrammar::ScalarOrEnumRef,
-                        element.clone(),
-                        "sce:type",
-                        text,
-                    )
-                    .map(crate::forge::model::AlgorithmValueType::Scalar)
-                }
+                crate::forge::parser::read_static_value_type(
+                    data,
+                    source_name,
+                    element.clone(),
+                    "sce:type",
+                    text,
+                )
             })
             .transpose()?;
         let record_fields = if value_type

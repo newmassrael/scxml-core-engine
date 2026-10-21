@@ -6550,7 +6550,10 @@ fn algorithm_record_slots(
     let slot = |ty: &AlgorithmValueType| -> Option<CalleeSlot> {
         match ty {
             AlgorithmValueType::Scalar(t) => Some(CalleeSlot::Scalar(t.clone())),
-            AlgorithmValueType::List { .. } => None,
+            // An algorithm's reader refuses an optional slot (docs/adr/0055), so
+            // none is called; a callee that held one would keep its host-only
+            // refusal, as a list does.
+            AlgorithmValueType::List { .. } | AlgorithmValueType::Optional { .. } => None,
             AlgorithmValueType::Record { alias } => {
                 let imp = callee_imports.iter().find(|i| {
                     i.alias == *alias && matches!(i.kind, forge::model::ForgeKind::EventSchema)

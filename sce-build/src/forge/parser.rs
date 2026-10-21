@@ -11537,6 +11537,24 @@ pub(crate) fn read_type_attr(
     attr: &str,
     text: &str,
 ) -> Result<SceType, Located<ForgeError>> {
+    // An optional value (docs/adr/0055) is read where a `sce-static`
+    // statechart's variable is ([`read_static_value_type`]); every position
+    // that reads its type here takes none, and says so by name rather than
+    // offering the scalars as if the type were misspelled.
+    if text.trim().starts_with(AlgorithmValueType::OPTIONAL_PREFIX) {
+        return Err(located(
+            node,
+            doc_name,
+            ValidationError::AttributeRuleViolated {
+                element,
+                attr: attr.into(),
+                value: value_as_written(node, attr, text),
+                rule: "an optional value (docs/adr/0055) is held by a `sce-static` \
+                       statechart's variable, and this position does not take one"
+                    .into(),
+            },
+        ));
+    }
     let aliases = match grammar {
         TypeGrammar::Scalar => Vec::new(),
         TypeGrammar::ScalarOrEnumRef => enum_import_aliases(node),
@@ -11600,6 +11618,26 @@ pub(crate) fn read_algorithm_value_type(
         )
         .map(AlgorithmValueType::Scalar);
     };
+    // A list holds no optional element (docs/adr/0055): its bound in elements
+    // is a bound in bytes only while each element is one value of its width.
+    if inner
+        .trim()
+        .starts_with(AlgorithmValueType::OPTIONAL_PREFIX)
+    {
+        return Err(located(
+            node,
+            doc_name,
+            ValidationError::AttributeRuleViolated {
+                element,
+                attr: attr.into(),
+                value: value_as_written(node, attr, text),
+                rule: "a list element is a fixed-width number, a bool or a record, never an \
+                       optional value — a list of values that may be absent is a list of \
+                       records with an optional field"
+                    .into(),
+            },
+        ));
+    }
     // A list of records (SCE_FORGE.md §4.12): the element is judged by the
     // record rule, so a list of records is exactly as closed as one record.
     if let Some(alias) = inner.trim().strip_prefix(AlgorithmValueType::RECORD_PREFIX) {
@@ -11635,6 +11673,61 @@ pub(crate) fn read_algorithm_value_type(
     Ok(AlgorithmValueType::List {
         elem: ListElemType::Scalar(elem),
     })
+}
+
+/// Read a `sce-static` statechart variable's `sce:type`: what
+/// [`read_algorithm_value_type`] reads — a scalar or a value of an imported
+/// enum, `record:<alias>`, `list<T>` — and `optional<T>` (docs/adr/0055) over a
+/// scalar, a value of an imported enum or a record of an imported event schema.
+///
+/// What may stand inside `optional<…>` is a closed set the document decides (its
+/// enum and event-schema imports), so anything else written there — a misspelled
+/// scalar, an alias nothing imports, a list, another optional — is refused with
+/// that set as its candidates, each spelled as the whole type. A nested optional
+/// has no carrier that holds two absences apart, and a list is a variable, never
+/// a value, whose resting state, empty, is its own.
+pub(crate) fn read_static_value_type(
+    node: &roxmltree::Node,
+    doc_name: &str,
+    element: String,
+    attr: &str,
+    text: &str,
+) -> Result<AlgorithmValueType, Located<ForgeError>> {
+    if !text.trim().starts_with(AlgorithmValueType::OPTIONAL_PREFIX) {
+        return read_algorithm_value_type(node, doc_name, element, attr, text);
+    }
+    let enums = enum_import_aliases(node);
+    let records = import_aliases_of(node, ForgeKind::EventSchema);
+    let elem = AlgorithmValueType::optional_inner(text)
+        .and_then(OptionalElemType::from_attr)
+        .filter(|elem| match elem {
+            OptionalElemType::Scalar(SceType::Enum(reference)) => enums.contains(&reference.alias),
+            OptionalElemType::Scalar(_) => true,
+            OptionalElemType::Record { alias } => records.contains(alias),
+        });
+    elem.map(|elem| AlgorithmValueType::Optional { elem })
+        .ok_or_else(|| {
+            let mut inside = SceType::scalar_attr_names();
+            inside.extend(enums.iter().map(|alias| format!("enum:{alias}")));
+            inside.extend(
+                records
+                    .iter()
+                    .map(|alias| format!("{}{alias}", AlgorithmValueType::RECORD_PREFIX)),
+            );
+            located(
+                node,
+                doc_name,
+                ValidationError::InvalidAttribute {
+                    element,
+                    attr: attr.into(),
+                    value: value_as_written(node, attr, text),
+                    allowed: inside
+                        .into_iter()
+                        .map(|t| format!("{}{t}>", AlgorithmValueType::OPTIONAL_PREFIX))
+                        .collect(),
+                },
+            )
+        })
 }
 
 /// The alias of a `record:<alias>` type — a record, or a list's record

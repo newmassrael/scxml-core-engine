@@ -148,14 +148,30 @@
     </xs:union>
   </xs:simpleType>
 
+  <!-- docs/adr/0055: `optional<T>`, a value that is either absent or a value
+       of `T` — a scalar `sceType`, a value of an imported enum or a record of
+       an imported event schema. Authored as `optional&lt;int64&gt;` in XML.
+       Lexical, as the list pattern is: the parser
+       (`read_static_value_type`) judges the alias against the document's
+       imports, and refuses a nested optional and a list inside one with the
+       set that may stand there. A `sce-static` statechart's variable holds
+       one; every other position's parser refuses it by name. -->
+  <xs:simpleType name="optionalValueType">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="optional&lt;\s*(uint8|uint16|uint32|uint64|int8|int16|int32|int64|float32|float64|bool|string|bytes|enum:[A-Za-z_][A-Za-z0-9_]*|record:[A-Za-z_][A-Za-z0-9_]*)\s*&gt;"/>
+    </xs:restriction>
+  </xs:simpleType>
+
   <!-- The global `sce:type` — every type grammar a `<data>` may be written in:
        a field's (`sceTypeOrEnumRef`), and under `datamodel="sce-static"` a
-       statechart variable's, which adds `list<T>` and `record:<alias>`
-       (SCE Accepted Subset §2.15). One global attribute cannot be narrowed by
-       where it sits in XSD 1.0, so each position's parser holds it to that
-       position's grammar (`read_type_attr`, `read_algorithm_value_type`). -->
+       statechart variable's, which adds `list<T>`, `record:<alias>` and
+       `optional<T>` (SCE Accepted Subset §2.15, docs/adr/0055). One global
+       attribute cannot be narrowed by where it sits in XSD 1.0, so each
+       position's parser holds it to that position's grammar
+       (`read_type_attr`, `read_algorithm_value_type`,
+       `read_static_value_type`). -->
   <xs:simpleType name="dataValueType">
-    <xs:union memberTypes="sce:sceTypeOrEnumRef sce:algorithmValueType"/>
+    <xs:union memberTypes="sce:sceTypeOrEnumRef sce:algorithmValueType sce:optionalValueType"/>
   </xs:simpleType>
 
   <!-- SCE Forge Section 3.3: Data flow direction -->

@@ -922,6 +922,13 @@ name = "an_enum_is_read_as_its_number_and_back"
 path = "tests/an_enum_is_read_as_its_number_and_back.rs"
 required-features = ["cli"]
 
+# An optional value is declared by its type (docs/adr/0055, step 1). It runs
+# `sce-codegen check`, `generate` and `lower`, so it carries the `cli` gate.
+[[test]]
+name = "an_optional_value_is_declared_by_its_type"
+path = "tests/an_optional_value_is_declared_by_its_type.rs"
+required-features = ["cli"]
+
 [[test]]
 name = "a_statechart_calls_the_forge_kinds_that_are_functions"
 path = "tests/a_statechart_calls_the_forge_kinds_that_are_functions.rs"

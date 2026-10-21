@@ -48,7 +48,7 @@ use crate::forge::expr;
 use crate::forge::expression_site::ExpressionSite;
 use crate::forge::model::{
     AlgorithmConstType, AlgorithmStmt, AlgorithmValueType, CodecVariant, Cycle, ForgeDocument,
-    ForgeField, ForgeImport, ListElemType, SceType,
+    ForgeField, ForgeImport, ListElemType, OptionalElemType, SceType,
 };
 
 /// The aliases of `imports` that `document` or its `cycles` name.
@@ -116,6 +116,11 @@ impl Names {
             | AlgorithmValueType::List {
                 elem: ListElemType::Record { alias },
             } => self.name(alias),
+            // An optional value names what its element names (docs/adr/0055).
+            AlgorithmValueType::Optional { elem } => match elem {
+                OptionalElemType::Scalar(t) => self.ty(t),
+                OptionalElemType::Record { alias } => self.name(alias),
+            },
         }
     }
 
