@@ -78,8 +78,9 @@
       }
     },
     "sessionid": {
-      "description": "The session's own id, kept by a restore: the events held in the tree name sessions by it (the `origin` of a child's event queued in its parent, of a parent's event queued in its child). A child's is derived from the tree alone (its parent's id, the state, the <invoke>'s id and the start), the same on every backend. Empty for a session that has none, as a sce-static root with no script engine.",
-      "type": "string"
+      "description": "The session's own id, an XML 1.0 Nmtoken as W3C SCXML 5.10 makes _sessionid, kept by a restore: the events held in the tree name sessions by it (the `origin` of a child's event queued in its parent, of a parent's event queued in its child), and so does a peer's #_scxml_<id> address. A root's is bound when its machine is created, given by the host or drawn by the runtime as a UUID version 4 in lowercase hexadecimal with hyphens, and a restore binds the saved one in its place. A child's is its parent's id, a `.`, and the id the child was started under, derived from the tree alone and the same on every backend (docs/adr/0045). Never empty. The pattern refuses the empty text and every character up to U+00FF that is not a name character; the runtimes hold the whole Nmtoken production.",
+      "type": "string",
+      "pattern": "^[^\\u0000-\\u002C\\u002F\\u003B-\\u0040\\u005B-\\u005E\\u0060\\u007B-\\u00B6\\u00B8-\\u00BF\\u00D7\\u00F7]+$"
     },
     "configuration": {
       "description": "The active configuration as state ids, in document order. A restore refuses one that is not a configuration of the document.",

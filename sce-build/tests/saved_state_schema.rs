@@ -410,12 +410,14 @@ fn session(shape: char, sessionid: &str, invokes: serde_json::Value) -> serde_js
 /// waiting for each direction of the link, a child's event queued in its
 /// parent, an invoke started twice and one whose id was generated.
 fn a_tree() -> serde_json::Value {
-    let grandchild = session('c', "", serde_json::json!([]));
+    // The root's id given, as a host may give it; each child's its parent's id,
+    // a `.` and the id it was started under (docs/adr/0045).
+    let grandchild = session('c', "planner-1.worker.busy.1.helper", serde_json::json!([]));
     let mut child = session(
         'b',
-        "s.working.worker.2",
+        "planner-1.worker",
         serde_json::json!([{
-            "id": "helper", "start": "1", "invokeid": "s.working.worker.2.busy.helper.1",
+            "id": "helper", "start": "1", "invokeid": "busy.1.helper",
             "document": "static_hybrid_holder", "session": grandchild
         }]),
     );
@@ -423,7 +425,7 @@ fn a_tree() -> serde_json::Value {
     child["invokestarts"] = serde_json::json!({"helper": "1"});
     child["pending"] = serde_json::json!([{
         "due": "1700000005000", "act": "parent", "event": "progress",
-        "data": "{\"n\":1}", "sendid": "report", "origin": "s.working.worker.2"
+        "data": "{\"n\":1}", "sendid": "report", "origin": "planner-1.worker"
     }]);
     child["external"] = serde_json::json!([{
         "name": "go", "data": "", "type": "external", "sendid": "",
@@ -431,7 +433,7 @@ fn a_tree() -> serde_json::Value {
     }]);
     let mut root = session(
         'a',
-        "",
+        "planner-1",
         serde_json::json!([{
             "id": "worker", "start": "2", "invokeid": "worker",
             "document": "static_invoke_child", "session": child
@@ -444,11 +446,11 @@ fn a_tree() -> serde_json::Value {
     });
     root["pending"] = serde_json::json!([{
         "due": "1700000006000", "act": "child", "invokeid": "worker", "event": "nudge",
-        "data": "", "sendid": "poke", "origin": ""
+        "data": "", "sendid": "poke", "origin": "planner-1"
     }]);
     root["external"] = serde_json::json!([{
         "name": "done.step", "data": "", "type": "external", "sendid": "",
-        "origin": "s.working.worker.2", "origintype": "http://www.w3.org/TR/scxml/#SCXMLEventProcessor",
+        "origin": "planner-1.worker", "origintype": "http://www.w3.org/TR/scxml/#SCXMLEventProcessor",
         "invokeid": "worker", "hostinvoketoken": null
     }]);
     root
@@ -480,7 +482,21 @@ fn the_format_2_schema_refuses_what_no_backend_writes() {
     );
 
     type Change = fn(&mut serde_json::Value);
-    let broken: [(&str, Change); 16] = [
+    let broken: [(&str, Change); 20] = [
+        // docs/adr/0045, "Questions the owner answered" 2: a session id is an
+        // Nmtoken, so never empty and never a text an address cannot carry.
+        ("a root with the empty session id", |t| {
+            t["sessionid"] = serde_json::json!("")
+        }),
+        ("a grandchild with the empty session id", |t| {
+            t["invokes"][0]["session"]["invokes"][0]["session"]["sessionid"] = serde_json::json!("")
+        }),
+        ("a session id with a space in it", |t| {
+            t["sessionid"] = serde_json::json!("planner 1")
+        }),
+        ("a session id with a character no name holds", |t| {
+            t["invokes"][0]["session"]["sessionid"] = serde_json::json!("planner-1#worker")
+        }),
         ("format 1", |t| t["format"] = serde_json::json!(1)),
         (
             "a running child named by its id alone, as format 1 does",
