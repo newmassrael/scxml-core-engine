@@ -704,6 +704,7 @@ pub fn forge_unit_dir(canonical: &str, lang: crate::generator::Language) -> std:
         Language::Cpp | Language::Rust | Language::Python | Language::C11 => {
             std::path::PathBuf::new()
         }
+        Language::Swift => no_swift_emitter("forge_unit_dir"),
     }
 }
 

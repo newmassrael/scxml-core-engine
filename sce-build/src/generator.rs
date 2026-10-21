@@ -2643,6 +2643,7 @@ pub fn machine_unit_dir(
         }
         Language::Go => PathBuf::from(go_machine_package(name)),
         Language::Cpp | Language::Rust | Language::Python | Language::C11 => PathBuf::new(),
+        Language::Swift => crate::forge::codegen_matrix::no_swift_emitter("machine_unit_dir"),
     }
 }
 
