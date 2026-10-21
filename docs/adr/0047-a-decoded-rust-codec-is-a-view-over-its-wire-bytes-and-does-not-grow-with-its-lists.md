@@ -1,6 +1,7 @@
 # ADR 0047 — A decoded Rust codec is a view over its wire bytes, and does not grow with its lists
 
-- Status: Proposed (2026-10-21). A draft for the owner: the decision it asks for is in "Decisions to take", and nothing here is built.
+- Status: Proposed (2026-10-21). A draft for the owner: the decision it asks for is in "Decisions to take". Step 0 (a
+  hand prototype) is done and its result is below; nothing is built in the generator.
 - Date: 2026-10-21
 - Scope: `tools/codegen/templates/forge/rust/codec.rs.jinja2` and the Rust half of `sce-build/src/forge/generator.rs`
   (the field, list, embed and variant statements); `backends/rust/forge-runtime/src/codec.rs` (a list view and its
@@ -102,6 +103,30 @@ Each step is gated on a number, taken the way the existing ones were: the genera
    no list copied on its decode path.
 3. **The downstream consumer** takes the view and measures. Gate: its footprint check passes without a rebase of its
    baseline, or the rebase is named and accepted.
+
+## Step 0 result (2026-10-21)
+
+A prototype was written by hand, outside the generator, over the generated Zenoh request, query, put and delete
+codecs: a `ListView` for the two kinds of list (a chain that ends on a flag, with the per-entry state one of them
+carries, and a list the wire counts), and views for the four codecs, including the field that is gated on the chain
+holding an entry of one id (answered during the scan, as decision 2 says). Built for `thumbv7em-none-eabihf` at
+`opt-level = "s"`; times are on the development host (x86-64), for comparison between rows and not for the target.
+
+| Gate | Result |
+|---|---|
+| A view is small | `Request` 1792 bytes, `RequestView` 184; `Query` 1456, `QueryView` 40 |
+| It does not move with a bound | `max-depth` 8 to 16 in the codec documents: `Request` 3456 and `Query` 2864 bytes, the views 184 and 40, unchanged |
+| A decode copies no list | the view's decode makes 9 copy calls of at most 71 bytes (the arm views moved into the enum); the eager `decode_into` makes 2 of 22 into a 1792-byte destination |
+| It decides as the eager decode does | a valid frame at six list lengths reads equal; every prefix of two frames is refused with the same error; 300,000 randomly damaged frames split 190,585 decoded alike (entries compared one by one) and 109,415 refused with the same error |
+| What a walk costs | request with 3 and 2 entries: eager `decode` 138 ns, eager `decode_into` into a reused destination 96, view built 75, view built and every list walked once 165, walked twice 235 |
+
+The first four gates pass. The last one is the finding: **a view is cheaper to build and dearer to read.** It is
+faster than `decode_into` only while its lists are not read (75 against 96 ns), and a consumer that reads every entry
+once is slower with it (165 against 96 ns), because the walk decodes the entries the eager decode had decoded already.
+So the case for the view is footprint and independence from `sce:max-count`, not time, and decision 1 of "Decisions to
+take" is the whole question: if a consumer reads most of what it decodes and its RAM is not the limit, the built
+mitigation is the better design. The prototype used small entries (the default arms); entries with a heavier body
+would move the walk rows, and the generator work should not start on these numbers alone.
 
 ## What this does not do
 
