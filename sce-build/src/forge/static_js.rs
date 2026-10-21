@@ -250,6 +250,46 @@ fn variant_list(variants: &[&str]) -> String {
     format!("[{}]", names.join(", "))
 }
 
+/// The type the library's `field` holds a field whose present value is of `ty`
+/// to: the names of its variants for an enum, `variants`, and the type's own
+/// name otherwise. `None` for a type `field` has no reader for.
+fn field_kind(ty: &SceType, variants: &[&str]) -> Option<String> {
+    Some(match ty {
+        SceType::Enum(_) => variant_list(variants),
+        ty => format!("'{}'", InferredType::from_sce_type(ty).declared_spelling()?),
+    })
+}
+
+/// The name the function handed to the library's `mapPresent` binds a present
+/// value to. What the function spells reads only that name and the library,
+/// so no variable of the document it would shadow is read there.
+const PRESENT_NAME: &str = "scePresent";
+
+/// `value`, an optional value, with `map` applied to its present value and
+/// `null` kept (docs/adr/0055): the library's `mapPresent`, or `value` itself
+/// where `map` changes nothing.
+fn map_present(value: &str, map: &dyn Fn(&str) -> String) -> String {
+    let mapped = map(PRESENT_NAME);
+    if mapped == PRESENT_NAME {
+        return value.to_string();
+    }
+    format!(
+        "{RUNTIME_GLOBAL}.mapPresent({value}, function ({PRESENT_NAME}) {{ return {mapped}; }})"
+    )
+}
+
+/// `value` without the library's `out` the expression lowering wrapped it in
+/// ([`crate::forge::expr`]): `out` refuses a BigInt the data model cannot hold,
+/// and a value that leaves for the wire leaves as the text of its digits, which
+/// it can.
+fn without_out(value: &str) -> &str {
+    value
+        .strip_prefix(RUNTIME_GLOBAL)
+        .and_then(|rest| rest.strip_prefix(".out("))
+        .and_then(|rest| rest.strip_suffix(')'))
+        .unwrap_or(value)
+}
+
 /// The functions the Interpreter lowers `<alias>.toNumber` and `<alias>.fromNumber`
 /// to, as `(to_number, from_number)`, for the enum whose `variants` are each a
 /// declared name and the number it declares: the library's `number` and
@@ -319,16 +359,65 @@ impl StaticTarget for JsTarget {
         variants: &[&str],
         default: &str,
     ) -> Option<String> {
-        // `lower` refused an optional field before any read is asked for
-        // (docs/adr/0055), so the field here holds a present value.
-        let kind = match field.sce_type.present_type() {
-            SceType::Enum(_) => variant_list(variants),
-            ty => format!("'{}'", InferredType::from_sce_type(ty).declared_spelling()?),
-        };
+        // `lower` refused an optional field a later revision adds before any
+        // read is asked for (docs/adr/0055, step 7), so the field here holds a
+        // present value.
+        let kind = field_kind(field.sce_type.present_type(), variants)?;
         Some(format!(
             "{RUNTIME_GLOBAL}.field({accessor}, '{}', {kind}, {default})",
             field.id
         ))
+    }
+    // An optional field is read through `field` with its type written
+    // `{optional: T}` (docs/adr/0055, section 4): a delivered `null` is absent, a
+    // delivered value is held to `T`, and a delivery that lacks the key is
+    // refused, since every field of the first revision is carried.
+    fn payload_optional_read(
+        &self,
+        accessor: &str,
+        field: &SchemaField,
+        variants: &[&str],
+    ) -> Option<String> {
+        let kind = field_kind(field.sce_type.optional_elem()?, variants)?;
+        Some(format!(
+            "{RUNTIME_GLOBAL}.field({accessor}, '{}', {{optional: {kind}}})",
+            field.id
+        ))
+    }
+    // An optional value is `null` where it is absent and the value itself where
+    // it is present (docs/adr/0055, section 5): the data model holds no types,
+    // so the type is named only where a refusal or a declaration reads it, and a
+    // present value is lifted as it is.
+    fn optional_type(&self, present: &str) -> Option<String> {
+        Some(format!("optional<{present}>"))
+    }
+    fn optional_none(&self, _present: &str) -> Option<String> {
+        Some("null".to_string())
+    }
+    fn optional_some(&self, _present: &str, value: &str) -> Option<String> {
+        Some(value.to_string())
+    }
+    // The present value is handed to a function the library calls only where it
+    // is present; what that function throws is the statement's failure.
+    fn optional_map(
+        &self,
+        value: &str,
+        _present: &str,
+        map: &dyn Fn(&str) -> String,
+    ) -> Option<String> {
+        Some(map_present(value, map))
+    }
+    // `null` crosses as JSON `null`, and a present value as its own wire value
+    // (a 64-bit integer as the text of its digits): the value leaves the
+    // expressions as that, so the `out` that refuses a BigInt the data model
+    // cannot hold is not asked, as for a present 64-bit integer.
+    fn wire_optional(
+        &self,
+        value: &str,
+        _present: &str,
+        wire: &dyn Fn(&str) -> String,
+    ) -> Option<String> {
+        Some(map_present(without_out(value), wire))
     }
     // Only an algorithm is lowered to a function the document carries; a call of
     // another kind is refused by name before the walk ([`lowered_algorithms`]).
@@ -615,14 +704,7 @@ impl StaticTarget for JsTarget {
     // number: it crosses as the text of its digits.
     fn wire_value(&self, ty: InferredType, value: &str) -> String {
         if ty.is_wide() {
-            // The `out` the expression was wrapped in refuses a `BigInt` the data
-            // model cannot hold; this one leaves as text, which it can.
-            let wrapper = format!("{RUNTIME_GLOBAL}.out(");
-            let inner = value
-                .strip_prefix(wrapper.as_str())
-                .and_then(|rest| rest.strip_suffix(')'))
-                .unwrap_or(value);
-            format!("String({inner})")
+            format!("String({})", without_out(value))
         } else {
             value.to_string()
         }
@@ -1544,10 +1626,10 @@ mod tests {
             "out: function",
             "extend: function",
             "candidate: function",
-            // An optional value (docs/adr/0055): `x ?? d`, and a 64-bit integer
-            // that may be absent as it crosses the wire.
+            // An optional value (docs/adr/0055): `x ?? d`, and a present value
+            // held to a bound or written for the wire, absence kept.
             "otherwise: function",
-            "wireInteger: function",
+            "mapPresent: function",
         ] {
             assert!(text.contains(member), "no `{member}` in the library");
         }
@@ -1928,5 +2010,160 @@ mod tests {
         let list = out.find(r#"<data id="picked""#).expect("the list");
         assert!(installed < list, "{out}");
         roxmltree::Document::parse(&out).expect("well-formed");
+    }
+
+    const OPTIONALS: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="sce-static" name="optionals">
+  <datamodel>
+    <data id="due" sce:type="optional&lt;int64&gt;" expr="null"/>
+    <data id="other" sce:type="optional&lt;int64&gt;" expr="7"/>
+    <data id="title" sce:type="optional&lt;string&gt;" sce:capacity="4" expr="null"/>
+    <data id="wider" sce:type="optional&lt;string&gt;" sce:capacity="8" expr="'longer'"/>
+    <data id="days" sce:type="int64" expr="0"/>
+  </datamodel>
+  <state id="s">
+    <transition event="write" type="internal">
+      <assign location="due" expr="null"/>
+      <assign location="title" expr="'abc'"/>
+      <assign location="other" expr="due"/>
+      <assign location="title" expr="wider"/>
+    </transition>
+    <transition event="read" type="internal">
+      <if cond="due !== null">
+        <assign location="days" expr="due.value"/>
+      </if>
+      <assign location="days" expr="due ?? 0"/>
+    </transition>
+    <transition event="finish" target="done"/>
+  </state>
+  <final id="done">
+    <donedata>
+      <param name="due" expr="due"/>
+      <param name="title" expr="title"/>
+    </donedata>
+  </final>
+</scxml>"#;
+
+    /// The `expr` of each element named `name` whose attribute `key` is `value`,
+    /// in document order, in the lowered document `out`.
+    fn exprs_of(out: &str, name: &str, key: &str, value: &str) -> Vec<String> {
+        let document = roxmltree::Document::parse(out).expect("well-formed");
+        document
+            .descendants()
+            .filter(|n| is_scxml_element(n, name) && n.attribute(key) == Some(value))
+            .map(|n| n.attribute("expr").unwrap_or_default().to_string())
+            .collect()
+    }
+
+    /// An optional value is `null` where it is absent and the value itself where
+    /// it is present (docs/adr/0055): `null` and a present initial value are
+    /// left as written, a present text is held to the bound of the place it is
+    /// written to, an optional text through `mapPresent`, which keeps `null`, an
+    /// optional 64-bit integer leaves the expressions through `out`, a proven
+    /// read is the value, and `??` is the library's `otherwise`.
+    #[test]
+    fn an_optional_value_is_null_or_the_value_itself() {
+        let out = lowered(OPTIONALS);
+        assert_eq!(exprs_of(&out, "data", "id", "due"), ["null"], "{out}");
+        assert_eq!(exprs_of(&out, "data", "id", "other"), ["7"], "{out}");
+        assert_eq!(
+            exprs_of(&out, "assign", "location", "due"),
+            ["null"],
+            "{out}"
+        );
+        assert_eq!(
+            exprs_of(&out, "assign", "location", "title"),
+            [
+                "SceStatic.bounded('abc', 4)",
+                "SceStatic.mapPresent(wider, function (scePresent) { return \
+                 SceStatic.bounded(scePresent, 4); })"
+            ],
+            "{out}"
+        );
+        assert_eq!(
+            exprs_of(&out, "assign", "location", "other"),
+            ["SceStatic.out(due)"],
+            "{out}"
+        );
+        assert_eq!(
+            exprs_of(&out, "assign", "location", "days"),
+            [
+                "SceStatic.out(due)",
+                "SceStatic.out(SceStatic.otherwise(due, function () { return 0; }))"
+            ],
+            "{out}"
+        );
+        let document = roxmltree::Document::parse(&out).expect("well-formed");
+        let guard = document
+            .descendants()
+            .find(|n| is_scxml_element(n, "if"))
+            .and_then(|n| n.attribute("cond"))
+            .expect("the <if>");
+        assert_eq!(guard, "due !== null", "{out}");
+    }
+
+    /// An optional value crosses a `<donedata>`'s `<param>` as JSON `null` where
+    /// it is absent and as its wire value where it is present: a 64-bit integer
+    /// as the text of its digits, through `mapPresent`, and a text as it is.
+    #[test]
+    fn an_optional_value_crosses_the_wire_as_null_or_its_wire_value() {
+        let out = lowered(OPTIONALS);
+        assert_eq!(
+            exprs_of(&out, "param", "name", "due"),
+            ["SceStatic.mapPresent(due, function (scePresent) { return String(scePresent); })"],
+            "{out}"
+        );
+        assert_eq!(exprs_of(&out, "param", "name", "title"), ["title"], "{out}");
+    }
+
+    /// An optional payload field is read through the library's `field` with its
+    /// type written `{optional: T}`, an enum's as the names of its variants.
+    #[test]
+    fn an_optional_payload_field_is_read_as_an_optional_value() {
+        let target = JsTarget::new(BTreeMap::new());
+        let field = |id: &str, elem: SceType| SchemaField {
+            id: id.to_string(),
+            sce_type: crate::forge::model::FieldType::Optional { elem },
+            direction: crate::forge::model::Direction::In,
+            expr: None,
+            expr_spelling: None,
+            expr_splices: None,
+            quantity: None,
+            max_size: None,
+            limit: None,
+            default_covers: Vec::new(),
+            retain: None,
+            initial: None,
+            initial_spelling: None,
+            since: None,
+            default: None,
+            default_spelling: None,
+        };
+        assert_eq!(
+            target
+                .payload_optional_read("_event.data", &field("due", SceType::Int64), &[])
+                .as_deref(),
+            Some("SceStatic.field(_event.data, 'due', {optional: 'int64'})")
+        );
+        assert_eq!(
+            target
+                .payload_optional_read("_event.data", &field("title", SceType::String), &[])
+                .as_deref(),
+            Some("SceStatic.field(_event.data, 'title', {optional: 'string'})")
+        );
+        let status = SceType::from_attr("enum:Status").expect("an enum type");
+        assert_eq!(
+            target
+                .payload_optional_read("_event.data", &field("status", status), &["open", "done"])
+                .as_deref(),
+            Some("SceStatic.field(_event.data, 'status', {optional: ['open', 'done']})")
+        );
+        // A field that is never absent is no optional read.
+        let mut plain = field("id", SceType::Uint32);
+        plain.sce_type = crate::forge::model::FieldType::Scalar(SceType::Uint32);
+        assert_eq!(
+            target.payload_optional_read("_event.data", &plain, &[]),
+            None
+        );
     }
 }

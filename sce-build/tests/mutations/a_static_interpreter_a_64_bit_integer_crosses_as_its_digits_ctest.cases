@@ -21,7 +21,7 @@ mutation_oracles tests/integration/AStaticDatamodelRunsLoweredUnderTheInterprete
 
 mutation_case "a 64-bit param leaves as the integer and not as its text" <<'PY'
 edit("sce-build/src/forge/static_js.rs",
-     "format!(\"String({inner})\")",
+     "format!(\"String({})\", without_out(value))",
      "value.to_string()")
 PY
 

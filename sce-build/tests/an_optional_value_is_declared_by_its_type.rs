@@ -279,21 +279,16 @@ fn every_backend_refuses_a_document_that_holds_an_optional_value_by_name() {
     }
 }
 
+/// The Interpreter's step lowers an optional value (docs/adr/0055): absent is
+/// `null` in its data model, which the lowered document holds as written.
 #[test]
-fn the_interpreter_refuses_a_document_that_holds_an_optional_value_by_name() {
+fn the_interpreter_lowers_a_document_that_holds_an_optional_value() {
     let text = statechart(
         r#"<data id="due" sce:type="optional&lt;int64&gt;" expr="null"/>"#,
         "",
     );
     let (ok, out) = run(&["lower"], &[("probe.scxml", &text)], "probe.scxml");
-    assert!(
-        !ok,
-        "the ecmascript lowering must refuse the document:\n{out}"
-    );
-    assert!(
-        out.contains(NOT_LOWERED) && out.contains("optional<int64>"),
-        "refused by name:\n{out}"
-    );
+    assert!(ok, "the ecmascript lowering lowers the document:\n{out}");
 }
 
 /// The same document with the variable a plain `int64` that starts at `0` is
@@ -601,14 +596,12 @@ fn every_backend_refuses_a_statechart_that_imports_a_schema_with_an_optional_fie
             "{args:?} refuses it by the schema's field:\n{out}"
         );
     }
+    // The Interpreter reads the payload's optional field as it reads any field,
+    // through its library (docs/adr/0055).
     let (ok, out) = run(&["lower"], &documents, "probe.scxml");
     assert!(
-        !ok,
-        "the ecmascript lowering must refuse the machine:\n{out}"
-    );
-    assert!(
-        out.contains(NOT_LOWERED) && out.contains("schema_item_due"),
-        "refused by the schema's field:\n{out}"
+        ok,
+        "the ecmascript lowering lowers the machine that imports the schema:\n{out}"
     );
 }
 

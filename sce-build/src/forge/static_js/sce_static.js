@@ -50,8 +50,11 @@
      default of null is absent, and no fourth argument at all means no default.
      otherwise() is x ?? d: it answers x when x is present and calls d, the
      function the default is written in, only when x is absent, so the default
-     is evaluated, and fails, only then. wireInteger() writes a 64-bit integer
-     that may be absent as it crosses: the text of its digits, or null.
+     is evaluated, and fails, only then. mapPresent() hands a present value to
+     the function it is given and answers what that answers, and answers null
+     for an absent one: how a present text is held to the bound of the place it
+     is written to, and how a present value is written as it crosses the wire
+     (a 64-bit integer as the text of its digits), absence staying null.
 
      A failure names itself. The thrown Error carries sceFailure, one of the
      names a generated backend reports (SCE_FORGE.md 3.4.1): overflow,
@@ -341,8 +344,8 @@
     otherwise: function (value, fallback) {
       return value === null ? fallback() : value;
     },
-    wireInteger: function (value) {
-      return value === null ? null : String(value);
+    mapPresent: function (value, map) {
+      return value === null ? null : map(value);
     },
     out: function (value) {
       check(value);
