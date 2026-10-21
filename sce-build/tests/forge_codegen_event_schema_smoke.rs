@@ -1112,6 +1112,59 @@ fn an_in_line_invoke_id_holding_the_synthesised_name_word_is_refused() {
     );
 }
 
+/// Two in-line children at one level: the first names no id, the second is
+/// `invoke_0`. The first was given `_invoke_0`, whose leading underscore was
+/// trimmed into the same machine name as the second's.
+const IN_LINE_GENERATED_BESIDE_AUTHORED: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="running" datamodel="sce-static" name="in_line_ids">
+  <state id="running">
+    <invoke type="scxml">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="idle"
+               datamodel="sce-static">
+          <state id="idle"/>
+        </scxml>
+      </content>
+    </invoke>
+    <invoke type="scxml" id="invoke_0">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="idle"
+               datamodel="sce-static">
+          <state id="idle"/>
+        </scxml>
+      </content>
+    </invoke>
+  </state>
+</scxml>"#;
+
+/// An in-line child that names no id and one whose author named it `invoke_0`
+/// are two machines in one Go package: the id generated for the first is
+/// numbered past the author's, so the two have two names, and every
+/// package-level name of the package is declared once. One file was written
+/// for both, and the parent declared what it holds of each child twice.
+#[test]
+fn a_generated_and_an_authored_invoke_id_name_two_in_line_children() {
+    let scratch = reset_scratch("go_in_line_ids");
+    let document = scratch.join("in_line_ids.scxml");
+    std::fs::write(&document, IN_LINE_GENERATED_BESIDE_AUTHORED).expect("write in_line_ids");
+    let machines = generate_go_package(&document, &scratch.join("out"));
+    let file_names: Vec<&str> = machines.iter().map(|(name, _)| name.as_str()).collect();
+    assert_eq!(
+        file_names,
+        [
+            "in_line_ids__sce_synth_invoke__invoke_0_sm.go",
+            "in_line_ids__sce_synth_invoke__invoke_1_sm.go",
+            "in_line_ids_sm.go",
+        ],
+        "each in-line child is a machine of its own"
+    );
+    let twice = declared_more_than_once(&machines);
+    assert!(
+        twice.is_empty(),
+        "names declared more than once in the package: {twice:?}"
+    );
+}
+
 /// The machine `static_child_mesh` and the candidate its hybrid `<invoke>`
 /// names, `static_mesh_relay`, generated for `lang` into `out_dir` as the
 /// committed trees generate them: the candidate `--as-child --parent-stem

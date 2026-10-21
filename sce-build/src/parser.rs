@@ -91,11 +91,19 @@ pub struct SCXMLParser {
     /// The last [`Action::if_ordinal`] handed out; the next `<if>` takes one more.
     if_counter: u32,
     /// §scxml-3.14: every `<invoke>` id must be document-unique.
-    /// Both author-supplied and auto-generated ids feed this set so
-    /// the author-shadows-auto-counter case (e.g. `<invoke id="_invoke_0">`
-    /// followed by an idless invoke whose auto counter hits 0) is
-    /// caught alongside plain author duplicates.
+    /// Both author-supplied and generated ids feed this set, so an author's
+    /// duplicate is caught wherever it stands; a generated id never lands in
+    /// it twice, since it is numbered past [`Self::authored_invoke_suffixes`].
     invoke_ids_seen: BTreeSet<String>,
+    /// Every `<invoke id>` the author of the document being parsed wrote, with
+    /// its leading underscores trimmed (the form [`InvokeBase::field_suffix`]
+    /// takes), read before any invoke is parsed. A generated id is numbered
+    /// past each of them ([`SCXMLParser::next_generated_invoke_id`]), so it is
+    /// neither an id the author wrote further down nor one that names the
+    /// author's child or field the way it would.
+    ///
+    /// [`InvokeBase::field_suffix`]: crate::model::InvokeBase::field_suffix
+    authored_invoke_suffixes: BTreeSet<String>,
     /// Canonical paths of every external file (xi:include target,
     /// sce:use template fragment) consumed by the most recent
     /// `parse_file` call. Populated by [`expand_preprocessors`] and
@@ -2098,6 +2106,7 @@ impl SCXMLParser {
             send_counter: 0,
             if_counter: 0,
             invoke_ids_seen: BTreeSet::new(),
+            authored_invoke_suffixes: BTreeSet::new(),
             preprocessor_deps: Vec::new(),
             include_dirs: Vec::new(),
             candidate_roots: Vec::new(),
@@ -2303,6 +2312,27 @@ impl SCXMLParser {
         Self::new()
             .with_include_dirs(self.include_dirs.clone())
             .with_candidate_roots(self.candidate_roots.clone())
+    }
+
+    /// The id of an `<invoke>` that names none (§scxml-6.4.1): `_invoke_<n>`,
+    /// with `n` the next number whose `invoke_<n>` is not the trimmed form of
+    /// an id the document's author wrote ([`Self::authored_invoke_suffixes`]).
+    /// So a generated id is never an author's — not one written further down
+    /// the document, which the uniqueness check would then refuse though the
+    /// author wrote it once — and never one an author's id is trimmed to,
+    /// which would give the two invokes one child machine name and one set of
+    /// generated fields.
+    fn next_generated_invoke_id(&mut self) -> String {
+        loop {
+            let id = format!("_invoke_{}", self.invoke_counter);
+            self.invoke_counter += 1;
+            if !self
+                .authored_invoke_suffixes
+                .contains(id.trim_start_matches('_'))
+            {
+                return id;
+            }
+        }
     }
 
     /// Parse the standard statechart `src` names (`sce:std/...`), whose text is
@@ -2848,6 +2878,10 @@ impl SCXMLParser {
         // §scxml-3.14: a state element that names no id is given one, so the
         // states pass below finds every element the ranking above numbered.
         self.assign_anonymous_state_ids(&root);
+        // Every invoke id the author wrote, read before the first invoke is
+        // parsed, so an id generated for an earlier invoke steers clear of one
+        // written after it.
+        self.authored_invoke_suffixes = authored_invoke_suffixes(&root);
 
         // Parse states recursively
         self.parse_states(&root, None, &mut model, base_dir, diag_label)?;
@@ -4699,8 +4733,7 @@ impl SCXMLParser {
         let mut invoke_id = elem.attribute("id").unwrap_or("").to_string();
         let id_generated = invoke_id.is_empty();
         if id_generated {
-            invoke_id = format!("_invoke_{}", self.invoke_counter);
-            self.invoke_counter += 1;
+            invoke_id = self.next_generated_invoke_id();
         }
         let field_suffix = invoke_id.trim_start_matches('_').to_string();
 
@@ -4709,9 +4742,9 @@ impl SCXMLParser {
         // matching, `idlocation` datamodel assignment (§6.4.2), mesh
         // `active_invokes_` keying — all assume this; a silent duplicate
         // collapses lifecycle event delivery and mis-cancels in-flight work.
-        // Author-supplied ids and auto-counter ids share one set so the
-        // shadow case (`<invoke id="_invoke_0">` racing a later auto-gen)
-        // is caught alongside plain duplicates.
+        // Author-supplied ids and generated ids share one set; a generated id
+        // is numbered past every id the author wrote, so what this refuses is
+        // an author's own duplicate.
         if !self.invoke_ids_seen.insert(invoke_id.clone()) {
             let pos = elem.document().text_pos_at(elem.range().start);
             return Err(crate::forge::error::Located::new(
@@ -4982,7 +5015,7 @@ impl SCXMLParser {
                     elem,
                     &model.name,
                     &invoke_id,
-                    &field_suffix,
+                    id_generated,
                     source_name,
                 )?;
                 // Recursive parse uses a fresh parser instance — sharing
@@ -5060,7 +5093,7 @@ impl SCXMLParser {
                     elem,
                     &model.name,
                     &invoke_id,
-                    &field_suffix,
+                    id_generated,
                     source_name,
                 )?;
                 let at = elem.document().text_pos_at(elem.range().start);
@@ -7367,9 +7400,15 @@ fn standard_document_text(
 /// carries — written in-line, or a standard statechart named by `src`: the
 /// name of the machine that starts it joined to the invoke's id by
 /// [`crate::mesh::deploy::SYNTH_INVOKE_INFIX`] (SCE_MESH.md §9.6.6 rule 1).
-/// `field_suffix` is the id with its leading underscore trimmed, so an
-/// author's id maps verbatim and a generated `_invoke_N` gives `invoke_N`
-/// rather than the triple underscore block `__sce_synth_invoke___invoke_N`.
+///
+/// An id the author wrote is joined as written. A generated id (`_invoke_N`,
+/// `id_generated`) is joined without its leading underscore, `invoke_N`,
+/// rather than as the triple underscore block `__sce_synth_invoke___invoke_N`;
+/// it is numbered past every id an author's is trimmed to
+/// ([`SCXMLParser::next_generated_invoke_id`]), so `invoke_N` is no author's id
+/// and no two invokes of one document are joined by the same text. Trimming an
+/// author's id as well made `_x` and `x` one name, and a generated `_invoke_0`
+/// and an author's `invoke_0` another.
 ///
 /// The child is parsed under this name, so a child it carries in turn is
 /// named after it: `<parent>__sce_synth_invoke__<id>__sce_synth_invoke__<id>`.
@@ -7385,7 +7424,7 @@ fn synthesised_child_name(
     elem: &roxmltree::Node,
     parent: &str,
     invoke_id: &str,
-    field_suffix: &str,
+    id_generated: bool,
     source_name: &str,
 ) -> Result<String, crate::forge::error::Located<crate::forge::error::ForgeError>> {
     let infix = crate::mesh::deploy::SYNTH_INVOKE_INFIX;
@@ -7410,7 +7449,33 @@ fn synthesised_child_name(
             Some(at.col),
         ));
     }
-    Ok(format!("{parent}{infix}{field_suffix}"))
+    let joined = if id_generated {
+        invoke_id.trim_start_matches('_')
+    } else {
+        invoke_id
+    };
+    Ok(format!("{parent}{infix}{joined}"))
+}
+
+/// Every `<invoke id>` the author of the document `root` heads wrote, each with
+/// its leading underscores trimmed. An `<invoke>` inside a `<content>` belongs
+/// to the document that `<content>` holds, which numbers its own, so no
+/// `<content>` is entered.
+fn authored_invoke_suffixes(root: &roxmltree::Node<'_, '_>) -> BTreeSet<String> {
+    let mut suffixes = BTreeSet::new();
+    let mut pending: Vec<roxmltree::Node<'_, '_>> = root.children().collect();
+    while let Some(node) = pending.pop() {
+        if !node.is_element() || (is_scxml_ns(&node) && node.tag_name().name() == "content") {
+            continue;
+        }
+        if is_scxml_ns(&node) && node.tag_name().name() == "invoke" {
+            if let Some(id) = node.attribute("id") {
+                suffixes.insert(id.trim_start_matches('_').to_string());
+            }
+        }
+        pending.extend(node.children());
+    }
+    suffixes
 }
 
 /// §scxml-6.4: an in-line child `<scxml>` under `<invoke><content>` as a
@@ -9961,32 +10026,75 @@ mod tests {
         assert_ne!(ids[0], ids[1], "auto-counter must yield distinct ids");
     }
 
+    /// Each static invoke of `model`'s states, as (invoke id, child name), in
+    /// document order.
+    fn scxml_invoke_ids_and_children(model: &SCXMLModel) -> Vec<(String, String)> {
+        model
+            .iter_scxml_invokes()
+            .map(|info| (info.common.base.invoke_id.clone(), info.child_name.clone()))
+            .collect()
+    }
+
+    /// §scxml-6.4.1: an idless `<invoke>` is given an id no id its author wrote
+    /// is, or is trimmed to — one written after it included. The idless invoke
+    /// here stands first, so the counter reaches 0 and 1 before the parse
+    /// reads the author's `_invoke_0` and `invoke_1`; it is numbered past both.
+    /// The id it was given before (`_invoke_0`) made the author's `_invoke_0`
+    /// a duplicate the author never wrote, and refused the document.
     #[test]
-    fn invoke_id_author_shadows_auto_counter_rejected() {
-        // Author picks `_invoke_0` explicitly; a subsequent idless invoke
-        // would take counter=0 and land on the same id. Must reject so the
-        // shadow case cannot slip past the uniqueness gate.
+    fn a_generated_invoke_id_is_numbered_past_every_id_its_author_wrote() {
         let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">
             <state id="s">
-                <invoke id="_invoke_0" type="scxml" src="a.scxml"/>
-                <invoke type="scxml" src="b.scxml"/>
+                <invoke type="scxml" src="a.scxml"/>
+                <invoke id="_invoke_0" type="scxml" src="b.scxml"/>
+                <invoke id="invoke_1" type="scxml" src="c.scxml"/>
             </state>
         </scxml>"#;
-        let mut parser = SCXMLParser::new();
-        let err = parser
+        let model = SCXMLParser::new()
             .parse_string(scxml, "test")
-            .expect_err("author-shadows-auto-counter must reject");
-        use crate::forge::error::{ForgeError, ValidationError};
-        match err.error {
-            ForgeError::Validation(boxed) => match *boxed {
-                ValidationError::DuplicateId { what, id, .. } => {
-                    assert_eq!(what, "<invoke id>");
-                    assert_eq!(id, "_invoke_0");
-                }
-                other => panic!("expected DuplicateId for <invoke id>, got: {other:?}"),
-            },
-            other => panic!("expected DuplicateId for <invoke id>, got: {other:?}"),
-        }
+            .expect("a document whose author wrote each id once parses");
+        let ids: Vec<String> = scxml_invoke_ids_and_children(&model)
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect();
+        assert_eq!(ids, ["_invoke_2", "_invoke_0", "invoke_1"]);
+    }
+
+    /// Every carried child of one document has a machine name of its own: an
+    /// author's id is joined to the infix as written, and a generated id is
+    /// numbered past every author's. Trimming every id's leading underscores
+    /// gave `_x` and `x` one name, and a generated `_invoke_0` and an author's
+    /// `invoke_0` another.
+    #[test]
+    fn the_carried_children_of_one_document_have_distinct_names() {
+        let child = r#"<content><scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+            initial="f"><final id="f"/></scxml></content>"#;
+        let scxml = format!(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">
+            <state id="s">
+                <invoke type="scxml">{child}</invoke>
+                <invoke id="invoke_0" type="scxml">{child}</invoke>
+                <invoke id="_x" type="scxml">{child}</invoke>
+                <invoke id="x" type="scxml">{child}</invoke>
+            </state>
+        </scxml>"#
+        );
+        let model = SCXMLParser::new()
+            .parse_string(&scxml, "doc")
+            .expect("a document with four in-line children parses");
+        let children: Vec<String> = scxml_invoke_ids_and_children(&model)
+            .into_iter()
+            .map(|(_, child)| child)
+            .collect();
+        assert_eq!(
+            children,
+            [
+                "doc__sce_synth_invoke__invoke_1",
+                "doc__sce_synth_invoke__invoke_0",
+                "doc__sce_synth_invoke___x",
+                "doc__sce_synth_invoke__x",
+            ]
+        );
     }
 
     // ── <invoke type="sce:mesh-rpc"> reserved-param rules (§9.5) ────

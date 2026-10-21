@@ -3677,6 +3677,12 @@ carried in the document may not have an id holding `sce_synth_invoke`, the word 
 are joined with, since such an id could give two children one name; it is refused at the
 id as `validation/attribute-rule-violated`. The same test file holds both.
 
+An id the author wrote is joined to those names as written, `_x` as `_x`. An `<invoke>` that
+names no id is given `_invoke_<n>`, with `<n>` numbered past every id the document's author wrote that is, or is trimmed of its
+leading underscores to, `invoke_<n>`, and is joined as `invoke_<n>`. So no two invokes of one
+document share a child's name, and an author's `_invoke_0` beside an invoke with no id is
+not refused as a duplicate the author never wrote.
+
 A child that declares `<sce:action>`s takes the host that performs its acts when it
 is built, because its first `<onentry>` can already perform an act and a host
 installed afterwards would arrive one act too late. So the host has to exist when
