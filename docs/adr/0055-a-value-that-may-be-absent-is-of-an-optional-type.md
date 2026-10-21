@@ -3,7 +3,8 @@
 - Status: Accepted (2026-10-21). The owner decided every question the proposal left open ("The
   owner's answers", below), under the standing rule: the most long-term correct structure, cost
   ignored; never a sentinel number and never a companion flag that admits impossible states. Step 1
-  is implemented; the others follow in the order section 9 gives.
+  is implemented; the others follow in the order section 9 gives. Section 8 and step 12 amended the
+  same day by that rule: a codec document declares its format, and format 1 is refused for good.
 - Date: 2026-10-21
 - Amends: ADR 0044 decisions 1 and 3 (a revision may widen a field from `T` to `optional<T>`);
   ADR 0045 section 2 (a saved shape spells an optional value by the type its present value is, so
@@ -503,32 +504,48 @@ no longer part of the grammar, so the language has one way to say a value may be
 content-line parameter of a repeated property, `optional<T>` is optional of each line that exists,
 as a parameter that is not `sce:required` is today.
 
-**The migration.** One step moves every codec document of the repository (the standard Mesh
-envelope among them), the grammar, the generators and the conformance cases together: an entry
-written without `sce:required` becomes `optional<T>`, and `sce:required="true"` is removed.
+**A codec document declares its format, and the format is permanent** (decided by the owner's
+standing rule on 2026-10-21: no document is ever read with a meaning other than the one it was
+written with). A document written in the earlier spelling cannot be told from one in the new
+spelling by its entries alone: a codec whose entries are all bare types is a codec of optional
+entries in the one and of required entries in the other. So the spelling a document is written in
+is said on its root, beside `sce:encoding`:
 
-**The transition refusals, a migration aid and not part of the final structure.** A document
-written in the earlier spelling, outside this repository, would otherwise change meaning in
-silence: each of its entries without `sce:required` would become required. So, from the migration
-step until the step that ends the transition, a codec is refused, each by
-`validation/attribute-rule-violated` with the new spelling as its repair:
+```xml
+<scxml ... sce:kind="codec" sce:encoding="cbor" sce:codec-format="2">
+```
 
-- an entry that writes `sce:required`, in any form, with its rewrite (`="true"` removed; `="false"`
-  as `optional<T>`). A document that writes `sce:required` anywhere is written in the earlier
-  spelling throughout, so the refusal names the rewrite of each of its entries: every entry without
-  the attribute becomes `optional<T>`;
-- a codec none of whose entries writes `sce:required` or `optional<…>`. In the earlier spelling it
-  is a codec of optional entries only, in the new one a codec of required entries only, and nothing
-  in it says which was meant; the refusal names both readings and the edit for the first. A codec
-  whose every entry is required is written in the new spelling once the transition ends.
+- **Format 2 is the only one read and generated.** A bare `T` entry is required, an `optional<T>`
+  entry is optional, and `sce:required` is not in its grammar: written in a format-2 document it is
+  refused (`validation/attribute-rule-violated`, naming `optional<T>` and the bare type as the two
+  spellings of what it meant).
+- **A document without `sce:codec-format`, or with `sce:codec-format="1"`, is format 1, and is
+  refused, never read.** The refusal is a code of its own, `validation/codec-format-superseded`
+  (in the appendix of docs/SCE_ACCEPTED_SUBSET.md and SCE_ERROR_CONTRACT.md with step 12), placed
+  on the root, and its repair is the document's own rewrite, which the tool computes from what
+  format 1 says: each entry with `sce:required="true"` becomes its bare type with the attribute
+  removed, each entry without it (or with `="false"`) becomes `optional<T>`, and the root gains
+  `sce:codec-format="2"`. The record carries the format-2 spelling of every entry, and
+  `sce-codegen codec-format <document>` prints the whole document in format 2, so the author
+  applies the rewrite rather than retyping it. Any other value of the attribute is
+  `validation/invalid-attribute`, naming `2`.
+- **It stays.** The refusal of format 1 is part of the grammar, not a migration aid: a document
+  written before this decision and built for the first time years after it is refused and told its
+  rewrite, exactly as one built the day after, and is never reinterpreted. There is no step that
+  ends a transition, and no release note carries a rule the build does not.
+- **Which documents declare it.** The CBOR and content-line codecs (`sce:encoding="cbor"`,
+  `"content-line"`), the two whose entries may be absent. A positional codec's field is never
+  absent by a declaration of its own (it is left out by `sce:present-if`, which no format changes),
+  so no reading of a positional document changes and it declares no format; written there, the
+  attribute is refused as `validation/sce-attribute-unread`. A positional codec that ever gains an
+  entry that may be absent gains the attribute in the same step, by the same rule.
 
-The step that ends the transition removes both refusals; `sce:required` is then an attribute
-nothing reads, refused as `validation/sce-attribute-unread` like any other. What the aid cannot
-reach after that is a document never built during the transition, and the release note of the
-migration step names it.
+**The migration.** One step moves every CBOR and content-line codec document of the repository
+(the standard Mesh envelope among them) to format 2 by that rewrite, together with the grammar, the
+generators and the conformance cases.
 
 **One representation.** The Go codecs' pointer fields and the C11 codecs' `<name>_present` members
-become section 5's types, Go's in its own step (13), C11's with the migration (14), so a value read
+become section 5's types, Go's in step 13 and C11's in step 14, each after the move to format 2, so a value read
 from a codec and held by a statechart has one type on each backend.
 
 ### 9. How it lands
@@ -624,23 +641,32 @@ documents, not observed from a backend.
     and the Go, C and C++ drivers that read the refusal by hand, the pin in
     `standard_saved_shapes.json`, docs/SCE_ACCEPTED_SUBSET.md "The standard shared record list".
     Test: the scenario's first step expecting `refused` to be `null`.
-12. **Codec entries typed by `optional<T>`** (section 8): the grammar, `CborEntry` and the
-    content-line entry typed by the value type, every repository codec document and conformance case
-    migrated, and the two transition refusals. Tests: the codec conformance oracle unchanged in its
-    bytes; a codec with `sce:required="true"`, one with `="false"` and one of bare entries only,
-    each refused with its rewrite.
+12. **Codec format 2** (section 8): `sce:codec-format` in the grammar (`schemas/sce-forge-ext.xsd`)
+    and the roster of known names; `CborEntry` and the content-line entry typed by the value type;
+    `sce:required` out of the format-2 grammar; the refusal of format 1,
+    `validation/codec-format-superseded`, with the rewrite of every entry, and
+    `sce-codegen codec-format`; every repository CBOR and content-line document and conformance case
+    moved to format 2. Tests: the codec conformance oracle unchanged in its bytes; a document with no
+    `sce:codec-format`, one with `="1"` and one with `="3"`, each refused; a format-1 document of
+    bare entries only (all optional in format 1) refused with each entry's rewrite as `optional<T>`,
+    and one mixing `sce:required="true"`, `="false"` and bare entries refused with the rewrite of
+    each; `codec-format` printing a document that `check` then accepts and that generates the bytes
+    the format-1 one did; `sce:required` in a format-2 document refused; the attribute on a
+    positional codec refused.
 13. **Go codecs on `optional.Of[T]`**: the CBOR and content-line codecs' pointer fields, and the
     gated positional fields, move to the Go optional type, through `LangCtx::optional_of`. Tests:
     the Go conformance cases, regenerated, unchanged in their bytes.
 14. **C11 codecs on `sce_optional_<elem>_t`**: the same for C11's `<name>_present` members. Tests:
     the C11 conformance cases, unchanged in their bytes.
-15. **The end of the codec transition**: the two refusals of section 8 removed, `sce:required`
-    dropped from the roster of known names.
+
+There is no step 15. The step the first accepted text listed there, "the end of the codec
+transition", which removed two temporary refusals, is withdrawn: the refusal of format 1 is
+permanent (section 8).
 
 Steps 1, 2 and 3 come first and in that order; 4 after 3; the seven of step 5 after 4 and
 independently of one another; 6 after the Rust and Kotlin steps of 5; 7 after 6; 8, 9 and 10 after
 the backends they lower on; 11 after 9; 12 after every step of 5; 13 after 12 and the Go step; 14
-after 12 and the C11 step; 15 last.
+after 12 and the C11 step.
 
 ## Alternatives considered
 
@@ -692,6 +718,15 @@ after 12 and the C11 step; 15 last.
   reason holds a row, a field and a command of a refusal that never happened.
 - **Keeping `sce:required` beside `optional<T>`.** Two spellings of one thing, with opposite
   defaults in two kinds of document; section 8.
+- **Temporary transition refusals for the codecs** (the first acceptance of this ADR): refuse
+  `sce:required` and a codec of bare entries only for a while, then remove the refusals. Nothing in
+  a document of bare entries only says which spelling it was written in, so once the refusals were
+  gone such a document from before the move would be read with every entry required, in silence.
+  A format the document declares makes the spelling a fact of the document, and the refusal of
+  format 1 never has to end.
+- **Inferring the format** (format 1 when any entry writes `sce:required`). It cannot tell a
+  format-1 codec of optional entries only from a format-2 codec of required entries only, which is
+  the one case that matters.
 
 ## Consequences
 
@@ -705,8 +740,9 @@ after 12 and the C11 step; 15 last.
 - Every committed tree of a machine that holds an optional value is new; the trees of the codecs
   whose optional wrap is folded into `LangCtx::optional_of` regenerate unchanged on Rust, Kotlin,
   C++ and Python, and change on Go and C11 with steps 13 and 14.
-- Every codec document of the repository is rewritten once, and an author outside it is told how
-  to rewrite theirs.
+- Every CBOR and content-line codec document of the repository is rewritten once, to format 2; a
+  format-1 document anywhere, built at any time, is refused with its rewrite and never read as
+  format 2.
 - ADR 0052 decision 2 is superseded; its parents hold `optional<record:Refused>`.
 
 ## The owner's answers (2026-10-21)
@@ -723,8 +759,11 @@ after 12 and the C11 step; 15 last.
    list's saved-shape pin moves with it, in its own step after the backends lower optional values
    (step 11). ADR 0052 records that this supersedes its decision 2.
 5. **Codecs**: moved from `sce:required` to `optional<T>`, with every repository codec migrated in
-   one step and the two transition refusals as a migration aid that a later step removes
-   (section 8).
+   one step (section 8). The proposal's temporary transition refusals left a document of bare
+   entries only able to flip in silence once they were removed; the owner's standing rule (no
+   silent flip, ever) decided on 2026-10-21 that a codec document declares its format
+   (`sce:codec-format="2"`), that format 2 is the only one read and generated, and that a format-1
+   document is refused with its rewrite, permanently, so no step ends a transition.
 6. **A widening keeps a saved state restorable**: a statechart variable, or a record field it
    holds, widened from `T` to `optional<T>` keeps the saved shape, and only other changes of type
    move it (section 6). This changed the proposal.
