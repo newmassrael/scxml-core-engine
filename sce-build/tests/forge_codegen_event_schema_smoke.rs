@@ -420,16 +420,19 @@ fn go_leading_identifier(text: &str) -> Option<String> {
 /// names it declares ([`go_package_level_names`]).
 type GoPackageMachines = Vec<(String, Vec<String>)>;
 
-/// Generate `document` for Go into `out_dir`, with `extra` arguments.
-fn generate_go_into(document: &Path, out_dir: &Path, extra: &[&str]) {
+/// Generate `document` for `lang` into `out_dir`, with `extra` arguments. Go is
+/// given the module prefix its imports are written under.
+fn generate_into(lang: &str, document: &Path, out_dir: &Path, extra: &[&str]) {
     std::fs::create_dir_all(out_dir).expect("create out dir");
-    let output = Command::new(sce_codegen_bin())
-        .args(["generate", "-l", "go", "-o"])
-        .arg(out_dir)
-        .args([
+    let mut cmd = Command::new(sce_codegen_bin());
+    cmd.args(["generate", "-l", lang, "-o"]).arg(out_dir);
+    if lang == "go" {
+        cmd.args([
             "--go-module-prefix",
             "example.com/sce-forge/event-schema-smoke",
-        ])
+        ]);
+    }
+    let output = cmd
         .args(extra)
         .arg(document)
         .current_dir(repo_root())
@@ -437,11 +440,23 @@ fn generate_go_into(document: &Path, out_dir: &Path, extra: &[&str]) {
         .expect("spawn sce-codegen");
     assert!(
         output.status.success(),
-        "sce-codegen generate -l go {extra:?} {} failed (exit {:?})\nstderr: {}",
+        "sce-codegen generate -l {lang} {extra:?} {} failed (exit {:?})\nstderr: {}",
         document.display(),
         output.status.code(),
         String::from_utf8_lossy(&output.stderr),
     );
+}
+
+/// Generate `document` for Go into `out_dir`, with `extra` arguments.
+fn generate_go_into(document: &Path, out_dir: &Path, extra: &[&str]) {
+    generate_into("go", document, out_dir, extra);
+}
+
+/// The package a Go or Kotlin source declares in its `package` clause.
+fn package_clause(src: &str) -> Option<&str> {
+    src.lines()
+        .find_map(|line| line.strip_prefix("package "))
+        .map(str::trim)
 }
 
 /// Generate `document` for Go into `out_dir`, as a parent and every child it
@@ -694,6 +709,127 @@ fn a_go_package_declares_each_name_once_where_a_child_invokes_under_its_parents_
         twice.is_empty(),
         "names declared more than once in the package: {twice:?}"
     );
+}
+
+/// The machine `static_child_mesh` and the candidate its hybrid `<invoke>`
+/// names, `static_mesh_relay`, generated for `lang` into `out_dir` as the
+/// committed trees generate them: the candidate `--as-child --parent-stem
+/// static_child_mesh`, with `extra` arguments to both. The candidate starts an
+/// in-line child of its own, `inner`, which is written beside it.
+fn generate_child_mesh_package(lang: &str, out_dir: &Path, extra: &[&str]) {
+    let fixtures =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/static_datamodel");
+    generate_into(
+        lang,
+        &fixtures.join("static_child_mesh.scxml"),
+        out_dir,
+        extra,
+    );
+    let as_child: Vec<&str> = ["--as-child", "--parent-stem", "static_child_mesh"]
+        .into_iter()
+        .chain(extra.iter().copied())
+        .collect();
+    generate_into(
+        lang,
+        &fixtures.join("static_mesh_relay.scxml"),
+        out_dir,
+        &as_child,
+    );
+}
+
+/// A candidate generated into its parent's package (`--as-child --parent-stem`)
+/// that starts an in-line child of its own. The candidate refers to the child's
+/// machine unqualified, so the child belongs to the same package, the parent's;
+/// it was given one named after the candidate (`package static_mesh_relay`), a
+/// second package in one directory, which Go refuses. Every Go file written
+/// declares the parent's package, and every package-level name the four machines
+/// declare is declared once: the candidate's child is named after the
+/// candidate, apart from the parent's own child.
+#[test]
+fn a_go_candidates_in_line_child_is_generated_into_its_parents_package() {
+    let out_dir = reset_scratch("go_candidate_in_line_child");
+    generate_child_mesh_package("go", &out_dir, &[]);
+    let machines = go_package_machines(&out_dir);
+    let file_names: Vec<&str> = machines.iter().map(|(name, _)| name.as_str()).collect();
+    assert_eq!(
+        file_names,
+        [
+            "static_child_mesh__sce_synth_invoke__list_sm.go",
+            "static_child_mesh_sm.go",
+            "static_mesh_relay__sce_synth_invoke__inner_sm.go",
+            "static_mesh_relay_sm.go",
+        ],
+        "the parent, its in-line child, the candidate and the candidate's in-line \
+         child are generated into one directory"
+    );
+    for path in find_by_ext(&out_dir, "go") {
+        let src = std::fs::read_to_string(&path).expect("read go");
+        assert_eq!(
+            package_clause(&src),
+            Some("static_child_mesh"),
+            "{} is not in the package of the machine that starts the candidate",
+            path.display()
+        );
+    }
+    for (file_name, names) in &machines {
+        // Each machine declares its policy, so the check below reads the
+        // declarations of four machines rather than files it misread.
+        assert!(
+            names.iter().any(|name| name.ends_with("Policy")),
+            "{file_name} declares no policy of its machine: {names:?}"
+        );
+    }
+    let twice = declared_more_than_once(&machines);
+    assert!(
+        twice.is_empty(),
+        "names declared more than once in the package: {twice:?}"
+    );
+}
+
+/// The Kotlin side of
+/// [`a_go_candidates_in_line_child_is_generated_into_its_parents_package`]: the
+/// candidate's in-line child was given a package named after the candidate
+/// (`static_mesh_relay` under the prefix), where the candidate, in the parent's
+/// package, cannot name it unqualified. Every machine file declares the
+/// parent's package.
+#[test]
+fn a_kotlin_candidates_in_line_child_is_generated_into_its_parents_package() {
+    let out_dir = reset_scratch("kotlin_candidate_in_line_child");
+    generate_child_mesh_package(
+        "kotlin",
+        &out_dir,
+        &["--kotlin-package-prefix", "com.sce.integration"],
+    );
+    let machine_files: Vec<PathBuf> = find_by_ext(&out_dir, "kt")
+        .into_iter()
+        .filter(|path| path.to_string_lossy().ends_with("Sm.kt"))
+        .collect();
+    let mut file_names: Vec<String> = machine_files
+        .iter()
+        .map(|path| path.file_name().unwrap().to_string_lossy().into_owned())
+        .collect();
+    file_names.sort();
+    let mut expected = [
+        "static_child_meshSm.kt",
+        "static_child_mesh__sce_synth_invoke__listSm.kt",
+        "static_mesh_relaySm.kt",
+        "static_mesh_relay__sce_synth_invoke__innerSm.kt",
+    ];
+    expected.sort_unstable();
+    assert_eq!(
+        file_names, expected,
+        "the parent, its in-line child, the candidate and the candidate's in-line \
+         child are generated into one directory"
+    );
+    for path in &machine_files {
+        let src = std::fs::read_to_string(path).expect("read kotlin");
+        assert_eq!(
+            package_clause(&src),
+            Some("com.sce.integration.static_child_mesh"),
+            "{} is not in the package of the machine that starts the candidate",
+            path.display()
+        );
+    }
 }
 
 // NL→IR Item C1 Path A (EventSchema native lowering) — Kotlin parity for

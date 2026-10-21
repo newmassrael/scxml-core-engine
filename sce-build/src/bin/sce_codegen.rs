@@ -1486,11 +1486,13 @@ struct GenerateArgs {
     /// Parent machine stem for Kotlin/Go child emission. When supplied
     /// with `--as-child`, the child's `package com.sce.generated.<child>`
     /// (Kotlin) or `package <child>` (Go) header is rewritten to the
-    /// parent's package, matching the layout `generate-w3c` produces
-    /// via its internal `process_child` hook. Without this flag a
-    /// single-file `--as-child` invocation leaves the child in its
-    /// own derived package and the parent's unqualified reference to
-    /// the child `StateMachine` class fails to resolve.
+    /// parent's package, and so is the header of every in-line child the
+    /// child itself starts, which is written beside it, matching the
+    /// layout `generate-w3c` produces via its internal `process_child`
+    /// hook. Without this flag a single-file `--as-child` invocation
+    /// leaves the child in its own derived package and the parent's
+    /// unqualified reference to the child `StateMachine` class fails to
+    /// resolve.
     ///
     /// C++ and Rust children already compile cleanly without the flag
     /// (C++ resolves via `-I`, Rust via the parent's `mod.rs`) — the
@@ -5262,15 +5264,18 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
     );
 }
 
-/// Re-address a synth-invoke child's package header to its parent's.
+/// Re-address a child's package header to the package `parent` names.
 ///
 /// Mirrors `generate-w3c`'s `KotlinBackend::process_child`. A child
 /// derives its package from its own name — `<prefix>.{child}` in Kotlin,
 /// `package {child}` in Go — while the parent refers to the child's
 /// state machine unqualified, so the two have to land in one compilation
-/// unit. The `<prefix>` mirrors whatever `--kotlin-package-prefix`
-/// selected (defaults to `com.sce.generated` for W3C,
-/// `com.sce.integration` for the integration tree).
+/// unit. `parent` is the package the whole run emits into: a candidate's
+/// in-line child is given the package of the machine that starts the
+/// candidate, not one named after the candidate. The `<prefix>` mirrors
+/// whatever `--kotlin-package-prefix` selected (defaults to
+/// `com.sce.generated` for W3C, `com.sce.integration` for the integration
+/// tree).
 ///
 /// Only the child's own machine artifact is re-addressed. A sibling
 /// forge artifact carries a package derived from ITS name, and a
@@ -6206,47 +6211,55 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
         // the siblings — which is exactly what this CLI did until the
         // two met. What stays here is the one thing the library cannot
         // decide: the `--as-child` package rewrite, below.
-        let emit_for_model = |m: &SCXMLModel,
-                              stem: &str,
-                              m_as_child: bool,
-                              m_parent_stem: Option<&str>|
-         -> GeneratedOutput {
-            // The engine target is the run's selection, or the backend's
-            // default when the caller did not ask — resolved and refused
-            // already, so reaching here means the backend can emit it.
-            let mut output = sce_build::emit_model_artifacts(
-                m,
-                &template_dir,
-                stem,
-                scxml_path,
-                lang,
-                &sce_build::ModelEmitOptions {
-                    forge: Some(&sce_build::ForgeCompileOptions {
-                        go_module_prefix: go_module_prefix.map(str::to_owned),
-                        const_fold_budget,
-                        owned_origin,
-                        ..Default::default()
-                    }),
-                    codegen: Some(&sce_build::generator::StatechartCodegenOptions {
-                        no_std,
-                        ..Default::default()
-                    }),
-                    script_engine: script_engine_target,
-                    cpp_namespace_prefix,
-                    kotlin_package_prefix,
-                    c_symbol_prefix,
-                },
-            )
-            .unwrap_or_else(|e| error_format.emit_forge_and_exit(&e));
-            if m_as_child {
-                if let Some(parent) = m_parent_stem {
-                    rewrite_child_package(&mut output, lang, stem, parent, kotlin_package_prefix);
+        //
+        // The package a machine is placed in, when it is not the one its
+        // own name derives: `adopting_package` for the document, and
+        // `inline_children_package` for every in-line child it starts.
+        // Under `--as-child --parent-stem P` the document is generated into
+        // P's package, and so is each of its in-line children: they are
+        // written beside it and it names their machines unqualified, so a
+        // child left in a package named after the document is a second
+        // package in one directory, which Go refuses and against which
+        // Kotlin cannot resolve the name. Without `--parent-stem` the
+        // in-line children join the document's own package.
+        let adopting_package = parent_stem.filter(|_| as_child);
+        let inline_children_package = adopting_package.unwrap_or(input_stem);
+        let emit_for_model =
+            |m: &SCXMLModel, stem: &str, m_package: Option<&str>| -> GeneratedOutput {
+                // The engine target is the run's selection, or the backend's
+                // default when the caller did not ask — resolved and refused
+                // already, so reaching here means the backend can emit it.
+                let mut output = sce_build::emit_model_artifacts(
+                    m,
+                    &template_dir,
+                    stem,
+                    scxml_path,
+                    lang,
+                    &sce_build::ModelEmitOptions {
+                        forge: Some(&sce_build::ForgeCompileOptions {
+                            go_module_prefix: go_module_prefix.map(str::to_owned),
+                            const_fold_budget,
+                            owned_origin,
+                            ..Default::default()
+                        }),
+                        codegen: Some(&sce_build::generator::StatechartCodegenOptions {
+                            no_std,
+                            ..Default::default()
+                        }),
+                        script_engine: script_engine_target,
+                        cpp_namespace_prefix,
+                        kotlin_package_prefix,
+                        c_symbol_prefix,
+                    },
+                )
+                .unwrap_or_else(|e| error_format.emit_forge_and_exit(&e));
+                if let Some(package) = m_package {
+                    rewrite_child_package(&mut output, lang, stem, package, kotlin_package_prefix);
                 }
-            }
-            output
-        };
+                output
+            };
 
-        let output = emit_for_model(&model, input_stem, as_child, parent_stem);
+        let output = emit_for_model(&model, input_stem, adopting_package);
         artifact_deps.extend(output.deps);
 
         let files = maybe_format_files(output.files, &cpp_formatter);
@@ -6317,7 +6330,8 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
             // envelope match the byte-stable goldens from the prior
             // `--as-child` flow that staged the synth child on disk.
             child_model.scxml_source_path = synthetic_path.to_string_lossy().into_owned();
-            let child_output = emit_for_model(&child_model, child_stem, true, Some(input_stem));
+            let child_output =
+                emit_for_model(&child_model, child_stem, Some(inline_children_package));
             artifact_deps.extend(child_output.deps);
             let child_files = maybe_format_files(child_output.files, &cpp_formatter);
             for (filename, code) in &child_files {
