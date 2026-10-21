@@ -179,6 +179,7 @@ pub fn check(
         diag_label,
         read: Default::default(),
         whole_state_call_ok: Default::default(),
+        receivers: Receivers::of(model),
     };
     // Every record variable's fields, readable everywhere; a transition adds
     // its payload to these.
@@ -576,6 +577,137 @@ struct Judge<'a> {
     /// list, around the judging of its right side: a call that returns one is a value
     /// there and nowhere else.
     whole_state_call_ok: std::cell::Cell<bool>,
+    /// Who reads the payload of a `<send>`, where the build knows ([`Receivers`]).
+    receivers: Receivers<'a>,
+}
+
+/// The documents that read the payload of a `<send>` of this document, where the
+/// build knows them: the document itself, which reads an event by the schema it
+/// imports for it (a send to `#_internal`, and the schema a send declares its
+/// payload by whatever its target), and each child session it starts, by the id
+/// a `<send target="#_<id>">` names it by, which reads an event by the schema it
+/// declares for it (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Child sessions").
+struct Receivers<'a> {
+    /// The schemas this document imports, by the event each declares.
+    own_schemas: &'a std::collections::BTreeMap<String, crate::forge::model::EventSchemaModel>,
+    /// The enums this document imports, by alias: what an enum field of one of
+    /// its own schemas holds, and what an enum value of it is.
+    own_enums: &'a std::collections::BTreeMap<String, crate::forge::model::EnumModel>,
+    /// Each child session's id, with each document it may be (one, or a hybrid
+    /// invoke's candidates) by name and what that document reads.
+    children: std::collections::BTreeMap<String, Vec<(&'a str, &'a crate::model::ChildReceives)>>,
+}
+
+impl<'a> Receivers<'a> {
+    fn of(model: &'a SCXMLModel) -> Self {
+        let mut children: std::collections::BTreeMap<String, Vec<_>> = Default::default();
+        for invoke in model.states.values().flat_map(|s| s.invokes.iter()) {
+            match invoke {
+                Invoke::Scxml(info) => {
+                    if let Some(receives) = &info.common.child_receives {
+                        children
+                            .entry(info.common.base.invoke_id.clone())
+                            .or_default()
+                            .push((info.common.child_name.as_str(), receives));
+                    }
+                }
+                Invoke::Hybrid(info) => {
+                    for candidate in &info.candidates {
+                        if let Some(receives) = &candidate.child_receives {
+                            children
+                                .entry(info.common.base.invoke_id.clone())
+                                .or_default()
+                                .push((candidate.stem.as_str(), receives));
+                        }
+                    }
+                }
+                Invoke::MeshRpc(_) | Invoke::Unsupported(_) => {}
+            }
+        }
+        Self {
+            own_schemas: &model.imported_event_schemas,
+            own_enums: &model.imported_enums,
+            children,
+        }
+    }
+
+    /// The child sessions a `<send>` to `target` (as written) is delivered to: a
+    /// `#_<id>` that names the id of an invoke of this document. `#_internal`,
+    /// `#_parent` and `#_scxml_<session>` name no child.
+    fn children_of(&self, target: &str) -> &[(&'a str, &'a crate::model::ChildReceives)] {
+        let id = target.trim().strip_prefix("#_").unwrap_or_default();
+        if id.is_empty() || id == "internal" || id == "parent" || id.starts_with("scxml_") {
+            return &[];
+        }
+        self.children.get(id).map(Vec::as_slice).unwrap_or(&[])
+    }
+}
+
+/// A value a `<send>` carries, as a field that reads it holds it to: a value of an
+/// enum, by the enum the sender holds it in, or a value of another type.
+enum SentValue<'m> {
+    Enum {
+        alias: String,
+        model: Option<&'m crate::forge::model::EnumModel>,
+    },
+    Typed(InferredType),
+}
+
+impl SentValue<'_> {
+    /// Why `field`, whose enum (when it holds one) is `field_enum`, cannot hold this
+    /// value as it crosses — as text, a number or a truth value, an enum's value as
+    /// the name its variant declares — or `None` when it can. The width of a number
+    /// is held when the delivery is read, as every payload is; the kind of a value
+    /// is the sender's to get right, since no delivery of it ever fits.
+    fn misfit(
+        &self,
+        field: &crate::forge::model::ForgeField,
+        field_enum: Option<&crate::forge::model::EnumModel>,
+    ) -> Option<String> {
+        use crate::forge::model::SceType;
+        let declared = field.sce_type.as_attr();
+        match (self, &field.sce_type) {
+            (SentValue::Enum { model, .. }, SceType::Enum(_)) => {
+                let (Some(sent), Some(read)) = (model, field_enum) else {
+                    return None;
+                };
+                crate::forge::schema_revision::enum_divergence(sent, read).map(|_| {
+                    format!(
+                        "the value is of the enum `{}`, and the field holds `{}`, which does not \
+                         declare the same variants with the same values (a value crosses as the \
+                         name its variant declares, and a name the field's enum does not declare \
+                         is refused when it arrives)",
+                        sent.name, read.name
+                    )
+                })
+            }
+            (SentValue::Enum { alias, .. }, _) => Some(format!(
+                "the value is of the enum `{alias}`, which crosses as the name its variant \
+                 declares, and the field is {declared}"
+            )),
+            (SentValue::Typed(ty), _) => {
+                let want = InferredType::from_sce_type(&field.sce_type);
+                let fits = match (want, *ty) {
+                    (_, InferredType::Unknown) => true,
+                    // An enum field reads the name of a variant, which no value of
+                    // another type is.
+                    (InferredType::Unknown, _) => !matches!(field.sce_type, SceType::Enum(_)),
+                    (want, got) if want.is_integer_like() => got.is_integer_like(),
+                    (want, got) if want.is_numeric() => got.is_numeric(),
+                    (InferredType::Bool, got) => got == InferredType::Bool,
+                    (InferredType::Str, got) => got == InferredType::Str,
+                    (InferredType::Bytes, got) => got == InferredType::Bytes,
+                    _ => true,
+                };
+                (!fits).then(|| {
+                    format!(
+                        "the value is {}, and the field is {declared}",
+                        ty.describe()
+                    )
+                })
+            }
+        }
+    }
 }
 
 impl<'a> Judge<'a> {
@@ -1833,17 +1965,7 @@ impl<'a> Judge<'a> {
             spelling,
             Expected::Hint(InferredType::Unknown),
         )?;
-        // An enum value crosses as the name its enum declares for it, a string
-        // as a saved state holds one, so every backend spells it alike. Only a
-        // variable, a field of a record variable or a field of the payload is
-        // read that way: a value of a loop's record item has no lowering here
-        // yet.
-        let held_by_a_variable = |name: &str| self.enum_of_wire_value(name);
-        let reading = crate::forge::static_enum::EnumReading {
-            var_alias: &held_by_a_variable,
-            calls: &|name| self.scope.call_enums(name),
-        };
-        match crate::forge::static_enum::value_enum(written, ctx, &reading) {
+        match self.wire_value_enum(ctx, written) {
             Ok(Some(_)) => return Ok(()),
             Ok(None) => {}
             Err(refusal) => {
@@ -1869,6 +1991,127 @@ impl<'a> Judge<'a> {
                 state,
                 written,
             ));
+        }
+        Ok(())
+    }
+
+    /// The enum `written`, a value that crosses as data, is a value of.
+    ///
+    /// An enum value crosses as the name its enum declares for it, a string as a
+    /// saved state holds one, so every backend spells it alike. Only a variable, a
+    /// field of a record variable or a field of the payload is read that way: a
+    /// value of a loop's record item has no lowering here yet.
+    fn wire_value_enum(
+        &self,
+        ctx: &TypeCtx<'_>,
+        written: &str,
+    ) -> Result<Option<String>, crate::forge::expr::Refusal> {
+        let held_by_a_variable = |name: &str| self.enum_of_wire_value(name);
+        let reading = crate::forge::static_enum::EnumReading {
+            var_alias: &held_by_a_variable,
+            calls: &|name| self.scope.call_enums(name),
+        };
+        crate::forge::static_enum::value_enum(written, ctx, &reading)
+    }
+
+    /// A value a `<send>` carries under the name `param.name`, held to each field
+    /// that reads it where the build knows the reader ([`Receivers`]): the field
+    /// of the schema this document imports for the event, and the field of the
+    /// schema each child the send is delivered to declares for it. A value of a
+    /// kind the field cannot hold — a value of an enum, which crosses as its
+    /// variant's declared name, where the field is a number — never fits the
+    /// schema, and is refused here rather than each time it arrives.
+    fn received(
+        &self,
+        ctx: &TypeCtx<'_>,
+        action: &Action,
+        param: &WireParam<'_>,
+        state: &str,
+    ) -> Result<(), Located<ForgeError>> {
+        use crate::forge::model::{EnumModel, ForgeField, SceType};
+        let written = param.written;
+        if action.event.is_empty() || param.name.is_empty() || written.trim().is_empty() {
+            return Ok(());
+        }
+        let mut readers: Vec<(String, &ForgeField, Option<&EnumModel>)> = Vec::new();
+        if let Some(schema) = self.receivers.own_schemas.get(&action.event) {
+            if let Some(field) = schema.fields.iter().find(|f| f.id == param.name) {
+                let held = match &field.sce_type {
+                    SceType::Enum(reference) => self.receivers.own_enums.get(&reference.alias),
+                    _ => None,
+                };
+                readers.push((
+                    format!(
+                        "the schema `{}` this document declares `{}` by",
+                        schema.name, action.event
+                    ),
+                    field,
+                    held,
+                ));
+            }
+        }
+        for (child, receives) in self.receivers.children_of(&action.target) {
+            let Some(schema) = receives.schemas.get(&action.event) else {
+                continue;
+            };
+            let Some(field) = schema.fields.iter().find(|f| f.id == param.name) else {
+                continue;
+            };
+            let held = receives
+                .enums
+                .get(&action.event)
+                .and_then(|fields| fields.get(&field.id));
+            readers.push((
+                format!(
+                    "the schema `{}` the child `{child}` reads `{}` by",
+                    schema.name, action.event
+                ),
+                field,
+                held,
+            ));
+        }
+        if readers.is_empty() {
+            return Ok(());
+        }
+        // The value as it crosses: an enum value by the enum the sender holds it
+        // in, anything else by its type. A value [`Self::wire_param`] refuses was
+        // refused before this is asked.
+        let value = match self.wire_value_enum(ctx, written) {
+            Ok(Some(alias)) => SentValue::Enum {
+                model: self.receivers.own_enums.get(&alias),
+                alias,
+            },
+            Ok(None) => SentValue::Typed(self.expr(
+                ctx,
+                written,
+                param.spelling,
+                Expected::Hint(InferredType::Unknown),
+            )?),
+            Err(_) => return Ok(()),
+        };
+        let (line, col) = match (param.source_location, param.spelling) {
+            (Some(at), _) => (at.line, at.col),
+            (None, Some(spelling)) => (Some(spelling.row()), Some(spelling.col())),
+            (None, None) => (None, None),
+        };
+        for (reader, field, held) in readers {
+            if let Some(why) = value.misfit(field, held) {
+                return Err(self.rule_at(
+                    format!(
+                        "<param name=\"{}\"> of <send event=\"{}\">",
+                        param.name, action.event
+                    ),
+                    &format!(
+                        "{reader} reads it as its field `{}`, and {why}: no delivery of it fits \
+                         that schema, so each would be refused where it arrives",
+                        field.id
+                    ),
+                    line,
+                    col,
+                    state,
+                    written,
+                ));
+            }
         }
         Ok(())
     }
@@ -2175,7 +2418,9 @@ impl<'a> Judge<'a> {
             }
             "send" => {
                 for param in &action.params {
-                    self.wire_param(ctx, &WireParam::of_param(param), "<send>", state)?;
+                    let wire = WireParam::of_param(param);
+                    self.wire_param(ctx, &wire, "<send>", state)?;
+                    self.received(ctx, action, &wire, state)?;
                 }
                 // A `namelist` name is the `<param name="x" expr="x"/>` it
                 // abbreviates ([`Action::fold_namelist_into_params`]), held to
@@ -2184,6 +2429,7 @@ impl<'a> Judge<'a> {
                     let namelist =
                         WireParam::of_namelist_name(name, action.spellings.get("namelist"), None);
                     self.wire_param(ctx, &namelist, "<send>", state)?;
+                    self.received(ctx, action, &namelist, state)?;
                 }
                 if !action.eventexpr.is_empty() {
                     self.event_expr(ctx, action, state)?;

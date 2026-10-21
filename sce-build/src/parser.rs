@@ -8084,6 +8084,11 @@ fn populate_child_metadata_from_model(child_model: &SCXMLModel, common: &mut Inv
     common.child_static_variables =
         (child_model.datamodel == Datamodel::SceStatic).then(|| child_model.variables.clone());
     common.child_is_static = child_model.datamodel == Datamodel::SceStatic;
+    // ... and holds what it sends the child to the schema the child reads the
+    // event by.
+    common.child_receives = common
+        .child_is_static
+        .then(|| crate::model::ChildReceives::of(child_model));
     common.child_declares_host_acts = common.child_is_static
         && crate::forge::native_action::document_has_native_actions(child_model);
     common.child_declares_host_duties = common.child_declares_host_acts
@@ -8143,6 +8148,7 @@ fn populate_candidate_metadata(
     candidate.child_needs_event_scheduler = common.child_needs_event_scheduler;
     candidate.child_mesh = common.child_mesh;
     candidate.child_saves = common.child_saves;
+    candidate.child_receives = common.child_receives;
 }
 
 // ══════════════════════════════════════════════════════════════

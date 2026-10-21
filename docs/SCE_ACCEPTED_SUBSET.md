@@ -3233,6 +3233,7 @@ line of the element or attribute that breaks it:
 | `<invoke idlocation>` on a host-run invocation or a Mesh request | Refused: such an invocation is started under the id the build wrote (the `id`, or `<state>.platform_N`), so there is no generated id to keep; a document that must name it writes `id`, which `done.invoke.<id>` and `error.invoke.<id>` already match. On a child session (`type="scxml"`, in-line, by `src` or hybrid) it is admitted: each start is started under `<state>.<start>.<id>` (docs/adr/0045), the id the child's events carry and a saved tree holds as the child's `invokeid`, and `idlocation` names a string variable the document declares whose `sce:capacity` exceeds the longest such id (the start a count of up to twenty digits), or is refused on its line. Rust writes it; Kotlin, Go, Python, C++ and C11 refuse it by name (`generate/unsupported-feature`) until their format-2 step |
 | a `<param>` or a `namelist` name of an `<invoke type="scxml">` whose child is not a `sce-static` document this build read, does not declare the name as a top-level `<data>`, declares it as a list, a record, an enum or bytes, is handed it twice, or is handed a value not of the variable's type | See **Child sessions** below. Refused at the `<param>` as `scxml/static-datamodel-rule` (a value of the wrong type as the expression's own refusal) rather than accepted and never delivered |
 | a `<finalize>` of an `<invoke type="scxml">` | §6.5 runs it in the invoking machine before a child's event is processed, but the model keeps its body as one script text and the generated code hands that text to a script engine this model never builds (measured 2026-10-01: the Rust body is an empty block, Kotlin finds no engine): the assignment would be accepted and never run. Refused at the `<invoke>` as `scxml/static-datamodel-rule`; the invoking state takes what the child sent in a transition. An EMPTY `<finalize/>` beside a `<param location>` or a `namelist` is the same refusal: §6.5.2 gives it the meaning "update each from the event's data of that name", which the model writes out as that script text. Lowering a body is not the obstacle — a `<finalize>` runs before any child event is processed, to read that event's `_event.data`, and no type rule reaches a payload that arrives from whichever event comes next; a body that reads none has no consumer. Under `ecmascript` the same document runs it |
+| a `<param>` or a `namelist` name of a `<send>` whose value is of a kind the field that reads it cannot hold — a field of the schema this document declares the event by, or of the schema a child the send is delivered to (`#_<id>`) declares it by | See **Child sessions** below ("What a send carries is held to the field that reads it"). Refused at the `<param>` as `scxml/static-datamodel-rule`: no delivery of it fits the schema |
 | a `<param>` of a `<send>`, of a host-run `<invoke>` or of a `<donedata>` whose value is not a bool, a string, a byte string, an integer, a real or an enum value held by a variable, a field of a record variable or a field of the payload, or reads a payload that is not in scope | See **Params** below. Refused at the `<param>` as `scxml/static-datamodel-rule`. An `<invoke>` typed by `sce:request` is held to its record: a literal where it is written, a computed value by its type (below) |
 
 **Expressions.** Every other expression is a forge expression judged
@@ -3650,6 +3651,27 @@ another kind, a name handed twice and a child under another data model are refus
 at the `<param>` as `scxml/static-datamodel-rule`: each would be typed, accepted
 and never delivered (measured 2026-10-01 on Rust and Kotlin, when no generated code
 handed a parent's `<param>` to a child).
+
+**What a send carries is held to the field that reads it**, where the build knows the
+reader: the schema this document declares the event by (whatever the `<send>`'s target),
+and the schema each child a `<send target="#_<id>">` is delivered to declares the event
+by — a child started by the invoke of that id (inline, under `src`, a standard statechart,
+or each of a hybrid invoke's candidates) that is a `sce-static` document this build read.
+A `<param>` or `namelist` name the field's type cannot hold is refused at the `<param>` as
+`scxml/static-datamodel-rule`, naming the reader, the field and both types: a value of an
+enum, which crosses as the name its variant declares, where the field is a number or a
+string; a number, a string or a bool where the field is an enum; a string, a byte string,
+a bool or a real where the field is an integer; and any other value of another kind than
+the field's, but for an integer where the field is a real, which holds one. An enum
+value stands where the field holds a revision of the same enum (docs/adr/0044, the rule
+the network holds an enum field to). The width of a number is not held here: a value past
+the field's width is refused when the delivery is read, as every payload is. Such a value
+never fits the schema, so every delivery of it would be refused where it arrives, the
+child's state untouched and the parent told nothing. Measured 2026-10-21, before the rule:
+a parent sending `<param name="value" expr="_event.data.status"/>` (a value of an enum)
+to `sce:std/shared/record_list.scxml`, whose `value` is an `int64`, passed `check` on
+every backend; only a literal was ever held to a schema, and only to the sender's own.
+`sce-build/tests/a_send_is_held_to_the_schema_its_receiver_reads.rs` holds this.
 
 A child may be a statechart of the standard library, named as an import names a
 standard document: `<invoke type="scxml" src="sce:std/shared/record_list.scxml">`

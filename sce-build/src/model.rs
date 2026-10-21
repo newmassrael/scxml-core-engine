@@ -2051,6 +2051,56 @@ pub struct InvokeSessionCommon {
     #[serde(skip)]
     #[cfg_attr(test, schemars(skip))]
     pub child_saves: bool,
+    /// Codegen-internal: what the child reads of each event it is sent, when it
+    /// is a `datamodel="sce-static"` document this build read ([`ChildReceives`]).
+    /// A static parent holds a `<param>` of a `<send>` to the child to the field
+    /// the child's schema declares for it (docs/SCE_ACCEPTED_SUBSET.md §2.15,
+    /// "Child sessions"). `None` for a child under another data model or one the
+    /// build could not read. Derived beside [`Self::child_static_variables`],
+    /// from the same child model; not part of the IR.
+    #[serde(skip)]
+    #[cfg_attr(test, schemars(skip))]
+    pub child_receives: Option<ChildReceives>,
+}
+
+/// What a `datamodel="sce-static"` child reads of the events it is sent: the
+/// schema it declares for each event whose payload it reads, and the enum each
+/// enum field of that schema holds. A delivery that does not fit the schema is
+/// refused when it arrives, so a value a parent sends of a kind the field cannot
+/// hold — a value of an enum, which crosses as its variant's declared name, where
+/// the field is a number — is a send that fails every time it runs, and the
+/// parent's build refuses it instead.
+#[derive(Debug, Clone, Default)]
+pub struct ChildReceives {
+    /// The schema the child declares for each event, by event name.
+    pub schemas: std::collections::BTreeMap<String, crate::forge::model::EventSchemaModel>,
+    /// For each of those events, the enum each enum field of its schema holds,
+    /// by field id.
+    pub enums: std::collections::BTreeMap<
+        String,
+        std::collections::BTreeMap<String, crate::forge::model::EnumModel>,
+    >,
+}
+
+impl ChildReceives {
+    /// What the `sce-static` document `child` reads of the events it is sent.
+    pub fn of(child: &SCXMLModel) -> Self {
+        Self {
+            schemas: child.imported_event_schemas.clone(),
+            enums: child
+                .enum_documents
+                .by_field
+                .iter()
+                .map(|(event, fields)| {
+                    let held = fields
+                        .iter()
+                        .map(|(field, document)| (field.clone(), document.model.clone()))
+                        .collect();
+                    (event.clone(), held)
+                })
+                .collect(),
+        }
+    }
 }
 
 /// What a child session asks of Mesh, as the build reads it from the child's
@@ -2662,6 +2712,12 @@ pub struct InvokeCandidate {
     #[serde(skip)]
     #[cfg_attr(test, schemars(skip))]
     pub child_saves: bool,
+    /// Codegen-internal: what the candidate reads of each event it is sent —
+    /// [`InvokeSessionCommon::child_receives`], per candidate. Outside the IR
+    /// contract.
+    #[serde(skip)]
+    #[cfg_attr(test, schemars(skip))]
+    pub child_receives: Option<ChildReceives>,
 }
 
 /// §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: the stem of the document a path
