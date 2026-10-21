@@ -1193,8 +1193,10 @@ pub trait StaticTarget {
     /// bound to each element, `index` — a `uint32`, when the document names one
     /// — to its position. The loop walks the list as it was when the loop
     /// began (§scxml-4.6: a shallow copy), so a body that appends to the list
-    /// does not move it. `None` for a target that leaves a `<foreach>` as the
-    /// document wrote it, as the Interpreter's ecmascript does.
+    /// does not move it. `item` and `index` come spelled as the target spells a
+    /// local (`ExprTarget::local_spelling`), the spelling the body's
+    /// expressions read them by. `None` for a target that leaves a `<foreach>`
+    /// as the document wrote it, as the Interpreter's ecmascript does.
     fn foreach_loop(
         &self,
         _list: &str,
@@ -4485,8 +4487,15 @@ impl Rewrites<'_> {
                 } else {
                     arg.written.as_str()
                 };
-                let held = renames.get(key).copied().unwrap_or(key);
-                self.target.state_argument(self.machine, arg, held)
+                let held = match renames.get(key) {
+                    Some(held) => (*held).to_string(),
+                    // A loop's record item is no field of the machine: it is
+                    // the local the loop binds, under the spelling every local
+                    // of the target takes ([`ExprTarget::local_spelling`]).
+                    None if arg.code == 'i' => self.target.expr_target().local_spelling(key),
+                    None => key.to_string(),
+                };
+                self.target.state_argument(self.machine, arg, &held)
             })
             .collect();
         let adapters: Vec<String> = rewrite
@@ -8819,13 +8828,19 @@ fn lower_action(
             })?;
             let item = action.item.trim();
             let index = Some(action.index.trim()).filter(|name| !name.is_empty());
+            // The loop binds its variables under the spelling every expression
+            // of the body reads them by, the target's for any local: the type
+            // scope and the renames stay keyed by the names as written.
+            let expr_target = target.expr_target();
+            let item_local = expr_target.local_spelling(item);
+            let index_local = index.map(|index| expr_target.local_spelling(index));
             // A loop variable the generated machine already has a field of
             // that name would hide it in a backend that reaches fields by
             // their bare names.
-            if let Some(clash) = [Some(item), index]
+            if let Some((clash, _)) = [Some((item, &item_local)), index.zip(index_local.as_ref())]
                 .into_iter()
                 .flatten()
-                .find(|name| renames.values().any(|field| field == name))
+                .find(|(_, local)| renames.values().any(|field| field == local))
             {
                 return Err(GenerateError::unsupported(format!(
                     "<foreach> names a loop variable `{clash}` that is the name {lang} gives a \
@@ -8849,9 +8864,13 @@ fn lower_action(
                     (record_ty, list.ty)
                 }
             };
-            if let Some((head, prologue)) =
-                target.foreach_loop_typed(name, item, index, &item_ty, &list_ty)
-            {
+            if let Some((head, prologue)) = target.foreach_loop_typed(
+                name,
+                &item_local,
+                index_local.as_deref(),
+                &item_ty,
+                &list_ty,
+            ) {
                 action.native_loop = head;
                 action.native_loop_prologue = prologue;
             }
@@ -8872,7 +8891,7 @@ fn lower_action(
                 .string_fields()
                 .filter_map(|field| {
                     target
-                        .record_string_read(item, field)
+                        .record_string_read(&item_local, field)
                         .map(|read| (format!("{item}.{field}"), read))
                 })
                 .collect();

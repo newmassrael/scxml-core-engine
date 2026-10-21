@@ -118,6 +118,21 @@ impl ExprTarget {
         }
     }
 
+    /// How this target spells a name the author gave a local — a parameter or a
+    /// variable of an algorithm, the item or the index of a `<foreach>` — where
+    /// it is declared and where an expression reads it. The emitter's `Ident`
+    /// and the loop a `<foreach>` lowers to both read it, and a declaration a
+    /// template writes reads `forge_local_id`, which it is, so a local is never
+    /// bound under one spelling and read under another (a loop that bound
+    /// `laterAt` and a condition that read `later_at`). The script engine's
+    /// ECMAScript keeps the name as written.
+    pub(crate) fn local_spelling(self, id: &str) -> String {
+        match self.language() {
+            Some(language) => crate::forge::generator::forge_local_id(id, language),
+            None => id.to_string(),
+        }
+    }
+
     /// Every backend SCE generates code for. This is the canonical list a
     /// "lowers natively on all backends" verdict must exercise — checking
     /// a proper subset (historically just Rust + Go) is a proxy that lies
@@ -5489,8 +5504,8 @@ fn cpp_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
         ExprKind::BoolLit(b) => if *b { "true" } else { "false" }.to_string(),
         ExprKind::NullLit => "nullptr".to_string(),
         // The one spelling every C++ local takes, declaration and read alike
-        // (`cpp_local_spelling`).
-        ExprKind::Ident(s) => crate::forge::generator::cpp_local_spelling(s),
+        // ([`ExprTarget::local_spelling`]).
+        ExprKind::Ident(s) => ExprTarget::Cpp.local_spelling(s),
         ExprKind::Raw(s) => s.clone(),
         ExprKind::Binary { op, left, right } if is_string_concatenation(*op, left.ty, right.ty) => {
             // `"E" + n` is pointer arithmetic in C++, so each side is made a
@@ -6062,8 +6077,8 @@ fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
         ExprKind::BoolLit(b) => if *b { "true" } else { "false" }.to_string(),
         ExprKind::NullLit => "null".to_string(),
         // The one spelling the declaration of the name takes
-        // (`kotlin_local_spelling`).
-        ExprKind::Ident(s) => crate::forge::generator::kotlin_local_spelling(s),
+        // ([`ExprTarget::local_spelling`]).
+        ExprKind::Ident(s) => ExprTarget::Kotlin.local_spelling(s),
         ExprKind::Raw(s) => s.clone(),
         ExprKind::Binary { op, left, right } if is_string_concatenation(*op, left.ty, right.ty) => {
             // `String.plus` takes `Any`, so Kotlin concatenated this by
@@ -6850,8 +6865,8 @@ fn rust_emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
         ExprKind::BoolLit(b) => if *b { "true" } else { "false" }.to_string(),
         ExprKind::NullLit => "None".to_string(),
         // The one spelling the declaration of the name takes
-        // (`rust_local_spelling`).
-        ExprKind::Ident(s) => crate::forge::generator::rust_local_spelling(s),
+        // ([`ExprTarget::local_spelling`]).
+        ExprKind::Ident(s) => ExprTarget::Rust.local_spelling(s),
         ExprKind::Raw(s) => s.clone(),
         ExprKind::Binary { op, left, right } if is_string_concatenation(*op, left.ty, right.ty) => {
             // `&str + i64` does not compile in Rust, and `&str + &str` does
@@ -7342,8 +7357,9 @@ fn go_emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
         ExprKind::NullLit => "nil".to_string(),
         // The spelling the function DECLARED the name with: one function spells
         // the parameter, the variable and every read, so a name that hides a
-        // builtin is escaped in the read as it was in the declaration.
-        ExprKind::Ident(s) => crate::forge::generator::go_local_spelling(s),
+        // builtin is escaped in the read as it was in the declaration
+        // ([`ExprTarget::local_spelling`]).
+        ExprKind::Ident(s) => ExprTarget::Go.local_spelling(s),
         ExprKind::Raw(s) => s.clone(),
         ExprKind::Binary { op, left, right } if is_string_concatenation(*op, left.ty, right.ty) => {
             // Go refuses `string + int64`, and `string(n)` is not the digits
@@ -7861,8 +7877,9 @@ fn python_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
         ExprKind::NullLit => "None".to_string(),
         // The spelling the function DECLARED the name with: the same function
         // spells its parameter and its variable, so a name that hides a
-        // builtin is escaped in the read as it was in the declaration.
-        ExprKind::Ident(s) => crate::forge::generator::python_local_spelling(s),
+        // builtin is escaped in the read as it was in the declaration
+        // ([`ExprTarget::local_spelling`]).
+        ExprKind::Ident(s) => ExprTarget::Python.local_spelling(s),
         ExprKind::Raw(s) => s.clone(),
         ExprKind::Binary { op, left, right } if is_string_concatenation(*op, left.ty, right.ty) => {
             // `'E' + 5` is a `TypeError` in Python; `str(int)` is the
@@ -8758,8 +8775,8 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
         ExprKind::BoolLit(b) => if *b { "true" } else { "false" }.to_string(),
         ExprKind::NullLit => "NULL".to_string(),
         // The one spelling every C local takes, declaration and read alike
-        // (`c11_local_spelling`).
-        ExprKind::Ident(s) => crate::forge::generator::c11_local_spelling(s),
+        // ([`ExprTarget::local_spelling`]).
+        ExprKind::Ident(s) => ExprTarget::C.local_spelling(s),
         ExprKind::Raw(s) => s.clone(),
         ExprKind::Binary { op, left, right } if is_string_concatenation(*op, left.ty, right.ty) => {
             // A C string is a `const char *`: there is nowhere for the joined

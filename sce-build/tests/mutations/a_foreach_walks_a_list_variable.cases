@@ -4,10 +4,11 @@
 # Run with:
 #   scripts/mutate sce-build/tests/mutations/a_foreach_walks_a_list_variable.cases
 #
-# A loop's variables are declared by the generated code in every backend as
-# written, so the rules that matter are the ones that keep a name the code
-# cannot declare, or one that hides something already in scope, from reaching
-# it, and the ones that give the body the scope the loop's variables are in.
+# A loop's variables are declared by the generated code in every backend under
+# the spelling it gives a local, so the rules that matter are the ones that keep
+# a name the code cannot declare, or one that hides something already in scope,
+# from reaching it, the ones that give the body the scope the loop's variables
+# are in, and the one spelling the loop binds and the body reads.
 # Each case takes one away and has to turn the suite red on its own.
 
 mutation_tests -p sce-build --features cli --test a_foreach_walks_a_list_variable
@@ -15,7 +16,7 @@ mutation_tests -p sce-build --features cli --test a_foreach_walks_a_list_variabl
 # evidence a mutation reached what ran is the file differing on disk while
 # the tests ran.
 mutation_targets sce-build/tests/a_foreach_walks_a_list_variable.rs
-mutation_runtime_targets sce-build/src/forge/static_datamodel.rs sce-build/src/forge/type_ctx.rs
+mutation_runtime_targets sce-build/src/forge/static_datamodel.rs sce-build/src/forge/type_ctx.rs sce-build/src/forge/static_lowering.rs sce-build/src/forge/expr.rs
 
 # A loop variable hides a variable, an enum, an algorithm or an outer loop's
 # variable: `item="total"` reads the loop's element where the author meant the
@@ -72,4 +73,29 @@ mutation_case "the body is judged without the loop's variables" <<'PY'
 edit("sce-build/src/forge/static_datamodel.rs",
      "        let judged = self.actions(&inner, &action.actions, state);\n",
      "        let _ = &inner;\n        let judged = self.actions(ctx, &action.actions, state);\n")
+PY
+
+# The loop binds its item as written while the body reads it under the
+# target's spelling of a local: Rust declares `outerItem` and reads
+# `outer_item`.
+mutation_case "the loop binds its item as written" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "            let item_local = expr_target.local_spelling(item);\n",
+     "            let item_local = item.to_string();\n")
+PY
+
+# A loop's record item handed to an algorithm is passed as written, beside
+# the local the loop bound under the target's spelling.
+mutation_case "a record item is handed to an algorithm as written" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "                    None if arg.code == 'i' => self.target.expr_target().local_spelling(key),\n",
+     "                    None if false && arg.code == 'i' => self.target.expr_target().local_spelling(key),\n")
+PY
+
+# An expression reads a local as written while the loop binds it under the
+# target's spelling: Rust declares `inner_at` and reads `innerAt`.
+mutation_case "an expression reads a local as written" <<'PY'
+edit("sce-build/src/forge/expr.rs",
+     "        ExprKind::Ident(s) => ExprTarget::Rust.local_spelling(s),\n",
+     "        ExprKind::Ident(s) => s.clone(),\n")
 PY
