@@ -5957,22 +5957,45 @@ the Interpreter. These are the first three of the six steps of
 | `note` | step | prose, shown when the step fails |
 | `event` | step | an external event, by the name the document gives it; a name no event of the machine matches (W3C SCXML 3.12.1) fails the step unless `dropped` is true |
 | `invoke` | step | with `event`, the running child session the event is for, as a peer's event: the path of invoke ids that started it from the machine, joined by `/` (`peer/inner` is the child `inner` of the child `peer`). The event is handed to the router the child was given and reaches the child when the child is next driven; the child's events are not the machine's, so `dropped` is not read. A step that names no running child fails |
-| `data` | step | the event's payload as JSON, from which the machine lifts the typed fields its schema names |
+| `data` | step | the event's payload as JSON, from which the machine lifts the typed fields its schema names; `null` is an absent value, and stands only for a field the schema declares `optional<T>` |
 | `dropped` | step | `true` when the step expects the machine to drop the event because none of its events matches the name |
 | `advance_ms` | step | moves the machine's manual clock on by that many milliseconds and runs what came due |
 | `restore` | step | `true`: before the step's event or time, the driver saves the machine, discards it, and restores it from the text on a machine built as the first was, with the driver's own registrations made on it again (docs/adr/0045). A restore is meant to change nothing a scenario can see, so every expected value is the one a run without it holds. The Rust driver runs it; a scenario that holds one drives a machine only Rust lowers until each other backend's format-2 step, and the Interpreter, which does not save, skips such a scenario and counts it |
 | `expect` | step | what the machine holds after the step, below; every step has one |
 | `state` | expect | the atomic state the machine is in |
 | `configuration` | expect | the set of every active state, a compound or a parallel one with the atomic ones below it, by the id the document gives it; the order is not part of the answer |
-| `variables` | expect | variable to value, for the variables the document publishes (`sce:direction="out"`): a number, a bool, an enum by its declared name, a string, a record as an object of its fields, a list as an array, a real written with a fraction or an exponent |
+| `variables` | expect | variable to value, for the variables the document publishes (`sce:direction="out"`): a number, a bool, an enum by its declared name, a string, a record as an object of its fields, a list as an array, a real written with a fraction or an exponent, and `null` for an absent value of a variable or a record's field declared `optional<T>` |
 | `ended` | expect | `true` when the machine ended in a top-level `<final>`; such a machine has no saved state, so the step states nothing but `ended`, `donedata`, `host_calls`, `child_hosts` and `sent` |
-| `donedata` | expect | with `ended`, the data the final's `<donedata>` left for an invoking parent, as JSON, compared as a value |
+| `donedata` | expect | with `ended`, the data the final's `<donedata>` left for an invoking parent, as JSON, compared as a value; `null` for a pair that carries an optional value that is absent |
 | `host_calls` | expect | the calls the machine made of its host in this step, oldest first: `{"action": <the name the document gives the <sce:action>>, "args": [<each <sce:arg>, in the document's order>]}`; the start's calls belong to the first step, a step that states none is not judged on them, and they are not carried into the next |
 | `child_hosts` | expect | the hosts the machine's own host answered for its invoked children, and what each child asked of its host, in this step: one entry for each child whose host was asked for in this step or that called its host in it, oldest asked first, `{"invoke": <the id of the <invoke>>, "start": <how many children that invoke had started, this one included, from 1>, "candidate": <the stem of the document a hybrid <invoke> started, left out for an inline child>, "host_calls": [<the child's calls in this step, as `host_calls` writes them>]}`; a child asked for earlier that called nothing in this step has no entry, a step that states none is not judged on them, and they are not carried into the next. A child is told by its invoke and its start, so two entries of one step may not name the same child |
 | `sent` | expect | what the machine sent its Mesh peers in this step, oldest first: `{"target": <the peer as the document writes it, "#server">, "event": <the event's name>, "data": <the event's data, as JSON>}`, `data` left out when the send carried none; the start's sends belong to the first step, a step that states none is not judged on them, and they are not carried into the next. A send a child session made through its own router carries `"invoke"` (the path of invoke ids that started it, as a step's `invoke` writes it) and `"start"` (how many children that path had started, this one included, from 1); an entry without them is the machine's own |
 
 A step sends an event or moves time and does not do both: the drivers do not agree
-on which comes first, and no scenario needs it. A machine that publishes no
+on which comes first, and no scenario needs it.
+
+`null` is an absent value (docs/adr/0055, section 4), and a scenario states it only
+where the machine declares a value that may be absent: a field of the payload the
+event's schema declares `optional<T>` (a delivery that lacks the key is another
+thing, refused as a field of the first revision a delivery lacks is), a variable or
+a record's field declared so (in a record variable, an optional record and a list's
+record alike), a pair of a `<donedata>` whose value is of an optional type, and a
+field of what the machine sent whose schema declares it so. `sce-codegen scenarios`
+holds a scenario to that with its machine in hand (`--machine`, or a standard
+statechart by its library name) and refuses a `null` anywhere else —
+a variable of `int64`, a field every delivery carries, a host call's argument, the
+data of an event handed to a child — as `null-not-optional`, at the place and naming
+it. `scenarios/static_optional.json` is the shared scenario of an optional value:
+variables, a record, a list of records and two payloads holding an optional
+`int64`, `string` and value of an enum, set, cleared, tested, read where a test
+proves them present under each construct that proves one, read with a default
+whose evaluation would fail, compared, sent and carried by a `<donedata>`. No engine
+lowers an optional value yet, so each lists it as not yet lowered with why — the
+table of `sce-build/tests/a_static_datamodel_holds_every_variable_to_a_type.rs`
+(`NOT_YET_LOWERED`, an engine to a line), the Rust scenario table
+(`backends/rust/scenarios/src/machines.rs`) and the Interpreter's scan — and the
+step of the ADR that lowers the type on an engine takes its line off and replays the
+scenario. A machine that publishes no
 variable, such as `static_host_call`, is read from what it told its host, which is
 why `host_calls` exists; a driver whose machine records no host refuses a step
 that states it rather than pass it.

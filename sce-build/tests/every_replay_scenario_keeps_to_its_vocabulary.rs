@@ -245,6 +245,117 @@ fn the_command_reports_every_problem_of_a_scenario() {
     }
 }
 
+/// The shared scenario of an optional value (docs/adr/0055, step 4) is one the
+/// command finds nothing wrong with, held to its machine: each `null` it states —
+/// a variable, a record's field, a field of a list's record, a field of the
+/// payload, a pair of the `<donedata>` — stands where the machine declares an
+/// optional value.
+#[test]
+fn the_optional_scenario_states_null_only_where_its_machine_declares_one() {
+    let scenario = fixtures().join("scenarios/static_optional.json");
+    let machine = fixtures().join("static_optional.scxml");
+    let (ok, lines, stderr) = scenarios(&[
+        scenario.to_str().expect("a path"),
+        "--machine",
+        machine.to_str().expect("a path"),
+    ]);
+    assert!(ok, "the command ran:\n{stderr}");
+    assert_eq!(lines[0]["machine"], "static_optional", "{lines:?}");
+    assert_eq!(lines[0]["usable"], true, "{lines:?}");
+    assert_eq!(
+        lines.len(),
+        1,
+        "a usable scenario has no problem lines: {lines:?}"
+    );
+    // A scenario that stated no `null` would pass the rule for nothing: each
+    // place an absent value is stated at holds one.
+    let text = std::fs::read_to_string(&scenario).expect("the scenario is readable");
+    let value: Value = sce_build::strict_json::from_str(&text).expect("the scenario is JSON");
+    let steps = &value["steps"];
+    for (pointer, what) in [
+        ("/0/expect/variables/due", "a variable"),
+        ("/0/expect/variables/item/due", "a record's field"),
+        ("/6/data/due", "a field of the payload"),
+        (
+            "/6/expect/variables/items/1/status",
+            "a field of a list's record",
+        ),
+        ("/15/expect/donedata/kept", "a pair of the <donedata>"),
+    ] {
+        assert!(
+            steps.pointer(pointer).is_some_and(Value::is_null),
+            "{what} is stated absent at /steps{pointer}"
+        );
+    }
+}
+
+/// `null` on a variable or a field that is not optional is refused, at its place
+/// and naming it, and on one that is, admitted: the same scenario states both, on
+/// the machine of the shared scenario.
+#[test]
+fn null_is_refused_where_the_machine_declares_no_optional_value() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("absent.json");
+    std::fs::write(
+        &path,
+        r#"{
+  "machine": "static_optional",
+  "steps": [
+    { "expect": { "variables": {
+        "due": null, "days": null,
+        "item": { "id": null, "due": null, "title": "first", "status": null },
+        "items": [ { "id": 1, "due": null, "title": null, "status": null } ] } } },
+    { "event": "due.set", "data": { "id": null, "due": null, "title": null, "status": null },
+      "expect": { "variables": { "label": null } } },
+    { "event": "due.read", "data": { "due": null }, "expect": {} },
+    { "event": "finish", "expect": { "ended": true, "donedata": { "due": null, "days": null } } }
+  ]
+}
+"#,
+    )
+    .expect("write the scenario");
+    let machine = fixtures().join("static_optional.scxml");
+    let (ok, lines, stderr) = scenarios(&[
+        path.to_str().expect("a path"),
+        "--machine",
+        machine.to_str().expect("a path"),
+    ]);
+    assert!(ok, "findings are no refusal:\n{stderr}");
+    assert_eq!(lines[0]["usable"], false, "{lines:?}");
+    let mut refused: Vec<String> = lines[1..]
+        .iter()
+        .filter(|line| line["code"] == "null-not-optional")
+        .map(|line| line["path"].as_str().expect("a path").to_string())
+        .collect();
+    refused.sort();
+    assert_eq!(
+        refused,
+        vec![
+            "/steps/0/expect/variables/days",
+            "/steps/0/expect/variables/item/id",
+            "/steps/1/data/id",
+            "/steps/1/expect/variables/label",
+            "/steps/2/data/due",
+            "/steps/3/expect/donedata/days",
+        ],
+        "{lines:?}"
+    );
+    assert_eq!(
+        lines.len(),
+        1 + refused.len(),
+        "nothing else is wrong with the scenario: {lines:?}"
+    );
+    let days = lines[1..]
+        .iter()
+        .find(|line| line["path"] == "/steps/0/expect/variables/days")
+        .expect("the variable is refused");
+    let detail = days["detail"].as_str().expect("a detail");
+    assert!(
+        detail.contains("the variable `days`") && detail.contains("optional<T>"),
+        "the refusal names the variable and the type that holds `null`: {detail}"
+    );
+}
+
 /// A file that is neither a scenario set nor a replay scenario is refused, as it was.
 #[test]
 fn a_file_that_is_no_scenario_is_still_refused() {

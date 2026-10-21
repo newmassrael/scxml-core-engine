@@ -35,9 +35,11 @@
 //! ([`problems`]), each with a JSON pointer to where it is and a code
 //! ([`PROBLEM_CODES`]). With the machine's document in hand ([`MachineFacts`]),
 //! the names a scenario uses are held to it too: the events it sends, the states
-//! and variables it expects ([`machine_problems`]).
+//! and variables it expects ([`machine_problems`]), and every `null` it states,
+//! which is an absent value and stands only where the machine declares an
+//! optional one ([`Holds`], docs/adr/0055, section 4).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{Map, Value};
 
@@ -213,6 +215,7 @@ pub const PROBLEM_CODES: &[&str] = &[
     "dropped-event-matches",
     "unknown-state",
     "unknown-variable",
+    "null-not-optional",
 ];
 
 /// One thing wrong with a scenario: where it is (a JSON pointer into the
@@ -711,9 +714,114 @@ fn child_host_problems(found: &mut Found, children: &Value, path: &str) {
     }
 }
 
+/// What a value a scenario states at a place may be, by what the machine declares
+/// there: in particular whether it may be `null`, the absent value of an optional
+/// value (docs/adr/0055, section 4). A variable, a record's field, a field of an
+/// event's payload and a pair of a `<donedata>` each hold one of these.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Holds {
+    /// A value that is never absent: a number, a bool, a text, a value of an
+    /// enum, a list of those.
+    Present,
+    /// `optional<T>`: `null`, or a value of what `T` holds.
+    Optional(Box<Holds>),
+    /// A record: an object, each field held as its schema declares it.
+    Record(BTreeMap<String, Holds>),
+    /// A list of records: an array, each element held as the record is.
+    List(Box<Holds>),
+}
+
+impl Holds {
+    /// `optional<T>` over a scalar.
+    pub fn optional() -> Self {
+        Self::Optional(Box::new(Self::Present))
+    }
+
+    /// What a variable declared `ty` holds, a record by the schema `records`
+    /// names under its alias. A variable with no declared type (one outside
+    /// `sce-static`) holds a value that is never absent.
+    pub fn of_variable(
+        ty: Option<&crate::forge::model::AlgorithmValueType>,
+        records: &BTreeMap<String, crate::forge::model::EventSchemaModel>,
+    ) -> Self {
+        use crate::forge::model::AlgorithmValueType;
+        // A record of an alias the document does not import has no field to
+        // admit `null` in; the parser refuses such a document before this.
+        let record = |alias: &str| match records.get(alias) {
+            Some(schema) => Self::of_schema(schema),
+            None => Self::Record(BTreeMap::new()),
+        };
+        match ty {
+            None | Some(AlgorithmValueType::Scalar(_)) => Self::Present,
+            Some(AlgorithmValueType::List { elem }) => match elem.record_alias() {
+                Some(alias) => Self::List(Box::new(record(alias))),
+                None => Self::Present,
+            },
+            Some(AlgorithmValueType::Record { alias }) => record(alias),
+            Some(AlgorithmValueType::Optional { elem }) => {
+                Self::Optional(Box::new(match elem.record_alias() {
+                    Some(alias) => record(alias),
+                    None => Self::Present,
+                }))
+            }
+        }
+    }
+
+    /// The record `schema` declares: a field of `optional<T>` holds `null`, and
+    /// every other field a value that is never absent.
+    pub fn of_schema(schema: &crate::forge::model::EventSchemaModel) -> Self {
+        Self::Record(
+            schema
+                .fields
+                .iter()
+                .map(|field| {
+                    let holds = if field.sce_type.optional_elem().is_some() {
+                        Self::optional()
+                    } else {
+                        Self::Present
+                    };
+                    (field.id.clone(), holds)
+                })
+                .collect(),
+        )
+    }
+
+    /// Whether `null` stands here.
+    fn admits_null(&self) -> bool {
+        matches!(self, Self::Optional(_))
+    }
+
+    /// What a present value of this holds: what stands inside an optional
+    /// value, and this itself for any other.
+    fn present(&self) -> &Self {
+        match self {
+            Self::Optional(inner) => inner.as_ref(),
+            other => other,
+        }
+    }
+
+    /// What the field `name` of a value of this holds, when this is a record
+    /// that declares it.
+    fn field(&self, name: &str) -> Option<&Self> {
+        match self.present() {
+            Self::Record(fields) => fields.get(name),
+            _ => None,
+        }
+    }
+
+    /// What an element of a value of this holds, when this is a list of records.
+    fn element(&self) -> Option<&Self> {
+        match self.present() {
+            Self::List(element) => Some(element.as_ref()),
+            _ => None,
+        }
+    }
+}
+
 /// What a scenario's names are held to, read from the machine's document: the
-/// name the scenario must give it, its states, its variables, and the event
-/// descriptors of its transitions.
+/// name the scenario must give it, its states, its variables, the event
+/// descriptors of its transitions, and what each place a scenario states a value
+/// at holds ([`Holds`]).
 #[derive(Debug, Clone, Default)]
 pub struct MachineFacts {
     /// The name a scenario gives the machine, its last `/`-separated segment
@@ -723,29 +831,43 @@ pub struct MachineFacts {
     /// Every state id of the document, compound, parallel and final ones
     /// included.
     pub states: BTreeSet<String>,
-    /// Every variable the document declares, top-level and per state: what a
-    /// saved state writes and a step's `variables` reads.
-    pub variables: BTreeSet<String>,
+    /// Every variable the document declares, top-level and per state, with what
+    /// it holds: what a saved state writes and a step's `variables` reads.
+    pub variables: BTreeMap<String, Holds>,
     /// Every event name the document writes — what a generated machine's table of
     /// its events holds.
     pub names: BTreeSet<String>,
     /// The `event` attribute of every transition, as written: a descriptor a name
     /// the machine is sent is matched against, `*` included.
     pub events: Vec<String>,
+    /// The payload of each event the document imports a schema for, by the
+    /// event's name: what a step's `data` and a send's `data` carry.
+    pub payloads: BTreeMap<String, Holds>,
+    /// What the `<donedata>` of each top-level `<final>` that declares one
+    /// carries: what a step's `donedata` states, from whichever final the
+    /// machine ended in.
+    pub donedata: Vec<Holds>,
 }
 
 impl MachineFacts {
     /// The facts of `model`, a statechart read from a document whose stem is `name`.
     pub fn of(model: &crate::model::SCXMLModel, name: &str) -> Self {
+        let variables: BTreeMap<String, Holds> = model
+            .variables
+            .iter()
+            .chain(model.states.values().flat_map(|s| s.datamodel.iter()))
+            .map(|v| {
+                (
+                    v.id.clone(),
+                    Holds::of_variable(v.value_type.as_ref(), &model.imported_records),
+                )
+            })
+            .collect();
+        let donedata = done_data(model, &variables);
         Self {
             name: name.to_string(),
             states: model.states.keys().cloned().collect(),
-            variables: model
-                .variables
-                .iter()
-                .chain(model.states.values().flat_map(|s| s.datamodel.iter()))
-                .map(|v| v.id.clone())
-                .collect(),
+            variables,
             names: model
                 .events
                 .iter()
@@ -759,6 +881,12 @@ impl MachineFacts {
                 .map(|t| t.event.clone())
                 .filter(|event| !event.trim().is_empty())
                 .collect(),
+            payloads: model
+                .imported_event_schemas
+                .iter()
+                .map(|(event, schema)| (event.clone(), Holds::of_schema(schema)))
+                .collect(),
+            donedata,
         }
     }
 
@@ -786,7 +914,8 @@ impl MachineFacts {
 /// Every name `scenario` uses that `machine` does not have: a `machine` that names
 /// another document, an event sent to the machine itself that no transition of it
 /// matches (unless the step expects it `dropped`, or one it matches that the step
-/// expects dropped), and a state or a variable the document does not declare.
+/// expects dropped), a state or a variable the document does not declare, and a
+/// `null` where the document declares no optional value (`absent_values`).
 /// The shape of the scenario is [`problems`]'s, and a member of the wrong kind is
 /// passed over here.
 pub fn machine_problems(scenario: &Value, machine: &MachineFacts) -> Vec<Problem> {
@@ -839,6 +968,7 @@ pub fn machine_problems(scenario: &Value, machine: &MachineFacts) -> Vec<Problem
                 }
             }
         }
+        absent_values(&mut found, step, &path, machine);
         let Some(expect) = step.get("expect").and_then(Value::as_object) else {
             continue;
         };
@@ -863,7 +993,7 @@ pub fn machine_problems(scenario: &Value, machine: &MachineFacts) -> Vec<Problem
         }
         if let Some(variables) = expect.get("variables").and_then(Value::as_object) {
             for name in variables.keys() {
-                if !machine.variables.contains(name) {
+                if !machine.variables.contains_key(name) {
                     found.push(
                         &format!("{path}/expect/variables/{}", pointer_token(name)),
                         "unknown-variable",
@@ -874,6 +1004,234 @@ pub fn machine_problems(scenario: &Value, machine: &MachineFacts) -> Vec<Problem
         }
     }
     found.0
+}
+
+/// Every `null` a step states where `machine` declares no optional value
+/// (docs/adr/0055, section 4): `null` is an absent value, and a place holds one
+/// only when its type is `optional<T>`. The places a scenario states a value of
+/// the machine's at are each held to what the machine declares there — the
+/// event's `data` to the schema the machine imports for the event, a variable to
+/// its `sce:type` (a record's field and a list's record's field to the schema of
+/// the record), the `donedata` to what a top-level `<final>` carries, and the
+/// `data` of a send to the schema of the event sent. Anywhere else a step states a
+/// value — a host call's arguments, what a child asked of its host, the data of an
+/// event handed to a child, whose schema is not this machine's to read — nothing
+/// is optional. A variable the machine does not declare is `unknown-variable`
+/// already, and is not judged twice.
+fn absent_values(found: &mut Found, step: &Value, path: &str, machine: &MachineFacts) {
+    let unread = |event: &str| {
+        format!(
+            "the payload of `{event}` (an event `{}` imports no schema for)",
+            machine.name
+        )
+    };
+    if let (Some(data), Some(event)) = (step.get("data"), step.get("event").and_then(Value::as_str))
+    {
+        let at = format!("{path}/data");
+        match (step.get("invoke"), machine.payloads.get(event)) {
+            (Some(_), _) => hold_nulls(
+                found,
+                data,
+                &[],
+                &at,
+                &format!(
+                    "the payload of `{event}` for a child (whose schema `{}` does not read)",
+                    machine.name
+                ),
+                machine,
+            ),
+            (None, Some(payload)) => hold_nulls(
+                found,
+                data,
+                &[payload],
+                &at,
+                &format!("the payload of `{event}`"),
+                machine,
+            ),
+            (None, None) => hold_nulls(found, data, &[], &at, &unread(event), machine),
+        }
+    }
+    let Some(expect) = step.get("expect").and_then(Value::as_object) else {
+        return;
+    };
+    if let Some(variables) = expect.get("variables").and_then(Value::as_object) {
+        for (name, value) in variables {
+            if let Some(holds) = machine.variables.get(name) {
+                hold_nulls(
+                    found,
+                    value,
+                    &[holds],
+                    &format!("{path}/expect/variables/{}", pointer_token(name)),
+                    &format!("the variable `{name}`"),
+                    machine,
+                );
+            }
+        }
+    }
+    if let Some(donedata) = expect.get("donedata") {
+        let finals: Vec<&Holds> = machine.donedata.iter().collect();
+        hold_nulls(
+            found,
+            donedata,
+            &finals,
+            &format!("{path}/expect/donedata"),
+            "the data of the `<donedata>`",
+            machine,
+        );
+    }
+    if let Some(sends) = expect.get("sent").and_then(Value::as_array) {
+        for (n, send) in sends.iter().enumerate() {
+            let (Some(data), Some(event)) =
+                (send.get("data"), send.get("event").and_then(Value::as_str))
+            else {
+                continue;
+            };
+            let at = format!("{path}/expect/sent/{n}/data");
+            match machine.payloads.get(event) {
+                Some(payload) => hold_nulls(
+                    found,
+                    data,
+                    &[payload],
+                    &at,
+                    &format!("the data of the `{event}` it sent"),
+                    machine,
+                ),
+                None => hold_nulls(found, data, &[], &at, &unread(event), machine),
+            }
+        }
+    }
+    for (member, place) in [
+        ("host_calls", "a call of its host"),
+        ("child_hosts", "what a child asked of its host"),
+    ] {
+        if let Some(value) = expect.get(member) {
+            hold_nulls(
+                found,
+                value,
+                &[],
+                &format!("{path}/expect/{member}"),
+                place,
+                machine,
+            );
+        }
+    }
+}
+
+/// A problem for each `null` under `value`, at `at`, that none of `holds` admits:
+/// `place` names what `value` is in words, and the pointer below it, when the
+/// `null` is nested, says where in it.
+fn hold_nulls(
+    found: &mut Found,
+    value: &Value,
+    holds: &[&Holds],
+    at: &str,
+    place: &str,
+    machine: &MachineFacts,
+) {
+    let mut unheld = Vec::new();
+    unheld_nulls(value, holds, String::new(), &mut unheld);
+    for below in unheld {
+        let within = if below.is_empty() {
+            String::new()
+        } else {
+            format!(" at `{below}`")
+        };
+        found.push(
+            &format!("{at}{below}"),
+            "null-not-optional",
+            format!(
+                "`null` is an absent value, which stands only where a type is `optional<T>`, \
+                 and `{}` declares no such type for {place}{within}",
+                machine.name
+            ),
+        );
+    }
+}
+
+/// The pointer below `value` (from `below`) of each `null` in it that none of
+/// `holds` admits, in document order. A field or an element `holds` does not
+/// declare holds nothing, so a `null` there is admitted by none.
+fn unheld_nulls(value: &Value, holds: &[&Holds], below: String, out: &mut Vec<String>) {
+    match value {
+        Value::Null => {
+            if !holds.iter().any(|h| h.admits_null()) {
+                out.push(below);
+            }
+        }
+        Value::Object(fields) => {
+            for (name, field) in fields {
+                let inner: Vec<&Holds> = holds.iter().filter_map(|h| h.field(name)).collect();
+                unheld_nulls(
+                    field,
+                    &inner,
+                    format!("{below}/{}", pointer_token(name)),
+                    out,
+                );
+            }
+        }
+        Value::Array(elements) => {
+            let inner: Vec<&Holds> = holds.iter().filter_map(|h| h.element()).collect();
+            for (n, element) in elements.iter().enumerate() {
+                unheld_nulls(element, &inner, format!("{below}/{n}"), out);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// What the `<donedata>` of each top-level `<final>` of `model` carries, a final to
+/// an entry: the pairs of its `<param>`s, or the one value its `<content expr>`
+/// names. A param or a content that names a variable carries what the variable
+/// holds (`variables`); any other expression is typed as the statechart's judge
+/// types it, and carries `null` when it is of an optional type
+/// (`due`, `item.due`, `flag ? due : null`) and not when it is of another
+/// (`due ?? 0`). A content written as text carries that text, which no type
+/// declares optional.
+fn done_data(model: &crate::model::SCXMLModel, variables: &BTreeMap<String, Holds>) -> Vec<Holds> {
+    use crate::forge::type_ctx::{StaticEnum, StaticEnumSpelling, StaticScope};
+    let scope = StaticScope::of(model);
+    let enums = StaticEnum::from_imports(&model.imported_enums, |alias, _| {
+        StaticEnumSpelling::unlowered(alias)
+    });
+    // A `<final>` is entered where no event's payload is in scope.
+    let paths = scope
+        .as_ref()
+        .map(|scope| scope.paths(None))
+        .unwrap_or_default();
+    let ctx = scope.as_ref().map(|scope| scope.ctx(&paths, &enums));
+    let carried = |written: &str| -> Holds {
+        let written = written.trim();
+        if let Some(holds) = variables.get(written) {
+            return holds.clone();
+        }
+        let optional = ctx.as_ref().is_some_and(|ctx| {
+            crate::forge::expr::infer_expr_type(written, ctx)
+                .is_ok_and(crate::forge::types::InferredType::is_optional)
+        });
+        if optional {
+            Holds::optional()
+        } else {
+            Holds::Present
+        }
+    };
+    model
+        .states
+        .values()
+        .filter(|state| state.is_final && state.parent.is_none())
+        .filter_map(|state| state.donedata.as_ref())
+        .map(|done| match &done.content {
+            crate::model::DoneDataContent::Expression(expr) => carried(expr),
+            _ => Holds::Record(
+                done.params
+                    .iter()
+                    .map(|param| {
+                        let pair = crate::forge::static_datamodel::WireParam::of_done_param(param);
+                        (param.name.clone(), carried(pair.written))
+                    })
+                    .collect(),
+            ),
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -1176,9 +1534,10 @@ mod tests {
         let machine = MachineFacts {
             name: "m".to_string(),
             states: ["idle".to_string()].into(),
-            variables: ["count".to_string()].into(),
+            variables: [("count".to_string(), Holds::Present)].into(),
             names: ["go".to_string()].into(),
             events: vec!["go".to_string()],
+            ..MachineFacts::default()
         };
         let inputs = [
             json!(1),
@@ -1207,6 +1566,7 @@ mod tests {
             json!({"machine": "m", "steps": [{"event": "go", "dropped": true, "expect": {}}]}),
             json!({"machine": "m", "steps": [{"expect": {"state": "busy"}}]}),
             json!({"machine": "m", "steps": [{"expect": {"variables": {"total": 1}}}]}),
+            json!({"machine": "m", "steps": [{"expect": {"variables": {"count": null}}}]}),
         ];
         let made: BTreeSet<&str> = inputs
             .iter()
@@ -1230,9 +1590,10 @@ mod tests {
         let machine = MachineFacts {
             name: "static_counter".to_string(),
             states: ["counting".to_string(), "done".to_string()].into(),
-            variables: ["count".to_string()].into(),
+            variables: [("count".to_string(), Holds::Present)].into(),
             names: ["tick".to_string(), "report".to_string()].into(),
             events: vec!["tick error.*".to_string()],
+            ..MachineFacts::default()
         };
         let fits = json!({
             "machine": "static_counter",
@@ -1257,6 +1618,109 @@ mod tests {
                 &standard
             ),
             Vec::new()
+        );
+    }
+
+    /// `null` is an absent value (docs/adr/0055, section 4): it stands where the
+    /// machine declares `optional<T>` — a variable, a record's field, the field of
+    /// a list's record, a field of an event's payload, a pair of a `<donedata>` —
+    /// and is refused everywhere else, at its own place.
+    #[test]
+    fn null_stands_only_where_the_machine_declares_an_optional_value() {
+        let record = Holds::Record(
+            [
+                ("id".to_string(), Holds::Present),
+                ("due".to_string(), Holds::optional()),
+            ]
+            .into(),
+        );
+        let machine = MachineFacts {
+            name: "m".to_string(),
+            variables: [
+                ("count".to_string(), Holds::Present),
+                ("due".to_string(), Holds::optional()),
+                ("item".to_string(), record.clone()),
+                ("items".to_string(), Holds::List(Box::new(record.clone()))),
+            ]
+            .into(),
+            names: ["set".to_string(), "tick".to_string()].into(),
+            events: vec!["set".to_string(), "tick".to_string()],
+            payloads: [("set".to_string(), record)].into(),
+            donedata: vec![Holds::Record(
+                [
+                    ("due".to_string(), Holds::optional()),
+                    ("total".to_string(), Holds::Present),
+                ]
+                .into(),
+            )],
+            ..MachineFacts::default()
+        };
+        let fits = json!({"machine": "m", "steps": [
+            {"event": "set", "data": {"id": 1, "due": null},
+             "expect": {"variables": {
+                 "due": null,
+                 "item": {"id": 1, "due": null},
+                 "items": [{"id": 1, "due": 5}, {"id": 2, "due": null}]}}},
+            {"event": "tick", "expect": {"ended": true, "donedata": {"due": null, "total": 3}}}
+        ]});
+        assert_eq!(machine_problems(&fits, &machine), Vec::new());
+        let refused = json!({"machine": "m", "steps": [
+            {"event": "set", "data": {"id": null, "due": 5},
+             "expect": {"variables": {
+                 "count": null,
+                 "item": {"id": null, "due": 5},
+                 "items": [{"id": null, "due": null}]}}},
+            {"event": "tick", "data": {"due": null},
+             "expect": {"ended": true, "donedata": {"total": null},
+                        "host_calls": [{"action": "a", "args": [null]}]}}
+        ]});
+        let found = machine_problems(&refused, &machine);
+        assert!(
+            found.iter().all(|p| p.code == "null-not-optional"),
+            "{found:?}"
+        );
+        let mut paths: Vec<&str> = found.iter().map(|p| p.path.as_str()).collect();
+        paths.sort_unstable();
+        assert_eq!(
+            paths,
+            vec![
+                "/steps/0/data/id",
+                "/steps/0/expect/variables/count",
+                "/steps/0/expect/variables/item/id",
+                "/steps/0/expect/variables/items/0/id",
+                "/steps/1/data/due",
+                "/steps/1/expect/donedata/total",
+                "/steps/1/expect/host_calls/0/args/0",
+            ]
+        );
+        // Each names the place in words: the variable, and where in it.
+        let count = found
+            .iter()
+            .find(|p| p.path == "/steps/0/expect/variables/count")
+            .expect("the variable is refused");
+        assert!(
+            count.detail.contains("the variable `count`") && count.detail.contains("optional<T>"),
+            "{}",
+            count.detail
+        );
+        let nested = found
+            .iter()
+            .find(|p| p.path == "/steps/0/expect/variables/items/0/id")
+            .expect("the field is refused");
+        assert!(
+            nested.detail.contains("the variable `items` at `/0/id`"),
+            "{}",
+            nested.detail
+        );
+        // An event the machine imports no schema for has no optional field.
+        let unread = found
+            .iter()
+            .find(|p| p.path == "/steps/1/data/due")
+            .expect("the payload is refused");
+        assert!(
+            unread.detail.contains("imports no schema for"),
+            "{}",
+            unread.detail
         );
     }
 }

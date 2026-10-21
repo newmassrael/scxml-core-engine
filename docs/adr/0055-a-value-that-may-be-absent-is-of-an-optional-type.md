@@ -3,7 +3,7 @@
 - Status: Accepted (2026-10-21). The owner decided every question the proposal left open ("The
   owner's answers", below), under the standing rule: the most long-term correct structure, cost
   ignored; never a sentinel number and never a companion flag that admits impossible states. Steps
-  1, 2 and 3 are implemented; the others follow in the order section 9 gives. Section 8 and step 12 amended the
+  1 to 4 are implemented; the others follow in the order section 9 gives. Section 8 and step 12 amended the
   same day by that rule: a codec document declares its format, and format 1 is refused for good.
 - Date: 2026-10-21
 - Amends: ADR 0044 decisions 1 and 3 (a revision may widen a field from `T` to `optional<T>`);
@@ -604,14 +604,34 @@ documents, not observed from a backend.
    enum and `status.value` is. An `<invoke>`'s `idlocation` is written when the invocation starts,
    after every block of the macrostep, so it ends no fact a block holds; a `<send idlocation>` may
    name an `optional<string>`.
-4. **The shared scenario and the drivers' vocabulary.** `scenarios/static_optional.json` (a variable,
+4. **The shared scenario and the drivers' vocabulary** (implemented). `scenarios/static_optional.json` (a variable,
    a record's field, a payload's field and a list of records holding an optional `int64`, an
    `optional<string>` and an `optional<enum:…>`: set, cleared, tested, read where proven, `??` with
    a `d` that would fail only when evaluated, equality, a delivery with a value, with `null`, and
    without the key); `scenario_replay` admitting `null` where the machine holds an optional; each
    scanning driver listing the scenario as not yet lowered, with the reason, until its backend's
    step. Tests: `every_replay_scenario_keeps_to_the_vocabulary_its_drivers_replay` reading `null` in
-   the new scenario and refusing it in a scenario whose variable is not optional.
+   the new scenario and refusing it in a scenario whose variable is not optional. As built, the
+   machine is `static_optional.scxml` over two schemas, `schema_due.scxml` (the record and the
+   payload of `due.set`) and `schema_due_sent.scxml` (what the machine sends itself); the scenario
+   adds what section 2 and section 3 read in a statechart (each narrowing construct of executable
+   content, a `<log>`, a `<send>` and a `<donedata>` of optional values). `null` is held by
+   `scenario_replay::machine_problems`, which reads what each place holds from the machine
+   (`Holds`: a variable's type, a record's and a list's record's fields, the payload of an event
+   the machine imports a schema for, the pairs of a top-level `<final>`'s `<donedata>` typed as the
+   judge types them) and refuses a `null` anywhere else as `null-not-optional`. "Not yet lowered"
+   is listed in three places: `NOT_YET_LOWERED` in
+   `sce-build/tests/a_static_datamodel_holds_every_variable_to_a_type.rs`, an engine to a line,
+   which admits a scenario no engine lowers only while every engine says why and fails for a line
+   whose engine lowers the machine; `NOT_YET_LOWERED` of the Rust scenario table
+   (`backends/rust/scenarios/src/machines.rs`, read by its wasm32 hosts too); and an expectation
+   of the Interpreter's scan (`AStaticDatamodelRunsLoweredUnderTheInterpreterTest`). The drivers
+   that name each scenario they replay (Rust `static_scenarios`, Kotlin, Go, Python, C++, C11)
+   list nothing: the test above already holds them to replay what their backend lowers. Tests:
+   `the_optional_scenario_states_null_only_where_its_machine_declares_one` and
+   `null_is_refused_where_the_machine_declares_no_optional_value` in
+   `sce-build/tests/every_replay_scenario_keeps_to_its_vocabulary.rs`, and
+   `null_stands_only_where_the_machine_declares_an_optional_value` in `scenario_replay`.
 5. **One backend at a time, in any order (seven steps, each its own branch):** Rust (with
    `sce_forge_runtime::optional::proven`), Kotlin, Go (with the `optional` package and `Of[T]`),
    Python, C++, C11 (with `sce/forge/optional.h`), the Interpreter (with `SceStatic.otherwise`).
