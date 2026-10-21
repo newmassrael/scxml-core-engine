@@ -14,9 +14,17 @@ kotlin {
     }
 
     sourceSets {
+        // What generated Kotlin names is exported, not only used: a machine's public
+        // `snapshot` is a coroutines `StateFlow`, and a `sce-static` machine checks
+        // its integer operations with the forge runtime's `SceChecked` and receives a
+        // failure as its `AlgorithmFailure`. A project that depends on this runtime
+        // alone compiles every generated machine;
+        // `the_kotlin_runtime_exports_what_generated_kotlin_names` holds this list to
+        // what the templates and the committed generated trees reference.
         val commonMain by getting {
             dependencies {
-                implementation(libs.kotlinx.coroutines.core)
+                api(libs.kotlinx.coroutines.core)
+                api(project(":sce-forge-runtime-kotlin"))
             }
         }
         val commonTest by getting {

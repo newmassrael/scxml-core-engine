@@ -6,15 +6,16 @@ group = "com.sce"
 version = "1.0.0"
 
 dependencies {
+    // The generated machines compile against what the runtime exports and nothing
+    // this module adds: the forge runtime (`SceChecked`, `AlgorithmFailure`) and
+    // kotlinx.coroutines (a machine's `snapshot`) reach them through the runtime's
+    // `api`, as they reach a project outside this repository that depends on the
+    // runtime alone. Declaring either here as well is what hid that the runtime did
+    // not export them.
     implementation(project(":sce-kotlin-runtime"))
     implementation(project(":sce-kotlin-rhino"))
     implementation(project(":sce-kotlin-lua"))
     implementation(project(":sce-kotlin-quickjs"))
-    // A `datamodel="sce-static"` machine checks its integer operations with
-    // the forge runtime's `SceChecked`, and receives a failure as its
-    // `AlgorithmFailure` (SCE Accepted Subset §2.15, SCE_FORGE.md §3.4.1).
-    implementation(project(":sce-forge-runtime-kotlin"))
-    implementation(libs.kotlinx.coroutines.core)
 
     testImplementation(kotlin("test"))
     // The Mesh host core, for the tests that run a generated machine's
