@@ -34,6 +34,7 @@
 //     document read and none of what the run wrote;
 //   - machines written into one directory share one sourcemap naming them
 //     all;
+//   - the set's manifest names each document that was rejected;
 //   - `orchestrate --document` takes a standard document by its library name.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -703,6 +704,65 @@ fn one_sourcemap_names_every_machine_a_run_writes_into_one_directory() {
     assert!(
         machine.contains(hash),
         "two machines of one source set: the sidecar carries the hash their headers do"
+    );
+}
+
+#[test]
+fn the_set_manifest_names_each_document_that_was_rejected() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let src = tmp.path().join("src");
+    fs::create_dir_all(&src).expect("create the source directory");
+    let door = src.join("door.scxml");
+    fs::write(&door, plain_statechart("door", "")).expect("write");
+    // A script that cannot be loaded rejects the document (W3C SCXML 5.8):
+    // stubs are written in place of its code.
+    let stubbed = src.join("stubbed.scxml");
+    fs::write(
+        &stubbed,
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<scxml \
+         xmlns=\"http://www.w3.org/2005/07/scxml\" version=\"1.0\" initial=\"s\" \
+         datamodel=\"ecmascript\" name=\"stubbed\">\n  <script src=\"absent.js\"/>\n  \
+         <state id=\"s\"/>\n</scxml>\n",
+    )
+    .expect("write");
+    let out = tmp.path().join("out");
+
+    let run = generate_documents(&[door, stubbed], &out, "rust", &[]);
+    succeeded(&run, "a run over a rejected document");
+    let manifest: serde_json::Value = serde_json::from_slice(&run.stdout)
+        .unwrap_or_else(|e| panic!("the manifest is one JSON line ({e})"));
+    let schema: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../schemas/sce-manifest.v1.schema.json"),
+        )
+        .expect("read the manifest schema"),
+    )
+    .expect("the schema is JSON");
+    let validator = jsonschema::JSONSchema::options()
+        .with_draft(jsonschema::Draft::Draft7)
+        .compile(&schema)
+        .expect("the schema compiles");
+    let violations: Vec<String> = match validator.validate(&manifest) {
+        Ok(()) => Vec::new(),
+        Err(errors) => errors.map(|e| e.to_string()).collect(),
+    };
+    assert!(violations.is_empty(), "{violations:?}\n{manifest}");
+
+    assert!(
+        manifest.get("rejected").is_none(),
+        "a set names no one rejected document: {manifest}"
+    );
+    let rejected = manifest["rejected_documents"]
+        .as_array()
+        .unwrap_or_else(|| panic!("the rejected document is named: {manifest}"));
+    assert_eq!(rejected.len(), 1, "{manifest}");
+    assert_eq!(rejected[0]["spec"], "W3C SCXML 5.8");
+    assert_eq!(rejected[0]["name"], "stubbed");
+    assert!(
+        rejected[0]["document"]
+            .as_str()
+            .is_some_and(|d| d.ends_with("stubbed.scxml")),
+        "{manifest}"
     );
 }
 

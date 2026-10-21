@@ -156,6 +156,19 @@ pub struct RejectedInfo {
     pub name: String,
 }
 
+/// A document of a `generate --with-imports` run that a W3C-spec rule
+/// rejected, so stub files were written in place of its code: what
+/// [`RejectedInfo`] says of the one document of a single-document run, with
+/// the document it is about, since a set holds several.
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+pub struct RejectedMember {
+    /// The document as the run generated it (`Unit::document` of
+    /// `crate::import_closure`).
+    pub document: String,
+    pub spec: &'static str,
+    pub name: String,
+}
+
 /// The kind a run read its one document as, and whether the document
 /// said so.
 ///
@@ -635,6 +648,11 @@ pub struct Manifest<'a> {
     pub holder: Option<crate::forge::generator::TransformHolderSymbols>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rejected: Option<RejectedInfo>,
+    /// Every document of a `generate --with-imports` run that was rejected,
+    /// in the order the run generated them; omitted when none was, and on
+    /// every run of one document, which says it in [`Self::rejected`].
+    #[serde(skip_serializing_if = "<[_]>::is_empty")]
+    pub rejected_documents: &'a [RejectedMember],
     #[serde(skip_serializing_if = "Option::is_none")]
     pub deploy: Option<DeployInfo>,
     /// The formatter that shaped the emitted artefacts, when one did.
@@ -958,6 +976,7 @@ mod tests {
                 unreadable_variables: &[],
                 holder: None,
                 rejected: None,
+                rejected_documents: &[],
                 deploy: None,
                 formatter: None,
                 languages: None,
@@ -1017,6 +1036,7 @@ mod tests {
             unreadable_variables: &[],
             holder: None,
             rejected: None,
+            rejected_documents: &[],
             deploy: None,
             formatter: None,
             languages: None,
@@ -1058,6 +1078,7 @@ mod tests {
                 spec: "W3C SCXML 5.8",
                 name: "untestable_doc".to_string(),
             }),
+            rejected_documents: &[],
             deploy: Some(DeployInfo {
                 static_analyzer: Some(StaticAnalyzer::Coverity.as_str()),
             }),
@@ -1099,6 +1120,7 @@ mod tests {
             unreadable_variables: &[],
             holder: None,
             rejected: None,
+            rejected_documents: &[],
             deploy: None,
             formatter: None,
             languages: Some(vec![
@@ -1164,6 +1186,7 @@ mod tests {
             unreadable_variables: &[],
             holder: None,
             rejected: None,
+            rejected_documents: &[],
             deploy: None,
             formatter: None,
             languages: None,
@@ -1214,6 +1237,7 @@ mod tests {
             unreadable_variables: &[],
             holder: None,
             rejected: None,
+            rejected_documents: &[],
             deploy: None,
             formatter: None,
             languages: None,
@@ -1272,6 +1296,7 @@ mod tests {
             unreadable_variables: &[],
             holder: None,
             rejected: None,
+            rejected_documents: &[],
             deploy: None,
             formatter: None,
             languages: None,
@@ -1314,6 +1339,7 @@ mod tests {
             unreadable_variables: &[],
             holder: None,
             rejected: None,
+            rejected_documents: &[],
             deploy: None,
             formatter: None,
             languages: None,
@@ -1366,6 +1392,7 @@ mod tests {
             unreadable_variables: &[],
             holder: None,
             rejected: None,
+            rejected_documents: &[],
             deploy: None,
             formatter: None,
             languages: None,
@@ -1421,6 +1448,7 @@ mod tests {
                 restored: Some("restored".to_string()),
             }),
             rejected: None,
+            rejected_documents: &[],
             deploy: None,
             formatter: None,
             languages: None,

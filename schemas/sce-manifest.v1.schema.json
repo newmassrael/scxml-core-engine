@@ -179,6 +179,12 @@
       "description": "Present only when the input triggered a W3C-spec rejection and stub files were written in place of generated code. Absence means clean generation.",
       "$ref": "#/definitions/rejected"
     },
+    "rejected_documents": {
+      "description": "Every document of a `generate --with-imports` run that a W3C-spec rule rejected, so stub files were written in place of its code, in the order the run generated them. Omitted when none was, and on every run of one document, which says it in `rejected`.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/rejectedMember" }
+    },
     "deploy": {
       "description": "Declarations read out of --deploy that SCE records without acting on. Omitted whole when the run had no deploy or the deploy declared none of them.",
       "$ref": "#/definitions/deploy"
@@ -533,6 +539,27 @@
       "type": "object",
       "required": ["spec", "name"],
       "properties": {
+        "spec": {
+          "description": "The spec rule that rejected the document, e.g. \"W3C SCXML 5.8\".",
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "description": "The document's name attribute.",
+          "type": "string"
+        }
+      }
+    },
+    "rejectedMember": {
+      "type": "object",
+      "required": ["document", "spec", "name"],
+      "additionalProperties": false,
+      "properties": {
+        "document": {
+          "description": "The document as the run generated it: the caller's spelling, an sce:std/... name, or the path a reference resolved to.",
+          "type": "string",
+          "minLength": 1
+        },
         "spec": {
           "description": "The spec rule that rejected the document, e.g. \"W3C SCXML 5.8\".",
           "type": "string",

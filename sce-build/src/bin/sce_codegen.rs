@@ -1158,6 +1158,10 @@ struct GenerateReport {
     /// The symbols the run's machines emitted, per directory, held for the
     /// caller of [`cmd_generate`] to write once per run ([`write_sourcemaps`]).
     sourcemaps: Vec<SourcemapShare>,
+    /// The documents of a `--with-imports` run that were rejected, each
+    /// named — see `Manifest::rejected_documents`. Empty on a run of one
+    /// document, which says it in [`Self::rejected`].
+    rejected_documents: Vec<sce_build::manifest::RejectedMember>,
 }
 
 impl GenerateReport {
@@ -1178,8 +1182,9 @@ impl GenerateReport {
     /// it: every file it wrote, the yes-or-no facts as a union, the causes
     /// and the aliases once each, and the records of every member, each
     /// naming the file it is about. What only one document can answer —
-    /// `document_kind`, the parent sends, the routes, the surface, a holder, a
-    /// rejection, the deploy — is left as the set leaves it, unanswered.
+    /// `document_kind`, the parent sends, the routes, the surface, a holder,
+    /// the deploy — is left as the set leaves it, unanswered; a rejection is
+    /// named with its document by the run (`rejected_documents`).
     fn absorb(&mut self, member: GenerateReport) {
         fn either(set: Option<bool>, member: Option<bool>) -> Option<bool> {
             Some(set.unwrap_or(false) || member.unwrap_or(false))
@@ -1370,6 +1375,7 @@ fn build_manifest<'a>(
             spec: rd.spec,
             name: rd.name.clone(),
         }),
+        rejected_documents: &report.rejected_documents,
         deploy: DeployInfo::from_facts(report.deploy_facts.as_ref()),
         formatter: report.formatter.clone(),
         languages,
@@ -5677,6 +5683,15 @@ fn cmd_generate_with_imports(args: GenerateArgs, error_format: ErrorFormat) {
             }
         }
         set_reached_from(Vec::new());
+        // A rejection is one document's; the set names each with its document.
+        if let Some(rejected) = &report.rejected {
+            set.rejected_documents
+                .push(sce_build::manifest::RejectedMember {
+                    document: unit.document.clone(),
+                    spec: rejected.spec,
+                    name: rejected.name.clone(),
+                });
+        }
         set.absorb(report);
     }
     // One sidecar per directory, naming every machine any member wrote there.
