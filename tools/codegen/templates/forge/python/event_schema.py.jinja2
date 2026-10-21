@@ -10,7 +10,7 @@
 # Do not edit — regenerate from the source SCXML file.
 
 from dataclasses import dataclass
-from typing import Final
+from typing import Final{% if needs_optional %}, Optional{% endif %}
 {% for imp in python_enum_imports %}
 {{ imp }}
 {% endfor %}

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  How many days from `today` a goal is due (docs/adr/0055): a day that may be absent
+  in, a count of days that may be absent out. An absent day answers absent, by an
+  early return; after it `day` is proven present, so the subtraction reads its value.
+  The subtraction is checked like any integer operation, so a difference an int64
+  does not hold is a failure and not a wrapped number.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       name="goal_until"
+       version="1.0">
+  <sce:signature>
+    <sce:param name="today" type="int64"/>
+    <sce:param name="day" type="optional&lt;int64&gt;"/>
+    <sce:return type="optional&lt;int64&gt;" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:if cond="day === null">
+      <sce:return expr="null"/>
+    </sce:if>
+    <sce:return expr="day.value - today"/>
+  </sce:body>
+</scxml>

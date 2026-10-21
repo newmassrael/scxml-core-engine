@@ -84,6 +84,24 @@ pub fn go_used_in(source: &str) -> Vec<&'static str> {
 /// lowers to `Choose`, a checked operation to `Failure`) is not left without the
 /// import by a flag that said otherwise.
 pub fn go_uses_forge_runtime(source: &str) -> bool {
+    go_names_package(source, GO_FORGE_RUNTIME_ALIAS)
+}
+
+/// The name the Go forge runtime's `optional` package is bound by, its own:
+/// `optional.Of[T]`, `optional.None[T]()` (docs/adr/0055).
+pub(crate) const GO_FORGE_OPTIONAL_NAME: &str = "optional";
+
+/// Whether `source` names the Go forge runtime's `optional` package
+/// ([`GO_FORGE_OPTIONAL_PATH`]), read from the program text as
+/// [`go_uses_forge_runtime`] reads the runtime's: a body reaches for it where it
+/// holds a value that may be absent, which only its expression emitters know.
+pub fn go_uses_optional(source: &str) -> bool {
+    go_names_package(source, GO_FORGE_OPTIONAL_NAME)
+}
+
+/// Whether `source` qualifies a name with `binding.`, where `binding` is not
+/// itself the member of something else: a use of the package bound so.
+fn go_names_package(source: &str, binding: &str) -> bool {
     let mut used = false;
     scan(source, |names| {
         if let Name::Qualified {
@@ -91,7 +109,7 @@ pub fn go_uses_forge_runtime(source: &str) -> bool {
             after_dot: false,
         } = names
         {
-            if head == GO_FORGE_RUNTIME_ALIAS {
+            if head == binding {
                 used = true;
             }
         }

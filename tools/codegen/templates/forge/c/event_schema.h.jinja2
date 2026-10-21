@@ -14,6 +14,9 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+{% if needs_optional %}
+#include "sce/forge/optional.h"  /* a field that may be absent, docs/adr/0055 */
+{% endif %}
 {% for inc in enum_includes %}
 #include "{{ inc }}"
 {% endfor %}

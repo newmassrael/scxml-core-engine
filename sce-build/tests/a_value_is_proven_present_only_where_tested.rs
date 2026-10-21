@@ -103,24 +103,42 @@ fn statechart(body: &str) -> String {
     )
 }
 
-/// An algorithm that takes a record of [`SCHEMA_DUE`] as `item` and a list of
-/// them as `items`, returns an `int64` (declaring `may-fail` when `may_fail`)
-/// and runs `body`.
+/// The file name an algorithm probe imports the schema [`SCHEMA_DATED`] from.
+const SCHEMA_DATED_FILE: &str = "schema_item_dated.scxml";
+
+/// An event schema whose one optional field is a day: the record an algorithm
+/// holds an optional value in (docs/adr/0055, step 8 — a number or a `bool`).
+const SCHEMA_DATED: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="schema_item_dated" sce:event-name="item.dated">
+  <datamodel>
+    <data id="id" sce:type="uint32" sce:direction="in"/>
+    <data id="due" sce:type="optional&lt;int64&gt;" sce:direction="in"/>
+  </datamodel>
+</scxml>
+"#;
+
+/// An algorithm that takes a record of [`SCHEMA_DATED`] as `item`, a list of
+/// them as `items` and an optional day as `day`, returns an `int64` (declaring
+/// `may-fail` when `may_fail`) and runs `body`, beside a local that may be absent,
+/// `held`, which starts absent.
 fn algorithm(may_fail: bool, body: &str) -> String {
     let fails = if may_fail { r#" may-fail="true""# } else { "" };
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        sce:kind="algorithm" name="due_probe" version="1.0">
-  <sce:import kind="event-schema" src="{SCHEMA_DUE_FILE}" as="Due"/>
+  <sce:import kind="event-schema" src="{SCHEMA_DATED_FILE}" as="Due"/>
   <sce:signature>
     <sce:param name="item" type="record:Due"/>
     <sce:param name="items" type="list&lt;record:Due&gt;"/>
+    <sce:param name="day" type="optional&lt;int64&gt;"/>
     <sce:return type="int64"{fails}/>
   </sce:signature>
   <sce:body>
     <sce:var name="last" type="int64" init="0"/>
     <sce:var name="going" type="bool" init="true"/>
+    <sce:var name="held" type="optional&lt;int64&gt;" init="null"/>
     {body}
   </sce:body>
 </scxml>
@@ -128,12 +146,13 @@ fn algorithm(may_fail: bool, body: &str) -> String {
     )
 }
 
-/// `sce-codegen <args…> <file>` in a directory holding the enum, the schema and
+/// `sce-codegen <args…> <file>` in a directory holding the enum, the schemas and
 /// `text` as `file`. Returns `(exit_ok, stderr + stdout)`.
 fn run(args: &[&str], text: &str, file: &str) -> (bool, String) {
     let dir = tempdir().expect("tempdir");
     std::fs::copy(fixtures().join(ENUM_FILE), dir.path().join(ENUM_FILE)).expect("copy the enum");
     std::fs::write(dir.path().join(SCHEMA_DUE_FILE), SCHEMA_DUE).expect("write the schema");
+    std::fs::write(dir.path().join(SCHEMA_DATED_FILE), SCHEMA_DATED).expect("write the schema");
     std::fs::write(dir.path().join(file), text).expect("write the probe");
     let out_dir = tempdir().expect("tempdir");
     let mut command = Command::new(sce_codegen_bin());
@@ -153,35 +172,19 @@ fn run(args: &[&str], text: &str, file: &str) -> (bool, String) {
     )
 }
 
-/// The refusal a backend gives a document that holds an optional value, before
-/// the step that lowers one there.
-const NOT_LOWERED: &str = "an optional value has no";
-
 /// The code of a read the build has not proven present.
 const UNPROVEN: &str = "expression/optional-read-unproven";
 
 /// `text`, written as `file`, is judged fit, and no read in it is unproven: a
-/// statechart is generated for Rust, whose step of docs/adr/0055 lowers it, and
-/// an algorithm is refused only where the backend renders it, by name, until the
-/// step that lowers an algorithm's optional value (8).
+/// statechart and an algorithm are generated for Rust, whose steps of
+/// docs/adr/0055 lower each (5 and 8).
 fn proven(text: &str, file: &str) {
     let (ok, out) = run(&["generate", "-l", "rust"], text, file);
     assert!(
         !out.contains("\"code\":\"expression/") && !out.contains("scxml/static-datamodel-rule"),
         "every read is proven:\n{out}"
     );
-    if file == ALGORITHM {
-        assert!(
-            !ok,
-            "no backend renders an algorithm's optional value yet:\n{out}"
-        );
-        assert!(
-            out.contains(NOT_LOWERED),
-            "refused only where it is rendered:\n{out}"
-        );
-    } else {
-        assert!(ok, "Rust lowers the statechart:\n{out}");
-    }
+    assert!(ok, "Rust lowers the document:\n{out}");
 }
 
 /// `text`, written as `file`, is refused at a read of `read` the build has not
@@ -636,8 +639,6 @@ fn an_algorithms_loop_keeps_a_fact_only_if_its_body_ends_none() {
             r#"<sce:var name="r" type="record:Due">
       <sce:set name="id" expr="1"/>
       <sce:set name="due" expr="item.due"/>
-      <sce:set name="title" expr="null"/>
-      <sce:set name="status" expr="null"/>
     </sce:var>
     <sce:if cond="r.due !== null">
       <sce:while cond="going" max-iter="4">
@@ -683,4 +684,99 @@ fn an_algorithms_foreach_item_field_is_a_subject() {
         "e.due.value",
         "e.due",
     );
+}
+
+// ── An algorithm's own optional values (docs/adr/0055, step 8) ───────────
+
+/// An optional parameter is a subject: an early return of what its absence
+/// answers proves it present after it, and a read with no test is unproven.
+#[test]
+fn an_algorithms_optional_parameter_is_read_where_a_test_proves_it() {
+    proven(
+        &algorithm(
+            false,
+            r#"<sce:if cond="day === null"><sce:return expr="0"/></sce:if>
+    <sce:return expr="day.value"/>"#,
+        ),
+        ALGORITHM,
+    );
+    unproven(
+        &algorithm(false, r#"<sce:return expr="day.value"/>"#),
+        ALGORITHM,
+        "day.value",
+        "day",
+    );
+}
+
+/// An optional local is a subject, and an assignment to it ends a fact about
+/// it, whatever it writes: a re-assignment proves nothing, only a test does.
+#[test]
+fn an_assignment_to_an_optional_local_ends_its_fact() {
+    proven(
+        &algorithm(
+            false,
+            r#"<sce:assign target="held" expr="item.due"/>
+    <sce:if cond="held !== null"><sce:assign target="last" expr="held.value"/></sce:if>
+    <sce:return expr="last"/>"#,
+        ),
+        ALGORITHM,
+    );
+    unproven(
+        &algorithm(
+            false,
+            r#"<sce:if cond="held !== null">
+      <sce:assign target="held" expr="day"/>
+      <sce:assign target="last" expr="held.value"/>
+    </sce:if>
+    <sce:return expr="last"/>"#,
+        ),
+        ALGORITHM,
+        "held.value",
+        "held",
+    );
+}
+
+/// The value of an optional value is a read and no place: an optional local is
+/// assigned whole, `null` or a value, and `<sce:assign target="held.value">` is
+/// refused by name where it is written, even where a test proves `held`.
+#[test]
+fn the_value_of_an_optional_local_is_no_place_to_assign() {
+    let (ok, out) = run(
+        &["generate", "-l", "rust"],
+        &algorithm(
+            false,
+            r#"<sce:if cond="held !== null"><sce:assign target="held.value" expr="1"/></sce:if>
+    <sce:return expr="0"/>"#,
+        ),
+        ALGORITHM,
+    );
+    assert!(!ok, "an assignment to the value is refused:\n{out}");
+    assert!(
+        out.contains("expression/unsupported-construct")
+            && out.contains("an assignment to `held.value`")
+            && out.contains("assigned whole"),
+        "refused naming the whole assignment:\n{out}"
+    );
+}
+
+/// A proven read is a value of its element to the integer arithmetic contract
+/// (SCE_FORGE.md §3.4.1) as to every other reader of the body: an addition to a
+/// day the build proved present can overflow, so an algorithm that does not
+/// declare `may-fail` is refused naming it, and one that declares it is
+/// generated.
+#[test]
+fn a_proven_read_is_held_to_the_integer_arithmetic_contract() {
+    let body = r#"<sce:if cond="day !== null"><sce:assign target="last" expr="day.value + 1"/></sce:if>
+    <sce:return expr="last"/>"#;
+    let (ok, out) = run(
+        &["generate", "-l", "rust"],
+        &algorithm(false, body),
+        ALGORITHM,
+    );
+    assert!(!ok, "an addition that can overflow is refused:\n{out}");
+    assert!(
+        out.contains("algorithm/undeclared-integer-failure") && out.contains("day.value + 1"),
+        "naming the operation on the proven read:\n{out}"
+    );
+    proven(&algorithm(true, body), ALGORITHM);
 }

@@ -6598,12 +6598,12 @@ fn validate_worker_inbox_queue(
     Ok(())
 }
 
-/// The whole signature of an imported algorithm that has a record slot and
-/// no list slot — what another algorithm's body calls it through
-/// (SCE_FORGE.md §4.12). `None` for an algorithm with no record slot, with a
-/// list slot (only a host calls one), or with a record slot whose schema
-/// import the callee cannot resolve (the callee's own compilation reports
-/// that; its callers keep the host-only refusal meanwhile).
+/// The whole signature of an imported algorithm that has a record slot or an
+/// optional slot (docs/adr/0055) and no list slot — what another algorithm's
+/// body calls it through (SCE_FORGE.md §4.12). `None` for an algorithm with
+/// neither, with a list slot (only a host calls one), or with a record slot
+/// whose schema import the callee cannot resolve (the callee's own compilation
+/// reports that; its callers keep the host-only refusal meanwhile).
 fn algorithm_record_slots(
     am: &forge::model::AlgorithmModel,
     callee_imports: &[forge::model::ForgeImport],
@@ -6615,10 +6615,16 @@ fn algorithm_record_slots(
     let slot = |ty: &AlgorithmValueType| -> Option<CalleeSlot> {
         match ty {
             AlgorithmValueType::Scalar(t) => Some(CalleeSlot::Scalar(t.clone())),
-            // An algorithm's reader refuses an optional slot (docs/adr/0055), so
-            // none is called; a callee that held one would keep its host-only
-            // refusal, as a list does.
-            AlgorithmValueType::List { .. } | AlgorithmValueType::Optional { .. } => None,
+            // An algorithm's optional slot is of a number or a bool
+            // (docs/adr/0055); an optional record is no slot an algorithm's
+            // reader takes, and would keep its host-only refusal, as a list does.
+            AlgorithmValueType::Optional {
+                elem: forge::model::OptionalElemType::Scalar(t),
+            } => Some(CalleeSlot::Optional(t.clone())),
+            AlgorithmValueType::List { .. }
+            | AlgorithmValueType::Optional {
+                elem: forge::model::OptionalElemType::Record { .. },
+            } => None,
             AlgorithmValueType::Record { alias } => {
                 let imp = callee_imports.iter().find(|i| {
                     i.alias == *alias && matches!(i.kind, forge::model::ForgeKind::EventSchema)
@@ -6639,14 +6645,11 @@ fn algorithm_record_slots(
         }
     };
     let sig = &am.signature;
-    let has_record = sig
-        .params
-        .iter()
-        .any(|p| p.sce_type.record_alias().is_some())
-        || sig
-            .return_type
-            .as_ref()
-            .is_some_and(|t| t.record_alias().is_some());
+    // A slot no scalar signature says: a record, or a value that may be absent.
+    let beyond_scalars =
+        |t: &AlgorithmValueType| t.record_alias().is_some() || t.optional_elem().is_some();
+    let has_record = sig.params.iter().any(|p| beyond_scalars(&p.sce_type))
+        || sig.return_type.as_ref().is_some_and(beyond_scalars);
     if !has_record {
         return None;
     }

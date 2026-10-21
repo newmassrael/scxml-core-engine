@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A goal whose day may be absent (docs/adr/0055): an id, the day it is due as a
+  count of days, and a weight. The record `static_state_algorithm_optional.scxml`
+  keeps its goals in, hands to an algorithm and takes back (SCE Accepted Subset
+  §2.15, SCE_FORGE.md §4.12), and the payload of the event that adds one. A
+  delivery carries `day` as a value or as `null`; one that lacks the key is
+  refused, since this first revision declares every field it has.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="schema_goal"
+       sce:event-name="goal.added">
+  <datamodel>
+    <data id="id" sce:type="uint32" sce:direction="in"/>
+    <data id="day" sce:type="optional&lt;int64&gt;" sce:direction="in"/>
+    <data id="weight" sce:type="int32" sce:direction="in"/>
+  </datamodel>
+</scxml>

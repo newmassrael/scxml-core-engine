@@ -377,27 +377,26 @@ fn an_optional_text_declares_its_bound() {
     );
 }
 
-/// An algorithm's slot and a codec's entry take no optional value yet
-/// (docs/adr/0055, steps 8 and 12), and say so by name rather than offer the
-/// scalars as if the type were misspelled. (An event schema's field takes one
-/// from step 2, below.)
+/// A transform's input is scalar by contract, as a condition's, a lookup's, an
+/// interpolation's and a validator's slots are (docs/adr/0055, section 1), and a
+/// codec's entry takes no optional value until step 12: each says so by name
+/// rather than offer the scalars as if the type were misspelled. (An event
+/// schema's field takes one from step 2, below, and an algorithm's slot from
+/// step 8, in `an_algorithm_holds_an_optional_value.rs`.)
 #[test]
 fn every_other_position_refuses_an_optional_value_by_name() {
-    let algorithm = r#"<?xml version="1.0" encoding="UTF-8"?>
+    let transform = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       sce:kind="algorithm" name="due_or" version="1.0">
-  <sce:signature>
-    <sce:param name="due" type="optional&lt;int64&gt;"/>
-    <sce:return type="int64"/>
-  </sce:signature>
-  <sce:body>
-    <sce:return expr="0"/>
-  </sce:body>
+       sce:kind="transform" name="due_or" version="1.0">
+  <datamodel>
+    <data id="due" sce:type="optional&lt;int64&gt;" sce:direction="in"/>
+    <data id="days" sce:type="int64" sce:direction="out" expr="0"/>
+  </datamodel>
 </scxml>
 "#;
     let (ok, out) = run(
         &["check", "-l", "rust"],
-        &[("due_or.scxml", algorithm)],
+        &[("due_or.scxml", transform)],
         "due_or.scxml",
     );
     assert!(!ok, "an optional value is refused there:\n{out}");
@@ -563,15 +562,112 @@ fn a_schema_field_holds_an_optional_scalar_and_the_forge_ast_spells_it() {
     );
 }
 
+/// The unit an event schema generates holds the struct an algorithm's record of
+/// it is (docs/adr/0055, step 8): an optional field of a number or a `bool` is held
+/// in the backend's optional type, and one of a text or an enum, which no
+/// algorithm holds, is refused by name.
 #[test]
-fn every_backend_refuses_a_schema_with_an_optional_field_by_name() {
+fn every_backend_refuses_a_schema_with_an_optional_text_field_by_name() {
     for args in every_backend() {
         let (ok, out) = run(&args, &[(SCHEMA_DUE_FILE, SCHEMA_DUE)], SCHEMA_DUE_FILE);
         assert!(!ok, "{args:?} must refuse the schema's unit:\n{out}");
         assert!(
-            out.contains(NOT_LOWERED) && out.contains("optional<int64>"),
-            "{args:?} refuses it by name:\n{out}"
+            out.contains(NOT_LOWERED) && out.contains("optional<string>"),
+            "{args:?} refuses it by its text field:\n{out}"
         );
+    }
+}
+
+/// An event schema whose optional fields are a number and a `bool`.
+const SCHEMA_DATED: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="schema_dated" sce:event-name="item.dated">
+  <datamodel>
+    <data id="id" sce:type="uint32" sce:direction="in"/>
+    <data id="day" sce:type="optional&lt;int64&gt;" sce:direction="in"/>
+    <data id="done" sce:type="optional&lt;bool&gt;" sce:direction="in"/>
+  </datamodel>
+</scxml>
+"#;
+
+/// Each generated backend holds an optional field of a number or a `bool` in its
+/// one optional type (docs/adr/0055, section 5), and brings the type into scope
+/// where it is not the language's own.
+#[test]
+fn every_backend_holds_an_optional_number_field_in_its_optional_type() {
+    let generated = |lang: &str| -> String {
+        let dir = tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("schema_dated.scxml"), SCHEMA_DATED).expect("write");
+        let out_dir = tempdir().expect("tempdir");
+        let mut command = Command::new(sce_codegen_bin());
+        command
+            .arg("--workspace-root")
+            .arg(repo_root())
+            .args(["generate", "-l", lang])
+            .arg(dir.path().join("schema_dated.scxml"))
+            .arg("-o")
+            .arg(out_dir.path());
+        if lang == "go" {
+            command.args(["--go-module-prefix", "example.com/probe"]);
+        }
+        let out = command.output().expect("invoke sce-codegen");
+        assert!(
+            out.status.success(),
+            "{lang} generates the schema:\n{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let mut text = String::new();
+        for entry in std::fs::read_dir(out_dir.path()).expect("the output directory") {
+            let path = entry.expect("an entry").path();
+            if path.is_file() {
+                text.push_str(&std::fs::read_to_string(&path).unwrap_or_default());
+            }
+        }
+        text
+    };
+    for (lang, spelled) in [
+        (
+            "rust",
+            vec!["pub day: Option<i64>,", "pub done: Option<bool>,"],
+        ),
+        ("kotlin", vec!["val day: Long?", "val done: Boolean?"]),
+        (
+            "cpp",
+            vec![
+                "#include <optional>",
+                "std::optional<int64_t> day;",
+                "std::optional<bool> done;",
+            ],
+        ),
+        (
+            "c11",
+            vec![
+                "#include \"sce/forge/optional.h\"",
+                "sce_optional_int64_t day;",
+                "sce_optional_bool_t done;",
+            ],
+        ),
+        (
+            "go",
+            vec![
+                "\"github.com/newmassrael/sce-forge-runtime/optional\"",
+                "Day optional.Of[int64]",
+                "Done optional.Of[bool]",
+            ],
+        ),
+        (
+            "python",
+            vec![
+                "from typing import Final, Optional",
+                "day: Optional[int]",
+                "done: Optional[bool]",
+            ],
+        ),
+    ] {
+        let text = generated(lang);
+        for needle in spelled {
+            assert!(text.contains(needle), "{lang} holds `{needle}`:\n{text}");
+        }
     }
 }
 
@@ -687,9 +783,10 @@ fn a_c11_machine_holds_each_optional_value_in_the_runtime_struct() {
 }
 
 /// An algorithm whose record is of the schema is judged, and refused where
-/// each backend renders it, by name.
+/// each backend renders it, by its text field: an algorithm holds an optional
+/// value of a number or a `bool` only (docs/adr/0055, step 8).
 #[test]
-fn every_backend_refuses_an_algorithm_whose_record_holds_an_optional_field() {
+fn every_backend_refuses_an_algorithm_whose_record_holds_an_optional_text_field() {
     let algorithm = format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
@@ -713,8 +810,8 @@ fn every_backend_refuses_an_algorithm_whose_record_holds_an_optional_field() {
         let (ok, out) = run(&args, &documents, "due_id.scxml");
         assert!(!ok, "{args:?} must refuse the algorithm:\n{out}");
         assert!(
-            out.contains(NOT_LOWERED) && out.contains("record:Due"),
-            "{args:?} refuses it by the record's field:\n{out}"
+            out.contains(NOT_LOWERED) && out.contains("record:Due") && out.contains("`title`"),
+            "{args:?} refuses it by the record's text field:\n{out}"
         );
     }
 }

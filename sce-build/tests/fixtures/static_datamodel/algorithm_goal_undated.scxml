@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  How many goals of a list have no day (docs/adr/0055): a list of records whose
+  `day` may be absent in, a number out, the goals filtered by a test of the field.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       name="goal_undated"
+       version="1.0">
+  <sce:import kind="event-schema" src="schema_goal.scxml" as="Goal"/>
+  <sce:signature>
+    <sce:param name="goals" type="list&lt;record:Goal&gt;"/>
+    <sce:return type="uint32" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="count" type="uint32" init="0"/>
+    <sce:foreach item="g" in="goals">
+      <sce:if cond="g.day === null">
+        <sce:assign target="count" expr="count + 1"/>
+      </sce:if>
+    </sce:foreach>
+    <sce:return expr="count"/>
+  </sce:body>
+</scxml>

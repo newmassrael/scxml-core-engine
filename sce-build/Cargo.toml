@@ -945,6 +945,15 @@ name = "a_value_is_proven_present_only_where_tested"
 path = "tests/a_value_is_proven_present_only_where_tested.rs"
 required-features = ["cli"]
 
+# An algorithm holds a value that may be absent (docs/adr/0055, step 8): its
+# parameter, return, local and record's field, each backend's spelling of them,
+# and a statechart's call that hands one over and takes one back. It runs
+# `sce-codegen check`, `generate` and `lower`, so it carries the `cli` gate.
+[[test]]
+name = "an_algorithm_holds_an_optional_value"
+path = "tests/an_algorithm_holds_an_optional_value.rs"
+required-features = ["cli"]
+
 [[test]]
 name = "a_statechart_calls_the_forge_kinds_that_are_functions"
 path = "tests/a_statechart_calls_the_forge_kinds_that_are_functions.rs"

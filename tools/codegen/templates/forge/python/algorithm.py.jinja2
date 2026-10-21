@@ -23,6 +23,16 @@
 # in place of a value.
 
 from sce_forge_runtime import algorithm as sce_algorithm
+{% elif uses_sce_algorithm %}
+{# `x ?? d` of a value that may be absent is the runtime's
+   `sce_algorithm.otherwise` (docs/adr/0055), named by a body that declares no
+   may-fail as well; the render reads it off the body. #}
+
+from sce_forge_runtime import algorithm as sce_algorithm
+{% endif %}
+{% if python_needs_optional %}
+
+from typing import Optional
 {% endif %}
 {% if all_imports %}
 

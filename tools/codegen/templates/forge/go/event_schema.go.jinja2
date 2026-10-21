@@ -10,8 +10,13 @@
 // Do not edit — regenerate from the source SCXML file.
 
 package {{ package }}
-{% if go_enum_imports %}
+{# `uses_optional` is read off the text by the render door: a field that may be
+   absent is the runtime's `optional.Of[T]` (docs/adr/0055). #}
+{% if go_enum_imports or uses_optional %}
 import (
+{% if uses_optional %}
+	"github.com/newmassrael/sce-forge-runtime/optional"
+{% endif %}
 {% for imp in go_enum_imports %}
 	{{ imp }}
 {% endfor %}

@@ -63,8 +63,11 @@ use crate::forge::model::{
     AlgorithmConstType, AlgorithmModel, AlgorithmStmt, AlgorithmValueType, FieldType, ForgeImport,
     ListElemType, SceType,
 };
+use crate::forge::narrowing::{
+    after_algorithm_statement, loop_entry, proves_written, Chain, Facts,
+};
 use crate::forge::static_js::{LOWERED_DATAMODEL, RUNTIME_GLOBAL};
-use crate::forge::types::{InferredType, TypeCtx};
+use crate::forge::types::{InferredType, OptionalElem, TypeCtx};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
@@ -443,9 +446,29 @@ struct Body<'a> {
 }
 
 impl Body<'_> {
-    /// `expr` as ECMAScript, in the slot of type `slot`.
+    /// `expr` as ECMAScript, in the slot of type `slot`, read where nothing is
+    /// proven present: a text written to a record's field.
     fn slot(&self, expr_text: &str, slot: InferredType) -> Result<String, GenerateError> {
-        expr::transpile_into(expr_text, ExprTarget::Js, self.ctx, self.renames, slot).map_err(
+        self.slot_at(expr_text, slot, &Facts::none())
+    }
+
+    /// `expr` as ECMAScript, in the slot of type `slot`, read where `proven`
+    /// holds (docs/adr/0055): a `.value` the narrowing admitted is the read of
+    /// the present value it is.
+    fn slot_at(
+        &self,
+        expr_text: &str,
+        slot: InferredType,
+        proven: &Facts,
+    ) -> Result<String, GenerateError> {
+        let proving;
+        let ctx = if proven.is_empty() {
+            self.ctx
+        } else {
+            proving = self.ctx.proving(proven.clone());
+            &proving
+        };
+        expr::transpile_into(expr_text, ExprTarget::Js, ctx, self.renames, slot).map_err(
             |refusal| {
                 GenerateError::unsupported(format!(
                     "the algorithm `{}`: `{}` has no ecmascript lowering: {}",
@@ -501,12 +524,22 @@ impl Body<'_> {
         Ok(format!("{RUNTIME_GLOBAL}.bounded({text}, {bound})"))
     }
 
+    /// The statements of one block, entered with `entry` proven present
+    /// (docs/adr/0055): each read where what the ones before it prove holds, as
+    /// [`crate::forge::narrowing::check_algorithm`] judged them.
     fn statements(
         &self,
         stmts: &[AlgorithmStmt],
         depth: usize,
+        entry: &Facts,
     ) -> Result<Vec<String>, GenerateError> {
-        stmts.iter().map(|s| self.statement(s, depth)).collect()
+        let mut proven = entry.clone();
+        let mut lowered = Vec::with_capacity(stmts.len());
+        for stmt in stmts {
+            lowered.push(self.statement(stmt, depth, &proven)?);
+            proven = after_algorithm_statement(&proven, stmt);
+        }
+        Ok(lowered)
     }
 
     /// The record type the schema `alias` names, or the refusal that says it
@@ -521,8 +554,14 @@ impl Body<'_> {
     }
 
     /// `statement`, with `depth` the number of `<sce:foreach>` it sits in, which
-    /// names the loop's counter.
-    fn statement(&self, stmt: &AlgorithmStmt, depth: usize) -> Result<String, GenerateError> {
+    /// names the loop's counter, read where `proven` holds (docs/adr/0055).
+    fn statement(
+        &self,
+        stmt: &AlgorithmStmt,
+        depth: usize,
+        proven: &Facts,
+    ) -> Result<String, GenerateError> {
+        let lowered = |text: &str, ty: InferredType| self.slot_at(text, ty, proven);
         Ok(match stmt {
             // A buffer starts empty; its capacity is what an append is held to.
             AlgorithmStmt::Var { name, .. } if self.buffers.contains_key(name.as_str()) => {
@@ -536,16 +575,21 @@ impl Body<'_> {
                 ..
             } => {
                 check_name(self.algorithm, name)?;
-                let Some(ty) = sce_type.scalar().filter(|ty| has_a_value_form(ty)) else {
-                    return Err(refuse(
-                        self.algorithm,
-                        format!("the local `{name}` of type `{}`", sce_type.as_attr()),
-                    ));
+                // A local that may be absent is `null` or its present value
+                // (docs/adr/0055).
+                let ty = match (sce_type.scalar(), sce_type.optional_elem()) {
+                    (Some(ty), _) if has_a_value_form(ty) => InferredType::from_sce_type(ty),
+                    (None, Some(elem)) if holds(sce_type) => {
+                        InferredType::Optional(OptionalElem::of_value(elem))
+                    }
+                    _ => {
+                        return Err(refuse(
+                            self.algorithm,
+                            format!("the local `{name}` of type `{}`", sce_type.as_attr()),
+                        ))
+                    }
                 };
-                format!(
-                    "var {name} = {};",
-                    self.slot(init, InferredType::from_sce_type(ty))?
-                )
+                format!("var {name} = {};", lowered(init, ty)?)
             }
             AlgorithmStmt::Var { name, sce_type, .. } => {
                 return Err(refuse(
@@ -575,7 +619,7 @@ impl Body<'_> {
                     let value = if matches!(field.ty, FieldType::Scalar(SceType::String)) {
                         self.text_write(&given.expr, field)?
                     } else {
-                        self.slot(&given.expr, InferredType::of_field(&field.ty))?
+                        lowered(&given.expr, InferredType::of_field(&field.ty))?
                     };
                     members.push(format!("{}: {value}", quoted(id)));
                 }
@@ -595,7 +639,7 @@ impl Body<'_> {
                 let record = self.record_import(alias)?;
                 format!(
                     "var {name} = {};",
-                    self.slot(init, InferredType::Record(record.id))?
+                    lowered(init, InferredType::Record(record.id))?
                 )
             }
             AlgorithmStmt::Assign { target, expr, .. } => {
@@ -621,7 +665,7 @@ impl Body<'_> {
                         None => {
                             let slot = expr::infer_expr_type(target, self.ctx)
                                 .unwrap_or(InferredType::Unknown);
-                            self.slot(expr, slot)?
+                            lowered(expr, slot)?
                         }
                     };
                     return Ok(format!(
@@ -636,7 +680,7 @@ impl Body<'_> {
                     ));
                 }
                 let slot = expr::infer_expr_type(target, self.ctx).unwrap_or(InferredType::Unknown);
-                format!("{target} = {};", self.slot(expr, slot)?)
+                format!("{target} = {};", lowered(expr, slot)?)
             }
             // The buffer written again with the element at its end. One that is
             // already full fails `capacity-exceeded`, as the bounded backends do
@@ -660,10 +704,10 @@ impl Body<'_> {
                             return Ok(format!(
                                 "{target} = {RUNTIME_GLOBAL}.extend({target}, {}, {});",
                                 buffer.capacity,
-                                self.slot(expr, InferredType::Bytes)?
+                                lowered(expr, InferredType::Bytes)?
                             ));
                         }
-                        self.slot(
+                        lowered(
                             expr,
                             InferredType::Int {
                                 signed: false,
@@ -672,7 +716,7 @@ impl Body<'_> {
                         )?
                     }
                     BufferElement::Scalar(elem) => {
-                        self.slot(expr, InferredType::from_sce_type(elem))?
+                        lowered(expr, InferredType::from_sce_type(elem))?
                     }
                     // A record is appended by name: there is no record
                     // expression (SCE_FORGE.md §4.12).
@@ -695,30 +739,41 @@ impl Body<'_> {
                     buffer.capacity
                 )
             }
+            // The block is read where the condition holds, the `<sce:else>`
+            // where it does not (docs/adr/0055).
             AlgorithmStmt::If {
                 cond,
                 then_body,
                 else_body,
                 ..
             } => {
+                let chain = Chain::of(proven, &[cond.as_str()]);
                 let mut text = format!(
                     "if ({}) {{ {} }}",
-                    self.slot(cond, InferredType::Bool)?,
-                    self.statements(then_body, depth)?.join(" ")
+                    lowered(cond, InferredType::Bool)?,
+                    self.statements(then_body, depth, &chain.block(0))?
+                        .join(" ")
                 );
                 if let Some(else_body) = else_body {
                     text.push_str(&format!(
                         " else {{ {} }}",
-                        self.statements(else_body, depth)?.join(" ")
+                        self.statements(else_body, depth, &chain.otherwise())?
+                            .join(" ")
                     ));
                 }
                 text
             }
-            AlgorithmStmt::While { cond, body, .. } => format!(
-                "while ({}) {{ {} }}",
-                self.slot(cond, InferredType::Bool)?,
-                self.statements(body, depth)?.join(" ")
-            ),
+            // The condition is read where every turn starts, and the body where
+            // it holds besides.
+            AlgorithmStmt::While { cond, body, .. } => {
+                let turn = loop_entry(proven, body);
+                format!(
+                    "while ({}) {{ {} }}",
+                    self.slot_at(cond, InferredType::Bool, &turn)?,
+                    self.statements(body, depth, &turn.and(&proves_written(cond, true)))?
+                        .join(" ")
+                )
+            }
             // Each element of a list or of bytes, in order. The item is a local
             // of the function, and a record item is changed, as any record is,
             // by writing it again.
@@ -746,14 +801,15 @@ impl Body<'_> {
                 format!(
                     "for (var {counter} = 0; {counter} < {source}.length; {counter}++) \
                      {{ var {item} = {source}[{counter}]; {} }}",
-                    self.statements(body, depth + 1)?.join(" ")
+                    self.statements(body, depth + 1, &loop_entry(proven, body))?
+                        .join(" ")
                 )
             }
             // The body goes on only where the condition holds, and fails
             // `precondition` where it does not (SCE_FORGE.md §3.4.1).
             AlgorithmStmt::Require { cond, .. } => format!(
                 "{RUNTIME_GLOBAL}.require({}, {});",
-                self.slot(cond, InferredType::Bool)?,
+                lowered(cond, InferredType::Bool)?,
                 quoted(cond.trim())
             ),
             // A call is typed as the expression it is, by the signature of the
@@ -768,7 +824,7 @@ impl Body<'_> {
                         .collect::<Vec<_>>()
                         .join(", ")
                 );
-                format!("{};", self.slot(&call, InferredType::Unknown)?)
+                format!("{};", lowered(&call, InferredType::Unknown)?)
             }
             AlgorithmStmt::Return {
                 expr: Some(expr), ..
@@ -777,7 +833,7 @@ impl Body<'_> {
                 if self.whole_values.contains(name) {
                     format!("return {name};")
                 } else {
-                    format!("return {};", self.slot(expr, self.return_ty)?)
+                    format!("return {};", lowered(expr, self.return_ty)?)
                 }
             }
             AlgorithmStmt::Return { expr: None, .. } => "return;".to_string(),
@@ -798,8 +854,11 @@ fn holds(ty: &AlgorithmValueType) -> bool {
             elem: ListElemType::Record { .. },
         }
         | AlgorithmValueType::Record { .. } => true,
-        // An optional value has no lowering here yet (docs/adr/0055).
-        AlgorithmValueType::Optional { .. } => false,
+        // A value that may be absent is `null` or its present value
+        // (docs/adr/0055), of the elements an algorithm holds one of.
+        AlgorithmValueType::Optional { elem } => elem
+            .scalar()
+            .is_some_and(AlgorithmValueType::algorithm_optional_admitted),
     }
 }
 
@@ -831,7 +890,14 @@ pub(crate) fn lower(m: &AlgorithmModel, imports: &Imports) -> Result<String, Gen
         if param.sce_type.list_elem().is_some() || is_bytes {
             iterable.insert(&param.name);
         }
-        if is_bytes || !matches!(param.sce_type, AlgorithmValueType::Scalar(_)) {
+        // A value that may be absent is an operand, judged where it is
+        // returned as any other value is (docs/adr/0055).
+        if is_bytes
+            || !matches!(
+                param.sce_type,
+                AlgorithmValueType::Scalar(_) | AlgorithmValueType::Optional { .. }
+            )
+        {
             whole_values.insert(&param.name);
         }
         params.push(param.name.clone());
@@ -862,11 +928,12 @@ pub(crate) fn lower(m: &AlgorithmModel, imports: &Imports) -> Result<String, Gen
             ))
         }
         Some(AlgorithmValueType::Scalar(scalar)) => InferredType::from_sce_type(scalar),
-        // A list or a record is returned by name, never judged as an operand. An
-        // optional return is refused above (`holds`), and is named here only so
-        // the reading stays whole.
-        Some(AlgorithmValueType::List { .. } | AlgorithmValueType::Optional { .. }) => {
-            InferredType::Unknown
+        // A list is returned by name, never judged as an operand.
+        Some(AlgorithmValueType::List { .. }) => InferredType::Unknown,
+        // An optional return takes `null`, a value of its element or an optional
+        // value (docs/adr/0055).
+        Some(AlgorithmValueType::Optional { elem }) => {
+            InferredType::Optional(OptionalElem::of_value(elem))
         }
         Some(AlgorithmValueType::Record { alias }) => {
             let Some(record) = imports.record(alias) else {
@@ -896,7 +963,7 @@ pub(crate) fn lower(m: &AlgorithmModel, imports: &Imports) -> Result<String, Gen
         iterable,
         whole_values,
     };
-    let statements = body.statements(&m.body, 0)?;
+    let statements = body.statements(&m.body, 0, &Facts::none())?;
     let function = format!(
         "function ({}) {{ {} }}",
         params.join(", "),

@@ -4002,6 +4002,19 @@ impl AlgorithmValueType {
         )
     }
 
+    /// Whether an algorithm holds an optional value of `elem` (docs/adr/0055,
+    /// step 8): in a parameter, a return, a local and a field of a record it
+    /// reads or returns. A fixed-width number or a `bool`, whose present value
+    /// every backend holds as the value itself and whose optional type is the
+    /// runtime's own on each. An optional text, byte string, value of an enum or
+    /// record is a statechart's, and is refused by name where an algorithm would
+    /// hold one: the one reading the algorithm's reader, its renderers, a call's
+    /// crossing and an event schema's generation share, so they cannot disagree
+    /// about which optional value an algorithm holds.
+    pub fn algorithm_optional_admitted(elem: &SceType) -> bool {
+        Self::list_elem_admitted(elem)
+    }
+
     /// Read the `type=` spelling [`Self::as_attr`] writes: a scalar
     /// [`SceType`] keyword, `list<T>` over an admitted element, `record:<alias>`
     /// or `optional<T>` over a scalar or a record. `None` for anything else.

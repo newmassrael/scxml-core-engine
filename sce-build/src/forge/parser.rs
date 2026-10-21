@@ -11540,10 +11540,11 @@ pub(crate) fn read_type_attr(
     text: &str,
 ) -> Result<SceType, Located<ForgeError>> {
     // An optional value (docs/adr/0055) is read where a `sce-static`
-    // statechart's variable is ([`read_static_value_type`]) and where an event
-    // schema's field is ([`read_schema_field_type`]); every position that reads
-    // its type here takes none, and says so by name rather than offering the
-    // scalars as if the type were misspelled.
+    // statechart's variable is ([`read_static_value_type`]), where an event
+    // schema's field is ([`read_schema_field_type`]) and where an algorithm's
+    // parameter, return and local are ([`read_algorithm_value_type`]); every
+    // position that reads its type here takes none, and says so by name rather
+    // than offering the scalars as if the type were misspelled.
     if text.trim().starts_with(AlgorithmValueType::OPTIONAL_PREFIX) {
         return Err(located(
             node,
@@ -11553,8 +11554,8 @@ pub(crate) fn read_type_attr(
                 attr: attr.into(),
                 value: value_as_written(node, attr, text),
                 rule: "an optional value (docs/adr/0055) is held by a `sce-static` \
-                       statechart's variable and an event schema's field, and this \
-                       position does not take one"
+                       statechart's variable, an event schema's field and an algorithm's \
+                       parameter, return and local, and this position does not take one"
                     .into(),
             },
         ));
@@ -11596,6 +11597,10 @@ pub(crate) fn read_type_attr(
 /// pattern does. The list form is a pattern rather than a value, so a list
 /// over an element it cannot hold is refused as a rule violation that names
 /// the rule.
+///
+/// `optional<T>` (docs/adr/0055) is read over a fixed-width number or a `bool`
+/// ([`AlgorithmValueType::algorithm_optional_admitted`]); see
+/// [`read_algorithm_optional`].
 pub(crate) fn read_algorithm_value_type(
     node: &roxmltree::Node,
     doc_name: &str,
@@ -11603,6 +11608,9 @@ pub(crate) fn read_algorithm_value_type(
     attr: &str,
     text: &str,
 ) -> Result<AlgorithmValueType, Located<ForgeError>> {
+    if text.trim().starts_with(AlgorithmValueType::OPTIONAL_PREFIX) {
+        return read_algorithm_optional(node, doc_name, element, attr, text);
+    }
     if let Some(alias) = text.trim().strip_prefix(AlgorithmValueType::RECORD_PREFIX) {
         return read_record_alias(node, doc_name, element, attr, text, alias)
             .map(|alias| AlgorithmValueType::Record { alias });
@@ -11677,6 +11685,52 @@ pub(crate) fn read_algorithm_value_type(
     Ok(AlgorithmValueType::List {
         elem: ListElemType::Scalar(elem),
     })
+}
+
+/// Read an algorithm's `optional<T>` (docs/adr/0055): a parameter, a return or
+/// a local that may be absent, over a fixed-width number or a `bool`
+/// ([`AlgorithmValueType::algorithm_optional_admitted`]).
+///
+/// What may stand inside is read as a statechart's variable reads it
+/// ([`read_optional_elem`]), so a misspelled element, an alias nothing imports,
+/// a list and a nested optional are refused with the same candidates. An
+/// element a statechart holds and an algorithm does not — a text, a byte
+/// string, a value of an enum, a record — is refused by name as a rule of this
+/// position, rather than offered as a misspelling.
+fn read_algorithm_optional(
+    node: &roxmltree::Node,
+    doc_name: &str,
+    element: String,
+    attr: &str,
+    text: &str,
+) -> Result<AlgorithmValueType, Located<ForgeError>> {
+    let elem = read_optional_elem(
+        node,
+        doc_name,
+        element.clone(),
+        attr,
+        text,
+        OptionalElems::OrRecord,
+    )?;
+    match &elem {
+        OptionalElemType::Scalar(ty) if AlgorithmValueType::algorithm_optional_admitted(ty) => {
+            Ok(AlgorithmValueType::Optional { elem })
+        }
+        OptionalElemType::Scalar(_) | OptionalElemType::Record { .. } => Err(located(
+            node,
+            doc_name,
+            ValidationError::AttributeRuleViolated {
+                element,
+                attr: attr.into(),
+                value: value_as_written(node, attr, text),
+                rule: "an algorithm's optional parameter, return or local is of a fixed-width \
+                       number or a bool (docs/adr/0055): an optional text, byte string, value \
+                       of an enum or record is held by a `sce-static` statechart's variable, \
+                       and an algorithm does not hold one"
+                    .into(),
+            },
+        )),
+    }
 }
 
 /// Read a `sce-static` statechart variable's `sce:type`: what

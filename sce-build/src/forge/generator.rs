@@ -430,12 +430,12 @@ pub struct ImportContext {
     #[serde(skip)]
     pub record: Option<RecordImport>,
 
-    /// For an imported algorithm whose signature has a record slot and no
-    /// list slot: the whole signature, record slots included. Another
-    /// algorithm's body calls it through these (SCE_FORGE.md §4.12 — a
-    /// record crosses between algorithms that name the same schema);
-    /// `host_only` still says why every other caller may not. `None` for
-    /// every other import.
+    /// For an imported algorithm whose signature has a record slot or an
+    /// optional slot (docs/adr/0055) and no list slot: the whole signature,
+    /// those slots included. Another algorithm's body calls it through these
+    /// (SCE_FORGE.md §4.12 — a record crosses between algorithms that name the
+    /// same schema); `host_only` still says why every other caller may not.
+    /// `None` for every other import.
     #[serde(skip)]
     pub record_slots: Option<AlgorithmSlots>,
 
@@ -481,7 +481,8 @@ pub struct RecordImport {
 pub struct RecordField {
     pub id: String,
     /// The type the schema declares: a scalar, or an optional scalar
-    /// (docs/adr/0055), which no backend renders an algorithm's record of yet.
+    /// (docs/adr/0055), which an algorithm's record holds over a number or a
+    /// `bool` ([`RecordImport::first_unheld_optional_field`]).
     pub ty: FieldType,
     /// The schema's `sce:max-size` on the field: the bound, in UTF-8 bytes,
     /// of a `string` field (SCE_FORGE.md §4.12). `None` when the schema
@@ -507,11 +508,15 @@ impl RecordImport {
             .any(|f| matches!(f.ty.present_type(), SceType::String))
     }
 
-    /// The first field that may be absent (docs/adr/0055), if any: what a
-    /// backend that renders no algorithm's optional value yet refuses the
-    /// record by.
-    pub fn first_optional_field(&self) -> Option<&RecordField> {
-        self.fields.iter().find(|f| f.ty.optional_elem().is_some())
+    /// The first field that may be absent and is of an element no algorithm
+    /// holds an optional value of — a text or a value of an enum
+    /// ([`AlgorithmValueType::algorithm_optional_admitted`], docs/adr/0055) —
+    /// if any: what an algorithm that holds the record is refused by.
+    pub fn first_unheld_optional_field(&self) -> Option<&RecordField> {
+        self.fields.iter().find(|f| {
+            f.ty.optional_elem()
+                .is_some_and(|elem| !AlgorithmValueType::algorithm_optional_admitted(elem))
+        })
     }
 }
 
@@ -524,20 +529,24 @@ pub enum CalleeSlot {
         id: crate::forge::types::RecordId,
         qualified_type: String,
     },
+    /// `optional<T>` over a number or a `bool` (docs/adr/0055): an argument of
+    /// `T` is lifted, `null` is absent.
+    Optional(SceType),
 }
 
 impl CalleeSlot {
     /// The type a value in this slot has in the expression pipeline.
     pub fn inferred(&self) -> crate::forge::types::InferredType {
-        use crate::forge::types::InferredType;
+        use crate::forge::types::{InferredType, OptionalElem};
         match self {
             Self::Scalar(ty) => InferredType::from_sce_type(ty),
             Self::Record { id, .. } => InferredType::Record(*id),
+            Self::Optional(elem) => InferredType::Optional(OptionalElem::of(elem)),
         }
     }
 }
 
-/// The signature of an imported algorithm with a record slot.
+/// The signature of an imported algorithm with a record or an optional slot.
 #[derive(Debug, Clone, Default)]
 pub struct AlgorithmSlots {
     pub params: Vec<CalleeSlot>,
@@ -2678,10 +2687,16 @@ fn render_event_schema(
     imports: &[ImportContext],
     _lang: crate::generator::Language,
 ) -> Result<String, ForgeError> {
-    // A field that may be absent (docs/adr/0055) has no carrier in the payload
-    // struct of any backend yet: refused by name before a field is spelled, so
-    // every field read below holds a present value.
-    if let Some(field) = m.first_optional_field() {
+    // A field that may be absent (docs/adr/0055) is held in the backend's
+    // optional type over its present value's where an algorithm's record holds
+    // one, a number or a `bool` ([`AlgorithmValueType::algorithm_optional_admitted`]),
+    // the struct an algorithm's record is. One of another element has no carrier
+    // in this struct yet: refused by name before a field is spelled.
+    if let Some(field) = m.fields.iter().find(|f| {
+        f.sce_type
+            .optional_elem()
+            .is_some_and(|elem| !AlgorithmValueType::algorithm_optional_admitted(elem))
+    }) {
         return Err(crate::forge::static_lowering::optional_not_lowered(
             &format!(
                 "<data id=\"{}\" sce:type=\"{}\">",
@@ -2738,19 +2753,33 @@ fn render_event_schema(
                 Some(bound) => crate::forge::static_lowering::c_string_storage_type(bound).into(),
                 None => resolved.clone(),
             };
-            serde_json::json!({
+            // An optional field of a number or a `bool` (docs/adr/0055): the type
+            // an algorithm holds the value of one in, in this language
+            // ([`algorithm_optional_type`]), which every key below names, since
+            // one language's template is rendered at a time.
+            let held = match &f.sce_type {
+                FieldType::Optional { elem } => Some(algorithm_optional_type(
+                    &l,
+                    &OptionalElemType::Scalar(elem.clone()),
+                )?),
+                FieldType::Scalar(_) => None,
+            };
+            let spelled = |plain: std::borrow::Cow<'static, str>| {
+                held.clone().map_or(plain, std::borrow::Cow::Owned)
+            };
+            Ok(serde_json::json!({
                 "id": f.id,
-                "cpp_type": resolved,
-                "rs_type": rs_type,
-                "kt_type": resolved,
-                "go_type": resolved,
-                "py_type": resolved,
-                "c_type": c_type,
+                "cpp_type": spelled(resolved.clone()),
+                "rs_type": spelled(rs_type),
+                "kt_type": spelled(resolved.clone()),
+                "go_type": spelled(resolved.clone()),
+                "py_type": spelled(resolved),
+                "c_type": spelled(c_type),
                 "go_field_name": go_field_name,
                 "rs_field_name": rs_field_name,
-            })
+            }))
         })
-        .collect();
+        .collect::<Result<_, ForgeError>>()?;
 
     // Per-backend enum-import surface. Walk `imports` filtered to Enum
     // kind; non-Enum imports (Lookup, Codec, Procedure, etc.) cannot
@@ -2852,6 +2881,13 @@ fn render_event_schema(
         .collect();
     ctx.insert("field_bounds".into(), serde_json::json!(bounds));
     ctx.insert("fields".into(), serde_json::json!(fields));
+    // A field that may be absent is held in a type C++'s `<optional>`, C11's
+    // `sce/forge/optional.h` and Python's `typing` declare (docs/adr/0055); Go's
+    // runtime package is read off the text by the render.
+    ctx.insert(
+        "needs_optional".into(),
+        m.first_optional_field().is_some().into(),
+    );
     // The declaration of each bounded buffer the C11 struct holds a text in,
     // once per bound, under the guard every header that declares it shares.
     let text_bounds: std::collections::BTreeSet<u32> = m
@@ -26485,10 +26521,17 @@ impl LangCtx {
         // to do with `may-fail` — so the template's own flag said "no import"
         // beside a body that named it. It is read off the text the same way,
         // and a template lists `uses_scealgorithm` in its import block.
+        //
+        // The runtime's `optional` package (docs/adr/0055) is the same kind of
+        // import: an algorithm or a payload that holds a value that may be absent
+        // names `optional.Of[T]`, and one whose optional values are only read
+        // through methods names it nowhere. It is read off the text the same way,
+        // and a template lists `uses_optional` in its import block.
         let go = matches!(self.lang, crate::generator::Language::Go);
         ctx.insert(key.into(), serde_json::Value::Array(Vec::new()));
         if go {
             ctx.insert("uses_scealgorithm".into(), false.into());
+            ctx.insert("uses_optional".into(), false.into());
         }
         let first = tmpl
             .render(minijinja::Value::from_serialize(&ctx))
@@ -26502,7 +26545,10 @@ impl LangCtx {
         let runtime = go
             && crate::std_imports::go_uses_forge_runtime(&first)
             && !first.contains(crate::std_imports::GO_FORGE_RUNTIME_PATH);
-        if used.is_empty() && !runtime {
+        let optional = go
+            && crate::std_imports::go_uses_optional(&first)
+            && !first.contains(crate::std_imports::GO_FORGE_OPTIONAL_PATH);
+        if used.is_empty() && !runtime && !optional {
             return Ok(first);
         }
         ctx.insert(
@@ -26511,6 +26557,9 @@ impl LangCtx {
         );
         if runtime {
             ctx.insert("uses_scealgorithm".into(), true.into());
+        }
+        if optional {
+            ctx.insert("uses_optional".into(), true.into());
         }
         let second = tmpl
             .render(minijinja::Value::from_serialize(&ctx))
@@ -26531,6 +26580,15 @@ impl LangCtx {
                  `uses_scealgorithm` in its imports",
                 self.lang,
                 crate::std_imports::GO_FORGE_RUNTIME_ALIAS
+            ))
+            .into());
+        }
+        if optional && !second.contains(crate::std_imports::GO_FORGE_OPTIONAL_PATH) {
+            return Err(GenerateError::TemplateLoad(format!(
+                "the {:?} `{kind}` template emits code that uses `{}` but does not list \
+                 `uses_optional` in its imports",
+                self.lang,
+                crate::std_imports::GO_FORGE_OPTIONAL_NAME
             ))
             .into());
         }
@@ -27240,6 +27298,41 @@ fn algorithm_format_bc_import_param(
 /// panicked in Kotlin, Go and Python and resolved in the other three.
 fn algorithm_format_param(l: &LangCtx, name: &str, ty: &SceType) -> String {
     l.place_param(name, &algorithm_param_type(l, ty))
+}
+
+/// The type an algorithm holds a value that may be absent in (docs/adr/0055):
+/// a parameter, the return and a local of `optional<T>` alike, by value on
+/// every backend. The backend's one spelling over the type of the present value
+/// ([`optional_of`]), and on C11 the struct `sce/forge/optional.h` declares for
+/// the element ([`crate::forge::static_lowering::c11_optional_type`]): the
+/// types a statechart's variable of the same element is held in, so a call
+/// hands one over as it is. The reader admits a number or a `bool` alone
+/// ([`AlgorithmValueType::algorithm_optional_admitted`]), which every backend
+/// names.
+fn algorithm_optional_type(l: &LangCtx, elem: &OptionalElemType) -> Result<String, ForgeError> {
+    let refused = || -> ForgeError {
+        GenerateError::InvalidConfig(format!(
+            "an algorithm's optional<{}> reached the renderer, which the algorithm's reader \
+             refuses (docs/adr/0055)",
+            elem.as_attr()
+        ))
+        .into()
+    };
+    let OptionalElemType::Scalar(ty) = elem else {
+        return Err(refused());
+    };
+    if !AlgorithmValueType::algorithm_optional_admitted(ty) {
+        return Err(refused());
+    }
+    let present = l.type_name(ty);
+    l.optional_of(&present)
+        .or_else(|| match l.lang {
+            crate::generator::Language::C11 => {
+                crate::forge::static_lowering::c11_optional_type(&present)
+            }
+            _ => None,
+        })
+        .ok_or_else(refused)
 }
 
 /// A record built whole from `fields`, one `<sce:set>` per field of
@@ -28119,10 +28212,37 @@ fn lower_algorithm_body(
         borrowed_records: cfg.borrowed_records,
         channel: cfg.channel,
     };
-    for s in stmts {
-        lower_algorithm_stmt_and_check(s, &ctx, &pad, indent, &mut out)?;
-    }
+    lower_algorithm_block(
+        stmts,
+        &ctx,
+        &pad,
+        indent,
+        &crate::forge::narrowing::Facts::none(),
+        &mut out,
+    )?;
     Ok(out.trim_end().to_string())
+}
+
+/// Lower the statements of one block, entered with `entry` proven present
+/// (docs/adr/0055): each statement is lowered where what the ones before it in
+/// the block prove holds ([`crate::forge::narrowing::after_algorithm_statement`]),
+/// the reading [`crate::forge::narrowing::check_algorithm`] judged the body by
+/// before any backend was asked, so a `.value` it admitted is lowered as the
+/// proven read it is. Every body and every nested block lowers through here.
+fn lower_algorithm_block(
+    block: &[AlgorithmStmt],
+    ctx: &AlgorithmLowerCtx<'_>,
+    pad: &str,
+    indent: usize,
+    entry: &crate::forge::narrowing::Facts,
+    out: &mut String,
+) -> Result<(), ForgeError> {
+    let mut proven = entry.clone();
+    for s in block {
+        lower_algorithm_stmt_and_check(s, ctx, pad, indent, &proven, out)?;
+        proven = crate::forge::narrowing::after_algorithm_statement(&proven, s);
+    }
+    Ok(())
 }
 
 /// Walk an algorithm body and collect every identifier that appears as
@@ -28231,9 +28351,10 @@ fn lower_algorithm_stmt_and_check(
     ctx: &AlgorithmLowerCtx<'_>,
     pad: &str,
     indent: usize,
+    proven: &crate::forge::narrowing::Facts,
     out: &mut String,
 ) -> Result<(), ForgeError> {
-    lower_algorithm_stmt(s, ctx, pad, indent, out)?;
+    lower_algorithm_stmt(s, ctx, pad, indent, proven, out)?;
     if matches!(
         s,
         AlgorithmStmt::Var { .. }
@@ -28252,7 +28373,10 @@ fn lower_algorithm_stmt_and_check(
 /// ([`lower_algorithm_stmt_and_check`]). Every refusal is placed at the
 /// attribute it names, from the statement's spellings
 /// (`crate::forge::expression_site`); nested bodies recurse through the
-/// checking wrapper, and a nested statement places its own.
+/// checking wrapper, and a nested statement places its own. `proven` is what
+/// is proven present where the statement stands (docs/adr/0055); a block it
+/// holds is entered with what its construct proves besides
+/// ([`crate::forge::narrowing::Chain`], [`crate::forge::narrowing::loop_entry`]).
 ///
 /// ⚠ This used to place every failure at the statement's recorded ROW — the
 /// row its start tag begins on — which only `<sce:call>` recorded at all.
@@ -28264,8 +28388,10 @@ fn lower_algorithm_stmt(
     ctx: &AlgorithmLowerCtx<'_>,
     pad: &str,
     indent: usize,
+    proven: &crate::forge::narrowing::Facts,
     out: &mut String,
 ) -> Result<(), ForgeError> {
+    use crate::forge::narrowing::{loop_entry, proves_written, Chain};
     use crate::forge::types::InferredType;
     use crate::generator::Language;
     let &AlgorithmLowerCtx {
@@ -28283,6 +28409,15 @@ fn lower_algorithm_stmt(
         borrowed_records,
         channel,
     } = ctx;
+    // The statement's expressions are read where `proven` holds: a `.value` the
+    // narrowing admitted is a proven read here too.
+    let proving;
+    let type_ctx = if proven.is_empty() {
+        type_ctx
+    } else {
+        proving = type_ctx.proving(proven.clone());
+        &proving
+    };
     match s {
         AlgorithmStmt::Var {
             name,
@@ -28388,28 +28523,37 @@ fn lower_algorithm_stmt(
                      one on every local that is not a bytes buffer"
                 ))
             })?;
-            // Every buffer returned above, so what reaches here is a scalar.
-            let sce_type = sce_type.scalar().ok_or_else(|| {
-                GenerateError::InvalidConfig(format!(
-                    "algorithm local '{name}' of type {} reached the scalar lowering",
-                    sce_type.as_attr()
-                ))
-            })?;
+            // Every buffer returned above, so what reaches here is a scalar, or
+            // a value of one that may be absent (docs/adr/0055): its type the
+            // optional type by value, and its initial value `null`, a value of
+            // its element (lifted) or an optional value.
+            let (ty, slot) = match (sce_type.scalar(), sce_type.optional_elem()) {
+                (Some(scalar), _) => (
+                    l.type_name(scalar).into_owned(),
+                    InferredType::from_sce_type(scalar),
+                ),
+                (None, Some(elem)) => (
+                    algorithm_optional_type(l, elem)?,
+                    InferredType::Optional(crate::forge::types::OptionalElem::of_value(elem)),
+                ),
+                (None, None) => {
+                    return Err(GenerateError::InvalidConfig(format!(
+                        "algorithm local '{name}' of type {} reached the scalar lowering",
+                        sce_type.as_attr()
+                    ))
+                    .into())
+                }
+            };
             let site = ExpressionSite::new(init, init_spelling.as_ref());
             // A local OWNS what it is given. Rust holds a `string` there as a
             // `String`, and a string inside an expression is borrowed, so the
             // initial value is lowered for a place that owns it: `let mut r:
             // String = "";` is a type error that no document of a string local
             // could get past, and every other backend emits what it always did.
-            let init_lowered = expr::transpile_into_owned(
-                init,
-                l.expr_target(),
-                type_ctx,
-                renames,
-                InferredType::from_sce_type(sce_type),
-            )
-            .map(|lowered| lowered.text)
-            .map_err(|refusal| site.place(refusal))?;
+            let init_lowered =
+                expr::transpile_into_owned(init, l.expr_target(), type_ctx, renames, slot)
+                    .map(|lowered| lowered.text)
+                    .map_err(|refusal| site.place(refusal))?;
             let local = l.local_id(name);
             // Rust: emit `let mut` only when the local is reassigned
             // somewhere in the body (workspace `warnings = "deny"` makes
@@ -28427,26 +28571,13 @@ fn lower_algorithm_stmt(
                 Language::Rust => format!(
                     "{pad}let {mut_kw}{local}: {ty} = {init_lowered};\n",
                     mut_kw = rust_mut,
-                    ty = l.type_name(sce_type)
                 ),
                 Language::Cpp | Language::C11 => {
-                    format!(
-                        "{pad}{ty} {local} = {init_lowered};\n",
-                        ty = l.type_name(sce_type)
-                    )
+                    format!("{pad}{ty} {local} = {init_lowered};\n")
                 }
-                Language::Kotlin => format!(
-                    "{pad}var {local}: {ty} = {init_lowered}\n",
-                    ty = l.type_name(sce_type)
-                ),
-                Language::Go => format!(
-                    "{pad}var {local} {ty} = {init_lowered}\n",
-                    ty = l.type_name(sce_type)
-                ),
-                Language::Python => format!(
-                    "{pad}{local}: {ty} = {init_lowered}\n",
-                    ty = l.type_name(sce_type)
-                ),
+                Language::Kotlin => format!("{pad}var {local}: {ty} = {init_lowered}\n"),
+                Language::Go => format!("{pad}var {local} {ty} = {init_lowered}\n"),
+                Language::Python => format!("{pad}{local}: {ty} = {init_lowered}\n"),
                 Language::Swift => no_swift_emitter("lower_algorithm_stmt"),
             };
             out.push_str(&line);
@@ -28864,18 +28995,32 @@ fn lower_algorithm_stmt(
             // we keep parens there to mirror the source SCXML's typical
             // C-flavored author intent. Python uses no parens and a
             // colon-terminated header.
+            //
+            // The block is read where the condition holds, the `<sce:else>`
+            // where it does not (docs/adr/0055).
+            let chain = Chain::of(proven, &[cond.as_str()]);
             match lang {
                 Language::Python => {
                     out.push_str(&format!("{pad}if {cond_lowered}:\n"));
                     let inner_pad = "    ".repeat(indent + 1);
-                    for st in then_body {
-                        lower_algorithm_stmt_and_check(st, ctx, &inner_pad, indent + 1, out)?;
-                    }
+                    lower_algorithm_block(
+                        then_body,
+                        ctx,
+                        &inner_pad,
+                        indent + 1,
+                        &chain.block(0),
+                        out,
+                    )?;
                     if let Some(eb) = else_body {
                         out.push_str(&format!("{pad}else:\n"));
-                        for st in eb {
-                            lower_algorithm_stmt_and_check(st, ctx, &inner_pad, indent + 1, out)?;
-                        }
+                        lower_algorithm_block(
+                            eb,
+                            ctx,
+                            &inner_pad,
+                            indent + 1,
+                            &chain.otherwise(),
+                            out,
+                        )?;
                     }
                 }
                 Language::Rust
@@ -28888,20 +29033,24 @@ fn lower_algorithm_stmt(
                     let if_pad = "    ".repeat(if_indent);
                     out.push_str(&header_open);
                     let inner_pad = "    ".repeat(if_indent + 1);
-                    for st in then_body {
-                        lower_algorithm_stmt_and_check(st, ctx, &inner_pad, if_indent + 1, out)?;
-                    }
+                    lower_algorithm_block(
+                        then_body,
+                        ctx,
+                        &inner_pad,
+                        if_indent + 1,
+                        &chain.block(0),
+                        out,
+                    )?;
                     if let Some(eb) = else_body {
                         out.push_str(&format!("{if_pad}}} else {{\n"));
-                        for st in eb {
-                            lower_algorithm_stmt_and_check(
-                                st,
-                                ctx,
-                                &inner_pad,
-                                if_indent + 1,
-                                out,
-                            )?;
-                        }
+                        lower_algorithm_block(
+                            eb,
+                            ctx,
+                            &inner_pad,
+                            if_indent + 1,
+                            &chain.otherwise(),
+                            out,
+                        )?;
                     }
                     out.push_str(&format!("{if_pad}}}\n"));
                     out.push_str(&block_close);
@@ -28950,10 +29099,20 @@ fn lower_algorithm_stmt(
             body,
             max_iter,
         } => {
+            // The condition is read where every turn starts — what holds before
+            // the loop and nothing in the body ends — and the body where it
+            // holds besides (docs/adr/0055).
+            let turn = loop_entry(proven, body);
             let site = ExpressionSite::new(cond, cond_spelling.as_ref());
-            let cond_lowered =
-                expr::transpile_into(cond, l.expr_target(), type_ctx, renames, InferredType::Bool)
-                    .map_err(|refusal| site.place(refusal))?;
+            let cond_lowered = expr::transpile_into(
+                cond,
+                l.expr_target(),
+                &ctx.type_ctx.proving(turn.clone()),
+                renames,
+                InferredType::Bool,
+            )
+            .map_err(|refusal| site.place(refusal))?;
+            let in_body = turn.and(&proves_written(cond, true));
             let _ = max_iter; // RFC §synth-5-A runtime-counter guard lands in A4 (build-time fold).
                               // Same paren policy as `if` above — Rust loop conditions
                               // refuse the C-flavoured paren wrap under unused_parens.
@@ -28961,9 +29120,7 @@ fn lower_algorithm_stmt(
                 Language::Python => {
                     out.push_str(&format!("{pad}while {cond_lowered}:\n"));
                     let inner_pad = "    ".repeat(indent + 1);
-                    for st in body {
-                        lower_algorithm_stmt_and_check(st, ctx, &inner_pad, indent + 1, out)?;
-                    }
+                    lower_algorithm_block(body, ctx, &inner_pad, indent + 1, &in_body, out)?;
                 }
                 Language::Rust
                 | Language::Cpp
@@ -28990,9 +29147,7 @@ fn lower_algorithm_stmt(
                     };
                     out.push_str(&header_open);
                     let inner_pad = "    ".repeat(indent + 1);
-                    for st in body {
-                        lower_algorithm_stmt_and_check(st, ctx, &inner_pad, indent + 1, out)?;
-                    }
+                    lower_algorithm_block(body, ctx, &inner_pad, indent + 1, &in_body, out)?;
                     out.push_str(&format!("{pad}}}\n"));
                 }
                 Language::Swift => no_swift_emitter("lower_algorithm_stmt"),
@@ -29196,9 +29351,14 @@ fn lower_algorithm_stmt(
                     }
                     Language::Swift => no_swift_emitter("lower_algorithm_stmt"),
                 }
-                for st in body {
-                    lower_algorithm_stmt_and_check(st, ctx, &inner_pad, body_inner_indent, out)?;
-                }
+                lower_algorithm_block(
+                    body,
+                    ctx,
+                    &inner_pad,
+                    body_inner_indent,
+                    &loop_entry(proven, body),
+                    out,
+                )?;
                 // Per-backend close braces. Rust/Cpp/C11 close two
                 // blocks (the Some/has_value branch + the for-loop);
                 // Kotlin/Go close one (the for-loop only); Python
@@ -29318,9 +29478,16 @@ fn lower_algorithm_stmt(
                 out.push_str(&header);
                 let inner_indent = indent + 1;
                 let inner_pad = "    ".repeat(inner_indent);
-                for st in body {
-                    lower_algorithm_stmt_and_check(st, ctx, &inner_pad, inner_indent, out)?;
-                }
+                // A fact holds in the body only where nothing in it ends one
+                // (docs/adr/0055).
+                lower_algorithm_block(
+                    body,
+                    ctx,
+                    &inner_pad,
+                    inner_indent,
+                    &loop_entry(proven, body),
+                    out,
+                )?;
                 if !matches!(lang, Language::Python) {
                     out.push_str(&format!("{pad}}}\n"));
                 }
@@ -30955,6 +31122,10 @@ fn reject_may_fail_in_unsupported_lang(
 pub(crate) struct AlgorithmTypes<'a> {
     /// Parameters, locals and byte foreach items, each a scalar.
     env: Vec<(String, SceType)>,
+    /// Every parameter and local of `optional<T>` (docs/adr/0055), with the
+    /// element it holds when present: read by `x !== null`, `x.value` where a
+    /// test proves it present and `x ?? d`, and written whole.
+    optionals: Vec<(String, crate::forge::types::OptionalElem)>,
     /// Every `list<T>` parameter and its element type: read by `xs[i]`,
     /// `len(xs)` and `<sce:foreach in="xs">`, never written.
     list_params: Vec<(String, ListElemType)>,
@@ -31057,6 +31228,20 @@ impl<'a> AlgorithmTypes<'a> {
             .iter()
             .filter_map(|p| p.sce_type.list_elem().map(|t| (p.name.clone(), t.clone())))
             .collect();
+        // An optional parameter is a value that may be absent, read as one.
+        let mut optionals: Vec<(String, crate::forge::types::OptionalElem)> = m
+            .signature
+            .params
+            .iter()
+            .filter_map(|p| {
+                p.sce_type.optional_elem().map(|elem| {
+                    (
+                        p.name.clone(),
+                        crate::forge::types::OptionalElem::of_value(elem),
+                    )
+                })
+            })
+            .collect();
         // An item over a list of records is a record, named by the item and
         // typed by its schema below, as a record parameter is.
         let mut record_list_items: Vec<(&str, &str, String)> = Vec::new();
@@ -31093,6 +31278,14 @@ impl<'a> AlgorithmTypes<'a> {
                         None => {
                             if let Some(ListElemType::Scalar(elem)) = sce_type.list_elem() {
                                 list_buffers.push((name.to_string(), elem.clone()));
+                            }
+                            // An optional local is read as an optional
+                            // parameter is.
+                            if let Some(elem) = sce_type.optional_elem() {
+                                optionals.push((
+                                    name.to_string(),
+                                    crate::forge::types::OptionalElem::of_value(elem),
+                                ));
                             }
                             continue;
                         }
@@ -31229,6 +31422,7 @@ impl<'a> AlgorithmTypes<'a> {
 
         Ok(Self {
             env,
+            optionals,
             list_params,
             list_buffers,
             bytes_buffers,
@@ -31268,24 +31462,28 @@ impl<'a> AlgorithmTypes<'a> {
         }
     }
 
-    /// Whether a record the body holds has a field that may be absent
-    /// (docs/adr/0055): what decides whether its expressions have an optional
-    /// value to be judged for.
+    /// Whether the body holds a value that may be absent (docs/adr/0055): an
+    /// optional parameter or local, or a field of a record it holds: what
+    /// decides whether its expressions have an optional value to be judged for.
     pub(crate) fn holds_optional(&self) -> bool {
-        self.record_members
-            .iter()
-            .any(|(_, ty)| ty.optional_elem().is_some())
+        !self.optionals.is_empty()
+            || self
+                .record_members
+                .iter()
+                .any(|(_, ty)| ty.optional_elem().is_some())
     }
 
-    /// The refusal of a backend, `lang`, that renders no algorithm's optional
-    /// value yet (docs/adr/0055), when a record the body holds has a field
-    /// that may be absent. The body was judged before any backend was asked;
-    /// this refuses it by name rather than render it with no type that holds
-    /// absence. One wording for every backend and the Interpreter.
+    /// The refusal of a backend, `lang`, when a record the body holds has a
+    /// field that may be absent and is of an element no algorithm holds an
+    /// optional value of: a text or a value of an enum
+    /// ([`AlgorithmValueType::algorithm_optional_admitted`], docs/adr/0055). The
+    /// body was judged before any backend was asked; this refuses it by name
+    /// rather than render it with no type that holds the absence. One wording
+    /// for every backend and the Interpreter.
     pub(crate) fn refuse_optional(&self, lang: &str) -> Result<(), GenerateError> {
         let held = self.records.iter().find_map(|&(name, alias, record)| {
             record
-                .first_optional_field()
+                .first_unheld_optional_field()
                 .map(|field| (name, alias, field))
         });
         match held {
@@ -31311,6 +31509,9 @@ impl<'a> AlgorithmTypes<'a> {
         let mut type_ctx = TypeCtx::new();
         for (name, ty) in &self.env {
             type_ctx.insert_var(name.as_str(), InferredType::from_sce_type(ty));
+        }
+        for (name, elem) in &self.optionals {
+            type_ctx.insert_var(name.as_str(), InferredType::Optional(*elem));
         }
         // A list parameter is a list as a value (`len(xs)`, a foreach source)
         // and its element under an index (`xs[i]`).
@@ -31644,6 +31845,11 @@ fn render_algorithm(
                     l.place_param(&p.name, &ListSpelling::new(&l, elem, imports)?.param_type())
                 );
             }
+            // A value that may be absent is passed by value, as a number is
+            // (docs/adr/0055).
+            if let Some(elem) = p.sce_type.optional_elem() {
+                return Ok(l.place_param(&p.name, &algorithm_optional_type(&l, elem)?));
+            }
             p.sce_type
                 .scalar()
                 .map(|t| algorithm_format_param(&l, &p.name, t))
@@ -31723,6 +31929,12 @@ fn render_algorithm(
         Some(alias) => Some(resolve_record(imports, alias, None, "<sce:return>")?),
         None => None,
     };
+    // An optional return (docs/adr/0055) is the optional type by value, as a
+    // parameter of it is.
+    let return_optional = declared_return
+        .and_then(|t| t.optional_elem())
+        .map(|elem| algorithm_optional_type(&l, elem))
+        .transpose()?;
     let may_fail = m.signature.may_fail;
     let return_type = match (return_scalar, lang) {
         (
@@ -31749,6 +31961,15 @@ fn render_algorithm(
         ) if return_record.is_some() => return_record
             .map(|record| record.qualified_type.clone())
             .expect("guarded by the arm"),
+        (
+            _,
+            Language::Rust
+            | Language::Cpp
+            | Language::Kotlin
+            | Language::Go
+            | Language::Python
+            | Language::C11,
+        ) if return_optional.is_some() => return_optional.clone().expect("guarded by the arm"),
         (
             Some(SceType::Bytes),
             Language::Rust
@@ -32026,9 +32247,12 @@ fn render_algorithm(
         .collect();
     // A `list<T>` return has no `InferredType`; its `<sce:return>` is lowered
     // by name from `return_value` (see the Return arm), so `Unknown` here is
-    // never used to judge an expression.
-    let return_ty_inferred =
-        return_scalar.map_or(InferredType::Unknown, InferredType::from_sce_type);
+    // never used to judge an expression. An optional return takes `null`, a
+    // value of its element (lifted) or an optional value (docs/adr/0055).
+    let return_ty_inferred = match declared_return.and_then(|t| t.optional_elem()) {
+        Some(elem) => InferredType::Optional(crate::forge::types::OptionalElem::of_value(elem)),
+        None => return_scalar.map_or(InferredType::Unknown, InferredType::from_sce_type),
+    };
     let records: std::collections::HashMap<String, String> = types
         .records
         .iter()
@@ -32095,6 +32319,10 @@ fn render_algorithm(
         "has_return".into(),
         m.signature.return_type.is_some().into(),
     );
+    // Python's `x ?? d` is the runtime's `sce_algorithm.otherwise`, which a body
+    // that does not declare `may-fail` reaches too (docs/adr/0055): whether the
+    // module is imported is read off the body that names it.
+    let python_uses_runtime = lang == Language::Python && body.contains("sce_algorithm.");
     ctx.insert("body".into(), body.into());
     ctx.insert("may_fail".into(), may_fail.into());
     ctx.insert("needs_span".into(), needs_span.into());
@@ -32107,6 +32335,32 @@ fn render_algorithm(
             .any(|(_, _, record)| record.holds_text())
             .into(),
     );
+    // A value that may be absent (docs/adr/0055) — a parameter, the return, a
+    // local or a field of a record the body holds — is C11's struct of the
+    // runtime's `sce/forge/optional.h`, and C++'s `std::optional` read through
+    // the runtime's helpers (`otherwise` for `??`): each header is included
+    // where the algorithm holds one.
+    ctx.insert(
+        "needs_optional".into(),
+        (types.holds_optional() || return_optional.is_some()).into(),
+    );
+    // Python annotates a parameter, the return and a local of `optional<T>` as
+    // `Optional[T]`, which `typing` declares; a record's optional field is
+    // annotated in its schema's own module.
+    let declares_optional = return_optional.is_some()
+        || m.signature
+            .params
+            .iter()
+            .any(|p| p.sce_type.optional_elem().is_some())
+        || m.body_bindings().into_iter().any(|binding| {
+            matches!(
+                binding,
+                crate::forge::model::AlgorithmBinding::Local { sce_type, .. }
+                    if sce_type.optional_elem().is_some()
+            )
+        });
+    ctx.insert("python_needs_optional".into(), declares_optional.into());
+    ctx.insert("uses_sce_algorithm".into(), python_uses_runtime.into());
     // C11 declares a read-only `list<T>` parameter as the runtime's view for
     // its element (`sce/forge/list_view.h`); a list of records' view is
     // declared beside the algorithm, over the `size_t` that header brings.

@@ -20,8 +20,10 @@ package {{ package }}
    cannot fall behind the vocabulary, and a name inside a string cannot add an
    import. `uses_scealgorithm` is the same fact for the forge runtime: the body
    names it for a `may-fail` algorithm's checked operations and for an
-   enum-valued conditional alike, so the text decides and `may_fail` does not. #}
-{% if all_imports or uses_scealgorithm or std_imports %}
+   enum-valued conditional alike, so the text decides and `may_fail` does not.
+   `uses_optional` is the same fact for the runtime's `optional` package, which
+   a value that may be absent is held in (docs/adr/0055). #}
+{% if all_imports or uses_scealgorithm or uses_optional or std_imports %}
 
 import (
 {% for pkg in std_imports %}
@@ -29,6 +31,9 @@ import (
 {% endfor %}
 {% if uses_scealgorithm %}
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
+{% endif %}
+{% if uses_optional %}
+	"github.com/newmassrael/sce-forge-runtime/optional"
 {% endif %}
 {% for imp in all_imports %}
 {{ imp.include_stmt }}

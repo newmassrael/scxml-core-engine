@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The earliest day a goal of a list is due (docs/adr/0055): a list of records whose
+  `day` may be absent in, an optional day out. A goal with no day is passed over, and
+  the answer is absent for an empty list and for one in which no goal has a day.
+
+  `best` is a local that may be absent, starting absent. Each `.value` is read where
+  the test before it in the same condition proves it present: the right operand of
+  `&&` where `g.day !== null` holds, and of `||` where `best === null` does not.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       name="goal_earliest"
+       version="1.0">
+  <sce:import kind="event-schema" src="schema_goal.scxml" as="Goal"/>
+  <sce:signature>
+    <sce:param name="goals" type="list&lt;record:Goal&gt;"/>
+    <sce:return type="optional&lt;int64&gt;"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="best" type="optional&lt;int64&gt;" init="null"/>
+    <sce:foreach item="g" in="goals">
+      <sce:if cond="g.day !== null &amp;&amp; (best === null || g.day.value &lt; best.value)">
+        <sce:assign target="best" expr="g.day"/>
+      </sce:if>
+    </sce:foreach>
+    <sce:return expr="best"/>
+  </sce:body>
+</scxml>

@@ -38,6 +38,9 @@ use crate::forge::expr::{
     infer_types, judge_into, resolve, BinOp, Expected, ExprKind, TypedExpr, UnaryOp,
 };
 use crate::forge::model::{AlgorithmStmt, AlgorithmValueType};
+use crate::forge::narrowing::{
+    after_algorithm_statement, loop_entry, proves_written, Chain, Facts,
+};
 use crate::forge::types::{InferredType, TypeCtx};
 
 /// Why an operation can fail.
@@ -117,6 +120,7 @@ pub fn hazards(
         found: Vec::new(),
         recording: true,
         untyped: std::cell::Cell::new(false),
+        proven: Facts::none(),
     };
     let mut env = Env::default();
     for (name, ty) in params {
@@ -314,6 +318,13 @@ struct Analysis<'c, 'a> {
     /// Whether an expression the typed pipeline refuses was met — the body is
     /// then not judged ([`hazards`]).
     untyped: std::cell::Cell<bool>,
+    /// The subjects proven present where the statement being judged stands
+    /// (docs/adr/0055): an expression is typed where they hold, as the
+    /// narrowing every reader of a body shares has them
+    /// ([`crate::forge::narrowing`]), so a `.value` read a test proves is a
+    /// value of its element here too, and the body is judged rather than
+    /// passed over as one the pipeline refuses.
+    proven: Facts,
 }
 
 /// Rounds a loop is iterated before its still-growing ranges are widened.
@@ -325,13 +336,20 @@ const ROUNDS_BEFORE_WIDENING: usize = 3;
 const ROUNDS_OF_NARROWING: usize = 2;
 
 impl Analysis<'_, '_> {
+    /// `stmts`, entered with [`Self::proven`]: each statement judged where
+    /// what the ones before it prove holds ([`after_algorithm_statement`]), and
+    /// nothing the block proves reaching past its end.
     fn block(&mut self, stmts: &[AlgorithmStmt], env: &mut Env) {
+        let entry = self.proven.clone();
         for stmt in stmts {
             if env.unreachable {
-                return;
+                break;
             }
+            let before = self.proven.clone();
             self.stmt(stmt, env);
+            self.proven = after_algorithm_statement(&before, stmt);
         }
+        self.proven = entry;
     }
 
     fn stmt(&mut self, stmt: &AlgorithmStmt, env: &mut Env) {
@@ -469,12 +487,17 @@ impl Analysis<'_, '_> {
                 if let Some(tree) = &tree {
                     self.eval(tree, cond, cond_spelling.as_ref(), env);
                 }
+                let outer = self.proven.clone();
+                let chain = Chain::of(&outer, &[cond.as_str()]);
                 let mut then_env = self.narrowed(tree.as_ref(), env, true);
+                self.proven = chain.block(0);
                 self.block(then_body, &mut then_env);
                 let mut else_env = self.narrowed(tree.as_ref(), env, false);
                 if let Some(body) = else_body {
+                    self.proven = chain.otherwise();
                     self.block(body, &mut else_env);
                 }
+                self.proven = outer;
                 *env = then_env.join(&else_env);
             }
             AlgorithmStmt::While {
@@ -483,7 +506,13 @@ impl Analysis<'_, '_> {
                 body,
                 ..
             } => {
+                // The condition is read where every turn starts, and the body
+                // where it held besides.
+                let outer = self.proven.clone();
+                let turn = loop_entry(&outer, body);
+                self.proven = turn.clone();
                 let tree = self.typed(cond);
+                self.proven = turn.and(&proves_written(cond, true));
                 let head = self.fixed_point(env, |this, head| {
                     let mut inner = this.narrowed(tree.as_ref(), head, true);
                     this.block(body, &mut inner);
@@ -495,6 +524,7 @@ impl Analysis<'_, '_> {
                 }
                 let mut inner = self.narrowed(tree.as_ref(), &head, true);
                 self.block(body, &mut inner);
+                self.proven = outer;
                 *env = self.narrowed(tree.as_ref(), &head, false);
             }
             AlgorithmStmt::Foreach {
@@ -506,6 +536,9 @@ impl Analysis<'_, '_> {
                     .typed(&format!("{source}[0]"))
                     .and_then(|t| type_range(t.ty))
                     .or(Some(Interval { lo: 0, hi: 255 }));
+                // A fact holds in the body only where nothing in it ends it.
+                let outer = self.proven.clone();
+                self.proven = loop_entry(&outer, body);
                 let head = self.fixed_point(env, |this, head| {
                     let mut inner = head.clone();
                     if let Some(r) = item_range {
@@ -521,6 +554,7 @@ impl Analysis<'_, '_> {
                 }
                 self.block(body, &mut inner);
                 inner.vars.remove(item);
+                self.proven = outer;
                 *env = head.join(&inner);
             }
         }
@@ -666,12 +700,22 @@ impl Analysis<'_, '_> {
     /// (`reading + 300` is a literal out of `uint8`'s range, not an
     /// overflow).
     fn typed(&self, expr: &str) -> Option<TypedExpr> {
-        let judged = judge_into(expr, self.ctx, Expected::Hint(InferredType::Unknown));
-        let (Ok(_), Ok(mut tree)) = (judged, resolve(expr, self.ctx)) else {
+        // Where the body has proven a value present, the expression is typed
+        // with that fact ([`Self::proven`]); a scope that proves nothing is the
+        // algorithm's own, read as it is.
+        let proving;
+        let ctx = if self.proven.is_empty() {
+            self.ctx
+        } else {
+            proving = self.ctx.proving(self.proven.clone());
+            &proving
+        };
+        let judged = judge_into(expr, ctx, Expected::Hint(InferredType::Unknown));
+        let (Ok(_), Ok(mut tree)) = (judged, resolve(expr, ctx)) else {
             self.untyped.set(true);
             return None;
         };
-        infer_types(&mut tree, self.ctx);
+        infer_types(&mut tree, ctx);
         Some(tree)
     }
 

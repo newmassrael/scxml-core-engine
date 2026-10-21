@@ -14,6 +14,9 @@
 #define {{ guard }}
 
 #include <cstdint>
+{% if needs_optional %}
+#include <optional>
+{% endif %}
 #include <string>
 #include <vector>
 {% for inc in enum_includes %}

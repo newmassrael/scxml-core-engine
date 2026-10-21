@@ -71,6 +71,11 @@ impl Facts {
         self.0.contains(subject)
     }
 
+    /// Whether no subject is proven here.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
     /// These facts and `other`'s: both hold.
     pub fn and(&self, other: &Facts) -> Facts {
         Facts(self.0.union(&other.0).cloned().collect())
@@ -418,15 +423,20 @@ pub fn after_algorithm_statement(before: &Facts, statement: &AlgorithmStmt) -> F
 /// [`Chain`], and a loop's [`loop_entry`], an `<sce:while>`'s condition proving
 /// its facts at the start of each turn. `imports` are the algorithm's own,
 /// enriched. Judged once, before any backend renders the body, so the verdict
-/// does not depend on the backend; a body that holds no optional value has
-/// nothing to judge here.
+/// does not depend on the backend; a body that holds no optional value and
+/// returns none has nothing to judge here.
 pub(crate) fn check_algorithm(
     m: &crate::forge::model::AlgorithmModel,
     imports: &[crate::forge::generator::ImportContext],
     options: &crate::ForgeCompileOptions,
 ) -> Result<(), crate::forge::error::ForgeError> {
     let types = crate::forge::generator::AlgorithmTypes::collect(m, imports, options)?;
-    if !types.holds_optional() {
+    let returns_optional = m
+        .signature
+        .return_type
+        .as_ref()
+        .is_some_and(|ty| ty.optional_elem().is_some());
+    if !types.holds_optional() && !returns_optional {
         return Ok(());
     }
     let ctx = types.type_ctx(m, imports);
@@ -512,11 +522,32 @@ impl AlgorithmWalk<'_, '_> {
             } => self.judge(init, init_spelling.as_ref(), hint, proven),
             AlgorithmStmt::Assign {
                 target,
+                target_spelling,
                 expr,
                 expr_spelling,
-                ..
             } => {
-                let slot = self.ctx.lookup_var(target.trim());
+                let target = target.trim();
+                // An optional value is written whole: `null` makes it absent and
+                // a value present. Its `.value` is a read, and no place to write.
+                if let Some(holder) = crate::forge::static_enum::present_value_of(target)
+                    .filter(|holder| self.ctx.lookup_var(holder.trim()).is_optional())
+                {
+                    let at = ExpressionSite::new(target, target_spelling.as_ref())
+                        .locate(Some(0..target.len()));
+                    let refusal: crate::forge::error::ForgeError =
+                        crate::forge::error::ExprError::UnsupportedConstruct {
+                            construct: format!(
+                                "an assignment to `{target}`, the value of an optional value \
+                                 (an optional value is assigned whole: <sce:assign \
+                                 target=\"{}\"> writes `null` or a value)",
+                                holder.trim()
+                            ),
+                            observed: at.observed(),
+                        }
+                        .into();
+                    return Err(at.place(refusal));
+                }
+                let slot = self.ctx.lookup_var(target);
                 self.judge(expr, expr_spelling.as_ref(), Expected::Slot(slot), proven)
             }
             AlgorithmStmt::Append {
