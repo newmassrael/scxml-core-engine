@@ -809,14 +809,20 @@ Each step lands with a test that fails without it.
    `nothing_is_in_transit_when_a_tree_is_saved.rs` holds that a save after any host call never
    meets the transit refusal. A resumed child's Mesh router is asked of the factory when the host
    registers it (step 3 of section 3), held by
-   `a_child_session_is_given_its_mesh_router_by_its_parent.rs`. Open: the tree fixture
-   (`static_invoke_tree.scxml` with a grandchild, the sends and queued events both ways, a
-   candidate whose `srcexpr` changed, a start counted twice) and its byte-for-byte text, which
-   the refusal tests of a grandchild of another shape and of a child of a later schema revision
-   read; two of its items are not yet expressible, an `idlocation` on an `<invoke>` of a
-   `sce-static` document (the Rust template reaches a script engine for it) and a host-run
-   invocation in a child (the child has no host invoker of its own); and the scenario step
-   `restore`.
+   `a_child_session_is_given_its_mesh_router_by_its_parent.rs`. A child session's host-run
+   invocation is served by the tree's invokers and ended by session id (section 3,
+   `a_child_sessions_host_invocation_is_served_by_the_trees_host.rs`), and a child session's
+   `<invoke idlocation>` is written under `sce-static` (section 3). The tree fixture
+   `static_invoke_tree.scxml` holds every item of section 8 (a grandchild under a hybrid candidate
+   whose `srcexpr` variable changed, a delayed send each way, an event queued each way, a
+   host-run invocation running in the child, an `idlocation`, a start counted twice, and a
+   record of a schema at its third revision in the child); `a_saved_tree_holds_every_session_where_it_stood.rs`
+   holds what each session stood at, its round trip, and the refusals of a grandchild of another
+   shape and of a child of a later revision, each naming the session's path; the scenario format
+   has its `restore` step, run by the Rust replay (`scenarios/static_invoke_tree.json`) and
+   skipped, counted, by the Interpreter. Open: the shared text `saved/static_invoke_tree_working.json`
+   itself, which Rust writes first: the test that pins it writes it under `UPDATE_EXPECT=1`, and
+   the text is committed from that run once read.
 4. **Kotlin.** The same over `SavedState.kt` and `StateMachineEngine`, the root's id included.
    *Exit:* Kotlin saves the tree fixture byte for byte as Rust does, Kotlin restores the text Rust
    saved, and Rust the text Kotlin saved.
