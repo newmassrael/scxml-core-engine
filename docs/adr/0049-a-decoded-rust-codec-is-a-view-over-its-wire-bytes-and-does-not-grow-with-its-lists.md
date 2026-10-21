@@ -1,14 +1,15 @@
-# ADR 0047 — A decoded Rust codec is a view over its wire bytes, and does not grow with its lists
+# ADR 0049 — A decoded Rust codec is a view over its wire bytes, and does not grow with its lists
 
 - Status: Proposed (2026-10-21). A draft for the owner: the decision it asks for is in "Decisions to take". Step 0 (a
-  hand prototype) is done and its result is below; nothing is built in the generator.
+  hand prototype) is done and its result is below; nothing is built in the generator. (Numbered 0047 when first
+  written; renumbered 0049 because another ADR took 0047 first.)
 - Date: 2026-10-21
 - Scope: `tools/codegen/templates/forge/rust/codec.rs.jinja2` and the Rust half of `sce-build/src/forge/generator.rs`
   (the field, list, embed and variant statements); `backends/rust/forge-runtime/src/codec.rs` (a list view and its
   iterator); SCE_FORGE.md §4.6 (the paragraph on filling a value in place); the golden trees under
   `tests/forge/expected/` and `backends/rust/mesh/src/generated/`. Rust only: the other five backends keep their own
   list forms (growable lists, and a fixed array in C11) and are not touched.
-- Related: the commits that added `decode_into` and `try_as_borrowed_into` (`b4c74302ac`, `2afb4c5103`); ADR 0010,
+- Related: the commits that added `decode_into` and `try_as_borrowed_into` and the owned `encode`; ADR 0010,
   decision 2 (the wire rules are written once, and every backend writes the same bytes).
 
 ## Context
@@ -41,7 +42,8 @@ size too.
 
 What exists now is a mitigation at the API: two entry points per operation (`decode` and `decode_into`,
 `try_as_borrowed` and `try_as_borrowed_into`), the value-returning one kept as a wrapper that still pays one move of
-the whole record, and a caller who has to know to call the other. It removed the copies and left their cause.
+the whole record, and a caller who has to know to call the other. It removed the copies and left their cause. The send
+side has since gone further: every owned mirror encodes straight from its own fields (see "Considered alternatives").
 
 ## Decisions to take
 
@@ -130,10 +132,9 @@ would move the walk rows, and the generator work should not start on these numbe
 
 ## What this does not do
 
-- **It does not fix the send path.** An owned value is projected into the builder form to be encoded, and that form
-  holds its lists inline; `try_as_borrowed_into` already fills it without moving it, and what remains is one entry
-  at a time. A view helps a receive and a relay (decode, then encode what was read), not a message built from owned
-  parts.
+- **It does not touch the send path.** An owned value no longer needs the borrowed record to be sent: every owned
+  mirror encodes straight from its own fields, and a view would not change that. A view helps a receive and a relay
+  (decode, then encode what was read).
 - **It is not a latency fix.** What is left to remove is about 4 µs on the measured board, against a gap of tens of
   microseconds. If time on the wire is the only aim, this is not worth its size; the levers are elsewhere in the
   consumer's application window.
@@ -150,16 +151,18 @@ would move the walk rows, and the generator work should not start on these numbe
 
 ## Considered alternatives
 
-- *Keep what is built* (`decode_into`, `try_as_borrowed_into`). The cheapest, and it has already removed the moves. It
-  leaves the footprint and the cost growing with `sce:max-count`. If footprint is not a goal, this is the answer.
+- *Keep what is built* (`decode_into`, `try_as_borrowed_into`, the owned `encode`). The cheapest, and it has already
+  removed the moves. It leaves the footprint and the cost growing with `sce:max-count`. If footprint is not a goal,
+  this is the answer.
 - *Lower `sce:max-count` in the codec documents.* The cost is proportional to it, so this is a direct fix, and a
   consumer can make it today. It is a protocol decision (how many extensions a frame may carry), not a generator one.
 - *A caller-supplied entry store*: `decode_into(cursor, &mut out, &mut [Entry; N])`, with the record holding slices.
   It keeps eager decode and random access and shrinks the record to pointers, but the same bytes of store exist, now in
   a second place the caller declares; the footprint is the same.
-- *An owned `encode`* (a parallel emission of every encode statement over the owned form). Rejected when `try_as_borrowed_into`
-  was chosen: it doubles roughly fifteen emit sites, it does not touch the receive path, and the repository's rule is
-  that `encode` lives once.
+- *An owned `encode`.* First rejected on the expectation that it would double roughly fifteen encode emit sites, and
+  built later at a consumer's request in a form that does not: the encode body is one skeleton included by the borrowed
+  type and by its owned mirror, and only the few reads that go through a storage container differ. It writes the bytes
+  the projection followed by `encode` writes, with no record built; the receive path is not touched by it.
 - *Boxing or an arena for the lists.* The heap-free tier forbids the first, and the second is the caller-supplied store
   above under another name.
 
