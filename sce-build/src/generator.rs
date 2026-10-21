@@ -4270,10 +4270,15 @@ fn render_go(
     // packages its own text reaches for and does not import are read from it, and
     // it is rendered again with them listed.
     let unimported = crate::std_imports::go_unimported_in(&first);
-    if unimported.is_empty() {
+    // The converse holds too: a package the lowering imported for a call is
+    // refused when the text no longer names it, which is the case when the only
+    // call stood after an element that always ends its block — the templates
+    // emit nothing there.
+    let named = crate::std_imports::go_imports_named_in(&first, &static_lowering.imports);
+    if unimported.is_empty() && named.len() == static_lowering.imports.len() {
         return Ok(first);
     }
-    let mut imports = static_lowering.imports.clone();
+    let mut imports = named;
     imports.extend(unimported.iter().map(|package| format!("\t\"{package}\"")));
     render_with(&imports)
 }

@@ -102,6 +102,47 @@ pub fn go_unimported_in(source: &str) -> Vec<&'static str> {
         .collect()
 }
 
+/// The lines of `imports` — Go import specs, `\talias "path"` or `\t"path"` —
+/// whose package `source` names, in their order: the rest are imported and
+/// never used, which Go refuses.
+///
+/// An import a document's lowering declared can lose its last use after the
+/// lowering ran: the Go templates emit nothing after an element that always
+/// ends its block, so a call written only there is not in the text. A spec
+/// this cannot read, and a blank or dot import, which binds no name, are kept.
+pub fn go_imports_named_in(source: &str, imports: &[String]) -> Vec<String> {
+    let mut named: Vec<&str> = Vec::new();
+    scan(source, |name| {
+        if let Name::Qualified {
+            head,
+            after_dot: false,
+        } = name
+        {
+            named.push(head);
+        }
+    });
+    imports
+        .iter()
+        .filter(|spec| match go_import_binding(spec) {
+            Some(binding) => binding == "_" || binding == "." || named.contains(&binding),
+            None => true,
+        })
+        .cloned()
+        .collect()
+}
+
+/// The name a Go import spec binds: its alias, or else the last element of its
+/// path. `None` for text that is not one spec.
+fn go_import_binding(spec: &str) -> Option<&str> {
+    let spec = spec.trim();
+    let (alias, path) = match spec.split_once(char::is_whitespace) {
+        Some((alias, path)) => (Some(alias), path.trim()),
+        None => (None, spec),
+    };
+    let path = path.strip_prefix('"')?.strip_suffix('"')?;
+    Some(alias.unwrap_or_else(|| path.rsplit('/').next().unwrap_or(path)))
+}
+
 /// The C++ headers in [`CPP_HEADERS`] that `source` needs, in that order.
 pub fn cpp_used_in(source: &str) -> Vec<&'static str> {
     let mut found = [false; CPP_HEADERS.len()];
@@ -250,7 +291,39 @@ fn skip_raw(bytes: &[u8], open: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use super::{cpp_used_in, go_unimported_in, go_used_in, go_uses_forge_runtime};
+    use super::{
+        cpp_used_in, go_imports_named_in, go_unimported_in, go_used_in, go_uses_forge_runtime,
+    };
+
+    /// An import is kept when the text calls into its package under the name
+    /// the import binds — its alias, or the last element of its path — and
+    /// left out when the only mention is a literal, a comment, the import
+    /// block itself or the member of something else.
+    #[test]
+    fn a_go_import_the_text_never_names_is_left_out() {
+        let imports: Vec<String> = [
+            "\tledger_alg \"example.com/m/ledger\"",
+            "\t\"example.com/m/codec\"",
+            "\t_ \"example.com/m/side\"",
+            "\tunused_alg \"example.com/m/unused\"",
+        ]
+        .iter()
+        .map(|spec| spec.to_string())
+        .collect();
+        let source = "import (\n\
+                      \tledger_alg \"example.com/m/ledger\"\n\
+                      \tunused_alg \"example.com/m/unused\"\n\
+                      )\n\
+                      func f() int {\n\
+                      \tvar c codec.Codec\n\
+                      \t_ = c\n\
+                      \t_ = \"unused_alg.Call\" // unused_alg.Call\n\
+                      \t_ = p.unused_alg.Call\n\
+                      \treturn ledger_alg.Amount(1)\n\
+                      }\n";
+        assert_eq!(go_imports_named_in(source, &imports), imports[..3].to_vec());
+        assert_eq!(go_imports_named_in("", &imports), imports[2..3].to_vec());
+    }
 
     #[test]
     fn a_go_call_into_the_forge_runtime_is_a_use() {
