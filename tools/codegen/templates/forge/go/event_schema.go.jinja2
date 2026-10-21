@@ -23,6 +23,11 @@ const EventName string = {{ event_name_literal }}
 
 // Revision is the revision of the schema (`sce:revision`, 1 when the document declares none).
 const Revision uint32 = {{ schema_revision }}
+{% for b in field_bounds %}
+
+// {{ b.go_name }} is the most {{ b.unit }} `{{ b.id }}` holds (`sce:max-size`{% if b.limit %}, the bound `sce:limit="{{ b.limit }}"` names{% endif %}), as this build resolved it.
+const {{ b.go_name }} uint32 = {{ b.value }}
+{% endfor %}
 
 {% if fields %}
 type {{ payload_struct_name }} struct {

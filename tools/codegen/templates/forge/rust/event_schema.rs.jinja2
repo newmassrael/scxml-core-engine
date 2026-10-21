@@ -22,6 +22,11 @@ pub const EVENT_NAME: &str = {{ event_name_literal }};
 /// The revision of the schema (`sce:revision`, 1 when the document declares none).
 #[allow(dead_code)]
 pub const REVISION: u32 = {{ schema_revision }};
+{% for b in field_bounds %}
+/// The most {{ b.unit }} `{{ b.id }}` holds (`sce:max-size`{% if b.limit %}, the bound `sce:limit="{{ b.limit }}"` names{% endif %}), as this build resolved it.
+#[allow(dead_code)]
+pub const {{ b.upper }}: u32 = {{ b.value }};
+{% endfor %}
 
 {% if fields %}
 {{ event_schema_payload_derives_attr }}

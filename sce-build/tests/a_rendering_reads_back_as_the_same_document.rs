@@ -263,6 +263,7 @@ fn every_field_clause_survives_the_round_trip() {
             unit: UnitTag::intern("degrees per second"),
         }),
         max_size: Some(64),
+        limit: None,
         // ⚠ Invented, and deliberately so. A `default-covers` list in
         // the wild names the variants of somebody's enum, and copying a
         // real one in would put that vocabulary in this tree. Two

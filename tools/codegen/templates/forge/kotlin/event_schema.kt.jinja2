@@ -19,6 +19,11 @@ const val EVENT_NAME: String = {{ event_name_literal }}
 
 /** The revision of the schema (`sce:revision`, 1 when the document declares none). */
 const val REVISION: UInt = {{ schema_revision }}u
+{% for b in field_bounds %}
+
+/** The most {{ b.unit }} `{{ b.id }}` holds (`sce:max-size`{% if b.limit %}, the bound `sce:limit="{{ b.limit }}"` names{% endif %}), as this build resolved it. */
+const val {{ b.upper }}: UInt = {{ b.value }}u
+{% endfor %}
 
 {% if fields %}
 data class {{ payload_struct_name }}(

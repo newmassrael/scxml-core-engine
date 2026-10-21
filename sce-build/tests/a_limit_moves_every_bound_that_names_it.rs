@@ -349,6 +349,152 @@ fn a_name_moves_the_text_a_schema_field_holds() {
     assert!(!ok, "a field that names no bound moved:\n{out}");
 }
 
+/// The statechart of [`machine`] that also reads the bound its list names, as
+/// `_x.limits.<read>` into `room` (docs/adr/0050).
+fn reading_machine(bound: u32, read: &str) -> String {
+    machine(bound, ROOM)
+        .replace(
+            r#"<data id="n" sce:type="uint8" expr="3"/>"#,
+            r#"<data id="n" sce:type="uint8" expr="3"/>
+    <data id="room" sce:type="uint32" expr="0" sce:direction="out"/>"#,
+        )
+        .replace(
+            r#"<assign location="shown" expr="Copies(n, 2)"/>"#,
+            &format!(
+                r#"<assign location="shown" expr="Copies(n, 2)"/>
+      <assign location="room" expr="_x.limits.{read}"/>"#
+            ),
+        )
+}
+
+/// What `generate -l <language>` writes for the statechart `text` beside the
+/// algorithm, under the limits `given`, every file of it in one text.
+fn generated_machine(text: &str, language: &str, given: &[&str]) -> String {
+    let (dir, path) = documents(&algorithm(8, ROOM), text);
+    let out = tempdir().expect("tempdir");
+    let mut args: Vec<&str> = Vec::new();
+    for limit in given {
+        args.push("--limit");
+        args.push(limit);
+    }
+    args.extend([
+        "generate",
+        "-l",
+        language,
+        "--go-module-prefix",
+        "example.test/generated",
+        "-o",
+        out.path().to_str().expect("utf-8"),
+    ]);
+    let (ok, written) = codegen(&args, &path);
+    assert!(ok, "{language} {given:?}:\n{written}");
+    let mut text = String::new();
+    let mut pending = vec![out.path().to_path_buf()];
+    while let Some(dir) = pending.pop() {
+        for entry in std::fs::read_dir(&dir).expect("the output directory") {
+            let file = entry.expect("an entry").path();
+            if file.is_dir() {
+                pending.push(file);
+            } else {
+                text.push_str(&std::fs::read_to_string(&file).unwrap_or_default());
+            }
+        }
+    }
+    drop(dir);
+    text
+}
+
+/// A statechart reads a bound by the name `sce:limit` gives it, `_x.limits.<name>`,
+/// and a machine declares each bound it names as a typed constant a host reads: one
+/// number, the build's, for the read, the constant and the buffer, so `--limit`
+/// moves the three together (docs/adr/0050).
+#[test]
+fn a_statechart_reads_a_bound_by_its_name_and_a_host_reads_its_constant() {
+    let (ok, out) = check(&reading_machine(8, "room"), &algorithm(8, ROOM), &[]);
+    assert!(ok, "a read of a bound the statechart names:\n{out}");
+    for (language, written, moved) in [
+        (
+            "rust",
+            "pub const ROOM: u32 = 8;",
+            "pub const ROOM: u32 = 9;",
+        ),
+        (
+            "kotlin",
+            "const val ROOM: UInt = 8u",
+            "const val ROOM: UInt = 9u",
+        ),
+        (
+            "cpp",
+            "static constexpr std::uint32_t ROOM = 8;",
+            "static constexpr std::uint32_t ROOM = 9;",
+        ),
+        (
+            "go",
+            "const ProbeLimitRoom uint32 = 8",
+            "const ProbeLimitRoom uint32 = 9",
+        ),
+        ("python", "ROOM: int = 8", "ROOM: int = 9"),
+        (
+            "c",
+            "#define PROBE_LIMIT_ROOM UINT32_C(8)",
+            "#define PROBE_LIMIT_ROOM UINT32_C(9)",
+        ),
+    ] {
+        let as_written = generated_machine(&reading_machine(8, "room"), language, &[]);
+        assert!(
+            as_written.contains(written) && !as_written.contains("_x.limits"),
+            "{language}: the machine declares `{written}` and reads the number:\n{as_written}"
+        );
+        let built = generated_machine(&reading_machine(8, "room"), language, &["room=9"]);
+        assert!(
+            built.contains(moved),
+            "{language}: `--limit room=9` moves the constant to `{moved}`:\n{built}"
+        );
+    }
+}
+
+/// A read of a name no element of the statechart names is refused, naming the ones
+/// it does, and so is a name two of its elements resolve to two numbers.
+#[test]
+fn a_read_of_a_bound_the_statechart_does_not_name_is_refused() {
+    let (ok, out) = check(&reading_machine(8, "rooms"), &algorithm(8, ROOM), &[]);
+    assert!(!ok, "a read of an unnamed bound was taken:\n{out}");
+    assert!(
+        out.contains("rooms") && out.contains("_x.limits"),
+        "the refusal names the read:\n{out}"
+    );
+    let twice = reading_machine(8, "room").replace(
+        r#"<data id="room" sce:type="uint32" expr="0" sce:direction="out"/>"#,
+        r#"<data id="room" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="other" sce:type="list&lt;uint8&gt;" sce:capacity="16" sce:limit="room"/>"#,
+    );
+    let (ok, out) = check(&twice, &algorithm(8, ROOM), &[]);
+    assert!(!ok, "a read of a name given two numbers was taken:\n{out}");
+    assert!(out.contains("8 and 16"), "the refusal names both:\n{out}");
+}
+
+/// An algorithm reads the bounds it names the same way.
+#[test]
+fn an_algorithm_reads_a_bound_by_its_name() {
+    let reading = algorithm(8, ROOM).replace(
+        r#"<sce:while cond="i &lt; count" max-iter="8">"#,
+        r#"<sce:while cond="i &lt; count &amp;&amp; i &lt; _x.limits.room" max-iter="8">"#,
+    );
+    assert_ne!(reading, algorithm(8, ROOM), "the algorithm reads the bound");
+    let check_algorithm = |text: &str| -> (bool, String) {
+        let (dir, _) = documents(text, &machine(8, ROOM));
+        codegen(&["check", "-l", "rust"], &dir.path().join("copies.scxml"))
+    };
+    let (ok, out) = check_algorithm(&reading);
+    assert!(ok, "an algorithm reads the bound it names:\n{out}");
+    let (ok, out) = check_algorithm(&reading.replace("_x.limits.room", "_x.limits.rooms"));
+    assert!(
+        !ok,
+        "a read of a bound the algorithm does not name was taken:\n{out}"
+    );
+    assert!(out.contains("rooms"), "the refusal names the read:\n{out}");
+}
+
 /// Every `sce:limit` the repository's own documents write, with the bound beside it.
 fn limits_the_repository_writes() -> BTreeMap<String, Vec<(PathBuf, u32)>> {
     let mut found: BTreeMap<String, Vec<(PathBuf, u32)>> = BTreeMap::new();

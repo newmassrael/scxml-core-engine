@@ -4530,6 +4530,29 @@ holds all of this, the text of a schema's field among it
 (`a_name_moves_the_text_a_schema_field_holds`), and that the repository's own bounds
 that share a name write one number.
 
+**A bound is read by its name** (docs/adr/0050). An expression of a `sce-static`
+statechart or of an algorithm reads the number a build gives a bound as
+`_x.limits.<name>` (`_x` is the system variable SCXML reserves for what a platform
+adds, which no document declares): `len(title) <= _x.limits.shared_typed_text`. The
+read is written as the integer literal of that number where it stands, the same on
+every backend and in the Interpreter's lowering, and is held to the place it lands in
+as any literal is. A statechart reads the bounds it names: its variables'
+`sce:capacity` and the `sce:max-size` of each field of each schema it imports, so a
+parent of the standard shared list that imports `record_edit` reads
+`_x.limits.shared_typed_text`; an algorithm reads its locals' `capacity`, its return's
+`returns-max-size` and its records' text fields. A name nothing of the document names
+is refused (`expression/unknown-member`, naming the ones it does), and so is a name two
+of its elements resolve to two numbers (`expression/unsupported-construct`, naming
+both): neither has one value. A generated machine declares every bound it names as a
+typed constant a host reads before it hands a value over: Rust `<Machine>Limits::<NAME>`
+(`u32`), Kotlin `object <Machine>Limits` (`UInt`), C++ `struct <Machine>Limits` (static
+`std::uint32_t`), Go `<Machine>Limit<Name>` (`uint32`), Python `class <Machine>Limits`
+(`int`), and C `<MACHINE>_LIMIT_<NAME>` (`UINT32_C`); and the unit an event schema
+generates declares each field's bound (the EventSchema kind, below). One number, the
+build's, is the buffer, the constant and the read, so `--limit` moves all three.
+`a_statechart_reads_a_bound_by_its_name_and_a_host_reads_its_constant` and its
+neighbours in the same test hold this on the six backends.
+
 **State an algorithm takes and gives back.** A rule that works on what a statechart
 keeps is written once, as an algorithm, and every backend runs the same one:
 `AddEntry(entries, _event.data.id, _event.data.amount)` hands the algorithm the
@@ -7460,6 +7483,10 @@ and `std::uint32_t REVISION` in its namespace, Go `EventName string` and
 `Revision uint32` in its package, Python `EVENT_NAME: Final[str]` and
 `REVISION: Final[int]` in its module, and C `<SCHEMA>_EVENT_NAME` and
 `<SCHEMA>_REVISION` (`UINT32_C`), named by the schema since C has no namespace.
+Each `string` or `bytes` field with a `sce:max-size` adds its bound as the build
+resolved it (`sce:limit`, so `--limit` moves it with the buffer, docs/adr/0050):
+`TEXT_MAX_SIZE` (Go `TextMaxSize`, C `<SCHEMA>_TEXT_MAX_SIZE`), a `uint32` of the
+language, its comment naming the `sce:limit` when one names it.
 `sce-build/tests/a_schema_unit_names_its_event_revision_and_bounds.rs` holds each
 spelling.
 

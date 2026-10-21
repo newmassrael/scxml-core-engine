@@ -1178,6 +1178,15 @@ pub struct TypeCtx<'a> {
     /// ⚠ Empty everywhere but an algorithm whose records hold text, which is
     /// what keeps every other context's string exactly what it was.
     pub record_text: std::collections::HashSet<&'a str>,
+    /// The bounds the document names (`sce:limit`), each with the number the build
+    /// resolved it to ([`crate::forge::type_ctx::BuildLimit`]): what
+    /// `_x.limits.<name>` reads, the integer the build gave the name, written into
+    /// the expression where it is read (docs/adr/0050).
+    ///
+    /// ⚠ Read only where the scope is closed (a `sce-static` statechart, an
+    /// algorithm): there a read of a name this does not hold is refused naming the
+    /// ones it does; anywhere else the expression is left as it was written.
+    pub limits: HashMap<&'a str, crate::forge::type_ctx::BuildLimit>,
 }
 
 /// Whether a record's members are known to the expression that reads it.
@@ -1213,6 +1222,7 @@ impl<'a> TypeCtx<'a> {
             joins_into_buffers: false,
             rounds_to_single: true,
             record_text: std::collections::HashSet::new(),
+            limits: HashMap::new(),
         }
     }
 

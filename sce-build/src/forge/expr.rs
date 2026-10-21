@@ -511,8 +511,79 @@ pub fn infer_expr_type(expr: &str, ctx: &TypeCtx<'_>) -> Result<InferredType, Re
         return Err(ExprError::Empty { what: "expression" }.at(None));
     }
     let mut ast = parse_to_ast(expr)?;
+    lower_build_limits(&mut ast, ctx)?;
     infer_types(&mut ast, ctx);
     Ok(ast.ty)
+}
+
+/// The two names a build's bounds are read under, `_x.limits.<name>` (docs/adr/0050):
+/// `_x` is the system variable an SCXML session reserves for what a platform adds,
+/// which no document declares, and `limits` the bounds `sce:limit` names.
+const BUILD_LIMITS: (&str, &str) = ("_x", "limits");
+
+/// The name `expr` reads a build's bound by, when it is `_x.limits.<name>`.
+fn build_limit_name(expr: &TypedExpr) -> Option<&str> {
+    let ExprKind::Member { object, property } = &expr.kind else {
+        return None;
+    };
+    let ExprKind::Member {
+        object: root,
+        property: limits,
+    } = &object.kind
+    else {
+        return None;
+    };
+    let ExprKind::Ident(x) = &root.kind else {
+        return None;
+    };
+    (x == BUILD_LIMITS.0 && limits == BUILD_LIMITS.1).then_some(property.as_str())
+}
+
+/// Each `_x.limits.<name>` of `expr` written as the integer the build gave the
+/// bound the name stands for ([`TypeCtx::limits`]): a number the build decided,
+/// the same on every backend and in the Interpreter's lowering, which then stands
+/// wherever an integer literal does and is held to the place it lands in as one
+/// is. Done first, so every pass after it sees a literal.
+///
+/// Where the scope is closed, a name no element of the document's build names is
+/// refused naming the ones it does, and a name two of its elements resolve to two
+/// numbers is refused naming both: neither has one value to read. Anywhere else the
+/// read is left as it is written.
+fn lower_build_limits(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) -> Result<(), Refusal> {
+    if let Some(name) = build_limit_name(expr).map(str::to_string) {
+        return match ctx.limits.get(name.as_str()) {
+            Some(Ok(value)) => {
+                expr.kind = ExprKind::NumberLit(value.to_string());
+                Ok(())
+            }
+            Some(Err((one, other))) => Err(ExprError::UnsupportedConstruct {
+                construct: format!(
+                    "a read of the bound `{name}`, which two elements of this build name and \
+                     resolve to two numbers, {one} and {other}: one name is one bound, so write \
+                     one number beside every `sce:limit=\"{name}\"`, or give the build one with \
+                     `--limit {name}=N`"
+                ),
+                observed: Some(format!("{}.{}.{name}", BUILD_LIMITS.0, BUILD_LIMITS.1)),
+            }
+            .at(expr.span.clone())),
+            None if ctx.reject_unknown_identifiers => {
+                let mut declared: Vec<String> =
+                    ctx.limits.keys().map(|name| name.to_string()).collect();
+                declared.sort();
+                Err(ExprError::UnknownMember {
+                    record: format!("{}.{}", BUILD_LIMITS.0, BUILD_LIMITS.1),
+                    member: name,
+                    declared,
+                }
+                .at(expr.span.clone()))
+            }
+            None => Ok(()),
+        };
+    }
+    for child in expr.children_mut() {
+        lower_build_limits(child, ctx)?;
+    }
+    Ok(())
 }
 
 /// Per-import lowering descriptor consumed by [`transpile_typed_with_import_lowering`].
@@ -663,6 +734,7 @@ fn resolve_then_rename(
 /// The `eq` builtin leaves it as the comparison it means ([`lower_bytes_eq`]),
 /// once its arguments are judged: no emitter has an `eq` to call.
 fn resolve_names(ast: &mut TypedExpr, ctx: &TypeCtx<'_>, source: &str) -> Result<(), Refusal> {
+    lower_build_limits(ast, ctx)?;
     lower_previous(ast, ctx);
     infer_types(ast, ctx);
     reject_unknown_callees(ast, ctx)?;
@@ -11836,6 +11908,55 @@ mod tests {
     }
 
     /// The length of a list or a string is `.length`.
+    /// `_x.limits.<name>` reads the number the build gave the bound, as an integer
+    /// literal every backend and the Interpreter write alike; in a closed scope a name
+    /// the build does not name, and one it gives two numbers, are refused by name.
+    #[test]
+    fn a_build_limit_is_read_as_the_number_the_build_gave_it() {
+        let mut ctx = TypeCtx::new();
+        ctx.insert_var("n", int(false, 32));
+        ctx.limits.insert("room", Ok(4096));
+        ctx.limits.insert("twice", Err((8, 16)));
+        for target in [
+            ExprTarget::Rust,
+            ExprTarget::Cpp,
+            ExprTarget::Go,
+            ExprTarget::Kotlin,
+            ExprTarget::Python,
+            ExprTarget::C,
+        ] {
+            let text = tp_with("n < _x.limits.room", target, &ctx);
+            assert!(
+                text.contains("4096") && !text.contains("_x") && !text.contains("limits"),
+                "{target:?}: {text}"
+            );
+        }
+        ctx.reject_unknown_identifiers = true;
+        let unknown = transpile_typed(
+            "n < _x.limits.rooms",
+            ExprTarget::Rust,
+            &ctx,
+            &empty_renames(),
+            InferredType::Unknown,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            unknown.contains("rooms") && unknown.contains("room") && unknown.contains("twice"),
+            "the refusal names the read and what the build names: {unknown}"
+        );
+        let twice = transpile_typed(
+            "n < _x.limits.twice",
+            ExprTarget::Rust,
+            &ctx,
+            &empty_renames(),
+            InferredType::Unknown,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(twice.contains("8 and 16"), "{twice}");
+    }
+
     /// `len` of a string is the UTF-8 bytes it holds on every backend, the unit a
     /// string's bound counts: Rust's `len`, C++'s `size` and Go's `len` count bytes
     /// already, and Kotlin (whose `String` has no `size`, and whose `length` counts

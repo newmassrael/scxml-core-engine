@@ -2032,6 +2032,7 @@ mod tests {
             expr_splices: None,
             quantity: None,
             max_size: None,
+            limit: None,
             default_covers: Vec::new(),
             retain: None,
             initial: None,

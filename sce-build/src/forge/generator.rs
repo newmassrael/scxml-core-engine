@@ -475,6 +475,9 @@ pub struct RecordField {
     /// of a `string` field (SCE_FORGE.md §4.12). `None` when the schema
     /// declares none, which a `string` field of a record cannot lack.
     pub max_size: Option<u32>,
+    /// The `sce:limit` that names [`Self::max_size`], when one does: what an
+    /// algorithm reads the bound by (`_x.limits.<name>`, docs/adr/0050).
+    pub limit: Option<String>,
 }
 
 impl RecordImport {
@@ -2721,10 +2724,32 @@ fn render_event_schema(
     ctx.insert("event_name_literal".into(), event_name_literal.into());
     ctx.insert("schema_revision".into(), m.revision().into());
     // C has no namespace: the unit's constants carry the schema's name.
-    ctx.insert(
-        "c_const_prefix".into(),
-        to_upper_snake(&filters::to_snake_case(m.name.clone())).into(),
-    );
+    ctx.insert("c_const_prefix".into(), to_upper_snake(&m.name).into());
+    // The bound of each text and byte string the schema declares one for, as the
+    // build resolved it (`sce:limit`, so `--limit` moves the constant with the
+    // buffer), named after the field: what a host holds a value to before it sends
+    // it, rather than learning the bound from a refusal (docs/adr/0050).
+    let bounds: Vec<serde_json::Value> = m
+        .fields
+        .iter()
+        .filter_map(|f| {
+            let unit = match f.sce_type {
+                SceType::String => "UTF-8 bytes",
+                SceType::Bytes => "bytes",
+                _ => return None,
+            };
+            let max = f.max_size?;
+            Some(serde_json::json!({
+                "id": f.id,
+                "upper": format!("{}_MAX_SIZE", to_upper_snake(&f.id)),
+                "go_name": format!("{}MaxSize", filters::to_pascal_case(f.id.clone())),
+                "value": max,
+                "unit": unit,
+                "limit": f.limit,
+            }))
+        })
+        .collect();
+    ctx.insert("field_bounds".into(), serde_json::json!(bounds));
     ctx.insert("fields".into(), serde_json::json!(fields));
     // The declaration of each bounded buffer the C11 struct holds a text in,
     // once per bound, under the guard every header that declares it shares.
@@ -30013,6 +30038,44 @@ pub(crate) struct AlgorithmTypes<'a> {
     text_members: Vec<String>,
     /// A collection element's `"<item>.<field>"` and its length sibling.
     member_lens: Vec<(String, String)>,
+    /// The bounds the algorithm names (`sce:limit`): its locals' capacities, its
+    /// return's `returns-max-size` and its records' text fields, each with the
+    /// number the build resolved it to — what `_x.limits.<name>` reads
+    /// (docs/adr/0050).
+    limits: Vec<(String, crate::forge::type_ctx::BuildLimit)>,
+}
+
+/// Each bound the locals of `body` name (`sce:limit` beside a `capacity`), with the
+/// number the build resolved it to, at any depth.
+fn body_limits(body: &[AlgorithmStmt]) -> Vec<(&str, u32)> {
+    fn walk<'b>(stmts: &'b [AlgorithmStmt], out: &mut Vec<(&'b str, u32)>) {
+        for s in stmts {
+            match s {
+                AlgorithmStmt::Var {
+                    capacity: Some(capacity),
+                    limit: Some(name),
+                    ..
+                } => out.push((name.as_str(), *capacity)),
+                AlgorithmStmt::If {
+                    then_body,
+                    else_body,
+                    ..
+                } => {
+                    walk(then_body, out);
+                    if let Some(eb) = else_body {
+                        walk(eb, out);
+                    }
+                }
+                AlgorithmStmt::While { body, .. } | AlgorithmStmt::Foreach { body, .. } => {
+                    walk(body, out)
+                }
+                _ => {}
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(body, &mut out);
+    out
 }
 
 impl<'a> AlgorithmTypes<'a> {
@@ -30197,6 +30260,22 @@ impl<'a> AlgorithmTypes<'a> {
             }
             records.push((*name, *alias, record));
         }
+        let limits = crate::forge::type_ctx::named_limits(
+            body_limits(&m.body)
+                .into_iter()
+                .chain(
+                    m.signature
+                        .returns_limit
+                        .as_deref()
+                        .zip(m.signature.returns_max_size),
+                )
+                .chain(records.iter().flat_map(|(_, _, record)| {
+                    record
+                        .fields
+                        .iter()
+                        .filter_map(|f| Some((f.limit.as_deref()?, f.max_size?)))
+                })),
+        );
 
         Ok(Self {
             env,
@@ -30209,6 +30288,7 @@ impl<'a> AlgorithmTypes<'a> {
             members,
             text_members,
             member_lens,
+            limits,
         })
     }
 
@@ -30272,6 +30352,10 @@ impl<'a> AlgorithmTypes<'a> {
         }
         for path in &self.text_members {
             type_ctx.insert_record_text(path.as_str());
+        }
+        // What `_x.limits.<name>` reads (docs/adr/0050).
+        for (name, value) in &self.limits {
+            type_ctx.limits.insert(name.as_str(), *value);
         }
         for (path, len_member) in &self.member_lens {
             type_ctx.insert_member_len_field(path.as_str(), len_member.as_str());
@@ -32133,6 +32217,7 @@ mod tests {
             expr_splices: None,
             quantity: None,
             max_size,
+            limit: None,
             default_covers: Vec::new(),
             retain: None,
             initial: None,

@@ -846,6 +846,31 @@ pub struct StaticScope {
     /// Each name a call of an algorithm with state in a slot can take
     /// ([`StateCallName`]), registered with the signature the call is judged by.
     state_calls: Vec<StateCallName>,
+    /// Each bound the statechart names ([`Self::limits`]).
+    limits: Vec<(String, BuildLimit)>,
+}
+
+/// What a build gives a bound a document names (`sce:limit`): the number every
+/// element that names it resolved to, or the first two numbers two of them resolved
+/// to when they disagree, which is no one value a constant or a read could have.
+pub type BuildLimit = Result<u32, (u32, u32)>;
+
+/// The bounds `named` (each a `sce:limit` name with the number the build resolved
+/// its element to) as one value per name, in the order of the names
+/// ([`BuildLimit`]).
+pub(crate) fn named_limits<'n>(
+    named: impl IntoIterator<Item = (&'n str, u32)>,
+) -> Vec<(String, BuildLimit)> {
+    let mut limits: std::collections::BTreeMap<String, BuildLimit> = Default::default();
+    for (name, value) in named {
+        let entry = limits.entry(name.to_string()).or_insert(Ok(value));
+        if let Ok(held) = *entry {
+            if held != value {
+                *entry = Err((held, value));
+            }
+        }
+    }
+    limits.into_iter().collect()
 }
 
 /// How a state argument — a record or a list a statechart hands an algorithm — is held
@@ -989,6 +1014,17 @@ impl StaticScope {
         let record_paths = static_record_paths(variables.iter(), &model.imported_records);
         let record_string_bounds =
             static_record_string_bounds(variables.iter(), &model.imported_records);
+        let limits = named_limits(
+            variables
+                .iter()
+                .filter_map(|v| Some((v.limit.as_deref()?, v.capacity?)))
+                .chain(model.imported_records.values().flat_map(|schema| {
+                    schema
+                        .fields
+                        .iter()
+                        .filter_map(|f| Some((f.limit.as_deref()?, f.max_size?)))
+                })),
+        );
         let callees = model.imported_callees.clone();
         let state_calls = callees
             .iter()
@@ -1010,7 +1046,15 @@ impl StaticScope {
             record_string_bounds,
             callees,
             state_calls,
+            limits,
         })
+    }
+
+    /// Each bound the statechart names (`sce:limit`) with the number the build
+    /// resolved it to, by name ([`named_limits`]): what a generated machine declares a
+    /// constant for and what `_x.limits.<name>` reads (docs/adr/0050).
+    pub fn limits(&self) -> &[(String, BuildLimit)] {
+        &self.limits
     }
 
     /// The call `alias` names in this scope, when it is of an algorithm whose slots
@@ -1344,6 +1388,11 @@ impl StaticScope {
         let mut ctx = static_statechart(self.variables.iter(), paths, enums);
         for (path, bound) in &self.record_string_bounds {
             ctx.insert_string_capacity(path.as_str(), *bound);
+        }
+        // What `_x.limits.<name>` reads (`_x` is the system variable a session
+        // reserves for what a platform adds): the bounds the statechart names.
+        for (name, value) in &self.limits {
+            ctx.limits.insert(name.as_str(), *value);
         }
         // The names a record or a list handed to an algorithm takes in the expression
         // read instead of the author's ([`Self::rewrite_state_calls`]): the placeholders,

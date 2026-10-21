@@ -133,6 +133,61 @@ fn every_backend_names_the_event_and_the_revision_of_a_schema() {
     }
 }
 
+/// The bound of each text the schema declares one for is a typed constant of the
+/// unit, as the build resolved it: `record_edit`'s `text` is 32 bytes, named
+/// `shared_typed_text`, so `--limit shared_typed_text=48` moves the constant with the
+/// buffer (docs/adr/0050). Measured 2026-10-21, before it: no generated code named
+/// the bound, and a host learned it from a refusal.
+#[test]
+fn every_backend_names_the_bound_of_each_text_a_schema_bounds() {
+    for (language, written, moved) in [
+        (
+            "rust",
+            "pub const TEXT_MAX_SIZE: u32 = 32;",
+            "pub const TEXT_MAX_SIZE: u32 = 48;",
+        ),
+        (
+            "kotlin",
+            "const val TEXT_MAX_SIZE: UInt = 32u",
+            "const val TEXT_MAX_SIZE: UInt = 48u",
+        ),
+        (
+            "cpp",
+            "inline constexpr std::uint32_t TEXT_MAX_SIZE = 32;",
+            "inline constexpr std::uint32_t TEXT_MAX_SIZE = 48;",
+        ),
+        (
+            "go",
+            "const TextMaxSize uint32 = 32",
+            "const TextMaxSize uint32 = 48",
+        ),
+        (
+            "python",
+            "TEXT_MAX_SIZE: Final[int] = 32",
+            "TEXT_MAX_SIZE: Final[int] = 48",
+        ),
+        (
+            "c",
+            "#define RECORD_EDIT_TEXT_MAX_SIZE UINT32_C(32)",
+            "#define RECORD_EDIT_TEXT_MAX_SIZE UINT32_C(48)",
+        ),
+    ] {
+        let as_written = generated(SCHEMA, language, &[]);
+        assert!(
+            as_written.contains(written) && as_written.contains("shared_typed_text"),
+            "{language}: the unit declares `{written}` and names the bound:\n{as_written}"
+        );
+        let built = generated(SCHEMA, language, &["shared_typed_text=48"]);
+        assert!(
+            built.contains(moved),
+            "{language}: the build's number moves the constant to `{moved}`:\n{built}"
+        );
+    }
+    // A field with no bound has no constant.
+    let rust = generated(SCHEMA, "rust", &[]);
+    assert!(!rust.contains("ID_MAX_SIZE"), "{rust}");
+}
+
 /// A schema that declares no revision is the first, and says so.
 #[test]
 fn a_schema_with_no_revision_declared_is_the_first() {

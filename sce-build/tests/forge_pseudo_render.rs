@@ -41,6 +41,7 @@ fn field(id: &str, t: SceType, dir: Direction) -> ForgeField {
         expr_splices: None,
         quantity: None,
         max_size: None,
+        limit: None,
         default_covers: Vec::new(),
         retain: None,
         initial: None,

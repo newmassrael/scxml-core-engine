@@ -1005,6 +1005,13 @@ pub struct ForgeField {
     /// types.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_size: Option<u32>,
+    /// `sce:limit` beside [`Self::max_size`]: the name of the bound a deployment
+    /// gives a number (`crate::limits`), which [`Self::max_size`] already holds as
+    /// the build resolved it. Kept so the generated code can name the bound and a
+    /// statechart can read it by name (docs/adr/0050). `None` for a bound no name
+    /// carries. The resolved number is the IR's; the name is not part of it.
+    #[serde(skip)]
+    pub limit: Option<String>,
     /// The variants of this field's value space that the author says
     /// reach the default branch ON PURPOSE — `sce:default-covers="A B C"`.
     ///

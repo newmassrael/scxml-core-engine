@@ -284,6 +284,7 @@ mod tests {
                 expr_splices: None,
                 quantity: None,
                 max_size: seed_cap,
+                limit: None,
                 default_covers: Vec::new(),
                 retain: None,
                 initial: None,

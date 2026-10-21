@@ -462,6 +462,16 @@ fn plain_schema<'a>(spec: &AdapterSpec<'a>, alias: &str) -> Option<&'a EventSche
     })
 }
 
+/// What a machine's declaration of its bounds says of itself
+/// ([`StaticTarget::limits_def`]).
+const LIMITS_DOC: &str =
+    "The bounds this machine is built with, each by the name `sce:limit` gives it (docs/adr/0050).";
+
+/// What the constant of the bound `name` says of itself.
+fn limit_doc(name: &str) -> String {
+    format!("The bound `sce:limit=\"{name}\"` names, as this build resolved it.")
+}
+
 /// Whether `ty` is a number or a truth value (see [`plain_schema`]).
 pub(crate) fn plain_scalar(ty: &SceType) -> bool {
     !matches!(ty, SceType::Enum(_) | SceType::String | SceType::Bytes)
@@ -705,6 +715,14 @@ pub trait StaticTarget {
     /// scope, which an adapter names the algorithm's enum type through; `None` for a
     /// target that needs none.
     fn enum_import(&self, _enum_name: &str) -> Option<String> {
+        None
+    }
+    /// The declaration of the bounds `machine` names (`sce:limit`), each a typed
+    /// constant of the number the build resolved it to, named by the machine and the
+    /// bound's name: what a host holds a value to before it hands it over
+    /// (docs/adr/0050). `limits` is never empty. `None` for a target that declares
+    /// none: the Interpreter's ecmascript, whose document is the host's to read.
+    fn limits_def(&self, _machine: &str, _limits: &[(String, u32)]) -> Option<String> {
         None
     }
     /// Whether an adapter names the type the algorithm's unit gives a record it
@@ -1489,6 +1507,22 @@ impl StaticTarget for KotlinTarget {
     fn enum_import(&self, enum_name: &str) -> Option<String> {
         self.schema_import(enum_name)
     }
+    // An object of the file, its constants unsigned as every bound is.
+    fn limits_def(&self, machine: &str, limits: &[(String, u32)]) -> Option<String> {
+        let constants: String = limits
+            .iter()
+            .map(|(name, value)| {
+                format!(
+                    "    /** {} */\n    const val {}: UInt = {value}u\n",
+                    limit_doc(name),
+                    name.to_uppercase()
+                )
+            })
+            .collect();
+        Some(format!(
+            "/** {LIMITS_DOC} */\nobject {machine}Limits {{\n{constants}}}"
+        ))
+    }
     // A function of the machine's file that takes the machine's values, builds the
     // algorithm's from them, calls it, and builds the machine's own from what it
     // returns, answering as the algorithm does: an `AlgorithmResult` where it may
@@ -2121,6 +2155,24 @@ impl StaticTarget for RustTarget {
     // The line that brings the enum document's module into scope, as for a schema.
     fn enum_import(&self, enum_name: &str) -> Option<String> {
         self.schema_import(enum_name)
+    }
+    // A unit struct of the module whose associated constants are the bounds, so a
+    // host names one as `<Machine>Limits::<NAME>`. A machine whose host reads none is
+    // not warned about them.
+    fn limits_def(&self, machine: &str, limits: &[(String, u32)]) -> Option<String> {
+        let constants: String = limits
+            .iter()
+            .map(|(name, value)| {
+                format!(
+                    "    /// {}\n    pub const {}: u32 = {value};\n",
+                    limit_doc(name),
+                    name.to_uppercase()
+                )
+            })
+            .collect();
+        Some(format!(
+            "/// {LIMITS_DOC}\n#[allow(dead_code)]\npub struct {machine}Limits;\n\n#[allow(dead_code)]\nimpl {machine}Limits {{\n{constants}}}"
+        ))
     }
     // A function of the machine's file that takes the values the machine holds —
     // a variable by reference, the event's payload by reference — and the call's
@@ -3532,6 +3584,19 @@ pub fn lower(
     // One adapter for each way a call of an algorithm that takes or returns a record
     // or a list was made (docs/SCE_ACCEPTED_SUBSET.md §2.15), and the unit of each
     // schema it names a record of.
+    // The bounds the machine names, each a constant of the number the build resolved
+    // it to (docs/adr/0050). A name two elements resolve to two numbers has no one
+    // value, and is declared by none: a read of it is refused where it is written.
+    let resolved_limits: Vec<(String, u32)> = scope
+        .limits()
+        .iter()
+        .filter_map(|(name, value)| Some((name.clone(), (*value).ok()?)))
+        .collect();
+    if !resolved_limits.is_empty() {
+        if let Some(def) = target.limits_def(machine, &resolved_limits) {
+            declarations.type_defs.push(def);
+        }
+    }
     let type_defs = declarations.type_defs;
     let mut adapter_defs = Vec::new();
     let mut imports: BTreeSet<String> = imports.into_iter().collect();
@@ -4834,6 +4899,23 @@ impl StaticTarget for CppTarget {
     fn enum_import(&self, enum_name: &str) -> Option<String> {
         self.schema_import(enum_name)
     }
+    // A struct of the machine's namespace whose static members are the bounds, so a
+    // host names one as `<Machine>Limits::<NAME>`.
+    fn limits_def(&self, machine: &str, limits: &[(String, u32)]) -> Option<String> {
+        let constants: String = limits
+            .iter()
+            .map(|(name, value)| {
+                format!(
+                    "    /// {}\n    static constexpr std::uint32_t {} = {value};\n",
+                    limit_doc(name),
+                    name.to_uppercase()
+                )
+            })
+            .collect();
+        Some(format!(
+            "/// {LIMITS_DOC}\nstruct {machine}Limits {{\n{constants}}};"
+        ))
+    }
     // A function of the machine's file that builds the algorithm's records from the
     // machine's, calls it, and builds the machine's own from what it returns,
     // answering as the algorithm does: an `AlgorithmResult` where it may fail, which
@@ -5628,6 +5710,24 @@ impl StaticTarget for GoTarget<'_> {
     fn enum_import(&self, enum_name: &str) -> Option<String> {
         self.schema_import(enum_name)
     }
+    // Typed constants of the package, named by the machine as everything a package
+    // that may hold several machines declares is.
+    fn limits_def(&self, machine: &str, limits: &[(String, u32)]) -> Option<String> {
+        let constants: Vec<String> = limits
+            .iter()
+            .map(|(name, value)| {
+                let constant = format!(
+                    "{machine}Limit{}",
+                    filters::to_pascal_case(name.to_string())
+                );
+                format!(
+                    "// {constant} is the bound `sce:limit=\"{name}\"` names, as this build \
+                     resolved it.\nconst {constant} uint32 = {value}"
+                )
+            })
+            .collect();
+        Some(format!("// {LIMITS_DOC}\n\n{}", constants.join("\n\n")))
+    }
     // The adapter reads what the algorithm returns by its fields (`e.Row`) and writes
     // the machine's own type, so the package of a record only a return names would be
     // an import nothing uses.
@@ -6410,6 +6510,23 @@ impl StaticTarget for PythonTarget {
     }
     fn enum_import(&self, enum_name: &str) -> Option<String> {
         self.schema_import(enum_name)
+    }
+    // A class of the module whose attributes are the bounds, so a host names one as
+    // `<Machine>Limits.<NAME>`.
+    fn limits_def(&self, machine: &str, limits: &[(String, u32)]) -> Option<String> {
+        let constants: String = limits
+            .iter()
+            .map(|(name, value)| {
+                format!(
+                    "    # {}\n    {}: int = {value}\n",
+                    limit_doc(name),
+                    name.to_uppercase()
+                )
+            })
+            .collect();
+        Some(format!(
+            "class {machine}Limits:\n    \"\"\"{LIMITS_DOC}\"\"\"\n\n{constants}"
+        ))
     }
     // A function of the machine's file that builds the algorithm's records from the
     // machine's, calls it, and builds the machine's from what it returns. The
@@ -7658,6 +7775,22 @@ impl StaticTarget for CTarget {
         _crossing: Crossing,
     ) -> Option<String> {
         Some(value.to_string())
+    }
+    // C has no namespace: each bound is a macro named by the machine, typed by
+    // `UINT32_C`, which a host can size an array with.
+    fn limits_def(&self, machine: &str, limits: &[(String, u32)]) -> Option<String> {
+        let prefix = machine.to_uppercase();
+        let constants: Vec<String> = limits
+            .iter()
+            .map(|(name, value)| {
+                format!(
+                    "/* {} */\n#define {prefix}_LIMIT_{} UINT32_C({value})",
+                    limit_doc(name),
+                    name.to_uppercase()
+                )
+            })
+            .collect();
+        Some(format!("/* {LIMITS_DOC} */\n{}", constants.join("\n")))
     }
     // The machine's own, named by its symbol (prefix included): a record is the
     // machine's, declared in its header like the payload types, so two machines

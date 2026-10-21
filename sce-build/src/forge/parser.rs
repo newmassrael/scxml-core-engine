@@ -12121,6 +12121,9 @@ fn parse_forge_field(
             Some(name) => crate::limits::resolve(name.trim(), written),
             None => written,
         });
+    // The name itself, kept beside the bound it names, so the generated code names
+    // the bound and a statechart reads it by name (docs/adr/0050).
+    let limit = max_size.and_then(|_| sce_attr(data, "limit").map(|name| name.trim().to_string()));
 
     // Whitespace-separated, like every other list-valued SCE attribute
     // in the tree (`sce:req`, `sce:unresolved-candidates`) — one
@@ -12151,6 +12154,7 @@ fn parse_forge_field(
         expr_splices: None,
         quantity,
         max_size,
+        limit,
         default_covers,
         retain,
         initial,

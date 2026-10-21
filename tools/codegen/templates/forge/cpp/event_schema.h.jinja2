@@ -26,6 +26,10 @@ namespace SCE::Generated::{{ namespace }} {
 inline constexpr const char *EVENT_NAME = {{ event_name_literal }};
 /// The revision of the schema (`sce:revision`, 1 when the document declares none).
 inline constexpr std::uint32_t REVISION = {{ schema_revision }};
+{% for b in field_bounds %}
+/// The most {{ b.unit }} `{{ b.id }}` holds (`sce:max-size`{% if b.limit %}, the bound `sce:limit="{{ b.limit }}"` names{% endif %}), as this build resolved it.
+inline constexpr std::uint32_t {{ b.upper }} = {{ b.value }};
+{% endfor %}
 
 {% if fields %}
 struct {{ payload_struct_name }} {

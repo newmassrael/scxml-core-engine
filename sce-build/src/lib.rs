@@ -5253,6 +5253,7 @@ fn validate_and_enrich_imports(
                             id: f.id.clone(),
                             ty: f.sce_type.clone(),
                             max_size: f.max_size,
+                            limit: f.limit.clone(),
                         })
                         .collect(),
                     id: forge::types::RecordId::intern(
