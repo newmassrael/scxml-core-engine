@@ -132,6 +132,7 @@ pub mod static_mesh_relay__sce_synth_invoke__inner_sm;
 pub mod static_mesh_relay_sm;
 pub mod static_optional_sm;
 pub mod static_optional_unwidened_sm;
+pub mod static_optional_widened_sm;
 pub mod static_overflow_sm;
 pub mod static_payload_bytes_sm;
 pub mod static_payload_enum_sm;
