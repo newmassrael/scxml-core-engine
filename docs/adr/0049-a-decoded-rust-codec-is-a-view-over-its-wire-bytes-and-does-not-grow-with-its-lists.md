@@ -90,6 +90,21 @@ non-canonical form is not passed on as it came. The owned mirror projects from a
 `Debug` and `PartialEq` on a view go through the fields and the walked entries, not through the span, so two frames
 that decode to the same value are equal. `Clone` is `Copy`.
 
+### 6. The view is generated when asked for, and both forms live in one binary
+
+Views are a generation option, off by default, in the way `generate --owned-origin` is: a consumer that does not ask
+gets the output it gets today, byte for byte, with no new type, no new API and no new golden. A consumer that does ask
+— a build configuration that passes the option through, as a consumer with its own configuration system will — gets
+`XView` beside `X`, and the two coexist in one binary because the view is additive (decision 1). So the choice is made
+at each call site and not once for the program: a path that reads most of what it decodes keeps `decode` or
+`decode_into`, and a path that holds many records, or reads few of them, takes the view. That is the tradeoff
+"Step 0 result" found between building a record and reading from it, left to the caller who knows which side of it
+a path is on.
+
+The option makes the cost of agreeing to this draft one the owner can bound: it commits no consumer to the API and no
+build to the size. Whether unused view code is dropped when the image is linked is expected, not measured; step 0
+measures it on a final image, with the option on and the views used and not used.
+
 ## Order of work
 
 Each step is gated on a number, taken the way the existing ones were: the generated crate built for
@@ -98,9 +113,9 @@ Each step is gated on a number, taken the way the existing ones were: the genera
 0. **A prototype by hand**, on the request and query codecs, outside the generator. Gate: `size_of::<RequestView>()`
    is a small multiple of the field count and does not move when a `max-count` is doubled; one decode makes no copy of
    a list; the cost of walking a list twice is measured and written down. If the gate fails, the draft stops here.
-1. **The generator**, Rust only, one commit for the templates and one for the goldens. Gate: for every codec
-   fixture, the entries a view yields equal the entries `decode` returned, and a frame `decode` refuses a view refuses
-   with the same error.
+1. **The generator**, Rust only, behind the option of decision 6, one commit for the templates and one for the goldens.
+   Gate: with the option off the goldens do not change; with it on, for every codec fixture, the entries a view
+   yields equal the entries `decode` returned, and a frame `decode` refuses a view refuses with the same error.
 2. **An in-tree consumer**: the Rust mesh host reads its envelopes through views. Gate: its tests unchanged, and
    no list copied on its decode path.
 3. **The downstream consumer** takes the view and measures. Gate: its footprint check passes without a rebase of its
@@ -130,6 +145,9 @@ take" is the whole question: if a consumer reads most of what it decodes and its
 mitigation is the better design. The prototype used small entries (the default arms); entries with a heavier body
 would move the walk rows, and the generator work should not start on these numbers alone.
 
+Not measured by step 0, and needed before the generator work: the size of a linked image with the option of decision 6
+on, with the views used and with them unused. The prototype measured the types and the copies, not the image.
+
 ## What this does not do
 
 - **It does not touch the send path.** An owned value no longer needs the borrowed record to be sent: every owned
@@ -143,10 +161,13 @@ would move the walk rows, and the generator work should not start on these numbe
 
 ## Costs and risks
 
-- **Generated code grows.** Two types per codec, a list view and an iterator per list. On a target with a byte-exact
-  `.text` gate this moves the baseline, and the amount is not known: step 0 measures it before the generator work.
-- **The other five backends keep their own list forms.** Byte parity is untouched, because the wire rules do not move; the
-  Rust API grows a form the others do not have, which is a difference between backends that SCE_FORGE.md has to say.
+- **Generated code grows, for a consumer that asks.** Two types per codec, a list view and an iterator per list, only
+  under the option of decision 6. For a build that does not pass it nothing changes. For one that does, the sources
+  grow and a byte-exact `.text` gate moves only by the view code that is linked, which is not known: step 0 measures
+  it on a final image before the generator work.
+- **The other five backends keep their own list forms.** Byte parity is untouched, because the wire rules do not move;
+  the Rust API grows a form the others do not have when the option is on, which is a difference between backends
+  that SCE_FORGE.md has to say.
 - **Two decode forms to maintain** until the old one is retired, which this draft does not propose.
 
 ## Considered alternatives
@@ -168,8 +189,10 @@ would move the walk rows, and the generator work should not start on these numbe
 
 ## Decisions to take (summary)
 
-1. Is footprint (RAM and generated size) a goal of the Rust codecs, or only time? If only time, stop at the built
-   mitigation.
-2. If footprint is: accept step 0 as the gate, and the names `XView` and `into_builder`.
-3. Is a Rust-only API form acceptable beside five backends that keep their own list forms?
+1. Is there a consumer whose footprint (RAM and generated size) needs this, or is it only time? If only time, stop at
+   the built mitigation: the view does not help time. With decision 6 the question is no longer whether every Rust
+   codec should have views, only whether a consumer is waiting for them.
+2. If one is: accept step 0 as the gate, and the names `XView` and `into_builder`.
+3. Is a Rust-only generation option, off by default and in the manner of `--owned-origin`, acceptable beside five
+   backends that keep their own list forms?
 4. Is the value-returning `decode` ever retired, or kept for good beside the view?
