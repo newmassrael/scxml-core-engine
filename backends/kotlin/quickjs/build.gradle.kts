@@ -49,7 +49,13 @@ val cmakeConfigure by tasks.registering(Exec::class) {
     inputs.dir(nativeSrcDir).withPropertyName("jniSources")
     outputs.file(nativeBuildDir.map { it.file("CMakeCache.txt") })
 
+    // A configure starts from no cache. One left by another compiler (a
+    // build machine's slot is configured by local and by remote-execution
+    // compilers in turn) is not reused: CMake deletes it itself and reruns
+    // without the -D options below.
     doFirst {
+        buildDir.resolve("CMakeCache.txt").delete()
+        buildDir.resolve("CMakeFiles").deleteRecursively()
         buildDir.mkdirs()
         libDir.mkdirs()
     }
