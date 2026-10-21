@@ -247,6 +247,13 @@ does (docs/SCE_ACCEPTED_SUBSET.md, "An event schema that grows").
 - **`shared_moved`, 64 by default** (16 before): the registers one change moves before they are
   told. A change of n operations moves at most n registers, so a build keeps `shared_moved` at
   least `shared_parts`, and no telling runs out of room.
+- **The internal queue of a C11 machine.** Taking a change of n operations in queues its n takes
+  and n passes at once, and each take queues what it tells the digest and the parent, so the
+  queue holds up to about four events for each operation of the change (measured on the model:
+  7 for a change of two operations, 112 for one of 32). The C11 backend's internal queue holds
+  `SCE_MAX_EVENTS` events (32 by default) and drops what does not fit, so a C11 build that lets a
+  change have more than eight operations sets `SCE_MAX_EVENTS` to at least four times
+  `shared_parts`. Every other backend's queue grows on the heap.
 
 ### 7. The protocol, ADR 0042's two copies, and the saved shape
 

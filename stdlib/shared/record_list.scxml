@@ -148,7 +148,9 @@
   registers a change moves before they are told, at least `shared_parts`, since a change
   of n operations moves at most n). Each name is carried by the standard algorithms and
   schemas the list reads through, so the machine and what it calls move together. Every
-  copy of one list is built with the same numbers.
+  copy of one list is built with the same numbers. A change of n operations queues
+  about 4n internal events at once while it is taken in, which a C11 build's
+  `SCE_MAX_EVENTS` has to hold (docs/adr/0046, section 6).
 
   What the list tells its parent. A statechart that invokes the list hands it `announce`
   (`<param name="announce" expr="true"/>`), and from then on the list tells it, once for
