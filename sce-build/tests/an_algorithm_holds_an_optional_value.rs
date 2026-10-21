@@ -328,3 +328,126 @@ fn every_backend_generates_the_record_of_an_optional_day() {
         );
     }
 }
+
+// ── A statechart's call ──────────────────────────────────────────────────
+
+/// The fixture machine hands the algorithms a list of records whose day may be
+/// absent, an optional variable, `null` and a day of `int64`, and takes optional
+/// days back: every backend lowers it.
+#[test]
+fn every_backend_lowers_a_statechart_that_hands_an_algorithm_an_optional_value() {
+    let path = fixtures().join("static_state_algorithm_optional.scxml");
+    for (lang, args) in every_backend() {
+        let mut checked = args.clone();
+        checked[0] = "check";
+        let (ok, out, _) = run_on(&checked, &path);
+        assert!(ok, "{lang} lowers the machine:\n{out}");
+    }
+    // Rust's adapter of the call that hands over the list takes the machine's
+    // records and answers the algorithm's optional day as it is.
+    let (ok, out, written) = run_on(&["generate", "-l", "rust"], &path);
+    assert!(ok, "Rust generates the machine:\n{out}");
+    assert!(
+        written.contains("fn call_Earliest__v(") && written.contains(") -> Option<i64> {"),
+        "the adapter answers the optional day:\n{written}"
+    );
+}
+
+/// The Interpreter lowers the machine with each algorithm beside it: a proven
+/// read is the value, `??` the library's `otherwise`, and `null` the absent value.
+#[test]
+fn the_interpreter_lowers_an_algorithm_that_holds_an_optional_value() {
+    let path = fixtures().join("static_state_algorithm_optional.scxml");
+    let (ok, out, written) = run_on(&["lower"], &path);
+    assert!(ok, "the ecmascript lowering lowers the machine:\n{out}");
+    for needle in ["if (day === null) { return null; }", "SceStatic.otherwise("] {
+        assert!(
+            written.contains(needle),
+            "the lowered document holds `{needle}`:\n{written}"
+        );
+    }
+}
+
+/// An algorithm with a parameter of `int64`.
+const PLUS: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="plus_one" version="1.0">
+  <sce:signature>
+    <sce:param name="day" type="int64"/>
+    <sce:return type="int64" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:return expr="day + 1"/>
+  </sce:body>
+</scxml>
+"#;
+
+/// A statechart that imports `goal_until` as `Until` and [`PLUS`] as `Plus`, holds
+/// optional days `first` and `left` and a day `days`, and assigns `days` and
+/// `left` on `go` from `expr` and `left_expr`.
+fn caller(expr: &str, left_expr: &str) -> String {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="caller_probe">
+  <sce:import kind="algorithm" src="algorithm_goal_until.scxml" as="Until"/>
+  <sce:import kind="algorithm" src="plus_one.scxml" as="Plus"/>
+  <datamodel>
+    <data id="first" sce:type="optional&lt;int64&gt;" expr="null"/>
+    <data id="left" sce:type="optional&lt;int64&gt;" expr="null"/>
+    <data id="days" sce:type="int64" expr="0"/>
+  </datamodel>
+  <state id="idle">
+    <transition event="go" type="internal">
+      <assign location="days" expr="{expr}"/>
+      <assign location="left" expr="{left_expr}"/>
+    </transition>
+  </state>
+</scxml>
+"#
+    )
+}
+
+/// `sce-codegen check -l rust` of the statechart [`caller`], with `goal_until`
+/// and [`PLUS`] beside it: `(exit_ok, stderr + stdout)`.
+fn check_caller(expr: &str, left_expr: &str) -> (bool, String) {
+    let dir = tempdir().expect("tempdir");
+    std::fs::copy(
+        fixtures().join("algorithm_goal_until.scxml"),
+        dir.path().join("algorithm_goal_until.scxml"),
+    )
+    .expect("copy the algorithm");
+    std::fs::write(dir.path().join("plus_one.scxml"), PLUS).expect("write the algorithm");
+    std::fs::write(dir.path().join("caller.scxml"), caller(expr, left_expr))
+        .expect("write the probe");
+    let (ok, out, _) = run_on(&["check", "-l", "rust"], &dir.path().join("caller.scxml"));
+    (ok, out)
+}
+
+/// A value of `T` and `null` stand where an optional parameter is declared, and
+/// an optional value where an `int64` is declared is refused, naming the reads
+/// that make it present: the rule an expression keeps everywhere else.
+#[test]
+fn an_optional_argument_stands_only_where_an_optional_parameter_is_declared() {
+    let (ok, out) = check_caller("Plus(first ?? 0)", "Until(days, first)");
+    assert!(
+        ok,
+        "an optional value, read with a default, and one handed whole:\n{out}"
+    );
+    let (ok, out) = check_caller("Plus(0)", "Until(days, 5)");
+    assert!(
+        ok,
+        "a value of int64 is lifted into the optional parameter:\n{out}"
+    );
+    let (ok, out) = check_caller("Plus(0)", "Until(days, null)");
+    assert!(ok, "`null` stands for the optional parameter:\n{out}");
+    let (ok, out) = check_caller("Plus(first)", "null");
+    assert!(
+        !ok,
+        "an optional value where an int64 is declared is refused:\n{out}"
+    );
+    assert!(
+        out.contains("expression/type-mismatch") && out.contains("may be absent"),
+        "refused naming the reads that make it present:\n{out}"
+    );
+}

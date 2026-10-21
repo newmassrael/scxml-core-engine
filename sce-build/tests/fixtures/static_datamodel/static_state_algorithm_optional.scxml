@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "State an algorithm
+  takes and gives back"; docs/adr/0055): a statechart hands imported algorithms values
+  that may be absent and holds the ones they give back. Goals whose day may be absent
+  are kept in `goals`, a list of records of `schema_goal.scxml`, and ordered and
+  counted by algorithms.
+
+  A goal comes in whole (`goal.added`) and is appended; then `Earliest` answers the
+  earliest day of the list, absent when no goal has one (a list of records in, an
+  optional day out), `Until` how many days from `today` that day is, absent for an
+  absent day (an optional day in and out), `Undated` how many goals have no day (the
+  goals filtered by a test of the optional field) and `DaySum` the days added up, a
+  goal with no day counted as 0 (`??` in the body). `until.none` hands `Until` the
+  literal `null`, and `until.at` a day of `int64`, which is lifted into the optional
+  value the parameter declares.
+
+  A fifth goal does not fit the four the list holds: the append fails, nothing after
+  it runs, and error.execution says so. `clear` empties the list, and
+  every algorithm answers what an empty list is: no earliest day, none undated, a sum
+  of 0. `errors` counts the error.execution events the document answers.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="tracking" datamodel="sce-static" name="static_state_algorithm_optional">
+  <sce:import kind="event-schema" src="schema_goal.scxml" as="Goal"/>
+  <sce:import kind="algorithm" src="algorithm_goal_earliest.scxml" as="Earliest"/>
+  <sce:import kind="algorithm" src="algorithm_goal_until.scxml" as="Until"/>
+  <sce:import kind="algorithm" src="algorithm_goal_undated.scxml" as="Undated"/>
+  <sce:import kind="algorithm" src="algorithm_goal_day_sum.scxml" as="DaySum"/>
+  <datamodel>
+    <data id="goals" sce:type="list&lt;record:Goal&gt;" sce:capacity="4" sce:direction="out"/>
+    <data id="draft" sce:type="record:Goal">
+      <sce:set name="id" expr="0"/>
+      <sce:set name="day" expr="null"/>
+      <sce:set name="weight" expr="0"/>
+    </data>
+    <data id="today" sce:type="int64" expr="100"/>
+    <data id="first" sce:type="optional&lt;int64&gt;" expr="null" sce:direction="out"/>
+    <data id="left" sce:type="optional&lt;int64&gt;" expr="0" sce:direction="out"/>
+    <data id="undated" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="total" sce:type="int64" expr="0" sce:direction="out"/>
+    <data id="errors" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="tracking">
+    <transition event="goal.added" type="internal">
+      <assign location="draft" expr="_event.data"/>
+      <sce:append target="goals" expr="draft"/>
+      <assign location="first" expr="Earliest(goals)"/>
+      <assign location="left" expr="Until(today, first)"/>
+      <assign location="undated" expr="Undated(goals)"/>
+      <assign location="total" expr="DaySum(goals, 0)"/>
+    </transition>
+    <transition event="until.none" type="internal">
+      <assign location="left" expr="Until(today, null)"/>
+    </transition>
+    <transition event="until.at" type="internal">
+      <assign location="left" expr="Until(today, 150)"/>
+    </transition>
+    <transition event="clear" type="internal">
+      <sce:clear target="goals"/>
+      <assign location="first" expr="Earliest(goals)"/>
+      <assign location="left" expr="Until(today, first)"/>
+      <assign location="undated" expr="Undated(goals)"/>
+      <assign location="total" expr="DaySum(goals, 0)"/>
+    </transition>
+    <transition event="error.execution" type="internal">
+      <assign location="errors" expr="errors + 1"/>
+    </transition>
+  </state>
+</scxml>

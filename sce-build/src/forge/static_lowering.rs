@@ -468,13 +468,15 @@ fn generated_callee(
 /// where the algorithm is imported ([`crate::forge::static_imports`]), as is one whose
 /// enum is not the document the statechart holds the field in.
 fn plain_schema<'a>(spec: &AdapterSpec<'a>, alias: &str) -> Option<&'a EventSchemaModel> {
-    // An optional field is copied by no rule yet (docs/adr/0055): an algorithm
-    // takes no optional value until the step that hands it one.
+    // An optional field of a number or a `bool` is held in the same optional type
+    // by the machine's record and the algorithm's, and copies as it is
+    // (docs/adr/0055); one of any other element is held by no algorithm.
     spec.schemas.get(alias).filter(|schema| {
-        schema.fields.iter().all(|f| {
-            f.sce_type
-                .scalar()
-                .is_some_and(|ty| record_field_copies(ty, f.max_size))
+        schema.fields.iter().all(|f| match &f.sce_type {
+            FieldType::Scalar(ty) => record_field_copies(ty, f.max_size),
+            FieldType::Optional { elem } => {
+                crate::forge::model::AlgorithmValueType::algorithm_optional_admitted(elem)
+            }
         })
     })
 }
@@ -517,6 +519,10 @@ pub(crate) fn record_field_copies(ty: &SceType, max_size: Option<u32>) -> bool {
 /// record or list the machine holds, as the machine spells it.
 pub enum AdapterParam<'a> {
     Scalar(&'a SceType),
+    /// A value that may be absent, of a number or a `bool` (docs/adr/0055): held
+    /// in the same optional type on both sides, so the adapter hands it on as it
+    /// is ([`AdapterSpec::optional_type`]).
+    Optional(&'a SceType),
     /// A state argument, held as `code` ([`crate::forge::type_ctx::STATE_CODES`]).
     State {
         slot: &'a StaticSlot,
@@ -549,6 +555,15 @@ pub struct AdapterSpec<'a> {
 }
 
 impl AdapterSpec<'_> {
+    /// The type `target` holds a value that may be absent of the number or `bool`
+    /// `ty` in, in the adapter of this call (docs/adr/0055): the one the machine's
+    /// variable of it is held in ([`optional_present`], [`StaticTarget::optional_type`]),
+    /// which the algorithm's slot is held in too, so it crosses as it is. `None`
+    /// for a target with no spelling of it.
+    fn optional_type(&self, target: &dyn StaticTarget, ty: &SceType) -> Option<String> {
+        target.optional_type(&optional_present(target, self.machine, ty, None))
+    }
+
     /// `value`, a value of the enum the document imports as `alias`, as the variant of
     /// the same declared name the other side holds ([`StaticTarget::enum_crossing`]);
     /// `None` where the target has no such spelling or the document no such enum.
@@ -1806,6 +1821,11 @@ impl StaticTarget for KotlinTarget {
                     declarations.push(format!("{name}: {}", self.scalar_type(ty)));
                     arguments.push(name);
                 }
+                // `T?` on both sides (docs/adr/0055).
+                AdapterParam::Optional(ty) => {
+                    declarations.push(format!("{name}: {}", spec.optional_type(self, ty)?));
+                    arguments.push(name);
+                }
                 AdapterParam::State {
                     slot: StaticSlot::Record(alias),
                     code,
@@ -1852,6 +1872,7 @@ impl StaticTarget for KotlinTarget {
                 StaticSlot::Scalar(ty) if plain_scalar(ty) => {
                     (self.scalar_type(ty), from.to_string())
                 }
+                StaticSlot::Optional(ty) => (spec.optional_type(self, ty)?, from.to_string()),
                 StaticSlot::Record(alias) => (machine_record(alias), from_algorithm(alias, from)?),
                 StaticSlot::ScalarList(ty) if plain_scalar(ty) => {
                     (self.list_type(ty), format!("{from}.toList()"))
@@ -2573,6 +2594,12 @@ impl StaticTarget for RustTarget {
                     declarations.push(format!("{name}: {}", self.scalar_type(ty)));
                     arguments.push(name);
                 }
+                // `Option<T>` of a number or a `bool` is `Copy`, and the
+                // algorithm's own type (docs/adr/0055).
+                AdapterParam::Optional(ty) => {
+                    declarations.push(format!("{name}: {}", spec.optional_type(self, ty)?));
+                    arguments.push(name);
+                }
                 AdapterParam::State {
                     slot: StaticSlot::Record(alias),
                     code,
@@ -2613,7 +2640,7 @@ impl StaticTarget for RustTarget {
                     arguments.push(format!("&{name}_algorithm"));
                 }
                 AdapterParam::State {
-                    slot: StaticSlot::Scalar(_),
+                    slot: StaticSlot::Scalar(_) | StaticSlot::Optional(_),
                     ..
                 } => return None,
             }
@@ -2625,6 +2652,7 @@ impl StaticTarget for RustTarget {
             ),
             StaticSlot::Scalar(ty) if scalar_ok(ty) => (self.scalar_type(ty), "r".to_string()),
             StaticSlot::Scalar(_) => return None,
+            StaticSlot::Optional(ty) => (spec.optional_type(self, ty)?, "r".to_string()),
             StaticSlot::Record(alias) => (machine_record(alias), from_algorithm(alias, "r")?),
             StaticSlot::ScalarList(ty) if scalar_ok(ty) => (
                 format!("Vec<{}>", self.scalar_type(ty)),
@@ -3246,8 +3274,9 @@ pub(crate) fn optional_not_lowered(what: &str, lang: &str) -> GenerateError {
 /// (step 9), and a field of a schema that a revision past the first added as an
 /// optional field (step 7: what a delivery that lacks it reads). The rest of
 /// what a later step lowers is refused where it is judged: a child session's
-/// optional variable as a `<param>`, an algorithm's optional slot, a typed
-/// request's optional field. `None` for a document that holds none of them.
+/// optional variable as a `<param>`, an algorithm's optional slot of a text, an
+/// enum or a record, a typed request's optional field. `None` for a document
+/// that holds none of them.
 fn optional_beyond_this_step(
     model: &SCXMLModel,
     scope: &StaticScope,
@@ -3576,8 +3605,17 @@ pub fn lower(
     }
     let names = names(&scope, target);
     // The runtime's optional type, for a target whose unit imports it by a line
-    // of its own, in a machine that holds an optional value.
-    let optional_import = holds_an_optional_value(model)
+    // of its own, in a machine that holds an optional value or hands one to an
+    // algorithm and takes one back (an adapter's slot, a `null` argument).
+    let calls_with_an_optional_slot = scope.callees.iter().any(|c| {
+        c.value.as_ref().is_some_and(|v| {
+            v.params
+                .iter()
+                .chain(v.ret.iter())
+                .any(|slot| matches!(slot, StaticSlot::Optional(_)))
+        })
+    });
+    let optional_import = (holds_an_optional_value(model) || calls_with_an_optional_slot)
         .then(|| target.optional_import())
         .flatten();
     let imports: Vec<String> = scope
@@ -4325,6 +4363,7 @@ pub fn lower(
             .iter()
             .map(|slot| match slot {
                 StaticSlot::Scalar(ty) => AdapterParam::Scalar(ty),
+                StaticSlot::Optional(ty) => AdapterParam::Optional(ty),
                 state => AdapterParam::State {
                     slot: state,
                     code: *codes.next().expect("one code per state slot"),
@@ -4356,10 +4395,7 @@ pub fn lower(
                             .fields
                             .iter()
                             .map(|f| {
-                                crate::forge::generator::c11_field_bytes(
-                                    f.sce_type.present_type(),
-                                    f.max_size,
-                                )
+                                crate::forge::generator::c11_field_bytes(&f.sce_type, f.max_size)
                             })
                             .sum()
                     })
@@ -5874,6 +5910,11 @@ impl StaticTarget for CppTarget {
                     declarations.push(format!("{} {name}", self.scalar_type(ty)));
                     arguments.push(name);
                 }
+                // `std::optional<T>` on both sides, by value (docs/adr/0055).
+                AdapterParam::Optional(ty) => {
+                    declarations.push(format!("{} {name}", spec.optional_type(self, ty)?));
+                    arguments.push(name);
+                }
                 AdapterParam::State {
                     slot: StaticSlot::Record(alias),
                     code,
@@ -5926,6 +5967,7 @@ impl StaticTarget for CppTarget {
                 self.enum_type(spec.machine, &reference.alias)?
             }
             StaticSlot::Scalar(ty) if plain_scalar(ty) => self.scalar_type(ty),
+            StaticSlot::Optional(ty) => spec.optional_type(self, ty)?,
             StaticSlot::Record(alias) => machine_record(alias),
             StaticSlot::ScalarList(ty) if plain_scalar(ty) => self.list_type(ty),
             StaticSlot::RecordList(alias) => self.record_list_type(&machine_record(alias)),
@@ -5937,7 +5979,9 @@ impl StaticTarget for CppTarget {
                 StaticSlot::Scalar(SceType::Enum(reference)) => {
                     spec.enum_crossing(self, &reference.alias, from, Crossing::FromAlgorithm)?
                 }
-                StaticSlot::Scalar(_) | StaticSlot::ScalarList(_) => from.to_string(),
+                StaticSlot::Scalar(_) | StaticSlot::ScalarList(_) | StaticSlot::Optional(_) => {
+                    from.to_string()
+                }
                 StaticSlot::Record(alias) => {
                     record_of(alias, machine_record(alias), from, Crossing::FromAlgorithm)?
                 }
@@ -6770,6 +6814,11 @@ impl StaticTarget for GoTarget<'_> {
                     declarations.push(format!("{name} {}", self.scalar_type(ty)));
                     arguments.push(name);
                 }
+                // `optional.Of[T]` on both sides, a value (docs/adr/0055).
+                AdapterParam::Optional(ty) => {
+                    declarations.push(format!("{name} {}", spec.optional_type(self, ty)?));
+                    arguments.push(name);
+                }
                 AdapterParam::State {
                     slot: StaticSlot::Record(alias),
                     code,
@@ -6845,6 +6894,7 @@ impl StaticTarget for GoTarget<'_> {
                 ),
             ),
             StaticSlot::Scalar(ty) if plain_scalar(ty) => (self.scalar_type(ty), String::new()),
+            StaticSlot::Optional(ty) => (spec.optional_type(self, ty)?, String::new()),
             StaticSlot::Record(alias) => (
                 machine_record(alias),
                 format!("\tout := {}\n", from_algorithm(alias, "r")?),
@@ -7652,6 +7702,8 @@ impl StaticTarget for PythonTarget {
                     }
                     arguments.push(name.clone());
                 }
+                // `None` or the value itself on both sides (docs/adr/0055).
+                AdapterParam::Optional(_) => arguments.push(name.clone()),
                 AdapterParam::State {
                     slot: StaticSlot::Record(alias),
                     ..
@@ -7674,6 +7726,7 @@ impl StaticTarget for PythonTarget {
                 spec.enum_crossing(self, &reference.alias, "r", Crossing::FromAlgorithm)?
             }
             StaticSlot::Scalar(ty) if plain_scalar(ty) => "r".to_string(),
+            StaticSlot::Optional(_) => "r".to_string(),
             StaticSlot::Record(alias) => from_algorithm(alias, "r")?,
             StaticSlot::ScalarList(ty) if plain_scalar(ty) => "list(r)".to_string(),
             StaticSlot::RecordList(alias) => {
@@ -8462,6 +8515,12 @@ impl StaticTarget for CTarget {
                     declarations.push(format!("{} {p}", self.scalar_type(ty)));
                     arguments.push(p);
                 }
+                // `sce_optional_<elem>_t` of the runtime on both sides, a value
+                // (docs/adr/0055).
+                AdapterParam::Optional(ty) => {
+                    declarations.push(format!("{} {p}", spec.optional_type(self, ty)?));
+                    arguments.push(p);
+                }
                 AdapterParam::State {
                     slot: StaticSlot::Record(alias),
                     code,
@@ -8537,6 +8596,7 @@ impl StaticTarget for CTarget {
                 Shape::Value(self.enum_type(spec.machine, &reference.alias)?)
             }
             StaticSlot::Scalar(ty) if plain_scalar(ty) => Shape::Value(self.scalar_type(ty)),
+            StaticSlot::Optional(ty) => Shape::Value(spec.optional_type(self, ty)?),
             StaticSlot::Record(alias) => Shape::Value(machine_record(alias)),
             StaticSlot::ScalarList(ty) if plain_scalar(ty) => {
                 Shape::List(self.scalar_type(ty), value.max_size?)
@@ -8551,7 +8611,7 @@ impl StaticTarget for CTarget {
                 StaticSlot::Scalar(SceType::Enum(reference)) => {
                     spec.enum_crossing(self, &reference.alias, from, Crossing::FromAlgorithm)?
                 }
-                StaticSlot::Scalar(_) => from.to_string(),
+                StaticSlot::Scalar(_) | StaticSlot::Optional(_) => from.to_string(),
                 StaticSlot::Record(alias) => {
                     record_of(alias, machine_record(alias), from, Crossing::FromAlgorithm)?
                 }

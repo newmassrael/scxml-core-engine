@@ -22,7 +22,7 @@ use crate::forge::error::{ForgeError, ImportError, Located};
 use crate::forge::generator::StatelessFunction;
 use crate::forge::model::{
     AlgorithmModel, AlgorithmValueType, EnumRef, FieldType, ForgeDocument, ForgeField, ForgeImport,
-    ForgeKind, ListElemType, OutOfBounds, ParsedForge, SceType,
+    ForgeKind, ListElemType, OptionalElemType, OutOfBounds, ParsedForge, SceType,
 };
 use crate::forge::type_ctx::{CalleeKind, StaticCallee, StaticSlot, StaticValueSignature};
 use crate::forge::types::{CallReading, RecordId};
@@ -230,15 +230,25 @@ fn value_signature(
         // string the schema bounds is held within the same bound on both sides, and an
         // enum field crosses by the declared name of its variant.
         for field in &fields {
-            // An optional field crosses by no rule yet: an algorithm takes no
-            // optional value until the step of docs/adr/0055 that hands it one.
-            let Some(ty) = field.ty.scalar() else {
-                return Err(format!(
-                    "its record `{alias}` has the field `{}` of type {}, and an optional \
-                     value is not handed to or from an algorithm yet (docs/adr/0055)",
-                    field.id,
-                    field.ty.as_attr()
-                ));
+            // An optional field of a number or a `bool` is held in the same
+            // optional type on both sides, and copies as it is (docs/adr/0055);
+            // one of another element is held by a statechart and no algorithm.
+            let ty = match &field.ty {
+                FieldType::Scalar(ty) => ty,
+                FieldType::Optional { elem }
+                    if AlgorithmValueType::algorithm_optional_admitted(elem) =>
+                {
+                    continue
+                }
+                FieldType::Optional { .. } => {
+                    return Err(format!(
+                        "its record `{alias}` has the field `{}` of type {}, and an \
+                         algorithm holds an optional value of a number or a bool only \
+                         (docs/adr/0055)",
+                        field.id,
+                        field.ty.as_attr()
+                    ))
+                }
             };
             if crate::forge::static_lowering::record_field_copies(ty, field.max_size) {
                 if let SceType::Enum(reference) = ty {
@@ -316,12 +326,19 @@ fn value_signature(
             AlgorithmValueType::List {
                 elem: ListElemType::Record { alias },
             } => Ok(StaticSlot::RecordList(record(alias)?)),
-            // The algorithm's own reader refuses an optional slot until a
-            // statechart can hand one over (docs/adr/0055), so an algorithm that
-            // declares one never reaches here; were it to, it is refused by name.
+            // A value that may be absent, of a number or a `bool`: the same type
+            // on both sides, handed over and taken back as it is (docs/adr/0055).
+            AlgorithmValueType::Optional {
+                elem: OptionalElemType::Scalar(t),
+            } if AlgorithmValueType::algorithm_optional_admitted(t) => {
+                Ok(StaticSlot::Optional(t.clone()))
+            }
+            // The algorithm's own reader refuses an optional slot of any other
+            // element, so an algorithm that declares one never reaches here;
+            // were it to, it is refused by name.
             AlgorithmValueType::Optional { .. } => Err(format!(
-                "its {name} is of type {}, and an optional value is not handed to or from an \
-                 algorithm yet (docs/adr/0055)",
+                "its {name} is of type {}, and an algorithm holds an optional value of a \
+                 number or a bool only (docs/adr/0055)",
                 ty.as_attr()
             )),
         }

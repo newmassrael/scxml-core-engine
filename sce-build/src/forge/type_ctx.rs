@@ -219,13 +219,19 @@ pub enum StaticSlot {
     ScalarList(SceType),
     /// `list<record:<alias>>`.
     RecordList(String),
+    /// `optional<T>` over a fixed-width number or a `bool` (docs/adr/0055): a
+    /// value the statechart hands over as it holds one — an optional variable,
+    /// `null`, or a value of `T`, lifted — and takes back into an optional
+    /// variable. The same type on both sides, so it crosses as it is.
+    Optional(SceType),
 }
 
 impl StaticSlot {
     /// Whether the slot holds a value the statechart keeps in a variable of its own
-    /// (a record or a list) and so passes by the name of that variable.
+    /// (a record or a list) and so passes by the name of that variable. A value
+    /// that may be absent is a value, passed by any expression of its type.
     pub fn is_state(&self) -> bool {
-        !matches!(self, Self::Scalar(_))
+        !matches!(self, Self::Scalar(_) | Self::Optional(_))
     }
 
     /// The alias the statechart imports the enum under, for a slot that holds a
@@ -976,16 +982,21 @@ pub struct StateContext<'a> {
 /// slot as the algorithm declares it, and the return as what the judge needs of it.
 fn value_func_sig(callee: &StaticCallee) -> Option<FuncSig> {
     let value = callee.value.as_ref()?;
+    let optional = |t: &SceType| InferredType::Optional(crate::forge::types::OptionalElem::of(t));
     let params = value
         .params
         .iter()
         .map(|slot| match slot {
             StaticSlot::Scalar(t) => InferredType::from_sce_type(t),
-            _ => InferredType::Unknown,
+            StaticSlot::Optional(t) => optional(t),
+            StaticSlot::Record(_) | StaticSlot::ScalarList(_) | StaticSlot::RecordList(_) => {
+                InferredType::Unknown
+            }
         })
         .collect();
     let ret = match value.ret.as_ref()? {
         StaticSlot::Scalar(t) => InferredType::from_sce_type(t),
+        StaticSlot::Optional(t) => optional(t),
         StaticSlot::Record(_) => InferredType::Unknown,
         StaticSlot::ScalarList(t) => InferredType::List(crate::forge::types::ListElem::of(t)?),
         StaticSlot::RecordList(_) => InferredType::List(crate::forge::types::ListElem::Record),

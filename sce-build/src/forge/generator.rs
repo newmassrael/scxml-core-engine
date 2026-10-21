@@ -31684,9 +31684,15 @@ pub(crate) const C11_LIST_STACK_LIMIT_BYTES: u64 = 256 * 1024;
 /// natural size of the type, or the bytes of a string and its terminator. An upper
 /// bound of the struct the C compiler lays out, which pads a field to its alignment and
 /// no more, and the same number for every record the repository holds (`Entry` 32,
-/// `Value` 88, `Node` 24).
-pub(crate) fn c11_field_bytes(ty: &SceType, max_size: Option<u32>) -> u64 {
-    c11_scalar_bytes(ty, max_size).next_multiple_of(8)
+/// `Value` 88, `Node` 24). A field that may be absent (docs/adr/0055) is the struct of
+/// a flag and the value, the flag padded to the value's alignment: eight bytes more at
+/// most.
+pub(crate) fn c11_field_bytes(ty: &FieldType, max_size: Option<u32>) -> u64 {
+    let present = c11_scalar_bytes(ty.present_type(), max_size).next_multiple_of(8);
+    match ty {
+        FieldType::Scalar(_) => present,
+        FieldType::Optional { .. } => present + 8,
+    }
 }
 
 /// What a value of type `ty` takes in C11: its natural size, or a string's bound and its
@@ -31912,7 +31918,7 @@ fn render_algorithm(
             ListElemType::Record { alias } => resolve_record(imports, alias, None, "<sce:return>")?
                 .fields
                 .iter()
-                .map(|f| c11_field_bytes(f.ty.present_type(), f.max_size))
+                .map(|f| c11_field_bytes(&f.ty, f.max_size))
                 .sum(),
         };
         if let Some(refusal) = c11_list_too_large(

@@ -1618,6 +1618,9 @@ impl<'a> Judge<'a> {
                         StaticSlot::ScalarList(t) => format!("a list of {}", t.as_attr()),
                         StaticSlot::RecordList(alias) => format!("a list of `{alias}`"),
                         StaticSlot::Scalar(t) => format!("a {}", t.as_attr()),
+                        StaticSlot::Optional(t) => {
+                            format!("a value of optional<{}>", t.as_attr())
+                        }
                     },
                     target.id
                 )))
