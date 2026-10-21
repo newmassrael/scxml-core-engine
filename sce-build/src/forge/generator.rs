@@ -417,6 +417,27 @@ pub struct ImportContext {
     /// every other import.
     #[serde(skip)]
     pub record_slots: Option<AlgorithmSlots>,
+
+    /// For an imported algorithm with a slot that holds a value of an enum: the
+    /// enum each parameter and the return holds, named as the IMPORTING document
+    /// names it ([`CalleeEnumSlots`]). What the importing body's enum rule holds an
+    /// argument and the value of a call to ([`crate::forge::static_enum`]). `None`
+    /// for every other import.
+    #[serde(skip)]
+    pub enum_slots: Option<CalleeEnumSlots>,
+}
+
+/// The enums the slots of an imported algorithm hold, each named as the importing
+/// document names it: the alias it imports that enum document under, or, where it
+/// imports none, the enum document's identity, which no alias equals — an enum is
+/// its document, whatever alias a document imports it under (SCE_FORGE.md §4.12).
+#[derive(Debug, Clone, Default)]
+pub struct CalleeEnumSlots {
+    /// One per parameter, in order: the enum it holds, or `None` for a parameter
+    /// that holds no enum.
+    pub params: Vec<Option<String>>,
+    /// The enum the return holds, if it holds one.
+    pub ret: Option<String>,
 }
 
 /// An imported event-schema as a record type (SCE_FORGE.md §4.12): the
@@ -877,6 +898,7 @@ fn resolve_single_import(
         enum_is_open: false,
         transform_state_read: None,
         record: None,
+        enum_slots: None,
     }
 }
 
@@ -29546,6 +29568,19 @@ impl<'a> AlgorithmTypes<'a> {
         })
     }
 
+    /// The alias of the enum the parameter, local, loop item or record field at
+    /// `path` (`status`, `e.status`) holds, for one that holds a value of an enum.
+    pub(crate) fn enum_at(&self, path: &str) -> Option<&str> {
+        self.env
+            .iter()
+            .chain(self.members.iter())
+            .find(|(name, _)| name == path)
+            .and_then(|(_, ty)| match ty {
+                SceType::Enum(reference) => Some(reference.alias.as_str()),
+                _ => None,
+            })
+    }
+
     /// The type context an expression of `m`'s body is lowered and judged in.
     pub(crate) fn type_ctx(
         &'a self,
@@ -31687,6 +31722,7 @@ mod tests {
             enum_is_open: false,
             transform_state_read: None,
             record: None,
+            enum_slots: None,
         }
     }
 
@@ -32556,6 +32592,7 @@ mod tests {
                 enum_is_open: false,
                 transform_state_read: None,
                 record: None,
+                enum_slots: None,
             },
             ImportContext {
                 alias: "c".to_string(),
@@ -32600,6 +32637,7 @@ mod tests {
                 enum_is_open: false,
                 transform_state_read: None,
                 record: None,
+                enum_slots: None,
             },
         ];
         let (has, _all, _stateful) = build_template_imports(&imports);

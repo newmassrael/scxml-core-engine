@@ -908,6 +908,11 @@ path = "tests/a_record_holds_an_enum_field.rs"
 required-features = ["cli"]
 
 [[test]]
+name = "an_algorithm_holds_an_enum_where_one_is_declared"
+path = "tests/an_algorithm_holds_an_enum_where_one_is_declared.rs"
+required-features = ["cli"]
+
+[[test]]
 name = "a_payload_holds_an_enum_field"
 path = "tests/a_payload_holds_an_enum_field.rs"
 required-features = ["cli"]

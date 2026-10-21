@@ -3273,6 +3273,11 @@ pub fn compile_forge_from_parsed(
     if let forge::model::ForgeDocument::Algorithm(m) = &parsed.document {
         forge::int_ranges::check(m, &import_ctx, options)
             .map_err(|e| Located::in_file(e, label.diagnostic_label))?;
+        // An enum value stands where a value of its enum is declared, and a number
+        // never does: the rule a statechart's expressions keep, held here once for
+        // the same reason.
+        forge::static_enum::check_algorithm(m, &import_ctx, options)
+            .map_err(|e| Located::in_file(e, label.diagnostic_label))?;
     }
 
     // `previous(x)` reads x from the activation before this one: x must be
@@ -4921,6 +4926,17 @@ fn validate_and_enrich_imports(
 ) -> Result<(), forge::error::Located<forge::error::ForgeError>> {
     use forge::error::{ImportError, Located};
 
+    // Each enum document this document imports, by the alias it imports it under:
+    // what an enum slot of an algorithm it imports is named by here.
+    let own_enums: Vec<(String, String)> = imports
+        .iter()
+        .filter(|i| i.kind == forge::model::ForgeKind::Enum)
+        .filter_map(|i| {
+            let identity = forge::static_imports::enum_identity(imports, base_dir, &i.alias)?;
+            Some((i.alias.clone(), identity))
+        })
+        .collect();
+
     for (ctx, imp) in import_ctx.iter_mut().zip(imports.iter()) {
         let src_label = forge::stdlib::resolve(base_dir, &imp.src)
             .display()
@@ -5249,6 +5265,8 @@ fn validate_and_enrich_imports(
                     .map_or_else(|| base_dir.to_path_buf(), |p| p.to_path_buf());
                 ctx.record_slots =
                     algorithm_record_slots(am, &parsed.imports, &callee_base, *language);
+                ctx.enum_slots =
+                    algorithm_enum_slots(am, &parsed.imports, &callee_base, &own_enums);
             }
             // Whether the imported transform keeps state is recorded here,
             // where its model is in hand, and judged once the importing
@@ -6566,6 +6584,45 @@ fn algorithm_record_slots(
             None => None,
         },
     })
+}
+
+/// The enum each slot of the imported algorithm `am` holds, named as the importing
+/// document names it ([`forge::generator::CalleeEnumSlots`]): `own_enums` is each
+/// enum document the importer imports, by alias and identity, and the callee's own
+/// enum imports are read from `callee_base`, where the callee reads them. `None`
+/// for an algorithm none of whose slots holds a value of an enum.
+fn algorithm_enum_slots(
+    am: &forge::model::AlgorithmModel,
+    callee_imports: &[forge::model::ForgeImport],
+    callee_base: &Path,
+    own_enums: &[(String, String)],
+) -> Option<forge::generator::CalleeEnumSlots> {
+    let held = |ty: &forge::model::AlgorithmValueType| -> Option<String> {
+        let forge::model::SceType::Enum(reference) = ty.scalar()? else {
+            return None;
+        };
+        // An enum document the callee cannot read has no identity to compare: it
+        // is named for the callee, in words no alias of the importer can equal.
+        let identity =
+            forge::static_imports::enum_identity(callee_imports, callee_base, &reference.alias)
+                .unwrap_or_else(|| format!("the enum `{}` of `{}`", reference.alias, am.name));
+        Some(
+            own_enums
+                .iter()
+                .find(|(_, own)| *own == identity)
+                .map_or(identity, |(alias, _)| alias.clone()),
+        )
+    };
+    let slots = forge::generator::CalleeEnumSlots {
+        params: am
+            .signature
+            .params
+            .iter()
+            .map(|p| held(&p.sce_type))
+            .collect(),
+        ret: am.signature.return_type.as_ref().and_then(held),
+    };
+    (slots.ret.is_some() || slots.params.iter().any(Option::is_some)).then_some(slots)
 }
 
 /// The call signature a stateless import exposes to its caller's type

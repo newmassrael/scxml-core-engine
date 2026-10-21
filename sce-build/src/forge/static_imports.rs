@@ -46,6 +46,22 @@ struct EnumDocument {
     strict: bool,
 }
 
+/// The identity of the enum document the import `alias` of `imports` names, read
+/// from `base_dir` — the name every reader of an enum names it by (SCE_FORGE.md
+/// §4.12). `None` for an alias no enum import of `imports` carries, or a document
+/// that cannot be read.
+pub(crate) fn enum_identity(
+    imports: &[ForgeImport],
+    base_dir: &Path,
+    alias: &str,
+) -> Option<String> {
+    let import = imports
+        .iter()
+        .find(|i| i.alias == alias && i.kind == ForgeKind::Enum)?;
+    let source = crate::forge::import_source::ImportSource::read(base_dir, import).ok()?;
+    Some(crate::forge::stdlib::identity(&source.path))
+}
+
 /// The enum document the import `alias` of `imports` names, read from `base_dir`;
 /// `None` for an alias no enum import of `imports` carries, or a document that
 /// cannot be read.

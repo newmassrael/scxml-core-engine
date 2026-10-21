@@ -20,9 +20,19 @@
 // with `==` or `!=` to a value of that same enum, and handed to an imported
 // algorithm whose parameter takes that same enum. No ordering, no arithmetic,
 // no argument to any other call.
+//
+// An algorithm's body is held to the same rule ([`check_algorithm`]): its
+// parameters, locals, loop items and record fields are typed by the enum they
+// are declared as, and its return by the signature. Before that pass an
+// algorithm that returned an enum parameter as an `int64`, or an `int64` as an
+// enum, passed `check` on every backend, and the Rust it generated
+// (`fn status_number(s: Status) -> i64 { return s; }`) did not compile.
 
-use crate::forge::error::ExprError;
+use crate::forge::error::{ExprError, ForgeError};
 use crate::forge::expr::{dotted_path, parse_to_ast, BinOp, ExprKind, Refusal, TypedExpr};
+use crate::forge::expression_site::ExpressionSite;
+use crate::forge::generator::{AlgorithmTypes, ImportContext};
+use crate::forge::model::{AlgorithmModel, AlgorithmStmt, AlgorithmValueType, SceType};
 use crate::forge::type_ctx::INDEXED_ELEMENT;
 use crate::forge::types::TypeCtx;
 
@@ -213,4 +223,249 @@ fn nothing_but(
         }
     }
     Ok(None)
+}
+
+/// What a place of an algorithm's body holds: a value of one enum, by the alias the
+/// algorithm imports it under; a number, a bool, a string or bytes; or a record or a
+/// list, which is named and not computed, and holds no enum value whole.
+enum Slot {
+    Enum(String),
+    Scalar,
+    Named,
+}
+
+impl Slot {
+    /// The place a value of `ty` is declared to stand in.
+    fn of(ty: &AlgorithmValueType) -> Self {
+        match ty.scalar() {
+            Some(SceType::Enum(reference)) => Self::Enum(reference.alias.clone()),
+            Some(_) => Self::Scalar,
+            None => Self::Named,
+        }
+    }
+
+    /// The place a parameter of a call that holds the enum `wanted` (`None` for a
+    /// parameter that holds none) is.
+    fn of_call(wanted: Option<&str>) -> Self {
+        wanted.map_or(Self::Scalar, |alias| Self::Enum(alias.to_string()))
+    }
+}
+
+/// Every expression of the algorithm `m`'s body held to the rule this module
+/// keeps for a statechart: an enum value stands only where a value of that enum
+/// is declared — a parameter, a local, a record field or a slot of a call of that
+/// enum, or the return of an algorithm that returns it — and a number never does.
+/// `imports` is the algorithm's own, enriched ([`ImportContext::enum_slots`] names
+/// the enum each slot of an imported algorithm holds). Judged once, before any
+/// backend renders the body, so the verdict does not depend on the backend.
+pub(crate) fn check_algorithm(
+    m: &AlgorithmModel,
+    imports: &[ImportContext],
+    options: &crate::ForgeCompileOptions,
+) -> Result<(), ForgeError> {
+    let types = AlgorithmTypes::collect(m, imports, options)?;
+    let ctx = types.type_ctx(m, imports);
+    let var_alias = |path: &str| types.enum_at(path).map(str::to_string);
+    let calls = |name: &str| callee_enums(imports, name);
+    let reading = EnumReading {
+        var_alias: &var_alias,
+        calls: &calls,
+    };
+    let walk = AlgorithmWalk {
+        m,
+        types: &types,
+        imports,
+        ctx: &ctx,
+        reading: &reading,
+    };
+    walk.block(&m.body)
+}
+
+/// The enums of the slots of the algorithm `name` names — its alias, or the
+/// `<alias>.<name>` spelling a `<sce:call>` may write — among `imports`.
+fn callee_enums(imports: &[ImportContext], name: &str) -> Option<CallEnums> {
+    let alias = name.split_once('.').map_or(name, |(alias, _)| alias);
+    let import = imports
+        .iter()
+        .find(|i| i.alias == alias && i.kind == "algorithm")?;
+    let slots = import.enum_slots.as_ref()?;
+    Some(CallEnums {
+        callee: alias.to_string(),
+        params: slots.params.clone(),
+        ret: slots.ret.clone(),
+    })
+}
+
+/// The walk of one algorithm's body ([`check_algorithm`]).
+struct AlgorithmWalk<'w, 'c> {
+    m: &'w AlgorithmModel,
+    types: &'w AlgorithmTypes<'w>,
+    imports: &'w [ImportContext],
+    ctx: &'w TypeCtx<'c>,
+    reading: &'w EnumReading<'w>,
+}
+
+impl AlgorithmWalk<'_, '_> {
+    fn block(&self, body: &[AlgorithmStmt]) -> Result<(), ForgeError> {
+        body.iter().try_for_each(|stmt| self.statement(stmt))
+    }
+
+    fn statement(&self, stmt: &AlgorithmStmt) -> Result<(), ForgeError> {
+        match stmt {
+            AlgorithmStmt::Var {
+                sce_type,
+                init: Some(init),
+                init_spelling,
+                ..
+            } => self.expect(init, init_spelling.as_ref(), &Slot::of(sce_type)),
+            AlgorithmStmt::Var { init: None, .. } => Ok(()),
+            AlgorithmStmt::RecordVar { name, fields, .. } => {
+                let record = self
+                    .types
+                    .records
+                    .iter()
+                    .find(|(held, _, _)| *held == name.as_str())
+                    .map(|(_, _, record)| *record);
+                for field in fields {
+                    let slot = match record.and_then(|r| r.field(&field.name)) {
+                        Some(declared) => {
+                            Slot::of(&AlgorithmValueType::Scalar(declared.ty.clone()))
+                        }
+                        // A field the schema does not declare is refused where the
+                        // record is resolved; its value is judged as a number's.
+                        None => Slot::Scalar,
+                    };
+                    self.expect(&field.expr, field.expr_spelling.as_ref(), &slot)?;
+                }
+                Ok(())
+            }
+            AlgorithmStmt::RecordFromCall {
+                init,
+                init_spelling,
+                ..
+            } => self.expect(init, init_spelling.as_ref(), &Slot::Named),
+            AlgorithmStmt::Assign {
+                target,
+                expr,
+                expr_spelling,
+                ..
+            } => {
+                let slot = self
+                    .types
+                    .enum_at(target.trim())
+                    .map_or(Slot::Scalar, |alias| Slot::Enum(alias.to_string()));
+                self.expect(expr, expr_spelling.as_ref(), &slot)
+            }
+            AlgorithmStmt::Append {
+                target,
+                expr,
+                expr_spelling,
+                ..
+            } => {
+                let slot = self.buffer_element(target.trim());
+                self.expect(expr, expr_spelling.as_ref(), &slot)
+            }
+            AlgorithmStmt::If {
+                cond,
+                cond_spelling,
+                then_body,
+                else_body,
+            } => {
+                self.expect(cond, cond_spelling.as_ref(), &Slot::Scalar)?;
+                self.block(then_body)?;
+                else_body.as_deref().map_or(Ok(()), |body| self.block(body))
+            }
+            AlgorithmStmt::While {
+                cond,
+                cond_spelling,
+                body,
+                ..
+            } => {
+                self.expect(cond, cond_spelling.as_ref(), &Slot::Scalar)?;
+                self.block(body)
+            }
+            AlgorithmStmt::Foreach { body, .. } => self.block(body),
+            AlgorithmStmt::Return {
+                expr: Some(expr),
+                expr_spelling,
+            } => {
+                let slot = self
+                    .m
+                    .signature
+                    .return_type
+                    .as_ref()
+                    .map_or(Slot::Scalar, Slot::of);
+                self.expect(expr, expr_spelling.as_ref(), &slot)
+            }
+            AlgorithmStmt::Return { expr: None, .. } => Ok(()),
+            AlgorithmStmt::Call { target, args, .. } => {
+                let slots = callee_enums(self.imports, target.trim());
+                for (index, arg) in args.iter().enumerate() {
+                    let wanted = slots
+                        .as_ref()
+                        .and_then(|s| s.params.get(index))
+                        .and_then(|held| held.as_deref());
+                    self.expect(&arg.expr, arg.spelling.as_ref(), &Slot::of_call(wanted))?;
+                }
+                Ok(())
+            }
+            AlgorithmStmt::Require {
+                cond,
+                cond_spelling,
+            } => self.expect(cond, cond_spelling.as_ref(), &Slot::Scalar),
+        }
+    }
+
+    /// The place an element appended to the buffer local `target` stands in.
+    fn buffer_element(&self, target: &str) -> Slot {
+        use crate::forge::model::{AlgorithmBinding, ListElemType};
+        self.m
+            .body_bindings()
+            .into_iter()
+            .find_map(|binding| match binding {
+                AlgorithmBinding::Local { name, sce_type } if name == target => {
+                    Some(match sce_type.list_elem() {
+                        Some(ListElemType::Scalar(elem)) => {
+                            Slot::of(&AlgorithmValueType::Scalar(elem.clone()))
+                        }
+                        Some(ListElemType::Record { .. }) => Slot::Named,
+                        None => Slot::Scalar,
+                    })
+                }
+                _ => None,
+            })
+            .unwrap_or(Slot::Scalar)
+    }
+
+    /// `expr`, written at `spelling`, held to the place `slot` it stands in.
+    fn expect(
+        &self,
+        expr: &str,
+        spelling: Option<&crate::attribute_spelling::AttributeSpelling>,
+        slot: &Slot,
+    ) -> Result<(), ForgeError> {
+        let site = ExpressionSite::new(expr, spelling);
+        let held = value_enum(expr, self.ctx, self.reading).map_err(|r| site.place(r))?;
+        let construct = match (slot, held) {
+            (Slot::Named, _) | (Slot::Scalar, None) => return Ok(()),
+            (Slot::Enum(wanted), Some(held)) if *wanted == held => return Ok(()),
+            (Slot::Scalar, Some(held)) => {
+                format!("a value of the enum `{held}` where a number or a bool is expected")
+            }
+            (Slot::Enum(wanted), Some(held)) => format!(
+                "a value of the enum `{held}` where a value of the enum `{wanted}` is declared"
+            ),
+            (Slot::Enum(wanted), None) => format!(
+                "a value that is not of the enum `{wanted}` where a value of it is declared \
+                 (write `{wanted}.<variant>`, or a parameter, a local or a field of that enum)"
+            ),
+        };
+        Err(site.place(
+            ExprError::UnsupportedConstruct {
+                construct,
+                observed: Some(expr.trim().to_string()),
+            }
+            .at(None),
+        ))
+    }
 }
