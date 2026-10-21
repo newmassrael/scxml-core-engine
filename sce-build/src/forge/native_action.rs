@@ -529,11 +529,11 @@ fn check_releases(scxml: &SCXMLModel, diag_label: &str) -> Result<(), Located<Fo
 }
 
 /// Every spelling `name` has as a method of some backend's host interface
-/// ([`method_name`] for each language), each with its language.
+/// ([`method_name`] for each language that emits a statechart, the only ones
+/// that write a host interface), each with its language.
 fn method_spellings(name: &str) -> impl Iterator<Item = MethodSpelling> + '_ {
-    Language::ALL
-        .iter()
-        .map(move |&lang| (lang.canonical_name(), method_name(lang, name)))
+    crate::forge::codegen_matrix::emitting(ForgeKind::Statechart)
+        .map(move |lang| (lang.canonical_name(), method_name(lang, name)))
 }
 
 /// A method's name as one backend writes it: the backend's canonical name, and
