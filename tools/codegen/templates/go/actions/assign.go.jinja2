@@ -7,8 +7,9 @@
 {% include 'actions/_native_statement.go.jinja2' %}
 {% elif model.needs_script_engine %}
 {% set loc = action.location | default("") %}
-{# W3C SCXML B.2: System variables are read-only (1:1 with Rust/C++ AssignHelper::isValidLocation) #}
-{% if not loc or loc in ('_sessionid', '_event', '_name', '_ioprocessors') %}
+{# W3C SCXML B.2: System variables are read-only, decided once for every
+   backend (`read_only_location`, filters::READ_ONLY_LOCATIONS). #}
+{% if not loc or loc is read_only_location %}
 	// W3C SCXML 5.3/B.2: Invalid or read-only location "{{ loc }}"
 {% if 'error.execution' in model.events %}
 	engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<assign> has an invalid or read-only location '{{ loc }}'"))

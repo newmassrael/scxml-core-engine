@@ -1890,7 +1890,9 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
 {% elif action.type == 'assign' %}
         {
             /* W3C SCXML 5.4: <assign location="{{ action.location }}" expr="{{ action.expr }}"> */
-{% if action.location in ['_sessionid', '_name', '_ioprocessors', '_event'] %}
+{# The read-only set is decided once for every backend (`read_only_location`,
+   filters::READ_ONLY_LOCATIONS). #}
+{% if action.location is read_only_location %}
             /* W3C SCXML 5.10: assignment to read-only system variable
                '{{ action.location }}' is illegal — raise error.execution
                and skip the lua chunk entirely so the system variable's

@@ -89,6 +89,11 @@
    never run and is not written, and `iterationSuccess` may then be read by
    nothing. #}
 {% with block_flow = namespace(ended=false) %}
+{# Whether an <assign> of the body writes the iteration's `success`, which is
+   declared only then. One the build refused (actions/assign.jinja2) ends the
+   iteration itself and writes nothing, so neither it nor the check of
+   `success` after it reads the declaration. #}
+{% set body_reads = namespace(success=False) %}
 {% set foreach_body %}
 {% for body_action in action.actions %}\
 {% if not block_flow.ended %}
@@ -98,11 +103,14 @@
             {% with action=body_action, in_foreach=True, block_exit='return false;' %}\
             {% include 'actions/' + body_action.type + '.jinja2' %}\
             {% endwith %}\
+{% if not block_flow.ended %}
+{% set body_reads.success = True %}
             iterationSuccess = iterationSuccess && success;
             if (!iterationSuccess) {
                 AOT_DEBUG("Foreach: Action {{ loop.index }} (assign) failed, stopping loop (W3C SCXML 4.6)");
                 return false;  // Stop foreach on error
             }
+{% endif %}
             {% else %}\
             // Non-assign action: ends the iteration itself through `block_exit`
             {
@@ -119,11 +127,7 @@
 {% else %}
             bool iterationSuccess = true;
 {% endif %}
-{% set has_assign = namespace(value=False) %}\
-{% for body_action in action.actions %}\
-{% if body_action.type == 'assign' %}{% set has_assign.value = True %}{% endif %}\
-{% endfor %}\
-{% if has_assign.value %}            bool success = false;  // Shared by all assign actions in this iteration
+{% if body_reads.success %}            bool success = false;  // Shared by all assign actions in this iteration
 {% endif %}\
 {{ foreach_body }}{% if not block_flow.ended %}
             return iterationSuccess;  // Return true only if all actions succeeded

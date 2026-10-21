@@ -8,7 +8,9 @@
     ARCHITECTURE.md Version: 2025-10-23
 
     ARCHITECTURE.md Compliance (Lines 311-491):
-    - Zero Duplication: Uses shared AssignHelper for validation
+    - Single Source of Truth: the location is validated at build time from the
+      fact every backend reads (`read_only_location`), not by a run-time check
+      of a literal
     - Zero Duplication: Uses shared AssignmentExecutionHelper for execution
     - Single Source of Truth: Assignment strategy matches Interpreter engine exactly
     - W3C SCXML 5.3: Data model assignment semantics
@@ -16,7 +18,6 @@
     - W3C SCXML B.2: System variable immutability enforcement
 
     Helper Classes Used:
-    - AssignHelper: W3C SCXML 5.3/5.4/B.2 location validation
     - AssignmentExecutionHelper: W3C SCXML 5.3/5.10 assignment execution strategy
 
     Critical Fixes:
@@ -26,14 +27,31 @@
 {% if action.native_code %}
 // W3C SCXML 5.3: <assign location="{{ action.location }}">, a sce-static statement lowered to C++
 {% include 'actions/_native_statement.jinja2' %}
+{% elif not action.location or action.location is read_only_location %}
+{# W3C SCXML 5.3/5.4/B.2: no location, or a system variable the data model
+   keeps read-only. The location is a literal, so the build decides it once,
+   from the fact every backend that refuses it reads (`read_only_location`,
+   filters::READ_ONLY_LOCATIONS), and the element is its refusal alone:
+   error.execution, and the block ends (W3C SCXML 4.9) — `return;` in an
+   entry, exit, initial, history or transition block, `return false;` in a
+   <foreach> body, as `block_exit` names it. #}
+{% set assign_exit = block_exit if block_exit is defined and block_exit else 'return;' %}
+{
+    // W3C SCXML 5.3/B.2: the build refused this location as invalid or read-only
+    SCE_LOG_ERROR("W3C SCXML 5.3: Invalid assign location '{{ action.location | escape_cpp_format }}'");
+    engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "<assign> has an invalid or read-only location '{{ action.location | escape_cpp }}'"));
+    {{ assign_exit }}  // W3C SCXML 4.9: the error ends the block
+}
+{# The exit is unconditional: the action list emits nothing after this
+   element (`block_flow`, entry_exit_actions.jinja2). #}
+{% set block_flow.ended = true %}
 {% else %}
 {% if not in_foreach %}{{ '{' }}{% endif %}
-// W3C SCXML 5.3, 5.4: Validate assignment location using shared AssignHelper
 {% if not in_foreach %}bool success = false;
 {% else %}success = false;  // Use foreach-scope variable
 {% endif %}
-if (::SCE::AssignHelper::isValidLocation("{{ action.location | escape_cpp }}")) {
-    // Location is valid, proceed with assignment
+{
+    // W3C SCXML 5.3, 5.4: the location is one an <assign> may write (decided at build time)
     AOT_DEBUG("AOT assign: Before ensureScriptEngine for {{ action.location | escape_cpp_format }}");
     this->ensureScriptEngine();
     AOT_DEBUG("AOT assign: After ensureScriptEngine, sessionId={}", sessionId_.value_or("NONE"));
@@ -75,11 +93,6 @@ if (::SCE::AssignHelper::isValidLocation("{{ action.location | escape_cpp }}")) 
         AOT_DEBUG("AOT assign: Successfully assigned {{ action.location | escape_cpp_format }} = {{ action.expr.rstrip(';') | escape_cpp_format }}");
         {% endif %}
     }
-} else {
-    // W3C SCXML 5.3/5.4/B.2: Invalid or read-only location
-    std::string errorMsg = ::SCE::AssignHelper::getInvalidLocationErrorMessage("{{ action.location | escape_cpp }}");
-    SCE_LOG_ERROR("W3C SCXML 5.3: {}", errorMsg);
-    engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, errorMsg));
 }
 {# W3C SCXML 4.9: the error ends the block. Inside a <foreach> body the loop
    reads `success` and ends the iteration itself. #}

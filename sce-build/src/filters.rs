@@ -70,6 +70,25 @@ pub fn w3c_session_name(declared: &str, generated: &str) -> String {
     }
 }
 
+/// The locations an `<assign>` may not write: the system variables the
+/// specification binds for the session and keeps read-only.
+///
+/// A location is a literal, so whether an `<assign>` names one of these is
+/// known when the machine is built, and every backend that refuses it there
+/// reads this one list through the `read_only_location` template test
+/// ([`is_read_only_location`], registered by `generator::new_env`). The paths
+/// that decide it when the machine runs keep the same four: the C++ runtime's
+/// `AssignHelper::isValidLocation` (the Interpreter) and the Python template's
+/// `_READONLY_SYSTEM_VARS`.
+pub const READ_ONLY_LOCATIONS: &[&str] = &["_sessionid", "_event", "_name", "_ioprocessors"];
+
+/// `{% if action.location is read_only_location %}`: whether an `<assign>` to
+/// `location` writes one of [`READ_ONLY_LOCATIONS`], and so raises
+/// error.execution and ends its block instead of writing anything.
+pub fn is_read_only_location(location: &str) -> bool {
+    READ_ONLY_LOCATIONS.contains(&location)
+}
+
 /// Rust 2021 edition reserved keywords — must be escaped with `r#` prefix
 pub(crate) const RUST_KEYWORDS: &[&str] = &[
     "as", "break", "const", "continue", "crate", "else", "enum", "extern", "false", "fn", "for",

@@ -36,7 +36,7 @@ namespace SCE::W3C::AotTests {
  *
  * ✅ Zero Duplication Principle:
  * - ForeachHelper::executeForeachWithActions() shared with Interpreter
- * - AssignHelper::isValidLocation() shared validation logic
+ * - Assign location validation decided at build time from one fact for every backend
  * - GuardHelper::evaluateGuard() shared condition evaluation
  * - DataModelInitHelper::initializeVariable() shared initialization
  *

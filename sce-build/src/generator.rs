@@ -48,6 +48,12 @@ pub(crate) fn new_env<'a>() -> Environment<'a> {
     env.add_filter("kotlin_forge_package", |snake: String| {
         crate::forge::generator::kotlin_forge_package(&snake)
     });
+    // Whether an `<assign>` names a location it may not write, decided once
+    // for every backend that refuses it at build time
+    // (`filters::READ_ONLY_LOCATIONS`): `{% if loc is read_only_location %}`.
+    env.add_test("read_only_location", |location: String| {
+        crate::filters::is_read_only_location(&location)
+    });
     env
 }
 
@@ -5736,6 +5742,70 @@ mod tests {
         );
         assert_eq!(cpp.matches("bool condFailed = false;").count(), 2, "{cpp}");
         assert_eq!(cpp.matches("if (condFailed) {").count(), 1, "{cpp}");
+    }
+
+    /// C++ refuses an `<assign>` to a read-only location when the machine is
+    /// built, as the other backends do, rather than asking at run time whether
+    /// a literal is writable: the refusal raises error.execution and ends its
+    /// block on every path, so the list it stands in emits nothing after it —
+    /// in an `<if>` branch, which then ends the `<if>`, and in a `<foreach>`
+    /// body, which then neither checks nor declares the iteration's `success`.
+    #[test]
+    fn cpp_refuses_an_assign_to_a_read_only_location_when_it_is_built() {
+        let mut model = parse(ENDED_BLOCKS_SCXML);
+        crate::analyzer::analyze(&mut model, "");
+        let output =
+            generate_cpp(&model, &crate::find_template_base(), "refusals", None).expect("cpp");
+        let cpp: String = output.files.iter().map(|(_, text)| text.as_str()).collect();
+
+        let unreachable = unreachable_in_files(&output);
+        assert!(
+            unreachable.is_empty(),
+            "statements after a terminating statement: {unreachable:?}\n{cpp}"
+        );
+        assert_eq!(
+            cpp.matches("AssignHelper::isValidLocation(").count(),
+            0,
+            "the location is decided when the machine is built\n{cpp}"
+        );
+        // Six refusals: the onentry block, the two <if> branches that end with
+        // one, the <if> without <else>, the <foreach> body and the onexit.
+        assert_eq!(
+            cpp.matches("\"<assign> has an invalid or read-only location '")
+                .count(),
+            6,
+            "each refused <assign> still raises\n{cpp}"
+        );
+        let raises = |spelled: &str| raises_of(&cpp, "engine.raise(", spelled);
+        assert_eq!(
+            raises("(Event::Never)"),
+            0,
+            "an element after a refusal\n{cpp}"
+        );
+        assert_eq!(raises("(Event::First)"), 1, "an element before one\n{cpp}");
+        assert_eq!(
+            raises("(Event::Kept)"),
+            1,
+            "after an <if> without <else>\n{cpp}"
+        );
+        assert_eq!(raises("(Event::Looped)"), 1, "after a <foreach>\n{cpp}");
+        // Eight <send>s are refused beside them, each still written.
+        assert_eq!(
+            cpp.matches("std::string sendId = ::SCE::SendHelper::generateSendId();")
+                .count(),
+            8,
+            "{cpp}"
+        );
+        // The <if> whose branches all end — a <send> and two <assign>s — is the
+        // end of its block, so no check of a failed cond follows it.
+        assert_eq!(cpp.matches("bool condFailed = false;").count(), 2, "{cpp}");
+        assert_eq!(cpp.matches("if (condFailed) {").count(), 1, "{cpp}");
+        assert_eq!(
+            cpp.matches("bool success = false;  // Shared by all assign actions in this iteration")
+                .count(),
+            0,
+            "a <foreach> body whose <assign> was refused reads no `success`\n{cpp}"
+        );
     }
 
     /// The C++ refusals that are not the build-time ones every backend shares:

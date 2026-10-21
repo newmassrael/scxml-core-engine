@@ -22,7 +22,11 @@ namespace SCE {
 /**
  * @brief Single Source of Truth for assignment location validation (§scxml-5.3, 5.4)
  *
- * Shared by Interpreter engine and Static Code Generator to ensure Zero Duplication.
+ * Read by the Interpreter engine, which meets a location when the machine runs.
+ * The code generator decides the same question when the machine is built, from
+ * the location literal (`read_only_location`, sce-build filters::READ_ONLY_LOCATIONS,
+ * which keeps the same four system variables), so generated code calls neither
+ * function.
  *
  * §scxml-5.3: "If the location expression does not denote a valid location in the
  * data model... the processor must place the error 'error.execution' in the internal
@@ -49,12 +53,6 @@ public:
      * if (!AssignHelper::isValidLocation(location)) {
      *     eventRaiser_->raiseEvent("error.execution", "Invalid or read-only location");
      *     return false;
-     * }
-     *
-     * // Static Code Generator (generated code)
-     * if (!AssignHelper::isValidLocation("_sessionid")) {
-     *     engine.raise(Event::Error_execution);
-     *     break;
      * }
      * ```
      */
