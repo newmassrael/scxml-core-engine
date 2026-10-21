@@ -879,8 +879,8 @@ fn validate_args(
             action,
             diag_label,
             format!(
-                "event '{event}' carries an enum-typed EventSchema field; native action \
-                 arguments require an all-primitive payload schema"
+                "event '{event}' carries an enum-typed or optional EventSchema field; native \
+                 action arguments require an all-primitive payload schema"
             ),
         ));
     }
@@ -920,7 +920,9 @@ fn validate_args(
                 },
             ));
         };
-        sig.push(canonical_type(&field.sce_type).to_string());
+        // An eligible schema holds no optional field (docs/adr/0055), so each
+        // field is the scalar a present value is.
+        sig.push(canonical_type(field.sce_type.present_type()).to_string());
     }
     Ok(sig)
 }
@@ -1562,8 +1564,10 @@ impl CallRendering<'_> {
             } else {
                 arg.name.clone()
             };
-            call_args.extend(args_for(lang, &accessor, field, &f.sce_type));
-            params.push((pname, f.sce_type.clone()));
+            // An eligible schema holds no optional field (docs/adr/0055).
+            let ty = f.sce_type.present_type();
+            call_args.extend(args_for(lang, &accessor, field, ty));
+            params.push((pname, ty.clone()));
         }
 
         self.payload_events.insert(binding.event.to_string());
@@ -2252,7 +2256,7 @@ fn rust_recording_host(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::forge::model::{Direction, ForgeField};
+    use crate::forge::model::{Direction, FieldType, SchemaField};
     use crate::parser::SCXMLParser;
 
     fn parse(scxml: &str) -> SCXMLModel {
@@ -2266,9 +2270,9 @@ mod tests {
             name: "FragmentSchema".to_string(),
             event_name: "fragment.received".to_string(),
             fields: vec![
-                ForgeField {
+                SchemaField {
                     id: "payload".to_string(),
-                    sce_type: SceType::Bytes,
+                    sce_type: FieldType::Scalar(SceType::Bytes),
                     direction: Direction::In,
                     expr: None,
                     expr_spelling: None,
@@ -2284,9 +2288,9 @@ mod tests {
                     default: None,
                     default_spelling: None,
                 },
-                ForgeField {
+                SchemaField {
                     id: "offset".to_string(),
-                    sce_type: SceType::Uint32,
+                    sce_type: FieldType::Scalar(SceType::Uint32),
                     direction: Direction::In,
                     expr: None,
                     expr_spelling: None,

@@ -60,7 +60,9 @@ use crate::forge::expr::{
     ExprKind, ExprTarget, TypedExpr, UnaryOp,
 };
 use crate::forge::expression_site::ExpressionSite;
-use crate::forge::model::{EnumModel, EventSchemaModel, ForgeField, ForgeKind, SceType};
+use crate::forge::model::{
+    EnumModel, EventSchemaModel, FieldType, ForgeKind, SceType, SchemaField,
+};
 use crate::forge::types::{InferredType, TypeCtx};
 use crate::model::{Action, Param, SCXMLModel, Transition};
 
@@ -342,7 +344,13 @@ pub fn name_schema_enums(model: &mut SCXMLModel) {
             continue;
         };
         for field in &mut schema.fields {
-            let SceType::Enum(reference) = &mut field.sce_type else {
+            // An optional enum field holds a value of the same document when
+            // present (docs/adr/0055), so it is named alike.
+            let (FieldType::Scalar(SceType::Enum(reference))
+            | FieldType::Optional {
+                elem: SceType::Enum(reference),
+            }) = &mut field.sce_type
+            else {
                 continue;
             };
             let Some(held) = held_by_field.get(&field.id) else {
@@ -448,7 +456,7 @@ pub(crate) fn event_payload_paths(schema: &EventSchemaModel) -> Vec<(String, Inf
         .map(|f| {
             (
                 format!("{EVENT_DATA_PATH}.{}", f.id),
-                InferredType::from_sce_type(&f.sce_type),
+                InferredType::of_field(&f.sce_type),
             )
         })
         .collect()
@@ -481,10 +489,13 @@ pub(crate) fn event_payload_paths(schema: &EventSchemaModel) -> Vec<(String, Inf
 /// This is the single eligibility rule shared by the engine-need
 /// analyzer and the codegen path so the two never disagree.
 pub fn schema_is_native_payload_eligible(schema: &EventSchemaModel) -> bool {
-    schema
-        .fields
-        .iter()
-        .all(|f| !matches!(f.sce_type, SceType::Enum(_)))
+    // An optional field (docs/adr/0055) has no native payload type yet either:
+    // the struct would need a carrier for absence, which is each backend's step
+    // to declare, so a schema that holds one keeps the dynamic baseline.
+    schema.fields.iter().all(|f| match &f.sce_type {
+        FieldType::Scalar(SceType::Enum(_)) | FieldType::Optional { .. } => false,
+        FieldType::Scalar(_) => true,
+    })
 }
 
 /// `true` iff `cond` lowers natively on every backend SCE generates —
@@ -576,7 +587,7 @@ fn bytes_comparisons_are_native_representable(ast: &TypedExpr, schema: &EventSch
                 // The same SSOT rule the validator uses: a bytes field
                 // touched by a non-representable comparison (B2/B3) is not
                 // natively lowerable.
-                if matches!(field.sce_type, SceType::Bytes)
+                if matches!(field.sce_type.present_type(), SceType::Bytes)
                     && classify_bytes_comparison(*op, other) != BytesComparisonForm::Representable
                 {
                     return false;
@@ -1117,7 +1128,7 @@ fn is_event_data_object(expr: &TypedExpr) -> bool {
 fn extract_event_data_field<'s>(
     expr: &TypedExpr,
     schema: &'s EventSchemaModel,
-) -> Option<&'s ForgeField> {
+) -> Option<&'s SchemaField> {
     let ExprKind::Member { object, property } = &expr.kind else {
         return None;
     };
@@ -1180,7 +1191,7 @@ fn resolve_field(
 /// existing typed-expression pipeline catches deeper mismatches at
 /// codegen).
 fn check_comparison_type(
-    field: &ForgeField,
+    field: &SchemaField,
     other_operand: &TypedExpr,
     imported_enums: &BTreeMap<String, EnumModel>,
     transition: &Transition,
@@ -1195,7 +1206,11 @@ fn check_comparison_type(
     let observed = literal
         .and_then(|literal| literal.on_one_row())
         .map(str::to_string);
-    if !literal_is_compatible_with(&field.sce_type, other_kind) {
+    // An optional field compared with a value of `T` is compared with the
+    // value it holds when present (docs/adr/0055), so a literal is judged
+    // against that type.
+    let present = field.sce_type.present_type();
+    if !literal_is_compatible_with(present, other_kind) {
         return Err(located_on_transition(
             transition,
             literal,
@@ -1218,8 +1233,7 @@ fn check_comparison_type(
     // runs alongside this category check. Keeping the bytes rule out of
     // this primitive-category helper is what lets the native-lowerability
     // verdict consult the identical rule without duplicating it.
-    if let Some(overflow) = enum_underlying_overflow(&field.sce_type, other_operand, imported_enums)
-    {
+    if let Some(overflow) = enum_underlying_overflow(present, other_operand, imported_enums) {
         return Err(located_on_transition(
             transition,
             literal,
@@ -1241,9 +1255,7 @@ fn check_comparison_type(
     // more fundamental violation and must surface first; once the
     // value is known to fit, the membership check asks the orthogonal
     // question of whether the value was actually declared.
-    if let Some(not_declared) =
-        enum_variant_not_declared(&field.sce_type, other_operand, imported_enums)
-    {
+    if let Some(not_declared) = enum_variant_not_declared(present, other_operand, imported_enums) {
         return Err(located_on_transition(
             transition,
             literal,
@@ -1313,7 +1325,7 @@ fn classify_bytes_comparison(op: BinOp, other: &TypedExpr) -> BytesComparisonFor
 /// are the comparison operator and the partner operand of `field`, and
 /// `operator` is that operator as the guard spells it.
 fn reject_non_representable_bytes(
-    field: &ForgeField,
+    field: &SchemaField,
     op: BinOp,
     operator: Option<Written<'_>>,
     other: &TypedExpr,
@@ -1321,7 +1333,7 @@ fn reject_non_representable_bytes(
     statechart_name: &str,
     diag_label: &str,
 ) -> Result<(), Located<ForgeError>> {
-    if !matches!(field.sce_type, SceType::Bytes) {
+    if !matches!(field.sce_type.present_type(), SceType::Bytes) {
         return Ok(());
     }
     match classify_bytes_comparison(op, other) {
@@ -1997,7 +2009,10 @@ fn check_send_param(
     let observed = literal
         .and_then(|literal| literal.on_one_row())
         .map(str::to_string);
-    if !literal_is_compatible_with(&field.sce_type, literal_kind) {
+    // A value of `T` sent to a field of `optional<T>` is present (docs/adr/0055),
+    // so a literal is judged against the type a present value is.
+    let present = field.sce_type.present_type();
+    if !literal_is_compatible_with(present, literal_kind) {
         return Err(located_on_param(
             param,
             literal,
@@ -2014,7 +2029,7 @@ fn check_send_param(
             },
         ));
     }
-    if let Some(overflow) = enum_underlying_overflow(&field.sce_type, &expr_ast, imported_enums) {
+    if let Some(overflow) = enum_underlying_overflow(present, &expr_ast, imported_enums) {
         return Err(located_on_param(
             param,
             literal,
@@ -2036,9 +2051,7 @@ fn check_send_param(
     // runs after width narrowing so a value that overflows the
     // underlying carrier surfaces the overflow diagnostic rather than
     // a membership one.
-    if let Some(not_declared) =
-        enum_variant_not_declared(&field.sce_type, &expr_ast, imported_enums)
-    {
+    if let Some(not_declared) = enum_variant_not_declared(present, &expr_ast, imported_enums) {
         return Err(located_on_param(
             param,
             literal,
@@ -2127,12 +2140,12 @@ fn located_at(
 mod tests {
     use super::*;
     use crate::forge::error::ExprError;
-    use crate::forge::model::{Direction, EnumModel, EnumRef, EnumVariant, ForgeField, SceType};
+    use crate::forge::model::{Direction, EnumModel, EnumRef, EnumVariant, SceType};
 
-    fn field(id: &str, ty: SceType) -> ForgeField {
-        ForgeField {
+    fn field(id: &str, ty: SceType) -> SchemaField {
+        SchemaField {
             id: id.to_string(),
-            sce_type: ty,
+            sce_type: FieldType::Scalar(ty),
             direction: Direction::In,
             expr: None,
             expr_spelling: None,
@@ -2150,7 +2163,7 @@ mod tests {
         }
     }
 
-    fn schema(event: &str, fields: Vec<ForgeField>) -> EventSchemaModel {
+    fn schema(event: &str, fields: Vec<SchemaField>) -> EventSchemaModel {
         EventSchemaModel {
             name: format!("{event}_schema"),
             event_name: event.to_string(),

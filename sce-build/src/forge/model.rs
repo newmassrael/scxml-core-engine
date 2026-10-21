@@ -968,11 +968,16 @@ impl Direction {
 // ── Typed field ────────────────────────────────────────────────
 
 /// A typed data field common to all kinds.
+///
+/// `T` is what its `sce:type` declares: a scalar ([`SceType`]) on every kind
+/// but the event schema, whose field may be optional ([`SchemaField`],
+/// docs/adr/0055). A position that is scalar by contract keeps the scalar
+/// type, so it never meets a case it would only have to refuse.
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
-pub struct ForgeField {
+pub struct ForgeField<T = SceType> {
     pub id: String,
-    pub sce_type: SceType,
+    pub sce_type: T,
     pub direction: Direction,
     /// ECMAScript expression (for computed/output fields).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1077,7 +1082,33 @@ pub struct ForgeField {
     pub default_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
 }
 
-impl ForgeField {
+/// A field of an event schema: typed by [`FieldType`], a scalar or an optional
+/// scalar (docs/adr/0055).
+pub type SchemaField = ForgeField<FieldType>;
+
+impl<T> ForgeField<T> {
+    /// The same field declared `sce_type`: everything else it says is kept.
+    pub fn with_type<U>(&self, sce_type: U) -> ForgeField<U> {
+        ForgeField {
+            id: self.id.clone(),
+            sce_type,
+            direction: self.direction,
+            expr: self.expr.clone(),
+            expr_spelling: self.expr_spelling.clone(),
+            expr_splices: self.expr_splices.clone(),
+            quantity: self.quantity,
+            max_size: self.max_size,
+            limit: self.limit.clone(),
+            default_covers: self.default_covers.clone(),
+            retain: self.retain.clone(),
+            initial: self.initial.clone(),
+            initial_spelling: self.initial_spelling.clone(),
+            since: self.since,
+            default: self.default.clone(),
+            default_spelling: self.default_spelling.clone(),
+        }
+    }
+
     /// `source` — this field's expression as a pass hands it on — placed
     /// against where it was written: [`Self::expr_spelling`], and
     /// [`Self::expr_splices`] when a pass assembled the text. The one place
@@ -1454,8 +1485,9 @@ pub struct EventSchemaModel {
     /// the receive side. `sce_type` may be a primitive
     /// (Uint8/Int32/Float64/Bool/String/Bytes) or
     /// [`SceType::Enum`] referring to an imported `sce:kind="enum"`
-    /// document.
-    pub fields: Vec<ForgeField>,
+    /// document, or an optional value of either ([`FieldType`],
+    /// docs/adr/0055).
+    pub fields: Vec<SchemaField>,
     /// `<datamodel sce:payload="none"/>`: the specification says the event
     /// carries no data, so the schema declares no field on purpose.
     ///
@@ -1508,6 +1540,14 @@ impl EventSchemaModel {
     /// name that struct asks this first and refuses in its own words.
     pub fn carries_payload(&self) -> bool {
         !self.fields.is_empty()
+    }
+
+    /// The first field that may be absent (docs/adr/0055), if any: what a
+    /// lowering that does not hold an optional value yet refuses the schema by.
+    pub fn first_optional_field(&self) -> Option<&SchemaField> {
+        self.fields
+            .iter()
+            .find(|f| f.sce_type.optional_elem().is_some())
     }
 
     /// The revision of the schema this document is: what `sce:revision`
@@ -4076,6 +4116,84 @@ impl OptionalElemType {
         match self {
             Self::Record { alias } => Some(alias),
             Self::Scalar(_) => None,
+        }
+    }
+}
+
+/// The type of a field of an event schema (docs/adr/0055): the value type
+/// restricted to a scalar or an optional scalar. A schema has no record or
+/// list fields, so neither is a case here for a reader to refuse.
+///
+/// A constructor, never a flag beside the scalar: every reader of a schema's
+/// field matches it, so the compiler names each one that has not said what it
+/// does with a field that may be absent.
+///
+/// Serialized untagged, as [`AlgorithmValueType`] is: a scalar field keeps the
+/// bare string it always was (`"int64"`), so the forge-AST of a schema that
+/// declares no optional field is byte-identical, and an optional one is
+/// `{"optional": "int64"}`, the spelling a variable of the same type has.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(untagged)]
+pub enum FieldType {
+    /// A scalar: a fixed-width number, `bool`, `string`, `bytes` or a value of
+    /// an enum. Every value of the field is present.
+    Scalar(SceType),
+    /// `optional<T>` over a scalar: a value that is either absent or a value
+    /// of `T`.
+    Optional {
+        #[serde(rename = "optional")]
+        elem: SceType,
+    },
+}
+
+impl FieldType {
+    /// The scalar type, or `None` for an optional one: an optional scalar is
+    /// not a scalar, since a value of it may be absent.
+    pub fn scalar(&self) -> Option<&SceType> {
+        match self {
+            Self::Scalar(t) => Some(t),
+            Self::Optional { .. } => None,
+        }
+    }
+
+    /// The element of an optional field, or `None` for a scalar one.
+    pub fn optional_elem(&self) -> Option<&SceType> {
+        match self {
+            Self::Optional { elem } => Some(elem),
+            Self::Scalar(_) => None,
+        }
+    }
+
+    /// The type a present value of the field is: the scalar itself, or the
+    /// element of an optional one. What a reader that spells a bound, a wire
+    /// default or the enum a field holds asks; a reader that holds or lowers
+    /// the field's value matches the constructor instead, since an optional
+    /// value is not a value of its element.
+    pub fn present_type(&self) -> &SceType {
+        match self {
+            Self::Scalar(t) | Self::Optional { elem: t } => t,
+        }
+    }
+
+    /// The `sce:type` spelling: `int64` or `optional<int64>`.
+    pub fn as_attr(&self) -> String {
+        match self {
+            Self::Scalar(t) => t.as_attr(),
+            Self::Optional { elem } => {
+                format!("{}{}>", AlgorithmValueType::OPTIONAL_PREFIX, elem.as_attr())
+            }
+        }
+    }
+
+    /// The same type as the value type a variable declares, so a field and a
+    /// variable are judged by one reading of what may stand in them.
+    pub fn value_type(&self) -> AlgorithmValueType {
+        match self {
+            Self::Scalar(t) => AlgorithmValueType::Scalar(t.clone()),
+            Self::Optional { elem } => AlgorithmValueType::Optional {
+                elem: OptionalElemType::Scalar(elem.clone()),
+            },
         }
     }
 }

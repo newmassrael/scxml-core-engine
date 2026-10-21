@@ -656,16 +656,21 @@ fn static_record_paths<'v>(
         {
             if let Some(schema) = records.get(alias) {
                 for field in &schema.fields {
-                    let ty = InferredType::from_sce_type(&field.sce_type);
-                    if matches!(
-                        ty,
-                        InferredType::Int { .. }
-                            | InferredType::Float { .. }
-                            | InferredType::Bool
-                            | InferredType::Str
-                            | InferredType::Bytes
-                    ) || matches!(field.sce_type, SceType::Enum(_))
-                    {
+                    let ty = InferredType::of_field(&field.sce_type);
+                    // An optional field is read as the optional value it is
+                    // (docs/adr/0055), whatever its element.
+                    let readable = match &field.sce_type {
+                        FieldType::Scalar(SceType::Enum(_)) | FieldType::Optional { .. } => true,
+                        FieldType::Scalar(_) => matches!(
+                            ty,
+                            InferredType::Int { .. }
+                                | InferredType::Float { .. }
+                                | InferredType::Bool
+                                | InferredType::Str
+                                | InferredType::Bytes
+                        ),
+                    };
+                    if readable {
                         paths.push((format!("{}{INDEXED_ELEMENT}{}", var.id, field.id), ty));
                     }
                 }
@@ -683,7 +688,7 @@ fn static_record_paths<'v>(
         for field in &schema.fields {
             paths.push((
                 format!("{}.{}", var.id, field.id),
-                InferredType::from_sce_type(&field.sce_type),
+                InferredType::of_field(&field.sce_type),
             ));
         }
     }
@@ -715,11 +720,8 @@ fn static_record_string_bounds<'v>(
         {
             if let Some(schema) = records.get(alias) {
                 for field in &schema.fields {
-                    if let (SceType::String, Some(bound)) = (&field.sce_type, field.max_size) {
-                        bounds.push((
-                            format!("{}{INDEXED_ELEMENT}{}", var.id, field.id),
-                            bound as usize,
-                        ));
+                    if let Some(bound) = text_field_bound(field) {
+                        bounds.push((format!("{}{INDEXED_ELEMENT}{}", var.id, field.id), bound));
                     }
                 }
             }
@@ -734,12 +736,23 @@ fn static_record_string_bounds<'v>(
             continue;
         };
         for field in &schema.fields {
-            if let (SceType::String, Some(bound)) = (&field.sce_type, field.max_size) {
-                bounds.push((format!("{}.{}", var.id, field.id), bound as usize));
+            if let Some(bound) = text_field_bound(field) {
+                bounds.push((format!("{}.{}", var.id, field.id), bound));
             }
         }
     }
     bounds
+}
+
+/// The bound, in UTF-8 bytes, of a string field of a schema: its
+/// `sce:max-size`. An optional text is bounded as the value it holds when
+/// present is (docs/adr/0055). `None` for a field that is no text, or a text
+/// the schema bounds by nothing.
+fn text_field_bound(field: &SchemaField) -> Option<usize> {
+    match (field.sce_type.present_type(), field.max_size) {
+        (SceType::String, Some(bound)) => Some(bound as usize),
+        _ => None,
+    }
 }
 
 /// What a `<foreach>` over a list variable binds in its body (§scxml-4.6):
@@ -779,7 +792,7 @@ impl LoopVariables {
                     .map(|field| {
                         (
                             format!("{item}.{}", field.id),
-                            InferredType::from_sce_type(&field.sce_type),
+                            InferredType::of_field(&field.sce_type),
                         )
                     })
                     .collect(),
@@ -791,11 +804,8 @@ impl LoopVariables {
                 .get(alias)
                 .into_iter()
                 .flat_map(|schema| &schema.fields)
-                .filter_map(|field| match (&field.sce_type, field.max_size) {
-                    (SceType::String, Some(bound)) => {
-                        Some((format!("{item}.{}", field.id), bound as usize))
-                    }
-                    _ => None,
+                .filter_map(|field| {
+                    text_field_bound(field).map(|bound| (format!("{item}.{}", field.id), bound))
                 })
                 .collect(),
         };

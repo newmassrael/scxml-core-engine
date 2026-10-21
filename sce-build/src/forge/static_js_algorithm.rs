@@ -60,10 +60,10 @@ use crate::forge::generator::{
     TextSource,
 };
 use crate::forge::model::{
-    AlgorithmConstType, AlgorithmModel, AlgorithmStmt, AlgorithmValueType, ForgeImport,
+    AlgorithmConstType, AlgorithmModel, AlgorithmStmt, AlgorithmValueType, FieldType, ForgeImport,
     ListElemType, SceType,
 };
-use crate::forge::static_js::RUNTIME_GLOBAL;
+use crate::forge::static_js::{LOWERED_DATAMODEL, RUNTIME_GLOBAL};
 use crate::forge::types::{InferredType, TypeCtx};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -572,10 +572,10 @@ impl Body<'_> {
                             format!("the record local `{name}`, which gives no value for `{id}`"),
                         ));
                     };
-                    let value = if matches!(field.ty, SceType::String) {
+                    let value = if matches!(field.ty, FieldType::Scalar(SceType::String)) {
                         self.text_write(&given.expr, field)?
                     } else {
-                        self.slot(&given.expr, InferredType::from_sce_type(&field.ty))?
+                        self.slot(&given.expr, InferredType::of_field(&field.ty))?
                     };
                     members.push(format!("{}: {value}", quoted(id)));
                 }
@@ -615,7 +615,7 @@ impl Body<'_> {
                         .get(root)
                         .and_then(|alias| self.imports.record(alias))
                         .and_then(|record| record.field(field))
-                        .filter(|f| matches!(f.ty, SceType::String));
+                        .filter(|f| matches!(f.ty, FieldType::Scalar(SceType::String)));
                     let value = match text_field {
                         Some(text_field) => self.text_write(expr, text_field)?,
                         None => {
@@ -843,6 +843,7 @@ pub(crate) fn lower(m: &AlgorithmModel, imports: &Imports) -> Result<String, Gen
     let options = crate::ForgeCompileOptions::default();
     let types = AlgorithmTypes::collect(m, &imports.contexts, &options)
         .map_err(|e| GenerateError::unsupported(format!("the algorithm `{}`: {e}", m.name)))?;
+    types.refuse_optional(LOWERED_DATAMODEL)?;
     let mut ctx = types.type_ctx(m, &imports.contexts);
     // An integer here is exact and may be a BigInt; one leaves the function as
     // the value it is, and a statechart that takes it from a call is the one

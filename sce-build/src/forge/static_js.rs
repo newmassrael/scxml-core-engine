@@ -109,7 +109,7 @@ use crate::forge::error::{ForgeError, GenerateError, Located};
 use crate::forge::expr::ExprTarget;
 use crate::forge::import_source::ImportSource;
 use crate::forge::model::{
-    EnumModel, ForgeDocument, ForgeField, ForgeImport, ForgeKind, ParsedForge, SceType,
+    EnumModel, ForgeDocument, ForgeImport, ForgeKind, ParsedForge, SceType, SchemaField,
 };
 use crate::forge::static_js_algorithm;
 use crate::forge::static_lowering::{lower, Callee, LoweredElement, LoweredSite, StaticTarget};
@@ -144,8 +144,9 @@ pub(crate) const PAYLOAD_ACCESSOR: &str = "_event.data";
 /// a call that fails at run time.
 pub(crate) const INTEGER_WIDTHS: [u8; 4] = [8, 16, 32, 64];
 
-/// The data model the lowered document declares.
-const LOWERED_DATAMODEL: &str = "ecmascript";
+/// The data model the lowered document declares, and the name its lowering
+/// refuses what it does not lower yet by.
+pub(crate) const LOWERED_DATAMODEL: &str = "ecmascript";
 
 /// The library's source as it is kept in the tree, formatted to be read.
 const RUNTIME_SOURCE: &str = include_str!("static_js/sce_static.js");
@@ -314,11 +315,13 @@ impl StaticTarget for JsTarget {
     fn payload_revised_read(
         &self,
         accessor: &str,
-        field: &ForgeField,
+        field: &SchemaField,
         variants: &[&str],
         default: &str,
     ) -> Option<String> {
-        let kind = match &field.sce_type {
+        // `lower` refused an optional field before any read is asked for
+        // (docs/adr/0055), so the field here holds a present value.
+        let kind = match field.sce_type.present_type() {
             SceType::Enum(_) => variant_list(variants),
             ty => format!("'{}'", InferredType::from_sce_type(ty).declared_spelling()?),
         };

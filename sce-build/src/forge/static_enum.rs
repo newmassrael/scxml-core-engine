@@ -369,9 +369,7 @@ impl AlgorithmWalk<'_, '_> {
                     .map(|(_, _, record)| *record);
                 for field in fields {
                     let slot = match record.and_then(|r| r.field(&field.name)) {
-                        Some(declared) => {
-                            Slot::of(&AlgorithmValueType::Scalar(declared.ty.clone()))
-                        }
+                        Some(declared) => Slot::of(&declared.ty.value_type()),
                         // A field the schema does not declare is refused where the
                         // record is resolved; its value is judged as a number's.
                         None => Slot::Scalar,

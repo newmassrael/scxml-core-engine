@@ -2,8 +2,9 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
 //! A value that may be absent is declared by its type, `optional<T>`
-//! (docs/adr/0055, step 1): a `sce-static` statechart's variable holds one over
-//! a scalar, a value of an enum it imports or a record of an event schema it
+//! (docs/adr/0055, steps 1 and 2): a `sce-static` statechart's variable holds
+//! one over a scalar, a value of an enum it imports or a record of an event
+//! schema it imports, and an event schema's field over a scalar or an enum it
 //! imports; the type is carried in the model and spelled back as written; every
 //! other position refuses it by name; and every backend and the Interpreter
 //! refuse a document that holds one, by name, until the step that lowers it on
@@ -359,19 +360,12 @@ fn an_optional_text_declares_its_bound() {
     );
 }
 
-/// An event schema's field, an algorithm's slot and a codec's entry take no
-/// optional value yet (docs/adr/0055, steps 2, 8 and 12), and say so by name
-/// rather than offer the scalars as if the type were misspelled.
+/// An algorithm's slot and a codec's entry take no optional value yet
+/// (docs/adr/0055, steps 8 and 12), and say so by name rather than offer the
+/// scalars as if the type were misspelled. (An event schema's field takes one
+/// from step 2, below.)
 #[test]
 fn every_other_position_refuses_an_optional_value_by_name() {
-    let schema = r#"<?xml version="1.0" encoding="UTF-8"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       version="1.0" sce:kind="event-schema" name="schema_due" sce:event-name="item.due">
-  <datamodel>
-    <data id="due" sce:type="optional&lt;int64&gt;" sce:direction="in"/>
-  </datamodel>
-</scxml>
-"#;
     let algorithm = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        sce:kind="algorithm" name="due_or" version="1.0">
@@ -384,15 +378,17 @@ fn every_other_position_refuses_an_optional_value_by_name() {
   </sce:body>
 </scxml>
 "#;
-    for (name, text) in [("schema_due.scxml", schema), ("due_or.scxml", algorithm)] {
-        let (ok, out) = run(&["check", "-l", "rust"], &[(name, text)], name);
-        assert!(!ok, "{name}: an optional value is refused there:\n{out}");
-        assert!(
-            out.contains("validation/attribute-rule-violated")
-                && out.contains("this position does not take one"),
-            "{name}: refused by name:\n{out}"
-        );
-    }
+    let (ok, out) = run(
+        &["check", "-l", "rust"],
+        &[("due_or.scxml", algorithm)],
+        "due_or.scxml",
+    );
+    assert!(!ok, "an optional value is refused there:\n{out}");
+    assert!(
+        out.contains("validation/attribute-rule-violated")
+            && out.contains("this position does not take one"),
+        "refused by name:\n{out}"
+    );
 }
 
 // ── `null` stands only where an optional value is declared ───────────────
@@ -431,4 +427,274 @@ fn a_number_is_still_assigned_to_a_variable_of_a_number() {
         "probe.scxml",
     );
     assert!(ok, "a number is assigned to an int64:\n{out}");
+}
+
+// ── An event schema's field (docs/adr/0055, step 2) ──────────────────────
+
+/// The file name a probe imports the schema [`SCHEMA_DUE`] from.
+const SCHEMA_DUE_FILE: &str = "schema_item_due.scxml";
+
+/// An event schema whose fields may be absent — a day, a bounded text and a
+/// value of an enum — beside a field every delivery carries.
+const SCHEMA_DUE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="schema_item_due" sce:event-name="item.due">
+  <sce:import src="enum_item_status.scxml" kind="enum" as="Status"/>
+  <datamodel>
+    <data id="id" sce:type="uint32" sce:direction="in"/>
+    <data id="due" sce:type="optional&lt;int64&gt;" sce:direction="in"/>
+    <data id="title" sce:type="optional&lt;string&gt;" sce:max-size="16" sce:direction="in"/>
+    <data id="status" sce:type="optional&lt;enum:Status&gt;" sce:direction="in"/>
+  </datamodel>
+</scxml>
+"#;
+
+/// An event schema of one field, typed `written` and carrying `extra`.
+fn schema_of(written: &str, extra: &str) -> String {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="schema_probe" sce:event-name="item.probe">
+  <sce:import src="enum_item_status.scxml" kind="enum" as="Status"/>
+  <datamodel>
+    <data id="probe" sce:type="{written}" sce:direction="in" {extra}/>
+  </datamodel>
+</scxml>
+"#
+    )
+}
+
+/// A `sce-static` statechart that imports [`SCHEMA_DUE`] as `Due`, declares
+/// `data` and does `body` in its one state.
+fn statechart_due(data: &str, body: &str) -> String {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="optional_probe">
+  <sce:import kind="enum" src="enum_item_status.scxml" as="Status"/>
+  <sce:import kind="event-schema" src="{SCHEMA_DUE_FILE}" as="Due"/>
+  <datamodel>
+    {data}
+  </datamodel>
+  <state id="idle">
+    {body}
+  </state>
+</scxml>
+"#
+    )
+}
+
+#[test]
+fn a_schema_field_holds_an_optional_scalar_and_the_forge_ast_spells_it() {
+    use sce_build::forge::model::{FieldType, ForgeDocument};
+    let parsed = sce_build::forge::parser::parse_forge_with_imports(
+        SCHEMA_DUE,
+        sce_build::DocumentLabel::symmetric("schema_item_due"),
+    )
+    .expect("an optional field is read on an event schema")
+    .expect("an event schema is a forge document");
+    let ForgeDocument::EventSchema(schema) = &parsed.document else {
+        panic!("expected an event schema, got {:?}", parsed.document.kind());
+    };
+    let declared = |id: &str| {
+        schema
+            .fields
+            .iter()
+            .find(|f| f.id == id)
+            .map(|f| f.sce_type.clone())
+            .unwrap_or_else(|| panic!("the field `{id}` is read"))
+    };
+    assert_eq!(declared("id"), FieldType::Scalar(SceType::Uint32));
+    assert_eq!(
+        declared("due"),
+        FieldType::Optional {
+            elem: SceType::Int64
+        }
+    );
+    assert_eq!(
+        declared("title"),
+        FieldType::Optional {
+            elem: SceType::String
+        }
+    );
+    assert!(
+        matches!(
+            declared("status"),
+            FieldType::Optional {
+                elem: SceType::Enum(_)
+            }
+        ),
+        "an optional enum field: {:?}",
+        declared("status")
+    );
+    // The forge-AST spells an optional field as a variable of the same type
+    // is spelled, and a field every delivery carries as it always was.
+    let ast = serde_json::to_value(&parsed.document).expect("the document serialises");
+    let fields = ast["fields"].as_array().expect("the schema's fields");
+    let spelled = |id: &str| {
+        fields
+            .iter()
+            .find(|f| f["id"] == id)
+            .map(|f| f["sce_type"].clone())
+            .unwrap_or_else(|| panic!("the field `{id}` is in the AST"))
+    };
+    assert_eq!(spelled("id"), serde_json::json!("uint32"));
+    assert_eq!(spelled("due"), serde_json::json!({ "optional": "int64" }));
+    assert_eq!(
+        spelled("title"),
+        serde_json::json!({ "optional": "string" })
+    );
+}
+
+#[test]
+fn every_backend_refuses_a_schema_with_an_optional_field_by_name() {
+    for args in every_backend() {
+        let (ok, out) = run(&args, &[(SCHEMA_DUE_FILE, SCHEMA_DUE)], SCHEMA_DUE_FILE);
+        assert!(!ok, "{args:?} must refuse the schema's unit:\n{out}");
+        assert!(
+            out.contains(NOT_LOWERED) && out.contains("optional<int64>"),
+            "{args:?} refuses it by name:\n{out}"
+        );
+    }
+}
+
+/// A machine that reads a payload of the schema, or holds a record of it,
+/// would hold an optional value in the payload's lift and the record: each
+/// backend and the Interpreter refuse it by name.
+#[test]
+fn every_backend_refuses_a_statechart_that_imports_a_schema_with_an_optional_field() {
+    let text = statechart_due(
+        r#"<data id="count" sce:type="int64" expr="0"/>"#,
+        r#"<transition event="item.due"><assign location="count" expr="1"/></transition>"#,
+    );
+    let documents = [
+        ("probe.scxml", text.as_str()),
+        (SCHEMA_DUE_FILE, SCHEMA_DUE),
+    ];
+    for args in every_backend() {
+        let (ok, out) = run(&args, &documents, "probe.scxml");
+        assert!(!ok, "{args:?} must refuse the machine:\n{out}");
+        assert!(
+            out.contains(NOT_LOWERED)
+                && out.contains("schema_item_due")
+                && out.contains("optional<int64>"),
+            "{args:?} refuses it by the schema's field:\n{out}"
+        );
+    }
+    let (ok, out) = run(&["lower"], &documents, "probe.scxml");
+    assert!(
+        !ok,
+        "the ecmascript lowering must refuse the machine:\n{out}"
+    );
+    assert!(
+        out.contains(NOT_LOWERED) && out.contains("schema_item_due"),
+        "refused by the schema's field:\n{out}"
+    );
+}
+
+/// An algorithm whose record is of the schema is judged, and refused where
+/// each backend renders it, by name.
+#[test]
+fn every_backend_refuses_an_algorithm_whose_record_holds_an_optional_field() {
+    let algorithm = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="due_id" version="1.0">
+  <sce:import kind="event-schema" src="{SCHEMA_DUE_FILE}" as="Due"/>
+  <sce:signature>
+    <sce:param name="item" type="record:Due"/>
+    <sce:return type="uint32"/>
+  </sce:signature>
+  <sce:body>
+    <sce:return expr="item.id"/>
+  </sce:body>
+</scxml>
+"#
+    );
+    let documents = [
+        ("due_id.scxml", algorithm.as_str()),
+        (SCHEMA_DUE_FILE, SCHEMA_DUE),
+    ];
+    for args in every_backend() {
+        let (ok, out) = run(&args, &documents, "due_id.scxml");
+        assert!(!ok, "{args:?} must refuse the algorithm:\n{out}");
+        assert!(
+            out.contains(NOT_LOWERED) && out.contains("record:Due"),
+            "{args:?} refuses it by the record's field:\n{out}"
+        );
+    }
+}
+
+/// A host-run record has no carrier for an absent value until the step that
+/// hands it one, so a typed `<invoke>` naming the schema is refused where the
+/// typed interface is checked.
+#[test]
+fn a_typed_host_invoke_of_a_schema_with_an_optional_field_is_refused_by_name() {
+    let text = statechart_due(
+        "",
+        r#"<invoke type="sce-host-due" id="ask" sce:result="Due"/>"#,
+    );
+    let (ok, out) = run(
+        &["check", "-l", "rust"],
+        &[("probe.scxml", &text), (SCHEMA_DUE_FILE, SCHEMA_DUE)],
+        "probe.scxml",
+    );
+    assert!(!ok, "the typed invoke must be refused:\n{out}");
+    assert!(
+        out.contains("does not carry an optional value yet") && out.contains("optional<int64>"),
+        "refused by the schema's field:\n{out}"
+    );
+}
+
+/// `sce-codegen check -l rust` of the event schema [`schema_of`] `written`,
+/// `extra`: `(exit_ok, stderr + stdout)`.
+fn check_schema(written: &str, extra: &str) -> (bool, String) {
+    run(
+        &["check", "-l", "rust"],
+        &[("schema_probe.scxml", &schema_of(written, extra))],
+        "schema_probe.scxml",
+    )
+}
+
+#[test]
+fn an_optional_field_declares_no_quantity() {
+    let (ok, out) = check_schema(
+        "optional&lt;float64&gt;",
+        r#"sce:quantity="celsius" sce:scale="0.5" sce:offset="0""#,
+    );
+    assert!(!ok, "a quantity on an optional field is refused:\n{out}");
+    assert!(
+        out.contains("validation/attribute-rule-violated") && out.contains("sce:quantity"),
+        "refused on the attribute:\n{out}"
+    );
+    // The same quantity on a field every delivery carries is read.
+    let (ok, out) = check_schema(
+        "float64",
+        r#"sce:quantity="celsius" sce:scale="0.5" sce:offset="0""#,
+    );
+    assert!(
+        !out.contains("an optional field"),
+        "a present field's quantity is no optional's refusal (ok={ok}):\n{out}"
+    );
+}
+
+/// What may stand inside a schema field's `optional<…>` is a scalar or an
+/// imported enum: a record, a nested optional and an alias nothing imports
+/// are each refused naming that set.
+#[test]
+fn a_schema_field_refuses_what_may_not_stand_inside_naming_the_set() {
+    for written in [
+        "optional&lt;record:Move&gt;",
+        "optional&lt;optional&lt;int64&gt;&gt;",
+        "optional&lt;enum:Nope&gt;",
+    ] {
+        let (ok, out) = check_schema(written, "");
+        assert!(!ok, "`{written}` is refused on a schema field:\n{out}");
+        assert!(
+            out.contains("validation/invalid-attribute")
+                && out.contains("optional<int64>")
+                && out.contains("optional<enum:Status>"),
+            "`{written}` is refused naming the scalars and imported enums:\n{out}"
+        );
+    }
 }

@@ -31,9 +31,38 @@
 use std::collections::HashSet;
 use std::path::Path;
 
+use crate::attribute_spelling::AttributeSpelling;
 use crate::forge::error::{ForgeError, Located, ValidationError};
 use crate::forge::model::{ForgeDocument, ForgeField, ParsedForge, SceType};
 use crate::forge::{import_source, previous_value};
+
+/// A field as this check reads it: its id, what it says about retention, and
+/// the type its initial value is judged against.
+struct RetainedField<'a> {
+    id: &'a str,
+    initial: Option<&'a str>,
+    initial_spelling: Option<&'a AttributeSpelling>,
+    retained: bool,
+    ty: &'a SceType,
+}
+
+impl<'a> RetainedField<'a> {
+    /// `field`, whose initial value is a value of `ty`.
+    fn of<T>(field: &'a ForgeField<T>, ty: &'a SceType) -> Self {
+        Self {
+            id: &field.id,
+            initial: field.initial.as_deref(),
+            initial_spelling: field.initial_spelling.as_ref(),
+            retained: field.retain.is_some(),
+            ty,
+        }
+    }
+
+    /// A field of a kind whose fields are scalar by contract.
+    fn scalar(field: &'a ForgeField) -> Self {
+        Self::of(field, &field.sce_type)
+    }
+}
 
 /// Every field of a document, whatever kind it is.
 ///
@@ -43,13 +72,29 @@ use crate::forge::{import_source, previous_value};
 /// is a deliberate act. The alternative — matching every variant — would
 /// make the roster look like it had decided eighteen things when it has
 /// decided one.
-fn fields_of(doc: &ForgeDocument) -> Vec<&ForgeField> {
+fn fields_of(doc: &ForgeDocument) -> Vec<RetainedField<'_>> {
     match doc {
-        ForgeDocument::Transform(m) => m.inputs.iter().chain(m.outputs.iter()).collect(),
+        ForgeDocument::Transform(m) => m
+            .inputs
+            .iter()
+            .chain(m.outputs.iter())
+            .map(RetainedField::scalar)
+            .collect(),
         // A procedure has no output FIELDS — it returns through its
         // internals, which is where a retained one would sit anyway.
-        ForgeDocument::Procedure(m) => m.inputs.iter().chain(m.internals.iter()).collect(),
-        ForgeDocument::EventSchema(m) => m.fields.iter().collect(),
+        ForgeDocument::Procedure(m) => m
+            .inputs
+            .iter()
+            .chain(m.internals.iter())
+            .map(RetainedField::scalar)
+            .collect(),
+        // An optional field's initial value is a value it holds when present
+        // (docs/adr/0055).
+        ForgeDocument::EventSchema(m) => m
+            .fields
+            .iter()
+            .map(|f| RetainedField::of(f, f.sce_type.present_type()))
+            .collect(),
         _ => Vec::new(),
     }
 }
@@ -70,7 +115,7 @@ pub fn check(
         _ => Some(HashSet::new()),
     };
     for field in fields_of(&parsed.document) {
-        let Some(value) = field.initial.as_deref() else {
+        let Some(value) = field.initial else {
             continue;
         };
         let element = format!("field '{}'", field.id);
@@ -80,16 +125,15 @@ pub fn check(
         // the least findable token a document holds.
         let (line, col) = field
             .initial_spelling
-            .as_ref()
             .map_or((None, None), |s| (Some(s.row()), Some(s.col())));
         // ⚠ The orphan rule moved here from the parser, unchanged for every
         // field that is not read through `previous()`. An ordinary field is
         // computed afresh every cycle, so an initial value that no store and
         // no `previous()` asks for is read by nothing.
-        let unread = field.retain.is_none()
+        let unread = !field.retained
             && read_previously
                 .as_ref()
-                .is_some_and(|read| !read.contains(&field.id));
+                .is_some_and(|read| !read.contains(field.id));
         if unread {
             return Err(Located::new(
                 ValidationError::AttributeRuleViolated {
@@ -126,7 +170,7 @@ pub fn check(
                 col,
             ))
         };
-        match &field.sce_type {
+        match field.ty {
             SceType::Enum(eref) => {
                 // An unreadable import is silent here; see
                 // `import_source::parse_quietly`.

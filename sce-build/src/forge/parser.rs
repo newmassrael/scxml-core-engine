@@ -10917,11 +10917,11 @@ fn parse_event_schema(
         label.diagnostic_label,
     )?;
 
-    let mut fields: Vec<ForgeField> = Vec::new();
+    let mut fields: Vec<SchemaField> = Vec::new();
     let mut seen_ids: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
 
     for data in data_children(&datamodel) {
-        let mut field = parse_forge_field(&data, label.diagnostic_label)?;
+        let mut field = parse_schema_field(&data, label.diagnostic_label)?;
         if field.direction != Direction::In {
             // Reproduce the offending direction value verbatim so the
             // diagnostic mirrors the authored token. `Direction::In`
@@ -11099,7 +11099,7 @@ fn read_revision(
 /// ([`crate::forge::schema_revision::check`]).
 fn read_field_revision(
     data: &roxmltree::Node,
-    field: &mut ForgeField,
+    field: &mut SchemaField,
     revision: Option<u32>,
     doc_name: &str,
 ) -> Result<(), Located<ForgeError>> {
@@ -11166,7 +11166,9 @@ fn read_field_revision(
             ));
         }
         (Some(_), Some(value)) => {
-            if let Err(unfit) = wire_of(&field.sce_type, field.max_size, value) {
+            // A default is a value of what the field holds when present: absence
+            // is never spelled by one (docs/adr/0055).
+            if let Err(unfit) = wire_of(field.sce_type.present_type(), field.max_size, value) {
                 let error = match unfit {
                     Unfit::Rule(rule) => ValidationError::AttributeRuleViolated {
                         element,
@@ -11538,9 +11540,10 @@ pub(crate) fn read_type_attr(
     text: &str,
 ) -> Result<SceType, Located<ForgeError>> {
     // An optional value (docs/adr/0055) is read where a `sce-static`
-    // statechart's variable is ([`read_static_value_type`]); every position
-    // that reads its type here takes none, and says so by name rather than
-    // offering the scalars as if the type were misspelled.
+    // statechart's variable is ([`read_static_value_type`]) and where an event
+    // schema's field is ([`read_schema_field_type`]); every position that reads
+    // its type here takes none, and says so by name rather than offering the
+    // scalars as if the type were misspelled.
     if text.trim().starts_with(AlgorithmValueType::OPTIONAL_PREFIX) {
         return Err(located(
             node,
@@ -11550,7 +11553,8 @@ pub(crate) fn read_type_attr(
                 attr: attr.into(),
                 value: value_as_written(node, attr, text),
                 rule: "an optional value (docs/adr/0055) is held by a `sce-static` \
-                       statechart's variable, and this position does not take one"
+                       statechart's variable and an event schema's field, and this \
+                       position does not take one"
                     .into(),
             },
         ));
@@ -11696,38 +11700,131 @@ pub(crate) fn read_static_value_type(
     if !text.trim().starts_with(AlgorithmValueType::OPTIONAL_PREFIX) {
         return read_algorithm_value_type(node, doc_name, element, attr, text);
     }
+    read_optional_elem(node, doc_name, element, attr, text, OptionalElems::OrRecord)
+        .map(|elem| AlgorithmValueType::Optional { elem })
+}
+
+/// Read an event schema's field's `sce:type` ([`FieldType`]): what
+/// [`read_type_attr`] reads in [`TypeGrammar::ScalarOrEnumRef`], and
+/// `optional<T>` (docs/adr/0055) over a scalar or a value of an imported enum.
+/// A schema has no record fields, so no record stands inside either; anything
+/// else written there is refused as [`read_static_value_type`] refuses it, with
+/// the closed set as its candidates.
+pub(crate) fn read_schema_field_type(
+    node: &roxmltree::Node,
+    doc_name: &str,
+    element: String,
+    attr: &str,
+    text: &str,
+) -> Result<FieldType, Located<ForgeError>> {
+    if !text.trim().starts_with(AlgorithmValueType::OPTIONAL_PREFIX) {
+        return read_type_attr(
+            node,
+            doc_name,
+            TypeGrammar::ScalarOrEnumRef,
+            element,
+            attr,
+            text,
+        )
+        .map(FieldType::Scalar);
+    }
+    match read_optional_elem(
+        node,
+        doc_name,
+        element.clone(),
+        attr,
+        text,
+        OptionalElems::Scalar,
+    )? {
+        OptionalElemType::Scalar(elem) => Ok(FieldType::Optional { elem }),
+        // `OptionalElems::Scalar` admits no record, so the reader has already
+        // refused one; were it to hand one back, the refusal is the same.
+        OptionalElemType::Record { .. } => Err(optional_elem_refusal(
+            node,
+            doc_name,
+            element,
+            attr,
+            text,
+            OptionalElems::Scalar,
+        )),
+    }
+}
+
+/// What may stand inside an `optional<…>` a position declares
+/// ([`read_optional_elem`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OptionalElems {
+    /// A scalar or a value of an imported enum: an event schema's field.
+    Scalar,
+    /// Those, or a record of an imported event schema: a statechart's
+    /// variable.
+    OrRecord,
+}
+
+/// The element of the `optional<…>` `text` spells, judged against the closed
+/// set the document decides (its enum imports, and its event-schema imports
+/// where `admitted` takes a record). The one reading of what stands inside an
+/// optional type, so a variable and a field cannot disagree about it.
+fn read_optional_elem(
+    node: &roxmltree::Node,
+    doc_name: &str,
+    element: String,
+    attr: &str,
+    text: &str,
+    admitted: OptionalElems,
+) -> Result<OptionalElemType, Located<ForgeError>> {
     let enums = enum_import_aliases(node);
-    let records = import_aliases_of(node, ForgeKind::EventSchema);
-    let elem = AlgorithmValueType::optional_inner(text)
+    let records = match admitted {
+        OptionalElems::Scalar => Vec::new(),
+        OptionalElems::OrRecord => import_aliases_of(node, ForgeKind::EventSchema),
+    };
+    AlgorithmValueType::optional_inner(text)
         .and_then(OptionalElemType::from_attr)
         .filter(|elem| match elem {
             OptionalElemType::Scalar(SceType::Enum(reference)) => enums.contains(&reference.alias),
             OptionalElemType::Scalar(_) => true,
             OptionalElemType::Record { alias } => records.contains(alias),
-        });
-    elem.map(|elem| AlgorithmValueType::Optional { elem })
-        .ok_or_else(|| {
-            let mut inside = SceType::scalar_attr_names();
-            inside.extend(enums.iter().map(|alias| format!("enum:{alias}")));
-            inside.extend(
-                records
-                    .iter()
-                    .map(|alias| format!("{}{alias}", AlgorithmValueType::RECORD_PREFIX)),
-            );
-            located(
-                node,
-                doc_name,
-                ValidationError::InvalidAttribute {
-                    element,
-                    attr: attr.into(),
-                    value: value_as_written(node, attr, text),
-                    allowed: inside
-                        .into_iter()
-                        .map(|t| format!("{}{t}>", AlgorithmValueType::OPTIONAL_PREFIX))
-                        .collect(),
-                },
-            )
         })
+        .ok_or_else(|| optional_elem_refusal(node, doc_name, element, attr, text, admitted))
+}
+
+/// The refusal of an `optional<…>` whose element `admitted` does not take, with
+/// every type the document could have written there as its candidates, each
+/// spelled as the whole type.
+fn optional_elem_refusal(
+    node: &roxmltree::Node,
+    doc_name: &str,
+    element: String,
+    attr: &str,
+    text: &str,
+    admitted: OptionalElems,
+) -> Located<ForgeError> {
+    let mut inside = SceType::scalar_attr_names();
+    inside.extend(
+        enum_import_aliases(node)
+            .iter()
+            .map(|alias| format!("enum:{alias}")),
+    );
+    if admitted == OptionalElems::OrRecord {
+        inside.extend(
+            import_aliases_of(node, ForgeKind::EventSchema)
+                .iter()
+                .map(|alias| format!("{}{alias}", AlgorithmValueType::RECORD_PREFIX)),
+        );
+    }
+    located(
+        node,
+        doc_name,
+        ValidationError::InvalidAttribute {
+            element,
+            attr: attr.into(),
+            value: value_as_written(node, attr, text),
+            allowed: inside
+                .into_iter()
+                .map(|t| format!("{}{t}>", AlgorithmValueType::OPTIONAL_PREFIX))
+                .collect(),
+        },
+    )
 }
 
 /// The alias of a `record:<alias>` type — a record, or a list's record
@@ -12130,6 +12227,62 @@ fn parse_forge_field(
     data: &roxmltree::Node,
     doc_name: &str,
 ) -> Result<ForgeField, Located<ForgeError>> {
+    let (id, type_str) = field_id_and_type(data, doc_name)?;
+    let sce_type = read_type_attr(
+        data,
+        doc_name,
+        TypeGrammar::ScalarOrEnumRef,
+        format!("field '{id}'"),
+        "sce:type",
+        &type_str,
+    )?;
+    let present = sce_type.clone();
+    parse_field_body(data, doc_name, id, sce_type, &present)
+}
+
+/// Parse a field of an event schema from a `<data>` element: what
+/// [`parse_forge_field`] reads, typed by [`read_schema_field_type`], so the
+/// field may be optional (docs/adr/0055).
+///
+/// An optional field declares no `sce:quantity`: a quantity scales a number
+/// every value of the field holds, and a value of an optional field may be
+/// absent, so a field that would be both is refused on the attribute.
+fn parse_schema_field(
+    data: &roxmltree::Node,
+    doc_name: &str,
+) -> Result<SchemaField, Located<ForgeError>> {
+    let (id, type_str) = field_id_and_type(data, doc_name)?;
+    let sce_type = read_schema_field_type(
+        data,
+        doc_name,
+        format!("field '{id}'"),
+        "sce:type",
+        &type_str,
+    )?;
+    if let (Some(_), Some(quantity)) = (sce_type.optional_elem(), sce_attr(data, "quantity")) {
+        return Err(located(
+            data,
+            doc_name,
+            ValidationError::AttributeRuleViolated {
+                element: format!("field '{id}'"),
+                attr: "sce:quantity".into(),
+                value: quantity,
+                rule: "a field whose value is a number every value holds — an optional field \
+                       (docs/adr/0055) may hold no value, and a quantity scales one"
+                    .into(),
+            },
+        ));
+    }
+    let present = sce_type.present_type().clone();
+    parse_field_body(data, doc_name, id, sce_type, &present)
+}
+
+/// A field's `id` and its `sce:type` as written, each refused by name when
+/// the `<data>` leaves it out.
+fn field_id_and_type(
+    data: &roxmltree::Node,
+    doc_name: &str,
+) -> Result<(String, String), Located<ForgeError>> {
     let id = data
         .attribute("id")
         .ok_or_else(|| {
@@ -12164,15 +12317,20 @@ fn parse_forge_field(
             },
         )
     })?;
-    let sce_type = read_type_attr(
-        data,
-        doc_name,
-        TypeGrammar::ScalarOrEnumRef,
-        format!("field '{id}'"),
-        "sce:type",
-        &type_str,
-    )?;
+    Ok((id, type_str))
+}
 
+/// Everything a field declares besides its id and its type, read the same for
+/// every kind. `present` is the type a present value of the field is — the
+/// declared type itself for every kind but an event schema's optional field —
+/// which the quantity and the retained initial value are judged against.
+fn parse_field_body<T>(
+    data: &roxmltree::Node,
+    doc_name: &str,
+    id: String,
+    sce_type: T,
+    present: &SceType,
+) -> Result<ForgeField<T>, Located<ForgeError>> {
     let dir_str = sce_attr(data, "direction").ok_or_else(|| {
         located(
             data,
@@ -12198,7 +12356,7 @@ fn parse_forge_field(
 
     let expr = data.attribute("expr").map(|s| s.to_string());
     let expr_spelling = AttributeSpelling::of(data, None, "expr");
-    let quantity = parse_quantity_attrs(data, doc_name, &format!("field '{id}'"), &sce_type)?;
+    let quantity = parse_quantity_attrs(data, doc_name, &format!("field '{id}'"), present)?;
     // Bounded-bytes contract: optional cap
     // on bytes-typed slots. Parsed for every field; the validator
     // pass decides whether to flag it on a non-bytes field.
@@ -12233,7 +12391,7 @@ fn parse_forge_field(
         .unwrap_or_default();
 
     let (retain, initial) =
-        parse_retention_attrs(data, doc_name, &format!("field '{id}'"), &sce_type)?;
+        parse_retention_attrs(data, doc_name, &format!("field '{id}'"), present)?;
     let initial_spelling = AttributeSpelling::of(data, Some(SCE_NAMESPACE), "initial");
 
     Ok(ForgeField {

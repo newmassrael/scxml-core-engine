@@ -2195,6 +2195,31 @@
       ],
       "type": "object"
     },
+    "FieldType": {
+      "anyOf": [
+        {
+          "allOf": [
+            {
+              "$ref": "#/definitions/SceType"
+            }
+          ],
+          "description": "A scalar: a fixed-width number, `bool`, `string`, `bytes` or a value of an enum. Every value of the field is present."
+        },
+        {
+          "description": "`optional<T>` over a scalar: a value that is either absent or a value of `T`.",
+          "properties": {
+            "optional": {
+              "$ref": "#/definitions/SceType"
+            }
+          },
+          "required": [
+            "optional"
+          ],
+          "type": "object"
+        }
+      ],
+      "description": "The type of a field of an event schema (docs/adr/0055): the value type restricted to a scalar or an optional scalar. A schema has no record or list fields, so neither is a case here for a reader to refuse.\n\nA constructor, never a flag beside the scalar: every reader of a schema's field matches it, so the compiler names each one that has not said what it does with a field that may be absent.\n\nSerialized untagged, as [`AlgorithmValueType`] is: a scalar field keeps the bare string it always was (`\"int64\"`), so the forge-AST of a schema that declares no optional field is byte-identical, and an optional one is `{\"optional\": \"int64\"}`, the spelling a variable of the same type has."
+    },
     "FilterType": {
       "description": "Filter type: algorithm used for signal filtering.",
       "enum": [
@@ -2931,7 +2956,7 @@
           "properties": {
             "inputs": {
               "items": {
-                "$ref": "#/definitions/ForgeField"
+                "$ref": "#/definitions/ForgeField_for_SceType"
               },
               "type": "array"
             },
@@ -2946,7 +2971,7 @@
             },
             "outputs": {
               "items": {
-                "$ref": "#/definitions/ForgeField"
+                "$ref": "#/definitions/ForgeField_for_SceType"
               },
               "type": "array"
             },
@@ -2980,7 +3005,7 @@
               "type": "array"
             },
             "input": {
-              "$ref": "#/definitions/ForgeField"
+              "$ref": "#/definitions/ForgeField_for_SceType"
             },
             "kind": {
               "enum": [
@@ -2995,7 +3020,7 @@
               "type": "string"
             },
             "output": {
-              "$ref": "#/definitions/ForgeField"
+              "$ref": "#/definitions/ForgeField_for_SceType"
             },
             "source_location": {
               "anyOf": [
@@ -3028,7 +3053,7 @@
             },
             "inputs": {
               "items": {
-                "$ref": "#/definitions/ForgeField"
+                "$ref": "#/definitions/ForgeField_for_SceType"
               },
               "type": "array"
             },
@@ -3173,7 +3198,7 @@
           "properties": {
             "inputs": {
               "items": {
-                "$ref": "#/definitions/ForgeField"
+                "$ref": "#/definitions/ForgeField_for_SceType"
               },
               "type": "array"
             },
@@ -3226,14 +3251,14 @@
             "inputs": {
               "description": "Input parameters (sce:direction=\"in\").",
               "items": {
-                "$ref": "#/definitions/ForgeField"
+                "$ref": "#/definitions/ForgeField_for_SceType"
               },
               "type": "array"
             },
             "internals": {
               "description": "Internal state variables (sce:direction=\"internal\"). Level 2 only.",
               "items": {
-                "$ref": "#/definitions/ForgeField"
+                "$ref": "#/definitions/ForgeField_for_SceType"
               },
               "type": "array"
             },
@@ -3289,7 +3314,7 @@
               "$ref": "#/definitions/FilterType"
             },
             "input": {
-              "$ref": "#/definitions/ForgeField"
+              "$ref": "#/definitions/ForgeField_for_SceType"
             },
             "kind": {
               "enum": [
@@ -3301,7 +3326,7 @@
               "type": "string"
             },
             "output": {
-              "$ref": "#/definitions/ForgeField"
+              "$ref": "#/definitions/ForgeField_for_SceType"
             },
             "source_location": {
               "anyOf": [
@@ -3345,7 +3370,7 @@
             },
             "inputs": {
               "items": {
-                "$ref": "#/definitions/ForgeField"
+                "$ref": "#/definitions/ForgeField_for_SceType"
               },
               "type": "array"
             },
@@ -3365,7 +3390,7 @@
               "$ref": "#/definitions/OutOfBounds"
             },
             "output": {
-              "$ref": "#/definitions/ForgeField"
+              "$ref": "#/definitions/ForgeField_for_SceType"
             },
             "source_location": {
               "anyOf": [
@@ -3468,7 +3493,7 @@
             },
             "inputs": {
               "items": {
-                "$ref": "#/definitions/ForgeField"
+                "$ref": "#/definitions/ForgeField_for_SceType"
               },
               "type": "array"
             },
@@ -3939,9 +3964,9 @@
               "type": "string"
             },
             "fields": {
-              "description": "Typed fields exposed via `_event.data.<field>`. Each field's `direction` is `Direction::In` (payload is the receiver's read-only view); the parser enforces this so authors cannot declare an `out`-direction field that would have no meaning on the receive side. `sce_type` may be a primitive (Uint8/Int32/Float64/Bool/String/Bytes) or [`SceType::Enum`] referring to an imported `sce:kind=\"enum\"` document.",
+              "description": "Typed fields exposed via `_event.data.<field>`. Each field's `direction` is `Direction::In` (payload is the receiver's read-only view); the parser enforces this so authors cannot declare an `out`-direction field that would have no meaning on the receive side. `sce_type` may be a primitive (Uint8/Int32/Float64/Bool/String/Bytes) or [`SceType::Enum`] referring to an imported `sce:kind=\"enum\"` document, or an optional value of either ([`FieldType`], docs/adr/0055).",
               "items": {
-                "$ref": "#/definitions/ForgeField"
+                "$ref": "#/definitions/ForgeField_for_FieldType"
               },
               "type": "array"
             },
@@ -4052,8 +4077,92 @@
         }
       ]
     },
-    "ForgeField": {
-      "description": "A typed data field common to all kinds.",
+    "ForgeField_for_FieldType": {
+      "description": "A typed data field common to all kinds.\n\n`T` is what its `sce:type` declares: a scalar ([`SceType`]) on every kind but the event schema, whose field may be optional ([`SchemaField`], docs/adr/0055). A position that is scalar by contract keeps the scalar type, so it never meets a case it would only have to refuse.",
+      "properties": {
+        "default": {
+          "description": "`sce:default` — on a field that declares `sce:since`, the value a delivery that lacks the field takes. Verbatim as the author wrote it; a literal of the field's own type, held to its bounds where the schema is read ([`crate::forge::schema_revision`]).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "default_covers": {
+          "description": "The variants of this field's value space that the author says reach the default branch ON PURPOSE — `sce:default-covers=\"A B C\"`.\n\nThis is the ANSWER half of [`crate::forge::coverage`]. That module reports which variants nothing in the document tests for; without a way to record \"yes, I meant those\", the report re-asks the same question on every run, and a list that never shrinks is a list nobody reads.\n\n⚠ It is a CLAIM, not a suppression, and the difference is the whole design. The claim names the variants, so it stays true only while they are exactly the ones falling through: add a variant to the enum document and the new one is unacknowledged, so the question comes back — which is right, because a value space growing is precisely when the author must decide again. A boolean `sce:default-is-deliberate` would have gone silent forever on the day the platform added a value.\n\n⚠⚠ A claim can be FALSE, and a false claim is refused rather than reported: naming a non-variant, or naming one the document's own conditions test for. See `coverage::check`.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "direction": {
+          "$ref": "#/definitions/Direction"
+        },
+        "expr": {
+          "description": "ECMAScript expression (for computed/output fields).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "initial": {
+          "description": "`sce:initial` — the value this field holds before anything has ever written it. Verbatim as the author wrote it; membership in the field's value space is checked by [`crate::forge::retention::check`], which is the one question SCE can answer about it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "max_size": {
+          "description": "Per-slot capacity for `bytes`-typed fields, declared via `sce:max-size=\"N\"`. `None` ⇒ fall back to [`crate::forge::limits::BYTES_DEFAULT_MAX`]. Ignored for non-bytes types.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "quantity": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Quantity"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Physical-quantity annotation (`sce:quantity`). `Some({ scale, offset, unit })` when the field carries a `sce:quantity=\"…\"` attribute. Drives type checking (units that disagree across an arithmetic operator are rejected) and codegen (raw + physical accessor pair emitted on numeric fields). Absent quantity declarations preserve the dimensionless baseline."
+        },
+        "retain": {
+          "description": "`sce:retain` — this field's value outlives the program, kept by the host in the store this label names. The label is opaque: SCE compares scopes for equality and never interprets them, so what a label means is a domain adapter's to decide.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sce_type": {
+          "$ref": "#/definitions/FieldType"
+        },
+        "since": {
+          "description": "`sce:since` — on a field of an event schema, the revision of the schema that added the field, from 2 up to the schema's own revision. `None` for a field of the first revision, which every delivery carries, and for a field of any other kind.\n\nWith [`Self::default`] it is what lets a schema grow without making an older delivery unreadable: a delivery written before the field existed lacks it, and takes the default instead of being refused. See [`crate::forge::schema_revision`].",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "direction",
+        "id",
+        "sce_type"
+      ],
+      "type": "object"
+    },
+    "ForgeField_for_SceType": {
+      "description": "A typed data field common to all kinds.\n\n`T` is what its `sce:type` declares: a scalar ([`SceType`]) on every kind but the event schema, whose field may be optional ([`SchemaField`], docs/adr/0055). A position that is scalar by contract keeps the scalar type, so it never meets a case it would only have to refuse.",
       "properties": {
         "default": {
           "description": "`sce:default` — on a field that declares `sce:since`, the value a delivery that lacks the field takes. Verbatim as the author wrote it; a literal of the field's own type, held to its bounds where the schema is read ([`crate::forge::schema_revision`]).",

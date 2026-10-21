@@ -1385,12 +1385,18 @@ fn render_procedure(m: &ProcedureModel) -> Vec<Node> {
 /// rendering that relies on them continuing to agree would be a
 /// rendering that stops being total the day they do not.
 fn render_field(f: &ForgeField, out: &mut Out<'_>) {
+    render_typed_field(f, &f.sce_type.as_attr(), out);
+}
+
+/// [`render_field`] for a field whose type is spelled `ty`: an event schema's
+/// field may be optional (docs/adr/0055), and is written as `optional<T>`.
+fn render_typed_field<T>(f: &ForgeField<T>, ty: &str, out: &mut Out<'_>) {
     let dir = match f.direction {
         Direction::In => "in",
         Direction::Out => "out",
         Direction::Internal => "internal",
     };
-    let mut line = format!("{} {}: {}", dir, text(&f.id), f.sce_type.as_attr());
+    let mut line = format!("{} {}: {}", dir, text(&f.id), ty);
     if let Some(max) = f.max_size {
         let _ = write!(line, " max-size {max}");
     }
@@ -1668,7 +1674,7 @@ fn render_event_schema(m: &EventSchemaModel) -> Result<Vec<Node>, Unsupported> {
             unresolved: &m.datamodel_markers,
         });
         for f in &m.fields {
-            render_field(f, out);
+            render_typed_field(f, &f.sce_type.as_attr(), out);
         }
     });
     if let Some(gap) = out.refused {

@@ -148,7 +148,18 @@ impl Names {
     }
 
     fn field(&mut self, field: &ForgeField) -> Result<(), ForgeError> {
-        self.ty(&field.sce_type);
+        self.typed_field(field, &field.sce_type)
+    }
+
+    /// A field names what `present`, the type a present value of it is, names,
+    /// and what its expression reads. An event schema's optional field names
+    /// what its element names (docs/adr/0055).
+    fn typed_field<T>(
+        &mut self,
+        field: &ForgeField<T>,
+        present: &SceType,
+    ) -> Result<(), ForgeError> {
+        self.ty(present);
         self.opt_expr(field.expr.as_deref(), field.expr_spelling.as_ref())
     }
 
@@ -395,7 +406,10 @@ impl Names {
                 self.name(&m.element_type);
                 Ok(())
             }
-            ForgeDocument::EventSchema(m) => self.fields(&m.fields),
+            ForgeDocument::EventSchema(m) => m
+                .fields
+                .iter()
+                .try_for_each(|f| self.typed_field(f, f.sce_type.present_type())),
             // A timer names events, a buffer pool sizes storage and an enum
             // lists values: none of them reads another document.
             ForgeDocument::Timer(_) | ForgeDocument::BufferPool(_) | ForgeDocument::Enum(_) => {

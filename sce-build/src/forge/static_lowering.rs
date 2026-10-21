@@ -26,7 +26,7 @@ use crate::forge::error::GenerateError;
 use crate::forge::expr::{
     transpile_into_owned, transpile_into_receiving, ExprTarget, Receiving, Refusal,
 };
-use crate::forge::model::{EnumModel, EventSchemaModel, ForgeField, SceType};
+use crate::forge::model::{EnumModel, EventSchemaModel, FieldType, SceType, SchemaField};
 use crate::forge::static_datamodel::indexed_element;
 use crate::forge::type_ctx::{
     CalleeKind, StateArg, StateCallRefusal, StateContext, StateRewrite, StaticCallee, StaticEnum,
@@ -454,11 +454,14 @@ fn generated_callee(
 /// where the algorithm is imported ([`crate::forge::static_imports`]), as is one whose
 /// enum is not the document the statechart holds the field in.
 fn plain_schema<'a>(spec: &AdapterSpec<'a>, alias: &str) -> Option<&'a EventSchemaModel> {
+    // An optional field is copied by no rule yet (docs/adr/0055): an algorithm
+    // takes no optional value until the step that hands it one.
     spec.schemas.get(alias).filter(|schema| {
-        schema
-            .fields
-            .iter()
-            .all(|f| record_field_copies(&f.sce_type, f.max_size))
+        schema.fields.iter().all(|f| {
+            f.sce_type
+                .scalar()
+                .is_some_and(|ty| record_field_copies(ty, f.max_size))
+        })
     })
 }
 
@@ -554,12 +557,12 @@ impl AdapterSpec<'_> {
     fn record_field_crossing(
         &self,
         target: &dyn StaticTarget,
-        field: &crate::forge::model::ForgeField,
+        field: &crate::forge::model::SchemaField,
         value: &str,
         crossing: Crossing,
         text: impl FnOnce(&str) -> String,
     ) -> Option<String> {
-        match &field.sce_type {
+        match field.sce_type.present_type() {
             SceType::Enum(reference) => {
                 self.enum_crossing(target, &reference.alias, value, crossing)
             }
@@ -591,7 +594,7 @@ fn crossing_enums(
         }
         if let StaticSlot::Record(record) | StaticSlot::RecordList(record) = slot {
             for field in records.get(record).iter().flat_map(|s| s.fields.iter()) {
-                if let SceType::Enum(reference) = &field.sce_type {
+                if let SceType::Enum(reference) = field.sce_type.present_type() {
                     aliases.insert(reference.alias.clone());
                 }
             }
@@ -912,7 +915,7 @@ pub trait StaticTarget {
     fn payload_revised_read(
         &self,
         _accessor: &str,
-        _field: &ForgeField,
+        _field: &SchemaField,
         _variants: &[&str],
         _default: &str,
     ) -> Option<String> {
@@ -1437,8 +1440,9 @@ impl KotlinTarget {
         if !holds_bytes(schema) {
             return String::new();
         }
-        let is_bytes =
-            |field: &crate::forge::model::ForgeField| matches!(field.sce_type, SceType::Bytes);
+        let is_bytes = |field: &crate::forge::model::SchemaField| {
+            matches!(field.sce_type.present_type(), SceType::Bytes)
+        };
         let equal: Vec<String> = schema
             .fields
             .iter()
@@ -1760,7 +1764,7 @@ impl StaticTarget for KotlinTarget {
             .fields
             .iter()
             .map(|field| {
-                let field_ty = match &field.sce_type {
+                let field_ty = match field.sce_type.present_type() {
                     SceType::Enum(reference) => enum_types[&reference.alias].clone(),
                     other => crate::forge::generator::kotlin_type(other).to_string(),
                 };
@@ -1777,7 +1781,7 @@ impl StaticTarget for KotlinTarget {
             .iter()
             .map(|field| {
                 let member = self.record_field(&field.id);
-                match &field.sce_type {
+                match field.sce_type.present_type() {
                     // An enum is saved by its own type, as a variable of it is.
                     SceType::Enum(_) => format!("\"{}\" to {member}.toSaved()", field.id),
                     _ => format!("\"{}\" to SavedValues.of({member})", field.id),
@@ -1791,7 +1795,7 @@ impl StaticTarget for KotlinTarget {
                 let name = self.record_field(&field.id);
                 let id = &field.id;
                 let saved = format!("SavedValues.field(value, what, \"{id}\")");
-                match (&field.sce_type, field.max_size) {
+                match (field.sce_type.present_type(), field.max_size) {
                     (SceType::Enum(reference), _) => format!(
                         "{name} = {}.fromSaved({saved}, \"$what.{id}\")",
                         enum_types[&reference.alias]
@@ -2272,7 +2276,7 @@ impl StaticTarget for RustTarget {
                     };
                     let read = format!("{from}.{held}");
                     spec.record_field_crossing(self, f, &read, Crossing::ToAlgorithm, |read| {
-                        match (&f.sce_type, f.max_size) {
+                        match (f.sce_type.present_type(), f.max_size) {
                             // The machine holds the text within the schema's bound,
                             // which is the bound the algorithm's record holds it in:
                             // the copy is the one a text already held to it takes.
@@ -2303,7 +2307,7 @@ impl StaticTarget for RustTarget {
                     // The algorithm's text is held within the field's bound by
                     // construction, so the machine's `String` takes it whole.
                     spec.record_field_crossing(self, f, &read, Crossing::FromAlgorithm, |read| {
-                        match f.sce_type {
+                        match f.sce_type.present_type() {
                             SceType::String => format!("{read}.as_str().to_string()"),
                             _ => read.to_string(),
                         }
@@ -2476,7 +2480,7 @@ impl StaticTarget for RustTarget {
             .fields
             .iter()
             .map(|field| {
-                let field_ty = match &field.sce_type {
+                let field_ty = match field.sce_type.present_type() {
                     SceType::Enum(reference) => enum_types[&reference.alias].clone(),
                     other => crate::forge::generator::rust_type(other).to_string(),
                 };
@@ -2916,7 +2920,8 @@ fn record_field_bounds<'a>(
             .and_then(|alias| records.get(alias));
         schema.into_iter().flat_map(move |schema| {
             schema.fields.iter().filter_map(move |field| {
-                kind(&field.sce_type).then_some((format!("{}.{}", v.id, field.id), field.max_size?))
+                kind(field.sce_type.present_type())
+                    .then_some((format!("{}.{}", v.id, field.id), field.max_size?))
             })
         })
     })
@@ -2973,6 +2978,16 @@ fn names(scope: &StaticScope, target: &dyn StaticTarget) -> Vec<(String, String)
         .collect()
 }
 
+/// The refusal of `what` — a declaration that holds a value that may be absent
+/// (docs/adr/0055) — by a backend, `lang`, that does not lower one yet: the one
+/// wording every such refusal takes, whatever kind of document holds the value,
+/// so an author reads by the same words which backend has its step to come.
+pub(crate) fn optional_not_lowered(what: &str, lang: &str) -> GenerateError {
+    GenerateError::unsupported(format!(
+        "{what}: an optional value has no {lang} lowering yet"
+    ))
+}
+
 /// Rewrite `model` — a clone the Kotlin backend renders — so every
 /// expression of a `sce-static` document is native Kotlin.
 pub fn lower_kotlin(
@@ -3006,7 +3021,9 @@ pub fn lower(
     };
     let lang = target.name();
     // An optional value (docs/adr/0055) is refused before anything reads the
-    // variables' types, on every target that does not lower it yet.
+    // variables' types, on every target that does not lower it yet: a variable
+    // that holds one, and a field of a schema the machine reads a payload by or
+    // holds a record of, which the payload lift and the record would hold.
     if !target.lowers_optional() {
         if let Some(variable) = scope.variables.iter().find(|v| {
             v.value_type
@@ -3014,15 +3031,34 @@ pub fn lower(
                 .and_then(crate::forge::model::AlgorithmValueType::optional_elem)
                 .is_some()
         }) {
-            return Err(GenerateError::unsupported(format!(
-                "<data id=\"{}\" sce:type=\"{}\">: an optional value has no {lang} lowering yet",
-                variable.id,
-                variable
-                    .value_type
-                    .as_ref()
-                    .map(crate::forge::model::AlgorithmValueType::as_attr)
-                    .unwrap_or_default()
-            )));
+            return Err(optional_not_lowered(
+                &format!(
+                    "<data id=\"{}\" sce:type=\"{}\">",
+                    variable.id,
+                    variable
+                        .value_type
+                        .as_ref()
+                        .map(crate::forge::model::AlgorithmValueType::as_attr)
+                        .unwrap_or_default()
+                ),
+                lang,
+            ));
+        }
+        if let Some((schema, field)) = model
+            .imported_event_schemas
+            .values()
+            .chain(model.imported_records.values())
+            .find_map(|schema| schema.first_optional_field().map(|field| (schema, field)))
+        {
+            return Err(optional_not_lowered(
+                &format!(
+                    "the field `{}` of the event schema `{}`, sce:type=\"{}\"",
+                    field.id,
+                    schema.name,
+                    field.sce_type.as_attr()
+                ),
+                lang,
+            ));
         }
     }
     let variables = &scope.variables;
@@ -3219,17 +3255,19 @@ pub fn lower(
                         target,
                         &ctx,
                         &renames,
-                        InferredType::from_sce_type(&field.sce_type),
+                        InferredType::of_field(&field.sce_type),
                     )
                     .map_err(|r| refused("the field value", &init.expr, r))?;
                     // A string field starts at its literal, which the judge held
                     // to the bound; a target that holds it in a buffer is given
                     // the buffer as that literal fills it.
                     let value = match (&field.sce_type, field.max_size) {
-                        (SceType::String, Some(bound)) => {
+                        (FieldType::Scalar(SceType::String), Some(bound)) => {
                             target.record_string_literal(bound, &value)
                         }
-                        (SceType::Bytes, Some(bound)) => target.record_bytes_literal(bound, &value),
+                        (FieldType::Scalar(SceType::Bytes), Some(bound)) => {
+                            target.record_bytes_literal(bound, &value)
+                        }
                         _ => value,
                     };
                     values.push((target.record_field(&field.id), value));
@@ -3618,10 +3656,13 @@ pub fn lower(
             continue;
         }
         let enum_fields = || {
-            schema.fields.iter().filter_map(|f| match &f.sce_type {
-                SceType::Enum(reference) => Some((f, reference.alias.as_str())),
-                _ => None,
-            })
+            schema
+                .fields
+                .iter()
+                .filter_map(|f| match f.sce_type.present_type() {
+                    SceType::Enum(reference) => Some((f, reference.alias.as_str())),
+                    _ => None,
+                })
         };
         if !target.payload_enum_fields() {
             let carried = enum_fields().next().map_or_else(
@@ -3759,7 +3800,10 @@ pub fn lower(
                             .fields
                             .iter()
                             .map(|f| {
-                                crate::forge::generator::c11_field_bytes(&f.sce_type, f.max_size)
+                                crate::forge::generator::c11_field_bytes(
+                                    f.sce_type.present_type(),
+                                    f.max_size,
+                                )
                             })
                             .sum()
                     })
@@ -3948,7 +3992,7 @@ impl<'t> TypeDeclarations<'t> {
     fn record(&mut self, alias: &str, schema: &EventSchemaModel) -> Result<String, GenerateError> {
         let mut enum_types = std::collections::BTreeMap::new();
         for field in &schema.fields {
-            if let SceType::Enum(reference) = &field.sce_type {
+            if let SceType::Enum(reference) = field.sce_type.present_type() {
                 let ty = self.enum_type(&reference.alias).map_err(|enum_alias| {
                     GenerateError::unsupported(format!(
                         "record:{alias} has the enum-typed field `{}`, whose enum `{enum_alias}` \
@@ -3966,7 +4010,7 @@ impl<'t> TypeDeclarations<'t> {
             // A string or byte-string field a target holds in a buffer is of the type
             // that buffer is declared as, which comes before the record that holds it.
             for field in &schema.fields {
-                let storage = match (&field.sce_type, field.max_size) {
+                let storage = match (field.sce_type.present_type(), field.max_size) {
                     (SceType::String, Some(bound)) => self.target.string_storage(bound, "\"\""),
                     (SceType::Bytes, Some(bound)) => self.target.bytes_storage(bound, "{ 0 }"),
                     _ => None,
@@ -3985,13 +4029,18 @@ impl<'t> TypeDeclarations<'t> {
                     .map(|f| StaticRecordField {
                         id: f.id.clone(),
                         name: self.target.record_field(&f.id),
-                        saved_type: match &f.sce_type {
+                        // A saved value is named by the type its present value
+                        // is (docs/adr/0055, its shape type).
+                        saved_type: match f.sce_type.present_type() {
                             SceType::Enum(reference) => enum_types[&reference.alias].clone(),
                             other => other.as_attr(),
                         },
-                        bound: matches!(f.sce_type, SceType::String | SceType::Bytes)
-                            .then_some(f.max_size)
-                            .flatten(),
+                        bound: matches!(
+                            f.sce_type.present_type(),
+                            SceType::String | SceType::Bytes
+                        )
+                        .then_some(f.max_size)
+                        .flatten(),
                     })
                     .collect(),
             });
@@ -4208,8 +4257,10 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<SavedShape> {
             // The first revision's fields: a later one's are the saved state's
             // `revisions` to name.
             for field in schema.fields.iter().filter(|f| f.since.is_none()) {
-                let by_alias = field.sce_type.as_attr();
-                let by_document = match &field.sce_type {
+                // A field is named by its shape type, the type its present value
+                // is (docs/adr/0055).
+                let by_alias = field.sce_type.present_type().as_attr();
+                let by_document = match field.sce_type.present_type() {
                     SceType::Enum(_) => enum_type_by_document(
                         field_documents.and_then(|documents| documents.get(&field.id)),
                         &by_alias,
@@ -4220,7 +4271,7 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<SavedShape> {
                     &format!("field {}.{} {by_alias}", var.id, field.id),
                     &format!("field {}.{} {by_document}", var.id, field.id),
                 );
-                if let SceType::Enum(reference) = &field.sce_type {
+                if let SceType::Enum(reference) = field.sce_type.present_type() {
                     text.variants(model, &reference.alias, &format!("{}.{}", var.id, field.id));
                 }
             }
@@ -4381,8 +4432,13 @@ fn revision_digest(model: &SCXMLModel, schema: &EventSchemaModel, at: u32) -> St
         .iter()
         .filter(|f| crate::forge::schema_revision::added_at(f) <= at)
     {
-        let _ = writeln!(text, "field {} {}", field.id, field.sce_type.as_attr());
-        if let SceType::Enum(reference) = &field.sce_type {
+        let _ = writeln!(
+            text,
+            "field {} {}",
+            field.id,
+            field.sce_type.present_type().as_attr()
+        );
+        if let SceType::Enum(reference) = field.sce_type.present_type() {
             write_variants(&mut text, model, &reference.alias, &field.id);
         }
     }
@@ -4754,7 +4810,7 @@ impl Rewrites<'_> {
             schema
                 .fields
                 .iter()
-                .any(|f| matches!(f.sce_type, SceType::String))
+                .any(|f| matches!(f.sce_type.present_type(), SceType::String))
         });
         self.scope.rewrite_state_calls(
             text,
@@ -5292,7 +5348,7 @@ impl StaticTarget for CppTarget {
             .fields
             .iter()
             .map(|field| {
-                let field_ty = match &field.sce_type {
+                let field_ty = match field.sce_type.present_type() {
                     SceType::Enum(reference) => enum_types[&reference.alias].clone(),
                     other => crate::forge::generator::cpp_type(other).to_string(),
                 };
@@ -5707,7 +5763,7 @@ fn holds_bytes(schema: &EventSchemaModel) -> bool {
     schema
         .fields
         .iter()
-        .any(|f| matches!(f.sce_type, SceType::Bytes))
+        .any(|f| matches!(f.sce_type.present_type(), SceType::Bytes))
 }
 
 /// Whether a record of `schema` owns a buffer — has a `string` or a `bytes` field —
@@ -5716,7 +5772,7 @@ fn owns_a_buffer(schema: &EventSchemaModel) -> bool {
     schema
         .fields
         .iter()
-        .any(|f| matches!(f.sce_type, SceType::String | SceType::Bytes))
+        .any(|f| matches!(f.sce_type.present_type(), SceType::String | SceType::Bytes))
 }
 
 /// Rewrite `model` — a clone the C++ backend renders — so every expression of
@@ -6159,10 +6215,11 @@ impl StaticTarget for GoTarget<'_> {
         schema: &EventSchemaModel,
         enum_types: &std::collections::BTreeMap<String, String>,
     ) -> String {
-        let go_field_type = |field: &crate::forge::model::ForgeField| match &field.sce_type {
-            SceType::Enum(reference) => enum_types[&reference.alias].clone(),
-            other => crate::forge::generator::go_type(other).to_string(),
-        };
+        let go_field_type =
+            |field: &crate::forge::model::SchemaField| match field.sce_type.present_type() {
+                SceType::Enum(reference) => enum_types[&reference.alias].clone(),
+                other => crate::forge::generator::go_type(other).to_string(),
+            };
         let fields: String = schema
             .fields
             .iter()
@@ -6181,7 +6238,7 @@ impl StaticTarget for GoTarget<'_> {
                 // A byte string is answered as a copy, so a host cannot write
                 // through the slice into what the machine holds
                 // (docs/adr/0005, decision 2).
-                let answer = if matches!(field.sce_type, SceType::Bytes) {
+                let answer = if matches!(field.sce_type.present_type(), SceType::Bytes) {
                     format!("append([]byte{{}}, r.{}...)", self.record_field(&field.id))
                 } else {
                     format!("r.{}", self.record_field(&field.id))
@@ -6887,7 +6944,7 @@ impl StaticTarget for PythonTarget {
             .fields
             .iter()
             .map(|field| {
-                let field_ty = match &field.sce_type {
+                let field_ty = match field.sce_type.present_type() {
                     SceType::Enum(reference) => enum_types[&reference.alias].clone(),
                     other => crate::forge::generator::python_type(other).to_string(),
                 };
@@ -7788,15 +7845,13 @@ impl StaticTarget for CTarget {
                 continue;
             };
             if let Some(field) = schema.fields.iter().find(|f| {
-                !held_scalar(&f.sce_type)
-                    && !matches!(
-                        f.sce_type,
-                        SceType::Enum(_) | SceType::Float32 | SceType::Float64
-                    )
+                // `lower` refused an optional field before asking (docs/adr/0055).
+                let ty = f.sce_type.present_type();
+                !held_scalar(ty)
+                    && !matches!(ty, SceType::Enum(_) | SceType::Float32 | SceType::Float64)
                     // A string or a byte string with no bound was refused where the
                     // record was declared, so the one that reaches here has its buffer.
-                    && !(matches!(f.sce_type, SceType::String | SceType::Bytes)
-                        && f.max_size.is_some())
+                    && !(matches!(ty, SceType::String | SceType::Bytes) && f.max_size.is_some())
             }) {
                 return Some(format!(
                     "record:{alias} with the field `{}` of type {}",
@@ -7999,7 +8054,7 @@ impl StaticTarget for CTarget {
             .fields
             .iter()
             .map(|field| {
-                let field_ty = match (&field.sce_type, field.max_size) {
+                let field_ty = match (field.sce_type.present_type(), field.max_size) {
                     (SceType::Enum(reference), _) => enum_types[&reference.alias].clone(),
                     // A string is the buffer of the bound its schema declares, and a
                     // byte string that buffer with the length it holds.
@@ -8727,7 +8782,7 @@ fn payload_record_value(
                 crate::forge::event_schema_check::EVENT_DATA_PATH,
                 field.id
             ),
-            InferredType::from_sce_type(&field.sce_type),
+            InferredType::of_field(&field.sce_type),
         )?;
         if read.can_fail {
             return Err(GenerateError::unsupported(format!(
@@ -8737,12 +8792,12 @@ fn payload_record_value(
             )));
         }
         let text = match (&field.sce_type, field.max_size) {
-            (SceType::String, Some(bound)) => {
+            (FieldType::Scalar(SceType::String), Some(bound)) => {
                 bounded = true;
                 let held = target.bounded_string(&read.text, bound);
                 target.record_string_runtime(bound, &held)
             }
-            (SceType::Bytes, Some(bound)) => {
+            (FieldType::Scalar(SceType::Bytes), Some(bound)) => {
                 bounded = true;
                 let held = target.bounded_bytes(&read.text, bound);
                 target.record_bytes_runtime(bound, &held)
@@ -8780,7 +8835,9 @@ fn payload_enum_reads(
         .fields
         .iter()
         .filter_map(|field| {
-            let variants: Vec<&str> = match &field.sce_type {
+            // `lower` refused an optional field before any read is asked for
+            // (docs/adr/0055), so each field here holds a present value.
+            let variants: Vec<&str> = match field.sce_type.present_type() {
                 SceType::Enum(reference) => enums
                     .get(&reference.alias)?
                     .variants
@@ -8796,7 +8853,7 @@ fn payload_enum_reads(
             } else {
                 None
             };
-            let read = match (revised, &field.sce_type) {
+            let read = match (revised, field.sce_type.present_type()) {
                 (Some(read), _) => read,
                 (None, SceType::Enum(_)) => {
                     target.payload_enum_read(accessor, &field.id, &variants)?

@@ -21,7 +21,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::forge::error::{ForgeError, Located, SourceLocation, ValidationError};
-use crate::forge::model::{EventSchemaModel, SceType};
+use crate::forge::model::{EventSchemaModel, FieldType, SceType};
 use crate::host_processor_analyzer::HOST_INVOKE_DEADLINE_PARAM;
 use crate::model::{Invoke, SCXMLModel, UnsupportedInvokeInfo};
 
@@ -76,6 +76,18 @@ pub fn validate(
                         .to_string(),
                 ));
             }
+            // A host-run record has no carrier for a value that may be absent
+            // yet: what a host receives and answers is decided with the step of
+            // docs/adr/0055 that hands it one, so a schema holding one is
+            // refused by name until then.
+            if let Some(field) = schema.first_optional_field() {
+                return Err(refuse(format!(
+                    "field '{}' is optional ({}), and a host-run request or result does not \
+                     carry an optional value yet (docs/adr/0055)",
+                    field.id,
+                    field.sce_type.as_attr()
+                )));
+            }
             // The record crosses to and from the host as text in every
             // backend, and an enumeration has no spelling there that all six
             // share: its generated type is per-language, and the payload
@@ -83,7 +95,7 @@ pub fn validate(
             if let Some(field) = schema
                 .fields
                 .iter()
-                .find(|f| matches!(f.sce_type, SceType::Enum(_)))
+                .find(|f| matches!(f.sce_type, FieldType::Scalar(SceType::Enum(_))))
             {
                 return Err(refuse(format!(
                     "field '{}' is enum-typed ({}), and a host-run record carries \
@@ -245,8 +257,10 @@ fn check_request(
 /// Why the text literal `value` cannot be `field`'s value, if it cannot —
 /// the judgement the runtimes' start sites make on an evaluated text, made
 /// here on the one text known before run time.
-fn literal_misfit(value: &str, field: &crate::forge::model::ForgeField) -> Option<String> {
-    match &field.sce_type {
+fn literal_misfit(value: &str, field: &crate::forge::model::SchemaField) -> Option<String> {
+    // A text is a present value of the field (docs/adr/0055), so it is judged
+    // against what a present value is.
+    match field.sce_type.present_type() {
         SceType::String => None,
         SceType::Bytes => {
             let cap = crate::forge::limits::resolve_bytes_max(field.max_size) as usize;

@@ -27,7 +27,7 @@
 use std::collections::BTreeMap;
 
 use crate::filters;
-use crate::forge::model::{EventSchemaModel, ForgeField, SceType};
+use crate::forge::model::{EventSchemaModel, SceType, SchemaField};
 use crate::model::{Invoke, SCXMLModel};
 
 /// One host-run `<invoke>` that names a request or a result record.
@@ -121,8 +121,11 @@ pub enum RequestFieldSpelling {
     Bytes(u32),
 }
 
-fn request_field_spelling(f: &ForgeField) -> RequestFieldSpelling {
-    RequestFieldSpelling::Scalar(match &f.sce_type {
+/// A typed request or result holds no optional field (`typed_invoke::validate`
+/// refuses one by name, docs/adr/0055), so every field read in this module is
+/// the scalar a present value of it is.
+fn request_field_spelling(f: &SchemaField) -> RequestFieldSpelling {
+    RequestFieldSpelling::Scalar(match f.sce_type.present_type() {
         SceType::Uint8 => "Uint8",
         SceType::Uint16 => "Uint16",
         SceType::Uint32 => "Uint32",
@@ -256,7 +259,7 @@ fn cancel_{snake}(&mut self, token: u64);\n"
                         .fields
                         .iter()
                         .map(|f| {
-                            let reader = if matches!(f.sce_type, SceType::Bytes) {
+                            let reader = if matches!(f.sce_type.present_type(), SceType::Bytes) {
                                 "request_bytes_field"
                             } else {
                                 "request_field"
@@ -398,7 +401,7 @@ pub fn render_go(model: &SCXMLModel, machine_name: &str) -> String {
                     format!(
                         "\t{} {}\n",
                         exported(&f.id),
-                        crate::forge::generator::go_type(&f.sce_type)
+                        crate::forge::generator::go_type(f.sce_type.present_type())
                     )
                 })
                 .collect();
@@ -413,7 +416,7 @@ type {name} struct {{\n{fields}}}\n\n",
                     .iter()
                     .map(|f| {
                         let value = format!("r.{}", exported(&f.id));
-                        let value = if matches!(f.sce_type, SceType::Bytes) {
+                        let value = if matches!(f.sce_type.present_type(), SceType::Bytes) {
                             format!("sce.BytesAsPayloadText({value})")
                         } else {
                             value
@@ -573,7 +576,7 @@ pub fn render_python(model: &SCXMLModel) -> String {
             let fields: String = schema
                 .fields
                 .iter()
-                .map(|f| format!("    {}: {}\n", f.id, l(&f.sce_type)))
+                .map(|f| format!("    {}: {}\n", f.id, l(f.sce_type.present_type())))
                 .collect();
             let wire = if what == "Result" {
                 let items: Vec<String> = schema
@@ -582,7 +585,7 @@ pub fn render_python(model: &SCXMLModel) -> String {
                     .map(|f| {
                         // JSON has no byte string, so a `bytes` field rides
                         // as its byte-exact Latin-1 text.
-                        if matches!(f.sce_type, SceType::Bytes) {
+                        if matches!(f.sce_type.present_type(), SceType::Bytes) {
                             format!("\"{0}\": self.{0}.decode(\"latin-1\")", f.id)
                         } else {
                             format!("\"{0}\": self.{0}", f.id)
@@ -763,7 +766,7 @@ pub fn render_kotlin(model: &SCXMLModel, machine_name: &str) -> KotlinHostInvoke
                     format!(
                         "    val {}: {},\n",
                         f.id,
-                        crate::forge::generator::kotlin_type(&f.sce_type)
+                        crate::forge::generator::kotlin_type(f.sce_type.present_type())
                     )
                 })
                 .collect();
@@ -826,7 +829,7 @@ fun cancel{pascal}(token: Long)\n"
                             format!(
                                 "                            {0} = TypedRequest.{1}(start.params, start.invokeId, \"{0}\"),\n",
                                 f.id,
-                                kotlin_request_reader(&f.sce_type)
+                                kotlin_request_reader(f.sce_type.present_type())
                             )
                         })
                         .collect();
@@ -932,7 +935,7 @@ pub fn render_cpp(model: &SCXMLModel) -> CppHostInvokerInterface {
     if typed.is_empty() {
         return CppHostInvokerInterface { defs, members };
     }
-    let cpp_type = |f: &ForgeField| crate::forge::generator::cpp_type(&f.sce_type);
+    let cpp_type = |f: &SchemaField| crate::forge::generator::cpp_type(f.sce_type.present_type());
     for invoke in &typed {
         let pascal = filters::to_pascal_case(invoke.field_suffix.to_string());
         for (record, what, role) in records_of(invoke) {
@@ -1194,7 +1197,7 @@ void (*cancel_{snake})(void *user_data, uint64_t token);\n"
                     let reads: Vec<String> = schema
                         .fields
                         .iter()
-                        .map(|f| c11_request_read(&f.sce_type, &f.id))
+                        .map(|f| c11_request_read(f.sce_type.present_type(), &f.id))
                         .collect();
                     format!(
                         "            {sm}_{snake}_request_t request;\n            \
@@ -1345,10 +1348,11 @@ fn python_spelling(spelling: RequestFieldSpelling) -> String {
 }
 
 /// The Go expression reading `f` out of the checked request `start`.
-fn go_request_reader(f: &ForgeField) -> String {
+fn go_request_reader(f: &SchemaField) -> String {
     let id = &f.id;
-    let ty = crate::forge::generator::go_type(&f.sce_type);
-    match &f.sce_type {
+    let present = f.sce_type.present_type();
+    let ty = crate::forge::generator::go_type(present);
+    match present {
         SceType::Uint8 | SceType::Uint16 | SceType::Uint32 | SceType::Uint64 => {
             format!("sce.RequestUnsigned[{ty}](*start, \"{id}\")")
         }

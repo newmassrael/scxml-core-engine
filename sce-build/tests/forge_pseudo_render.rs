@@ -18,15 +18,15 @@ use sce_build::forge::model::{
     BufferPoolModel, BufferPoolVariant, CachePolicy, CallArg, CapacitySource, CodecField,
     CodecModel, CodecTestVector, CodecVariant, CollectionOrdering, ConcurrencyMode, ConditionModel,
     DecodedField, DecodedFieldValue, DecodedValue, Direction, Endian, EnumModel, EnumVariant,
-    EventSchemaModel, FilterModel, FilterType, FlagDef, FlagInput, FoldBody, ForgeDocument,
-    ForgeField, InboxConfig, InterpolationAxis, InterpolationMethod, InterpolationModel, LinkClass,
-    LinkInboundEvent, LinkModel, LinkOutboundEvent, LookupEntry, LookupModel, MissPolicy,
-    ObserverModel, OutOfBounds, OverflowPolicy, PeekByteSpec, PresentIfPredicate, PresentIfScope,
-    ProcedureAssign, ProcedureDoneParam, ProcedureHelper, ProcedureModel, ProcedureSendAction,
-    ProcedureState, ProcedureTransition, RangeRule, RateOfChangeRule, ReassemblyConfig, SceType,
-    TestVector, TestVectorValue, ThresholdMonitor, TimerModel, TlvEntryFlagBind, TlvEntryId,
-    TlvOverflowPolicy, TlvTerminateStrategy, TransformModel, ValidatorModel, ValidatorRules,
-    VariantArm, WorkerModel,
+    EventSchemaModel, FieldType, FilterModel, FilterType, FlagDef, FlagInput, FoldBody,
+    ForgeDocument, ForgeField, InboxConfig, InterpolationAxis, InterpolationMethod,
+    InterpolationModel, LinkClass, LinkInboundEvent, LinkModel, LinkOutboundEvent, LookupEntry,
+    LookupModel, MissPolicy, ObserverModel, OutOfBounds, OverflowPolicy, PeekByteSpec,
+    PresentIfPredicate, PresentIfScope, ProcedureAssign, ProcedureDoneParam, ProcedureHelper,
+    ProcedureModel, ProcedureSendAction, ProcedureState, ProcedureTransition, RangeRule,
+    RateOfChangeRule, ReassemblyConfig, SceType, TestVector, TestVectorValue, ThresholdMonitor,
+    TimerModel, TlvEntryFlagBind, TlvEntryId, TlvOverflowPolicy, TlvTerminateStrategy,
+    TransformModel, ValidatorModel, ValidatorRules, VariantArm, WorkerModel,
 };
 use sce_build::forge::pseudo::{render, Unsupported};
 use sce_build::provenance::RequirementId;
@@ -733,7 +733,8 @@ fn each_declarative_kind_renders_every_field_it_can_carry() {
     let ev = EventSchemaModel {
         name: "tick".to_string(),
         event_name: "bus.tick".to_string(),
-        fields: vec![field("seq", SceType::Uint8, Direction::In)],
+        fields: vec![field("seq", SceType::Uint8, Direction::In)
+            .with_type(FieldType::Scalar(SceType::Uint8))],
         payload_none: false,
         datamodel_markers: Vec::new(),
         revision: None,
@@ -742,6 +743,24 @@ fn each_declarative_kind_renders_every_field_it_can_carry() {
     assert_eq!(
         render(&ForgeDocument::EventSchema(ev)).unwrap(),
         "event-schema tick event bus.tick\n  in seq: uint8\n"
+    );
+    // An optional field (docs/adr/0055) is written by the type it declares.
+    let due = EventSchemaModel {
+        name: "due".to_string(),
+        event_name: "item.due".to_string(),
+        fields: vec![
+            field("due", SceType::Int64, Direction::In).with_type(FieldType::Optional {
+                elem: SceType::Int64,
+            }),
+        ],
+        payload_none: false,
+        datamodel_markers: Vec::new(),
+        revision: None,
+        source_location: None,
+    };
+    assert_eq!(
+        render(&ForgeDocument::EventSchema(due)).unwrap(),
+        "event-schema due event item.due\n  in due: optional<int64>\n"
     );
 
     let en = EnumModel {

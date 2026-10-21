@@ -2529,10 +2529,20 @@ fn read_record_fields(
     m.fields
         .iter()
         .map(|f| {
+            // A field that may be absent (docs/adr/0055) has no canonical type a
+            // harness builds yet.
+            let Some(declared) = f.sce_type.scalar() else {
+                return Err(format!(
+                    "record `{record}`: field `{}` is {}, which the harness has no canonical \
+                     type for",
+                    f.id,
+                    f.sce_type.as_attr()
+                ));
+            };
             // An enum field is the enum document's own type, which the harness
             // reaches through the enum fixture of this manifest that generates
             // it, and which the oracle writes by the name each variant declares.
-            if let SceType::Enum(reference) = &f.sce_type {
+            if let SceType::Enum(reference) = declared {
                 let model = enums.get(&reference.alias).ok_or_else(|| {
                     format!(
                         "record `{record}`: field `{}` holds the enum `{}`, which the schema \
@@ -2571,7 +2581,7 @@ fn read_record_fields(
                         .collect(),
                 });
             }
-            let ty = match &f.sce_type {
+            let ty = match declared {
                 SceType::Bool => CanonicalType::Bool,
                 SceType::Uint8 => CanonicalType::U8,
                 SceType::Uint16 => CanonicalType::U16,

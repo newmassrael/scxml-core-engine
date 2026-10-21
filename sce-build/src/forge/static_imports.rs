@@ -21,8 +21,8 @@ use std::path::Path;
 use crate::forge::error::{ForgeError, ImportError, Located};
 use crate::forge::generator::StatelessFunction;
 use crate::forge::model::{
-    AlgorithmModel, AlgorithmValueType, EnumRef, ForgeDocument, ForgeField, ForgeImport, ForgeKind,
-    ListElemType, OutOfBounds, ParsedForge, SceType,
+    AlgorithmModel, AlgorithmValueType, EnumRef, FieldType, ForgeDocument, ForgeField, ForgeImport,
+    ForgeKind, ListElemType, OutOfBounds, ParsedForge, SceType,
 };
 use crate::forge::type_ctx::{CalleeKind, StaticCallee, StaticSlot, StaticValueSignature};
 use crate::forge::types::{CallReading, RecordId};
@@ -86,7 +86,7 @@ fn enum_document(imports: &[ForgeImport], base_dir: &Path, alias: &str) -> Optio
 /// A field of a record schema, as a record handed to an algorithm is judged by it.
 struct SchemaField {
     id: String,
-    ty: SceType,
+    ty: FieldType,
     /// The `sce:max-size` the schema declares on it, if any.
     max_size: Option<u32>,
     /// The enum document an enum field holds a value of, read from the schema's
@@ -122,7 +122,7 @@ fn record_schema(
                 id: f.id.clone(),
                 ty: f.sce_type.clone(),
                 max_size: f.max_size,
-                enum_document: match &f.sce_type {
+                enum_document: match f.sce_type.present_type() {
                     SceType::Enum(reference) => {
                         enum_document(&parsed.imports, schema_base, &reference.alias)
                     }
@@ -230,8 +230,18 @@ fn value_signature(
         // string the schema bounds is held within the same bound on both sides, and an
         // enum field crosses by the declared name of its variant.
         for field in &fields {
-            if crate::forge::static_lowering::record_field_copies(&field.ty, field.max_size) {
-                if let SceType::Enum(reference) = &field.ty {
+            // An optional field crosses by no rule yet: an algorithm takes no
+            // optional value until the step of docs/adr/0055 that hands it one.
+            let Some(ty) = field.ty.scalar() else {
+                return Err(format!(
+                    "its record `{alias}` has the field `{}` of type {}, and an optional \
+                     value is not handed to or from an algorithm yet (docs/adr/0055)",
+                    field.id,
+                    field.ty.as_attr()
+                ));
+            };
+            if crate::forge::static_lowering::record_field_copies(ty, field.max_size) {
+                if let SceType::Enum(reference) = ty {
                     let what = format!("the field `{}` of its record `{alias}`", field.id);
                     // The machine holds the field in its own type for the enum
                     // document the schema imports, whether or not the statechart
@@ -241,7 +251,7 @@ fn value_signature(
                 }
                 continue;
             }
-            return Err(match (&field.ty, field.max_size) {
+            return Err(match (ty, field.max_size) {
                 (SceType::String, None) => format!(
                     "its record `{alias}` has a string field with no `sce:max-size`, which \
                      bounds the text an algorithm's record holds"

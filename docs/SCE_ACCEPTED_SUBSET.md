@@ -3934,18 +3934,26 @@ initial value as every variable does, `null` for absent; an optional `string` or
 What may stand inside is that closed set, so a nested optional, a list inside one
 and an alias the document does not import are refused on the `sce:type` as
 `validation/invalid-attribute`, naming the set; a list holds no optional element
-(`list<optional<T>>` is `validation/attribute-rule-violated`). Every other position
-— an event schema's field, an algorithm's slot, a codec's entry — refuses
-`optional<…>` by name as `validation/attribute-rule-violated` until the step of the
-ADR that admits it there. The model carries the type (`{"optional": "int64"}` in the
-forge AST), and no backend lowers it yet: each of the six and the Interpreter's
-lowering refuses a document that declares one, by name, as
-`generate/unsupported-feature` ("an optional value has no <language> lowering
-yet"), and nothing about the value is judged until then. `null` stands only where an
-optional value is declared: `<data sce:type="int64" expr="null"/>` and an
-`<assign>` of `null` to an `int64` are `expression/type-mismatch`, where until
-2026-10-21 they were judged fit. `sce-build/tests/an_optional_value_is_declared_by_its_type.rs`
-holds this.
+(`list<optional<T>>` is `validation/attribute-rule-violated`). An event schema's
+field may be optional too, over a scalar or an enum the schema imports
+(`optional<int64>`, `optional<enum:Status>`; an optional `string` or `bytes` field
+declares its `sce:max-size`, the bound of the value it holds when present): the
+field's type is the value type restricted to a scalar or an optional scalar, so a
+record of the schema holds the field as optional and the payload carries it as one.
+An optional field declares no `sce:quantity` (`validation/attribute-rule-violated`),
+and what may stand inside is refused as a variable's is, naming the set. Every other
+position — an algorithm's slot, a codec's entry — refuses `optional<…>` by name as
+`validation/attribute-rule-violated` until the step of the ADR that admits it there.
+The model carries the type (`{"optional": "int64"}` in the forge AST, on a variable
+and a schema's field alike), and no backend lowers it yet: each of the six and the
+Interpreter's lowering refuses, by name, as `generate/unsupported-feature` ("an
+optional value has no <language> lowering yet"), a statechart that declares one or
+imports a schema that does, the schema's own unit, and an algorithm whose record holds
+one; a host-run `<invoke>` whose `sce:request` or `sce:result` names such a schema is
+refused where it is checked. `null` stands only where an optional value is declared:
+`<data sce:type="int64" expr="null"/>` and an `<assign>` of `null` to an `int64` are
+`expression/type-mismatch`, where until 2026-10-21 they were judged fit.
+`sce-build/tests/an_optional_value_is_declared_by_its_type.rs` holds this.
 
 **Record variables.** `sce:type="record:<alias>"` holds a variable in the
 event-schema the document imports as `<alias>` — the record an algorithm's

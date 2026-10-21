@@ -38,8 +38,8 @@ use std::path::Path;
 
 use crate::forge::error::{ForgeError, Located, ValidationError};
 use crate::forge::model::{
-    EnumModel, EnumVariant, EventSchemaModel, ForgeDocument, ForgeField, NumericLiteral,
-    ParsedForge, SceType,
+    EnumModel, EnumVariant, EventSchemaModel, FieldType, ForgeDocument, NumericLiteral,
+    ParsedForge, SceType, SchemaField,
 };
 
 /// Why a default is no value of its field.
@@ -123,9 +123,11 @@ pub fn wire_of(ty: &SceType, max_size: Option<u32>, text: &str) -> Result<String
 /// The JSON a delivery that lacks `field` reads in its place: its default as
 /// [`wire_of`] spells it. `None` for a field that declares no default, or one
 /// whose default is no value of it (which the parser refuses).
-pub fn default_wire(field: &ForgeField) -> Option<String> {
+pub fn default_wire(field: &SchemaField) -> Option<String> {
     let text = field.default.as_deref()?;
-    wire_of(&field.sce_type, field.max_size, text).ok()
+    // A default is a value of what the field holds when present, never a
+    // spelling of absence (docs/adr/0055).
+    wire_of(field.sce_type.present_type(), field.max_size, text).ok()
 }
 
 /// The defaults of every field of `schema` a later revision added, as one
@@ -157,7 +159,8 @@ pub fn check_schema(
     document: &str,
 ) -> Result<(), Located<ForgeError>> {
     for field in &schema.fields {
-        let (SceType::Enum(reference), Some(value)) = (&field.sce_type, field.default.as_deref())
+        let (SceType::Enum(reference), Some(value)) =
+            (field.sce_type.present_type(), field.default.as_deref())
         else {
             continue;
         };
@@ -280,7 +283,7 @@ pub enum EnumDivergence {
 
 /// The revision a field belongs to: the one its `sce:since` names, and the first
 /// for a field that declares none.
-pub fn added_at(field: &ForgeField) -> u32 {
+pub fn added_at(field: &SchemaField) -> u32 {
     field.since.unwrap_or(1)
 }
 
@@ -366,7 +369,7 @@ pub fn divergence(first: &EventSchemaModel, second: &EventSchemaModel) -> Option
     parting(
         (first.fields.as_slice(), first.revision()),
         (second.fields.as_slice(), second.revision()),
-        |f: &ForgeField| f.id.as_str(),
+        |f: &SchemaField| f.id.as_str(),
         added_at,
         declared_alike,
     )
@@ -394,7 +397,7 @@ pub fn divergence_with_enums(
 ) -> Option<Divergence> {
     divergence(first, second).or_else(|| {
         first.fields.iter().find_map(|field| {
-            let SceType::Enum(_) = &field.sce_type else {
+            let SceType::Enum(_) = field.sce_type.present_type() else {
                 return None;
             };
             second.fields.iter().find(|theirs| theirs.id == field.id)?;
@@ -522,7 +525,9 @@ pub fn enum_documents(model: &crate::model::SCXMLModel, base_dir: &Path) -> Enum
                 let schema_dir = source.path.parent().unwrap_or(base_dir);
                 let mut fields = BTreeMap::new();
                 for field in &schema.fields {
-                    let SceType::Enum(reference) = &field.sce_type else {
+                    // An optional enum field holds a value of its document when
+                    // present (docs/adr/0055).
+                    let SceType::Enum(reference) = field.sce_type.present_type() else {
                         continue;
                     };
                     let Some(enum_import) = parsed
@@ -587,7 +592,7 @@ pub fn enum_divergence(first: &EnumModel, second: &EnumModel) -> Option<EnumDive
 /// Whether two fields of one id are declared alike: the whole field, as the forge
 /// model serialises it (positions are not serialised, so where it is written does
 /// not count), but for the alias of the enum it holds ([`unaliased`]).
-fn declared_alike(one: &ForgeField, other: &ForgeField) -> bool {
+fn declared_alike(one: &SchemaField, other: &SchemaField) -> bool {
     match (
         serde_json::to_value(unaliased(one)),
         serde_json::to_value(unaliased(other)),
@@ -602,17 +607,17 @@ fn declared_alike(one: &ForgeField, other: &ForgeField) -> bool {
 /// schema as two statecharts read it, each naming the field's enum as it holds
 /// it (docs/adr/0054) — may name one enum two ways. Which enum a field holds is
 /// its document, which [`divergence_with_enums`] compares.
-fn unaliased(field: &ForgeField) -> std::borrow::Cow<'_, ForgeField> {
-    match &field.sce_type {
-        SceType::Enum(_) => {
-            let mut field = field.clone();
-            field.sce_type = SceType::Enum(crate::forge::model::EnumRef {
-                alias: String::new(),
-            });
-            std::borrow::Cow::Owned(field)
-        }
-        _ => std::borrow::Cow::Borrowed(field),
+fn unaliased(field: &SchemaField) -> std::borrow::Cow<'_, SchemaField> {
+    if !matches!(field.sce_type.present_type(), SceType::Enum(_)) {
+        return std::borrow::Cow::Borrowed(field);
     }
+    // Whether the field is optional is kept: only the alias is left out.
+    let mut field = field.clone();
+    let (FieldType::Scalar(held) | FieldType::Optional { elem: held }) = &mut field.sce_type;
+    *held = SceType::Enum(crate::forge::model::EnumRef {
+        alias: String::new(),
+    });
+    std::borrow::Cow::Owned(field)
 }
 
 /// A text as a JSON string.
@@ -625,10 +630,10 @@ mod tests {
     use super::*;
     use crate::forge::model::{Direction, EnumRef};
 
-    fn field(id: &str, ty: SceType, since: Option<u32>, default: Option<&str>) -> ForgeField {
-        ForgeField {
+    fn field(id: &str, ty: SceType, since: Option<u32>, default: Option<&str>) -> SchemaField {
+        SchemaField {
             id: id.to_string(),
-            sce_type: ty,
+            sce_type: FieldType::Scalar(ty),
             direction: Direction::In,
             expr: None,
             expr_spelling: None,
@@ -646,7 +651,7 @@ mod tests {
         }
     }
 
-    fn schema(fields: Vec<ForgeField>) -> EventSchemaModel {
+    fn schema(fields: Vec<SchemaField>) -> EventSchemaModel {
         EventSchemaModel {
             name: "schema_revised".to_string(),
             event_name: "reading.revised".to_string(),
@@ -815,22 +820,22 @@ mod tests {
     }
 
     /// `schema_revised` at `revision`, declaring `fields`.
-    fn at_revision(revision: u32, fields: Vec<ForgeField>) -> EventSchemaModel {
+    fn at_revision(revision: u32, fields: Vec<SchemaField>) -> EventSchemaModel {
         EventSchemaModel {
             revision: Some(revision),
             ..schema(fields)
         }
     }
 
-    fn level() -> ForgeField {
+    fn level() -> SchemaField {
         field("level", SceType::Uint8, None, None)
     }
 
-    fn layout() -> ForgeField {
+    fn layout() -> SchemaField {
         field("layout", view_mode(), Some(2), Some("week"))
     }
 
-    fn urgent() -> ForgeField {
+    fn urgent() -> SchemaField {
         field("urgent", SceType::Bool, Some(3), Some("true"))
     }
 

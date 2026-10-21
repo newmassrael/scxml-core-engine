@@ -482,10 +482,12 @@ pub(crate) fn enum_variables(
 fn enum_field_aliases(
     schema: &crate::forge::model::EventSchemaModel,
 ) -> impl Iterator<Item = (&str, &str)> {
+    // An optional enum field holds a value of its enum when present
+    // (docs/adr/0055), so it names the enum as a field of the enum does.
     schema
         .fields
         .iter()
-        .filter_map(|field| match &field.sce_type {
+        .filter_map(|field| match field.sce_type.present_type() {
             crate::forge::model::SceType::Enum(reference) => {
                 Some((field.id.as_str(), reference.alias.as_str()))
             }
@@ -694,12 +696,15 @@ impl SentValue<'_> {
     /// the narrowing is the sender's to write (docs/adr/0050).
     fn misfit(
         &self,
-        field: &crate::forge::model::ForgeField,
+        field: &crate::forge::model::SchemaField,
         field_enum: Option<&crate::forge::model::EnumModel>,
     ) -> Option<Misfit> {
         use crate::forge::model::SceType;
         let declared = field.sce_type.as_attr();
-        match (self, &field.sce_type) {
+        // A value of `T` sent to a field of `optional<T>` is present
+        // (docs/adr/0055): it fits the field as it fits a field of `T`.
+        let present = field.sce_type.present_type();
+        match (self, present) {
             (SentValue::Enum { model, .. }, SceType::Enum(_)) => {
                 let (Some(sent), Some(read)) = (model, field_enum) else {
                     return None;
@@ -720,7 +725,7 @@ impl SentValue<'_> {
                  its variant declares)"
             ))),
             (SentValue::Typed { ty, bound }, _) => {
-                let want = InferredType::from_sce_type(&field.sce_type);
+                let want = InferredType::from_sce_type(present);
                 // A text or a byte string the sender declares a bound for, past the
                 // bound the field declares: refused unless the sender narrows it.
                 if let (InferredType::Str | InferredType::Bytes, Some(held), Some(max)) =
@@ -742,7 +747,7 @@ impl SentValue<'_> {
                     (_, InferredType::Unknown) => true,
                     // An enum field reads the name of a variant, which no value of
                     // another type is.
-                    (InferredType::Unknown, _) => !matches!(field.sce_type, SceType::Enum(_)),
+                    (InferredType::Unknown, _) => !matches!(present, SceType::Enum(_)),
                     (want, got) if want.is_integer_like() => got.is_integer_like(),
                     (want, got) if want.is_numeric() => got.is_numeric(),
                     (InferredType::Bool, got) => got == InferredType::Bool,
@@ -783,10 +788,12 @@ impl<'a> Judge<'a> {
         let loops = self.loop_records.borrow();
         let payload = self.payload_alias();
         let payload_holds_text = self.payload_schema.borrow().as_ref().is_some_and(|schema| {
-            schema
-                .fields
-                .iter()
-                .any(|f| matches!(f.sce_type, crate::forge::model::SceType::String))
+            schema.fields.iter().any(|f| {
+                matches!(
+                    f.sce_type.present_type(),
+                    crate::forge::model::SceType::String
+                )
+            })
         });
         self.scope.rewrite_state_calls(
             expr,
@@ -1158,12 +1165,15 @@ impl<'a> Judge<'a> {
         schema: &crate::forge::model::EventSchemaModel,
     ) -> Result<(), Located<ForgeError>> {
         use crate::forge::model::SceType;
+        // An optional text is bounded as the value it holds when present is
+        // (docs/adr/0055).
         let Some(field) = schema.fields.iter().find(|f| {
-            matches!(f.sce_type, SceType::String | SceType::Bytes) && f.max_size.is_none()
+            matches!(f.sce_type.present_type(), SceType::String | SceType::Bytes)
+                && f.max_size.is_none()
         }) else {
             return Ok(());
         };
-        let kind = match field.sce_type {
+        let kind = match field.sce_type.present_type() {
             SceType::Bytes => "a byte string",
             _ => "a string",
         };
@@ -1440,9 +1450,10 @@ impl<'a> Judge<'a> {
         self.schema_enums_named(var, alias, schema)?;
         self.schema_strings_bounded(var, alias, schema)?;
         for (field, init) in schema.fields.iter().zip(ordered) {
+            use crate::forge::model::{FieldType, SceType};
             // A field of an enum starts at one of its variants, as a variable
             // of it does.
-            if let crate::forge::model::SceType::Enum(reference) = &field.sce_type {
+            if let FieldType::Scalar(SceType::Enum(reference)) = &field.sce_type {
                 self.expr_of_enum(
                     ctx,
                     &init.expr,
@@ -1455,14 +1466,14 @@ impl<'a> Judge<'a> {
                 ctx,
                 &init.expr,
                 init.expr_spelling.as_ref(),
-                Expected::Slot(InferredType::from_sce_type(&field.sce_type)),
+                Expected::Slot(InferredType::of_field(&field.sce_type)),
             )?;
             // A string field starts at a literal that fits its bound; one
             // that declares none was refused above.
             let holder = match &field.sce_type {
-                crate::forge::model::SceType::String => Some(StringHolder::STRING_FIELD),
-                crate::forge::model::SceType::Bytes => Some(StringHolder::BYTES_FIELD),
-                _ => None,
+                FieldType::Scalar(SceType::String) => Some(StringHolder::STRING_FIELD),
+                FieldType::Scalar(SceType::Bytes) => Some(StringHolder::BYTES_FIELD),
+                FieldType::Scalar(_) | FieldType::Optional { .. } => None,
             };
             if let (Some(holder), Some(max_size)) = (holder, field.max_size) {
                 self.string_field_start(
@@ -1490,7 +1501,8 @@ impl<'a> Judge<'a> {
         schema: &crate::forge::model::EventSchemaModel,
     ) -> Result<(), Located<ForgeError>> {
         for field in &schema.fields {
-            let crate::forge::model::SceType::Enum(reference) = &field.sce_type else {
+            let crate::forge::model::SceType::Enum(reference) = field.sce_type.present_type()
+            else {
                 continue;
             };
             let Some(held) = self.held_enums.get(&reference.alias) else {
@@ -1532,7 +1544,8 @@ impl<'a> Judge<'a> {
         schema: &crate::forge::model::EventSchemaModel,
     ) -> Result<(), Located<ForgeError>> {
         for field in &schema.fields {
-            let crate::forge::model::SceType::Enum(reference) = &field.sce_type else {
+            let crate::forge::model::SceType::Enum(reference) = field.sce_type.present_type()
+            else {
                 continue;
             };
             if self.enums.iter().any(|e| e.alias == reference.alias) {
@@ -2227,15 +2240,15 @@ impl<'a> Judge<'a> {
         param: &WireParam<'_>,
         state: &str,
     ) -> Result<(), Located<ForgeError>> {
-        use crate::forge::model::{EnumModel, ForgeField, SceType};
+        use crate::forge::model::{EnumModel, SceType, SchemaField};
         let written = param.written;
         if action.event.is_empty() || param.name.is_empty() || written.trim().is_empty() {
             return Ok(());
         }
-        let mut readers: Vec<(String, &ForgeField, Option<&EnumModel>)> = Vec::new();
+        let mut readers: Vec<(String, &SchemaField, Option<&EnumModel>)> = Vec::new();
         if let Some(schema) = self.receivers.own_schemas.get(&action.event) {
             if let Some(field) = schema.fields.iter().find(|f| f.id == param.name) {
-                let held = match &field.sce_type {
+                let held = match field.sce_type.present_type() {
                     SceType::Enum(reference) => self.receivers.own_enums.get(&reference.alias),
                     _ => None,
                 };
@@ -2377,7 +2390,9 @@ impl<'a> Judge<'a> {
             wire.spelling,
             Expected::Hint(InferredType::Unknown),
         )?;
-        let want = InferredType::from_sce_type(&field.sce_type);
+        // A typed request holds no optional field (`typed_invoke::validate`
+        // refuses one by name, docs/adr/0055), so the field is read as it is.
+        let want = InferredType::of_field(&field.sce_type);
         let given = ty.wire_param_slot().unwrap_or(ty);
         let verdict = match (want, given) {
             (
@@ -2937,9 +2952,11 @@ impl<'a> Judge<'a> {
         };
         for field in &schema.fields {
             // An enum is untyped to an expression: the schema holds it to the enum.
-            let slot = match field.sce_type {
-                crate::forge::model::SceType::Enum(_) => InferredType::Unknown,
-                ref ty => InferredType::from_sce_type(ty),
+            let slot = match &field.sce_type {
+                crate::forge::model::FieldType::Scalar(crate::forge::model::SceType::Enum(_)) => {
+                    InferredType::Unknown
+                }
+                declared => InferredType::of_field(declared),
             };
             self.expr(
                 ctx,

@@ -480,7 +480,9 @@ pub struct RecordImport {
 #[derive(Debug, Clone)]
 pub struct RecordField {
     pub id: String,
-    pub ty: SceType,
+    /// The type the schema declares: a scalar, or an optional scalar
+    /// (docs/adr/0055), which no backend renders an algorithm's record of yet.
+    pub ty: FieldType,
     /// The schema's `sce:max-size` on the field: the bound, in UTF-8 bytes,
     /// of a `string` field (SCE_FORGE.md §4.12). `None` when the schema
     /// declares none, which a `string` field of a record cannot lack.
@@ -500,7 +502,16 @@ impl RecordImport {
     /// not plain data, so a backend that holds it by borrow or clone instead
     /// of by copy asks this.
     pub fn holds_text(&self) -> bool {
-        self.fields.iter().any(|f| matches!(f.ty, SceType::String))
+        self.fields
+            .iter()
+            .any(|f| matches!(f.ty.present_type(), SceType::String))
+    }
+
+    /// The first field that may be absent (docs/adr/0055), if any: what a
+    /// backend that renders no algorithm's optional value yet refuses the
+    /// record by.
+    pub fn first_optional_field(&self) -> Option<&RecordField> {
+        self.fields.iter().find(|f| f.ty.optional_elem().is_some())
     }
 }
 
@@ -2667,6 +2678,20 @@ fn render_event_schema(
     imports: &[ImportContext],
     _lang: crate::generator::Language,
 ) -> Result<String, ForgeError> {
+    // A field that may be absent (docs/adr/0055) has no carrier in the payload
+    // struct of any backend yet: refused by name before a field is spelled, so
+    // every field read below holds a present value.
+    if let Some(field) = m.first_optional_field() {
+        return Err(crate::forge::static_lowering::optional_not_lowered(
+            &format!(
+                "<data id=\"{}\" sce:type=\"{}\">",
+                field.id,
+                field.sce_type.as_attr()
+            ),
+            _lang.canonical_name(),
+        )
+        .into());
+    }
     let l = LangCtx::new(_lang, imports);
 
     let payload_struct_name = format!("{}Payload", filters::to_pascal_case(m.name.clone()));
@@ -2692,7 +2717,7 @@ fn render_event_schema(
         .fields
         .iter()
         .map(|f| {
-            let resolved = l.type_name(&f.sce_type);
+            let resolved = l.type_name(f.sce_type.present_type());
             let go_field_name = event_schema_field_ident(&f.id, crate::generator::Language::Go);
             let rs_field_name = event_schema_field_ident(&f.id, crate::generator::Language::Rust);
             // A `string` field the schema bounds is held in a buffer of that
@@ -2701,7 +2726,7 @@ fn render_event_schema(
             // fixed-capacity on the no-alloc profile; C11 the bounded buffer a
             // `sce-static` statechart holds the same text in. A string with no
             // bound stays the language's own, and no record can name it.
-            let text_bound = match (&f.sce_type, f.max_size) {
+            let text_bound = match (f.sce_type.present_type(), f.max_size) {
                 (SceType::String, Some(bound)) => Some(bound),
                 _ => None,
             };
@@ -2809,7 +2834,7 @@ fn render_event_schema(
         .fields
         .iter()
         .filter_map(|f| {
-            let unit = match f.sce_type {
+            let unit = match f.sce_type.present_type() {
                 SceType::String => "UTF-8 bytes",
                 SceType::Bytes => "bytes",
                 _ => return None,
@@ -2832,7 +2857,7 @@ fn render_event_schema(
     let text_bounds: std::collections::BTreeSet<u32> = m
         .fields
         .iter()
-        .filter_map(|f| match (&f.sce_type, f.max_size) {
+        .filter_map(|f| match (f.sce_type.present_type(), f.max_size) {
             (SceType::String, Some(bound)) => Some(bound),
             _ => None,
         })
@@ -2863,8 +2888,8 @@ fn render_event_schema(
         // Plain data — every field fixed-width, `bool` or an enum — is
         // `Copy` as well (the record rule's schema, SCE_FORGE.md §4.12).
         let plain = m.fields.iter().all(|f| {
-            crate::forge::model::AlgorithmValueType::list_elem_admitted(&f.sce_type)
-                || matches!(f.sce_type, SceType::Enum(_))
+            crate::forge::model::AlgorithmValueType::list_elem_admitted(f.sce_type.present_type())
+                || matches!(f.sce_type.present_type(), SceType::Enum(_))
         });
         let category = if plain {
             RustDeriveCategory::EventSchemaPlainPayload
@@ -3089,8 +3114,10 @@ pub fn build_rust_event_payload(
             // writes into it beside the typed payload: the same fields, named
             // once. The reader's width comes from the field's own declared
             // type, so a field widened in its schema cannot keep being read at
-            // the old width — the generated call stops compiling instead.
-            let reader = match &f.sce_type {
+            // the old width — the generated call stops compiling instead. A
+            // schema with an optional field was refused where the machine was
+            // lowered (docs/adr/0055), so each field holds a present value.
+            let reader = match f.sce_type.present_type() {
                 // A 64-bit integer is read from its digits as a text, or from a number
                 // exact in a double (`PayloadFields::wide`).
                 SceType::Uint64 => format!("fields.unsigned64(\"{}\")?", f.id),
@@ -3162,7 +3189,7 @@ self.raise_external_typed_with_data(\n            {machine_name}Event::{variant}
         let derives = if schema
             .fields
             .iter()
-            .any(|f| matches!(f.sce_type, SceType::Enum(_)))
+            .any(|f| matches!(f.sce_type.present_type(), SceType::Enum(_)))
         {
             "Clone, Debug, PartialEq"
         } else {
@@ -3246,15 +3273,17 @@ match event {{\n{lift_arms}            _ => {{}}\n        }}\n        Ok(())\n  
 /// Both deref to `[u8]` / `str`, so `&ev.<field>` coerces to the
 /// `&[u8]` / `&str` an `Actions` trait method takes. Every other
 /// primitive resolves through `LangCtx::type_name`; the callers admit
-/// primitive fields only, so no enum-alias arm is hit.
-fn rust_record_field_type(l: &LangCtx, f: &ForgeField) -> String {
-    match &f.sce_type {
+/// primitive fields only, so no enum-alias arm is hit. A record with an
+/// optional field (docs/adr/0055) is refused before one is generated, so the
+/// field is spelled as the value it holds when present.
+fn rust_record_field_type(l: &LangCtx, f: &SchemaField) -> String {
+    match f.sce_type.present_type() {
         SceType::Bytes => {
             let cap = crate::forge::limits::resolve_bytes_max(f.max_size);
             format!("::sce_rust_runtime::SceBytes<{cap}>")
         }
         SceType::String => "::sce_rust_runtime::SceString".to_string(),
-        _ => l.type_name(&f.sce_type).into_owned(),
+        other => l.type_name(other).into_owned(),
     }
 }
 
@@ -3305,7 +3334,7 @@ fn rust_enum_lift(
 }
 
 /// [`rust_record_field_type`] for a caller outside this module.
-pub(crate) fn rust_record_type(f: &ForgeField) -> String {
+pub(crate) fn rust_record_type(f: &SchemaField) -> String {
     rust_record_field_type(&LangCtx::primitive(crate::generator::Language::Rust), f)
 }
 
@@ -3316,7 +3345,7 @@ pub(crate) fn rust_record_type(f: &ForgeField) -> String {
 /// ⚠ JSON has no byte string, so a `bytes` field rides as its byte-exact
 /// Latin-1 text (`PayloadFields::bytes` reads it back the same way), and a
 /// text is quoted and escaped.
-pub(crate) fn rust_record_wire(fields: &[ForgeField], receiver: &str, indent: &str) -> String {
+pub(crate) fn rust_record_wire(fields: &[SchemaField], receiver: &str, indent: &str) -> String {
     rust_record_wire_of(fields, receiver, indent, &[])
 }
 
@@ -3324,7 +3353,7 @@ pub(crate) fn rust_record_wire(fields: &[ForgeField], receiver: &str, indent: &s
 /// (`static_enums`): it rides as the variant's declared name, quoted, as a
 /// saved state holds it.
 fn rust_record_wire_of(
-    fields: &[ForgeField],
+    fields: &[SchemaField],
     receiver: &str,
     indent: &str,
     static_enums: &[crate::forge::static_lowering::StaticEnumType],
@@ -3332,7 +3361,9 @@ fn rust_record_wire_of(
     let mut items = String::new();
     let mut args = String::new();
     for f in fields {
-        let wire = match &f.sce_type {
+        // A record with an optional field (docs/adr/0055) is refused before its
+        // wire is written, so each field is written as a present value.
+        let wire = match f.sce_type.present_type() {
             SceType::Bytes => format!(
                 "::sce_rust_runtime::event_payload::quote(\
 &::sce_rust_runtime::event_payload::bytes_as_payload_text(&{receiver}.{}))",
@@ -3367,7 +3398,7 @@ fn rust_record_wire_of(
             items.push_str(", ");
         }
         // A 64-bit integer crosses as the text of its digits.
-        let value = if matches!(f.sce_type, SceType::Uint64 | SceType::Int64) {
+        let value = if matches!(f.sce_type.present_type(), SceType::Uint64 | SceType::Int64) {
             "\\\"{}\\\""
         } else {
             "{}"
@@ -3448,7 +3479,7 @@ pub(crate) struct C11RecordWire {
     pub args: String,
 }
 
-pub(crate) fn c11_record_wire(fields: &[ForgeField], receiver: &str) -> C11RecordWire {
+pub(crate) fn c11_record_wire(fields: &[SchemaField], receiver: &str) -> C11RecordWire {
     c11_record_wire_of(fields, receiver, &[])
 }
 
@@ -3457,7 +3488,7 @@ pub(crate) fn c11_record_wire(fields: &[ForgeField], receiver: &str) -> C11Recor
 /// state holds it. A value no variant names is one the writer refuses, as it
 /// refuses a real that is not finite.
 fn c11_record_wire_of(
-    fields: &[ForgeField],
+    fields: &[SchemaField],
     receiver: &str,
     static_enums: &[crate::forge::static_lowering::StaticEnumType],
 ) -> C11RecordWire {
@@ -3472,7 +3503,9 @@ fn c11_record_wire_of(
         if !format.is_empty() {
             format.push(',');
         }
-        match &f.sce_type {
+        // A record with an optional field (docs/adr/0055) is refused before its
+        // wire is written, so each field is written as a present value.
+        match f.sce_type.present_type() {
             SceType::Bytes => {
                 locals.push_str(&format!(
                     "    char _wire_{id}[SCE_MAX_DATA_LEN];\n    \
@@ -3570,7 +3603,7 @@ if (_name_{id} == NULL) {{\n        return false;\n    }}\n"
 
 /// [`c11_payload_field_decl`] for a caller outside this module, which has no
 /// [`LangCtx`] of its own: the primitive C11 context.
-pub(crate) fn c11_record_field_decl(f: &ForgeField) -> String {
+pub(crate) fn c11_record_field_decl(f: &SchemaField) -> String {
     c11_payload_field_decl(&LangCtx::primitive(crate::generator::Language::C11), f)
 }
 
@@ -3584,12 +3617,15 @@ pub(crate) fn c11_record_field_decl(f: &ForgeField) -> String {
 /// the native guard reads `<id>` and `<id>_len` (see the C bytes-equality
 /// lowering in [`crate::forge::expr`]). RFC §bytesguard-3 B4. Every other field type
 /// is a self-contained scalar via [`LangCtx::type_name`].
-fn c11_payload_field_decl(l: &LangCtx, f: &ForgeField) -> String {
-    if matches!(f.sce_type, SceType::Bytes) {
+fn c11_payload_field_decl(l: &LangCtx, f: &SchemaField) -> String {
+    // A schema with an optional field (docs/adr/0055) is refused before its
+    // struct is declared, so the field is declared as the value it holds.
+    let present = f.sce_type.present_type();
+    if matches!(present, SceType::Bytes) {
         let cap = crate::forge::limits::resolve_bytes_max(f.max_size);
         format!("    uint8_t {}[{cap}];\n    size_t {}_len;\n", f.id, f.id)
     } else {
-        let ty = l.type_name(&f.sce_type).into_owned();
+        let ty = l.type_name(present).into_owned();
         format!("    {ty} {};\n", f.id)
     }
 }
@@ -3700,7 +3736,9 @@ pub fn build_c11_event_payload(
         let mut field_reads = String::new();
         for f in &schema.fields {
             let id = &f.id;
-            let read = match &f.sce_type {
+            // A schema with an optional field was refused where the machine was
+            // lowered (docs/adr/0055), so each field is read as a present value.
+            let read = match f.sce_type.present_type() {
                 SceType::Uint8 => format!("sce_payload_read_u8(&_fields, \"{id}\", &out->{id})"),
                 SceType::Uint16 => format!("sce_payload_read_u16(&_fields, \"{id}\", &out->{id})"),
                 SceType::Uint32 => format!("sce_payload_read_u32(&_fields, \"{id}\", &out->{id})"),
@@ -3833,7 +3871,11 @@ sm->pending_payload.as.{member} = _payload;\n        return;\n    }}\n"
         // Strings arrive as borrowed C pointers. Queue the owned JSON and
         // lift it on dequeue; copying the pointer into the queue would keep
         // reading a caller's subsequently modified or expired storage.
-        let owned_payload = if schema.fields.iter().any(|f| f.sce_type == SceType::String) {
+        let owned_payload = if schema
+            .fields
+            .iter()
+            .any(|f| *f.sce_type.present_type() == SceType::String)
+        {
             String::new()
         } else {
             format!("    evt.payload.tag = {tag_const};\n    evt.payload.as.{member} = *payload;\n")
@@ -3970,29 +4012,27 @@ pub struct GoEventPayload {
 /// a field that was widened in its schema cannot keep being read at the old
 /// width — the generated call stops compiling instead.
 fn go_payload_reader(
-    f: &ForgeField,
+    f: &SchemaField,
     obj: &str,
     static_enums: &[crate::forge::static_lowering::StaticEnumType],
 ) -> String {
     let id = &f.id;
-    match &f.sce_type {
+    // A schema with an optional field was refused where the machine was
+    // lowered (docs/adr/0055), so the field is read as a present value.
+    let present = f.sce_type.present_type();
+    match present {
         // A 64-bit integer is read from the text of its digits, or from a number
         // exact in a double.
         SceType::Uint64 => format!("sce.PayloadUnsigned64({obj}, \"{id}\")"),
         SceType::Int64 => format!("sce.PayloadSigned64({obj}, \"{id}\")"),
-        SceType::Uint8 | SceType::Uint16 | SceType::Uint32 => format!(
-            "sce.PayloadUnsigned[{}]({obj}, \"{id}\")",
-            go_type(&f.sce_type)
-        ),
-        SceType::Int8 | SceType::Int16 | SceType::Int32 => format!(
-            "sce.PayloadSigned[{}]({obj}, \"{id}\")",
-            go_type(&f.sce_type)
-        ),
+        SceType::Uint8 | SceType::Uint16 | SceType::Uint32 => {
+            format!("sce.PayloadUnsigned[{}]({obj}, \"{id}\")", go_type(present))
+        }
+        SceType::Int8 | SceType::Int16 | SceType::Int32 => {
+            format!("sce.PayloadSigned[{}]({obj}, \"{id}\")", go_type(present))
+        }
         SceType::Float32 | SceType::Float64 => {
-            format!(
-                "sce.PayloadFloat[{}]({obj}, \"{id}\")",
-                go_type(&f.sce_type)
-            )
+            format!("sce.PayloadFloat[{}]({obj}, \"{id}\")", go_type(present))
         }
         SceType::Bool => format!("sce.PayloadBool({obj}, \"{id}\")"),
         SceType::String => format!("sce.PayloadString({obj}, \"{id}\")"),
@@ -4029,8 +4069,8 @@ fn go_payload_reader(
 ///
 /// ⚠ JSON has no byte string, so a `bytes` field rides as its byte-exact
 /// Latin-1 text and `sce.PayloadBytes` reads it back the same way.
-fn go_payload_data_value(f: &ForgeField) -> String {
-    match f.sce_type {
+fn go_payload_data_value(f: &SchemaField) -> String {
+    match f.sce_type.present_type() {
         SceType::Bytes => format!("sce.BytesAsPayloadText({})", f.id),
         // The name the enum document declares for the value, which is what
         // the enum's `String` answers.
@@ -4146,7 +4186,9 @@ pub fn build_go_event_payload(
         let mut field_reads = String::new();
         let mut data_items = String::new();
         for f in &schema.fields {
-            let ty = l.type_name(&f.sce_type).into_owned();
+            // A schema with an optional field was refused where the machine was
+            // lowered (docs/adr/0055), so each field holds a present value.
+            let ty = l.type_name(f.sce_type.present_type()).into_owned();
             field_lines.push_str(&format!("\t{} {ty}\n", f.id));
             params.push_str(&format!(", {} {ty}", f.id));
             struct_lits.push_str(&format!("{}: {}, ", f.id, f.id));
@@ -4314,9 +4356,11 @@ fn cpp_event_enum_value(event: &str) -> String {
 /// The width comes from the field's own declared type (the out-parameter), so a
 /// field that was widened in its schema cannot keep being read at the old
 /// width — the generated call stops compiling instead.
-fn cpp_payload_reader(f: &ForgeField, target: &str) -> String {
+fn cpp_payload_reader(f: &SchemaField, target: &str) -> String {
     let id = &f.id;
-    let call = match &f.sce_type {
+    // A schema with an optional field was refused where the machine was
+    // lowered (docs/adr/0055), so the field is read as a present value.
+    let call = match f.sce_type.present_type() {
         // A 64-bit integer is read from the text of its digits, or from a number
         // exact in a double.
         SceType::Uint64 | SceType::Int64 => "readWide",
@@ -4457,7 +4501,10 @@ pendingPayloadTag_ = {TAG}::None;\n",
         let mut field_reads = String::new();
         let mut data_items = String::new();
         for f in &schema.fields {
-            let ty = l.type_name(&f.sce_type).into_owned();
+            // A schema with an optional field was refused where the machine was
+            // lowered (docs/adr/0055), so each field holds a present value.
+            let present = f.sce_type.present_type();
+            let ty = l.type_name(present).into_owned();
             field_lines.push_str(&format!("    {ty} {};\n", f.id));
             if !params.is_empty() {
                 params.push_str(", ");
@@ -4465,7 +4512,7 @@ pendingPayloadTag_ = {TAG}::None;\n",
             }
             params.push_str(&format!("{ty} {}", f.id));
             struct_inits.push_str(&format!(".{} = {}, ", f.id, f.id));
-            match &f.sce_type {
+            match present {
                 SceType::Enum(r) => field_reads.push_str(&cpp_enum_lift(
                     &f.id,
                     "payload",
@@ -4487,9 +4534,9 @@ if (!refusal.empty()) {{\n                return refusal;\n            }}\n",
             // JSON has no byte string.
             // An enum rides as the name its document declares for the value,
             // which the enum's `sceLogName` answers.
-            let written = if matches!(f.sce_type, SceType::Enum(_)) {
+            let written = if matches!(present, SceType::Enum(_)) {
                 format!("::std::string(sceLogName({}))", f.id)
-            } else if matches!(f.sce_type, SceType::Uint64 | SceType::Int64) {
+            } else if matches!(present, SceType::Uint64 | SceType::Int64) {
                 // A 64-bit integer crosses as the text of its digits.
                 format!("::std::to_string({})", f.id)
             } else {
@@ -4615,20 +4662,23 @@ pub struct KotlinEventPayload {
 /// The width is in the method name rather than in a cast, so a field that was
 /// widened in its schema cannot keep being read at the old width — the
 /// generated call stops compiling instead.
-fn kotlin_payload_reader(f: &ForgeField, l: &LangCtx) -> String {
+fn kotlin_payload_reader(f: &SchemaField, l: &LangCtx) -> String {
     let id = &f.id;
+    // A schema with an optional field was refused where the machine was
+    // lowered (docs/adr/0055), so the field is read as a present value.
+    let present = f.sce_type.present_type();
     // An enum is the machine's own, lifted from the variant's declared name; a
     // name the enum does not declare is a payload that does not fit its schema,
     // refused as a number out of range is.
-    if let SceType::Enum(r) = &f.sce_type {
+    if let SceType::Enum(r) = present {
         return format!(
             "fields.string(\"{id}\").let {{ name -> {ty}.entries.firstOrNull {{ it.declaredName == name }} \
              ?: throw EventPayload.Refusal(\"'{id}' ($name) is not a variant of {alias}\") }}",
-            ty = l.type_name(&f.sce_type),
+            ty = l.type_name(present),
             alias = r.alias
         );
     }
-    let reader = match &f.sce_type {
+    let reader = match present {
         SceType::Uint8 => "uint8",
         SceType::Uint16 => "uint16",
         SceType::Uint32 => "uint32",
@@ -4749,7 +4799,9 @@ pub fn build_kotlin_event_payload(
         let mut lift_args = String::new();
         let mut data_items = String::new();
         for f in &schema.fields {
-            let ty = l.type_name(&f.sce_type).into_owned();
+            // A schema with an optional field was refused where the machine was
+            // lowered (docs/adr/0055), so each field holds a present value.
+            let ty = l.type_name(f.sce_type.present_type()).into_owned();
             if !ctor_params.is_empty() {
                 ctor_params.push_str(", ");
             }
@@ -4766,7 +4818,7 @@ pub fn build_kotlin_event_payload(
             call_args.push_str(&f.id);
             lift_args.push_str(&kotlin_payload_reader(f, &l));
             // An enum rides as the name its document declares for the value.
-            let written = if matches!(f.sce_type, SceType::Enum(_)) {
+            let written = if matches!(f.sce_type.present_type(), SceType::Enum(_)) {
                 format!("{}.declaredName", f.id)
             } else {
                 f.id.clone()
@@ -5001,7 +5053,10 @@ pub fn build_python_event_payload(
         let mut lift_fields = String::new();
         let mut data_items = String::new();
         for f in &schema.fields {
-            let ty = l.type_name(&f.sce_type).into_owned();
+            // A schema with an optional field was refused where the machine was
+            // lowered (docs/adr/0055), so each field holds a present value.
+            let present = f.sce_type.present_type();
+            let ty = l.type_name(present).into_owned();
             field_lines.push_str(&format!("    {}: {ty}\n", f.id));
             params.push_str(&format!(", {}: {ty}", f.id));
             if !call_args.is_empty() {
@@ -5012,7 +5067,7 @@ pub fn build_python_event_payload(
             // holds the binary32 nearest the number it is given, whether the
             // lift reads it out of the data or the inject seam is handed it, as
             // every engine with a single of its own holds it.
-            let single = matches!(f.sce_type, SceType::Float32);
+            let single = matches!(present, SceType::Float32);
             uses_single |= single;
             if single {
                 call_args.push_str(&format!("_as_single({})", f.id));
@@ -5022,13 +5077,12 @@ pub fn build_python_event_payload(
             // An integer is read at the width its schema declares, as every
             // other engine reads it: Python's `int` has no width to refuse a
             // value past it by.
-            let width = f
-                .sce_type
+            let width = present
                 .int_value_range()
                 .map_or(String::new(), |(low, high)| format!(", {low}, {high}"));
             // A 64-bit integer is read from the text of its digits, or from a number
             // exact in a double, and crosses as that text.
-            let wide = matches!(f.sce_type, SceType::Uint64 | SceType::Int64);
+            let wide = matches!(present, SceType::Uint64 | SceType::Int64);
             uses_wide |= wide;
             let declared = if single {
                 "_Single"
@@ -5042,9 +5096,9 @@ pub fn build_python_event_payload(
             // `bytes` field rides the wire as its byte-exact Latin-1 text (the
             // lift reads it back the same way). Printable ASCII — what a bytes
             // guard compares — is the same characters either way.
-            if matches!(f.sce_type, SceType::Bytes) {
+            if matches!(present, SceType::Bytes) {
                 data_items.push_str(&format!("\"{}\": {}.decode(\"latin-1\")", f.id, f.id));
-            } else if matches!(f.sce_type, SceType::Enum(_)) {
+            } else if matches!(present, SceType::Enum(_)) {
                 // An enum rides as the name its document declares for the value.
                 data_items.push_str(&format!("\"{}\": {}.sce_name", f.id, f.id));
             } else if single {
@@ -26895,9 +26949,13 @@ fn resolve_record<'i>(
              carries no payload and no record type is generated for it"
         )));
     }
+    // An optional field (docs/adr/0055) is judged as the value it holds when
+    // present: a body reads it as an optional value, and a backend that renders
+    // no algorithm's optional value yet refuses it by name where it renders.
     if let Some(field) = record.fields.iter().find(|f| {
-        !(AlgorithmValueType::list_elem_admitted(&f.ty)
-            || matches!(f.ty, SceType::Enum(_) | SceType::String))
+        let present = f.ty.present_type();
+        !(AlgorithmValueType::list_elem_admitted(present)
+            || matches!(present, SceType::Enum(_) | SceType::String))
     }) {
         return Err(refuse(format!(
             "a schema of fixed-width and bounded text fields — `{alias}` declares `{}` as {}, \
@@ -26909,7 +26967,7 @@ fn resolve_record<'i>(
     if let Some(field) = record
         .fields
         .iter()
-        .find(|f| matches!(f.ty, SceType::String) && f.max_size.is_none())
+        .find(|f| matches!(f.ty.present_type(), SceType::String) && f.max_size.is_none())
     {
         return Err(refuse(format!(
             "a string field with a bound — `{alias}` declares `{id}` as string without \
@@ -27009,7 +27067,8 @@ pub(crate) fn judge_text_write<'r>(
                 .and_then(|path| {
                     let (record, field) = path.split_once('.')?;
                     let field = record_of(record)?.field(field)?;
-                    matches!(field.ty, SceType::String).then(|| (record.to_string(), field))
+                    matches!(field.ty, FieldType::Scalar(SceType::String))
+                        .then(|| (record.to_string(), field))
                 })
                 .ok_or(TextRefusal::Shape(
                     "a value that is no text field of a record",
@@ -28020,7 +28079,7 @@ fn lower_algorithm_stmt(
             let mut inits: Vec<(String, String)> = Vec::new();
             for (field, f) in record.fields.iter().zip(ordered) {
                 let site = ExpressionSite::new(&f.expr, f.expr_spelling.as_ref());
-                let value = if matches!(field.ty, SceType::String) {
+                let value = if matches!(field.ty, FieldType::Scalar(SceType::String)) {
                     lower_text_write(&f.expr, f.expr_spelling.as_ref(), field, ctx)?
                 } else {
                     expr::transpile_into(
@@ -28028,7 +28087,7 @@ fn lower_algorithm_stmt(
                         l.expr_target(),
                         type_ctx,
                         renames,
-                        InferredType::from_sce_type(&field.ty),
+                        InferredType::of_field(&field.ty),
                     )
                     .map_err(|refusal| site.place(refusal))?
                 };
@@ -28152,7 +28211,7 @@ fn lower_algorithm_stmt(
                 let alias = records.get(root.trim())?;
                 let record = resolve_record(imports, alias, None, "<sce:assign>").ok()?;
                 let field = record.field(field.trim())?;
-                matches!(field.ty, SceType::String).then(|| (root.trim(), field))
+                matches!(field.ty, FieldType::Scalar(SceType::String)).then(|| (root.trim(), field))
             });
             if let Some((root, field)) = text_target {
                 let value = lower_text_write(rhs, expr_spelling.as_ref(), field, ctx)?;
@@ -30517,8 +30576,11 @@ pub(crate) struct AlgorithmTypes<'a> {
     /// backend that holds a text-bearing record by clone rather than by copy
     /// must clone before it stores or returns one.
     pub(crate) borrowed_records: std::collections::HashSet<String>,
-    /// `"<name>.<field>"` for a record's and a collection element's fields.
+    /// `"<name>.<field>"` for a collection element's fields.
     members: Vec<(String, SceType)>,
+    /// `"<name>.<field>"` for a record's fields, each typed as its schema
+    /// declares it — a scalar, or an optional scalar (docs/adr/0055).
+    record_members: Vec<(String, FieldType)>,
     /// `"<name>.<field>"` for each `string` field of a record: the members
     /// whose text lives in a buffer of the schema's bound
     /// ([`crate::forge::types::TypeCtx::record_text`]).
@@ -30736,14 +30798,15 @@ impl<'a> AlgorithmTypes<'a> {
             .collect::<Vec<_>>();
         let mut records = Vec::new();
         let mut text_members = Vec::new();
+        let mut record_members = Vec::new();
         for (name, alias, spelling, element) in &bindings {
             let record = resolve_record(imports, alias, *spelling, element)?;
             for field in &record.fields {
                 let path = format!("{name}.{}", field.id);
-                if matches!(field.ty, SceType::String) {
+                if matches!(field.ty, FieldType::Scalar(SceType::String)) {
                     text_members.push(path.clone());
                 }
-                members.push((path, field.ty.clone()));
+                record_members.push((path, field.ty.clone()));
             }
             records.push((*name, *alias, record));
         }
@@ -30773,6 +30836,7 @@ impl<'a> AlgorithmTypes<'a> {
             records,
             borrowed_records,
             members,
+            record_members,
             text_members,
             member_lens,
             limits,
@@ -30781,15 +30845,54 @@ impl<'a> AlgorithmTypes<'a> {
 
     /// The alias of the enum the parameter, local, loop item or record field at
     /// `path` (`status`, `e.status`) holds, for one that holds a value of an enum.
+    /// A record's optional enum field holds none: a value of it may be absent.
     pub(crate) fn enum_at(&self, path: &str) -> Option<&str> {
-        self.env
+        let scalars = self.env.iter().chain(self.members.iter());
+        let records = self
+            .record_members
             .iter()
-            .chain(self.members.iter())
-            .find(|(name, _)| name == path)
+            .filter_map(|(name, ty)| ty.scalar().map(|ty| (name, ty)));
+        scalars
+            .map(|(name, ty)| (name, ty))
+            .chain(records)
+            .find(|(name, _)| *name == path)
             .and_then(|(_, ty)| match ty {
                 SceType::Enum(reference) => Some(reference.alias.as_str()),
                 _ => None,
             })
+    }
+
+    /// Whether a record the body holds has a field that may be absent
+    /// (docs/adr/0055): what decides whether its expressions have an optional
+    /// value to be judged for.
+    pub(crate) fn holds_optional(&self) -> bool {
+        self.record_members
+            .iter()
+            .any(|(_, ty)| ty.optional_elem().is_some())
+    }
+
+    /// The refusal of a backend, `lang`, that renders no algorithm's optional
+    /// value yet (docs/adr/0055), when a record the body holds has a field
+    /// that may be absent. The body was judged before any backend was asked;
+    /// this refuses it by name rather than render it with no type that holds
+    /// absence. One wording for every backend and the Interpreter.
+    pub(crate) fn refuse_optional(&self, lang: &str) -> Result<(), GenerateError> {
+        let held = self.records.iter().find_map(|&(name, alias, record)| {
+            record
+                .first_optional_field()
+                .map(|field| (name, alias, field))
+        });
+        match held {
+            Some((name, alias, field)) => Err(crate::forge::static_lowering::optional_not_lowered(
+                &format!(
+                    "`{name}`, a record:{alias} whose field `{}` is {}",
+                    field.id,
+                    field.ty.as_attr()
+                ),
+                lang,
+            )),
+            None => Ok(()),
+        }
     }
 
     /// The type context an expression of `m`'s body is lowered and judged in.
@@ -30836,6 +30939,9 @@ impl<'a> AlgorithmTypes<'a> {
         }
         for (name, ty) in &self.members {
             type_ctx.insert_var(name.as_str(), InferredType::from_sce_type(ty));
+        }
+        for (name, ty) in &self.record_members {
+            type_ctx.insert_var(name.as_str(), InferredType::of_field(ty));
         }
         for path in &self.text_members {
             type_ctx.insert_record_text(path.as_str());
@@ -31070,6 +31176,7 @@ fn render_algorithm(
     // The names the body's expressions are typed against — collected once,
     // for the renderer and the integer arithmetic contract alike.
     let types = AlgorithmTypes::collect(m, imports, options)?;
+    types.refuse_optional(lang.canonical_name())?;
     // SCE_FORGE.md §4.12 records: each member access is renamed to the field
     // identifier the payload struct was emitted with on this backend
     // (`event_schema_field_ident`), through the local's own backend
@@ -31084,7 +31191,7 @@ fn render_algorithm(
                 match field.ty {
                     // The text a comparison reads, in the type the backend
                     // compares a string as.
-                    SceType::String => record_text_operand(lang, &member),
+                    FieldType::Scalar(SceType::String) => record_text_operand(lang, &member),
                     _ => member,
                 },
             ));
@@ -31193,7 +31300,7 @@ fn render_algorithm(
             ListElemType::Record { alias } => resolve_record(imports, alias, None, "<sce:return>")?
                 .fields
                 .iter()
-                .map(|f| c11_field_bytes(&f.ty, f.max_size))
+                .map(|f| c11_field_bytes(f.ty.present_type(), f.max_size))
                 .sum(),
         };
         if let Some(refusal) = c11_list_too_large(

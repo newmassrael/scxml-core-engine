@@ -27,7 +27,7 @@
 //   Users must rewrite to a decimal float literal. This matches textbook
 //   strict type checking and prevents silent precision loss.
 
-use crate::forge::model::SceType;
+use crate::forge::model::{FieldType, SceType};
 use crate::forge::quantity::{NumericBaseType, Quantity, Rational, UnitTag};
 use std::collections::HashMap;
 
@@ -585,6 +585,17 @@ impl InferredType {
             // `Unknown` here means "this layer declines to claim the
             // type", not "type mismatch".
             SceType::Enum(_) => Self::Unknown,
+        }
+    }
+
+    /// The type a field of an event schema is read as (docs/adr/0055): a
+    /// scalar field as [`Self::from_sce_type`] maps its type. An optional
+    /// field is a value this layer declines to claim, as an optional variable
+    /// is, until the expression surface reads one.
+    pub fn of_field(ty: &FieldType) -> Self {
+        match ty {
+            FieldType::Scalar(t) => Self::from_sce_type(t),
+            FieldType::Optional { .. } => Self::Unknown,
         }
     }
 }

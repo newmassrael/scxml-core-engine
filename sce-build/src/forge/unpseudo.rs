@@ -50,11 +50,12 @@ use crate::forge::model::{
 };
 use crate::forge::model::{
     CapacitySource, CollectionOrdering, ConcurrencyMode, ConditionModel, Direction, EnumModel,
-    EnumVariant, EventSchemaModel, FilterModel, FilterType, ForgeDocument, ForgeField, InboxConfig,
-    InterpolationAxis, InterpolationMethod, InterpolationModel, LinkClass, LinkInboundEvent,
-    LinkModel, LinkOutboundEvent, LookupEntry, LookupModel, MissPolicy, ObserverModel, OutOfBounds,
-    OverflowPolicy, RangeRule, RateOfChangeRule, ReassemblyConfig, SceType, ThresholdMonitor,
-    TimerModel, TransformModel, ValidatorModel, ValidatorRules, WorkerModel,
+    EnumVariant, EventSchemaModel, FieldType, FilterModel, FilterType, ForgeDocument, ForgeField,
+    InboxConfig, InterpolationAxis, InterpolationMethod, InterpolationModel, LinkClass,
+    LinkInboundEvent, LinkModel, LinkOutboundEvent, LookupEntry, LookupModel, MissPolicy,
+    ObserverModel, OutOfBounds, OverflowPolicy, RangeRule, RateOfChangeRule, ReassemblyConfig,
+    SceType, SchemaField, ThresholdMonitor, TimerModel, TransformModel, ValidatorModel,
+    ValidatorRules, WorkerModel,
 };
 use crate::provenance::RequirementId;
 
@@ -365,7 +366,7 @@ fn parse_event_schema(head: &Line<'_>, body: &[&Line<'_>]) -> Result<EventSchema
     let mut payload_none = false;
     let mut revision: Option<u32> = None;
     let mut traced = Traced::default();
-    let mut fields: Vec<ForgeField> = Vec::new();
+    let mut fields: Vec<SchemaField> = Vec::new();
     let mut leading = true;
     for (l, sub) in group(body) {
         if leading {
@@ -405,7 +406,7 @@ fn parse_event_schema(head: &Line<'_>, body: &[&Line<'_>]) -> Result<EventSchema
                 why: "a field line holds nothing under it".to_string(),
             });
         }
-        fields.push(parse_field(l)?);
+        fields.push(parse_schema_field(l)?);
     }
     // The document has no place for a requirement or a provenance anchor on
     // an event-schema (`ReviewScope::NoAnnotationSite`), so a line naming one
@@ -622,6 +623,27 @@ fn rational(s: &str, line: usize) -> Result<crate::forge::quantity::Rational, Pa
 
 /// `(in|out|internal) <id>: <type> <clause>...`
 fn parse_field(line: &Line<'_>) -> Result<ForgeField, ParseError> {
+    parse_typed_field(line, SceType::from_attr)
+}
+
+/// [`parse_field`] for a field of an event schema, whose type may be
+/// `optional<T>` (docs/adr/0055), written as one word as the renderer writes
+/// it.
+fn parse_schema_field(line: &Line<'_>) -> Result<SchemaField, ParseError> {
+    parse_typed_field(
+        line,
+        |word| match crate::forge::model::AlgorithmValueType::optional_inner(word) {
+            Some(inner) => SceType::from_attr(inner).map(|elem| FieldType::Optional { elem }),
+            None => SceType::from_attr(word).map(FieldType::Scalar),
+        },
+    )
+}
+
+/// A field line, its type read by `read_type`.
+fn parse_typed_field<T>(
+    line: &Line<'_>,
+    read_type: impl FnOnce(&str) -> Option<T>,
+) -> Result<ForgeField<T>, ParseError> {
     let mut words = line.text.split_whitespace();
     let dir = match words.next() {
         Some("in") => Direction::In,
@@ -645,7 +667,7 @@ fn parse_field(line: &Line<'_>) -> Result<ForgeField, ParseError> {
         line: line.number,
         why: "a field needs a type".to_string(),
     })?;
-    let sce_type = SceType::from_attr(type_word).ok_or_else(|| ParseError {
+    let sce_type = read_type(type_word).ok_or_else(|| ParseError {
         line: line.number,
         why: format!("`{type_word}` is not an sce:type"),
     })?;

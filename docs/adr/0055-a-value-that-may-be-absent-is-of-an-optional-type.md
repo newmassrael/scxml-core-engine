@@ -2,8 +2,8 @@
 
 - Status: Accepted (2026-10-21). The owner decided every question the proposal left open ("The
   owner's answers", below), under the standing rule: the most long-term correct structure, cost
-  ignored; never a sentinel number and never a companion flag that admits impossible states. Step 1
-  is implemented; the others follow in the order section 9 gives. Section 8 and step 12 amended the
+  ignored; never a sentinel number and never a companion flag that admits impossible states. Steps
+  1 and 2 are implemented; the others follow in the order section 9 gives. Section 8 and step 12 amended the
   same day by that rule: a codec document declares its format, and format 1 is refused for good.
 - Date: 2026-10-21
 - Amends: ADR 0044 decisions 1 and 3 (a revision may widen a field from `T` to `optional<T>`);
@@ -571,11 +571,16 @@ documents, not observed from a backend.
    Meanwhile the statechart's judge types an optional variable as a value it does not yet know
    (`InferredType::Unknown`), as it types a variable with no type: nothing about one is judged
    until step 3, and no backend generates one.
-2. **An event schema's field typed by the value type.** The schema field's type moves from `SceType`
-   to the value type (a scalar or an optional scalar) at every reader, which the compiler
-   enumerates; `optional<T>` is read on a schema field and refused by name at generation; the lift
-   still refuses such a schema on every backend. Test: the schema-field cases added to the step-1
-   test file, and the forge-AST of a schema with an optional field.
+2. **An event schema's field typed by the value type** (implemented). The schema field's type moves
+   from `SceType` to the value type (a scalar or an optional scalar) at every reader, which the
+   compiler enumerates; `optional<T>` is read on a schema field and refused by name at generation;
+   the lift still refuses such a schema on every backend. Test: the schema-field cases added to the
+   step-1 test file, and the forge-AST of a schema with an optional field. As built, the field is
+   `ForgeField<FieldType>` (`SchemaField`) while every other kind's stays `ForgeField<SceType>`, so
+   only a reader of a schema's field had to say what it does with an optional one; a lowering
+   that refuses one before it reads the schema reads each field's `present_type`, which the
+   backend step that lowers the type revisits. An algorithm's record of such a schema is judged
+   and then refused where each backend renders the algorithm.
 3. **The expression surface and narrowing.** `InferredType::Optional`; the lift of `T`; `=== null`;
    `??` (the lexer's refusal removed); conditionals; section 3's narrowing over expressions,
    `<if>` chains, transitions and algorithm bodies, and its invalidation; `.value` proven or refused
