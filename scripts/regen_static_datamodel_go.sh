@@ -119,8 +119,20 @@ imports_of() {
     done < <(grep "<sce:import kind=\"$kind\"" "$(document_file "$document")" | grep -o 'src="[^"]*"' | cut -d'"' -f2)
 }
 
-# Every algorithm a machine calls, and every algorithm one of those calls in its
-# turn: an algorithm's package imports the package of each it calls, as a
+# The kinds a machine calls as functions: an algorithm, and a transform, a condition,
+# a lookup, an interpolation or a validator (docs/adr/0048).
+CALLED_KINDS=(algorithm transform condition lookup interpolation validator)
+
+# The documents document $1 calls, of every kind it calls.
+callees_of() {
+    local kind
+    for kind in "${CALLED_KINDS[@]}"; do
+        imports_of "$kind" "$1"
+    done
+}
+
+# Every document a machine calls, and every document one of those calls in its
+# turn: a callee's package imports the package of each it calls, as a
 # machine's does.
 ALGORITHMS=()
 declare -A REACHED=()
@@ -128,7 +140,7 @@ PENDING=()
 for source in "${SOURCES[@]}"; do
     while IFS= read -r algorithm; do
         PENDING+=("$algorithm")
-    done < <(imports_of algorithm "$source")
+    done < <(callees_of "$source")
 done
 while [ "${#PENDING[@]}" -gt 0 ]; do
     algorithm="${PENDING[0]}"
@@ -140,7 +152,7 @@ while [ "${#PENDING[@]}" -gt 0 ]; do
     ALGORITHMS+=("$algorithm")
     while IFS= read -r called; do
         PENDING+=("$called")
-    done < <(imports_of algorithm "$algorithm")
+    done < <(callees_of "$algorithm")
 done
 if [ "${#ALGORITHMS[@]}" -gt 0 ]; then
     mapfile -t ALGORITHMS < <(printf '%s\n' "${ALGORITHMS[@]}" | sort -u)

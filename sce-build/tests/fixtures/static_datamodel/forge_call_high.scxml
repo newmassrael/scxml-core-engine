@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A condition static_forge_calls.scxml calls from a guard as `High(level)`
+  (docs/adr/0048): whether a level is above 20.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="condition" name="forge_call_high" version="1.0">
+  <datamodel>
+    <data id="level" sce:type="int32" sce:direction="in"/>
+    <data id="high" sce:type="bool" sce:direction="out" expr="level &gt; 20"/>
+  </datamodel>
+</scxml>

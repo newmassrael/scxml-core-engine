@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A lookup static_forge_calls.scxml calls as `Ratio(gear)` (docs/adr/0048): the
+  ratio of a gear, and 0 for a gear the table does not list.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="lookup" name="forge_call_ratio" version="1.0">
+  <datamodel>
+    <data id="gear" sce:type="uint8" sce:direction="in"/>
+    <data id="ratio" sce:type="int32" sce:direction="out"/>
+    <data id="mapping" sce:default="0">
+      <sce:entry key="1" value="35"/>
+      <sce:entry key="2" value="20"/>
+      <sce:entry key="3" value="14"/>
+    </data>
+  </datamodel>
+</scxml>

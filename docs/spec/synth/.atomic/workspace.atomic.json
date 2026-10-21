@@ -215,11 +215,6 @@
         },
         {
           "file": "sce-build/src/lib.rs",
-          "symbol": "discover_primary_function",
-          "kind": "implements"
-        },
-        {
-          "file": "sce-build/src/lib.rs",
           "symbol": "discover_stateful_member_methods",
           "kind": "implements"
         },
@@ -386,6 +381,11 @@
         {
           "file": "sce-build/src/forge/parser.rs",
           "symbol": "reject_param_assignment",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "of",
           "kind": "implements"
         }
       ]
@@ -1859,11 +1859,6 @@
         },
         {
           "file": "sce-build/src/lib.rs",
-          "symbol": "discover_primary_function",
-          "kind": "implements"
-        },
-        {
-          "file": "sce-build/src/lib.rs",
           "symbol": "discover_stateful_member_methods",
           "kind": "implements"
         },
@@ -1984,6 +1979,11 @@
         {
           "file": "sce-build/src/forge/model.rs",
           "symbol": "record_fields",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "of",
           "kind": "implements"
         }
       ]
@@ -3671,11 +3671,6 @@
           "kind": "implements"
         },
         {
-          "file": "sce-build/src/lib.rs",
-          "symbol": "discover_primary_function",
-          "kind": "implements"
-        },
-        {
           "file": "sce-build/src/mesh/deploy.rs",
           "symbol": "MachineConfig",
           "kind": "implements"
@@ -3752,6 +3747,11 @@
         {
           "file": "sce-build/src/mesh/deploy.rs",
           "symbol": "validate_platform_class_os_consistency",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "of",
           "kind": "implements"
         }
       ]
@@ -4125,11 +4125,6 @@
         },
         {
           "file": "sce-build/src/lib.rs",
-          "symbol": "discover_primary_function",
-          "kind": "implements"
-        },
-        {
-          "file": "sce-build/src/lib.rs",
           "symbol": "discover_stateful_member_methods",
           "kind": "implements"
         },
@@ -4333,6 +4328,11 @@
         {
           "file": "sce-build/src/forge/generator.rs",
           "symbol": "rust_stored_element",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "of",
           "kind": "implements"
         }
       ]
@@ -6547,6 +6547,30 @@
       "target_kind": "section",
       "target_id": "synth-5-K",
       "reason": "the session runtime text moved to RFC section 5.Q and the file no longer cites 5.K"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-A",
+      "reason": "folded into StatelessFunction::of in forge/generator.rs (ADR 0048)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-C",
+      "reason": "folded into StatelessFunction::of in forge/generator.rs (ADR 0048)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-J-5",
+      "reason": "folded into StatelessFunction::of in forge/generator.rs (ADR 0048)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-L",
+      "reason": "folded into StatelessFunction::of in forge/generator.rs (ADR 0048)"
     }
   ],
   "frames": {},

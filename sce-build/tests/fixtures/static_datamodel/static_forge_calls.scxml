@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Calling another kind";
+  docs/adr/0048): the kinds that are functions of their inputs, called as
+  `Alias(args)` the way an algorithm is.
+
+  `shift` steps the gear and reads two lookups of it: `Ratio`, whose miss answers
+  its default, and `Code`, whose miss is an error — a gear its table does not list
+  fails the assignment, nothing is written, and error.execution says so
+  (§scxml-4.9), counted in `misses`. `rise` steps the level, takes it through a transform
+  (`Offset`) and asks a validator (`Range`) whether the two are valid. `spin` steps
+  the engine speed and reads the limit an interpolation (`Limit`) gives it. `probe`
+  is guarded by a condition (`High`) of the level.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="run" datamodel="sce-static" name="static_forge_calls">
+  <sce:import kind="condition" src="forge_call_high.scxml" as="High"/>
+  <sce:import kind="transform" src="forge_call_offset.scxml" as="Offset"/>
+  <sce:import kind="lookup" src="forge_call_ratio.scxml" as="Ratio"/>
+  <sce:import kind="lookup" src="forge_call_code.scxml" as="Code"/>
+  <sce:import kind="interpolation" src="forge_call_limit.scxml" as="Limit"/>
+  <sce:import kind="validator" src="forge_call_range.scxml" as="Range"/>
+  <datamodel>
+    <data id="gear" sce:type="uint8" expr="0" sce:direction="out"/>
+    <data id="ratio" sce:type="int32" expr="0" sce:direction="out"/>
+    <data id="code" sce:type="int32" expr="0" sce:direction="out"/>
+    <data id="misses" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="level" sce:type="int32" expr="0" sce:direction="out"/>
+    <data id="offset" sce:type="int32" expr="0" sce:direction="out"/>
+    <data id="accepted" sce:type="bool" expr="false" sce:direction="out"/>
+    <data id="rpm" sce:type="uint16" expr="0" sce:direction="out"/>
+    <data id="limit" sce:type="float64" expr="0.0" sce:direction="out"/>
+    <data id="highs" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="run">
+    <transition event="shift" type="internal">
+      <assign location="gear" expr="gear + 1"/>
+      <assign location="ratio" expr="Ratio(gear)"/>
+      <assign location="code" expr="Code(gear)"/>
+    </transition>
+    <transition event="rise" type="internal">
+      <assign location="level" expr="level + 7"/>
+      <assign location="offset" expr="Offset(level)"/>
+      <assign location="accepted" expr="Range(level, offset)"/>
+    </transition>
+    <transition event="spin" type="internal">
+      <assign location="rpm" expr="rpm + 500"/>
+      <assign location="limit" expr="Limit(rpm)"/>
+    </transition>
+    <transition event="probe" cond="High(level)" type="internal">
+      <assign location="highs" expr="highs + 1"/>
+    </transition>
+    <transition event="error.execution" type="internal">
+      <assign location="misses" expr="misses + 1"/>
+    </transition>
+  </state>
+</scxml>

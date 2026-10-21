@@ -2501,7 +2501,8 @@ pub(crate) fn enum_number_symbols(
 /// of the document's name, by a machine that holds a value of the enum and by an
 /// algorithm that may fail, so a program that includes both declares it once. It
 /// includes `sce/forge/algorithm.h`, whose failure it records: a machine's header,
-/// where the text stands, includes no runtime header of its own.
+/// where the text stands, includes no runtime header of its own. The result and its
+/// `_take` are the ones a `may-fail` algorithm declares ([`c11_found_reading`]).
 pub(crate) fn c11_enum_from_number(
     enum_name: &str,
     carrier: &SceType,
@@ -2509,9 +2510,7 @@ pub(crate) fn c11_enum_from_number(
 ) -> String {
     use crate::generator::Language;
     let prefix = crate::forge::enum_naming::c11_function_prefix(enum_name);
-    let guard = format!("SCE_ENUM_{}_FROM_NUMBER", prefix.to_uppercase());
     let ty = enum_qualified_type(enum_name, Language::C11);
-    let carrier = c_type(carrier);
     let cases: String = variants
         .iter()
         .map(|(name, value)| {
@@ -2521,21 +2520,65 @@ pub(crate) fn c11_enum_from_number(
             )
         })
         .collect();
+    c11_found_reading(
+        &format!("{prefix}_from_number"),
+        &ty,
+        &format!("{} raw", c_type(carrier)),
+        "The variant `raw` declares, or why there is none: a number no variant\n \
+         * declares is outside the enum.",
+        &format!("    switch (raw) {{\n{cases}    default:\n        break;\n    }}\n"),
+    )
+}
+
+/// The C11 name of the reading of the lookup function `function` (as a caller
+/// spells it, `<document>_<output>`) whose miss is an error: what a `sce-static`
+/// machine calls in its place ([`c11_lookup_found`]).
+pub(crate) fn c11_lookup_found_name(function: &str) -> String {
+    format!("{function}_found")
+}
+
+/// The C11 reading of a lookup whose miss is an error, for a caller that receives a
+/// failure: `<function>_found(key)` ([`c11_lookup_found_name`]), which answers the
+/// value the table holds for `key` or that it holds none (`out-of-range`, the failure
+/// a key outside the table is on every backend — the one the other five backends'
+/// runtimes answer through `found`), and its `_take`. The lookup itself answers
+/// whether it found a value and writes it through a pointer (the `bool f(key, T *out)`
+/// a C lookup with `sce:on-miss="error"` declares), which no expression can hold;
+/// this turns it into the result every C call that may fail answers. Written under a
+/// guard of the function's name, so two machines of one program declare it once.
+pub(crate) fn c11_lookup_found(function: &str, key: &SceType, value: &SceType) -> String {
+    c11_found_reading(
+        &c11_lookup_found_name(function),
+        c_type(value),
+        &format!("{} key", c_type(key)),
+        "The value the table holds for `key`, or why there is none: a key the\n \
+         * table does not hold is outside it.",
+        &format!("    result.ok = {function}(key, &result.value);\n"),
+    )
+}
+
+/// `<name>`, a C11 reading that answers a value of the C type `value` or that it
+/// found none, as the result struct and `_take` of a `may-fail` algorithm
+/// ([`c11_result_struct`], [`c11_take`]), under a guard of `name`: `params` are the
+/// reading's parameters, `about` the comment over its result, and `body` the
+/// statements that set `result.ok` and `result.value` from them. A result that found
+/// nothing is `out-of-range`.
+fn c11_found_reading(name: &str, value: &str, params: &str, about: &str, body: &str) -> String {
+    let guard = format!("SCE_FOUND_{}", name.to_uppercase());
     format!(
         "#ifndef {guard}\n#define {guard}\n\
          #include \"sce/forge/algorithm.h\"\n\n\
-         /* The variant `raw` declares, or why there is none: a number no variant\n \
-         * declares is outside the enum. */\n\
-         typedef struct {{\n    bool ok;\n    sce_forge_algorithm_error_t why;\n    {ty} value;\n}} {prefix}_from_number_result_t;\n\n\
-         static inline {prefix}_from_number_result_t {prefix}_from_number({carrier} raw) {{\n    \
-         {prefix}_from_number_result_t result = {{false, SCE_FORGE_ALGORITHM_OUT_OF_RANGE, ({ty})0}};\n    \
-         switch (raw) {{\n{cases}    default:\n        break;\n    }}\n    return result;\n}}\n\n\
-         /* The variant a conversion found, or its failure recorded in `f` and a value\n \
-         * the statement around it never uses. */\n\
-         static inline {ty} {prefix}_from_number_take(sce_forge_algorithm_failure_t *f,\n    \
-         {prefix}_from_number_result_t result) {{\n    \
-         if (!result.ok) {{\n        sce_forge_algorithm_fail(f, result.why);\n    }}\n    \
-         return result.value;\n}}\n#endif  /* {guard} */"
+         /* {about} */\n\
+         {result}\
+         static inline {name}_result_t {name}({params}) {{\n    \
+         {name}_result_t result = {{0}};\n    \
+         result.why = SCE_FORGE_ALGORITHM_OUT_OF_RANGE;\n\
+         {body}    \
+         return result;\n}}\n\n\
+         {take}\
+         #endif  /* {guard} */",
+        result = c11_result_struct(&format!("    {value} value;\n"), name, true),
+        take = c11_take(value, name),
     )
 }
 
@@ -17813,7 +17856,10 @@ fn render_validator(
             format!("{snake}_result_t").into(),
         );
         ctx.insert("c_state_typedef".into(), format!("{snake}_t").into());
-        ctx.insert("c_validate_func".into(), format!("{snake}_validate").into());
+        ctx.insert(
+            "c_validate_func".into(),
+            c11_validate_function(&m.name).into(),
+        );
         let c_has_state = !prev_vars.is_empty() || has_stateful_imports;
         ctx.insert("c_has_state".into(), c_has_state.into());
     }
@@ -17832,6 +17878,43 @@ fn render_validator(
     l.insert_imports(&mut ctx, imports);
 
     l.render(env, "validator", ctx)
+}
+
+/// The C11 function a validator `name` checks its inputs with,
+/// `<snake(name)>_validate`: the free function of a validator that keeps nothing
+/// from one check to the next, and the one that takes its state first otherwise.
+fn c11_validate_function(name: &str) -> String {
+    format!("{}_validate", filters::to_snake_case(name.to_string()))
+}
+
+/// What a caller that keeps no validator of its own writes for one check by the
+/// validator document `document_name`, whose import names it under `namespace`
+/// (the stateless form of [`forge_import_identity`]): a validator built for the
+/// call and asked once, which answers its `ValidationResult`. The struct, its
+/// constructor and its method are the ones [`render_validator`] declares —
+/// `<Pascal>` (`New<Pascal>` on Go) and `validate` (`Validate` on Go) — and on C11
+/// the free function a validator that keeps nothing declares
+/// ([`c11_validate_function`]). Only such a validator is called this way: one with
+/// a rate-of-change rule or a stateful import keeps what it read, and a validator
+/// built for each call would forget it ([`crate::forge::static_imports`]).
+pub(crate) fn validator_check_call(
+    document_name: &str,
+    namespace: &str,
+    lang: crate::generator::Language,
+) -> String {
+    use crate::generator::Language;
+    let pascal = filters::to_pascal_case(document_name.to_string());
+    match lang {
+        Language::Rust => format!("{namespace}::{pascal}::new().validate"),
+        Language::Cpp => format!("{namespace}::{pascal}{{}}.validate"),
+        // The `import com.sce.generated.<snake>.*` an import writes brings the class
+        // into unqualified scope.
+        Language::Kotlin => format!("{pascal}().validate"),
+        Language::Go => format!("{namespace}.New{pascal}().Validate"),
+        Language::Python => format!("{namespace}.{pascal}().validate"),
+        Language::C11 => c11_validate_function(document_name),
+        Language::Swift => no_swift_emitter("validator_check_call"),
+    }
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -28162,7 +28245,7 @@ fn lower_algorithm_stmt(
             let call = match callee {
                 // The symbol the expression form calls, so the two forms
                 // cannot spell one algorithm two ways (`qualified_call` is
-                // the cross-document symbol SSOT, `forge_qualified_call`).
+                // the cross-document symbol SSOT, `StatelessFunction::qualified_call`).
                 CallTarget::Algorithm(imp) => {
                     let call = format!("{}({})", imp.qualified_call, lowered_args.join(", "));
                     // Reached only from a body that receives failures
@@ -28427,7 +28510,7 @@ fn collection_method_call(
 /// re-encoded in three places — the per-backend template variable picked
 /// for the function declaration (`{{ name }}` / `{{ name_pascal }}` /
 /// `{{ name_camel }}`), the matching call-site in the test-vector sidecar,
-/// and the `Algorithm` arm of `discover_primary_function`. The definition
+/// and the `Algorithm` arm of [`StatelessFunction::symbol`]. The definition
 /// site (`render_algorithm`), the call site (sidecar + cross-doc resolver),
 /// and the test harness now all read this function, so the casing cannot
 /// drift between where the symbol is defined and where it is called.
@@ -28484,7 +28567,7 @@ pub(crate) fn forge_stateless_def_symbol(
 
 /// W1 symbol-name SSOT for the `condition` kind: the bare call-base symbol —
 /// the irreducible per-(kind, language) fact, before any namespace
-/// qualification. `discover_primary_function` returns this verbatim;
+/// qualification. [`StatelessFunction::symbol`] returns this verbatim;
 /// `render_condition` and the conformance harness add the C11 flat prefix via
 /// [`forge_stateless_def_symbol`]. Condition's idiomatic casing is camelCase
 /// on Cpp/Kotlin (a free function, not a namespaced symbol like algorithm);
@@ -28525,7 +28608,7 @@ pub(crate) fn forge_lookup_symbol(output_id: &str, language: crate::generator::L
 
 /// W1 symbol-name SSOT for the `transform` kind: the bare call-base symbol
 /// for one output accessor, keyed on the output id with a `compute` verb
-/// prefix. `render_transform` emits one per output; `discover_primary_function`
+/// prefix. `render_transform` emits one per output; [`StatelessFunction::symbol`]
 /// and the conformance harness read the same base. C11 adds the
 /// `<snake(name)>_` flat prefix via [`forge_stateless_def_symbol`].
 pub(crate) fn forge_transform_symbol(
@@ -29043,7 +29126,7 @@ pub(crate) fn forge_transform_output_field(
 /// member, the constant `lookup` (exported as `Lookup` on Go). This is the
 /// def≠call kind: `render_interpolation` defines it as a member of a
 /// `<Pascal>` wrapper (and flattens to `<snake(name)>_lookup` on C11 via
-/// [`forge_stateless_def_symbol`]); `discover_primary_function` wraps it in
+/// [`forge_stateless_def_symbol`]); [`StatelessFunction::symbol`] wraps it in
 /// the cross-doc qualifier (`<Pascal>::lookup` / `<Pascal>.lookup`) where the
 /// wrapper is visible, returning the bare base on Go/Python/C11.
 pub(crate) fn forge_interpolation_symbol(language: crate::generator::Language) -> String {
@@ -29055,6 +29138,153 @@ pub(crate) fn forge_interpolation_symbol(language: crate::generator::Language) -
         | crate::generator::Language::Python
         | crate::generator::Language::C11 => "lookup".to_string(),
         crate::generator::Language::Swift => no_swift_emitter("forge_interpolation_symbol"),
+    }
+}
+
+/// The one free function a stateless forge document is called by, as every caller
+/// names it: a forge kind that imports the document, whose import pass writes the
+/// call ([`crate::validate_and_enrich_imports`]), and a `sce-static` statechart that
+/// calls it ([`crate::forge::static_lowering`]). Read off the document once
+/// ([`Self::of`]) and spelled by the symbol helpers each kind's renderer defines
+/// its function with, so a caller and the definition cannot disagree.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StatelessFunction {
+    /// A transform's function for its output `output`, the first it declares: the
+    /// one a caller calls the document by.
+    Transform { output: String },
+    /// A condition's function, named for the document.
+    Condition { name: String },
+    /// A lookup's function, named for its output `output`.
+    Lookup { output: String },
+    /// An interpolation's accessor, a member of the type named for the document.
+    Interpolation { name: String },
+    /// An algorithm's function, named for the document.
+    Algorithm { name: String },
+}
+
+impl StatelessFunction {
+    /// The function `doc` is called by, or `None` for a document that is reached
+    /// through an instance or declares a type and no function.
+    pub(crate) fn of(doc: &ForgeDocument) -> Option<Self> {
+        match doc {
+            // Statechart never reaches forge codegen — SCXML pipeline owns it.
+            ForgeDocument::Statechart(_) => unreachable!(
+                "StatelessFunction::of called on Statechart — only forge \
+                 pipeline reaches this helper (see `classify_document`)"
+            ),
+            // The first output's function: the cross-doc callsite resolves to its
+            // bare call-base, and [`Self::qualified_call`] re-prepends
+            // `<namespace>_` on C11, landing on the emitted `<m.name>_compute_<output>`.
+            ForgeDocument::Transform(m) => Some(Self::Transform {
+                output: m.outputs.first()?.id.clone(),
+            }),
+            ForgeDocument::Condition(m) => Some(Self::Condition {
+                name: m.name.clone(),
+            }),
+            ForgeDocument::Lookup(m) => Some(Self::Lookup {
+                output: m.output.id.clone(),
+            }),
+            ForgeDocument::Interpolation(m) => Some(Self::Interpolation {
+                name: m.name.clone(),
+            }),
+            // RFC §synth-5-A Algorithm: free function whose name is the
+            // SCXML-author-declared `name=` attribute, lowered to each language's
+            // idiomatic identifier per RFC §synth-5-J-5. The cross-file consumer of
+            // `<sce:call target="algo_name"/>` resolves through this name.
+            ForgeDocument::Algorithm(m) => Some(Self::Algorithm {
+                name: m.name.clone(),
+            }),
+            // Stateful kinds (Codec, Validator, Procedure, Filter, Observer, Timer,
+            // Link) use member access, not free function calls. They are handled by
+            // the member rename mechanism in procedure and validator render
+            // functions. Link (RFC §synth-5-C) is stateful (owns its `impl Link`
+            // driver) — it has no callsite-visible primary function name.
+            ForgeDocument::Codec(_)
+            | ForgeDocument::Validator(_)
+            | ForgeDocument::Procedure(_)
+            | ForgeDocument::Filter(_)
+            | ForgeDocument::Observer(_)
+            | ForgeDocument::Timer(_)
+            | ForgeDocument::Link(_)
+            | ForgeDocument::BufferPool(_)
+            | ForgeDocument::Worker(_)
+            // RFC §synth-5-L: stateful — uses member access via insert/remove etc.
+            // (spec lines 2609-2619). No callsite-visible primary free function name.
+            | ForgeDocument::BoundedCollection(_)
+            // RFC §synth-5-P: stateful — reached through its handles.
+            | ForgeDocument::Queue(_)
+            // Enum emits a type declaration, not a callable. Authors reference
+            // variants as `<EnumName>.<v>`, resolved through the cross-kind binding
+            // pass; no primary function name belongs at this site.
+            | ForgeDocument::Enum(_)
+            // EventSchema is parse-time metadata with no primary function callsite —
+            // the schema document does not emit a callable surface (the codegen
+            // emits a payload struct, not a free function, and the SCXML event
+            // handler is dispatched implicitly by event-name match, not by alias
+            // function call).
+            | ForgeDocument::EventSchema(_) => None,
+        }
+    }
+
+    /// The kind's name, as an import writes it (`kind="transform"`).
+    pub(crate) fn kind(&self) -> ForgeKind {
+        match self {
+            Self::Transform { .. } => ForgeKind::Transform,
+            Self::Condition { .. } => ForgeKind::Condition,
+            Self::Lookup { .. } => ForgeKind::Lookup,
+            Self::Interpolation { .. } => ForgeKind::Interpolation,
+            Self::Algorithm { .. } => ForgeKind::Algorithm,
+        }
+    }
+
+    /// The function's bare call-base in `language`, before any namespace: the
+    /// symbol the kind's renderer defines (C11 adds its `<namespace>_` prefix in
+    /// [`Self::qualified_call`]).
+    pub(crate) fn symbol(&self, language: generator::Language) -> String {
+        match self {
+            Self::Transform { output } => forge_transform_symbol(output, language),
+            Self::Condition { name } => forge_condition_symbol(name, language),
+            Self::Lookup { output } => forge_lookup_symbol(output, language),
+            // The def≠call kind: `render_interpolation` defines the accessor
+            // (forge_interpolation_symbol) as a member of a `<Pascal>` wrapper
+            // (struct/object/impl) on Cpp/Kotlin/Rust, a free `Lookup` on Go, a
+            // module-level `lookup` on Python, and a flat `<snake>_lookup` on C11.
+            // Cross-file consumers need the wrapper qualifier; Go/Python resolve the
+            // bare name via the import include_stmt; C11 uses the bare `lookup` base
+            // and [`Self::qualified_call`] re-prepends `<namespace>_` →
+            // `<m.name>_lookup`.
+            Self::Interpolation { name } => {
+                let pascal = filters::to_pascal_case(name.clone());
+                let base = forge_interpolation_symbol(language);
+                match language {
+                    generator::Language::Cpp | generator::Language::Rust => {
+                        format!("{pascal}::{base}")
+                    }
+                    generator::Language::Kotlin => format!("{pascal}.{base}"),
+                    generator::Language::Go
+                    | generator::Language::Python
+                    | generator::Language::C11 => base,
+                    generator::Language::Swift => no_swift_emitter("StatelessFunction::symbol"),
+                }
+            }
+            // The algorithm kind's definition equals its discovery name (no wrapper
+            // qualification, unlike Interpolation).
+            Self::Algorithm { name } => forge_algorithm_symbol(name, language),
+        }
+    }
+
+    /// The call a document that imports this one writes, against the import's
+    /// `namespace` ([`forge_import_identity`]). The one kind-specific exception
+    /// the generic `<namespace>_<func>` C11 shape cannot express is the
+    /// `algorithm` kind's: its C11 symbol is bare, the module being the function
+    /// ([`crate::algorithm_qualified_call`]); every other C11 stateless kind
+    /// prefixes the module name onto its emitted symbol.
+    pub(crate) fn qualified_call(&self, namespace: &str, language: &generator::Language) -> String {
+        let symbol = self.symbol(*language);
+        match self {
+            Self::Algorithm { .. } => crate::algorithm_qualified_call(&symbol, namespace, language),
+            _ => crate::build_qualified_call(&symbol, namespace, language),
+        }
     }
 }
 

@@ -306,17 +306,19 @@ pub fn check(
             }
         }
     }
-    // An imported algorithm is imported to be called. One nothing calls is
+    // An imported algorithm — or a transform, condition, lookup, interpolation or
+    // validator (docs/adr/0048) — is imported to be called. One nothing calls is
     // refused rather than dropped in silence — a statechart keeps no import
     // for later, and a stale one would outlive the call it was for.
     let read = judge.read.borrow();
     if let Some(unused) = scope.callees.iter().find(|c| !read.contains(&c.alias)) {
+        let kind = unused.kind.forge_kind();
         return Err(Located::new(
             ScxmlSemanticError::StaticDatamodelRule {
-                construct: format!("<sce:import kind=\"algorithm\" as=\"{}\">", unused.alias),
+                construct: format!("<sce:import kind=\"{kind}\" as=\"{}\">", unused.alias),
                 datamodel: Datamodel::SceStatic.as_str().to_string(),
                 rule: format!(
-                    "an imported algorithm is called by the document, and nothing calls `{}`",
+                    "an imported {kind} is called by the document, and nothing calls `{}`",
                     unused.alias
                 ),
                 state: String::new(),

@@ -923,6 +923,11 @@ path = "tests/an_enum_is_read_as_its_number_and_back.rs"
 required-features = ["cli"]
 
 [[test]]
+name = "a_statechart_calls_the_forge_kinds_that_are_functions"
+path = "tests/a_statechart_calls_the_forge_kinds_that_are_functions.rs"
+required-features = ["cli"]
+
+[[test]]
 name = "every_replay_scenario_keeps_to_its_vocabulary"
 path = "tests/every_replay_scenario_keeps_to_its_vocabulary.rs"
 required-features = ["cli"]

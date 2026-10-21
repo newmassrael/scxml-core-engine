@@ -7964,8 +7964,8 @@ fn parse_algorithm(
     // identifier is the documentary fallback (preserves the legacy
     // `algorithm_crc16.scxml` → `algorithm_crc16` shape exercised by
     // the conformance harness). Resolving the attribute here keeps
-    // `validate_and_enrich_imports::discover_primary_function` +
-    // `build_qualified_call` aligned with the template emit on the
+    // `StatelessFunction::symbol` + `build_qualified_call` (through
+    // `StatelessFunction::qualified_call`) aligned with the template emit on the
     // cross-doc dispatch path (the item C7 lowering renames pipeline
     // substitutes `alias` with `<namespace>::<algorithm_name>` and
     // the consumed symbol must match).

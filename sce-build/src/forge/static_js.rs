@@ -327,8 +327,13 @@ impl StaticTarget for JsTarget {
             field.id
         ))
     }
-    fn callee(&self, document_name: &str) -> Option<Callee> {
-        let symbol = self.algorithms.get(document_name)?;
+    // Only an algorithm is lowered to a function the document carries; a call of
+    // another kind is refused by name before the walk ([`lowered_algorithms`]).
+    fn callee(&self, callee: &StaticCallee) -> Option<Callee> {
+        if !callee.kind.is_algorithm() {
+            return None;
+        }
+        let symbol = self.algorithms.get(&callee.document_name)?;
         Some(Callee {
             call: format!("{RUNTIME_GLOBAL}.algorithms.{symbol}"),
             // The function travels in the document, so there is nothing to
@@ -351,7 +356,7 @@ impl StaticTarget for JsTarget {
         held.to_string()
     }
     fn state_adapter_name(&self, _machine: &str, callee: &StaticCallee, _coded: &str) -> String {
-        self.callee(&callee.document_name)
+        self.callee(callee)
             .expect("an algorithm the document imports travels in it")
             .call
     }
@@ -1133,6 +1138,16 @@ fn lowered_algorithms(
         return Ok(lowered);
     };
     for callee in &scope.callees {
+        // A transform, condition, lookup, interpolation or validator a statechart
+        // calls (docs/adr/0048) has no function in the Interpreter's library yet,
+        // and is refused by its name rather than read as an algorithm.
+        if !callee.kind.is_algorithm() {
+            return Err(GenerateError::unsupported(format!(
+                "`{}(…)`: a call of an imported {} has no ecmascript lowering yet",
+                callee.alias,
+                callee.kind.forge_kind()
+            )));
+        }
         let what = |reason: &str| {
             GenerateError::unsupported(format!(
                 "`{}(…)`: the algorithm it imports {reason}",

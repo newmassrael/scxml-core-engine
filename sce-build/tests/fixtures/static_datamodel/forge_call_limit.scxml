@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  An interpolation static_forge_calls.scxml calls as `Limit(rpm)` (docs/adr/0048):
+  a limit per engine speed, interpolated between the breakpoints and clamped
+  outside them.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="interpolation" name="forge_call_limit" version="1.0">
+  <datamodel>
+    <data id="rpm" sce:type="uint16" sce:direction="in"/>
+    <data id="limit" sce:type="float64" sce:direction="out"
+          sce:interpolation="linear" sce:out-of-bounds="clamp"
+          sce:axis-rpm="0 1000 2000">
+      100.0 150.0 120.0
+    </data>
+  </datamodel>
+</scxml>

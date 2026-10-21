@@ -3071,7 +3071,7 @@ impl SCXMLParser {
             // imports under the alias the schema writes, which must be the schema's
             // own enum document: judged once, where the schema is imported.
             crate::forge::static_imports::check_record_enum_documents(&model, dir, diag_label)?;
-            model.imported_algorithms =
+            model.imported_callees =
                 crate::forge::static_imports::resolve(&model, dir, diag_label)?;
             let imported_enums =
                 crate::forge::event_schema_check::resolve_imported_enums(&model, &enums_by_stem);

@@ -3990,7 +3990,7 @@ for it, by the names and shapes of the enum document's own (`to_underlying` /
 C++; `toUnderlying` / `fromUnderlying` on Kotlin; `ToUnderlying` / `<T>FromUnderlying`
 on Go; `<doc>_number` and the `<doc>_from_number` family on C11), so a statechart and
 an algorithm lower the two calls alike, and a reading that answers no variant is
-turned into the failure by the runtime's `declared`; the Interpreter reads the
+turned into the failure by the runtime's `found`; the Interpreter reads the
 library's table of the enum's names and numbers (`SceStatic.number`,
 `SceStatic.variant`). `scenarios/static_enum_number.json` holds this on every engine
 that runs the model, and `sce-build/tests/an_enum_is_read_as_its_number_and_back.rs`
@@ -4401,6 +4401,34 @@ later. Kotlin calls the function the algorithm's own generation emits and
 imports it by the line a forge kind importing it writes
 (`import com.sce.generated.<name>.*`); `sce-codegen generate` does not
 generate the algorithm itself, so it is generated beside the machine.
+
+**Calling another kind.** A transform, a condition, a lookup, an interpolation
+and a validator are functions of their inputs, and a statechart imports and calls
+one as it does an algorithm (docs/adr/0048): `<sce:import kind="lookup"
+src="gear_ratio.scxml" as="Ratio"/>` and `Ratio(gear)` in a guard, an assignment
+or a host action's argument, judged against the signature a forge kind importing
+the same document calls it by — its inputs in the order the document declares
+them, and its one value: a transform's output, a condition's truth value, a
+lookup's or an interpolation's output, and for a validator whether its inputs are
+valid, a `bool`. Each backend calls the function the document's own generation
+emits, through the import line a forge kind importing it writes; a validator is
+built for the call and asked once, and the call's value is the validity of what
+it answers. A lookup whose miss is an error (`sce:on-miss="error"`) may fail: a
+key its table does not list fails the statement as an overflow does — nothing is
+written, `error.execution` is raised and the block ends — read through the
+runtime's `found`, as an enum's `fromNumber` is (§3.4.1), and on C11 through the
+`<function>_found` reading the machine declares beside the call. What a call
+could not do as the document declares it is refused where it is imported, as
+`scxml/static-datamodel-rule` naming the import and why: a transform of more than
+one output, or one that reads `previous()`; a lookup whose output is a string; an
+interpolation whose `sce:out-of-bounds` is not `clamp`, since the generated
+function clamps on every backend; a validator with a rate-of-change rule or a
+stateful import, which keeps what it read; and a slot that is not a number or a
+truth value. The six generated backends call them; the Interpreter refuses such a
+call by name, as a construct it has no lowering for yet.
+`scenarios/static_forge_calls.json` replays a call of each kind, and
+`sce-build/tests/a_statechart_calls_the_forge_kinds_that_are_functions.rs` holds
+the rule, each refusal and what each backend lowers a call to.
 
 **A list an algorithm returns.** `<assign location="shown" expr="DayRun(first, 3)"/>`
 replaces the list variable `shown` with what the imported algorithm returns, a

@@ -117,6 +117,11 @@ STD_ALGORITHMS+=(merge/sheet_value merge/sheet_shown merge/sheet_apply merge/she
 # scenario's machine, and the child record_list_parent invokes): the roster and the member record it
 # keeps, the hash a settle compares, and a register's values in the order of their dots.
 STD_ALGORITHMS+=(shared/record_member shared/record_roster shared/record_settled shared/register_values)
+# static_forge_calls's: a condition, a transform, two lookups, an interpolation and a
+# validator, which it calls as the functions of their inputs they are
+# (docs/adr/0048). A machine's import names each as `super::<name>`, so it is
+# generated beside the machines.
+CALLED=(forge_call_high forge_call_offset forge_call_ratio forge_call_code forge_call_limit forge_call_range)
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -135,6 +140,9 @@ for algorithm in "${ALGORITHMS[@]}"; do
 done
 for algorithm in "${STD_ALGORITHMS[@]}"; do
     "$CODEGEN" generate "sce:std/$algorithm.scxml" -l rust -o "$TMP/"
+done
+for document in "${CALLED[@]}"; do
+    "$CODEGEN" generate "$INPUT_ROOT/$document.scxml" -l rust -o "$TMP/"
 done
 
 mkdir -p "$GENERATED_DIR"
@@ -158,4 +166,4 @@ MODRS="$GENERATED_DIR/mod.rs"
 source "$REPO_ROOT/scripts/lib/sce_rustfmt.sh"
 sce_rustfmt_dir "$GENERATED_DIR" "$REPO_ROOT"
 
-echo "Regenerated: ${MACHINES[*]} ${STANDARD_MACHINES[*]}, ${SCHEMAS[*]}, ${ALGORITHMS[*]} and ${STD_ALGORITHMS[*]} under $GENERATED_DIR/ from $INPUT_ROOT"
+echo "Regenerated: ${MACHINES[*]} ${STANDARD_MACHINES[*]}, ${SCHEMAS[*]}, ${ALGORITHMS[*]}, ${STD_ALGORITHMS[*]} and ${CALLED[*]} under $GENERATED_DIR/ from $INPUT_ROOT"

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A transform of one output static_forge_calls.scxml calls in an assignment as
+  `Offset(level)` (docs/adr/0048): a level less 10.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="transform" name="forge_call_offset" version="1.0">
+  <datamodel>
+    <data id="level" sce:type="int32" sce:direction="in"/>
+    <data id="offset" sce:type="int32" sce:direction="out" expr="level - 10"/>
+  </datamodel>
+</scxml>

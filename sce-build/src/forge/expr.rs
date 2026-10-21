@@ -59,7 +59,7 @@
 //   use explicit masking. Kotlin has `ushr` and Python promotes to big-int.
 
 use crate::forge::error::{ExprError, Spanned};
-use crate::forge::types::{join_arith, join_int, InferredType, TypeCtx};
+use crate::forge::types::{join_arith, join_int, CallReading, InferredType, TypeCtx};
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::LazyLock;
@@ -614,9 +614,11 @@ pub(crate) fn transpile_typed_with_import_lowering(
 ///    is a `Raw` symbol that `ctx` holds under no spelling, so no check
 ///    could judge it afterwards.
 /// 4. An enum's conversions (`<alias>.toNumber`, `<alias>.fromNumber`) lowered
-///    to the functions the context spells them with, and then the enum
-///    variants to this backend's spelling, once the names are known good;
-///    rename leaves the resulting `Raw` alone.
+///    to the functions the context spells them with, each call whose function
+///    answers something other than its value read as its signature says
+///    ([`lower_call_readings`]), and then the enum variants to this backend's
+///    spelling, once the names are known good; rename leaves the resulting
+///    `Raw` alone.
 /// 5. Rename.
 ///
 /// ⚠ Step 3 ran first, before inference, until 2026-09-24. Every check then
@@ -637,6 +639,7 @@ fn resolve_then_rename(
         lower_stateful_import_calls(ast, lowerings);
     }
     lower_enum_conversions(ast, ctx, target);
+    lower_call_readings(ast, ctx, target);
     lower_enum_variant_refs(ast, ctx, target)?;
     // A C string is a bounded buffer: a join of strings the data model sizes is
     // written into one the lowering sizes, and one it cannot size is refused at
@@ -4880,28 +4883,30 @@ pub(crate) fn is_enum_conversion(callee: &TypedExpr, ctx: &TypeCtx<'_>) -> bool 
         .is_some_and(|scope| scope.conversion(property).is_some())
 }
 
-/// What turns the answer of an enum's `fromNumber` function — the variant a
-/// number declares, or that none does, in the backend's own optional shape — into
-/// the shape a call that may fail answers on `target` ([`pass_failure_on`]), when
-/// the two differ: a `Result` in Rust, an `AlgorithmResult` in Kotlin and C++, an
-/// `Outcome` in Go, a value or a raised failure in Python. `None` for C, whose
-/// `<prefix>_from_number` answers the result its own `_take` reads
-/// ([`crate::forge::generator::c11_enum_from_number`]), and for the Interpreter,
-/// whose library throws the failure itself.
-pub(crate) fn enum_from_number_wrapper(target: ExprTarget) -> Option<&'static str> {
+/// What turns the answer of a reading that may find nothing — an enum's
+/// `fromNumber` function, the variant a number declares or that none does, and a
+/// lookup whose miss is an error, the value its table holds for a key or that it
+/// holds none, each in the backend's own optional shape — into the shape a call
+/// that may fail answers on `target` ([`pass_failure_on`]), when the two differ: a
+/// `Result` in Rust, an `AlgorithmResult` in Kotlin and C++, an `Outcome` in Go, a
+/// value or a raised failure in Python. `None` for C, whose readings answer the
+/// result their own `_take` reads ([`crate::forge::generator::c11_enum_from_number`],
+/// [`crate::forge::generator::c11_lookup_found`]), and for the Interpreter, whose
+/// library throws the failure itself.
+pub(crate) fn found_wrapper(target: ExprTarget) -> Option<&'static str> {
     match target {
-        ExprTarget::Rust => Some("sce_forge_runtime::algorithm::declared"),
-        ExprTarget::Kotlin => Some("com.sce.forge.runtime.SceChecked.declared"),
-        ExprTarget::Cpp => Some("SCE::Forge::Checked::declared"),
-        ExprTarget::Go => Some(GO_DECLARED),
-        ExprTarget::Python => Some("sce_algorithm.declared"),
+        ExprTarget::Rust => Some("sce_forge_runtime::algorithm::found"),
+        ExprTarget::Kotlin => Some("com.sce.forge.runtime.SceChecked.found"),
+        ExprTarget::Cpp => Some("SCE::Forge::Checked::found"),
+        ExprTarget::Go => Some(GO_FOUND),
+        ExprTarget::Python => Some("sce_algorithm.found"),
         ExprTarget::C | ExprTarget::Js => None,
     }
 }
 
-/// The Go runtime's reading of a variant a number declares, or that none does,
-/// as the `Outcome` a call that may fail answers ([`enum_from_number_wrapper`]).
-const GO_DECLARED: &str = "scealgorithm.Declared";
+/// The Go runtime's reading of a value that may not have been found, as the
+/// `Outcome` a call that may fail answers ([`found_wrapper`]).
+const GO_FOUND: &str = "scealgorithm.Found";
 
 /// Lower each conversion of an imported enum (`<alias>.toNumber(value)`,
 /// `<alias>.fromNumber(number)`) to the functions the context spells the enum's
@@ -4909,7 +4914,7 @@ const GO_DECLARED: &str = "scealgorithm.Declared";
 /// [`crate::forge::types::EnumScope::from_number`]): a statechart's own type for
 /// the enum, an algorithm's import of the enum document. A `fromNumber` that may
 /// fail is wrapped where the backend's optional answer is not the shape a failing
-/// call answers ([`enum_from_number_wrapper`]): the call becomes the wrapper's
+/// call answers ([`found_wrapper`]): the call becomes the wrapper's
 /// call of the conversion, which the failure channel then receives as any call
 /// that may fail ([`pass_failure_on`]), and the number is still held to the
 /// enum's carrier where it is handed over.
@@ -4920,14 +4925,7 @@ fn lower_enum_conversions(expr: &mut TypedExpr, ctx: &TypeCtx<'_>, target: ExprT
     for child in expr.children_mut() {
         lower_enum_conversions(child, ctx, target);
     }
-    let span = expr.span.clone();
-    let ExprKind::Call {
-        callee,
-        args,
-        params,
-        fails,
-    } = &mut expr.kind
-    else {
+    let ExprKind::Call { callee, fails, .. } = &mut expr.kind else {
         return;
     };
     let (alias, method) = match &callee.kind {
@@ -4940,31 +4938,119 @@ fn lower_enum_conversions(expr: &mut TypedExpr, ctx: &TypeCtx<'_>, target: ExprT
     let Some(scope) = ctx.lookup_enum(&alias) else {
         return;
     };
-    match method.as_str() {
+    let wrapper = match method.as_str() {
         crate::forge::types::ENUM_TO_NUMBER => {
             callee.kind = ExprKind::Raw(scope.to_number.to_string());
+            None
         }
-        crate::forge::types::ENUM_FROM_NUMBER => match enum_from_number_wrapper(target) {
-            Some(wrapper) if *fails => {
-                let conversion = TypedExpr {
-                    kind: ExprKind::Call {
-                        callee: Box::new(TypedExpr::new(ExprKind::Raw(
-                            scope.from_number.to_string(),
-                        ))),
-                        args: std::mem::take(args),
-                        params: std::mem::take(params),
-                        fails: false,
-                    },
+        crate::forge::types::ENUM_FROM_NUMBER => {
+            callee.kind = ExprKind::Raw(scope.from_number.to_string());
+            found_wrapper(target).filter(|_| *fails)
+        }
+        _ => None,
+    };
+    if let Some(wrapper) = wrapper {
+        wrap_in_found(expr, wrapper);
+    }
+}
+
+/// `expr`, a call of a function that answers a value or that it found none, in the
+/// backend's own optional shape, as the call of `wrapper` ([`found_wrapper`]) with
+/// it: the wrapper's call is the one that may fail, which the failure channel
+/// receives as any call that may fail ([`pass_failure_on`]), and the function's own
+/// call keeps its arguments and the types they are held to where they are handed
+/// over. Anything but a call is left as it is.
+fn wrap_in_found(expr: &mut TypedExpr, wrapper: &str) {
+    let span = expr.span.clone();
+    let ExprKind::Call {
+        callee,
+        args,
+        params,
+        fails,
+    } = &mut expr.kind
+    else {
+        return;
+    };
+    let reading = TypedExpr {
+        kind: ExprKind::Call {
+            callee: std::mem::replace(
+                callee,
+                Box::new(TypedExpr::new(ExprKind::Raw(wrapper.to_string()))),
+            ),
+            args: std::mem::take(args),
+            params: std::mem::take(params),
+            fails: false,
+        },
+        ty: InferredType::Unknown,
+        span,
+    };
+    *args = vec![reading];
+    *params = vec![InferredType::Unknown];
+    *fails = true;
+}
+
+/// The field of a validator's `ValidationResult` that says whether its inputs are
+/// valid, as `target` spells it: `Valid` on Go, whose exported fields are
+/// capitalised, and `valid` everywhere else — the field each backend's validator
+/// declares.
+pub(crate) fn validation_result_valid(target: ExprTarget) -> &'static str {
+    match target {
+        ExprTarget::Go => "Valid",
+        ExprTarget::Rust
+        | ExprTarget::Kotlin
+        | ExprTarget::Cpp
+        | ExprTarget::Python
+        | ExprTarget::C
+        | ExprTarget::Js => "valid",
+    }
+}
+
+/// Read each call whose function answers something other than the value of the
+/// call as its signature says ([`CallReading`], docs/adr/0048), before the callee is
+/// renamed to the function a backend calls:
+///
+/// - a lookup whose miss is an error ([`CallReading::Found`]) answers the value or
+///   that it found none, in the backend's optional shape, and is read through the
+///   runtime's `found` where the call's failure is received — its failure is a key
+///   the table does not hold — as the variant a number declares is
+///   ([`lower_enum_conversions`]). C's reading is the `<function>_found` family the
+///   machine declares beside the call, which answers the result its `_take` reads
+///   ([`crate::forge::generator::c11_lookup_found`]); the callee renames to it.
+/// - a validator's check ([`CallReading::Validity`]) answers its `ValidationResult`,
+///   and the call's value is the result's validity ([`validation_result_valid`]).
+fn lower_call_readings(expr: &mut TypedExpr, ctx: &TypeCtx<'_>, target: ExprTarget) {
+    for child in expr.children_mut() {
+        lower_call_readings(child, ctx, target);
+    }
+    let (reading, fails) = match &expr.kind {
+        ExprKind::Call { callee, fails, .. } => match &callee.kind {
+            ExprKind::Ident(name) => match ctx.lookup_func(name) {
+                Some(signature) => (signature.reading, *fails),
+                None => return,
+            },
+            _ => return,
+        },
+        _ => return,
+    };
+    match reading {
+        CallReading::Value => {}
+        CallReading::Found => {
+            if let Some(wrapper) = found_wrapper(target).filter(|_| fails) {
+                wrap_in_found(expr, wrapper);
+            }
+        }
+        CallReading::Validity => {
+            let span = expr.span.clone();
+            let check = std::mem::replace(&mut expr.kind, ExprKind::Raw(String::new()));
+            expr.kind = ExprKind::Member {
+                object: Box::new(TypedExpr {
+                    kind: check,
                     ty: InferredType::Unknown,
                     span,
-                };
-                callee.kind = ExprKind::Raw(wrapper.to_string());
-                *args = vec![conversion];
-                *params = vec![InferredType::Unknown];
-            }
-            _ => callee.kind = ExprKind::Raw(scope.from_number.to_string()),
-        },
-        _ => {}
+                }),
+                property: validation_result_valid(target).to_string(),
+            };
+        }
     }
 }
 
@@ -7863,10 +7949,10 @@ pub(crate) fn pass_failure_on(
         // returns a record or a list answers in the statechart's own types, which
         // this layer cannot spell (the lattice does not carry which record a list
         // holds): it answers an `Outcome`, whose type `TakeOutcome` infers.
-        // ... and so does the runtime's reading of the variant a number declares
-        // ([`enum_from_number_wrapper`]), whose type is the enum's, which the
-        // lattice does not carry either.
-        ExprTarget::Go if symbol.starts_with(STATE_ADAPTER_PREFIX) || symbol == GO_DECLARED => {
+        // ... and so does the runtime's reading of a value that may not have been
+        // found ([`found_wrapper`]), the variant a number declares among them,
+        // whose type is the enum's, which the lattice does not carry either.
+        ExprTarget::Go if symbol.starts_with(STATE_ADAPTER_PREFIX) || symbol == GO_FOUND => {
             format!("scealgorithm.TakeOutcome(&sceFailure, {call})")
         }
         ExprTarget::Go => {
@@ -11855,21 +11941,21 @@ mod tests {
         for (target, fragment) in [
             (
                 ExprTarget::Rust,
-                "sce_forge_runtime::algorithm::declared(mode_from(n))?",
+                "sce_forge_runtime::algorithm::found(mode_from(n))?",
             ),
             (
                 ExprTarget::Kotlin,
-                "com.sce.forge.runtime.SceChecked.take(com.sce.forge.runtime.SceChecked.declared(mode_from(",
+                "com.sce.forge.runtime.SceChecked.take(com.sce.forge.runtime.SceChecked.found(mode_from(",
             ),
             (
                 ExprTarget::Cpp,
-                "SCE::Forge::Checked::take(sce_failure_, SCE::Forge::Checked::declared(mode_from(",
+                "SCE::Forge::Checked::take(sce_failure_, SCE::Forge::Checked::found(mode_from(",
             ),
             (
                 ExprTarget::Go,
-                "scealgorithm.TakeOutcome(&sceFailure, scealgorithm.Declared(mode_from(",
+                "scealgorithm.TakeOutcome(&sceFailure, scealgorithm.Found(mode_from(",
             ),
-            (ExprTarget::Python, "sce_algorithm.declared(mode_from("),
+            (ExprTarget::Python, "sce_algorithm.found(mode_from("),
             (ExprTarget::C, "mode_from_take(&sce_failure_, mode_from("),
         ] {
             let out = lowered("Mode.fromNumber(n)", target);
@@ -11906,6 +11992,109 @@ mod tests {
         )
         .expect("an open enum's reading cannot fail");
         assert_eq!(lowered, "mode_from(n)");
+    }
+
+    /// A context whose `Check` is a validator's check and `Find` a lookup whose miss
+    /// is an error (docs/adr/0048), each of an `int32`, with an `int32` `n`, renamed
+    /// to the functions a backend calls.
+    fn reading_ctx() -> TypeCtx<'static> {
+        use crate::forge::types::FuncSig;
+        let mut ctx = TypeCtx::new();
+        ctx.insert_var("n", int(true, 32));
+        ctx.insert_func(
+            "Check",
+            FuncSig {
+                reading: CallReading::Validity,
+                ..FuncSig::new(vec![int(true, 32)], InferredType::Bool)
+            },
+        );
+        ctx.insert_func(
+            "Find",
+            FuncSig {
+                may_fail: true,
+                reading: CallReading::Found,
+                ..FuncSig::new(vec![int(true, 32)], int(true, 32))
+            },
+        );
+        ctx.receives_failures = true;
+        ctx
+    }
+
+    /// A validator's check is read as the validity of what it answers, and a lookup
+    /// whose miss is an error through the runtime's `found`, which turns a miss into
+    /// the failure the statement receives; C's reading is the one the machine
+    /// declares, which answers the result its `_take` reads.
+    #[test]
+    fn a_call_is_read_as_its_signature_says() {
+        let ctx = reading_ctx();
+        let lowered = |expr: &str, target: ExprTarget, renames: &[(&'static str, &'static str)]| {
+            let renames: HashMap<&str, &str> = renames.iter().copied().collect();
+            transpile_typed(expr, target, &ctx, &renames, InferredType::Unknown)
+                .unwrap_or_else(|e| panic!("{expr} lowers for {target:?}: {e:?}"))
+        };
+        for (target, check, valid) in [
+            (ExprTarget::Rust, "v::V::new().validate", ".valid"),
+            (ExprTarget::Kotlin, "V().validate", ".valid"),
+            (ExprTarget::Cpp, "v::V{}.validate", ".valid"),
+            (ExprTarget::Go, "v.NewV().Validate", ".Valid"),
+            (ExprTarget::Python, "v.V().validate", ".valid"),
+            (ExprTarget::C, "v_validate", ".valid"),
+        ] {
+            let out = lowered("Check(n)", target, &[("Check", check)]);
+            assert!(
+                out.contains(&format!("{check}(n){valid}")),
+                "{target:?}: {out}"
+            );
+        }
+        for (target, fragment) in [
+            (ExprTarget::Rust, "sce_forge_runtime::algorithm::found(t::find(n))?"),
+            (
+                ExprTarget::Kotlin,
+                "com.sce.forge.runtime.SceChecked.take(com.sce.forge.runtime.SceChecked.found(t_find(",
+            ),
+            (
+                ExprTarget::Cpp,
+                "SCE::Forge::Checked::take(sce_failure_, SCE::Forge::Checked::found(t_find(",
+            ),
+            (
+                ExprTarget::Go,
+                "scealgorithm.TakeOutcome(&sceFailure, scealgorithm.Found(t_find(",
+            ),
+            (ExprTarget::Python, "sce_algorithm.found(t_find("),
+        ] {
+            let callee = if target == ExprTarget::Rust {
+                "t::find"
+            } else {
+                "t_find"
+            };
+            let out = lowered("Find(n)", target, &[("Find", callee)]);
+            assert!(out.contains(fragment), "{target:?}: {out}");
+        }
+        let c = lowered("Find(n)", ExprTarget::C, &[("Find", "t_find_found")]);
+        assert!(
+            c.contains("t_find_found_take(&sce_failure_, t_find_found("),
+            "C reads the lookup through the reading the machine declares: {c}"
+        );
+    }
+
+    /// A call whose signature says nothing of how it is read is the function's own
+    /// answer.
+    #[test]
+    fn a_call_of_a_value_is_left_as_it_is() {
+        use crate::forge::types::FuncSig;
+        let mut ctx = TypeCtx::new();
+        ctx.insert_var("n", int(true, 32));
+        ctx.insert_func("Twice", FuncSig::new(vec![int(true, 32)], int(true, 32)));
+        let renames: HashMap<&str, &str> = [("Twice", "t::twice")].into_iter().collect();
+        let out = transpile_typed(
+            "Twice(n)",
+            ExprTarget::Rust,
+            &ctx,
+            &renames,
+            InferredType::Unknown,
+        )
+        .expect("a call of a value lowers");
+        assert_eq!(out, "t::twice(n)");
     }
 
     /// A field of the event's data reaches the Interpreter as untyped JSON, so

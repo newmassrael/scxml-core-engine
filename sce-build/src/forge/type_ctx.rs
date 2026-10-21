@@ -121,16 +121,23 @@ pub(crate) fn imported_callee_sig(
     })
 }
 
-/// An algorithm a `sce-static` statechart imports (`<sce:import
-/// kind="algorithm">`), read where the document is parsed: its alias, the
-/// document it names, and its signature as the forge import pass discovers
-/// it. Language-free — the name a backend calls it by is the renderer's.
-#[derive(Debug, Clone, Default)]
+/// A forge document a `sce-static` statechart imports and calls as `Alias(args)`
+/// (docs/adr/0048): an algorithm (`<sce:import kind="algorithm">`), or a transform,
+/// condition, lookup, interpolation or validator, the kinds that are functions of
+/// their inputs. Read where the document is parsed: its alias, the document it
+/// names, what kind of callee it is, and its signature as the forge import pass
+/// discovers it. Language-free — the name a backend calls it by is the renderer's.
+#[derive(Debug, Clone)]
 pub struct StaticCallee {
     pub alias: String,
     /// The imported document's own name, from which a backend derives the
     /// symbol it emits.
     pub document_name: String,
+    /// What a target calls ([`CalleeKind`]).
+    pub kind: CalleeKind,
+    /// How the call's value is read from what the function answers: a
+    /// validator's validity, the value a lookup whose miss is an error found.
+    pub reading: crate::forge::types::CallReading,
     pub params: Vec<SceType>,
     pub ret: Option<SceType>,
     /// Why only a host may call it (a list or record slot), if so.
@@ -154,6 +161,40 @@ pub struct StaticCallee {
     /// Set instead of `host_only`; the list of numbers a statechart already takes
     /// whole (`list_return`) is not this.
     pub value: Option<StaticValueSignature>,
+}
+
+/// What a `sce-static` statechart's imported callee is, as a target spells a call
+/// of it (docs/adr/0048).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CalleeKind {
+    /// A free function the document emits, called with the arguments as they are:
+    /// an algorithm's, a transform's for its one output, a condition's, a lookup's
+    /// or an interpolation's, named as a forge kind that imports the document names
+    /// it.
+    Function(crate::forge::generator::StatelessFunction),
+    /// A validator that keeps nothing from one check to the next, built for the call
+    /// and asked once ([`crate::forge::generator::validator_check_call`]); its
+    /// validity is the value ([`crate::forge::types::CallReading::Validity`]).
+    Validator,
+}
+
+impl CalleeKind {
+    /// The kind of the document, as its import names it (`kind="lookup"`).
+    pub fn forge_kind(&self) -> ForgeKind {
+        match self {
+            Self::Function(function) => function.kind(),
+            Self::Validator => ForgeKind::Validator,
+        }
+    }
+
+    /// Whether it is an algorithm: the only callee whose slots may hold a record, a
+    /// list or a value of an enum, and the only one the Interpreter lowers.
+    pub fn is_algorithm(&self) -> bool {
+        matches!(
+            self,
+            Self::Function(crate::forge::generator::StatelessFunction::Algorithm { .. })
+        )
+    }
 }
 
 /// One slot of an imported algorithm's signature, as a `sce-static` statechart
@@ -799,7 +840,8 @@ pub struct StaticScope {
     record_paths: Vec<(String, InferredType)>,
     /// The bound of each string field of those ([`static_record_string_bounds`]).
     record_string_bounds: Vec<(String, usize)>,
-    /// Every imported algorithm, callable as `Alias(args)`.
+    /// Every imported callee, an algorithm or a function of another kind
+    /// ([`StaticCallee`]), callable as `Alias(args)`.
     pub callees: Vec<StaticCallee>,
     /// Each name a call of an algorithm with state in a slot can take
     /// ([`StateCallName`]), registered with the signature the call is judged by.
@@ -947,7 +989,7 @@ impl StaticScope {
         let record_paths = static_record_paths(variables.iter(), &model.imported_records);
         let record_string_bounds =
             static_record_string_bounds(variables.iter(), &model.imported_records);
-        let callees = model.imported_algorithms.clone();
+        let callees = model.imported_callees.clone();
         let state_calls = callees
             .iter()
             .filter_map(|callee| Some((callee, callee.value.as_ref()?)))
@@ -1330,13 +1372,22 @@ impl StaticScope {
                     ctx.insert_func(callee.alias.as_str(), sig);
                 }
             }
+            // A validator's check and a lookup whose miss is an error answer
+            // something other than the value: the call is read as the callee says
+            // ([`crate::forge::types::CallReading`]).
             if let Some(sig) = imported_callee_sig(
                 &callee.params,
                 callee.ret.as_ref(),
                 callee.host_only.as_deref(),
                 callee.may_fail,
             ) {
-                ctx.insert_func(callee.alias.as_str(), sig);
+                ctx.insert_func(
+                    callee.alias.as_str(),
+                    FuncSig {
+                        reading: callee.reading,
+                        ..sig
+                    },
+                );
             }
             // A callee returning a list a statechart takes whole is typed by what
             // it takes and returns, so the one place it may stand —

@@ -957,6 +957,30 @@ pub struct FuncSig {
     /// call anywhere else is refused, since nothing there could pass the
     /// failure on.
     pub may_fail: bool,
+    /// How the call's value is read from what the function answers
+    /// ([`CallReading`]): the answer itself for every function but a validator's
+    /// check and a lookup whose miss is an error, which a `sce-static` statechart
+    /// calls.
+    pub reading: CallReading,
+}
+
+/// How the value of a call is read from what the called function answers, where
+/// the two differ (docs/adr/0048). The expression layer reads the call so
+/// (`crate::forge::expr`'s `lower_call_readings`) before the callee is renamed to
+/// the function a backend calls.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CallReading {
+    /// The function answers the value.
+    #[default]
+    Value,
+    /// The function answers the value or that it found none, in the backend's own
+    /// optional shape: a lookup whose miss is an error. The call may fail
+    /// ([`FuncSig::may_fail`]), and a miss is its `out-of-range` failure, read
+    /// through the runtime's `found` as the variant an enum's number declares is.
+    Found,
+    /// The function answers a validation result, whose `valid` is the value: one
+    /// check by a validator built for the call.
+    Validity,
 }
 
 impl FuncSig {
@@ -968,6 +992,7 @@ impl FuncSig {
             ret,
             host_only: None,
             may_fail: false,
+            reading: CallReading::Value,
         }
     }
 

@@ -29,10 +29,10 @@ use crate::forge::expr::{
 use crate::forge::model::{EnumModel, EventSchemaModel, ForgeField, SceType};
 use crate::forge::static_datamodel::indexed_element;
 use crate::forge::type_ctx::{
-    StateArg, StateCallRefusal, StateContext, StateRewrite, StaticCallee, StaticEnum, StaticScope,
-    StaticSlot,
+    CalleeKind, StateArg, StateCallRefusal, StateContext, StateRewrite, StaticCallee, StaticEnum,
+    StaticScope, StaticSlot,
 };
-use crate::forge::types::InferredType;
+use crate::forge::types::{CallReading, InferredType};
 use crate::generator::Language;
 use crate::model::{Action, SCXMLModel};
 
@@ -381,49 +381,68 @@ pub struct StringStorage {
     pub view: String,
 }
 
-/// An imported algorithm as a target reaches it: the name a call is written
-/// with, and the line that makes the name visible where the machine is.
+/// An imported callee as a target reaches it: the name a call is written with,
+/// and the line that makes the name visible where the machine is.
 #[derive(Debug, Clone)]
 pub struct Callee {
     /// The callee, qualified as the generated unit that holds it requires.
     pub call: String,
-    /// The import line a forge kind importing the same algorithm writes, so
-    /// the machine reaches the function where the algorithm's own generation
+    /// The import line a forge kind importing the same document writes, so
+    /// the machine reaches the function where the document's own generation
     /// put it. `None` when the target was built without what the line needs —
     /// a Go target without the module path its packages live under — and a
     /// call is all it can then spell: [`lower`] refuses a document that calls
-    /// the algorithm rather than leave the name unimported.
+    /// the callee rather than leave the name unimported.
     pub import: Option<String>,
 }
 
 /// [`Callee`] for a generated-code backend: the identity and symbol every
-/// other forge kind derives for the same document, so a statechart and an
-/// algorithm that imports it agree on where it lives.
+/// other forge kind derives for the same document, so a statechart and a
+/// forge kind that imports it agree on where it lives. A function is called by
+/// the name a forge kind importing the document calls it by
+/// ([`crate::forge::generator::StatelessFunction::qualified_call`]); a validator
+/// is built for the call and asked once
+/// ([`crate::forge::generator::validator_check_call`]). Both are reached through
+/// the import a stateless kind is: the module, never a type of it, so no name of
+/// the document stands beside the machine's own.
 ///
 /// `go_module_prefix` is what the Go import path is rooted at, and the one
 /// thing of the identity that is not the document's own: the namespace a call
 /// is qualified with is the package's name, which it is not. Any other backend
 /// ignores it.
-fn generated_callee(lang: Language, document_name: &str, go_module_prefix: Option<&str>) -> Callee {
+fn generated_callee(
+    lang: Language,
+    callee: &StaticCallee,
+    go_module_prefix: Option<&str>,
+) -> Callee {
     let options = crate::ForgeCompileOptions {
         go_module_prefix: go_module_prefix.map(str::to_owned),
         ..Default::default()
     };
-    let symbol = crate::forge::generator::forge_algorithm_symbol(document_name, lang);
+    let call = |namespace: &str| match &callee.kind {
+        CalleeKind::Function(function) => function.qualified_call(namespace, &lang),
+        CalleeKind::Validator => {
+            crate::forge::generator::validator_check_call(&callee.document_name, namespace, lang)
+        }
+    };
     // The identity of a Go document cannot be derived without the root its
     // path is written under, and the call does not need it: the package is
     // named for the document alone.
     if matches!(lang, Language::Go) && go_module_prefix.is_none() {
-        let package = filters::to_snake_case(document_name.to_string());
+        let package = filters::to_snake_case(callee.document_name.clone());
         return Callee {
-            call: crate::algorithm_qualified_call(&symbol, &package, &lang),
+            call: call(&package),
             import: None,
         };
     }
-    let identity =
-        crate::forge::generator::forge_import_identity(document_name, &lang, false, &options);
+    let identity = crate::forge::generator::forge_import_identity(
+        &callee.document_name,
+        &lang,
+        false,
+        &options,
+    );
     Callee {
-        call: crate::algorithm_qualified_call(&symbol, &identity.namespace, &lang),
+        call: call(&identity.namespace),
         import: Some(identity.include_stmt),
     }
 }
@@ -607,11 +626,18 @@ pub trait StaticTarget {
     fn lowers_host_action_arguments(&self) -> bool {
         false
     }
-    /// How a call of the imported algorithm `document_name` is spelled, and
-    /// the line that imports it — or `None` for a target that does not reach
-    /// algorithms yet, which refuses a document that calls one rather than
-    /// leaving the name undefined.
-    fn callee(&self, document_name: &str) -> Option<Callee>;
+    /// How a call of the imported `callee` is spelled, and the line that imports
+    /// it — or `None` for a target that does not reach callees of its kind yet,
+    /// which refuses a document that calls one rather than leaving the name
+    /// undefined.
+    fn callee(&self, callee: &StaticCallee) -> Option<Callee>;
+    /// What the machine declares beside its calls of `callee` for [`Self::callee`]
+    /// to name, for a target whose call of it is not the imported function itself:
+    /// C's reading of a lookup whose miss is an error
+    /// ([`crate::forge::generator::c11_lookup_found`]). `None` for every other.
+    fn callee_def(&self, _callee: &StaticCallee) -> Option<String> {
+        None
+    }
     /// Whether this target lowers a call of an imported algorithm that takes or
     /// returns a record or a list (docs/SCE_ACCEPTED_SUBSET.md §2.15, "State an
     /// algorithm takes and gives back"). A target that does not refuses the
@@ -1419,8 +1445,8 @@ impl StaticTarget for KotlinTarget {
     fn name(&self) -> &'static str {
         "Kotlin"
     }
-    fn callee(&self, document_name: &str) -> Option<Callee> {
-        Some(generated_callee(Language::Kotlin, document_name, None))
+    fn callee(&self, callee: &StaticCallee) -> Option<Callee> {
+        Some(generated_callee(Language::Kotlin, callee, None))
     }
     fn lowers_state_calls(&self) -> bool {
         true
@@ -2049,8 +2075,8 @@ impl StaticTarget for RustTarget {
     fn name(&self) -> &'static str {
         "Rust"
     }
-    fn callee(&self, document_name: &str) -> Option<Callee> {
-        Some(generated_callee(Language::Rust, document_name, None))
+    fn callee(&self, callee: &StaticCallee) -> Option<Callee> {
+        Some(generated_callee(Language::Rust, callee, None))
     }
     fn lowers_state_calls(&self) -> bool {
         true
@@ -2822,7 +2848,7 @@ fn names(scope: &StaticScope, target: &dyn StaticTarget) -> Vec<(String, String)
         // refused a document that calls one.
         .chain(scope.callees.iter().filter_map(|c| {
             target
-                .callee(&c.document_name)
+                .callee(c)
                 .map(|callee| (c.alias.clone(), callee.call))
         }))
         .collect()
@@ -2885,17 +2911,18 @@ pub fn lower(
     // A call the target cannot spell would be an undefined name where the
     // machine runs; it is refused here, where the document is read.
     for callee in &scope.callees {
-        match target.callee(&callee.document_name) {
+        let kind = callee.kind.forge_kind();
+        match target.callee(callee) {
             None => {
                 return Err(GenerateError::unsupported(format!(
-                    "`{}(…)`: an imported algorithm has no {lang} lowering yet",
+                    "`{}(…)`: a call of an imported {kind} has no {lang} lowering yet",
                     callee.alias
                 )))
             }
             Some(Callee { import: None, .. }) => {
                 return Err(GenerateError::unsupported(format!(
-                    "`{}(…)`: the import of an algorithm cannot be written for {lang} \
-                     without the module its packages live under",
+                    "`{}(…)`: the import of the {kind} it calls cannot be written for \
+                     {lang} without the module its packages live under",
                     callee.alias
                 )))
             }
@@ -2923,11 +2950,7 @@ pub fn lower(
     let imports: Vec<String> = scope
         .callees
         .iter()
-        .filter_map(|c| {
-            target
-                .callee(&c.document_name)
-                .and_then(|callee| callee.import)
-        })
+        .filter_map(|c| target.callee(c).and_then(|callee| callee.import))
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect();
@@ -3555,7 +3578,7 @@ pub fn lower(
             name: target.state_adapter_name(machine, callee, coded),
             machine,
             call: target
-                .callee(&callee.document_name)
+                .callee(callee)
                 .expect("checked when the callees were read")
                 .call,
             callee,
@@ -3650,6 +3673,9 @@ pub fn lower(
             }
         }
     }
+    // What a target declares beside its calls of a callee it does not call as the
+    // imported function itself: C's reading of a lookup whose miss is an error.
+    adapter_defs.extend(scope.callees.iter().filter_map(|c| target.callee_def(c)));
     let imports: Vec<String> = imports.into_iter().collect();
     Ok(StaticLowering {
         fields,
@@ -4758,8 +4784,8 @@ impl StaticTarget for CppTarget {
     fn name(&self) -> &'static str {
         "C++"
     }
-    fn callee(&self, document_name: &str) -> Option<Callee> {
-        Some(generated_callee(Language::Cpp, document_name, None))
+    fn callee(&self, callee: &StaticCallee) -> Option<Callee> {
+        Some(generated_callee(Language::Cpp, callee, None))
     }
     fn lowers_state_calls(&self) -> bool {
         true
@@ -5536,12 +5562,8 @@ impl StaticTarget for GoTarget<'_> {
     fn name(&self) -> &'static str {
         "Go"
     }
-    fn callee(&self, document_name: &str) -> Option<Callee> {
-        Some(generated_callee(
-            Language::Go,
-            document_name,
-            self.import_root,
-        ))
+    fn callee(&self, callee: &StaticCallee) -> Option<Callee> {
+        Some(generated_callee(Language::Go, callee, self.import_root))
     }
     fn lowers_state_calls(&self) -> bool {
         true
@@ -6257,8 +6279,9 @@ impl StaticTarget for GoTarget<'_> {
 /// `sce-static` document is native Go.
 ///
 /// `go_module_prefix` is the module path the generated packages live under
-/// (`--go-module-prefix`). A machine that calls an imported algorithm imports
-/// its package by that path, and a Go import path has no valid bare form, so a
+/// (`--go-module-prefix`). A machine that calls an imported algorithm, or a
+/// document of another kind it calls (docs/adr/0047), imports its package by
+/// that path, and a Go import path has no valid bare form, so a
 /// document that calls one without a usable prefix is refused as any forge kind
 /// importing another is.
 pub fn lower_go(
@@ -6266,8 +6289,8 @@ pub fn lower_go(
     machine: &str,
     go_module_prefix: Option<&str>,
 ) -> Result<StaticLowering, GenerateError> {
-    let calls_an_algorithm = StaticScope::of(model).is_some_and(|scope| !scope.callees.is_empty());
-    let import_root = if calls_an_algorithm {
+    let calls_an_import = StaticScope::of(model).is_some_and(|scope| !scope.callees.is_empty());
+    let import_root = if calls_an_import {
         Some(crate::forge::generator::go_import_root(go_module_prefix)?)
     } else {
         None
@@ -6343,8 +6366,8 @@ impl StaticTarget for PythonTarget {
     fn in_sequence(&self, parts: &[String]) -> String {
         parts.join("\n")
     }
-    fn callee(&self, document_name: &str) -> Option<Callee> {
-        Some(generated_callee(Language::Python, document_name, None))
+    fn callee(&self, callee: &StaticCallee) -> Option<Callee> {
+        Some(generated_callee(Language::Python, callee, None))
     }
     fn lowers_state_calls(&self) -> bool {
         true
@@ -7129,9 +7152,26 @@ impl StaticTarget for CTarget {
     // An algorithm's C artifact is a header of `static inline` functions, which
     // the machine includes by the line a forge kind importing it writes; a call
     // that can fail is received through the `<name>_take` the header declares
-    // (the expression lowerer spells it).
-    fn callee(&self, document_name: &str) -> Option<Callee> {
-        Some(generated_callee(Language::C11, document_name, None))
+    // (the expression lowerer spells it). A lookup whose miss is an error answers
+    // through a pointer, which no expression holds: it is called through the
+    // reading the machine declares for it ([`Self::callee_def`]).
+    fn callee(&self, callee: &StaticCallee) -> Option<Callee> {
+        let mut reached = generated_callee(Language::C11, callee, None);
+        if callee.reading == CallReading::Found {
+            reached.call = crate::forge::generator::c11_lookup_found_name(&reached.call);
+        }
+        Some(reached)
+    }
+    fn callee_def(&self, callee: &StaticCallee) -> Option<String> {
+        if callee.reading != CallReading::Found {
+            return None;
+        }
+        let function = generated_callee(Language::C11, callee, None).call;
+        Some(crate::forge::generator::c11_lookup_found(
+            &function,
+            callee.params.first()?,
+            callee.ret.as_ref()?,
+        ))
     }
     fn lowers_state_calls(&self) -> bool {
         true

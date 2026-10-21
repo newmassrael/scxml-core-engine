@@ -259,8 +259,8 @@ PY
 
 mutation_case "a call names the module of another language's identity" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
-     "        Some(generated_callee(Language::Python, document_name, None))",
-     "        Some(generated_callee(Language::Rust, document_name, None))")
+     "        Some(generated_callee(Language::Python, callee, None))",
+     "        Some(generated_callee(Language::Rust, callee, None))")
 PY
 
 # ── A list holds no more than its bound ────────────────────────────

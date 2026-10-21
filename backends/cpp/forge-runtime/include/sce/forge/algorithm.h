@@ -150,15 +150,16 @@ template <typename T> T take(AlgorithmFailure &f, const AlgorithmResult<T> &resu
     return result.value();
 }
 
-/// The variant an enum's `from_underlying` found for a number, or an
-/// out-of-range failure when no variant declares it: what `<alias>.fromNumber(n)`
-/// answers (SCE_FORGE.md §4.12), the number outside the enum failing as a number
-/// outside a collection does.
-template <typename T> AlgorithmResult<T> declared(const std::optional<T> &variant) {
-    if (!variant.has_value()) {
+/// The value a reading found, or an out-of-range failure when it found none:
+/// the variant an enum's `from_underlying` found for a number, which is what
+/// `<alias>.fromNumber(n)` answers (SCE_FORGE.md §4.12), and the value a lookup
+/// whose miss is an error found for a key. A number outside the enum and a key
+/// outside the table fail as an index outside a collection does.
+template <typename T> AlgorithmResult<T> found(const std::optional<T> &value) {
+    if (!value.has_value()) {
         return AlgorithmResult<T>::failure(AlgorithmError::OutOfRange);
     }
-    return AlgorithmResult<T>::success(*variant);
+    return AlgorithmResult<T>::success(*value);
 }
 
 /// `value` when it holds no more than `capacity` bytes — the bound a string

@@ -79,16 +79,17 @@ public object SceChecked {
         }
 
     /**
-     * The variant an enum's `fromUnderlying` found for a number, or an
-     * out-of-range failure when no variant declares it: what
-     * `<alias>.fromNumber(n)` answers (SCE_FORGE.md Section 4.12), the number
-     * outside the enum failing as a number outside a collection does.
+     * The value a reading found, or an out-of-range failure when it found none:
+     * the variant an enum's `fromUnderlying` found for a number, which is what
+     * `<alias>.fromNumber(n)` answers (SCE_FORGE.md Section 4.12), and the value
+     * a lookup whose miss is an error found for a key. A number outside the enum
+     * and a key outside the table fail as an index outside a collection does.
      */
-    public fun <T : Any> declared(variant: T?): AlgorithmResult<T> =
-        if (variant == null) {
+    public fun <T : Any> found(value: T?): AlgorithmResult<T> =
+        if (value == null) {
             AlgorithmResult.Failed(AlgorithmError.OutOfRange)
         } else {
-            AlgorithmResult.Ok(variant)
+            AlgorithmResult.Ok(value)
         }
 
     /**

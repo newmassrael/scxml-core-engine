@@ -20,6 +20,6 @@ mutation_oracles tests/integration/AStaticDatamodelRunsLoweredUnderTheInterprete
 
 mutation_case "the algorithm a call names is not the one the document imports" <<'PY'
 edit("sce-build/src/forge/static_js.rs",
-     "        self.callee(&callee.document_name)\n            .expect(\"an algorithm the document imports travels in it\")\n            .call\n    }\n    fn state_list_within",
-     "        self.callee(&callee.document_name)\n            .expect(\"an algorithm the document imports travels in it\")\n            .call\n            .replace(\"ledger_\", \"nothing_\")\n    }\n    fn state_list_within")
+     "        self.callee(callee)\n            .expect(\"an algorithm the document imports travels in it\")\n            .call\n    }\n    fn state_list_within",
+     "        self.callee(callee)\n            .expect(\"an algorithm the document imports travels in it\")\n            .call\n            .replace(\"ledger_\", \"nothing_\")\n    }\n    fn state_list_within")
 PY

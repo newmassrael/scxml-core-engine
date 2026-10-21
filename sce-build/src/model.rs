@@ -3722,13 +3722,14 @@ pub struct SCXMLModel {
     /// parsed; empty without sibling files and not serialized.
     #[serde(skip)]
     pub enum_documents: crate::forge::schema_revision::EnumDocuments,
-    /// The algorithms a `sce-static` document imports, each with the
-    /// signature its import resolved to — what an expression calls as
-    /// `Alias(args)` (SCE Accepted Subset §2.15). Resolved from sibling files
-    /// where the document is parsed ([`crate::forge::static_imports`]);
-    /// empty without them, and not serialized.
+    /// The callees a `sce-static` document imports — its algorithms, and its
+    /// transforms, conditions, lookups, interpolations and validators
+    /// (docs/adr/0048) — each with the signature its import resolved to: what an
+    /// expression calls as `Alias(args)` (SCE Accepted Subset §2.15). Resolved
+    /// from sibling files where the document is parsed
+    /// ([`crate::forge::static_imports`]); empty without them, and not serialized.
     #[serde(skip)]
-    pub imported_algorithms: Vec<crate::forge::type_ctx::StaticCallee>,
+    pub imported_callees: Vec<crate::forge::type_ctx::StaticCallee>,
     /// The document's initial state, as the parser leaves it: resolved to
     /// a leaf, and for a multi-token value collapsed to its first token.
     ///

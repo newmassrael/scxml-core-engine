@@ -166,7 +166,7 @@ fn every_backend_lowers_the_machine_that_reads_an_enum_as_its_number() {
 
 /// Each backend lowers the two calls to the accessors the machine's own type for
 /// the enum declares, by the names and shapes of the enum document's, and wraps the
-/// reading of a number in its runtime's `declared` where the two shapes differ.
+/// reading of a number in its runtime's `found` where the two shapes differ.
 #[test]
 fn each_backend_lowers_the_conversions_to_the_enums_accessors() {
     let text = machine(None);
@@ -176,7 +176,7 @@ fn each_backend_lowers_the_conversions_to_the_enums_accessors() {
             "rust",
             &[
                 "::to_underlying(",
-                "sce_forge_runtime::algorithm::declared(",
+                "sce_forge_runtime::algorithm::found(",
                 "::from_underlying(",
             ][..],
         ),
@@ -184,7 +184,7 @@ fn each_backend_lowers_the_conversions_to_the_enums_accessors() {
             "kotlin",
             &[
                 "::toUnderlying)(",
-                "com.sce.forge.runtime.SceChecked.declared(",
+                "com.sce.forge.runtime.SceChecked.found(",
                 ".fromUnderlying(",
             ][..],
         ),
@@ -192,23 +192,19 @@ fn each_backend_lowers_the_conversions_to_the_enums_accessors() {
             "cpp",
             &[
                 "ToUnderlying(",
-                "SCE::Forge::Checked::declared(",
+                "SCE::Forge::Checked::found(",
                 "FromUnderlying(",
             ][..],
         ),
         (
             "go",
-            &[
-                ".ToUnderlying(",
-                "scealgorithm.Declared(",
-                "FromUnderlying(",
-            ][..],
+            &[".ToUnderlying(", "scealgorithm.Found(", "FromUnderlying("][..],
         ),
         (
             "python",
             &[
                 ".to_underlying(",
-                "sce_algorithm.declared(",
+                "sce_algorithm.found(",
                 ".from_underlying(",
             ][..],
         ),
@@ -366,13 +362,13 @@ fn an_algorithm_reads_an_enum_as_its_number_and_back_on_every_backend() {
     let documents = [("number_status.scxml", from.as_str())];
     let rust = generated("rust", &documents, "number_status.scxml");
     assert!(
-        rust.contains("sce_forge_runtime::algorithm::declared(")
+        rust.contains("sce_forge_runtime::algorithm::found(")
             && rust.contains("::from_underlying("),
         "{rust}"
     );
     let c = generated("c11", &documents, "number_status.scxml");
     assert!(
-        c.contains("SCE_ENUM_ENUM_ITEM_STATUS_FROM_NUMBER")
+        c.contains("SCE_FOUND_ENUM_ITEM_STATUS_FROM_NUMBER")
             && c.contains("enum_item_status_from_number_take(&sce_failure_,"),
         "{c}"
     );

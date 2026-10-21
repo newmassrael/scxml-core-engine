@@ -8,7 +8,7 @@
   generated backends (`forge::static_lowering`, `StaticTarget::enum_number_symbols`), the
   enum document's accessors an algorithm reaches (`forge::generator::enum_number_symbols`,
   `c11_enum_from_number`), the Interpreter's library (`static_js/sce_static.js`); the forge
-  runtimes of Rust, Kotlin, C++, Go and Python (`declared`); docs/SCE_ACCEPTED_SUBSET.md
+  runtimes of Rust, Kotlin, C++, Go and Python (`found`); docs/SCE_ACCEPTED_SUBSET.md
   §3.4.1 and §2.15 ("Enum variables"), SCE_FORGE.md §4.12
 - Related: ADR 0042 (an application keeps an enum in a numeric field of the shared list "by
   the enum's declared wire number"), ADR 0044 decision 6 (an older receiver refuses a variant
@@ -86,10 +86,12 @@ the forge expression grammar is a subset of (SCE_FORGE.md §3.4).
   (`EnumScope::to_number`, `EnumScope::from_number`) before the variants are lowered. Where the
   backend's reading of a number answers an optional value and a failing call answers something
   else, the call is wrapped in one runtime helper that turns "none" into `out-of-range`:
-  `sce_forge_runtime::algorithm::declared` (Rust), `SceChecked.declared` (Kotlin),
-  `SCE::Forge::Checked::declared` (C++), `scealgorithm.Declared` (Go, an `Outcome`),
-  `sce_algorithm.declared` (Python). C answers a result struct of its own and the Interpreter
-  throws, so neither is wrapped.
+  `sce_forge_runtime::algorithm::found` (Rust), `SceChecked.found` (Kotlin),
+  `SCE::Forge::Checked::found` (C++), `scealgorithm.Found` (Go, an `Outcome`),
+  `sce_algorithm.found` (Python). C answers a result struct of its own and the Interpreter
+  throws, so neither is wrapped. The helper is named for what it reads, a value that may not
+  have been found, and not for the enum: a lookup whose miss is an error answers the same
+  optional value and is turned into its failure by the same helper (ADR 0048).
 
 **The functions are the enum document's own accessors, by name and shape.** An algorithm reaches
 the enum document's generated type, whose accessors every backend's enum kind already emits

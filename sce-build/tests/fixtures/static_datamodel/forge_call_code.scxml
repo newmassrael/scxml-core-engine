@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A lookup whose miss is an error, which static_forge_calls.scxml calls as
+  `Code(gear)` (docs/adr/0048): the code of a gear, and no code at all for a gear
+  the table does not list, which the call fails with.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="lookup" name="forge_call_code" version="1.0">
+  <datamodel>
+    <data id="gear" sce:type="uint8" sce:direction="in"/>
+    <data id="code" sce:type="int32" sce:direction="out"/>
+    <data id="mapping" sce:on-miss="error">
+      <sce:entry key="1" value="100"/>
+      <sce:entry key="2" value="200"/>
+    </data>
+  </datamodel>
+</scxml>
