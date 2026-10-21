@@ -793,80 +793,85 @@ impl StatePolicy for Test567Policy {
                                 break 'action_block; // W3C SCXML 4.9: the error ends the block
                             }
                             if let Some(ref _rt) = _resolved_target {
-                                let mut _param_failed = false;
+                                // W3C SCXML 6.2 + C.2: the BasicHTTP processor is the runtime's `http-send`
+                                // feature. A build without it does not support the type, so the send is
+                                // refused as an unsupported type is: one error.execution carrying the send
+                                // id, the payload never read, nothing posted, the block ended.
+                                if !sce_rust_runtime::helpers::send::is_supported_send_type(sce_rust_runtime::helpers::scxml_constants::BASIC_HTTP_EVENT_PROCESSOR_TYPE) {
+        ::sce_rust_runtime::sce_log_error!("<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'>: this build has no BasicHTTP processor (sce-rust-runtime's `http-send` feature)");
+        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(Test567Event::ErrorExecution, "<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'> names a processor this platform does not support");
+        err_meta.metadata.send_id = send_id.clone();
+        engine.raise(err_meta);
+        break 'action_block;  // W3C SCXML 4.9: the error ends the block
+    } else {
+    let mut _param_failed = false;
 
-                                // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                                // delivered, so each name carries a vector. The typed value is kept
-                                // rather than its text — a receiver reading `_event.data.value === 42`
-                                // finds the string "42" unequal.
-                                //
-                                // Declared out here rather than inside the payload block because
-                                // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                                // below are renderings of that one evaluation: the BasicHTTP and
-                                // host-served arms read this map instead of asking the data model again.
-                                let mut _send_wire_params: ::std::collections::BTreeMap<
-                                    String,
-                                    Vec<::sce_rust_runtime::ScriptValue>,
-                                > = ::std::collections::BTreeMap::new();
-                                // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                                let event_data_string: String = {
-                                    self.ensure_script_engine();
-                                    let sid = self.session_id.as_ref().unwrap().clone();
-                                    let se = self.script_engine.clone();
-                                    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                                    let wire_params = &mut _send_wire_params;
-                                    match se.evaluate_expression(&sid, "2") {
-                                        Ok(val) => {
-                                            wire_params
-                                                .entry("param1".to_string())
-                                                .or_default()
-                                                .push(val);
-                                        }
-                                        Err(e) => {
-                                            ::sce_rust_runtime::sce_log_error!(
-                                                "send param 'param1' eval failed: {}",
-                                                e
-                                            );
-                                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(Test567Event::ErrorExecution, "<send> <param name='param1'> could not be read"));
-                                            // W3C SCXML 5.7.1: the pair is left out; 4.9: the block stops after the send.
-                                            _param_failed = true;
-                                        }
-                                    }
-                                    ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
-                                };
-                                let event_data: &str = &event_data_string;
+    // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+    // delivered, so each name carries a vector. The typed value is kept
+    // rather than its text — a receiver reading `_event.data.value === 42`
+    // finds the string "42" unequal.
+    //
+    // Declared out here rather than inside the payload block because
+    // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+    // below are renderings of that one evaluation: the BasicHTTP and
+    // host-served arms read this map instead of asking the data model again.
+    let mut _send_wire_params: ::std::collections::BTreeMap<String, Vec<::sce_rust_runtime::ScriptValue>> =
+        ::std::collections::BTreeMap::new();
+    // W3C SCXML 6.2: Evaluate <param> expressions at send time
+    let event_data_string: String = {
+        self.ensure_script_engine();
+        let sid = self.session_id.as_ref().unwrap().clone();
+        let se = self.script_engine.clone();
+        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+        let wire_params = &mut _send_wire_params;
+        match se.evaluate_expression(&sid, "2") {
+            Ok(val) => {
+                wire_params.entry("param1".to_string()).or_default().push(val);
+            }
+            Err(e) => {
+                ::sce_rust_runtime::sce_log_error!("send param 'param1' eval failed: {}", e);
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(Test567Event::ErrorExecution, "<send> <param name='param1'> could not be read"));
+                // W3C SCXML 5.7.1: the pair is left out; 4.9: the block stops after the send.
+                _param_failed = true;
+            }
+        }
+        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(wire_params)
+    };
+    let event_data: &str = &event_data_string;
 
-                                // W3C SCXML C.2: BasicHTTP send to HTTP target
-                                {
-                                    // W3C SCXML C.2: Validate dynamic target is HTTP URL
-                                    if !_rt.starts_with("http://") && !_rt.starts_with("https://") {
-                                        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(Test567Event::ErrorCommunication, "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL");
-                                        err_meta.metadata.send_id = send_id.clone();
-                                        engine.raise(err_meta);
-                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                    } else {
-                                        // W3C SCXML C.2: "If the namelist attribute is defined, the SCXML
-                                        // Processor MUST map its variable names and values to HTTP POST
-                                        // parameters." Both kinds of argument are already evaluated, so the
-                                        // form is a rendering of that map rather than a second reading.
-                                        let http_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
-                                        engine.perform_http_send(
-                                            _rt.to_string(),
-                                            "test".to_string(),
-                                            "".to_string(),
-                                            http_params,
-                                            send_id.clone(),
-                                        );
-                                    }
-                                }
+    // W3C SCXML C.2: BasicHTTP send to HTTP target
+    {
+        // W3C SCXML C.2: Validate dynamic target is HTTP URL
+        if !_rt.starts_with("http://") && !_rt.starts_with("https://") {
+            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(Test567Event::ErrorCommunication, "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL");
+            err_meta.metadata.send_id = send_id.clone();
+            engine.raise(err_meta);
+            break 'action_block;  // W3C SCXML 4.9: the error ends the block
+        } else {
+        // W3C SCXML C.2: "If the namelist attribute is defined, the SCXML
+        // Processor MUST map its variable names and values to HTTP POST
+        // parameters." Both kinds of argument are already evaluated, so the
+        // form is a rendering of that map rather than a second reading.
+        let http_params = ::sce_rust_runtime::helpers::event_data::typed_params_to_wire_strings(&_send_wire_params);
+        engine.perform_http_send(
+            _rt.to_string(),
+"test".to_string(),
+"".to_string(),
+            http_params,
+            send_id.clone(),
+        );
+        }
+    }
 
-                                // W3C SCXML 4.9: a <param> that could not be read raised an error while
-                                // this element was processed, so the rest of the block does not run —
-                                // from however deep a <foreach> it came.
-                                if _param_failed {
-                                    break 'action_block;
-                                }
-                                let _ = event_data; // suppress unused warning in branches that skip dispatch
+
+    // W3C SCXML 4.9: a <param> that could not be read raised an error while
+    // this element was processed, so the rest of the block does not run —
+    // from however deep a <foreach> it came.
+    if _param_failed {
+        break 'action_block;
+    }
+    let _ = event_data;  // suppress unused warning in branches that skip dispatch
+    } // end of the BasicHTTP processor check
                             } // end of if let Some(ref _rt) = _resolved_target
                         } // end of the prologue's discard (W3C SCXML 6.2: an argument error sends nothing)
                         let _ = send_id; // suppress unused warning when no send operation

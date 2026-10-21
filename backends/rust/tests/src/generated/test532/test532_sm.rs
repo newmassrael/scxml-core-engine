@@ -761,54 +761,67 @@ impl StatePolicy for Test532Policy {
                                 break 'action_block; // W3C SCXML 4.9: the error ends the block
                             }
                             if let Some(ref _rt) = _resolved_target {
-                                // W3C SCXML B.2: inline text takes the ordered readings — an expression
-                                // when it is one, XML when it opens with `<`, otherwise the string. The
-                                // same filter inline `<data>` and `<donedata>` text goes through decides
-                                // which, so one clause reaches one answer wherever `<content>` appears.
-                                //
-                                // Handing the author's text over unread made this line evaluate it *as
-                                // Lua*: `<content>t.length</content>` reached `_event.data` as nil where
-                                // the datamodel reads 5, and whether the text was an expression at all
-                                // was discovered by an evaluation that failed.
-                                // The reading is decided at codegen time; the VALUE is produced here, at
-                                // send time, and serialized so the far end parses instead of evaluating.
-                                let event_data_string: String = {
-                                    self.ensure_script_engine();
-                                    let sid = self.session_id.as_ref().unwrap().clone();
-                                    let se = self.script_engine.clone();
-                                    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                                    match se.evaluate_expression(&sid, "\"some content\"") {
+                                // W3C SCXML 6.2 + C.2: the BasicHTTP processor is the runtime's `http-send`
+                                // feature. A build without it does not support the type, so the send is
+                                // refused as an unsupported type is: one error.execution carrying the send
+                                // id, the payload never read, nothing posted, the block ended.
+                                if !sce_rust_runtime::helpers::send::is_supported_send_type(sce_rust_runtime::helpers::scxml_constants::BASIC_HTTP_EVENT_PROCESSOR_TYPE) {
+        ::sce_rust_runtime::sce_log_error!("<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'>: this build has no BasicHTTP processor (sce-rust-runtime's `http-send` feature)");
+        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(Test532Event::ErrorExecution, "<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'> names a processor this platform does not support");
+        err_meta.metadata.send_id = send_id.clone();
+        engine.raise(err_meta);
+        break 'action_block;  // W3C SCXML 4.9: the error ends the block
+    } else {
+
+    // W3C SCXML B.2: inline text takes the ordered readings — an expression
+    // when it is one, XML when it opens with `<`, otherwise the string. The
+    // same filter inline `<data>` and `<donedata>` text goes through decides
+    // which, so one clause reaches one answer wherever `<content>` appears.
+    //
+    // Handing the author's text over unread made this line evaluate it *as
+    // Lua*: `<content>t.length</content>` reached `_event.data` as nil where
+    // the datamodel reads 5, and whether the text was an expression at all
+    // was discovered by an evaluation that failed.
+    // The reading is decided at codegen time; the VALUE is produced here, at
+    // send time, and serialized so the far end parses instead of evaluating.
+    let event_data_string: String = {
+        self.ensure_script_engine();
+        let sid = self.session_id.as_ref().unwrap().clone();
+        let se = self.script_engine.clone();
+        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+        match se.evaluate_expression(&sid, "\"some content\"") {
             Ok(val) => ::sce_rust_runtime::helpers::event_data::script_value_to_json(&val),
             Err(e) => {
                 ::sce_rust_runtime::sce_log_error!("send content eval failed: {}", e);
                 String::new()
             }
         }
-                                };
-                                let event_data: &str = &event_data_string;
+    };
+    let event_data: &str = &event_data_string;
 
-                                // W3C SCXML C.2: BasicHTTP send to HTTP target
-                                {
-                                    // W3C SCXML C.2: Validate dynamic target is HTTP URL
-                                    if !_rt.starts_with("http://") && !_rt.starts_with("https://") {
-                                        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(Test532Event::ErrorCommunication, "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL");
-                                        err_meta.metadata.send_id = send_id.clone();
-                                        engine.raise(err_meta);
-                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                    } else {
-                                        let http_params =
-                                            std::collections::HashMap::<String, Vec<String>>::new();
-                                        engine.perform_http_send(
-                                            _rt.to_string(),
-                                            "".to_string(),
-                                            "some content".to_string(),
-                                            http_params,
-                                            send_id.clone(),
-                                        );
-                                    }
-                                }
+    // W3C SCXML C.2: BasicHTTP send to HTTP target
+    {
+        // W3C SCXML C.2: Validate dynamic target is HTTP URL
+        if !_rt.starts_with("http://") && !_rt.starts_with("https://") {
+            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(Test532Event::ErrorCommunication, "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL");
+            err_meta.metadata.send_id = send_id.clone();
+            engine.raise(err_meta);
+            break 'action_block;  // W3C SCXML 4.9: the error ends the block
+        } else {
+        let http_params = std::collections::HashMap::<String, Vec<String>>::new();
+        engine.perform_http_send(
+            _rt.to_string(),
+"".to_string(),
+"some content".to_string(),
+            http_params,
+            send_id.clone(),
+        );
+        }
+    }
 
-                                let _ = event_data; // suppress unused warning in branches that skip dispatch
+
+    let _ = event_data;  // suppress unused warning in branches that skip dispatch
+    } // end of the BasicHTTP processor check
                             } // end of if let Some(ref _rt) = _resolved_target
                         } // end of the prologue's discard (W3C SCXML 6.2: an argument error sends nothing)
                         let _ = send_id; // suppress unused warning when no send operation

@@ -758,42 +758,52 @@ impl StatePolicy for Test531Policy {
                                 break 'action_block; // W3C SCXML 4.9: the error ends the block
                             }
                             if let Some(ref _rt) = _resolved_target {
-                                // W3C SCXML 6.2 + B-2-9: every value is a literal, so the payload is
-                                // finished here. It has to be: this arm is what a machine with no script
-                                // engine emits, and the wire it used to write — a `_scxml_params(...)`
-                                // call in Lua — could only be read back by an interpreter.
-                                //
-                                // The author name/value cross two literal boundaries, the JSON text this
-                                // filter assembles and the Rust string literal carrying it, so each is
-                                // escaped once per boundary (`static_params_json | escape_rust`).
-                                let event_data: &str = "{\"_scxmleventname\":\"test\"}";
+                                // W3C SCXML 6.2 + C.2: the BasicHTTP processor is the runtime's `http-send`
+                                // feature. A build without it does not support the type, so the send is
+                                // refused as an unsupported type is: one error.execution carrying the send
+                                // id, the payload never read, nothing posted, the block ended.
+                                if !sce_rust_runtime::helpers::send::is_supported_send_type(sce_rust_runtime::helpers::scxml_constants::BASIC_HTTP_EVENT_PROCESSOR_TYPE) {
+        ::sce_rust_runtime::sce_log_error!("<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'>: this build has no BasicHTTP processor (sce-rust-runtime's `http-send` feature)");
+        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(Test531Event::ErrorExecution, "<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'> names a processor this platform does not support");
+        err_meta.metadata.send_id = send_id.clone();
+        engine.raise(err_meta);
+        break 'action_block;  // W3C SCXML 4.9: the error ends the block
+    } else {
 
-                                // W3C SCXML C.2: BasicHTTP send to HTTP target
-                                {
-                                    // W3C SCXML C.2: Validate dynamic target is HTTP URL
-                                    if !_rt.starts_with("http://") && !_rt.starts_with("https://") {
-                                        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(Test531Event::ErrorCommunication, "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL");
-                                        err_meta.metadata.send_id = send_id.clone();
-                                        engine.raise(err_meta);
-                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                    } else {
-                                        let mut http_params =
-                                            std::collections::HashMap::<String, Vec<String>>::new();
-                                        http_params
-                                            .entry("_scxmleventname".to_string())
-                                            .or_default()
-                                            .push("test".to_string());
-                                        engine.perform_http_send(
-                                            _rt.to_string(),
-                                            "".to_string(),
-                                            "".to_string(),
-                                            http_params,
-                                            send_id.clone(),
-                                        );
-                                    }
-                                }
+    // W3C SCXML 6.2 + B-2-9: every value is a literal, so the payload is
+    // finished here. It has to be: this arm is what a machine with no script
+    // engine emits, and the wire it used to write — a `_scxml_params(...)`
+    // call in Lua — could only be read back by an interpreter.
+    //
+    // The author name/value cross two literal boundaries, the JSON text this
+    // filter assembles and the Rust string literal carrying it, so each is
+    // escaped once per boundary (`static_params_json | escape_rust`).
+    let event_data: &str = "{\"_scxmleventname\":\"test\"}";
 
-                                let _ = event_data; // suppress unused warning in branches that skip dispatch
+    // W3C SCXML C.2: BasicHTTP send to HTTP target
+    {
+        // W3C SCXML C.2: Validate dynamic target is HTTP URL
+        if !_rt.starts_with("http://") && !_rt.starts_with("https://") {
+            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(Test531Event::ErrorCommunication, "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL");
+            err_meta.metadata.send_id = send_id.clone();
+            engine.raise(err_meta);
+            break 'action_block;  // W3C SCXML 4.9: the error ends the block
+        } else {
+        let mut http_params = std::collections::HashMap::<String, Vec<String>>::new();
+        http_params.entry("_scxmleventname".to_string()).or_default().push("test".to_string());
+        engine.perform_http_send(
+            _rt.to_string(),
+"".to_string(),
+"".to_string(),
+            http_params,
+            send_id.clone(),
+        );
+        }
+    }
+
+
+    let _ = event_data;  // suppress unused warning in branches that skip dispatch
+    } // end of the BasicHTTP processor check
                             } // end of if let Some(ref _rt) = _resolved_target
                         } // end of the prologue's discard (W3C SCXML 6.2: an argument error sends nothing)
                         let _ = send_id; // suppress unused warning when no send operation

@@ -726,44 +726,70 @@ impl StatePolicy for ADelayedHttpSendIsPostedWhenDuePolicy {
                     {
                         let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
 
-                        let event_data: &str = "";
+                        // W3C SCXML 6.2 + C.2: the BasicHTTP processor is the runtime's `http-send`
+                        // feature. A build without it does not support the type, so the send is
+                        // refused as an unsupported type is: one error.execution carrying the send
+                        // id, the payload never read, nothing posted, the block ended.
+                        if !sce_rust_runtime::helpers::send::is_supported_send_type(sce_rust_runtime::helpers::scxml_constants::BASIC_HTTP_EVENT_PROCESSOR_TYPE) {
+        ::sce_rust_runtime::sce_log_error!("<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'>: this build has no BasicHTTP processor (sce-rust-runtime's `http-send` feature)");
+        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ADelayedHttpSendIsPostedWhenDueEvent::ErrorExecution, "<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'> names a processor this platform does not support");
+        err_meta.metadata.send_id = send_id.clone();
+        engine.raise(err_meta);
+        break 'action_block;  // W3C SCXML 4.9: the error ends the block
+    } else {
 
-                        // W3C SCXML C.2: BasicHTTP send to HTTP target
-                        {
-                            let http_params =
-                                std::collections::HashMap::<String, Vec<String>>::new();
-                            engine.perform_http_send(
-                                "http://127.0.0.1:18081/now".to_string(),
-                                "now".to_string(),
-                                "".to_string(),
-                                http_params,
-                                send_id.clone(),
-                            );
-                        }
+    let event_data: &str = "";
 
-                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+    // W3C SCXML C.2: BasicHTTP send to HTTP target
+    {
+        let http_params = std::collections::HashMap::<String, Vec<String>>::new();
+        engine.perform_http_send(
+            "http://127.0.0.1:18081/now".to_string(),
+"now".to_string(),
+"".to_string(),
+            http_params,
+            send_id.clone(),
+        );
+    }
+
+
+    let _ = event_data;  // suppress unused warning in branches that skip dispatch
+    } // end of the BasicHTTP processor check
                         let _ = send_id; // suppress unused warning when no send operation
                     }
 
                     {
                         let send_id = ::sce_rust_runtime::sce_string_from_str("__send_1");
 
-                        let event_data: &str = "";
+                        // W3C SCXML 6.2 + C.2: the BasicHTTP processor is the runtime's `http-send`
+                        // feature. A build without it does not support the type, so the send is
+                        // refused as an unsupported type is: one error.execution carrying the send
+                        // id, the payload never read, nothing posted, the block ended.
+                        if !sce_rust_runtime::helpers::send::is_supported_send_type(sce_rust_runtime::helpers::scxml_constants::BASIC_HTTP_EVENT_PROCESSOR_TYPE) {
+        ::sce_rust_runtime::sce_log_error!("<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'>: this build has no BasicHTTP processor (sce-rust-runtime's `http-send` feature)");
+        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ADelayedHttpSendIsPostedWhenDueEvent::ErrorExecution, "<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'> names a processor this platform does not support");
+        err_meta.metadata.send_id = send_id.clone();
+        engine.raise(err_meta);
+        break 'action_block;  // W3C SCXML 4.9: the error ends the block
+    } else {
 
-                        // W3C SCXML C.2: BasicHTTP send to HTTP target
-                        {
-                            let http_params =
-                                std::collections::HashMap::<String, Vec<String>>::new();
-                            engine.perform_http_send(
-                                "http://127.0.0.1:18081/zero".to_string(),
-                                "zero".to_string(),
-                                "".to_string(),
-                                http_params,
-                                send_id.clone(),
-                            );
-                        }
+    let event_data: &str = "";
 
-                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+    // W3C SCXML C.2: BasicHTTP send to HTTP target
+    {
+        let http_params = std::collections::HashMap::<String, Vec<String>>::new();
+        engine.perform_http_send(
+            "http://127.0.0.1:18081/zero".to_string(),
+"zero".to_string(),
+"".to_string(),
+            http_params,
+            send_id.clone(),
+        );
+    }
+
+
+    let _ = event_data;  // suppress unused warning in branches that skip dispatch
+    } // end of the BasicHTTP processor check
                         let _ = send_id; // suppress unused warning when no send operation
                     }
 
@@ -812,27 +838,40 @@ impl StatePolicy for ADelayedHttpSendIsPostedWhenDuePolicy {
                             engine.raise(err_meta);
                             break 'action_block; // W3C SCXML 4.9: the error ends the block
                         } else {
-                            let event_data: &str = "";
+                            // W3C SCXML 6.2 + C.2: the BasicHTTP processor is the runtime's `http-send`
+                            // feature. A build without it does not support the type, so the send is
+                            // refused as an unsupported type is: one error.execution carrying the send
+                            // id, the payload never read, nothing posted, the block ended.
+                            if !sce_rust_runtime::helpers::send::is_supported_send_type(sce_rust_runtime::helpers::scxml_constants::BASIC_HTTP_EVENT_PROCESSOR_TYPE) {
+        ::sce_rust_runtime::sce_log_error!("<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'>: this build has no BasicHTTP processor (sce-rust-runtime's `http-send` feature)");
+        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ADelayedHttpSendIsPostedWhenDueEvent::ErrorExecution, "<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'> names a processor this platform does not support");
+        err_meta.metadata.send_id = send_id.clone();
+        engine.raise(err_meta);
+        break 'action_block;  // W3C SCXML 4.9: the error ends the block
+    } else {
 
-                            // W3C SCXML C.2: BasicHTTP send to HTTP target
-                            {
-                                let http_params =
-                                    std::collections::HashMap::<String, Vec<String>>::new();
-                                // W3C SCXML 6.2.4: a delay postpones the POST, not the processor that
-                                // makes it — the request waits in the queue every delayed send does (so
-                                // `<cancel>` reaches it) and its deadline dispatches it through
-                                // `perform_http_send`.
-                                engine.schedule_http_send(
-                                    "http://127.0.0.1:18081/zeroexpr".to_string(),
-                                    "zeroexpr".to_string(),
-                                    "".to_string(),
-                                    http_params,
-                                    core::time::Duration::from_millis(_send_delay_ms),
-                                    send_id.clone(),
-                                );
-                            }
+    let event_data: &str = "";
 
-                            let _ = event_data; // suppress unused warning in branches that skip dispatch
+    // W3C SCXML C.2: BasicHTTP send to HTTP target
+    {
+        let http_params = std::collections::HashMap::<String, Vec<String>>::new();
+        // W3C SCXML 6.2.4: a delay postpones the POST, not the processor that
+        // makes it — the request waits in the queue every delayed send does (so
+        // `<cancel>` reaches it) and its deadline dispatches it through
+        // `perform_http_send`.
+        engine.schedule_http_send(
+            "http://127.0.0.1:18081/zeroexpr".to_string(),
+"zeroexpr".to_string(),
+"".to_string(),
+            http_params,
+            core::time::Duration::from_millis(_send_delay_ms),
+            send_id.clone(),
+        );
+    }
+
+
+    let _ = event_data;  // suppress unused warning in branches that skip dispatch
+    } // end of the BasicHTTP processor check
                         } // end of the prologue's discard (W3C SCXML 6.2: an argument error sends nothing)
                         let _ = send_id; // suppress unused warning when no send operation
                     }
@@ -840,54 +879,80 @@ impl StatePolicy for ADelayedHttpSendIsPostedWhenDuePolicy {
                     {
                         let send_id = ::sce_rust_runtime::sce_string_from_str("later");
 
-                        let event_data: &str = "";
+                        // W3C SCXML 6.2 + C.2: the BasicHTTP processor is the runtime's `http-send`
+                        // feature. A build without it does not support the type, so the send is
+                        // refused as an unsupported type is: one error.execution carrying the send
+                        // id, the payload never read, nothing posted, the block ended.
+                        if !sce_rust_runtime::helpers::send::is_supported_send_type(sce_rust_runtime::helpers::scxml_constants::BASIC_HTTP_EVENT_PROCESSOR_TYPE) {
+        ::sce_rust_runtime::sce_log_error!("<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'>: this build has no BasicHTTP processor (sce-rust-runtime's `http-send` feature)");
+        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ADelayedHttpSendIsPostedWhenDueEvent::ErrorExecution, "<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'> names a processor this platform does not support");
+        err_meta.metadata.send_id = send_id.clone();
+        engine.raise(err_meta);
+        break 'action_block;  // W3C SCXML 4.9: the error ends the block
+    } else {
 
-                        // W3C SCXML C.2: BasicHTTP send to HTTP target
-                        {
-                            let http_params =
-                                std::collections::HashMap::<String, Vec<String>>::new();
-                            // W3C SCXML 6.2.4: a delay postpones the POST, not the processor that
-                            // makes it — the request waits in the queue every delayed send does (so
-                            // `<cancel>` reaches it) and its deadline dispatches it through
-                            // `perform_http_send`.
-                            engine.schedule_http_send(
-                                "http://127.0.0.1:18081/later".to_string(),
-                                "later".to_string(),
-                                "".to_string(),
-                                http_params,
-                                core::time::Duration::from_millis(100_u64),
-                                send_id.clone(),
-                            );
-                        }
+    let event_data: &str = "";
 
-                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+    // W3C SCXML C.2: BasicHTTP send to HTTP target
+    {
+        let http_params = std::collections::HashMap::<String, Vec<String>>::new();
+        // W3C SCXML 6.2.4: a delay postpones the POST, not the processor that
+        // makes it — the request waits in the queue every delayed send does (so
+        // `<cancel>` reaches it) and its deadline dispatches it through
+        // `perform_http_send`.
+        engine.schedule_http_send(
+            "http://127.0.0.1:18081/later".to_string(),
+"later".to_string(),
+"".to_string(),
+            http_params,
+            core::time::Duration::from_millis(100_u64),
+            send_id.clone(),
+        );
+    }
+
+
+    let _ = event_data;  // suppress unused warning in branches that skip dispatch
+    } // end of the BasicHTTP processor check
                         let _ = send_id; // suppress unused warning when no send operation
                     }
 
                     {
                         let send_id = ::sce_rust_runtime::sce_string_from_str("dropped");
 
-                        let event_data: &str = "";
+                        // W3C SCXML 6.2 + C.2: the BasicHTTP processor is the runtime's `http-send`
+                        // feature. A build without it does not support the type, so the send is
+                        // refused as an unsupported type is: one error.execution carrying the send
+                        // id, the payload never read, nothing posted, the block ended.
+                        if !sce_rust_runtime::helpers::send::is_supported_send_type(sce_rust_runtime::helpers::scxml_constants::BASIC_HTTP_EVENT_PROCESSOR_TYPE) {
+        ::sce_rust_runtime::sce_log_error!("<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'>: this build has no BasicHTTP processor (sce-rust-runtime's `http-send` feature)");
+        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ADelayedHttpSendIsPostedWhenDueEvent::ErrorExecution, "<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'> names a processor this platform does not support");
+        err_meta.metadata.send_id = send_id.clone();
+        engine.raise(err_meta);
+        break 'action_block;  // W3C SCXML 4.9: the error ends the block
+    } else {
 
-                        // W3C SCXML C.2: BasicHTTP send to HTTP target
-                        {
-                            let http_params =
-                                std::collections::HashMap::<String, Vec<String>>::new();
-                            // W3C SCXML 6.2.4: a delay postpones the POST, not the processor that
-                            // makes it — the request waits in the queue every delayed send does (so
-                            // `<cancel>` reaches it) and its deadline dispatches it through
-                            // `perform_http_send`.
-                            engine.schedule_http_send(
-                                "http://127.0.0.1:18081/dropped".to_string(),
-                                "dropped".to_string(),
-                                "".to_string(),
-                                http_params,
-                                core::time::Duration::from_millis(100_u64),
-                                send_id.clone(),
-                            );
-                        }
+    let event_data: &str = "";
 
-                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+    // W3C SCXML C.2: BasicHTTP send to HTTP target
+    {
+        let http_params = std::collections::HashMap::<String, Vec<String>>::new();
+        // W3C SCXML 6.2.4: a delay postpones the POST, not the processor that
+        // makes it — the request waits in the queue every delayed send does (so
+        // `<cancel>` reaches it) and its deadline dispatches it through
+        // `perform_http_send`.
+        engine.schedule_http_send(
+            "http://127.0.0.1:18081/dropped".to_string(),
+"dropped".to_string(),
+"".to_string(),
+            http_params,
+            core::time::Duration::from_millis(100_u64),
+            send_id.clone(),
+        );
+    }
+
+
+    let _ = event_data;  // suppress unused warning in branches that skip dispatch
+    } // end of the BasicHTTP processor check
                         let _ = send_id; // suppress unused warning when no send operation
                     }
 
@@ -960,47 +1025,57 @@ impl StatePolicy for ADelayedHttpSendIsPostedWhenDuePolicy {
                                 break 'action_block; // W3C SCXML 4.9: the error ends the block
                             }
                             if let Some(ref _rt) = _resolved_target {
-                                // W3C SCXML 6.2 + B-2-9: every value is a literal, so the payload is
-                                // finished here. It has to be: this arm is what a machine with no script
-                                // engine emits, and the wire it used to write — a `_scxml_params(...)`
-                                // call in Lua — could only be read back by an interpreter.
-                                //
-                                // The author name/value cross two literal boundaries, the JSON text this
-                                // filter assembles and the Rust string literal carrying it, so each is
-                                // escaped once per boundary (`static_params_json | escape_rust`).
-                                let event_data: &str = "{\"k\":\"v\"}";
+                                // W3C SCXML 6.2 + C.2: the BasicHTTP processor is the runtime's `http-send`
+                                // feature. A build without it does not support the type, so the send is
+                                // refused as an unsupported type is: one error.execution carrying the send
+                                // id, the payload never read, nothing posted, the block ended.
+                                if !sce_rust_runtime::helpers::send::is_supported_send_type(sce_rust_runtime::helpers::scxml_constants::BASIC_HTTP_EVENT_PROCESSOR_TYPE) {
+        ::sce_rust_runtime::sce_log_error!("<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'>: this build has no BasicHTTP processor (sce-rust-runtime's `http-send` feature)");
+        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ADelayedHttpSendIsPostedWhenDueEvent::ErrorExecution, "<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'> names a processor this platform does not support");
+        err_meta.metadata.send_id = send_id.clone();
+        engine.raise(err_meta);
+        break 'action_block;  // W3C SCXML 4.9: the error ends the block
+    } else {
 
-                                // W3C SCXML C.2: BasicHTTP send to HTTP target
-                                {
-                                    // W3C SCXML C.2: Validate dynamic target is HTTP URL
-                                    if !_rt.starts_with("http://") && !_rt.starts_with("https://") {
-                                        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ADelayedHttpSendIsPostedWhenDueEvent::ErrorCommunication, "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL");
-                                        err_meta.metadata.send_id = send_id.clone();
-                                        engine.raise(err_meta);
-                                        break 'action_block; // W3C SCXML 4.9: the error ends the block
-                                    } else {
-                                        let mut http_params =
-                                            std::collections::HashMap::<String, Vec<String>>::new();
-                                        http_params
-                                            .entry("k".to_string())
-                                            .or_default()
-                                            .push("v".to_string());
-                                        // W3C SCXML 6.2.4: a delay postpones the POST, not the processor that
-                                        // makes it — the request waits in the queue every delayed send does (so
-                                        // `<cancel>` reaches it) and its deadline dispatches it through
-                                        // `perform_http_send`.
-                                        engine.schedule_http_send(
-                                            _rt.to_string(),
-                                            "dynamic".to_string(),
-                                            "".to_string(),
-                                            http_params,
-                                            core::time::Duration::from_millis(200_u64),
-                                            send_id.clone(),
-                                        );
-                                    }
-                                }
+    // W3C SCXML 6.2 + B-2-9: every value is a literal, so the payload is
+    // finished here. It has to be: this arm is what a machine with no script
+    // engine emits, and the wire it used to write — a `_scxml_params(...)`
+    // call in Lua — could only be read back by an interpreter.
+    //
+    // The author name/value cross two literal boundaries, the JSON text this
+    // filter assembles and the Rust string literal carrying it, so each is
+    // escaped once per boundary (`static_params_json | escape_rust`).
+    let event_data: &str = "{\"k\":\"v\"}";
 
-                                let _ = event_data; // suppress unused warning in branches that skip dispatch
+    // W3C SCXML C.2: BasicHTTP send to HTTP target
+    {
+        // W3C SCXML C.2: Validate dynamic target is HTTP URL
+        if !_rt.starts_with("http://") && !_rt.starts_with("https://") {
+            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ADelayedHttpSendIsPostedWhenDueEvent::ErrorCommunication, "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL");
+            err_meta.metadata.send_id = send_id.clone();
+            engine.raise(err_meta);
+            break 'action_block;  // W3C SCXML 4.9: the error ends the block
+        } else {
+        let mut http_params = std::collections::HashMap::<String, Vec<String>>::new();
+        http_params.entry("k".to_string()).or_default().push("v".to_string());
+        // W3C SCXML 6.2.4: a delay postpones the POST, not the processor that
+        // makes it — the request waits in the queue every delayed send does (so
+        // `<cancel>` reaches it) and its deadline dispatches it through
+        // `perform_http_send`.
+        engine.schedule_http_send(
+            _rt.to_string(),
+"dynamic".to_string(),
+"".to_string(),
+            http_params,
+            core::time::Duration::from_millis(200_u64),
+            send_id.clone(),
+        );
+        }
+    }
+
+
+    let _ = event_data;  // suppress unused warning in branches that skip dispatch
+    } // end of the BasicHTTP processor check
                             } // end of if let Some(ref _rt) = _resolved_target
                         } // end of the prologue's discard (W3C SCXML 6.2: an argument error sends nothing)
                         let _ = send_id; // suppress unused warning when no send operation
