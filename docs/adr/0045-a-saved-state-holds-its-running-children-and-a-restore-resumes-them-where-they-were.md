@@ -1,6 +1,7 @@
 # ADR 0045 — A saved state holds its running children, and a restore resumes them where they were
 
-- Status: Accepted (2026-10-20); step 1 done, step 2 in progress (see its "Where it stands")
+- Status: Accepted (2026-10-20); steps 1 and 2 done (two ids of step 2 land with steps 3 to 5,
+  see its "Where it stands"), step 3 in progress
 - Date: 2026-10-20
 - Scope: docs/SCE_ACCEPTED_SUBSET.md §2.15 ("Saving and restoring", "Running invocations",
   "Child sessions", the scenario format); `schemas/sce-saved-state.v1.schema.json` and a new
@@ -198,7 +199,10 @@ moves its key and still refuses, since it is another document to every reader (A
 - **Two shapes per document, as long as format 1 is read.** The generator emits the format-1 shape
   (alias spelling, and ADR 0044's revised format-1 shape) for judging a format-1 text, and the
   format-2 shape (document-key spelling, and its revised form) for judging and writing a format-2
-  one. A format-1 text is read exactly as today; nothing in it is re-spelled.
+  one. A format-1 text is read exactly as today; nothing in it is re-spelled. The two texts are
+  the same line for line but for the enum-typed lines, header included, so a document that holds
+  no enum has one shape in both formats; and since the format-1 text names no document, moving an
+  enum's file moves the format-2 shape and the key and leaves the format-1 shape as it was.
 - **One text on every backend.** The key is computed once, by the generator, from paths the
   restoring build reads, and emitted into every backend's shape constant; no backend computes or
   re-spells it. So every backend hashes the identical key text, writes the identical `revisions`
@@ -694,20 +698,25 @@ Each step lands with a test that fails without it.
    extended: a delayed send to `#_parent` or a child now saves, one to a session outside the tree
    still does not, and a parent of a child that cannot save has no API; a lowering test shows that
    renaming an enum import's alias leaves the format-2 shape as it was and moves the format-1 shape,
-   and that moving the enum's file moves both; and a cross-backend test shows the six backends'
-   generated format-2 shape constants and enum keys equal as text.
+   and that moving the enum's file moves the format-2 shape and the enum's key (the format-1 shape
+   names no document and stays); and a cross-backend test shows the six backends' generated
+   format-2 shape constants and enum keys equal as text.
 
    *Where it stands.* Done: the child rule (`a_tree_can_hold`), the two sends that no longer
    remove the API (a format-1 save refuses with a reason while one waits), a per-invoke start
    count in every generated parent, the generated invoke id `<state>.<start>.<invoke>` on all six
-   backends, child session ids `<parent>.<invokeid>` on Rust, C++, Go, Python and Kotlin, and a
-   test that pins the shape of every standard statechart that saves. Open: the format-2 shape,
-   which needs ADR 0044's `document_key` and `SavedShape` on the branch it is built on; the C11
-   child session id, whose buffer sizes are decided with C11's saved state (step 5); and a Kotlin
-   child that opened a script session to take an argument before its start keeps that session's
-   id. The id of a `sce-static` root, empty today on Rust and Kotlin and drawn by the process in
-   another spelling on Go, Python, C++ and C11, is decided ("Questions the owner answered" 2) and
-   lands with each backend's save: Rust in step 3, Kotlin in step 4, the other four in step 5.
+   backends, child session ids `<parent>.<invokeid>` on Rust, C++, Go, Python and Kotlin (a
+   Kotlin child is given its id where its parent builds it, `adoptChild`, so a script session it
+   opens to take an argument is named by it, and a start refuses a child given no id), a test that
+   pins the shape of every standard statechart that saves, and the format-2 shape: the generator
+   hashes the format-1 and format-2 texts of `saved_shape` in one walk (`SavedShape`'s
+   `format2_first` and `format2_revised`), Rust's and Kotlin's `SavedShape` constants carry both,
+   and Go, Python, C++ and C11, which do not save yet, declare the format-2 shapes and enum keys as
+   constants of the machine (`static_format2_shape`). Step 2 is done but for two ids that land
+   later: the C11 child session id, whose buffer sizes are decided with C11's saved state (step 5),
+   and the id of a `sce-static` root, empty today on Rust and Kotlin and drawn by the process in
+   another spelling on Go, Python, C++ and C11, which is decided ("Questions the owner answered" 2)
+   and lands with each backend's save: Rust in step 3, Kotlin in step 4, the other four in step 5.
 3. **Rust.** `SavedState` as a session tree, format 2 written, formats 1 and 2 read, the restore of
    section 3, the transit check, the tree fixture, and the root's session id (drawn or given at
    creation, saved, bound again by a restore). *Exit:* the Rust tests of section 8.
