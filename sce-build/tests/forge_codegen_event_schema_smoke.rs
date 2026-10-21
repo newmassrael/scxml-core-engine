@@ -779,17 +779,26 @@ fn an_in_line_childs_imports_resolve_as_its_parents_do_on_every_backend() {
             "{lang}: the in-line child's machine was not written into {}",
             out_dir.display()
         );
-        let folded: String = child_files
-            .iter()
-            .map(|path| std::fs::read_to_string(path).expect("read the child's machine"))
-            .collect::<String>()
-            .to_lowercase()
-            .replace('_', "");
         assert!(
-            folded.contains("daysinmonth"),
+            spelling_free(&read_all(&child_files)).contains("daysinmonth"),
             "{lang}: the in-line child's machine does not name the algorithm it calls"
         );
     }
+}
+
+/// The text of every file of `files`, one after another.
+fn read_all(files: &[PathBuf]) -> String {
+    files
+        .iter()
+        .map(|path| std::fs::read_to_string(path).expect("read a generated file"))
+        .collect()
+}
+
+/// `text` with the spellings the backends derive from one name
+/// (`in_line_chain`, `InLineChain`, `IN_LINE_CHAIN`, `inLineChain`) made one:
+/// lowercased, with no underscore.
+fn spelling_free(text: &str) -> String {
+    text.to_lowercase().replace('_', "")
 }
 
 /// The files in `dir` a machine named `machine` was generated into: every file
@@ -869,6 +878,237 @@ fn a_go_package_declares_each_name_once_where_a_child_invokes_under_its_parents_
     assert!(
         twice.is_empty(),
         "names declared more than once in the package: {twice:?}"
+    );
+}
+
+/// Three machines in a chain, each written in-line in the one before it:
+/// `in_line_chain` starts `kid`, which starts a `kid` of its own. The second id
+/// is the first's, so the grandchild's name differs from the child's by its
+/// depth alone.
+const IN_LINE_CHAIN: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="running" datamodel="sce-static" name="in_line_chain">
+  <state id="running">
+    <invoke type="scxml" id="kid">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="waiting"
+               datamodel="sce-static">
+          <state id="waiting">
+            <invoke type="scxml" id="kid">
+              <content>
+                <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="idle"
+                       datamodel="sce-static">
+                  <state id="idle">
+                    <transition event="stop" target="done"/>
+                  </state>
+                  <final id="done"/>
+                </scxml>
+              </content>
+            </invoke>
+          </state>
+        </scxml>
+      </content>
+    </invoke>
+  </state>
+</scxml>"#;
+
+/// The machines of [`IN_LINE_CHAIN`], each followed by the one it starts.
+const IN_LINE_CHAIN_MACHINES: [&str; 3] = [
+    "in_line_chain",
+    "in_line_chain__sce_synth_invoke__kid",
+    "in_line_chain__sce_synth_invoke__kid__sce_synth_invoke__kid",
+];
+
+/// [`IN_LINE_CHAIN`], written into `dir`.
+fn in_line_chain_document(dir: &Path) -> PathBuf {
+    let document = dir.join("in_line_chain.scxml");
+    std::fs::write(&document, IN_LINE_CHAIN).expect("write in_line_chain");
+    document
+}
+
+/// A plain `sce-codegen generate` writes every machine of an in-line chain, on
+/// every backend that writes a child as a machine of its own: the document's
+/// in-line children were written and their own in-line children were not, so
+/// the child named a machine that no run wrote. Each machine is written, and
+/// each names the machine it starts.
+#[test]
+fn every_machine_of_an_in_line_chain_is_generated_on_every_backend() {
+    let scratch = reset_scratch("in_line_chain");
+    let document = in_line_chain_document(&scratch);
+    for lang in STATIC_DATAMODEL_BACKENDS {
+        let out_dir = scratch.join("out").join(lang);
+        let extra: &[&str] = if lang == "cpp" { &["--no-format"] } else { &[] };
+        generate_into(lang, &document, &out_dir, extra);
+        let texts: Vec<String> = IN_LINE_CHAIN_MACHINES
+            .iter()
+            .map(|machine| {
+                let files = machine_files_of(&out_dir, machine);
+                assert!(
+                    !files.is_empty(),
+                    "{lang}: {machine} was not written into {}",
+                    out_dir.display()
+                );
+                spelling_free(&read_all(&files))
+            })
+            .collect();
+        for (text, (machine, started)) in texts.iter().zip(
+            IN_LINE_CHAIN_MACHINES
+                .iter()
+                .zip(IN_LINE_CHAIN_MACHINES.iter().skip(1)),
+        ) {
+            assert!(
+                text.contains(&spelling_free(started)),
+                "{lang}: {machine} does not name {started}, the machine it starts"
+            );
+        }
+    }
+}
+
+/// The Go package of an in-line chain: the three machines are written into the
+/// document's package, and the names they declare at package level are
+/// declared once — the grandchild is named after the child that starts it, so
+/// its declarations stand apart from the child's though its invoke id is the
+/// child's own.
+#[test]
+fn a_go_package_holds_every_machine_of_an_in_line_chain_once() {
+    let scratch = reset_scratch("go_in_line_chain");
+    let document = in_line_chain_document(&scratch);
+    let out_dir = scratch.join("out");
+    let machines = generate_go_package(&document, &out_dir);
+    let file_names: Vec<&str> = machines.iter().map(|(name, _)| name.as_str()).collect();
+    assert_eq!(
+        file_names,
+        [
+            "in_line_chain__sce_synth_invoke__kid__sce_synth_invoke__kid_sm.go",
+            "in_line_chain__sce_synth_invoke__kid_sm.go",
+            "in_line_chain_sm.go",
+        ],
+        "the document, its in-line child and that child's in-line child are \
+         generated into one directory"
+    );
+    for path in find_by_ext(&out_dir, "go") {
+        let src = std::fs::read_to_string(&path).expect("read go");
+        assert_eq!(
+            package_clause(&src),
+            Some("in_line_chain"),
+            "{} is not in the document's package",
+            path.display()
+        );
+    }
+    let twice = declared_more_than_once(&machines);
+    assert!(
+        twice.is_empty(),
+        "names declared more than once in the package: {twice:?}"
+    );
+}
+
+/// Under `--as-child --parent-stem`, every machine of the chain the document
+/// starts is placed in the package of the machine that starts the document, as
+/// the document is: each is written beside it and named unqualified by the
+/// machine that starts it. Go and Kotlin, the two backends whose machines
+/// declare a package.
+#[test]
+fn every_machine_of_an_in_line_chain_joins_the_package_its_parent_stem_names() {
+    let scratch = reset_scratch("in_line_chain_as_child");
+    let document = in_line_chain_document(&scratch);
+    for (lang, extra, package) in [
+        ("go", &[][..], "holder"),
+        (
+            "kotlin",
+            &["--kotlin-package-prefix", "com.sce.integration"][..],
+            "com.sce.integration.holder",
+        ),
+    ] {
+        let out_dir = scratch.join("out").join(lang);
+        let args: Vec<&str> = ["--as-child", "--parent-stem", "holder"]
+            .into_iter()
+            .chain(extra.iter().copied())
+            .collect();
+        generate_into(lang, &document, &out_dir, &args);
+        for machine in IN_LINE_CHAIN_MACHINES {
+            let files = machine_files_of(&out_dir, machine);
+            assert!(
+                !files.is_empty(),
+                "{lang}: {machine} was not written into {}",
+                out_dir.display()
+            );
+            for path in &files {
+                let src = std::fs::read_to_string(path).expect("read the machine");
+                assert_eq!(
+                    package_clause(&src),
+                    Some(package),
+                    "{lang}: {} is not in the package --parent-stem names",
+                    path.display()
+                );
+            }
+        }
+    }
+}
+
+/// Two in-line children of one document that the infix alone would give one
+/// name: `a`'s own child `b` is `<doc>__sce_synth_invoke__a__sce_synth_invoke__b`,
+/// and so is a child beside `a` whose id is `a__sce_synth_invoke__b`.
+const IN_LINE_NAME_CLASH: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="running" datamodel="sce-static" name="in_line_name_clash">
+  <state id="running">
+    <invoke type="scxml" id="a">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="waiting"
+               datamodel="sce-static">
+          <state id="waiting">
+            <invoke type="scxml" id="b">
+              <content>
+                <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="done"
+                       datamodel="sce-static">
+                  <final id="done"/>
+                </scxml>
+              </content>
+            </invoke>
+          </state>
+        </scxml>
+      </content>
+    </invoke>
+    <invoke type="scxml" id="a__sce_synth_invoke__b">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="done"
+               datamodel="sce-static">
+          <final id="done"/>
+        </scxml>
+      </content>
+    </invoke>
+  </state>
+</scxml>"#;
+
+/// An `<invoke>` whose child is carried in the document may not have an id
+/// holding `sce_synth_invoke`, the word the name of each such child is joined
+/// with: with it, a child beside another could take the name of that one's
+/// child, and the two would be written to one file. The run is refused at the
+/// id, and writes no machine.
+#[test]
+fn an_in_line_invoke_id_holding_the_synthesised_name_word_is_refused() {
+    let scratch = reset_scratch("in_line_name_clash");
+    let document = scratch.join("in_line_name_clash.scxml");
+    std::fs::write(&document, IN_LINE_NAME_CLASH).expect("write in_line_name_clash");
+    let out_dir = scratch.join("out");
+    std::fs::create_dir_all(&out_dir).expect("create out dir");
+    let output = Command::new(sce_codegen_bin())
+        .args(["generate", "-l", "rust", "-o"])
+        .arg(&out_dir)
+        .arg(&document)
+        .current_dir(repo_root())
+        .output()
+        .expect("spawn sce-codegen");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !output.status.success(),
+        "a document whose two in-line children share a name was generated\nstderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("invalid id value 'a__sce_synth_invoke__b'"),
+        "the refusal does not stand at the id that holds the word\nstderr: {stderr}"
+    );
+    assert!(
+        find_by_ext(&out_dir, "rs").is_empty(),
+        "a refused run wrote a machine"
     );
 }
 

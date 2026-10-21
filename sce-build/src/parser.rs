@@ -4978,20 +4978,13 @@ impl SCXMLParser {
                 inline_child_range,
                 inline_child_positions,
             ) = if let Some(inline) = inline_document.as_ref() {
-                // SCE Mesh §9.6.6 rule 1: synthesised machine name is
-                // `<parent_machine_id>__sce_synth_invoke__<invoke_id>`.
-                // `field_suffix` is the invoke_id with its leading
-                // underscore trimmed (line ~1438), so author ids map
-                // verbatim and the auto-generated `_invoke_N` ids
-                // (§scxml-6.4.1 §3.14 — SCE emits one when `id` is
-                // absent) produce `invoke_N` rather than the triple
-                // underscore block `__sce_synth_invoke___invoke_N`.
-                let synth_name = format!(
-                    "{}{}{}",
-                    model.name,
-                    crate::mesh::deploy::SYNTH_INVOKE_INFIX,
-                    field_suffix,
-                );
+                let synth_name = synthesised_child_name(
+                    elem,
+                    &model.name,
+                    &invoke_id,
+                    &field_suffix,
+                    source_name,
+                )?;
                 // Recursive parse uses a fresh parser instance — sharing
                 // `self` would cross-contaminate document_order_counter /
                 // invoke_counter between parent and child. The child is read
@@ -5063,12 +5056,13 @@ impl SCXMLParser {
                 // a lowering that rewrites an in-line child where it stands refuses
                 // it as an invoke by `src`, and a refusal raised against it stays in
                 // its own coordinates, under its library name.
-                let synth_name = format!(
-                    "{}{}{}",
-                    model.name,
-                    crate::mesh::deploy::SYNTH_INVOKE_INFIX,
-                    field_suffix,
-                );
+                let synth_name = synthesised_child_name(
+                    elem,
+                    &model.name,
+                    &invoke_id,
+                    &field_suffix,
+                    source_name,
+                )?;
                 let at = elem.document().text_pos_at(elem.range().start);
                 let text = standard_document_text(&src, source_name, Some(at.row), Some(at.col))?;
                 let standard_child =
@@ -7367,6 +7361,56 @@ fn standard_document_text(
             col,
         )
     })
+}
+
+/// The machine name of the child an `<invoke>` starts from a document it
+/// carries — written in-line, or a standard statechart named by `src`: the
+/// name of the machine that starts it joined to the invoke's id by
+/// [`crate::mesh::deploy::SYNTH_INVOKE_INFIX`] (SCE_MESH.md §9.6.6 rule 1).
+/// `field_suffix` is the id with its leading underscore trimmed, so an
+/// author's id maps verbatim and a generated `_invoke_N` gives `invoke_N`
+/// rather than the triple underscore block `__sce_synth_invoke___invoke_N`.
+///
+/// The child is parsed under this name, so a child it carries in turn is
+/// named after it: `<parent>__sce_synth_invoke__<id>__sce_synth_invoke__<id>`.
+/// Every machine of one document's tree is written into one directory under
+/// its name, so two of them must not share one, and an id that holds the word
+/// the infix is made of (`sce_synth_invoke`) is refused: with it, the name of a
+/// child written inside another could be the name of one written beside it
+/// (an id `a__sce_synth_invoke__b` beside an id `a` whose child is `b`). An id
+/// without the word cannot reach across the infix, so a name is read back into
+/// one path of ids, one id per level, and children at different depths cannot
+/// share it.
+fn synthesised_child_name(
+    elem: &roxmltree::Node,
+    parent: &str,
+    invoke_id: &str,
+    field_suffix: &str,
+    source_name: &str,
+) -> Result<String, crate::forge::error::Located<crate::forge::error::ForgeError>> {
+    let infix = crate::mesh::deploy::SYNTH_INVOKE_INFIX;
+    let word = infix.trim_matches('_');
+    if invoke_id.contains(word) {
+        let at = elem.document().text_pos_at(elem.range().start);
+        return Err(crate::forge::error::Located::new(
+            crate::forge::error::ValidationError::AttributeRuleViolated {
+                element: "<invoke>".into(),
+                attr: "id".into(),
+                value: invoke_id.to_string(),
+                rule: format!(
+                    "an id without `{word}` on an <invoke> whose child is carried in the \
+                     document: the child is named `<machine>{infix}<id>`, and so is each \
+                     child it carries in turn, so an id holding the word could give two \
+                     children one name"
+                ),
+            }
+            .into(),
+            source_name,
+            Some(at.row),
+            Some(at.col),
+        ));
+    }
+    Ok(format!("{parent}{infix}{field_suffix}"))
 }
 
 /// §scxml-6.4: an in-line child `<scxml>` under `<invoke><content>` as a

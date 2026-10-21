@@ -3668,6 +3668,15 @@ library name (`sce:std/...`) from the library and any other `src` beside the doc
 holds it, on every route that reads the document (`generate`, `check`, the Interpreter's
 lowering). `sce-build/tests/forge_codegen_event_schema_smoke.rs` holds this on every backend.
 
+A child written inline may start children inline in turn, to any depth. Each is a machine
+of the run that generates the document, written beside it in the package or module the
+document's own inline children are written in (the `--parent-stem` one under `--as-child`),
+and named after the machine that starts it: a child's child is
+`<parent>__sce_synth_invoke__<id>__sce_synth_invoke__<id>`. An `<invoke>` whose child is
+carried in the document may not have an id holding `sce_synth_invoke`, the word those names
+are joined with, since such an id could give two children one name; it is refused at the
+id as `validation/attribute-rule-violated`. The same test file holds both.
+
 A child that declares `<sce:action>`s takes the host that performs its acts when it
 is built, because its first `<onentry>` can already perform an act and a host
 installed afterwards would arrive one act too late. So the host has to exist when

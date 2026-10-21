@@ -2304,6 +2304,18 @@ impl ScxmlInvokeInfo {
     pub fn arguments(&self) -> Vec<Param> {
         invoke_arguments(&self.common.base, &self.namelist)
     }
+
+    /// This invoke, followed — when the document of its child is carried on it
+    /// ([`Self::inline_child`]) — by every invoke below that child whose child
+    /// is carried as well, in the order [`SCXMLModel::inline_child_invokes`]
+    /// gives them.
+    pub fn with_inline_descendants(&self) -> Vec<&ScxmlInvokeInfo> {
+        let mut invokes = vec![self];
+        if let Some(child) = self.inline_child.as_deref() {
+            invokes.extend(child.inline_child_invokes());
+        }
+        invokes
+    }
 }
 
 impl HybridInvokeInfo {
@@ -4775,6 +4787,23 @@ impl SCXMLModel {
         let mut ordered: Vec<&State> = self.states.values().collect();
         ordered.sort_by_key(|s| s.document_order);
         ordered.into_iter().flat_map(|s| s.iter_scxml_invokes())
+    }
+    /// Every static-SCXML invoke whose child's document is carried on it
+    /// ([`ScxmlInvokeInfo::inline_child`]: written in-line, or a standard
+    /// statechart named by `src`), at any depth: this document's in document
+    /// order, each followed by those below its child, so a child comes before
+    /// the children it starts in turn.
+    ///
+    /// Each is a machine of the run that generates this document. Its name is
+    /// the name of the machine that starts it joined to its invoke id
+    /// (`<parent>__sce_synth_invoke__<id>`, SCE_MESH.md §9.6.6), so a child's
+    /// child is `<parent>__sce_synth_invoke__<id>__sce_synth_invoke__<id>` and
+    /// the names of one document's children differ at every depth.
+    pub fn inline_child_invokes(&self) -> Vec<&ScxmlInvokeInfo> {
+        self.iter_scxml_invokes()
+            .filter(|invoke| invoke.inline_child.is_some())
+            .flat_map(ScxmlInvokeInfo::with_inline_descendants)
+            .collect()
     }
     /// Iterate every hybrid-SCXML invoke across all states in document order.
     pub fn iter_hybrid_invokes(&self) -> impl Iterator<Item = &HybridInvokeInfo> {

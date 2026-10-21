@@ -6080,8 +6080,8 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
     });
 
     // SCE_MESH.md §9.6.6: re-materialise every inline-`<content>`
-    // synth child to `-o` (and `deploy_dir` when distinct) so
-    // downstream consumers find a file on disk:
+    // synth child, at every depth, to `-o` (and `deploy_dir` when
+    // distinct) so downstream consumers find a file on disk:
     // - `inject_partition_context_for` opens every declared machine
     //   SCXML when `--deploy` is set (reads from `deploy_dir`)
     // - CMake's stage-3 synth codegen reads from the parent's `-o`
@@ -6096,7 +6096,8 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
     // cannot fall behind a new side-effect write.
     let mut self_written: Vec<PathBuf> = Vec::new();
     let synth_scxml_writes: Vec<(String, String)> = model
-        .iter_scxml_invokes()
+        .inline_child_invokes()
+        .into_iter()
         .filter_map(|inv| {
             inv.inline_child_xml.as_deref().and_then(|xml| {
                 if inv.child_name.is_empty() {
@@ -6289,7 +6290,12 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
         // other backends use under `--as-child` because C11 child
         // templates auto-detect parent-communication from the model and
         // the override would break that detection.
-        for invoke in model.iter_scxml_invokes() {
+        //
+        // Every depth: a child's own in-line children are machines its
+        // machine starts by name, so a run that wrote only the first level
+        // left a package that names a machine nobody wrote. Each is placed
+        // in the package the document's in-line children are placed in.
+        for invoke in model.inline_child_invokes() {
             let Some(child_box) = invoke.inline_child.as_deref() else {
                 continue;
             };
@@ -7520,6 +7526,12 @@ trait W3cBackend {
 /// substring heuristics, and no naming-convention filtering — the
 /// backend trait carries no child-discovery hooks anymore.
 ///
+/// A child whose document its invoke carries (written in-line, or a
+/// standard statechart) is generated with the children ITS document carries,
+/// at every depth, each right after the machine that starts it: they are
+/// named after that machine (`<child>__sce_synth_invoke__<id>`), and that
+/// machine names them.
+///
 /// A child declaring its transition function or table is generated as a
 /// fixture is: judged, bound to this run's digest, and written with its
 /// function beside its machine. Returns the refusals that fail the fixture:
@@ -7544,31 +7556,43 @@ fn generate_child_sms(
     // re-parsed from `resource_dir`, or a hybrid stub from `test_mod_dir`.
     // Replaces the prior unconditional disk read which was a leftover
     // from the parser-writes-synth-child era.
-    enum ChildSource<'a> {
-        Inline(&'a SCXMLModel),
-        Disk(&'a Path),
+    enum ChildSource {
+        Inline(Box<SCXMLModel>),
+        Disk(PathBuf),
     }
 
-    let scxml_children: Vec<(&str, ChildSource<'_>)> = model
+    // A child whose document its invoke carries (written in-line, or a
+    // standard statechart), under the machine name the parse gave it.
+    fn carried(invoke: &sce_build::model::ScxmlInvokeInfo) -> Option<(String, ChildSource)> {
+        let child = invoke.inline_child.as_deref()?;
+        Some((
+            invoke.child_name.clone(),
+            ChildSource::Inline(Box::new(child.clone())),
+        ))
+    }
+
+    let mut pending: std::collections::VecDeque<(String, ChildSource)> = model
         .iter_scxml_invokes()
         .map(|inv| {
-            let source = match inv.inline_child.as_deref() {
-                Some(m) => ChildSource::Inline(m),
-                None => ChildSource::Disk(resource_dir),
-            };
-            (inv.child_name.as_str(), source)
+            carried(inv).unwrap_or_else(|| {
+                (
+                    inv.child_name.clone(),
+                    ChildSource::Disk(resource_dir.to_path_buf()),
+                )
+            })
         })
         .collect();
-    let hybrid_children: Vec<(&str, ChildSource<'_>)> = if backend.emits_hybrid_child_stub() {
-        model
-            .iter_hybrid_invokes()
-            .map(|inv| (inv.child_name.as_str(), ChildSource::Disk(test_mod_dir)))
-            .collect()
-    } else {
-        Vec::new()
-    };
+    if backend.emits_hybrid_child_stub() {
+        pending.extend(model.iter_hybrid_invokes().map(|inv| {
+            (
+                inv.child_name.clone(),
+                ChildSource::Disk(test_mod_dir.to_path_buf()),
+            )
+        }));
+    }
 
-    for (child_name, child_source) in scxml_children.into_iter().chain(hybrid_children) {
+    while let Some((child_name, child_source)) = pending.pop_front() {
+        let child_name = child_name.as_str();
         if child_name.is_empty() || !seen.insert(child_name.to_string()) {
             continue;
         }
@@ -7583,7 +7607,7 @@ fn generate_child_sms(
         let (mut child_model, label, child_path_for_resolver) = match child_source {
             ChildSource::Inline(m) => {
                 let synthetic = resource_dir.join(format!("{child_name}.scxml"));
-                (m.clone(), synthetic.to_string_lossy().into_owned(), None)
+                (*m, synthetic.to_string_lossy().into_owned(), None)
             }
             ChildSource::Disk(source_dir) => {
                 let child_path = source_dir.join(format!("{child_name}.scxml"));
@@ -7601,6 +7625,19 @@ fn generate_child_sms(
                 }
             }
         };
+
+        // The children this child carries are machines of the test as well:
+        // its machine starts them by name, and a run that wrote only the
+        // parent's children left one that names a machine nobody wrote. Each
+        // is generated right after the child, in its document order, with its
+        // own carried children after it.
+        for (offset, entry) in child_model
+            .iter_scxml_invokes()
+            .filter_map(carried)
+            .enumerate()
+        {
+            pending.insert(offset, entry);
+        }
 
         analyzer::analyze(&mut child_model, &label);
 
