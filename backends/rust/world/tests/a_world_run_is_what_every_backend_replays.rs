@@ -34,7 +34,7 @@ use common::calendar::{
 };
 use common::resync::{MINUTE, OLD_LIMIT_MINUTES};
 use common::*;
-use sce_rust_runtime::Engine;
+use sce_rust_runtime::{Engine, StatePolicy};
 use sce_rust_scenarios::integration::static_datamodel::record_list_sm::{
     RecordListPersist, RecordListPolicy,
 };
@@ -218,6 +218,17 @@ fn record_list_scenario(about: &str, record: &[Taken]) -> String {
                 .and_then(Value::as_str)
                 .map(record_list_name);
             if let Some(named) = renamed {
+                // Whether the machine drops an event is a fact of the machine, and this
+                // scenario is of the standard list: the to-do list's record says its own
+                // machine did not know `error.communication`, which the standard list
+                // does, as every machine does that sends to a route. So the flag is the
+                // list's, asked of the list and not carried over from the record.
+                step.as_object_mut()
+                    .expect("a step is an object")
+                    .remove("dropped");
+                if RecordListPolicy::resolve_event_by_name(&named).is_none() {
+                    step["dropped"] = json!(true);
+                }
                 step["event"] = json!(named);
             }
             if let Some(sent) = step["expect"]["sent"].as_array_mut() {
