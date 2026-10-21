@@ -57,24 +57,10 @@ cd "$REPO_ROOT"
 # which says so and writes itself to the override log.
 # shellcheck source=tools/git-hooks/restricted-term-gate.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/restricted-term-gate.sh"
-term_push_failed=0
-while read -r _tref tlocal _trref tremote; do
-    [[ -z "${tlocal:-}" ]] && continue
-    [[ "$tlocal" =~ ^0+$ ]] && continue   # a deletion publishes no commits
-    if [[ -z "${tremote:-}" || "$tremote" =~ ^0+$ ]] \
-        || ! git cat-file -e "${tremote}^{commit}" 2>/dev/null; then
-        # A new ref, or a remote commit this clone does not have (a force
-        # push): what is new is what no remote-tracking ref reaches.
-        restricted_term_gate_range "pre-push" "$tlocal" --not --remotes || term_push_failed=1
-    else
-        restricted_term_gate_range "pre-push" "${tremote}..${tlocal}" || term_push_failed=1
-    fi
-done <<<"$PUSHED_REFS"
-if (( term_push_failed )); then
-    printf '\npre-push: take the text out of the commits above (amend or rebase) and push\n' >&2
-    printf 'pre-push: again — the remote is public and a push does not un-publish.\n' >&2
-    exit 1
-fi
+# The check itself is `restricted_term_gate_pushed_refs`, a function of its own: a push
+# made with `--no-verify` never runs this hook, and whoever issues that push asks the
+# same function for what it publishes.
+restricted_term_gate_pushed_refs "pre-push" <<<"$PUSHED_REFS" || exit 1
 
 if [[ "${SKIP_PREPUSH:-0}" == "1" ]]; then
     echo "pre-push: SKIP_PREPUSH=1 — bypassing all local CI gates" >&2

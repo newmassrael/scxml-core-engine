@@ -910,6 +910,54 @@ fn the_pre_push_hook_reads_the_range_it_publishes_and_the_bypass_does_not_cover_
 }
 
 #[test]
+fn the_push_check_is_asked_without_the_hook_and_refuses_what_the_hook_refuses() {
+    // A push made with `--no-verify` never runs `pre-push`, so whoever issues it has to be able to ask the
+    // check without the hook: the same function, given the refs a push would publish, written as git writes them.
+    let sb = Sandbox::new("pushed-refs");
+    let terms = sb.terms(TERMS);
+    sb.stage("notes.txt", b"a SCE_PROBE_TERM_3 line\n");
+    sb.commit("old");
+    let published = sb.rev("HEAD");
+    sb.stage("notes.txt", b"a SCE_PROBE_TERM_3 line\nand a clean one\n");
+    sb.commit("clean");
+    let head = sb.rev("HEAD");
+    let ask = |refs: &str| {
+        sb.bash(
+            &format!("restricted_term_gate_pushed_refs probe <<<'{refs}'"),
+            &terms,
+            &[],
+        )
+    };
+
+    // Only what follows the remote's commit is read: the old one is already public.
+    let update = ask(&format!(
+        "refs/heads/main {head} refs/heads/main {published}"
+    ));
+    assert!(update.status.success(), "{}", stderr_of(&update));
+    assert!(said_lines(&update).is_empty(), "{}", stderr_of(&update));
+
+    // A ref the remote does not have yet publishes all of it; the refusal says who asked, and never what it found.
+    let new_ref = ask(&format!("refs/heads/main {head} refs/heads/main {ZERO}"));
+    assert!(!new_ref.status.success(), "{}", stderr_of(&new_ref));
+    assert_eq!(said_lines(&new_ref).len(), 1, "{}", stderr_of(&new_ref));
+    assert!(stderr_of(&new_ref).contains("term #0"));
+    assert!(stderr_of(&new_ref).contains("probe: take the text out of the commits above"));
+    assert!(!stderr_of(&new_ref).contains("SCE_PROBE_TERM_3"));
+
+    // One refused ref among clean ones refuses the push.
+    let mixed = ask(&format!(
+        "refs/heads/clean {published} refs/heads/clean {published}\nrefs/heads/main {head} refs/heads/main {ZERO}"
+    ));
+    assert!(!mixed.status.success(), "{}", stderr_of(&mixed));
+
+    // A deletion publishes no commit, and no refs at all publish none.
+    let gone = ask(&format!("(delete) {ZERO} refs/heads/main {head}"));
+    assert!(gone.status.success(), "{}", stderr_of(&gone));
+    let none = ask("");
+    assert!(none.status.success(), "{}", stderr_of(&none));
+}
+
+#[test]
 fn a_commit_made_past_the_hooks_is_warned_about_by_post_commit_and_a_clean_one_is_not() {
     let sb = Sandbox::new("post-commit");
     let terms = sb.terms(TERMS);

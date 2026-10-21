@@ -57,14 +57,26 @@ PY
 
 mutation_case "the push gate stands behind SKIP_PREPUSH" <<'PY'
 edit("tools/git-hooks/pre-push",
-     '        restricted_term_gate_range "pre-push" "$tlocal" --not --remotes || term_push_failed=1',
-     '        [[ "${SKIP_PREPUSH:-0}" == "1" ]] || restricted_term_gate_range "pre-push" "$tlocal" --not --remotes || term_push_failed=1')
+     'restricted_term_gate_pushed_refs "pre-push" <<<"$PUSHED_REFS" || exit 1',
+     '[[ "${SKIP_PREPUSH:-0}" == "1" ]] || restricted_term_gate_pushed_refs "pre-push" <<<"$PUSHED_REFS" || exit 1')
 PY
 
 mutation_case "a ref the remote does not have is read from the remote ref it names" <<'PY'
-edit("tools/git-hooks/pre-push",
-     '        restricted_term_gate_range "pre-push" "$tlocal" --not --remotes || term_push_failed=1',
-     '        restricted_term_gate_range "pre-push" "${tremote}..${tlocal}" || term_push_failed=1')
+edit("tools/git-hooks/restricted-term-gate.sh",
+     '            restricted_term_gate_range "$label" "$tlocal" --not --remotes || failed=1',
+     '            restricted_term_gate_range "$label" "${tremote}..${tlocal}" || failed=1')
+PY
+
+mutation_case "the push check names what it found and refuses nothing" <<'PY'
+edit("tools/git-hooks/restricted-term-gate.sh",
+     '    if (( failed )); then\n',
+     '    if (( failed && 0 )); then\n')
+PY
+
+mutation_case "the push check reads a deletion as a push of the commit it removes" <<'PY'
+edit("tools/git-hooks/restricted-term-gate.sh",
+     '        [[ "$tlocal" =~ ^0+$ ]] && continue   # a deletion publishes no commits\n',
+     '')
 PY
 
 # ── The override, and the commit made past the hooks ───────────────

@@ -588,6 +588,40 @@ restricted_term_gate_range() {
     return 0
 }
 
+# What a push publishes, read from the lines git hands `pre-push` on standard input: one
+# `<local ref> <local sha> <remote ref> <remote sha>` per ref. Refuses (returns 1, after
+# naming each hit) when any commit the push would publish carries a restricted term, and
+# says so under `label`.
+#
+# This is the push's term check as a function of its own, and not a loop inside the hook,
+# because the hook is the one stage a push made with `--no-verify` never runs: git has no
+# other client-side stage before a push, so the one way to hold that push to this gate is
+# to be able to ask it without the hook. `pre-push` calls it with what git gave it, and a
+# caller that issues the push itself (the guard that refuses a `--no-verify` push which has
+# not met this gate) calls it with the refs it is about to publish, written the same way.
+# One reading of the refs, so the two cannot disagree about what a push publishes.
+restricted_term_gate_pushed_refs() {
+    local label="$1" failed=0 _tref tlocal _trref tremote
+    while read -r _tref tlocal _trref tremote; do
+        [[ -z "${tlocal:-}" ]] && continue
+        [[ "$tlocal" =~ ^0+$ ]] && continue   # a deletion publishes no commits
+        if [[ -z "${tremote:-}" || "$tremote" =~ ^0+$ ]] \
+            || ! git cat-file -e "${tremote}^{commit}" 2>/dev/null; then
+            # A new ref, or a remote commit this clone does not have (a force
+            # push): what is new is what no remote-tracking ref reaches.
+            restricted_term_gate_range "$label" "$tlocal" --not --remotes || failed=1
+        else
+            restricted_term_gate_range "$label" "${tremote}..${tlocal}" || failed=1
+        fi
+    done
+    if (( failed )); then
+        printf '\n%s: take the text out of the commits above (amend or rebase) and push\n' "$label" >&2
+        printf '%s: again — the remote is public and a push does not un-publish.\n' "$label" >&2
+        return 1
+    fi
+    return 0
+}
+
 # What `post-commit` says. A commit made with `--no-verify` never met the two
 # hooks above, and a post-commit hook is the one git still runs for it. The commit
 # exists by now, so this cannot refuse it: it says, loudly, that the commit as made
