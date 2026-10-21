@@ -1405,9 +1405,9 @@ pub enum DiagnosticCode {
     //    `--no-std` is passed to `sce-codegen generate -l rust` and
     //    rejects documents that depend on std-coupled runtime
     //    features. SCE Protocol-Synthesis RFC §synth-5-J-2 line 1989 prescribes
-    //    `zero alloc dependency`; the `sce-rust-runtime` feature
-    //    matrix encodes the same: `no_std` is incompatible with
-    //    `http-send`, `script-engine-lua`, and `script-engine-quickjs`.
+    //    `zero alloc dependency`; the `sce-rust-runtime` profiles
+    //    encode the same: the script engine seam and the BasicHTTP
+    //    processor exist only with its `std` feature (docs/adr/0053).
     //    Author repair is to drop `--no-std`, or remove the
     //    incompatible SCXML construct. Stage = Generate (codegen-time
     //    rejection shares the existing repair-routing key). ──
@@ -13994,7 +13994,7 @@ mod tests {
                     locations: "<script> in state 'init'".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:99d806fa3e160004","code":"codegen/no-std-script-not-supported","stage":"generate","spec":"SCE Protocol-Synthesis RFC §5.J.2","message":"Rust no_std variant rejects `<script>`: document 'demo' uses ECMAScript at <script> in state 'init' (SCE Protocol-Synthesis RFC §5.J.2; sce-rust-runtime no_std feature is incompatible with `script-engine-lua` and `script-engine-quickjs`)"}"#,
+                r#"{"v":1,"id":"fnv1a:99d806fa3e160004","code":"codegen/no-std-script-not-supported","stage":"generate","spec":"SCE Protocol-Synthesis RFC §5.J.2","message":"Rust no_std variant rejects `<script>`: document 'demo' uses ECMAScript at <script> in state 'init' (SCE Protocol-Synthesis RFC §5.J.2; a script engine needs an allocator, and sce-rust-runtime without its `std` feature has none)"}"#,
             ),
             (
                 "forge/codegen-no-std-http-not-supported",
@@ -14003,7 +14003,7 @@ mod tests {
                     locations: "<send target=\"http://localhost\"> in state 'send_step'".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:1e0ad94889d9bb0c","code":"codegen/no-std-http-not-supported","stage":"generate","spec":"SCE Protocol-Synthesis RFC §5.J.2","message":"Rust no_std variant rejects HTTP send: document 'demo' uses BasicHTTPEventProcessor at <send target=\"http://localhost\"> in state 'send_step' (SCE Protocol-Synthesis RFC §5.J.2; sce-rust-runtime no_std feature is incompatible with `http-send`)"}"#,
+                r#"{"v":1,"id":"fnv1a:1e0ad94889d9bb0c","code":"codegen/no-std-http-not-supported","stage":"generate","spec":"SCE Protocol-Synthesis RFC §5.J.2","message":"Rust no_std variant rejects HTTP send: document 'demo' uses BasicHTTPEventProcessor at <send target=\"http://localhost\"> in state 'send_step' (SCE Protocol-Synthesis RFC §5.J.2; the BasicHTTP processor is part of sce-rust-runtime's `std` feature, which `http-send` asks for)"}"#,
             ),
             // ── SCE Protocol-Synthesis RFC §synth-5-J-2 Rust no_std variant rejections
             //    (item C3). Helper runtime cfg-gate companion

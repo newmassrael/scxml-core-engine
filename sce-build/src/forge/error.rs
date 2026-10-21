@@ -5806,20 +5806,20 @@ pub enum GenerateError {
 
     /// SCE Protocol-Synthesis RFC §synth-5-J-2 (item C3): the SCXML document
     /// is generated with `sce-codegen generate -l rust --no-std` but
-    /// contains a `<script>` element. The `sce-rust-runtime`
-    /// `no_std` Cargo feature is mutually exclusive with the
-    /// `script-engine-lua` / `script-engine-quickjs` features per
-    /// spec line 1989 ("zero `alloc` dependency"): a Lua or QuickJS
-    /// interpreter cannot be linked into a target without a global
-    /// allocator. Author repair is to remove every `<script>` from
+    /// contains a `<script>` element. The script engine seam is part
+    /// of the `sce-rust-runtime` `std` profile, and the bare-metal
+    /// profile (the runtime without its `std` feature) has no
+    /// allocator per spec line 1989 ("zero `alloc` dependency"): a Lua
+    /// or QuickJS interpreter cannot be linked into a target without a
+    /// global allocator. Author repair is to remove every `<script>` from
     /// the document, or drop `--no-std` from this codegen call.
     /// `document` is the SCXML basename; `locations` is a single
     /// human-readable summary of where the offending `<script>` was
     /// found (e.g. `"<script> in state 'init'"`).
     #[error(
         "Rust no_std variant rejects `<script>`: document '{document}' uses ECMAScript \
-         at {locations} (SCE Protocol-Synthesis RFC §5.J.2; sce-rust-runtime no_std feature \
-         is incompatible with `script-engine-lua` and `script-engine-quickjs`)"
+         at {locations} (SCE Protocol-Synthesis RFC §5.J.2; a script engine needs an \
+         allocator, and sce-rust-runtime without its `std` feature has none)"
     )]
     CodegenNoStdScriptNotSupported { document: String, locations: String },
 
@@ -5828,16 +5828,16 @@ pub enum GenerateError {
     /// contains a §scxml-C-2 `<send>` that targets
     /// `BasicHTTPEventProcessor` (either by explicit `type=` or by
     /// `target` URL beginning with `http://` / `https://`). The
-    /// runtime crate's `http-send` feature pulls in `tokio` +
-    /// `reqwest`, both of which require std; the `no_std` feature
-    /// asserts incompatibility at the cfg layer in
-    /// `backends/rust/runtime/src/lib.rs`. Author repair is to remove the
+    /// BasicHTTP processor is part of the runtime crate's `std`
+    /// profile, which its `http-send` feature asks for; the bare-metal
+    /// profile has no such processor (docs/adr/0053). Author repair is to remove the
     /// HTTP send, or drop `--no-std`. `locations` is a single
     /// human-readable summary of the offending `<send>` site.
     #[error(
         "Rust no_std variant rejects HTTP send: document '{document}' uses \
          BasicHTTPEventProcessor at {locations} (SCE Protocol-Synthesis RFC §5.J.2; \
-         sce-rust-runtime no_std feature is incompatible with `http-send`)"
+         the BasicHTTP processor is part of sce-rust-runtime's `std` feature, which \
+         `http-send` asks for)"
     )]
     CodegenNoStdHttpNotSupported { document: String, locations: String },
 
