@@ -1350,10 +1350,10 @@ const JOINT_CHILD_STATE: &str =
     r#"<state id="idle"><onentry><sce:action name="note" effect="notice"/></onentry></state>"#;
 
 /// `in_line_joint`, written into `dir` with the candidate document `b` beside
-/// it: a state that starts, when `hybrid`, the hybrid invoke `a` whose one
-/// candidate is `b`, and, when `in_line`, an in-line child under the id `a_b`.
-/// Both children perform an act, so each has a host operation.
-fn joint_document(dir: &Path, hybrid: bool, in_line: bool) -> PathBuf {
+/// it: a state that starts the hybrid invoke `a`, whose one candidate is `b`,
+/// and an in-line child under the id `in_line_id`. Both children perform an
+/// act, so each has a host operation.
+fn joint_document(dir: &Path, in_line_id: &str) -> PathBuf {
     std::fs::create_dir_all(dir).expect("create document dir");
     std::fs::write(
         dir.join("b.scxml"),
@@ -1365,17 +1365,10 @@ fn joint_document(dir: &Path, hybrid: bool, in_line: bool) -> PathBuf {
         ),
     )
     .expect("write the candidate");
-    let mut invokes = String::new();
-    if hybrid {
-        invokes.push_str(
-            r#"
-    <invoke type="scxml" id="a" srcexpr="pick" sce:candidates="b.scxml"/>"#,
-        );
-    }
-    if in_line {
-        invokes.push_str(&format!(
-            r#"
-    <invoke type="scxml" id="a_b">
+    let invokes = format!(
+        r#"
+    <invoke type="scxml" id="a" srcexpr="pick" sce:candidates="b.scxml"/>
+    <invoke type="scxml" id="{in_line_id}">
       <content>
         <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
                version="1.0" initial="idle" datamodel="sce-static">
@@ -1383,8 +1376,7 @@ fn joint_document(dir: &Path, hybrid: bool, in_line: bool) -> PathBuf {
         </scxml>
       </content>
     </invoke>"#
-        ));
-    }
+    );
     let document = dir.join("in_line_joint.scxml");
     std::fs::write(
         &document,
@@ -1403,39 +1395,39 @@ fn joint_document(dir: &Path, hybrid: bool, in_line: bool) -> PathBuf {
     document
 }
 
-/// The names `lang` builds for the invoke `a_b` and for the candidate `b` of
-/// the invoke `a`, as the text that spells them: the host operation each
-/// child's host is answered by, in the backend's case, and — where the
-/// backend holds a child in a field named after it — that field.
-fn joint_names(lang: &str) -> [Vec<&'static str>; 2] {
+/// The names `lang` builds for a child, as the text that spells them, from its
+/// identifier (`identifier`): the host operation its host is answered by, in
+/// the backend's case, and — where the backend holds a child in a field named
+/// after it — that field.
+fn joint_names(lang: &str, identifier: &str) -> Vec<String> {
+    let pascal = sce_build::filters::to_pascal_case(identifier.to_string());
     match lang {
-        "rust" | "c11" => [
-            vec!["actions_for_a_b", "child_a_b"],
-            vec!["actions_for_a_0j_b", "child_a_0j_b"],
+        "rust" | "c11" => vec![
+            format!("actions_for_{identifier}"),
+            format!("child_{identifier}"),
         ],
-        "cpp" => [
-            vec!["actionsForAB", "child_a_b"],
-            vec!["actionsForA0jB", "child_a_0j_b"],
-        ],
-        "python" => [vec!["actions_for_a_b"], vec!["actions_for_a_0j_b"]],
-        "go" => [vec!["ActionsForAB"], vec!["ActionsForA0jB"]],
-        _ => [vec!["actionsForAB"], vec!["actionsForA0jB"]],
+        "cpp" => vec![format!("actionsFor{pascal}"), format!("child_{identifier}")],
+        "python" => vec![format!("actions_for_{identifier}")],
+        "go" => vec![format!("ActionsFor{pascal}")],
+        _ => vec![format!("actionsFor{pascal}")],
     }
 }
 
 /// An invoke `a` whose candidate is `b`, beside an invoke `a_b`, on every
-/// backend that lowers `sce-static`. The candidate's names joined the invoke's
-/// identifier to the stem with `_` alone, so the candidate's field and host
-/// operation (`actions_for_a_b`, `actionsForAB`) were the names of the invoke
-/// `a_b`'s. Joined with `0j` (`actions_for_a_0j_b`), each name the parent
-/// builds for either appears exactly as often as in a machine that has that
-/// invoke alone, and in Go the package declares every package-level name once.
+/// backend that lowers `sce-static`, against the same machine with the second
+/// invoke named `c_d`. The candidate's names joined the invoke's identifier to
+/// the stem with `_` alone, so the candidate's field and host operation
+/// (`actions_for_a_b`, `actionsForAB`) were the names of the invoke `a_b`'s.
+/// Joined with `0j` (`actions_for_a_0j_b`), the names of `a_b` appear exactly
+/// as often as `c_d`'s do beside the same candidate, the candidate's as often
+/// in either machine, and in Go the package declares every package-level name
+/// once. (A machine with one of the two invokes alone is no measure: a backend
+/// writes some passages only for a machine that has both kinds of child.)
 #[test]
 fn a_candidates_names_are_never_another_invokes_on_any_backend() {
     let scratch = reset_scratch("in_line_joint");
-    let both = joint_document(&scratch.join("both"), true, true);
-    let in_line_only = joint_document(&scratch.join("in_line_only"), false, true);
-    let hybrid_only = joint_document(&scratch.join("hybrid_only"), true, false);
+    let clashing = joint_document(&scratch.join("clashing"), "a_b");
+    let apart = joint_document(&scratch.join("apart"), "c_d");
     for lang in STATIC_DATAMODEL_BACKENDS {
         let extra: &[&str] = if lang == "cpp" { &["--no-format"] } else { &[] };
         let parent_text = |document: &Path, out: &str| {
@@ -1446,26 +1438,28 @@ fn a_candidates_names_are_never_another_invokes_on_any_backend() {
                 out_dir,
             )
         };
-        let (both_text, both_out) = parent_text(&both, "out_both");
-        let (in_line_text, _) = parent_text(&in_line_only, "out_in_line_only");
-        let (hybrid_text, _) = parent_text(&hybrid_only, "out_hybrid_only");
-        let [invoke_names, candidate_names] = joint_names(lang);
-        for (names, alone) in [
-            (invoke_names, &in_line_text),
-            (candidate_names, &hybrid_text),
-        ] {
-            for name in names {
-                let once = alone.matches(name).count();
-                assert!(once > 0, "{lang}: the parent never writes `{name}`");
-                assert_eq!(
-                    both_text.matches(name).count(),
-                    once,
-                    "{lang}: `{name}` is written for the invoke `a_b` and for `a`'s candidate `b`"
-                );
-            }
+        let (clashing_text, clashing_out) = parent_text(&clashing, "out_clashing");
+        let (apart_text, _) = parent_text(&apart, "out_apart");
+        let pairs = joint_names(lang, "a_b")
+            .into_iter()
+            .zip(joint_names(lang, "c_d"))
+            .chain(
+                joint_names(lang, "a_0j_b")
+                    .into_iter()
+                    .map(|name| (name.clone(), name)),
+            );
+        for (clashing_name, apart_name) in pairs {
+            let once = apart_text.matches(apart_name.as_str()).count();
+            assert!(once > 0, "{lang}: the parent never writes `{apart_name}`");
+            assert_eq!(
+                clashing_text.matches(clashing_name.as_str()).count(),
+                once,
+                "{lang}: `{clashing_name}` is written for the invoke `a_b` and for `a`'s \
+                 candidate `b`"
+            );
         }
         if lang == "go" {
-            let twice = declared_more_than_once(&go_package_machines(&both_out));
+            let twice = declared_more_than_once(&go_package_machines(&clashing_out));
             assert!(
                 twice.is_empty(),
                 "names declared more than once in the package: {twice:?}"

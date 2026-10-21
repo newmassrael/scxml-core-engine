@@ -9933,7 +9933,23 @@ mod tests {
 
     #[test]
     fn invoke_field_suffix_preserves_user_supplied_id() {
-        // User-supplied id has no leading underscore — round-trips unchanged.
+        // A user-supplied id in lower snake case is its own identifier; the id
+        // itself is kept as written either way.
+        let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">
+            <state id="s">
+                <invoke id="invoked_child" type="scxml" src="child.scxml"/>
+            </state>
+        </scxml>"#;
+        let (invoke_id, field_suffix) = first_invoke_ids(scxml);
+        assert_eq!(invoke_id, "invoked_child");
+        assert_eq!(field_suffix, "invoked_child");
+    }
+
+    #[test]
+    fn invoke_field_suffix_escapes_a_user_supplied_id_in_another_case() {
+        // `invokedChild` is not lower snake case: its identifier is escaped
+        // (`crate::model::invoke_identifier`), so that `invoked_child` beside
+        // it, which a case filter would spell the same, keeps a name of its own.
         let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">
             <state id="s">
                 <invoke id="invokedChild" type="scxml" src="child.scxml"/>
@@ -9941,7 +9957,7 @@ mod tests {
         </scxml>"#;
         let (invoke_id, field_suffix) = first_invoke_ids(scxml);
         assert_eq!(invoke_id, "invokedChild");
-        assert_eq!(field_suffix, "invokedChild");
+        assert_eq!(field_suffix, "0zinvokedzuchild");
     }
 
     // ── §scxml-3.14 invoke-id uniqueness ─────────────────────────

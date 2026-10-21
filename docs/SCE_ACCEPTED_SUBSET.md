@@ -3739,9 +3739,10 @@ declares no act of its own still takes that host, and the recording host it gene
 takes one source per child, the function a test hands it (in Rust it is generic over what
 each answers, and derives neither `Default` nor `Debug`), and records each question
 beside the acts. An act
-whose name is spelled as one of those operations, in any language's convention, and
-two invokes whose ids differ only in spelling, are refused where the second is
-written (`<sce:action name="…">` names one host method, not two).
+whose name is spelled as one of those operations, in any language's convention, is
+refused where the second is written (`<sce:action name="…">` names one host method, not
+two). Two children's operations are never one method: each is named after an invoke's
+identifier or a candidate's (above), and no two of those share a spelling.
 
 Every generated language does this, for a parent of either data model, and so does the
 Interpreter, which has no interface to generate: its child sessions are built by the engine

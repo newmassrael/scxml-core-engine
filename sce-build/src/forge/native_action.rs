@@ -82,7 +82,6 @@ fn host_operation(field_suffix: &str, candidate_stem: Option<&str>) -> String {
 struct ChildHostSite {
     operation: String,
     invoke_id: String,
-    at: Option<SourceLocation>,
 }
 
 /// Every child of `model` that declares `<sce:action>`s: each
@@ -97,7 +96,6 @@ fn child_host_sites(model: &SCXMLModel) -> Vec<ChildHostSite> {
                     sites.push(ChildHostSite {
                         operation: host_operation(&info.common.base.field_suffix, None),
                         invoke_id: info.common.base.invoke_id.clone(),
-                        at: info.common.base.source_location.clone(),
                     });
                 }
                 crate::model::Invoke::Hybrid(info) => {
@@ -112,7 +110,6 @@ fn child_host_sites(model: &SCXMLModel) -> Vec<ChildHostSite> {
                                 Some(&candidate.stem),
                             ),
                             invoke_id: info.common.base.invoke_id.clone(),
-                            at: info.common.base.source_location.clone(),
                         });
                     }
                 }
@@ -531,50 +528,62 @@ fn check_releases(scxml: &SCXMLModel, diag_label: &str) -> Result<(), Located<Fo
     Ok(())
 }
 
+/// Every spelling `name` has as a method of some backend's host interface
+/// ([`method_name`] for each language), each with its language.
+fn method_spellings(name: &str) -> impl Iterator<Item = MethodSpelling> + '_ {
+    Language::ALL
+        .iter()
+        .map(move |&lang| (lang.canonical_name(), method_name(lang, name)))
+}
+
+/// A method's name as one backend writes it: the backend's canonical name, and
+/// the spelling.
+type MethodSpelling = (&'static str, String);
+
+/// Each act of the document, by every spelling of its name.
+type ActsBySpelling<'a> = BTreeMap<MethodSpelling, (&'a String, &'a Option<SourceLocation>)>;
+
 /// The host interface carries two kinds of operation in one namespace: the acts
 /// the document names and, for each child that declares acts of its own, the
 /// operation that answers the child's host ([`host_operation`]). A name both
-/// kinds spell the same would be one method serving two meanings, so it is
-/// refused at the construct that came second, as a conflict of signatures is.
+/// kinds spell the same, in the case any one backend writes it in, would be one
+/// method serving two meanings there, so it is refused at the construct that
+/// came second, as a conflict of signatures is.
+///
+/// Two children's operations are never one method, so they are not compared:
+/// each is built from its invoke's identifier, or its candidate's
+/// ([`crate::model::invoke_identifier`],
+/// [`crate::model::invoke_candidate_identifier`]), and no two of those share a
+/// spelling in any case. An act is any name its author chose, so it is held
+/// to every spelling of every operation.
 fn check_host_operations(
     scxml: &SCXMLModel,
     signatures: &SignatureTable,
     diag_label: &str,
 ) -> Result<(), Located<ForgeError>> {
-    let acts: BTreeMap<String, (&String, &Option<SourceLocation>)> = signatures
+    let acts: ActsBySpelling<'_> = signatures
         .iter()
-        .map(|(name, (_, at, _))| (filters::to_snake_case(name.clone()), (name, at)))
+        .flat_map(|(name, (_, at, _))| {
+            method_spellings(name).map(move |spelled| (spelled, (name, at)))
+        })
         .collect();
-    let mut seen: BTreeMap<String, String> = BTreeMap::new();
     for site in child_host_sites(scxml) {
-        let operation = filters::to_snake_case(site.operation.clone());
-        if let Some((name, at)) = acts.get(&operation) {
-            return Err(located_at(
-                at.as_ref(),
-                diag_label,
-                ValidationError::NativeActionSignatureConflict {
-                    name: (*name).clone(),
-                    detail: format!(
-                        "is also the host operation that answers the host of the child \
-                         <invoke id=\"{}\"> starts; rename the act or the invoke",
-                        site.invoke_id
-                    ),
-                },
-            ));
-        }
-        if let Some(first) = seen.insert(operation.clone(), site.invoke_id.clone()) {
-            return Err(located_at(
-                site.at.as_ref(),
-                diag_label,
-                ValidationError::NativeActionSignatureConflict {
-                    name: operation,
-                    detail: format!(
-                        "is the host operation of the children of both <invoke id=\"{first}\"> \
-                         and <invoke id=\"{}\">; their ids differ only in spelling",
-                        site.invoke_id
-                    ),
-                },
-            ));
+        for spelled in method_spellings(&site.operation) {
+            if let Some((name, at)) = acts.get(&spelled) {
+                return Err(located_at(
+                    at.as_ref(),
+                    diag_label,
+                    ValidationError::NativeActionSignatureConflict {
+                        name: (*name).clone(),
+                        detail: format!(
+                            "is also the host operation that answers the host of the child \
+                             <invoke id=\"{}\"> starts, as {} spells it; rename the act or \
+                             the invoke",
+                            site.invoke_id, spelled.0
+                        ),
+                    },
+                ));
+            }
         }
     }
     Ok(())
@@ -2949,13 +2958,24 @@ mod tests {
             format!("{refusal:?}").contains("actionsForWorker"),
             "{refusal:?}"
         );
-        let twins = document(format!("{}{}", child("a_b"), child("aB")));
-        let refusal =
-            validate(&twins, &fragment_schema(), "t").expect_err("one method, two children");
+        // Spelled as Go, Kotlin and C++ spell it (`ActionsForA1`,
+        // `actionsForA1`), the act is the operation of the child `a1`, though
+        // their snake spellings (`actions_for_a_1`, `actions_for_a1`) differ.
+        let pascal = document(format!(
+            r#"{} <onentry><sce:action name="actions_for_a_1" effect="notice"/></onentry>"#,
+            child("a1")
+        ));
+        let refusal = validate(&pascal, &fragment_schema(), "t")
+            .expect_err("one method in the backends that spell it so");
         assert!(
-            format!("{refusal:?}").contains("their ids differ only in spelling"),
+            format!("{refusal:?}").contains("actions_for_a_1"),
             "{refusal:?}"
         );
+        // Two children whose ids differ only where a case filter would join
+        // them have operations of their own: each is built from its invoke's
+        // identifier, and `aB`'s is escaped.
+        let twins = document(format!("{}{}", child("a_b"), child("aB")));
+        assert!(validate(&twins, &fragment_schema(), "t").is_ok());
         let apart = document(format!("{}{}", child("one"), child("two")));
         assert!(validate(&apart, &fragment_schema(), "t").is_ok());
     }

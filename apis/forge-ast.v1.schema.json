@@ -4457,7 +4457,7 @@
               "type": "boolean"
             },
             "field_suffix": {
-              "description": "Identifier suffix derived from [`Self::invoke_id`] by trimming the SCXML auto-id leading underscore. User-supplied ids round-trip unchanged. Used by Rust/C++ templates to compose field names like `child_{field_suffix}` without producing double underscores.",
+              "description": "The identifier every name generated for this invoke is built from — [`invoke_identifier`] of [`Self::invoke_id`], and nothing else: the fields, wrappers and counters of each backend (`child_{field_suffix}`, `childEngineWrapper…_{Pascal}`), the host operations a child's acts take (`actions_for_{field_suffix}`), the typed host-invoke interface, and the name of a child the invoke carries (`<parent>__sce_synth_invoke__{field_suffix}`). Distinct ids of one document have distinct identifiers, in every case each backend writes them in.",
               "type": "string"
             },
             "finalize_content": {
@@ -4605,7 +4605,7 @@
               "type": "string"
             },
             "field_suffix": {
-              "description": "Identifier suffix derived from [`Self::invoke_id`] by trimming the SCXML auto-id leading underscore. User-supplied ids round-trip unchanged. Used by Rust/C++ templates to compose field names like `child_{field_suffix}` without producing double underscores.",
+              "description": "The identifier every name generated for this invoke is built from — [`invoke_identifier`] of [`Self::invoke_id`], and nothing else: the fields, wrappers and counters of each backend (`child_{field_suffix}`, `childEngineWrapper…_{Pascal}`), the host operations a child's acts take (`actions_for_{field_suffix}`), the typed host-invoke interface, and the name of a child the invoke carries (`<parent>__sce_synth_invoke__{field_suffix}`). Distinct ids of one document have distinct identifiers, in every case each backend writes them in.",
               "type": "string"
             },
             "id_generated": {
@@ -4735,7 +4735,7 @@
               ]
             },
             "field_suffix": {
-              "description": "Identifier suffix derived from [`Self::invoke_id`] by trimming the SCXML auto-id leading underscore. User-supplied ids round-trip unchanged. Used by Rust/C++ templates to compose field names like `child_{field_suffix}` without producing double underscores.",
+              "description": "The identifier every name generated for this invoke is built from — [`invoke_identifier`] of [`Self::invoke_id`], and nothing else: the fields, wrappers and counters of each backend (`child_{field_suffix}`, `childEngineWrapper…_{Pascal}`), the host operations a child's acts take (`actions_for_{field_suffix}`), the typed host-invoke interface, and the name of a child the invoke carries (`<parent>__sce_synth_invoke__{field_suffix}`). Distinct ids of one document have distinct identifiers, in every case each backend writes them in.",
               "type": "string"
             },
             "id_generated": {
@@ -4823,7 +4823,7 @@
               "type": "string"
             },
             "field_suffix": {
-              "description": "Identifier suffix derived from [`Self::invoke_id`] by trimming the SCXML auto-id leading underscore. User-supplied ids round-trip unchanged. Used by Rust/C++ templates to compose field names like `child_{field_suffix}` without producing double underscores.",
+              "description": "The identifier every name generated for this invoke is built from — [`invoke_identifier`] of [`Self::invoke_id`], and nothing else: the fields, wrappers and counters of each backend (`child_{field_suffix}`, `childEngineWrapper…_{Pascal}`), the host operations a child's acts take (`actions_for_{field_suffix}`), the typed host-invoke interface, and the name of a child the invoke carries (`<parent>__sce_synth_invoke__{field_suffix}`). Distinct ids of one document have distinct identifiers, in every case each backend writes them in.",
               "type": "string"
             },
             "host_served": {

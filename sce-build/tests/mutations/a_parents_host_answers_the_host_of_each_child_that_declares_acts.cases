@@ -10,20 +10,22 @@
 # list the call a template places is, so the two cannot name different methods,
 # and its recording host asks the test for what to answer and records the
 # question. The acts and those operations share one namespace, so an act spelled
-# as an operation is spelled (in any language's convention), or two invokes whose
-# ids differ only in spelling, are refused where the second is written. The unit
-# tests read the generated Kotlin interface and the refusals; the machine that
-# really asks is the Kotlin test `AChildIsGivenItsHostByItsParentTest`, which
-# the casefile for the template (`a_static_kotlin_child_is_built_with_the_host_its_parent_answers`)
-# holds. The mutants take one decision away each:
+# as an operation is spelled (in any language's convention) is refused where the
+# second is written. Two children's operations are not compared: each is built
+# from its invoke's identifier or its candidate's, which no two invokes share in
+# any spelling (`model::invoke_identifiers` holds that), so a mutant that let two
+# be one would have nothing to act on. The unit tests read the generated Kotlin
+# interface and the refusals; the machine that really asks is the Kotlin test
+# `AChildIsGivenItsHostByItsParentTest`, which the casefile for the template
+# (`a_static_kotlin_child_is_built_with_the_host_its_parent_answers`) holds. The
+# mutants take one decision away each:
 #
 #   the operations are not declared in the Kotlin interface;
 #   the operations are not declared in the Python interface;
 #   the recording host does not record the question;
 #   the recording host does not take what to answer from its test;
 #   an act named as an operation is accepted;
-#   the comparison ignores another language's spelling;
-#   two invokes' operations may be one.
+#   the comparison ignores another language's spelling.
 #
 # Anchors are literal slices of the source; an edit that moves one is reported
 # INCONCLUSIVE with the anchor quoted, never as a pass.
@@ -58,18 +60,12 @@ PY
 
 mutation_case "an act named as an operation is accepted" <<'PY'
 edit("sce-build/src/forge/native_action.rs",
-     "        if let Some((name, at)) = acts.get(&operation) {",
-     "        if let Some((name, at)) = acts.get(&operation).filter(|_| false) {")
+     "            if let Some((name, at)) = acts.get(&spelled) {",
+     "            if let Some((name, at)) = acts.get(&spelled).filter(|_| false) {")
 PY
 
 mutation_case "the comparison ignores another language's spelling" <<'PY'
 edit("sce-build/src/forge/native_action.rs",
-     "        .map(|(name, (_, at, _))| (filters::to_snake_case(name.clone()), (name, at)))",
-     "        .map(|(name, (_, at, _))| (name.clone(), (name, at)))")
-PY
-
-mutation_case "two invokes' operations may be one" <<'PY'
-edit("sce-build/src/forge/native_action.rs",
-     "        if let Some(first) = seen.insert(operation.clone(), site.invoke_id.clone()) {",
-     "        if let Some(first) = seen.insert(operation.clone(), site.invoke_id.clone()).filter(|_| false) {")
+     "        .map(move |&lang| (lang.canonical_name(), method_name(lang, name)))",
+     "        .map(move |&lang| (lang.canonical_name(), name.to_string()))")
 PY
