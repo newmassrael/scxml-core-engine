@@ -200,6 +200,10 @@ type AutoforwardDequeuePointPolicy struct {
 	activeInvokes  map[string]*sce.ChildSession
 	childInvProbe sce.ChildEngine
 	pendingDoneInvokeInvProbe bool
+	// docs/adr/0045: how many times 'inv_probe' has started in
+	// this session; the next start, and the id it is started under, is numbered
+	// by it, so a child's ids come from the tree alone.
+	invokeStartsInvProbe uint64
 	// W3C SCXML 6.4: Parent communication (unbounded — see sce.ParentEventQueue)
 	ParentExternalQueue *sce.ParentEventQueue
 	InvokeID           string
@@ -281,6 +285,12 @@ func (p *AutoforwardDequeuePointPolicy) ExecutePendingInvokes(engine *sce.Engine
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
 			childEngine.SetCompletionCallback(func() {})
+			// Child sessions in Mesh (SCE_MESH.md): the child's router, asked of
+			// this machine's factory with the invoke's id and the stem of the
+			// child's document (empty for one written inline), and installed
+			// before the child initializes, since its first <onentry> may
+			// already send to a peer.
+			engine.StartChildMesh(childEngine, "inv_probe", "")
 			childEngine.Initialize()
 
 			// W3C SCXML 6.4: Store child and create wrapper
@@ -293,6 +303,8 @@ func (p *AutoforwardDequeuePointPolicy) ExecutePendingInvokes(engine *sce.Engine
 			// W3C SCXML 6.4: Check if child completed during initialize
 			if wrapper.IsInFinalState() {
 				p.pendingDoneInvokeInvProbe = true
+				// The session ended: its Mesh router is told so.
+				wrapper.DetachMesh()
 				// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 				// done.invoke.<id>._event.data. Mirrors the C++ AOT contract
 				// and the Rust raise_done_invoke(donedata) 3-arg signature.
@@ -309,10 +321,15 @@ func (p *AutoforwardDequeuePointPolicy) TickChildren(engine *sce.Engine[Autoforw
 	if !p.pendingDoneInvokeInvProbe && p.childInvProbe != nil {
 		child := p.childInvProbe
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "inv_probe", engine)
+		// Child sessions in Mesh (SCE_MESH.md): what arrived for the child on
+		// the router it was given, before its macrostep.
+		child.ApplyMeshCalls()
 		child.Tick()
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "inv_probe", engine)
 		if child.IsInFinalState() && !p.pendingDoneInvokeInvProbe {
 			p.pendingDoneInvokeInvProbe = true
+			// The session ended: its Mesh router is told so.
+			child.DetachMesh()
 			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 			// done.invoke.<id>._event.data.
 			sce.RaiseDoneInvoke("inv_probe", child.DonedataAtFinal(), engine)
@@ -436,6 +453,8 @@ func (w *childEngineWrapperAutoforwardDequeuePoint_InvProbe) SetCompletionCallba
 func (w *childEngineWrapperAutoforwardDequeuePoint_InvProbe) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperAutoforwardDequeuePoint_InvProbe) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 func (w *childEngineWrapperAutoforwardDequeuePoint_InvProbe) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperAutoforwardDequeuePoint_InvProbe) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperAutoforwardDequeuePoint_InvProbe) DetachMesh() { w.engine.DetachMesh() }
 
 
 // DeliverToParent delivers a delayed `<send target="#_parent">` whose wait is
@@ -671,7 +690,10 @@ func (p *AutoforwardDequeuePointPolicy) ExecuteEntryActions(state AutoforwardDeq
 		//line autoforward_dequeue_point.scxml:70
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
-			generatedInvokeID := fmt.Sprintf("%s.%d.inv_probe", "phase", sce.NextInvokeCounter())
+			// docs/adr/0045: the platform part of the id is the number of this
+			// start, so the id comes from the tree alone.
+			p.invokeStartsInvProbe++
+			generatedInvokeID := fmt.Sprintf("%s.%d.inv_probe", "phase", p.invokeStartsInvProbe)
 			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[AutoforwardDequeuePointState]{
 				InvokeID:   generatedInvokeID,
 				State:      AutoforwardDequeuePointStatePhase,
@@ -715,6 +737,9 @@ func (p *AutoforwardDequeuePointPolicy) ExecuteExitActions(state AutoforwardDequ
 			// states' <onexit> run -- before it is dropped; what that exit
 			// sends to #_parent is dropped with it (§scxml-6.4, test252).
 			p.childInvProbe.Stop()
+			// Child sessions in Mesh (SCE_MESH.md): the session ended, after the
+			// child stopped, so what it sent while stopping was handed over first.
+			p.childInvProbe.DetachMesh()
 			p.childInvProbe = nil
 		}
 		delete(p.activeInvokes, "inv_probe")

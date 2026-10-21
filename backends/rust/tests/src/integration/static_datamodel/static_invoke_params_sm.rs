@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
+// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -376,6 +376,18 @@ pub struct StaticInvokeParamsPolicy {
     // W3C SCXML 6.4: Static invoke child 'watcher' (static_invoke_params__sce_synth_invoke__watcher)
     child_watcher: Option<Box<sce_rust_runtime::Engine<super::static_invoke_params__sce_synth_invoke__watcher_sm::StaticInvokeParamsSceSynthInvokeWatcherPolicy>>>,
     pending_done_invoke_watcher: bool,
+    // docs/adr/0045: how many times 'worker' has started in
+    // this session. The next start is numbered by it, and so is the id it is
+    // started under, so a child's ids come from the tree alone.
+    invoke_starts_worker: u64,
+    // docs/adr/0045: how many times 'control' has started in
+    // this session. The next start is numbered by it, and so is the id it is
+    // started under, so a child's ids come from the tree alone.
+    invoke_starts_control: u64,
+    // docs/adr/0045: how many times 'watcher' has started in
+    // this session. The next start is numbered by it, and so is the id it is
+    // started under, so a child's ids come from the tree alone.
+    invoke_starts_watcher: u64,
     // W3C SCXML 6.4: Parent engine external queue for #_parent send routing
     // Always generated under std — any SM can be invoked as a child. Under
     // `--no-std` (SCE Protocol-Synthesis RFC §synth-5-J-2) the SCXML `<invoke>` element
@@ -409,6 +421,9 @@ impl StaticInvokeParamsPolicy {
             pending_done_invoke_control: false,
             child_watcher: None,
             pending_done_invoke_watcher: false,
+            invoke_starts_worker: 0,
+            invoke_starts_control: 0,
+            invoke_starts_watcher: 0,
             parent_external_queue: None,
             invoke_id: String::new(),
             child_session_id: String::new(),
@@ -438,7 +453,12 @@ impl StaticInvokeParamsPolicy {
     // W3C SCXML 6.4: Defer the start of invoke 'control' of state 'plain' to macrostep end
     fn defer_invoke_control(&mut self, _engine: &mut sce_rust_runtime::Engine<Self>) {
         {
-            let generated_invoke_id = format!("{}.{}.control", "plain", self as *const _ as usize);
+            // docs/adr/0045: the id is the state's, the number of this start and
+            // the `<invoke>`'s, so it comes from the tree alone and is the same
+            // text on every backend (W3C test 224 reads the state's id and a dot
+            // in front of it).
+            self.invoke_starts_control += 1;
+            let generated_invoke_id = format!("{}.{}.control", "plain", self.invoke_starts_control);
             let id_stored = true;
             if id_stored {
                 sce_rust_runtime::invoke::defer_invoke(
@@ -456,7 +476,12 @@ impl StaticInvokeParamsPolicy {
     // W3C SCXML 6.4: Defer the start of invoke 'watcher' of state 'plain' to macrostep end
     fn defer_invoke_watcher(&mut self, _engine: &mut sce_rust_runtime::Engine<Self>) {
         {
-            let generated_invoke_id = format!("{}.{}.watcher", "plain", self as *const _ as usize);
+            // docs/adr/0045: the id is the state's, the number of this start and
+            // the `<invoke>`'s, so it comes from the tree alone and is the same
+            // text on every backend (W3C test 224 reads the state's id and a dot
+            // in front of it).
+            self.invoke_starts_watcher += 1;
+            let generated_invoke_id = format!("{}.{}.watcher", "plain", self.invoke_starts_watcher);
             let id_stored = true;
             if id_stored {
                 sce_rust_runtime::invoke::defer_invoke(
@@ -474,7 +499,12 @@ impl StaticInvokeParamsPolicy {
     // W3C SCXML 6.4: Defer the start of invoke 'worker' of state 'working' to macrostep end
     fn defer_invoke_worker(&mut self, _engine: &mut sce_rust_runtime::Engine<Self>) {
         {
-            let generated_invoke_id = format!("{}.{}.worker", "working", self as *const _ as usize);
+            // docs/adr/0045: the id is the state's, the number of this start and
+            // the `<invoke>`'s, so it comes from the tree alone and is the same
+            // text on every backend (W3C test 224 reads the state's id and a dot
+            // in front of it).
+            self.invoke_starts_worker += 1;
+            let generated_invoke_id = format!("{}.{}.worker", "working", self.invoke_starts_worker);
             let id_stored = true;
             if id_stored {
                 sce_rust_runtime::invoke::defer_invoke(
@@ -559,6 +589,12 @@ impl StaticInvokeParamsPolicy {
                 child_engine.set_clock(engine.clock());
                 // W3C SCXML 6.4: Set completion callback so child runs final state onexit (test 236)
                 child_engine.set_completion_callback(|| {});
+                // Child sessions in Mesh (SCE_MESH.md): the child's router,
+                // asked of this machine's factory with the invoke's id and the
+                // stem of the child's document (empty for one written inline),
+                // and installed before the child initializes, since its first
+                // `<onentry>` may already send to a peer.
+                engine.start_child_mesh(&mut child_engine, "control", "");
                 child_engine.initialize();
 
                 // W3C SCXML 6.4: Store child BEFORE draining events so autoforward can find it
@@ -584,6 +620,10 @@ impl StaticInvokeParamsPolicy {
                     .map_or(false, |c| c.is_in_final_state())
                 {
                     self.pending_done_invoke_control = true;
+                    // The session ended: its Mesh router is told so.
+                    if let Some(child) = self.child_control.as_mut() {
+                        child.detach_mesh();
+                    }
                     // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                     // done.invoke.<id>._event.data. Mirrors the C++ AOT contract in
                     // tools/codegen/templates/invoke_methods.jinja2 (child->donedataAtFinal()
@@ -659,6 +699,12 @@ impl StaticInvokeParamsPolicy {
                 child_engine.set_clock(engine.clock());
                 // W3C SCXML 6.4: Set completion callback so child runs final state onexit (test 236)
                 child_engine.set_completion_callback(|| {});
+                // Child sessions in Mesh (SCE_MESH.md): the child's router,
+                // asked of this machine's factory with the invoke's id and the
+                // stem of the child's document (empty for one written inline),
+                // and installed before the child initializes, since its first
+                // `<onentry>` may already send to a peer.
+                engine.start_child_mesh(&mut child_engine, "watcher", "");
                 child_engine.initialize();
 
                 // W3C SCXML 6.4: Store child BEFORE draining events so autoforward can find it
@@ -684,6 +730,10 @@ impl StaticInvokeParamsPolicy {
                     .map_or(false, |c| c.is_in_final_state())
                 {
                     self.pending_done_invoke_watcher = true;
+                    // The session ended: its Mesh router is told so.
+                    if let Some(child) = self.child_watcher.as_mut() {
+                        child.detach_mesh();
+                    }
                     // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                     // done.invoke.<id>._event.data. Mirrors the C++ AOT contract in
                     // tools/codegen/templates/invoke_methods.jinja2 (child->donedataAtFinal()
@@ -760,6 +810,12 @@ impl StaticInvokeParamsPolicy {
                 child_engine.set_clock(engine.clock());
                 // W3C SCXML 6.4: Set completion callback so child runs final state onexit (test 236)
                 child_engine.set_completion_callback(|| {});
+                // Child sessions in Mesh (SCE_MESH.md): the child's router,
+                // asked of this machine's factory with the invoke's id and the
+                // stem of the child's document (empty for one written inline),
+                // and installed before the child initializes, since its first
+                // `<onentry>` may already send to a peer.
+                engine.start_child_mesh(&mut child_engine, "worker", "");
                 child_engine.initialize();
 
                 // W3C SCXML 6.4: Store child BEFORE draining events so autoforward can find it
@@ -785,6 +841,10 @@ impl StaticInvokeParamsPolicy {
                     .map_or(false, |c| c.is_in_final_state())
                 {
                     self.pending_done_invoke_worker = true;
+                    // The session ended: its Mesh router is told so.
+                    if let Some(child) = self.child_worker.as_mut() {
+                        child.detach_mesh();
+                    }
                     // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                     // done.invoke.<id>._event.data. Mirrors the C++ AOT contract in
                     // tools/codegen/templates/invoke_methods.jinja2 (child->donedataAtFinal()
@@ -816,6 +876,9 @@ impl StaticInvokeParamsPolicy {
                     engine,
                 );
 
+                // Child sessions in Mesh (SCE_MESH.md): what arrived for the
+                // child on the router it was given, before its macrostep.
+                child.apply_mesh_calls();
                 child.tick();
 
                 // W3C SCXML 6.4: Drain parent events sent by child AFTER tick
@@ -829,6 +892,8 @@ impl StaticInvokeParamsPolicy {
                 // W3C SCXML 6.4: Check if child reached final state after tick
                 if child.is_in_final_state() && !self.pending_done_invoke_worker {
                     self.pending_done_invoke_worker = true;
+                    // The session ended: its Mesh router is told so.
+                    child.detach_mesh();
                     // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                     // done.invoke.<id>._event.data.
                     let donedata = child.donedata_at_final().to_string();
@@ -852,6 +917,9 @@ impl StaticInvokeParamsPolicy {
                     engine,
                 );
 
+                // Child sessions in Mesh (SCE_MESH.md): what arrived for the
+                // child on the router it was given, before its macrostep.
+                child.apply_mesh_calls();
                 child.tick();
 
                 // W3C SCXML 6.4: Drain parent events sent by child AFTER tick
@@ -865,6 +933,8 @@ impl StaticInvokeParamsPolicy {
                 // W3C SCXML 6.4: Check if child reached final state after tick
                 if child.is_in_final_state() && !self.pending_done_invoke_control {
                     self.pending_done_invoke_control = true;
+                    // The session ended: its Mesh router is told so.
+                    child.detach_mesh();
                     // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                     // done.invoke.<id>._event.data.
                     let donedata = child.donedata_at_final().to_string();
@@ -888,6 +958,9 @@ impl StaticInvokeParamsPolicy {
                     engine,
                 );
 
+                // Child sessions in Mesh (SCE_MESH.md): what arrived for the
+                // child on the router it was given, before its macrostep.
+                child.apply_mesh_calls();
                 child.tick();
 
                 // W3C SCXML 6.4: Drain parent events sent by child AFTER tick
@@ -901,6 +974,8 @@ impl StaticInvokeParamsPolicy {
                 // W3C SCXML 6.4: Check if child reached final state after tick
                 if child.is_in_final_state() && !self.pending_done_invoke_watcher {
                     self.pending_done_invoke_watcher = true;
+                    // The session ended: its Mesh router is told so.
+                    child.detach_mesh();
                     // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                     // done.invoke.<id>._event.data.
                     let donedata = child.donedata_at_final().to_string();
@@ -1241,6 +1316,10 @@ impl StatePolicy for StaticInvokeParamsPolicy {
                     // cancel-drop, test252).
                     if let Some(mut child) = self.child_control.take() {
                         child.stop();
+                        // Child sessions in Mesh (SCE_MESH.md): the session
+                        // ended, after the child stopped, so what it sent while
+                        // stopping was handed to its router first.
+                        child.detach_mesh();
                     }
                 }
                 self.active_invokes.remove("control");
@@ -1258,6 +1337,10 @@ impl StatePolicy for StaticInvokeParamsPolicy {
                     // cancel-drop, test252).
                     if let Some(mut child) = self.child_watcher.take() {
                         child.stop();
+                        // Child sessions in Mesh (SCE_MESH.md): the session
+                        // ended, after the child stopped, so what it sent while
+                        // stopping was handed to its router first.
+                        child.detach_mesh();
                     }
                 }
                 self.active_invokes.remove("watcher");
@@ -1284,6 +1367,10 @@ impl StatePolicy for StaticInvokeParamsPolicy {
                     // cancel-drop, test252).
                     if let Some(mut child) = self.child_worker.take() {
                         child.stop();
+                        // Child sessions in Mesh (SCE_MESH.md): the session
+                        // ended, after the child stopped, so what it sent while
+                        // stopping was handed to its router first.
+                        child.detach_mesh();
                     }
                 }
                 self.active_invokes.remove("worker");

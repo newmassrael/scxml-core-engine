@@ -736,8 +736,9 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
     private fun deferStaticInvoke(invokeId: String, state: InvokeParamSeedsDeclaredChildDataState) {
         when (invokeId) {
             "inv_infinite" -> run {
-                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
-                val generatedInvokeId = "infinite.${System.identityHashCode(this)}.inv_infinite"
+                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
+                // the platform part is the number of this start (docs/adr/0045).
+                val generatedInvokeId = "infinite.${nextInvokeStart("inv_infinite")}.inv_infinite"
                 deferInvoke(state, generatedInvokeId) {
                         // W3C SCXML 6.4: the arguments are evaluated when the <invoke>
                         // is executed — at macrostep end, where this deferred body
@@ -759,12 +760,13 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
                     val childSM = InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
                     setInvokeParams(childSM, invokeParams)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("inv_infinite", childSM, false, InvokeParamSeedsDeclaredChildDataEvent.Done.Invoke, "", generatedInvokeId)
+                    startInvoke("inv_infinite", childSM, false, InvokeParamSeedsDeclaredChildDataEvent.Done.Invoke, "", generatedInvokeId, "")
                 }
             }
             "inv_namelist" -> run {
-                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
-                val generatedInvokeId = "namelistPhase.${System.identityHashCode(this)}.inv_namelist"
+                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
+                // the platform part is the number of this start (docs/adr/0045).
+                val generatedInvokeId = "namelistPhase.${nextInvokeStart("inv_namelist")}.inv_namelist"
                 deferInvoke(state, generatedInvokeId) {
                         // W3C SCXML 6.4: the arguments are evaluated when the <invoke>
                         // is executed — at macrostep end, where this deferred body
@@ -782,12 +784,13 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
                     val childSM = InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
                     setInvokeParams(childSM, invokeParams)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("inv_namelist", childSM, false, InvokeParamSeedsDeclaredChildDataEvent.Done.Invoke, "", generatedInvokeId)
+                    startInvoke("inv_namelist", childSM, false, InvokeParamSeedsDeclaredChildDataEvent.Done.Invoke, "", generatedInvokeId, "")
                 }
             }
             "inv_shadow" -> run {
-                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
-                val generatedInvokeId = "shadowed.${System.identityHashCode(this)}.inv_shadow"
+                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
+                // the platform part is the number of this start (docs/adr/0045).
+                val generatedInvokeId = "shadowed.${nextInvokeStart("inv_shadow")}.inv_shadow"
                 deferInvoke(state, generatedInvokeId) {
                         // W3C SCXML 6.4: the arguments are evaluated when the <invoke>
                         // is executed — at macrostep end, where this deferred body
@@ -809,12 +812,13 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
                     val childSM = InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
                     setInvokeParams(childSM, invokeParams)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("inv_shadow", childSM, false, InvokeParamSeedsDeclaredChildDataEvent.Done.Invoke, "", generatedInvokeId)
+                    startInvoke("inv_shadow", childSM, false, InvokeParamSeedsDeclaredChildDataEvent.Done.Invoke, "", generatedInvokeId, "")
                 }
             }
             "inv_sole" -> run {
-                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
-                val generatedInvokeId = "soleName.${System.identityHashCode(this)}.inv_sole"
+                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
+                // the platform part is the number of this start (docs/adr/0045).
+                val generatedInvokeId = "soleName.${nextInvokeStart("inv_sole")}.inv_sole"
                 deferInvoke(state, generatedInvokeId) {
                         // W3C SCXML 6.4: the arguments are evaluated when the <invoke>
                         // is executed — at macrostep end, where this deferred body
@@ -836,12 +840,13 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
                     val childSM = InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
                     setInvokeParams(childSM, invokeParams)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("inv_sole", childSM, false, InvokeParamSeedsDeclaredChildDataEvent.Done.Invoke, "", generatedInvokeId)
+                    startInvoke("inv_sole", childSM, false, InvokeParamSeedsDeclaredChildDataEvent.Done.Invoke, "", generatedInvokeId, "")
                 }
             }
             "inv_unmatched" -> run {
-                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
-                val generatedInvokeId = "unmatched.${System.identityHashCode(this)}.inv_unmatched"
+                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
+                // the platform part is the number of this start (docs/adr/0045).
+                val generatedInvokeId = "unmatched.${nextInvokeStart("inv_unmatched")}.inv_unmatched"
                 deferInvoke(state, generatedInvokeId) {
                         // W3C SCXML 6.4: the arguments are evaluated when the <invoke>
                         // is executed — at macrostep end, where this deferred body
@@ -872,7 +877,7 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
                     val childSM = InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
                     setInvokeParams(childSM, invokeParams)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("inv_unmatched", childSM, false, InvokeParamSeedsDeclaredChildDataEvent.Done.Invoke, "", generatedInvokeId)
+                    startInvoke("inv_unmatched", childSM, false, InvokeParamSeedsDeclaredChildDataEvent.Done.Invoke, "", generatedInvokeId, "")
                 }
             }
             else -> error("the document has no child session '$invokeId' (codegen invariant)")

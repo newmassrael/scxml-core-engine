@@ -442,13 +442,14 @@ class DonedataLateCompletionStateMachine(
     private fun deferStaticInvoke(invokeId: String, state: DonedataLateCompletionState) {
         when (invokeId) {
             "inv_late" -> run {
-                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
-                val generatedInvokeId = "phase.${System.identityHashCode(this)}.inv_late"
+                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
+                // the platform part is the number of this start (docs/adr/0045).
+                val generatedInvokeId = "phase.${nextInvokeStart("inv_late")}.inv_late"
                 deferInvoke(state, generatedInvokeId) {
 
                     val childSM = DonedataLateCompletionSceSynthInvokeInvLateStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("inv_late", childSM, false, DonedataLateCompletionEvent.Done.Invoke.InvLate, "", generatedInvokeId)
+                    startInvoke("inv_late", childSM, false, DonedataLateCompletionEvent.Done.Invoke.InvLate, "", generatedInvokeId, "")
                 }
             }
             else -> error("the document has no child session '$invokeId' (codegen invariant)")

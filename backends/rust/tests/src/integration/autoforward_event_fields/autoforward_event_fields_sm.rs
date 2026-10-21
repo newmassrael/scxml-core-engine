@@ -183,6 +183,10 @@ pub struct AutoforwardEventFieldsPolicy {
     // W3C SCXML 6.4: Static invoke child 'inv_echo' (autoforward_event_fields__sce_synth_invoke__inv_echo)
     child_inv_echo: Option<Box<sce_rust_runtime::Engine<super::autoforward_event_fields__sce_synth_invoke__inv_echo_sm::AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy>>>,
     pending_done_invoke_inv_echo: bool,
+    // docs/adr/0045: how many times 'inv_echo' has started in
+    // this session. The next start is numbered by it, and so is the id it is
+    // started under, so a child's ids come from the tree alone.
+    invoke_starts_inv_echo: u64,
     // W3C SCXML 6.4: Parent engine external queue for #_parent send routing
     // Always generated under std — any SM can be invoked as a child. Under
     // `--no-std` (SCE Protocol-Synthesis RFC §synth-5-J-2) the SCXML `<invoke>` element
@@ -225,6 +229,7 @@ impl AutoforwardEventFieldsPolicy {
             active_invokes: std::collections::HashMap::new(),
             child_inv_echo: None,
             pending_done_invoke_inv_echo: false,
+            invoke_starts_inv_echo: 0,
             parent_external_queue: None,
             invoke_id: String::new(),
             child_session_id: String::new(),
@@ -426,7 +431,13 @@ impl AutoforwardEventFieldsPolicy {
     // W3C SCXML 6.4: Defer the start of invoke 'inv_echo' of state 'phase' to macrostep end
     fn defer_invoke_inv_echo(&mut self, _engine: &mut sce_rust_runtime::Engine<Self>) {
         {
-            let generated_invoke_id = format!("{}.{}.inv_echo", "phase", self as *const _ as usize);
+            // docs/adr/0045: the id is the state's, the number of this start and
+            // the `<invoke>`'s, so it comes from the tree alone and is the same
+            // text on every backend (W3C test 224 reads the state's id and a dot
+            // in front of it).
+            self.invoke_starts_inv_echo += 1;
+            let generated_invoke_id =
+                format!("{}.{}.inv_echo", "phase", self.invoke_starts_inv_echo);
             let id_stored = true;
             if id_stored {
                 sce_rust_runtime::invoke::defer_invoke(
@@ -511,6 +522,12 @@ impl AutoforwardEventFieldsPolicy {
                 child_engine.set_clock(engine.clock());
                 // W3C SCXML 6.4: Set completion callback so child runs final state onexit (test 236)
                 child_engine.set_completion_callback(|| {});
+                // Child sessions in Mesh (SCE_MESH.md): the child's router,
+                // asked of this machine's factory with the invoke's id and the
+                // stem of the child's document (empty for one written inline),
+                // and installed before the child initializes, since its first
+                // `<onentry>` may already send to a peer.
+                engine.start_child_mesh(&mut child_engine, "inv_echo", "");
                 child_engine.initialize();
 
                 // W3C SCXML 6.4: Store child BEFORE draining events so autoforward can find it
@@ -536,6 +553,10 @@ impl AutoforwardEventFieldsPolicy {
                     .map_or(false, |c| c.is_in_final_state())
                 {
                     self.pending_done_invoke_inv_echo = true;
+                    // The session ended: its Mesh router is told so.
+                    if let Some(child) = self.child_inv_echo.as_mut() {
+                        child.detach_mesh();
+                    }
                     // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                     // done.invoke.<id>._event.data. Mirrors the C++ AOT contract in
                     // tools/codegen/templates/invoke_methods.jinja2 (child->donedataAtFinal()
@@ -567,6 +588,9 @@ impl AutoforwardEventFieldsPolicy {
                     engine,
                 );
 
+                // Child sessions in Mesh (SCE_MESH.md): what arrived for the
+                // child on the router it was given, before its macrostep.
+                child.apply_mesh_calls();
                 child.tick();
 
                 // W3C SCXML 6.4: Drain parent events sent by child AFTER tick
@@ -580,6 +604,8 @@ impl AutoforwardEventFieldsPolicy {
                 // W3C SCXML 6.4: Check if child reached final state after tick
                 if child.is_in_final_state() && !self.pending_done_invoke_inv_echo {
                     self.pending_done_invoke_inv_echo = true;
+                    // The session ended: its Mesh router is told so.
+                    child.detach_mesh();
                     // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                     // done.invoke.<id>._event.data.
                     let donedata = child.donedata_at_final().to_string();
@@ -924,6 +950,10 @@ impl StatePolicy for AutoforwardEventFieldsPolicy {
                     // cancel-drop, test252).
                     if let Some(mut child) = self.child_inv_echo.take() {
                         child.stop();
+                        // Child sessions in Mesh (SCE_MESH.md): the session
+                        // ended, after the child stopped, so what it sent while
+                        // stopping was handed to its router first.
+                        child.detach_mesh();
                     }
                 }
                 self.active_invokes.remove("inv_echo");

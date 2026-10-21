@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
+// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_child_host.scxml
@@ -429,14 +429,15 @@ class StaticChildHostStateMachine(
     private fun deferStaticInvoke(invokeId: String, state: StaticChildHostState) {
         when (invokeId) {
             "worker" -> run {
-                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
-                val generatedInvokeId = "working.${System.identityHashCode(this)}.worker"
+                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
+                // the platform part is the number of this start (docs/adr/0045).
+                val generatedInvokeId = "working.${nextInvokeStart("worker")}.worker"
                 deferInvoke(state, generatedInvokeId) {
 
                     val childSM = StaticChildHostSceSynthInvokeWorkerStateMachine(actions.actionsForWorker())
 
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("worker", childSM, true, StaticChildHostEvent.Done.Invoke.Worker, "", generatedInvokeId)
+                    startInvoke("worker", childSM, true, StaticChildHostEvent.Done.Invoke.Worker, "", generatedInvokeId, "")
                 }
             }
             else -> error("the document has no child session '$invokeId' (codegen invariant)")

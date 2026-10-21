@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)",
-  "embed_version": "96cf8d3373",
+  "embed_version": "86dc4f41b8",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 311,
+  "symbol_count": 316,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -1171,6 +1171,12 @@
       "header": "core/StatePolicyConcepts.h",
       "kind": "struct",
       "members": [],
+      "name": "SCE::Core::HasChildMeshDetachTrait<T>"
+    },
+    {
+      "header": "core/StatePolicyConcepts.h",
+      "kind": "struct",
+      "members": [],
       "name": "SCE::Core::HasChildSessionDeliveryTrait<T>"
     },
     {
@@ -1853,6 +1859,18 @@
       "name": "SCE::IActionExecutor"
     },
     {
+      "header": "runtime/IChildMeshRouter.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::IChildMeshRouter"
+    },
+    {
+      "header": "runtime/IChildMeshRouter.h",
+      "kind": "typedef",
+      "name": "SCE::ChildMeshRouters",
+      "type": "std::function<std::shared_ptr<IChildMeshRouter> (const std::string &, const std::string &)>"
+    },
+    {
       "header": "runtime/IEventRaiser.h",
       "kind": "class",
       "members": [],
@@ -2455,6 +2473,12 @@
       "header": "static/StaticExecutionEngine.h",
       "kind": "class",
       "members": [],
+      "name": "SCE::Static::IChildMeshRouter"
+    },
+    {
+      "header": "static/StaticExecutionEngine.h",
+      "kind": "class",
+      "members": [],
       "name": "SCE::Static::StaticExecutionEngine<T>"
     },
     {
@@ -2483,6 +2507,12 @@
         "method void (const HttpSendRequest &) HttpSendRequest"
       ],
       "name": "SCE::Static::HttpSendRequest"
+    },
+    {
+      "header": "static/StaticExecutionEngine.h",
+      "kind": "typedef",
+      "name": "SCE::Static::ChildMeshRouters",
+      "type": "std::function<std::shared_ptr<IChildMeshRouter> (const std::string &, const std::string &)>"
     },
     {
       "header": "static/StaticExecutionEngine.h",

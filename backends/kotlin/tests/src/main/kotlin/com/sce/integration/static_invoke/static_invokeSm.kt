@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
+// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_invoke.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: static_invoke.scxml:22 :: _machine
+// SCE-MAP: static_invoke.scxml:26 :: _machine
 
 package com.sce.integration.static_invoke
 
@@ -328,19 +328,19 @@ class StaticInvokeStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: static_invoke.scxml:22 :: _machine
+    // SCE-MAP: static_invoke.scxml:26 :: _machine
     override fun onEntry(state: StaticInvokeState, isDefaultEntry: Boolean) {
         when (state) {
             is StaticInvokeState.Finished -> {
-                // SCE-MAP: static_invoke.scxml:53 :: finished :: _state_body
+                // SCE-MAP: static_invoke.scxml:57 :: finished :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is StaticInvokeState.Idle -> {
-                // SCE-MAP: static_invoke.scxml:52 :: idle :: _state_body
+                // SCE-MAP: static_invoke.scxml:56 :: idle :: _state_body
             }
             is StaticInvokeState.Working -> {
-                // SCE-MAP: static_invoke.scxml:27 :: working :: _state_body
+                // SCE-MAP: static_invoke.scxml:31 :: working :: _state_body
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
                 deferStaticInvoke("worker", state)
             }
@@ -360,14 +360,15 @@ class StaticInvokeStateMachine(
     private fun deferStaticInvoke(invokeId: String, state: StaticInvokeState) {
         when (invokeId) {
             "worker" -> run {
-                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
-                val generatedInvokeId = "working.${System.identityHashCode(this)}.worker"
+                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
+                // the platform part is the number of this start (docs/adr/0045).
+                val generatedInvokeId = "working.${nextInvokeStart("worker")}.worker"
                 deferInvoke(state, generatedInvokeId) {
 
                     val childSM = StaticInvokeSceSynthInvokeWorkerStateMachine()
 
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("worker", childSM, true, StaticInvokeEvent.Done.Invoke.Worker, "", generatedInvokeId)
+                    startInvoke("worker", childSM, true, StaticInvokeEvent.Done.Invoke.Worker, "", generatedInvokeId, "")
                 }
             }
             else -> error("the document has no child session '$invokeId' (codegen invariant)")
@@ -375,17 +376,17 @@ class StaticInvokeStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: static_invoke.scxml:22 :: _machine
+    // SCE-MAP: static_invoke.scxml:26 :: _machine
     override fun onExit(state: StaticInvokeState) {
         when (state) {
             is StaticInvokeState.Finished -> {
-                // SCE-MAP: static_invoke.scxml:53 :: finished :: _state_body
+                // SCE-MAP: static_invoke.scxml:57 :: finished :: _state_body
             }
             is StaticInvokeState.Idle -> {
-                // SCE-MAP: static_invoke.scxml:52 :: idle :: _state_body
+                // SCE-MAP: static_invoke.scxml:56 :: idle :: _state_body
             }
             is StaticInvokeState.Working -> {
-                // SCE-MAP: static_invoke.scxml:27 :: working :: _state_body
+                // SCE-MAP: static_invoke.scxml:31 :: working :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(state)
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
@@ -396,12 +397,12 @@ class StaticInvokeStateMachine(
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: static_invoke.scxml:22 :: _machine
+    // SCE-MAP: static_invoke.scxml:26 :: _machine
     override fun executeTransitionContent(source: StaticInvokeState, transitionIndex: Int) {
         when (source) {
         is StaticInvokeState.Working -> when (transitionIndex) {
             2 -> {
-                // SCE-MAP: static_invoke.scxml:46 :: working :: _transition_2
+                // SCE-MAP: static_invoke.scxml:50 :: working :: _transition_2
 
             if (try { vCompleted = com.sce.forge.runtime.SceChecked.add(vCompleted, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeEvent.Error.Execution, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
                 return

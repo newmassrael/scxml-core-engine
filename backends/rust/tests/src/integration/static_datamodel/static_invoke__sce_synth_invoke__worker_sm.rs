@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
+// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -123,6 +123,175 @@ impl StaticInvokeSceSynthInvokeWorkerEvent {
         StaticInvokeSceSynthInvokeWorkerEvent::A,
         StaticInvokeSceSynthInvokeWorkerEvent::B,
     ];
+}
+
+// ── SCE Accepted Subset §2.15: what a host observes of a sce-static machine ──
+
+/// What a host observes: the full active configuration — every active state,
+/// each region of a `<parallel>` included —
+/// taken together between two host calls, which is a macrostep boundary (W3C
+/// SCXML Appendix D). `truncated` is `true` when that macrostep was stopped at
+/// the microstep ceiling, so the configuration is not a stable one. Owned: a
+/// host holding one keeps what it saw whatever the machine does next.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StaticInvokeSceSynthInvokeWorkerSnapshot {
+    pub configuration:
+        ::sce_rust_runtime::helpers::hierarchy::StateChain<StaticInvokeSceSynthInvokeWorkerState>,
+    pub truncated: bool,
+}
+
+/// The snapshot of a running machine, as an extension of the runtime's
+/// `Engine` (a foreign type, so a local trait — the `Inject` shape).
+pub trait StaticInvokeSceSynthInvokeWorkerObserve {
+    /// The machine as the host sees it now: one [`StaticInvokeSceSynthInvokeWorkerSnapshot`],
+    /// never a state between two microsteps.
+    fn snapshot(&self) -> StaticInvokeSceSynthInvokeWorkerSnapshot;
+}
+
+impl StaticInvokeSceSynthInvokeWorkerObserve for Engine<StaticInvokeSceSynthInvokeWorkerPolicy> {
+    fn snapshot(&self) -> StaticInvokeSceSynthInvokeWorkerSnapshot {
+        StaticInvokeSceSynthInvokeWorkerSnapshot {
+            configuration: self.get_active_states(),
+            truncated: self.last_macrostep_truncated(),
+        }
+    }
+}
+
+// ── SCE Accepted Subset §2.15: saving a sce-static machine and restoring it ──
+
+/// A running machine saved at a macrostep boundary, and restored into a new
+/// process in place of `initialize` — every variable, the machine's own
+/// included, and where the machine stands. The saved state is JSON
+/// (`SavedState::to_json`), the same on every backend.
+pub trait StaticInvokeSceSynthInvokeWorkerPersist: Sized {
+    /// The policy a restored machine is built around, constructed by the host
+    /// as it would be for `initialize`.
+    type Policy;
+
+    /// What a saved state of this document is bound to: a state saved from a
+    /// document that renamed, re-typed or moved a state or a variable is
+    /// refused, one saved before a guard or an action changed is not, and one
+    /// saved at an earlier revision of a record schema is read with each field
+    /// a later revision added at its default.
+    const SHAPE: ::sce_rust_runtime::saved_state::SavedShape;
+
+    /// The document's `<history>` pseudo-states, by the id a saved state keys
+    /// them by — what a saved state records of each, and what a restore reads
+    /// back. Empty for a document that declares none.
+    const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<
+        ::sce_rust_runtime::NoHistory,
+    >];
+
+    /// The machine's whole state, each delayed `<send>` still waiting written
+    /// as the moment it comes due on the wall clock whose reading now is
+    /// `wall_now_ms`, in milliseconds since the Unix epoch. Refused for a
+    /// machine that is not running, and for one whose last macrostep stopped
+    /// at the microstep ceiling.
+    fn save_at(
+        &self,
+        wall_now_ms: u64,
+    ) -> Result<
+        ::sce_rust_runtime::saved_state::SavedState,
+        ::sce_rust_runtime::saved_state::StateRefusal,
+    >;
+
+    /// [`save_at`](Self::save_at) at the host's wall clock now.
+    ///
+    /// Absent on `wasm32-unknown-unknown`, which provides no wall clock to read:
+    /// a host there says what time it is, through [`save_at`](Self::save_at).
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+    fn save(
+        &self,
+    ) -> Result<
+        ::sce_rust_runtime::saved_state::SavedState,
+        ::sce_rust_runtime::saved_state::StateRefusal,
+    > {
+        self.save_at(::sce_rust_runtime::saved_state::wall_clock_ms())
+    }
+
+    /// A machine of `policy` standing where `saved` left one, measuring time
+    /// by `clock` and told by `wall_now_ms` what time it is on the wall clock
+    /// the saved `due`s were written against: a waiting send comes due when
+    /// its saved moment does, and one already due comes due now. No
+    /// `<onentry>` runs and no `<data>` is evaluated: the saved run already
+    /// did both.
+    fn restore_with(
+        policy: Self::Policy,
+        saved: &::sce_rust_runtime::saved_state::SavedState,
+        clock: ::sce_rust_runtime::SceClock,
+        wall_now_ms: u64,
+    ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal>;
+
+    /// [`restore_with`](Self::restore_with) on the engine's own clock, at the
+    /// host's wall clock now.
+    ///
+    /// Absent on `wasm32-unknown-unknown`, for the reason [`save`](Self::save)
+    /// is: a host there gives the clock and the wall time to
+    /// [`restore_with`](Self::restore_with).
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+    fn restore(
+        policy: Self::Policy,
+        saved: &::sce_rust_runtime::saved_state::SavedState,
+    ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
+        Self::restore_with(
+            policy,
+            saved,
+            ::sce_rust_runtime::SceClock::default(),
+            ::sce_rust_runtime::saved_state::wall_clock_ms(),
+        )
+    }
+}
+
+impl StaticInvokeSceSynthInvokeWorkerPersist for Engine<StaticInvokeSceSynthInvokeWorkerPolicy> {
+    type Policy = StaticInvokeSceSynthInvokeWorkerPolicy;
+
+    const SHAPE: ::sce_rust_runtime::saved_state::SavedShape =
+        ::sce_rust_runtime::saved_state::SavedShape {
+            first: "688ad00d954ad9f35bdaa5eae06768a788173e0f8a8236e670efa68038781a6d",
+            revised: "38159d9913b229e5a218bb8a42f452ceb1fa0452b7aef974b612de1e5fabbd74",
+            records: &[],
+            enums: &[],
+        };
+
+    const HISTORIES: &'static [::sce_rust_runtime::saved_state::HistoryDecl<
+        ::sce_rust_runtime::NoHistory,
+    >] = &[];
+
+    fn save_at(
+        &self,
+        wall_now_ms: u64,
+    ) -> Result<
+        ::sce_rust_runtime::saved_state::SavedState,
+        ::sce_rust_runtime::saved_state::StateRefusal,
+    > {
+        ::sce_rust_runtime::saved_state::save(
+            self,
+            &Self::SHAPE,
+            vec![],
+            ::sce_rust_runtime::saved_state::save_history(self.policy(), Self::HISTORIES),
+            wall_now_ms,
+        )
+    }
+
+    fn restore_with(
+        policy: StaticInvokeSceSynthInvokeWorkerPolicy,
+        saved: &::sce_rust_runtime::saved_state::SavedState,
+        clock: ::sce_rust_runtime::SceClock,
+        wall_now_ms: u64,
+    ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
+        // The shape, the revision of each record schema, and each record of an
+        // earlier revision grown by the defaults of the fields added since, so
+        // what is read below is a state of this machine.
+        let saved = &::sce_rust_runtime::saved_state::upgrade(saved, &Self::SHAPE)?;
+        // Judged with the configuration and before any value is written, so a
+        // refused restore holds no half of a state. A document with no
+        // `<history>` refuses any a saved state records.
+        ::sce_rust_runtime::saved_state::restore_history::<StaticInvokeSceSynthInvokeWorkerPolicy>(
+            saved,
+            Self::HISTORIES,
+        )?;
+        ::sce_rust_runtime::saved_state::enter(policy, saved, clock, wall_now_ms)
+    }
 }
 
 // ======================================================================

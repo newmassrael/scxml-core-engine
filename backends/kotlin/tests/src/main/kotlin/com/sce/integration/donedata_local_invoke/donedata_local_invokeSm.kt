@@ -489,23 +489,25 @@ class DonedataLocalInvokeStateMachine(
     private fun deferStaticInvoke(invokeId: String, state: DonedataLocalInvokeState) {
         when (invokeId) {
             "inv_content" -> run {
-                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
-                val generatedInvokeId = "phase_content.${System.identityHashCode(this)}.inv_content"
+                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
+                // the platform part is the number of this start (docs/adr/0045).
+                val generatedInvokeId = "phase_content.${nextInvokeStart("inv_content")}.inv_content"
                 deferInvoke(state, generatedInvokeId) {
 
                     val childSM = DonedataLocalInvokeSceSynthInvokeInvContentStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("inv_content", childSM, false, DonedataLocalInvokeEvent.Done.Invoke.InvContent, "", generatedInvokeId)
+                    startInvoke("inv_content", childSM, false, DonedataLocalInvokeEvent.Done.Invoke.InvContent, "", generatedInvokeId, "")
                 }
             }
             "inv_param" -> run {
-                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
-                val generatedInvokeId = "phase_param.${System.identityHashCode(this)}.inv_param"
+                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
+                // the platform part is the number of this start (docs/adr/0045).
+                val generatedInvokeId = "phase_param.${nextInvokeStart("inv_param")}.inv_param"
                 deferInvoke(state, generatedInvokeId) {
 
                     val childSM = DonedataLocalInvokeSceSynthInvokeInvParamStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("inv_param", childSM, false, DonedataLocalInvokeEvent.Done.Invoke.InvParam, "", generatedInvokeId)
+                    startInvoke("inv_param", childSM, false, DonedataLocalInvokeEvent.Done.Invoke.InvParam, "", generatedInvokeId, "")
                 }
             }
             else -> error("the document has no child session '$invokeId' (codegen invariant)")

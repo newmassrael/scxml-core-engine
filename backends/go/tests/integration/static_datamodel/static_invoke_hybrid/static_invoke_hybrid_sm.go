@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
+// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -235,6 +235,22 @@ type StaticInvokeHybridPolicy struct {
 	pendingDoneInvokeLossyRun bool
 	childMissingRun sce.ChildEngine
 	pendingDoneInvokeMissingRun bool
+	// docs/adr/0045: how many times 'first_run' has started in
+	// this session; the next start, and the id it is started under, is numbered
+	// by it, so a child's ids come from the tree alone.
+	invokeStartsFirstRun uint64
+	// docs/adr/0045: how many times 'second_run' has started in
+	// this session; the next start, and the id it is started under, is numbered
+	// by it, so a child's ids come from the tree alone.
+	invokeStartsSecondRun uint64
+	// docs/adr/0045: how many times 'lossy_run' has started in
+	// this session; the next start, and the id it is started under, is numbered
+	// by it, so a child's ids come from the tree alone.
+	invokeStartsLossyRun uint64
+	// docs/adr/0045: how many times 'missing_run' has started in
+	// this session; the next start, and the id it is started under, is numbered
+	// by it, so a child's ids come from the tree alone.
+	invokeStartsMissingRun uint64
 	// W3C SCXML 6.4: Parent communication (unbounded — see sce.ParentEventQueue)
 	ParentExternalQueue *sce.ParentEventQueue
 	InvokeID           string
@@ -405,6 +421,11 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
 			childEngine.SetCompletionCallback(func() {})
+			// Child sessions in Mesh (SCE_MESH.md): the router of the candidate
+			// this start chose, asked of this machine's factory and installed
+			// before the child initializes, since its first <onentry> may
+			// already send to a peer.
+			engine.StartChildMesh(childEngine, "first_run", "static_hybrid_first")
 			childEngine.Initialize()
 
 			wrapper := &childEngineWrapperStaticInvokeHybrid_FirstRunStaticHybridFirst{engine: childEngine, policy: &childPolicy}
@@ -414,6 +435,8 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 
 			if wrapper.IsInFinalState() {
 				p.pendingDoneInvokeFirstRun = true
+				// The session ended: its Mesh router is told so.
+				wrapper.DetachMesh()
 				// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 				// done.invoke.<id>._event.data.
 				sce.RaiseDoneInvoke("first_run", wrapper.DonedataAtFinal(), engine)
@@ -480,6 +503,11 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
 			childEngine.SetCompletionCallback(func() {})
+			// Child sessions in Mesh (SCE_MESH.md): the router of the candidate
+			// this start chose, asked of this machine's factory and installed
+			// before the child initializes, since its first <onentry> may
+			// already send to a peer.
+			engine.StartChildMesh(childEngine, "first_run", "static_hybrid_second")
 			childEngine.Initialize()
 
 			wrapper := &childEngineWrapperStaticInvokeHybrid_FirstRunStaticHybridSecond{engine: childEngine, policy: &childPolicy}
@@ -489,6 +517,8 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 
 			if wrapper.IsInFinalState() {
 				p.pendingDoneInvokeFirstRun = true
+				// The session ended: its Mesh router is told so.
+				wrapper.DetachMesh()
 				// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 				// done.invoke.<id>._event.data.
 				sce.RaiseDoneInvoke("first_run", wrapper.DonedataAtFinal(), engine)
@@ -581,6 +611,11 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
 			childEngine.SetCompletionCallback(func() {})
+			// Child sessions in Mesh (SCE_MESH.md): the router of the candidate
+			// this start chose, asked of this machine's factory and installed
+			// before the child initializes, since its first <onentry> may
+			// already send to a peer.
+			engine.StartChildMesh(childEngine, "lossy_run", "static_hybrid_first")
 			childEngine.Initialize()
 
 			wrapper := &childEngineWrapperStaticInvokeHybrid_LossyRunStaticHybridFirst{engine: childEngine, policy: &childPolicy}
@@ -590,6 +625,8 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 
 			if wrapper.IsInFinalState() {
 				p.pendingDoneInvokeLossyRun = true
+				// The session ended: its Mesh router is told so.
+				wrapper.DetachMesh()
 				// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 				// done.invoke.<id>._event.data.
 				sce.RaiseDoneInvoke("lossy_run", wrapper.DonedataAtFinal(), engine)
@@ -656,6 +693,11 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
 			childEngine.SetCompletionCallback(func() {})
+			// Child sessions in Mesh (SCE_MESH.md): the router of the candidate
+			// this start chose, asked of this machine's factory and installed
+			// before the child initializes, since its first <onentry> may
+			// already send to a peer.
+			engine.StartChildMesh(childEngine, "lossy_run", "static_hybrid_second")
 			childEngine.Initialize()
 
 			wrapper := &childEngineWrapperStaticInvokeHybrid_LossyRunStaticHybridSecond{engine: childEngine, policy: &childPolicy}
@@ -665,6 +707,8 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 
 			if wrapper.IsInFinalState() {
 				p.pendingDoneInvokeLossyRun = true
+				// The session ended: its Mesh router is told so.
+				wrapper.DetachMesh()
 				// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 				// done.invoke.<id>._event.data.
 				sce.RaiseDoneInvoke("lossy_run", wrapper.DonedataAtFinal(), engine)
@@ -747,6 +791,11 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
 			childEngine.SetCompletionCallback(func() {})
+			// Child sessions in Mesh (SCE_MESH.md): the router of the candidate
+			// this start chose, asked of this machine's factory and installed
+			// before the child initializes, since its first <onentry> may
+			// already send to a peer.
+			engine.StartChildMesh(childEngine, "missing_run", "static_hybrid_first")
 			childEngine.Initialize()
 
 			wrapper := &childEngineWrapperStaticInvokeHybrid_MissingRunStaticHybridFirst{engine: childEngine, policy: &childPolicy}
@@ -756,6 +805,8 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 
 			if wrapper.IsInFinalState() {
 				p.pendingDoneInvokeMissingRun = true
+				// The session ended: its Mesh router is told so.
+				wrapper.DetachMesh()
 				// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 				// done.invoke.<id>._event.data.
 				sce.RaiseDoneInvoke("missing_run", wrapper.DonedataAtFinal(), engine)
@@ -811,6 +862,11 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
 			childEngine.SetCompletionCallback(func() {})
+			// Child sessions in Mesh (SCE_MESH.md): the router of the candidate
+			// this start chose, asked of this machine's factory and installed
+			// before the child initializes, since its first <onentry> may
+			// already send to a peer.
+			engine.StartChildMesh(childEngine, "missing_run", "static_hybrid_second")
 			childEngine.Initialize()
 
 			wrapper := &childEngineWrapperStaticInvokeHybrid_MissingRunStaticHybridSecond{engine: childEngine, policy: &childPolicy}
@@ -820,6 +876,8 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 
 			if wrapper.IsInFinalState() {
 				p.pendingDoneInvokeMissingRun = true
+				// The session ended: its Mesh router is told so.
+				wrapper.DetachMesh()
 				// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 				// done.invoke.<id>._event.data.
 				sce.RaiseDoneInvoke("missing_run", wrapper.DonedataAtFinal(), engine)
@@ -912,6 +970,11 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
 			childEngine.SetCompletionCallback(func() {})
+			// Child sessions in Mesh (SCE_MESH.md): the router of the candidate
+			// this start chose, asked of this machine's factory and installed
+			// before the child initializes, since its first <onentry> may
+			// already send to a peer.
+			engine.StartChildMesh(childEngine, "second_run", "static_hybrid_first")
 			childEngine.Initialize()
 
 			wrapper := &childEngineWrapperStaticInvokeHybrid_SecondRunStaticHybridFirst{engine: childEngine, policy: &childPolicy}
@@ -921,6 +984,8 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 
 			if wrapper.IsInFinalState() {
 				p.pendingDoneInvokeSecondRun = true
+				// The session ended: its Mesh router is told so.
+				wrapper.DetachMesh()
 				// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 				// done.invoke.<id>._event.data.
 				sce.RaiseDoneInvoke("second_run", wrapper.DonedataAtFinal(), engine)
@@ -987,6 +1052,11 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
 			childEngine.SetCompletionCallback(func() {})
+			// Child sessions in Mesh (SCE_MESH.md): the router of the candidate
+			// this start chose, asked of this machine's factory and installed
+			// before the child initializes, since its first <onentry> may
+			// already send to a peer.
+			engine.StartChildMesh(childEngine, "second_run", "static_hybrid_second")
 			childEngine.Initialize()
 
 			wrapper := &childEngineWrapperStaticInvokeHybrid_SecondRunStaticHybridSecond{engine: childEngine, policy: &childPolicy}
@@ -996,6 +1066,8 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 
 			if wrapper.IsInFinalState() {
 				p.pendingDoneInvokeSecondRun = true
+				// The session ended: its Mesh router is told so.
+				wrapper.DetachMesh()
 				// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 				// done.invoke.<id>._event.data.
 				sce.RaiseDoneInvoke("second_run", wrapper.DonedataAtFinal(), engine)
@@ -1014,10 +1086,15 @@ func (p *StaticInvokeHybridPolicy) TickChildren(engine *sce.Engine[StaticInvokeH
 	if !p.pendingDoneInvokeFirstRun && p.childFirstRun != nil {
 		child := p.childFirstRun
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "first_run", engine)
+		// Child sessions in Mesh (SCE_MESH.md): what arrived for the child on
+		// the router it was given, before its macrostep.
+		child.ApplyMeshCalls()
 		child.Tick()
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "first_run", engine)
 		if child.IsInFinalState() && !p.pendingDoneInvokeFirstRun {
 			p.pendingDoneInvokeFirstRun = true
+			// The session ended: its Mesh router is told so.
+			child.DetachMesh()
 			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 			// done.invoke.<id>._event.data.
 			sce.RaiseDoneInvoke("first_run", child.DonedataAtFinal(), engine)
@@ -1026,10 +1103,15 @@ func (p *StaticInvokeHybridPolicy) TickChildren(engine *sce.Engine[StaticInvokeH
 	if !p.pendingDoneInvokeSecondRun && p.childSecondRun != nil {
 		child := p.childSecondRun
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "second_run", engine)
+		// Child sessions in Mesh (SCE_MESH.md): what arrived for the child on
+		// the router it was given, before its macrostep.
+		child.ApplyMeshCalls()
 		child.Tick()
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "second_run", engine)
 		if child.IsInFinalState() && !p.pendingDoneInvokeSecondRun {
 			p.pendingDoneInvokeSecondRun = true
+			// The session ended: its Mesh router is told so.
+			child.DetachMesh()
 			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 			// done.invoke.<id>._event.data.
 			sce.RaiseDoneInvoke("second_run", child.DonedataAtFinal(), engine)
@@ -1038,10 +1120,15 @@ func (p *StaticInvokeHybridPolicy) TickChildren(engine *sce.Engine[StaticInvokeH
 	if !p.pendingDoneInvokeLossyRun && p.childLossyRun != nil {
 		child := p.childLossyRun
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "lossy_run", engine)
+		// Child sessions in Mesh (SCE_MESH.md): what arrived for the child on
+		// the router it was given, before its macrostep.
+		child.ApplyMeshCalls()
 		child.Tick()
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "lossy_run", engine)
 		if child.IsInFinalState() && !p.pendingDoneInvokeLossyRun {
 			p.pendingDoneInvokeLossyRun = true
+			// The session ended: its Mesh router is told so.
+			child.DetachMesh()
 			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 			// done.invoke.<id>._event.data.
 			sce.RaiseDoneInvoke("lossy_run", child.DonedataAtFinal(), engine)
@@ -1050,10 +1137,15 @@ func (p *StaticInvokeHybridPolicy) TickChildren(engine *sce.Engine[StaticInvokeH
 	if !p.pendingDoneInvokeMissingRun && p.childMissingRun != nil {
 		child := p.childMissingRun
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "missing_run", engine)
+		// Child sessions in Mesh (SCE_MESH.md): what arrived for the child on
+		// the router it was given, before its macrostep.
+		child.ApplyMeshCalls()
 		child.Tick()
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "missing_run", engine)
 		if child.IsInFinalState() && !p.pendingDoneInvokeMissingRun {
 			p.pendingDoneInvokeMissingRun = true
+			// The session ended: its Mesh router is told so.
+			child.DetachMesh()
 			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 			// done.invoke.<id>._event.data.
 			sce.RaiseDoneInvoke("missing_run", child.DonedataAtFinal(), engine)
@@ -1172,6 +1264,8 @@ func (w *childEngineWrapperStaticInvokeHybrid_FirstRunStaticHybridFirst) SetComp
 func (w *childEngineWrapperStaticInvokeHybrid_FirstRunStaticHybridFirst) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperStaticInvokeHybrid_FirstRunStaticHybridFirst) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 func (w *childEngineWrapperStaticInvokeHybrid_FirstRunStaticHybridFirst) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperStaticInvokeHybrid_FirstRunStaticHybridFirst) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperStaticInvokeHybrid_FirstRunStaticHybridFirst) DetachMesh() { w.engine.DetachMesh() }
 type childEngineWrapperStaticInvokeHybrid_FirstRunStaticHybridSecond struct {
 	engine *sce.Engine[StaticHybridSecondState, StaticHybridSecondEvent]
 	policy *StaticHybridSecondPolicy
@@ -1187,6 +1281,8 @@ func (w *childEngineWrapperStaticInvokeHybrid_FirstRunStaticHybridSecond) SetCom
 func (w *childEngineWrapperStaticInvokeHybrid_FirstRunStaticHybridSecond) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperStaticInvokeHybrid_FirstRunStaticHybridSecond) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 func (w *childEngineWrapperStaticInvokeHybrid_FirstRunStaticHybridSecond) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperStaticInvokeHybrid_FirstRunStaticHybridSecond) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperStaticInvokeHybrid_FirstRunStaticHybridSecond) DetachMesh() { w.engine.DetachMesh() }
 type childEngineWrapperStaticInvokeHybrid_SecondRunStaticHybridFirst struct {
 	engine *sce.Engine[StaticHybridFirstState, StaticHybridFirstEvent]
 	policy *StaticHybridFirstPolicy
@@ -1202,6 +1298,8 @@ func (w *childEngineWrapperStaticInvokeHybrid_SecondRunStaticHybridFirst) SetCom
 func (w *childEngineWrapperStaticInvokeHybrid_SecondRunStaticHybridFirst) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperStaticInvokeHybrid_SecondRunStaticHybridFirst) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 func (w *childEngineWrapperStaticInvokeHybrid_SecondRunStaticHybridFirst) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperStaticInvokeHybrid_SecondRunStaticHybridFirst) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperStaticInvokeHybrid_SecondRunStaticHybridFirst) DetachMesh() { w.engine.DetachMesh() }
 type childEngineWrapperStaticInvokeHybrid_SecondRunStaticHybridSecond struct {
 	engine *sce.Engine[StaticHybridSecondState, StaticHybridSecondEvent]
 	policy *StaticHybridSecondPolicy
@@ -1217,6 +1315,8 @@ func (w *childEngineWrapperStaticInvokeHybrid_SecondRunStaticHybridSecond) SetCo
 func (w *childEngineWrapperStaticInvokeHybrid_SecondRunStaticHybridSecond) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperStaticInvokeHybrid_SecondRunStaticHybridSecond) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 func (w *childEngineWrapperStaticInvokeHybrid_SecondRunStaticHybridSecond) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperStaticInvokeHybrid_SecondRunStaticHybridSecond) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperStaticInvokeHybrid_SecondRunStaticHybridSecond) DetachMesh() { w.engine.DetachMesh() }
 type childEngineWrapperStaticInvokeHybrid_LossyRunStaticHybridFirst struct {
 	engine *sce.Engine[StaticHybridFirstState, StaticHybridFirstEvent]
 	policy *StaticHybridFirstPolicy
@@ -1232,6 +1332,8 @@ func (w *childEngineWrapperStaticInvokeHybrid_LossyRunStaticHybridFirst) SetComp
 func (w *childEngineWrapperStaticInvokeHybrid_LossyRunStaticHybridFirst) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperStaticInvokeHybrid_LossyRunStaticHybridFirst) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 func (w *childEngineWrapperStaticInvokeHybrid_LossyRunStaticHybridFirst) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperStaticInvokeHybrid_LossyRunStaticHybridFirst) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperStaticInvokeHybrid_LossyRunStaticHybridFirst) DetachMesh() { w.engine.DetachMesh() }
 type childEngineWrapperStaticInvokeHybrid_LossyRunStaticHybridSecond struct {
 	engine *sce.Engine[StaticHybridSecondState, StaticHybridSecondEvent]
 	policy *StaticHybridSecondPolicy
@@ -1247,6 +1349,8 @@ func (w *childEngineWrapperStaticInvokeHybrid_LossyRunStaticHybridSecond) SetCom
 func (w *childEngineWrapperStaticInvokeHybrid_LossyRunStaticHybridSecond) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperStaticInvokeHybrid_LossyRunStaticHybridSecond) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 func (w *childEngineWrapperStaticInvokeHybrid_LossyRunStaticHybridSecond) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperStaticInvokeHybrid_LossyRunStaticHybridSecond) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperStaticInvokeHybrid_LossyRunStaticHybridSecond) DetachMesh() { w.engine.DetachMesh() }
 type childEngineWrapperStaticInvokeHybrid_MissingRunStaticHybridFirst struct {
 	engine *sce.Engine[StaticHybridFirstState, StaticHybridFirstEvent]
 	policy *StaticHybridFirstPolicy
@@ -1262,6 +1366,8 @@ func (w *childEngineWrapperStaticInvokeHybrid_MissingRunStaticHybridFirst) SetCo
 func (w *childEngineWrapperStaticInvokeHybrid_MissingRunStaticHybridFirst) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperStaticInvokeHybrid_MissingRunStaticHybridFirst) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 func (w *childEngineWrapperStaticInvokeHybrid_MissingRunStaticHybridFirst) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperStaticInvokeHybrid_MissingRunStaticHybridFirst) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperStaticInvokeHybrid_MissingRunStaticHybridFirst) DetachMesh() { w.engine.DetachMesh() }
 type childEngineWrapperStaticInvokeHybrid_MissingRunStaticHybridSecond struct {
 	engine *sce.Engine[StaticHybridSecondState, StaticHybridSecondEvent]
 	policy *StaticHybridSecondPolicy
@@ -1277,6 +1383,8 @@ func (w *childEngineWrapperStaticInvokeHybrid_MissingRunStaticHybridSecond) SetC
 func (w *childEngineWrapperStaticInvokeHybrid_MissingRunStaticHybridSecond) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperStaticInvokeHybrid_MissingRunStaticHybridSecond) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 func (w *childEngineWrapperStaticInvokeHybrid_MissingRunStaticHybridSecond) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperStaticInvokeHybrid_MissingRunStaticHybridSecond) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperStaticInvokeHybrid_MissingRunStaticHybridSecond) DetachMesh() { w.engine.DetachMesh() }
 
 
 // DeliverToParent delivers a delayed `<send target="#_parent">` whose wait is
@@ -1528,7 +1636,8 @@ func (p *StaticInvokeHybridPolicy) ExecuteEntryActions(state StaticInvokeHybridS
 		}()
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
-			generatedInvokeID := fmt.Sprintf("%s.%d.first_run", "first", sce.NextInvokeCounter())
+			p.invokeStartsFirstRun++
+			generatedInvokeID := fmt.Sprintf("%s.%d.first_run", "first", p.invokeStartsFirstRun)
 			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[StaticInvokeHybridState]{
 				InvokeID:   generatedInvokeID,
 				State:      StaticInvokeHybridStateFirst,
@@ -1549,7 +1658,8 @@ func (p *StaticInvokeHybridPolicy) ExecuteEntryActions(state StaticInvokeHybridS
 		}()
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
-			generatedInvokeID := fmt.Sprintf("%s.%d.lossy_run", "lossy", sce.NextInvokeCounter())
+			p.invokeStartsLossyRun++
+			generatedInvokeID := fmt.Sprintf("%s.%d.lossy_run", "lossy", p.invokeStartsLossyRun)
 			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[StaticInvokeHybridState]{
 				InvokeID:   generatedInvokeID,
 				State:      StaticInvokeHybridStateLossy,
@@ -1570,7 +1680,8 @@ func (p *StaticInvokeHybridPolicy) ExecuteEntryActions(state StaticInvokeHybridS
 		}()
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
-			generatedInvokeID := fmt.Sprintf("%s.%d.missing_run", "missing", sce.NextInvokeCounter())
+			p.invokeStartsMissingRun++
+			generatedInvokeID := fmt.Sprintf("%s.%d.missing_run", "missing", p.invokeStartsMissingRun)
 			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[StaticInvokeHybridState]{
 				InvokeID:   generatedInvokeID,
 				State:      StaticInvokeHybridStateMissing,
@@ -1591,7 +1702,8 @@ func (p *StaticInvokeHybridPolicy) ExecuteEntryActions(state StaticInvokeHybridS
 		}()
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
-			generatedInvokeID := fmt.Sprintf("%s.%d.second_run", "second", sce.NextInvokeCounter())
+			p.invokeStartsSecondRun++
+			generatedInvokeID := fmt.Sprintf("%s.%d.second_run", "second", p.invokeStartsSecondRun)
 			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[StaticInvokeHybridState]{
 				InvokeID:   generatedInvokeID,
 				State:      StaticInvokeHybridStateSecond,
@@ -1631,6 +1743,11 @@ func (p *StaticInvokeHybridPolicy) ExecuteExitActions(state StaticInvokeHybridSt
 	case StaticInvokeHybridStateFirst:
 		sce.CancelInvokesForState(&p.pendingInvokes, StaticInvokeHybridStateFirst)
 		if p.childFirstRun != nil {
+			// A cancelled candidate is exited as a static child is, which
+			// cancels its own children first; then its Mesh router is told the
+			// session ended (SCE_MESH.md, Child Sessions in Mesh).
+			p.childFirstRun.Stop()
+			p.childFirstRun.DetachMesh()
 			p.childFirstRun = nil
 		}
 		delete(p.activeInvokes, "first_run")
@@ -1638,6 +1755,11 @@ func (p *StaticInvokeHybridPolicy) ExecuteExitActions(state StaticInvokeHybridSt
 	case StaticInvokeHybridStateLossy:
 		sce.CancelInvokesForState(&p.pendingInvokes, StaticInvokeHybridStateLossy)
 		if p.childLossyRun != nil {
+			// A cancelled candidate is exited as a static child is, which
+			// cancels its own children first; then its Mesh router is told the
+			// session ended (SCE_MESH.md, Child Sessions in Mesh).
+			p.childLossyRun.Stop()
+			p.childLossyRun.DetachMesh()
 			p.childLossyRun = nil
 		}
 		delete(p.activeInvokes, "lossy_run")
@@ -1645,6 +1767,11 @@ func (p *StaticInvokeHybridPolicy) ExecuteExitActions(state StaticInvokeHybridSt
 	case StaticInvokeHybridStateMissing:
 		sce.CancelInvokesForState(&p.pendingInvokes, StaticInvokeHybridStateMissing)
 		if p.childMissingRun != nil {
+			// A cancelled candidate is exited as a static child is, which
+			// cancels its own children first; then its Mesh router is told the
+			// session ended (SCE_MESH.md, Child Sessions in Mesh).
+			p.childMissingRun.Stop()
+			p.childMissingRun.DetachMesh()
 			p.childMissingRun = nil
 		}
 		delete(p.activeInvokes, "missing_run")
@@ -1652,6 +1779,11 @@ func (p *StaticInvokeHybridPolicy) ExecuteExitActions(state StaticInvokeHybridSt
 	case StaticInvokeHybridStateSecond:
 		sce.CancelInvokesForState(&p.pendingInvokes, StaticInvokeHybridStateSecond)
 		if p.childSecondRun != nil {
+			// A cancelled candidate is exited as a static child is, which
+			// cancels its own children first; then its Mesh router is told the
+			// session ended (SCE_MESH.md, Child Sessions in Mesh).
+			p.childSecondRun.Stop()
+			p.childSecondRun.DetachMesh()
 			p.childSecondRun = nil
 		}
 		delete(p.activeInvokes, "second_run")

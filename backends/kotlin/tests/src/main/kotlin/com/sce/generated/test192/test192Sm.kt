@@ -278,13 +278,14 @@ class Test192StateMachine(
     private fun deferStaticInvoke(invokeId: String, state: Test192State) {
         when (invokeId) {
             "invokedChild" -> run {
-                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
-                val generatedInvokeId = "s0.${System.identityHashCode(this)}.invokedChild"
+                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
+                // the platform part is the number of this start (docs/adr/0045).
+                val generatedInvokeId = "s0.${nextInvokeStart("invokedChild")}.invokedChild"
                 deferInvoke(state, generatedInvokeId) {
 
                     val childSM = Test192SceSynthInvokeInvokedChildStateMachine()
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("invokedChild", childSM, false, Test192Event.Done.Invoke, "", generatedInvokeId)
+                    startInvoke("invokedChild", childSM, false, Test192Event.Done.Invoke, "", generatedInvokeId, "")
                 }
             }
             else -> error("the document has no child session '$invokeId' (codegen invariant)")

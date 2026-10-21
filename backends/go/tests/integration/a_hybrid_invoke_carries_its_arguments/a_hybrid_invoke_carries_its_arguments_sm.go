@@ -242,6 +242,18 @@ type AHybridInvokeCarriesItsArgumentsPolicy struct {
 	pendingDoneInvokeInvoke1 bool
 	childInvoke2 sce.ChildEngine
 	pendingDoneInvokeInvoke2 bool
+	// docs/adr/0045: how many times '_invoke_0' has started in
+	// this session; the next start, and the id it is started under, is numbered
+	// by it, so a child's ids come from the tree alone.
+	invokeStartsInvoke0 uint64
+	// docs/adr/0045: how many times '_invoke_1' has started in
+	// this session; the next start, and the id it is started under, is numbered
+	// by it, so a child's ids come from the tree alone.
+	invokeStartsInvoke1 uint64
+	// docs/adr/0045: how many times '_invoke_2' has started in
+	// this session; the next start, and the id it is started under, is numbered
+	// by it, so a child's ids come from the tree alone.
+	invokeStartsInvoke2 uint64
 	// W3C SCXML 6.4: Parent communication (unbounded — see sce.ParentEventQueue)
 	ParentExternalQueue *sce.ParentEventQueue
 	InvokeID           string
@@ -707,6 +719,11 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecutePendingInvokes(engine *s
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
 			childEngine.SetCompletionCallback(func() {})
+			// Child sessions in Mesh (SCE_MESH.md): the router of the candidate
+			// this start chose, asked of this machine's factory and installed
+			// before the child initializes, since its first <onentry> may
+			// already send to a peer.
+			engine.StartChildMesh(childEngine, "_invoke_1", "keeper")
 			childEngine.Initialize()
 
 			wrapper := &childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke1Keeper{engine: childEngine, policy: &childPolicy}
@@ -716,6 +733,8 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecutePendingInvokes(engine *s
 
 			if wrapper.IsInFinalState() {
 				p.pendingDoneInvokeInvoke1 = true
+				// The session ended: its Mesh router is told so.
+				wrapper.DetachMesh()
 				// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 				// done.invoke.<id>._event.data.
 				sce.RaiseDoneInvoke("_invoke_1", wrapper.DonedataAtFinal(), engine)
@@ -771,6 +790,11 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecutePendingInvokes(engine *s
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
 			childEngine.SetCompletionCallback(func() {})
+			// Child sessions in Mesh (SCE_MESH.md): the router of the candidate
+			// this start chose, asked of this machine's factory and installed
+			// before the child initializes, since its first <onentry> may
+			// already send to a peer.
+			engine.StartChildMesh(childEngine, "_invoke_1", "bare")
 			childEngine.Initialize()
 
 			wrapper := &childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke1Bare{engine: childEngine, policy: &childPolicy}
@@ -780,6 +804,8 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecutePendingInvokes(engine *s
 
 			if wrapper.IsInFinalState() {
 				p.pendingDoneInvokeInvoke1 = true
+				// The session ended: its Mesh router is told so.
+				wrapper.DetachMesh()
 				// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 				// done.invoke.<id>._event.data.
 				sce.RaiseDoneInvoke("_invoke_1", wrapper.DonedataAtFinal(), engine)
@@ -906,6 +932,11 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecutePendingInvokes(engine *s
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
 			childEngine.SetCompletionCallback(func() {})
+			// Child sessions in Mesh (SCE_MESH.md): the router of the candidate
+			// this start chose, asked of this machine's factory and installed
+			// before the child initializes, since its first <onentry> may
+			// already send to a peer.
+			engine.StartChildMesh(childEngine, "_invoke_0", "keeper")
 			childEngine.Initialize()
 
 			wrapper := &childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke0Keeper{engine: childEngine, policy: &childPolicy}
@@ -915,6 +946,8 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecutePendingInvokes(engine *s
 
 			if wrapper.IsInFinalState() {
 				p.pendingDoneInvokeInvoke0 = true
+				// The session ended: its Mesh router is told so.
+				wrapper.DetachMesh()
 				// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 				// done.invoke.<id>._event.data.
 				sce.RaiseDoneInvoke("_invoke_0", wrapper.DonedataAtFinal(), engine)
@@ -1009,6 +1042,11 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecutePendingInvokes(engine *s
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
 			childEngine.SetCompletionCallback(func() {})
+			// Child sessions in Mesh (SCE_MESH.md): the router of the candidate
+			// this start chose, asked of this machine's factory and installed
+			// before the child initializes, since its first <onentry> may
+			// already send to a peer.
+			engine.StartChildMesh(childEngine, "_invoke_0", "bare")
 			childEngine.Initialize()
 
 			wrapper := &childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke0Bare{engine: childEngine, policy: &childPolicy}
@@ -1018,6 +1056,8 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecutePendingInvokes(engine *s
 
 			if wrapper.IsInFinalState() {
 				p.pendingDoneInvokeInvoke0 = true
+				// The session ended: its Mesh router is told so.
+				wrapper.DetachMesh()
 				// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 				// done.invoke.<id>._event.data.
 				sce.RaiseDoneInvoke("_invoke_0", wrapper.DonedataAtFinal(), engine)
@@ -1136,6 +1176,11 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecutePendingInvokes(engine *s
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
 			childEngine.SetCompletionCallback(func() {})
+			// Child sessions in Mesh (SCE_MESH.md): the router of the candidate
+			// this start chose, asked of this machine's factory and installed
+			// before the child initializes, since its first <onentry> may
+			// already send to a peer.
+			engine.StartChildMesh(childEngine, "_invoke_2", "keeper")
 			childEngine.Initialize()
 
 			wrapper := &childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke2Keeper{engine: childEngine, policy: &childPolicy}
@@ -1145,6 +1190,8 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecutePendingInvokes(engine *s
 
 			if wrapper.IsInFinalState() {
 				p.pendingDoneInvokeInvoke2 = true
+				// The session ended: its Mesh router is told so.
+				wrapper.DetachMesh()
 				// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 				// done.invoke.<id>._event.data.
 				sce.RaiseDoneInvoke("_invoke_2", wrapper.DonedataAtFinal(), engine)
@@ -1219,6 +1266,11 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecutePendingInvokes(engine *s
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
 			childEngine.SetCompletionCallback(func() {})
+			// Child sessions in Mesh (SCE_MESH.md): the router of the candidate
+			// this start chose, asked of this machine's factory and installed
+			// before the child initializes, since its first <onentry> may
+			// already send to a peer.
+			engine.StartChildMesh(childEngine, "_invoke_2", "bare")
 			childEngine.Initialize()
 
 			wrapper := &childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke2Bare{engine: childEngine, policy: &childPolicy}
@@ -1228,6 +1280,8 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecutePendingInvokes(engine *s
 
 			if wrapper.IsInFinalState() {
 				p.pendingDoneInvokeInvoke2 = true
+				// The session ended: its Mesh router is told so.
+				wrapper.DetachMesh()
 				// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 				// done.invoke.<id>._event.data.
 				sce.RaiseDoneInvoke("_invoke_2", wrapper.DonedataAtFinal(), engine)
@@ -1246,10 +1300,15 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) TickChildren(engine *sce.Engine
 	if !p.pendingDoneInvokeInvoke0 && p.childInvoke0 != nil {
 		child := p.childInvoke0
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "_invoke_0", engine)
+		// Child sessions in Mesh (SCE_MESH.md): what arrived for the child on
+		// the router it was given, before its macrostep.
+		child.ApplyMeshCalls()
 		child.Tick()
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "_invoke_0", engine)
 		if child.IsInFinalState() && !p.pendingDoneInvokeInvoke0 {
 			p.pendingDoneInvokeInvoke0 = true
+			// The session ended: its Mesh router is told so.
+			child.DetachMesh()
 			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 			// done.invoke.<id>._event.data.
 			sce.RaiseDoneInvoke("_invoke_0", child.DonedataAtFinal(), engine)
@@ -1258,10 +1317,15 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) TickChildren(engine *sce.Engine
 	if !p.pendingDoneInvokeInvoke1 && p.childInvoke1 != nil {
 		child := p.childInvoke1
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "_invoke_1", engine)
+		// Child sessions in Mesh (SCE_MESH.md): what arrived for the child on
+		// the router it was given, before its macrostep.
+		child.ApplyMeshCalls()
 		child.Tick()
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "_invoke_1", engine)
 		if child.IsInFinalState() && !p.pendingDoneInvokeInvoke1 {
 			p.pendingDoneInvokeInvoke1 = true
+			// The session ended: its Mesh router is told so.
+			child.DetachMesh()
 			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 			// done.invoke.<id>._event.data.
 			sce.RaiseDoneInvoke("_invoke_1", child.DonedataAtFinal(), engine)
@@ -1270,10 +1334,15 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) TickChildren(engine *sce.Engine
 	if !p.pendingDoneInvokeInvoke2 && p.childInvoke2 != nil {
 		child := p.childInvoke2
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "_invoke_2", engine)
+		// Child sessions in Mesh (SCE_MESH.md): what arrived for the child on
+		// the router it was given, before its macrostep.
+		child.ApplyMeshCalls()
 		child.Tick()
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "_invoke_2", engine)
 		if child.IsInFinalState() && !p.pendingDoneInvokeInvoke2 {
 			p.pendingDoneInvokeInvoke2 = true
+			// The session ended: its Mesh router is told so.
+			child.DetachMesh()
 			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 			// done.invoke.<id>._event.data.
 			sce.RaiseDoneInvoke("_invoke_2", child.DonedataAtFinal(), engine)
@@ -1376,6 +1445,8 @@ func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke0Keeper) SetCo
 func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke0Keeper) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke0Keeper) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke0Keeper) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke0Keeper) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke0Keeper) DetachMesh() { w.engine.DetachMesh() }
 type childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke0Bare struct {
 	engine *sce.Engine[BareState, BareEvent]
 	policy *BarePolicy
@@ -1391,6 +1462,8 @@ func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke0Bare) SetComp
 func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke0Bare) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke0Bare) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke0Bare) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke0Bare) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke0Bare) DetachMesh() { w.engine.DetachMesh() }
 type childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke1Keeper struct {
 	engine *sce.Engine[KeeperState, KeeperEvent]
 	policy *KeeperPolicy
@@ -1406,6 +1479,8 @@ func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke1Keeper) SetCo
 func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke1Keeper) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke1Keeper) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke1Keeper) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke1Keeper) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke1Keeper) DetachMesh() { w.engine.DetachMesh() }
 type childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke1Bare struct {
 	engine *sce.Engine[BareState, BareEvent]
 	policy *BarePolicy
@@ -1421,6 +1496,8 @@ func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke1Bare) SetComp
 func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke1Bare) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke1Bare) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke1Bare) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke1Bare) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke1Bare) DetachMesh() { w.engine.DetachMesh() }
 type childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke2Keeper struct {
 	engine *sce.Engine[KeeperState, KeeperEvent]
 	policy *KeeperPolicy
@@ -1436,6 +1513,8 @@ func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke2Keeper) SetCo
 func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke2Keeper) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke2Keeper) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke2Keeper) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke2Keeper) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke2Keeper) DetachMesh() { w.engine.DetachMesh() }
 type childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke2Bare struct {
 	engine *sce.Engine[BareState, BareEvent]
 	policy *BarePolicy
@@ -1451,6 +1530,8 @@ func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke2Bare) SetComp
 func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke2Bare) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke2Bare) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke2Bare) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke2Bare) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke2Bare) DetachMesh() { w.engine.DetachMesh() }
 
 
 // DeliverToParent delivers a delayed `<send target="#_parent">` whose wait is
@@ -1708,7 +1789,8 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecuteEntryActions(state AHybr
 		//line a_hybrid_invoke_carries_its_arguments.scxml:76
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
-			generatedInvokeID := fmt.Sprintf("%s.%d._invoke_1", "namelistPhase", sce.NextInvokeCounter())
+			p.invokeStartsInvoke1++
+			generatedInvokeID := fmt.Sprintf("%s.%d._invoke_1", "namelistPhase", p.invokeStartsInvoke1)
 			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[AHybridInvokeCarriesItsArgumentsState]{
 				InvokeID:   generatedInvokeID,
 				State:      AHybridInvokeCarriesItsArgumentsStateNamelistPhase,
@@ -1719,7 +1801,8 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecuteEntryActions(state AHybr
 		//line a_hybrid_invoke_carries_its_arguments.scxml:60
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
-			generatedInvokeID := fmt.Sprintf("%s.%d._invoke_0", "paramsPhase", sce.NextInvokeCounter())
+			p.invokeStartsInvoke0++
+			generatedInvokeID := fmt.Sprintf("%s.%d._invoke_0", "paramsPhase", p.invokeStartsInvoke0)
 			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[AHybridInvokeCarriesItsArgumentsState]{
 				InvokeID:   generatedInvokeID,
 				State:      AHybridInvokeCarriesItsArgumentsStateParamsPhase,
@@ -1730,7 +1813,8 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecuteEntryActions(state AHybr
 		//line a_hybrid_invoke_carries_its_arguments.scxml:87
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
-			generatedInvokeID := fmt.Sprintf("%s.%d._invoke_2", "refusedPhase", sce.NextInvokeCounter())
+			p.invokeStartsInvoke2++
+			generatedInvokeID := fmt.Sprintf("%s.%d._invoke_2", "refusedPhase", p.invokeStartsInvoke2)
 			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[AHybridInvokeCarriesItsArgumentsState]{
 				InvokeID:   generatedInvokeID,
 				State:      AHybridInvokeCarriesItsArgumentsStateRefusedPhase,
@@ -1771,6 +1855,11 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecuteExitActions(state AHybri
 	case AHybridInvokeCarriesItsArgumentsStateNamelistPhase:
 		sce.CancelInvokesForState(&p.pendingInvokes, AHybridInvokeCarriesItsArgumentsStateNamelistPhase)
 		if p.childInvoke1 != nil {
+			// A cancelled candidate is exited as a static child is, which
+			// cancels its own children first; then its Mesh router is told the
+			// session ended (SCE_MESH.md, Child Sessions in Mesh).
+			p.childInvoke1.Stop()
+			p.childInvoke1.DetachMesh()
 			p.childInvoke1 = nil
 		}
 		delete(p.activeInvokes, "_invoke_1")
@@ -1778,6 +1867,11 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecuteExitActions(state AHybri
 	case AHybridInvokeCarriesItsArgumentsStateParamsPhase:
 		sce.CancelInvokesForState(&p.pendingInvokes, AHybridInvokeCarriesItsArgumentsStateParamsPhase)
 		if p.childInvoke0 != nil {
+			// A cancelled candidate is exited as a static child is, which
+			// cancels its own children first; then its Mesh router is told the
+			// session ended (SCE_MESH.md, Child Sessions in Mesh).
+			p.childInvoke0.Stop()
+			p.childInvoke0.DetachMesh()
 			p.childInvoke0 = nil
 		}
 		delete(p.activeInvokes, "_invoke_0")
@@ -1785,6 +1879,11 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecuteExitActions(state AHybri
 	case AHybridInvokeCarriesItsArgumentsStateRefusedPhase:
 		sce.CancelInvokesForState(&p.pendingInvokes, AHybridInvokeCarriesItsArgumentsStateRefusedPhase)
 		if p.childInvoke2 != nil {
+			// A cancelled candidate is exited as a static child is, which
+			// cancels its own children first; then its Mesh router is told the
+			// session ended (SCE_MESH.md, Child Sessions in Mesh).
+			p.childInvoke2.Stop()
+			p.childInvoke2.DetachMesh()
 			p.childInvoke2 = nil
 		}
 		delete(p.activeInvokes, "_invoke_2")

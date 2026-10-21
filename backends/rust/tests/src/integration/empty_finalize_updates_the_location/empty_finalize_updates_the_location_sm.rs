@@ -202,6 +202,18 @@ pub struct EmptyFinalizeUpdatesTheLocationPolicy {
     // W3C SCXML 6.4: Static invoke child 'inv_unmatched' (empty_finalize_updates_the_location__sce_synth_invoke__inv_unmatched)
     child_inv_unmatched: Option<Box<sce_rust_runtime::Engine<super::empty_finalize_updates_the_location__sce_synth_invoke__inv_unmatched_sm::EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedPolicy>>>,
     pending_done_invoke_inv_unmatched: bool,
+    // docs/adr/0045: how many times 'inv_empty' has started in
+    // this session. The next start is numbered by it, and so is the id it is
+    // started under, so a child's ids come from the tree alone.
+    invoke_starts_inv_empty: u64,
+    // docs/adr/0045: how many times 'inv_absent' has started in
+    // this session. The next start is numbered by it, and so is the id it is
+    // started under, so a child's ids come from the tree alone.
+    invoke_starts_inv_absent: u64,
+    // docs/adr/0045: how many times 'inv_unmatched' has started in
+    // this session. The next start is numbered by it, and so is the id it is
+    // started under, so a child's ids come from the tree alone.
+    invoke_starts_inv_unmatched: u64,
     // W3C SCXML 6.4: Parent engine external queue for #_parent send routing
     // Always generated under std — any SM can be invoked as a child. Under
     // `--no-std` (SCE Protocol-Synthesis RFC §synth-5-J-2) the SCXML `<invoke>` element
@@ -293,6 +305,9 @@ impl EmptyFinalizeUpdatesTheLocationPolicy {
             pending_done_invoke_inv_absent: false,
             child_inv_unmatched: None,
             pending_done_invoke_inv_unmatched: false,
+            invoke_starts_inv_empty: 0,
+            invoke_starts_inv_absent: 0,
+            invoke_starts_inv_unmatched: 0,
             parent_external_queue: None,
             invoke_id: String::new(),
             child_session_id: String::new(),
@@ -548,8 +563,15 @@ impl EmptyFinalizeUpdatesTheLocationPolicy {
     // W3C SCXML 6.4: Defer the start of invoke 'inv_absent' of state 'absentPhase' to macrostep end
     fn defer_invoke_inv_absent(&mut self, _engine: &mut sce_rust_runtime::Engine<Self>) {
         {
-            let generated_invoke_id =
-                format!("{}.{}.inv_absent", "absentPhase", self as *const _ as usize);
+            // docs/adr/0045: the id is the state's, the number of this start and
+            // the `<invoke>`'s, so it comes from the tree alone and is the same
+            // text on every backend (W3C test 224 reads the state's id and a dot
+            // in front of it).
+            self.invoke_starts_inv_absent += 1;
+            let generated_invoke_id = format!(
+                "{}.{}.inv_absent",
+                "absentPhase", self.invoke_starts_inv_absent
+            );
             let id_stored = true;
             if id_stored {
                 sce_rust_runtime::invoke::defer_invoke(
@@ -567,8 +589,15 @@ impl EmptyFinalizeUpdatesTheLocationPolicy {
     // W3C SCXML 6.4: Defer the start of invoke 'inv_empty' of state 'emptyPhase' to macrostep end
     fn defer_invoke_inv_empty(&mut self, _engine: &mut sce_rust_runtime::Engine<Self>) {
         {
-            let generated_invoke_id =
-                format!("{}.{}.inv_empty", "emptyPhase", self as *const _ as usize);
+            // docs/adr/0045: the id is the state's, the number of this start and
+            // the `<invoke>`'s, so it comes from the tree alone and is the same
+            // text on every backend (W3C test 224 reads the state's id and a dot
+            // in front of it).
+            self.invoke_starts_inv_empty += 1;
+            let generated_invoke_id = format!(
+                "{}.{}.inv_empty",
+                "emptyPhase", self.invoke_starts_inv_empty
+            );
             let id_stored = true;
             if id_stored {
                 sce_rust_runtime::invoke::defer_invoke(
@@ -586,9 +615,14 @@ impl EmptyFinalizeUpdatesTheLocationPolicy {
     // W3C SCXML 6.4: Defer the start of invoke 'inv_unmatched' of state 'unmatchedPhase' to macrostep end
     fn defer_invoke_inv_unmatched(&mut self, _engine: &mut sce_rust_runtime::Engine<Self>) {
         {
+            // docs/adr/0045: the id is the state's, the number of this start and
+            // the `<invoke>`'s, so it comes from the tree alone and is the same
+            // text on every backend (W3C test 224 reads the state's id and a dot
+            // in front of it).
+            self.invoke_starts_inv_unmatched += 1;
             let generated_invoke_id = format!(
                 "{}.{}.inv_unmatched",
-                "unmatchedPhase", self as *const _ as usize
+                "unmatchedPhase", self.invoke_starts_inv_unmatched
             );
             let id_stored = true;
             if id_stored {
@@ -713,6 +747,12 @@ impl EmptyFinalizeUpdatesTheLocationPolicy {
                 child_engine.set_clock(engine.clock());
                 // W3C SCXML 6.4: Set completion callback so child runs final state onexit (test 236)
                 child_engine.set_completion_callback(|| {});
+                // Child sessions in Mesh (SCE_MESH.md): the child's router,
+                // asked of this machine's factory with the invoke's id and the
+                // stem of the child's document (empty for one written inline),
+                // and installed before the child initializes, since its first
+                // `<onentry>` may already send to a peer.
+                engine.start_child_mesh(&mut child_engine, "inv_absent", "");
                 child_engine.initialize();
 
                 // W3C SCXML 6.4: Store child BEFORE draining events so autoforward can find it
@@ -738,6 +778,10 @@ impl EmptyFinalizeUpdatesTheLocationPolicy {
                     .map_or(false, |c| c.is_in_final_state())
                 {
                     self.pending_done_invoke_inv_absent = true;
+                    // The session ended: its Mesh router is told so.
+                    if let Some(child) = self.child_inv_absent.as_mut() {
+                        child.detach_mesh();
+                    }
                     // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                     // done.invoke.<id>._event.data. Mirrors the C++ AOT contract in
                     // tools/codegen/templates/invoke_methods.jinja2 (child->donedataAtFinal()
@@ -846,6 +890,12 @@ impl EmptyFinalizeUpdatesTheLocationPolicy {
                 child_engine.set_clock(engine.clock());
                 // W3C SCXML 6.4: Set completion callback so child runs final state onexit (test 236)
                 child_engine.set_completion_callback(|| {});
+                // Child sessions in Mesh (SCE_MESH.md): the child's router,
+                // asked of this machine's factory with the invoke's id and the
+                // stem of the child's document (empty for one written inline),
+                // and installed before the child initializes, since its first
+                // `<onentry>` may already send to a peer.
+                engine.start_child_mesh(&mut child_engine, "inv_empty", "");
                 child_engine.initialize();
 
                 // W3C SCXML 6.4: Store child BEFORE draining events so autoforward can find it
@@ -871,6 +921,10 @@ impl EmptyFinalizeUpdatesTheLocationPolicy {
                     .map_or(false, |c| c.is_in_final_state())
                 {
                     self.pending_done_invoke_inv_empty = true;
+                    // The session ended: its Mesh router is told so.
+                    if let Some(child) = self.child_inv_empty.as_mut() {
+                        child.detach_mesh();
+                    }
                     // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                     // done.invoke.<id>._event.data. Mirrors the C++ AOT contract in
                     // tools/codegen/templates/invoke_methods.jinja2 (child->donedataAtFinal()
@@ -979,6 +1033,12 @@ impl EmptyFinalizeUpdatesTheLocationPolicy {
                 child_engine.set_clock(engine.clock());
                 // W3C SCXML 6.4: Set completion callback so child runs final state onexit (test 236)
                 child_engine.set_completion_callback(|| {});
+                // Child sessions in Mesh (SCE_MESH.md): the child's router,
+                // asked of this machine's factory with the invoke's id and the
+                // stem of the child's document (empty for one written inline),
+                // and installed before the child initializes, since its first
+                // `<onentry>` may already send to a peer.
+                engine.start_child_mesh(&mut child_engine, "inv_unmatched", "");
                 child_engine.initialize();
 
                 // W3C SCXML 6.4: Store child BEFORE draining events so autoforward can find it
@@ -1004,6 +1064,10 @@ impl EmptyFinalizeUpdatesTheLocationPolicy {
                     .map_or(false, |c| c.is_in_final_state())
                 {
                     self.pending_done_invoke_inv_unmatched = true;
+                    // The session ended: its Mesh router is told so.
+                    if let Some(child) = self.child_inv_unmatched.as_mut() {
+                        child.detach_mesh();
+                    }
                     // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                     // done.invoke.<id>._event.data. Mirrors the C++ AOT contract in
                     // tools/codegen/templates/invoke_methods.jinja2 (child->donedataAtFinal()
@@ -1037,6 +1101,9 @@ impl EmptyFinalizeUpdatesTheLocationPolicy {
                     engine,
                 );
 
+                // Child sessions in Mesh (SCE_MESH.md): what arrived for the
+                // child on the router it was given, before its macrostep.
+                child.apply_mesh_calls();
                 child.tick();
 
                 // W3C SCXML 6.4: Drain parent events sent by child AFTER tick
@@ -1050,6 +1117,8 @@ impl EmptyFinalizeUpdatesTheLocationPolicy {
                 // W3C SCXML 6.4: Check if child reached final state after tick
                 if child.is_in_final_state() && !self.pending_done_invoke_inv_empty {
                     self.pending_done_invoke_inv_empty = true;
+                    // The session ended: its Mesh router is told so.
+                    child.detach_mesh();
                     // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                     // done.invoke.<id>._event.data.
                     let donedata = child.donedata_at_final().to_string();
@@ -1075,6 +1144,9 @@ impl EmptyFinalizeUpdatesTheLocationPolicy {
                     engine,
                 );
 
+                // Child sessions in Mesh (SCE_MESH.md): what arrived for the
+                // child on the router it was given, before its macrostep.
+                child.apply_mesh_calls();
                 child.tick();
 
                 // W3C SCXML 6.4: Drain parent events sent by child AFTER tick
@@ -1088,6 +1160,8 @@ impl EmptyFinalizeUpdatesTheLocationPolicy {
                 // W3C SCXML 6.4: Check if child reached final state after tick
                 if child.is_in_final_state() && !self.pending_done_invoke_inv_absent {
                     self.pending_done_invoke_inv_absent = true;
+                    // The session ended: its Mesh router is told so.
+                    child.detach_mesh();
                     // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                     // done.invoke.<id>._event.data.
                     let donedata = child.donedata_at_final().to_string();
@@ -1113,6 +1187,9 @@ impl EmptyFinalizeUpdatesTheLocationPolicy {
                     engine,
                 );
 
+                // Child sessions in Mesh (SCE_MESH.md): what arrived for the
+                // child on the router it was given, before its macrostep.
+                child.apply_mesh_calls();
                 child.tick();
 
                 // W3C SCXML 6.4: Drain parent events sent by child AFTER tick
@@ -1126,6 +1203,8 @@ impl EmptyFinalizeUpdatesTheLocationPolicy {
                 // W3C SCXML 6.4: Check if child reached final state after tick
                 if child.is_in_final_state() && !self.pending_done_invoke_inv_unmatched {
                     self.pending_done_invoke_inv_unmatched = true;
+                    // The session ended: its Mesh router is told so.
+                    child.detach_mesh();
                     // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                     // done.invoke.<id>._event.data.
                     let donedata = child.donedata_at_final().to_string();
@@ -1653,6 +1732,10 @@ impl StatePolicy for EmptyFinalizeUpdatesTheLocationPolicy {
                     // cancel-drop, test252).
                     if let Some(mut child) = self.child_inv_absent.take() {
                         child.stop();
+                        // Child sessions in Mesh (SCE_MESH.md): the session
+                        // ended, after the child stopped, so what it sent while
+                        // stopping was handed to its router first.
+                        child.detach_mesh();
                     }
                 }
                 self.active_invokes.remove("inv_absent");
@@ -1679,6 +1762,10 @@ impl StatePolicy for EmptyFinalizeUpdatesTheLocationPolicy {
                     // cancel-drop, test252).
                     if let Some(mut child) = self.child_inv_empty.take() {
                         child.stop();
+                        // Child sessions in Mesh (SCE_MESH.md): the session
+                        // ended, after the child stopped, so what it sent while
+                        // stopping was handed to its router first.
+                        child.detach_mesh();
                     }
                 }
                 self.active_invokes.remove("inv_empty");
@@ -1705,6 +1792,10 @@ impl StatePolicy for EmptyFinalizeUpdatesTheLocationPolicy {
                     // cancel-drop, test252).
                     if let Some(mut child) = self.child_inv_unmatched.take() {
                         child.stop();
+                        // Child sessions in Mesh (SCE_MESH.md): the session
+                        // ended, after the child stopped, so what it sent while
+                        // stopping was handed to its router first.
+                        child.detach_mesh();
                     }
                 }
                 self.active_invokes.remove("inv_unmatched");

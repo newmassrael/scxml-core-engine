@@ -213,23 +213,25 @@ class AutoforwardDoneInvokeStateMachine(
     private fun deferStaticInvoke(invokeId: String, state: AutoforwardDoneInvokeState) {
         when (invokeId) {
             "inv_watch" -> run {
-                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
-                val generatedInvokeId = "phase.${System.identityHashCode(this)}.inv_watch"
+                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
+                // the platform part is the number of this start (docs/adr/0045).
+                val generatedInvokeId = "phase.${nextInvokeStart("inv_watch")}.inv_watch"
                 deferInvoke(state, generatedInvokeId) {
 
                     val childSM = AutoforwardDoneInvokeSceSynthInvokeInvWatchStateMachine()
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("inv_watch", childSM, true, AutoforwardDoneInvokeEvent.Done.Invoke.Self, "", generatedInvokeId)
+                    startInvoke("inv_watch", childSM, true, AutoforwardDoneInvokeEvent.Done.Invoke.Self, "", generatedInvokeId, "")
                 }
             }
             "inv_short" -> run {
-                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
-                val generatedInvokeId = "phase.${System.identityHashCode(this)}.inv_short"
+                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
+                // the platform part is the number of this start (docs/adr/0045).
+                val generatedInvokeId = "phase.${nextInvokeStart("inv_short")}.inv_short"
                 deferInvoke(state, generatedInvokeId) {
 
                     val childSM = AutoforwardDoneInvokeSceSynthInvokeInvShortStateMachine()
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("inv_short", childSM, false, AutoforwardDoneInvokeEvent.Done.Invoke.InvShort, "", generatedInvokeId)
+                    startInvoke("inv_short", childSM, false, AutoforwardDoneInvokeEvent.Done.Invoke.InvShort, "", generatedInvokeId, "")
                 }
             }
             else -> error("the document has no child session '$invokeId' (codegen invariant)")

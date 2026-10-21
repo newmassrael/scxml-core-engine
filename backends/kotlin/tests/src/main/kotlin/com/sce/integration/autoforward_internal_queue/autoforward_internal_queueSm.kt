@@ -212,13 +212,14 @@ class AutoforwardInternalQueueStateMachine(
     private fun deferStaticInvoke(invokeId: String, state: AutoforwardInternalQueueState) {
         when (invokeId) {
             "inv_watch" -> run {
-                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
-                val generatedInvokeId = "phase.${System.identityHashCode(this)}.inv_watch"
+                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
+                // the platform part is the number of this start (docs/adr/0045).
+                val generatedInvokeId = "phase.${nextInvokeStart("inv_watch")}.inv_watch"
                 deferInvoke(state, generatedInvokeId) {
 
                     val childSM = AutoforwardInternalQueueSceSynthInvokeInvWatchStateMachine()
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("inv_watch", childSM, true, AutoforwardInternalQueueEvent.Done.Invoke, "", generatedInvokeId)
+                    startInvoke("inv_watch", childSM, true, AutoforwardInternalQueueEvent.Done.Invoke, "", generatedInvokeId, "")
                 }
             }
             else -> error("the document has no child session '$invokeId' (codegen invariant)")

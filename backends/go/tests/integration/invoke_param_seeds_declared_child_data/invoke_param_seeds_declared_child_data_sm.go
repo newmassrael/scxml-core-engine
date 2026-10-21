@@ -313,6 +313,26 @@ type InvokeParamSeedsDeclaredChildDataPolicy struct {
 	pendingDoneInvokeInvNamelist bool
 	childInvInfinite sce.ChildEngine
 	pendingDoneInvokeInvInfinite bool
+	// docs/adr/0045: how many times 'inv_shadow' has started in
+	// this session; the next start, and the id it is started under, is numbered
+	// by it, so a child's ids come from the tree alone.
+	invokeStartsInvShadow uint64
+	// docs/adr/0045: how many times 'inv_sole' has started in
+	// this session; the next start, and the id it is started under, is numbered
+	// by it, so a child's ids come from the tree alone.
+	invokeStartsInvSole uint64
+	// docs/adr/0045: how many times 'inv_unmatched' has started in
+	// this session; the next start, and the id it is started under, is numbered
+	// by it, so a child's ids come from the tree alone.
+	invokeStartsInvUnmatched uint64
+	// docs/adr/0045: how many times 'inv_namelist' has started in
+	// this session; the next start, and the id it is started under, is numbered
+	// by it, so a child's ids come from the tree alone.
+	invokeStartsInvNamelist uint64
+	// docs/adr/0045: how many times 'inv_infinite' has started in
+	// this session; the next start, and the id it is started under, is numbered
+	// by it, so a child's ids come from the tree alone.
+	invokeStartsInvInfinite uint64
 	// W3C SCXML 6.4: Parent communication (unbounded — see sce.ParentEventQueue)
 	ParentExternalQueue *sce.ParentEventQueue
 	InvokeID           string
@@ -640,6 +660,12 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
 			childEngine.SetCompletionCallback(func() {})
+			// Child sessions in Mesh (SCE_MESH.md): the child's router, asked of
+			// this machine's factory with the invoke's id and the stem of the
+			// child's document (empty for one written inline), and installed
+			// before the child initializes, since its first <onentry> may
+			// already send to a peer.
+			engine.StartChildMesh(childEngine, "inv_infinite", "")
 			childEngine.Initialize()
 
 			// W3C SCXML 6.4: Store child and create wrapper
@@ -652,6 +678,8 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 			// W3C SCXML 6.4: Check if child completed during initialize
 			if wrapper.IsInFinalState() {
 				p.pendingDoneInvokeInvInfinite = true
+				// The session ended: its Mesh router is told so.
+				wrapper.DetachMesh()
 				// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 				// done.invoke.<id>._event.data. Mirrors the C++ AOT contract
 				// and the Rust raise_done_invoke(donedata) 3-arg signature.
@@ -723,6 +751,12 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
 			childEngine.SetCompletionCallback(func() {})
+			// Child sessions in Mesh (SCE_MESH.md): the child's router, asked of
+			// this machine's factory with the invoke's id and the stem of the
+			// child's document (empty for one written inline), and installed
+			// before the child initializes, since its first <onentry> may
+			// already send to a peer.
+			engine.StartChildMesh(childEngine, "inv_namelist", "")
 			childEngine.Initialize()
 
 			// W3C SCXML 6.4: Store child and create wrapper
@@ -735,6 +769,8 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 			// W3C SCXML 6.4: Check if child completed during initialize
 			if wrapper.IsInFinalState() {
 				p.pendingDoneInvokeInvNamelist = true
+				// The session ended: its Mesh router is told so.
+				wrapper.DetachMesh()
 				// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 				// done.invoke.<id>._event.data. Mirrors the C++ AOT contract
 				// and the Rust raise_done_invoke(donedata) 3-arg signature.
@@ -804,6 +840,12 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
 			childEngine.SetCompletionCallback(func() {})
+			// Child sessions in Mesh (SCE_MESH.md): the child's router, asked of
+			// this machine's factory with the invoke's id and the stem of the
+			// child's document (empty for one written inline), and installed
+			// before the child initializes, since its first <onentry> may
+			// already send to a peer.
+			engine.StartChildMesh(childEngine, "inv_shadow", "")
 			childEngine.Initialize()
 
 			// W3C SCXML 6.4: Store child and create wrapper
@@ -816,6 +858,8 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 			// W3C SCXML 6.4: Check if child completed during initialize
 			if wrapper.IsInFinalState() {
 				p.pendingDoneInvokeInvShadow = true
+				// The session ended: its Mesh router is told so.
+				wrapper.DetachMesh()
 				// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 				// done.invoke.<id>._event.data. Mirrors the C++ AOT contract
 				// and the Rust raise_done_invoke(donedata) 3-arg signature.
@@ -885,6 +929,12 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
 			childEngine.SetCompletionCallback(func() {})
+			// Child sessions in Mesh (SCE_MESH.md): the child's router, asked of
+			// this machine's factory with the invoke's id and the stem of the
+			// child's document (empty for one written inline), and installed
+			// before the child initializes, since its first <onentry> may
+			// already send to a peer.
+			engine.StartChildMesh(childEngine, "inv_sole", "")
 			childEngine.Initialize()
 
 			// W3C SCXML 6.4: Store child and create wrapper
@@ -897,6 +947,8 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 			// W3C SCXML 6.4: Check if child completed during initialize
 			if wrapper.IsInFinalState() {
 				p.pendingDoneInvokeInvSole = true
+				// The session ended: its Mesh router is told so.
+				wrapper.DetachMesh()
 				// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 				// done.invoke.<id>._event.data. Mirrors the C++ AOT contract
 				// and the Rust raise_done_invoke(donedata) 3-arg signature.
@@ -980,6 +1032,12 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
 			childEngine.SetCompletionCallback(func() {})
+			// Child sessions in Mesh (SCE_MESH.md): the child's router, asked of
+			// this machine's factory with the invoke's id and the stem of the
+			// child's document (empty for one written inline), and installed
+			// before the child initializes, since its first <onentry> may
+			// already send to a peer.
+			engine.StartChildMesh(childEngine, "inv_unmatched", "")
 			childEngine.Initialize()
 
 			// W3C SCXML 6.4: Store child and create wrapper
@@ -992,6 +1050,8 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 			// W3C SCXML 6.4: Check if child completed during initialize
 			if wrapper.IsInFinalState() {
 				p.pendingDoneInvokeInvUnmatched = true
+				// The session ended: its Mesh router is told so.
+				wrapper.DetachMesh()
 				// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 				// done.invoke.<id>._event.data. Mirrors the C++ AOT contract
 				// and the Rust raise_done_invoke(donedata) 3-arg signature.
@@ -1008,10 +1068,15 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) TickChildren(engine *sce.Engin
 	if !p.pendingDoneInvokeInvShadow && p.childInvShadow != nil {
 		child := p.childInvShadow
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "inv_shadow", engine)
+		// Child sessions in Mesh (SCE_MESH.md): what arrived for the child on
+		// the router it was given, before its macrostep.
+		child.ApplyMeshCalls()
 		child.Tick()
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "inv_shadow", engine)
 		if child.IsInFinalState() && !p.pendingDoneInvokeInvShadow {
 			p.pendingDoneInvokeInvShadow = true
+			// The session ended: its Mesh router is told so.
+			child.DetachMesh()
 			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 			// done.invoke.<id>._event.data.
 			sce.RaiseDoneInvoke("inv_shadow", child.DonedataAtFinal(), engine)
@@ -1020,10 +1085,15 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) TickChildren(engine *sce.Engin
 	if !p.pendingDoneInvokeInvSole && p.childInvSole != nil {
 		child := p.childInvSole
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "inv_sole", engine)
+		// Child sessions in Mesh (SCE_MESH.md): what arrived for the child on
+		// the router it was given, before its macrostep.
+		child.ApplyMeshCalls()
 		child.Tick()
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "inv_sole", engine)
 		if child.IsInFinalState() && !p.pendingDoneInvokeInvSole {
 			p.pendingDoneInvokeInvSole = true
+			// The session ended: its Mesh router is told so.
+			child.DetachMesh()
 			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 			// done.invoke.<id>._event.data.
 			sce.RaiseDoneInvoke("inv_sole", child.DonedataAtFinal(), engine)
@@ -1032,10 +1102,15 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) TickChildren(engine *sce.Engin
 	if !p.pendingDoneInvokeInvUnmatched && p.childInvUnmatched != nil {
 		child := p.childInvUnmatched
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "inv_unmatched", engine)
+		// Child sessions in Mesh (SCE_MESH.md): what arrived for the child on
+		// the router it was given, before its macrostep.
+		child.ApplyMeshCalls()
 		child.Tick()
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "inv_unmatched", engine)
 		if child.IsInFinalState() && !p.pendingDoneInvokeInvUnmatched {
 			p.pendingDoneInvokeInvUnmatched = true
+			// The session ended: its Mesh router is told so.
+			child.DetachMesh()
 			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 			// done.invoke.<id>._event.data.
 			sce.RaiseDoneInvoke("inv_unmatched", child.DonedataAtFinal(), engine)
@@ -1044,10 +1119,15 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) TickChildren(engine *sce.Engin
 	if !p.pendingDoneInvokeInvNamelist && p.childInvNamelist != nil {
 		child := p.childInvNamelist
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "inv_namelist", engine)
+		// Child sessions in Mesh (SCE_MESH.md): what arrived for the child on
+		// the router it was given, before its macrostep.
+		child.ApplyMeshCalls()
 		child.Tick()
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "inv_namelist", engine)
 		if child.IsInFinalState() && !p.pendingDoneInvokeInvNamelist {
 			p.pendingDoneInvokeInvNamelist = true
+			// The session ended: its Mesh router is told so.
+			child.DetachMesh()
 			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 			// done.invoke.<id>._event.data.
 			sce.RaiseDoneInvoke("inv_namelist", child.DonedataAtFinal(), engine)
@@ -1056,10 +1136,15 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) TickChildren(engine *sce.Engin
 	if !p.pendingDoneInvokeInvInfinite && p.childInvInfinite != nil {
 		child := p.childInvInfinite
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "inv_infinite", engine)
+		// Child sessions in Mesh (SCE_MESH.md): what arrived for the child on
+		// the router it was given, before its macrostep.
+		child.ApplyMeshCalls()
 		child.Tick()
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "inv_infinite", engine)
 		if child.IsInFinalState() && !p.pendingDoneInvokeInvInfinite {
 			p.pendingDoneInvokeInvInfinite = true
+			// The session ended: its Mesh router is told so.
+			child.DetachMesh()
 			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 			// done.invoke.<id>._event.data.
 			sce.RaiseDoneInvoke("inv_infinite", child.DonedataAtFinal(), engine)
@@ -1259,6 +1344,8 @@ func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvShadow) SetCompl
 func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvShadow) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvShadow) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvShadow) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvShadow) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvShadow) DetachMesh() { w.engine.DetachMesh() }
 type childEngineWrapperInvokeParamSeedsDeclaredChildData_InvSole struct {
 	engine *sce.Engine[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleState, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEvent]
 	policy *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSolePolicy
@@ -1274,6 +1361,8 @@ func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvSole) SetComplet
 func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvSole) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvSole) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvSole) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvSole) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvSole) DetachMesh() { w.engine.DetachMesh() }
 type childEngineWrapperInvokeParamSeedsDeclaredChildData_InvUnmatched struct {
 	engine *sce.Engine[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedEvent]
 	policy *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedPolicy
@@ -1289,6 +1378,8 @@ func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvUnmatched) SetCo
 func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvUnmatched) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvUnmatched) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvUnmatched) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvUnmatched) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvUnmatched) DetachMesh() { w.engine.DetachMesh() }
 type childEngineWrapperInvokeParamSeedsDeclaredChildData_InvNamelist struct {
 	engine *sce.Engine[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistEvent]
 	policy *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistPolicy
@@ -1304,6 +1395,8 @@ func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvNamelist) SetCom
 func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvNamelist) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvNamelist) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvNamelist) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvNamelist) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvNamelist) DetachMesh() { w.engine.DetachMesh() }
 type childEngineWrapperInvokeParamSeedsDeclaredChildData_InvInfinite struct {
 	engine *sce.Engine[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteEvent]
 	policy *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy
@@ -1319,6 +1412,8 @@ func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvInfinite) SetCom
 func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvInfinite) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvInfinite) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvInfinite) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvInfinite) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperInvokeParamSeedsDeclaredChildData_InvInfinite) DetachMesh() { w.engine.DetachMesh() }
 
 
 // DeliverToParent delivers a delayed `<send target="#_parent">` whose wait is
@@ -1604,7 +1699,10 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecuteEntryActions(state Invo
 		//line invoke_param_seeds_declared_child_data.scxml:235
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
-			generatedInvokeID := fmt.Sprintf("%s.%d.inv_infinite", "infinite", sce.NextInvokeCounter())
+			// docs/adr/0045: the platform part of the id is the number of this
+			// start, so the id comes from the tree alone.
+			p.invokeStartsInvInfinite++
+			generatedInvokeID := fmt.Sprintf("%s.%d.inv_infinite", "infinite", p.invokeStartsInvInfinite)
 			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[InvokeParamSeedsDeclaredChildDataState]{
 				InvokeID:   generatedInvokeID,
 				State:      InvokeParamSeedsDeclaredChildDataStateInfinite,
@@ -1615,7 +1713,10 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecuteEntryActions(state Invo
 		//line invoke_param_seeds_declared_child_data.scxml:193
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
-			generatedInvokeID := fmt.Sprintf("%s.%d.inv_namelist", "namelistPhase", sce.NextInvokeCounter())
+			// docs/adr/0045: the platform part of the id is the number of this
+			// start, so the id comes from the tree alone.
+			p.invokeStartsInvNamelist++
+			generatedInvokeID := fmt.Sprintf("%s.%d.inv_namelist", "namelistPhase", p.invokeStartsInvNamelist)
 			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[InvokeParamSeedsDeclaredChildDataState]{
 				InvokeID:   generatedInvokeID,
 				State:      InvokeParamSeedsDeclaredChildDataStateNamelistPhase,
@@ -1626,7 +1727,10 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecuteEntryActions(state Invo
 		//line invoke_param_seeds_declared_child_data.scxml:92
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
-			generatedInvokeID := fmt.Sprintf("%s.%d.inv_shadow", "shadowed", sce.NextInvokeCounter())
+			// docs/adr/0045: the platform part of the id is the number of this
+			// start, so the id comes from the tree alone.
+			p.invokeStartsInvShadow++
+			generatedInvokeID := fmt.Sprintf("%s.%d.inv_shadow", "shadowed", p.invokeStartsInvShadow)
 			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[InvokeParamSeedsDeclaredChildDataState]{
 				InvokeID:   generatedInvokeID,
 				State:      InvokeParamSeedsDeclaredChildDataStateShadowed,
@@ -1637,7 +1741,10 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecuteEntryActions(state Invo
 		//line invoke_param_seeds_declared_child_data.scxml:123
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
-			generatedInvokeID := fmt.Sprintf("%s.%d.inv_sole", "soleName", sce.NextInvokeCounter())
+			// docs/adr/0045: the platform part of the id is the number of this
+			// start, so the id comes from the tree alone.
+			p.invokeStartsInvSole++
+			generatedInvokeID := fmt.Sprintf("%s.%d.inv_sole", "soleName", p.invokeStartsInvSole)
 			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[InvokeParamSeedsDeclaredChildDataState]{
 				InvokeID:   generatedInvokeID,
 				State:      InvokeParamSeedsDeclaredChildDataStateSoleName,
@@ -1648,7 +1755,10 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecuteEntryActions(state Invo
 		//line invoke_param_seeds_declared_child_data.scxml:149
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
-			generatedInvokeID := fmt.Sprintf("%s.%d.inv_unmatched", "unmatched", sce.NextInvokeCounter())
+			// docs/adr/0045: the platform part of the id is the number of this
+			// start, so the id comes from the tree alone.
+			p.invokeStartsInvUnmatched++
+			generatedInvokeID := fmt.Sprintf("%s.%d.inv_unmatched", "unmatched", p.invokeStartsInvUnmatched)
 			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[InvokeParamSeedsDeclaredChildDataState]{
 				InvokeID:   generatedInvokeID,
 				State:      InvokeParamSeedsDeclaredChildDataStateUnmatched,
@@ -1693,6 +1803,9 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecuteExitActions(state Invok
 			// states' <onexit> run -- before it is dropped; what that exit
 			// sends to #_parent is dropped with it (§scxml-6.4, test252).
 			p.childInvInfinite.Stop()
+			// Child sessions in Mesh (SCE_MESH.md): the session ended, after the
+			// child stopped, so what it sent while stopping was handed over first.
+			p.childInvInfinite.DetachMesh()
 			p.childInvInfinite = nil
 		}
 		delete(p.activeInvokes, "inv_infinite")
@@ -1704,6 +1817,9 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecuteExitActions(state Invok
 			// states' <onexit> run -- before it is dropped; what that exit
 			// sends to #_parent is dropped with it (§scxml-6.4, test252).
 			p.childInvNamelist.Stop()
+			// Child sessions in Mesh (SCE_MESH.md): the session ended, after the
+			// child stopped, so what it sent while stopping was handed over first.
+			p.childInvNamelist.DetachMesh()
 			p.childInvNamelist = nil
 		}
 		delete(p.activeInvokes, "inv_namelist")
@@ -1715,6 +1831,9 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecuteExitActions(state Invok
 			// states' <onexit> run -- before it is dropped; what that exit
 			// sends to #_parent is dropped with it (§scxml-6.4, test252).
 			p.childInvShadow.Stop()
+			// Child sessions in Mesh (SCE_MESH.md): the session ended, after the
+			// child stopped, so what it sent while stopping was handed over first.
+			p.childInvShadow.DetachMesh()
 			p.childInvShadow = nil
 		}
 		delete(p.activeInvokes, "inv_shadow")
@@ -1726,6 +1845,9 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecuteExitActions(state Invok
 			// states' <onexit> run -- before it is dropped; what that exit
 			// sends to #_parent is dropped with it (§scxml-6.4, test252).
 			p.childInvSole.Stop()
+			// Child sessions in Mesh (SCE_MESH.md): the session ended, after the
+			// child stopped, so what it sent while stopping was handed over first.
+			p.childInvSole.DetachMesh()
 			p.childInvSole = nil
 		}
 		delete(p.activeInvokes, "inv_sole")
@@ -1737,6 +1859,9 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecuteExitActions(state Invok
 			// states' <onexit> run -- before it is dropped; what that exit
 			// sends to #_parent is dropped with it (§scxml-6.4, test252).
 			p.childInvUnmatched.Stop()
+			// Child sessions in Mesh (SCE_MESH.md): the session ended, after the
+			// child stopped, so what it sent while stopping was handed over first.
+			p.childInvUnmatched.DetachMesh()
 			p.childInvUnmatched = nil
 		}
 		delete(p.activeInvokes, "inv_unmatched")

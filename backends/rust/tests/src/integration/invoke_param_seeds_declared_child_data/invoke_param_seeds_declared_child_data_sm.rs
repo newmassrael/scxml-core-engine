@@ -210,6 +210,26 @@ pub struct InvokeParamSeedsDeclaredChildDataPolicy {
     // W3C SCXML 6.4: Static invoke child 'inv_infinite' (invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_infinite)
     child_inv_infinite: Option<Box<sce_rust_runtime::Engine<super::invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_infinite_sm::InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy>>>,
     pending_done_invoke_inv_infinite: bool,
+    // docs/adr/0045: how many times 'inv_shadow' has started in
+    // this session. The next start is numbered by it, and so is the id it is
+    // started under, so a child's ids come from the tree alone.
+    invoke_starts_inv_shadow: u64,
+    // docs/adr/0045: how many times 'inv_sole' has started in
+    // this session. The next start is numbered by it, and so is the id it is
+    // started under, so a child's ids come from the tree alone.
+    invoke_starts_inv_sole: u64,
+    // docs/adr/0045: how many times 'inv_unmatched' has started in
+    // this session. The next start is numbered by it, and so is the id it is
+    // started under, so a child's ids come from the tree alone.
+    invoke_starts_inv_unmatched: u64,
+    // docs/adr/0045: how many times 'inv_namelist' has started in
+    // this session. The next start is numbered by it, and so is the id it is
+    // started under, so a child's ids come from the tree alone.
+    invoke_starts_inv_namelist: u64,
+    // docs/adr/0045: how many times 'inv_infinite' has started in
+    // this session. The next start is numbered by it, and so is the id it is
+    // started under, so a child's ids come from the tree alone.
+    invoke_starts_inv_infinite: u64,
     // W3C SCXML 6.4: Parent engine external queue for #_parent send routing
     // Always generated under std — any SM can be invoked as a child. Under
     // `--no-std` (SCE Protocol-Synthesis RFC §synth-5-J-2) the SCXML `<invoke>` element
@@ -290,6 +310,11 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
             pending_done_invoke_inv_namelist: false,
             child_inv_infinite: None,
             pending_done_invoke_inv_infinite: false,
+            invoke_starts_inv_shadow: 0,
+            invoke_starts_inv_sole: 0,
+            invoke_starts_inv_unmatched: 0,
+            invoke_starts_inv_namelist: 0,
+            invoke_starts_inv_infinite: 0,
             parent_external_queue: None,
             invoke_id: String::new(),
             child_session_id: String::new(),
@@ -543,8 +568,15 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
     // W3C SCXML 6.4: Defer the start of invoke 'inv_infinite' of state 'infinite' to macrostep end
     fn defer_invoke_inv_infinite(&mut self, _engine: &mut sce_rust_runtime::Engine<Self>) {
         {
-            let generated_invoke_id =
-                format!("{}.{}.inv_infinite", "infinite", self as *const _ as usize);
+            // docs/adr/0045: the id is the state's, the number of this start and
+            // the `<invoke>`'s, so it comes from the tree alone and is the same
+            // text on every backend (W3C test 224 reads the state's id and a dot
+            // in front of it).
+            self.invoke_starts_inv_infinite += 1;
+            let generated_invoke_id = format!(
+                "{}.{}.inv_infinite",
+                "infinite", self.invoke_starts_inv_infinite
+            );
             let id_stored = true;
             if id_stored {
                 sce_rust_runtime::invoke::defer_invoke(
@@ -562,9 +594,14 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
     // W3C SCXML 6.4: Defer the start of invoke 'inv_namelist' of state 'namelistPhase' to macrostep end
     fn defer_invoke_inv_namelist(&mut self, _engine: &mut sce_rust_runtime::Engine<Self>) {
         {
+            // docs/adr/0045: the id is the state's, the number of this start and
+            // the `<invoke>`'s, so it comes from the tree alone and is the same
+            // text on every backend (W3C test 224 reads the state's id and a dot
+            // in front of it).
+            self.invoke_starts_inv_namelist += 1;
             let generated_invoke_id = format!(
                 "{}.{}.inv_namelist",
-                "namelistPhase", self as *const _ as usize
+                "namelistPhase", self.invoke_starts_inv_namelist
             );
             let id_stored = true;
             if id_stored {
@@ -583,8 +620,15 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
     // W3C SCXML 6.4: Defer the start of invoke 'inv_shadow' of state 'shadowed' to macrostep end
     fn defer_invoke_inv_shadow(&mut self, _engine: &mut sce_rust_runtime::Engine<Self>) {
         {
-            let generated_invoke_id =
-                format!("{}.{}.inv_shadow", "shadowed", self as *const _ as usize);
+            // docs/adr/0045: the id is the state's, the number of this start and
+            // the `<invoke>`'s, so it comes from the tree alone and is the same
+            // text on every backend (W3C test 224 reads the state's id and a dot
+            // in front of it).
+            self.invoke_starts_inv_shadow += 1;
+            let generated_invoke_id = format!(
+                "{}.{}.inv_shadow",
+                "shadowed", self.invoke_starts_inv_shadow
+            );
             let id_stored = true;
             if id_stored {
                 sce_rust_runtime::invoke::defer_invoke(
@@ -602,8 +646,13 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
     // W3C SCXML 6.4: Defer the start of invoke 'inv_sole' of state 'soleName' to macrostep end
     fn defer_invoke_inv_sole(&mut self, _engine: &mut sce_rust_runtime::Engine<Self>) {
         {
+            // docs/adr/0045: the id is the state's, the number of this start and
+            // the `<invoke>`'s, so it comes from the tree alone and is the same
+            // text on every backend (W3C test 224 reads the state's id and a dot
+            // in front of it).
+            self.invoke_starts_inv_sole += 1;
             let generated_invoke_id =
-                format!("{}.{}.inv_sole", "soleName", self as *const _ as usize);
+                format!("{}.{}.inv_sole", "soleName", self.invoke_starts_inv_sole);
             let id_stored = true;
             if id_stored {
                 sce_rust_runtime::invoke::defer_invoke(
@@ -621,9 +670,14 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
     // W3C SCXML 6.4: Defer the start of invoke 'inv_unmatched' of state 'unmatched' to macrostep end
     fn defer_invoke_inv_unmatched(&mut self, _engine: &mut sce_rust_runtime::Engine<Self>) {
         {
+            // docs/adr/0045: the id is the state's, the number of this start and
+            // the `<invoke>`'s, so it comes from the tree alone and is the same
+            // text on every backend (W3C test 224 reads the state's id and a dot
+            // in front of it).
+            self.invoke_starts_inv_unmatched += 1;
             let generated_invoke_id = format!(
                 "{}.{}.inv_unmatched",
-                "unmatched", self as *const _ as usize
+                "unmatched", self.invoke_starts_inv_unmatched
             );
             let id_stored = true;
             if id_stored {
@@ -743,6 +797,12 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                 child_engine.set_clock(engine.clock());
                 // W3C SCXML 6.4: Set completion callback so child runs final state onexit (test 236)
                 child_engine.set_completion_callback(|| {});
+                // Child sessions in Mesh (SCE_MESH.md): the child's router,
+                // asked of this machine's factory with the invoke's id and the
+                // stem of the child's document (empty for one written inline),
+                // and installed before the child initializes, since its first
+                // `<onentry>` may already send to a peer.
+                engine.start_child_mesh(&mut child_engine, "inv_infinite", "");
                 child_engine.initialize();
 
                 // W3C SCXML 6.4: Store child BEFORE draining events so autoforward can find it
@@ -768,6 +828,10 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                     .map_or(false, |c| c.is_in_final_state())
                 {
                     self.pending_done_invoke_inv_infinite = true;
+                    // The session ended: its Mesh router is told so.
+                    if let Some(child) = self.child_inv_infinite.as_mut() {
+                        child.detach_mesh();
+                    }
                     // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                     // done.invoke.<id>._event.data. Mirrors the C++ AOT contract in
                     // tools/codegen/templates/invoke_methods.jinja2 (child->donedataAtFinal()
@@ -877,6 +941,12 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                 child_engine.set_clock(engine.clock());
                 // W3C SCXML 6.4: Set completion callback so child runs final state onexit (test 236)
                 child_engine.set_completion_callback(|| {});
+                // Child sessions in Mesh (SCE_MESH.md): the child's router,
+                // asked of this machine's factory with the invoke's id and the
+                // stem of the child's document (empty for one written inline),
+                // and installed before the child initializes, since its first
+                // `<onentry>` may already send to a peer.
+                engine.start_child_mesh(&mut child_engine, "inv_namelist", "");
                 child_engine.initialize();
 
                 // W3C SCXML 6.4: Store child BEFORE draining events so autoforward can find it
@@ -902,6 +972,10 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                     .map_or(false, |c| c.is_in_final_state())
                 {
                     self.pending_done_invoke_inv_namelist = true;
+                    // The session ended: its Mesh router is told so.
+                    if let Some(child) = self.child_inv_namelist.as_mut() {
+                        child.detach_mesh();
+                    }
                     // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                     // done.invoke.<id>._event.data. Mirrors the C++ AOT contract in
                     // tools/codegen/templates/invoke_methods.jinja2 (child->donedataAtFinal()
@@ -1006,6 +1080,12 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                 child_engine.set_clock(engine.clock());
                 // W3C SCXML 6.4: Set completion callback so child runs final state onexit (test 236)
                 child_engine.set_completion_callback(|| {});
+                // Child sessions in Mesh (SCE_MESH.md): the child's router,
+                // asked of this machine's factory with the invoke's id and the
+                // stem of the child's document (empty for one written inline),
+                // and installed before the child initializes, since its first
+                // `<onentry>` may already send to a peer.
+                engine.start_child_mesh(&mut child_engine, "inv_shadow", "");
                 child_engine.initialize();
 
                 // W3C SCXML 6.4: Store child BEFORE draining events so autoforward can find it
@@ -1031,6 +1111,10 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                     .map_or(false, |c| c.is_in_final_state())
                 {
                     self.pending_done_invoke_inv_shadow = true;
+                    // The session ended: its Mesh router is told so.
+                    if let Some(child) = self.child_inv_shadow.as_mut() {
+                        child.detach_mesh();
+                    }
                     // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                     // done.invoke.<id>._event.data. Mirrors the C++ AOT contract in
                     // tools/codegen/templates/invoke_methods.jinja2 (child->donedataAtFinal()
@@ -1135,6 +1219,12 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                 child_engine.set_clock(engine.clock());
                 // W3C SCXML 6.4: Set completion callback so child runs final state onexit (test 236)
                 child_engine.set_completion_callback(|| {});
+                // Child sessions in Mesh (SCE_MESH.md): the child's router,
+                // asked of this machine's factory with the invoke's id and the
+                // stem of the child's document (empty for one written inline),
+                // and installed before the child initializes, since its first
+                // `<onentry>` may already send to a peer.
+                engine.start_child_mesh(&mut child_engine, "inv_sole", "");
                 child_engine.initialize();
 
                 // W3C SCXML 6.4: Store child BEFORE draining events so autoforward can find it
@@ -1160,6 +1250,10 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                     .map_or(false, |c| c.is_in_final_state())
                 {
                     self.pending_done_invoke_inv_sole = true;
+                    // The session ended: its Mesh router is told so.
+                    if let Some(child) = self.child_inv_sole.as_mut() {
+                        child.detach_mesh();
+                    }
                     // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                     // done.invoke.<id>._event.data. Mirrors the C++ AOT contract in
                     // tools/codegen/templates/invoke_methods.jinja2 (child->donedataAtFinal()
@@ -1289,6 +1383,12 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                 child_engine.set_clock(engine.clock());
                 // W3C SCXML 6.4: Set completion callback so child runs final state onexit (test 236)
                 child_engine.set_completion_callback(|| {});
+                // Child sessions in Mesh (SCE_MESH.md): the child's router,
+                // asked of this machine's factory with the invoke's id and the
+                // stem of the child's document (empty for one written inline),
+                // and installed before the child initializes, since its first
+                // `<onentry>` may already send to a peer.
+                engine.start_child_mesh(&mut child_engine, "inv_unmatched", "");
                 child_engine.initialize();
 
                 // W3C SCXML 6.4: Store child BEFORE draining events so autoforward can find it
@@ -1314,6 +1414,10 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                     .map_or(false, |c| c.is_in_final_state())
                 {
                     self.pending_done_invoke_inv_unmatched = true;
+                    // The session ended: its Mesh router is told so.
+                    if let Some(child) = self.child_inv_unmatched.as_mut() {
+                        child.detach_mesh();
+                    }
                     // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                     // done.invoke.<id>._event.data. Mirrors the C++ AOT contract in
                     // tools/codegen/templates/invoke_methods.jinja2 (child->donedataAtFinal()
@@ -1347,6 +1451,9 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                     engine,
                 );
 
+                // Child sessions in Mesh (SCE_MESH.md): what arrived for the
+                // child on the router it was given, before its macrostep.
+                child.apply_mesh_calls();
                 child.tick();
 
                 // W3C SCXML 6.4: Drain parent events sent by child AFTER tick
@@ -1360,6 +1467,8 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                 // W3C SCXML 6.4: Check if child reached final state after tick
                 if child.is_in_final_state() && !self.pending_done_invoke_inv_shadow {
                     self.pending_done_invoke_inv_shadow = true;
+                    // The session ended: its Mesh router is told so.
+                    child.detach_mesh();
                     // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                     // done.invoke.<id>._event.data.
                     let donedata = child.donedata_at_final().to_string();
@@ -1385,6 +1494,9 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                     engine,
                 );
 
+                // Child sessions in Mesh (SCE_MESH.md): what arrived for the
+                // child on the router it was given, before its macrostep.
+                child.apply_mesh_calls();
                 child.tick();
 
                 // W3C SCXML 6.4: Drain parent events sent by child AFTER tick
@@ -1398,6 +1510,8 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                 // W3C SCXML 6.4: Check if child reached final state after tick
                 if child.is_in_final_state() && !self.pending_done_invoke_inv_sole {
                     self.pending_done_invoke_inv_sole = true;
+                    // The session ended: its Mesh router is told so.
+                    child.detach_mesh();
                     // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                     // done.invoke.<id>._event.data.
                     let donedata = child.donedata_at_final().to_string();
@@ -1421,6 +1535,9 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                     engine,
                 );
 
+                // Child sessions in Mesh (SCE_MESH.md): what arrived for the
+                // child on the router it was given, before its macrostep.
+                child.apply_mesh_calls();
                 child.tick();
 
                 // W3C SCXML 6.4: Drain parent events sent by child AFTER tick
@@ -1434,6 +1551,8 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                 // W3C SCXML 6.4: Check if child reached final state after tick
                 if child.is_in_final_state() && !self.pending_done_invoke_inv_unmatched {
                     self.pending_done_invoke_inv_unmatched = true;
+                    // The session ended: its Mesh router is told so.
+                    child.detach_mesh();
                     // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                     // done.invoke.<id>._event.data.
                     let donedata = child.donedata_at_final().to_string();
@@ -1459,6 +1578,9 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                     engine,
                 );
 
+                // Child sessions in Mesh (SCE_MESH.md): what arrived for the
+                // child on the router it was given, before its macrostep.
+                child.apply_mesh_calls();
                 child.tick();
 
                 // W3C SCXML 6.4: Drain parent events sent by child AFTER tick
@@ -1472,6 +1594,8 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                 // W3C SCXML 6.4: Check if child reached final state after tick
                 if child.is_in_final_state() && !self.pending_done_invoke_inv_namelist {
                     self.pending_done_invoke_inv_namelist = true;
+                    // The session ended: its Mesh router is told so.
+                    child.detach_mesh();
                     // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                     // done.invoke.<id>._event.data.
                     let donedata = child.donedata_at_final().to_string();
@@ -1497,6 +1621,9 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                     engine,
                 );
 
+                // Child sessions in Mesh (SCE_MESH.md): what arrived for the
+                // child on the router it was given, before its macrostep.
+                child.apply_mesh_calls();
                 child.tick();
 
                 // W3C SCXML 6.4: Drain parent events sent by child AFTER tick
@@ -1510,6 +1637,8 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                 // W3C SCXML 6.4: Check if child reached final state after tick
                 if child.is_in_final_state() && !self.pending_done_invoke_inv_infinite {
                     self.pending_done_invoke_inv_infinite = true;
+                    // The session ended: its Mesh router is told so.
+                    child.detach_mesh();
                     // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                     // done.invoke.<id>._event.data.
                     let donedata = child.donedata_at_final().to_string();
@@ -1964,6 +2093,10 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
                     // cancel-drop, test252).
                     if let Some(mut child) = self.child_inv_infinite.take() {
                         child.stop();
+                        // Child sessions in Mesh (SCE_MESH.md): the session
+                        // ended, after the child stopped, so what it sent while
+                        // stopping was handed to its router first.
+                        child.detach_mesh();
                     }
                 }
                 self.active_invokes.remove("inv_infinite");
@@ -1990,6 +2123,10 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
                     // cancel-drop, test252).
                     if let Some(mut child) = self.child_inv_namelist.take() {
                         child.stop();
+                        // Child sessions in Mesh (SCE_MESH.md): the session
+                        // ended, after the child stopped, so what it sent while
+                        // stopping was handed to its router first.
+                        child.detach_mesh();
                     }
                 }
                 self.active_invokes.remove("inv_namelist");
@@ -2016,6 +2153,10 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
                     // cancel-drop, test252).
                     if let Some(mut child) = self.child_inv_shadow.take() {
                         child.stop();
+                        // Child sessions in Mesh (SCE_MESH.md): the session
+                        // ended, after the child stopped, so what it sent while
+                        // stopping was handed to its router first.
+                        child.detach_mesh();
                     }
                 }
                 self.active_invokes.remove("inv_shadow");
@@ -2042,6 +2183,10 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
                     // cancel-drop, test252).
                     if let Some(mut child) = self.child_inv_sole.take() {
                         child.stop();
+                        // Child sessions in Mesh (SCE_MESH.md): the session
+                        // ended, after the child stopped, so what it sent while
+                        // stopping was handed to its router first.
+                        child.detach_mesh();
                     }
                 }
                 self.active_invokes.remove("inv_sole");
@@ -2068,6 +2213,10 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
                     // cancel-drop, test252).
                     if let Some(mut child) = self.child_inv_unmatched.take() {
                         child.stop();
+                        // Child sessions in Mesh (SCE_MESH.md): the session
+                        // ended, after the child stopped, so what it sent while
+                        // stopping was handed to its router first.
+                        child.detach_mesh();
                     }
                 }
                 self.active_invokes.remove("inv_unmatched");

@@ -552,23 +552,25 @@ class Test234StateMachine(
     private fun deferStaticInvoke(invokeId: String, state: Test234State) {
         when (invokeId) {
             "_invoke_0" -> run {
-                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
-                val generatedInvokeId = "p01.${System.identityHashCode(this)}._invoke_0"
+                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
+                // the platform part is the number of this start (docs/adr/0045).
+                val generatedInvokeId = "p01.${nextInvokeStart("_invoke_0")}._invoke_0"
                 deferInvoke(state, generatedInvokeId) {
 
                     val childSM = Test234SceSynthInvokeInvoke0StateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("_invoke_0", childSM, false, Test234Event.Done.Invoke, "Var1 = _event.data.aParam;", generatedInvokeId)
+                    startInvoke("_invoke_0", childSM, false, Test234Event.Done.Invoke, "Var1 = _event.data.aParam;", generatedInvokeId, "")
                 }
             }
             "_invoke_1" -> run {
-                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
-                val generatedInvokeId = "p02.${System.identityHashCode(this)}._invoke_1"
+                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
+                // the platform part is the number of this start (docs/adr/0045).
+                val generatedInvokeId = "p02.${nextInvokeStart("_invoke_1")}._invoke_1"
                 deferInvoke(state, generatedInvokeId) {
 
                     val childSM = Test234SceSynthInvokeInvoke1StateMachine()
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("_invoke_1", childSM, false, Test234Event.Done.Invoke, "Var2 = _event.data.aParam;", generatedInvokeId)
+                    startInvoke("_invoke_1", childSM, false, Test234Event.Done.Invoke, "Var2 = _event.data.aParam;", generatedInvokeId, "")
                 }
             }
             else -> error("the document has no child session '$invokeId' (codegen invariant)")

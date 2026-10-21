@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
+// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_invoke__sce_synth_invoke__worker.scxml
@@ -29,6 +29,71 @@ sealed interface StaticInvokeSceSynthInvokeWorkerEvent : Event {
 
 class StaticInvokeSceSynthInvokeWorkerStateMachine(
 ) : StateMachineEngine<StaticInvokeSceSynthInvokeWorkerState, StaticInvokeSceSynthInvokeWorkerEvent>() {
+
+    // ── SCE Accepted Subset §2.15: saving this machine, restoring it ─────────
+
+    /**
+     * What a saved state of this document is bound to: a state saved from a
+     * document that renamed, re-typed or moved a state or a variable is
+     * refused, one saved before a guard or an action changed is not, and one
+     * saved at an earlier revision of a record schema is read with each field a
+     * later revision added at its default.
+     */
+    val savedShape: SavedShape = SavedShape(
+        first = "688ad00d954ad9f35bdaa5eae06768a788173e0f8a8236e670efa68038781a6d",
+        revised = "38159d9913b229e5a218bb8a42f452ceb1fa0452b7aef974b612de1e5fabbd74",
+        records = listOf(
+        ),
+        enums = listOf(
+        ),
+    )
+
+    /**
+     * This machine's whole state at the macrostep boundary it stands at —
+     * every variable, the machine's own included, and where it stands — as
+     * the `sce-saved-state` document every backend reads ([SavedState.toJson]).
+     * Each delayed `<send>` still waiting is written as the moment it comes due
+     * on the wall clock whose reading now is [wallNowMs], in milliseconds since
+     * the Unix epoch.
+     *
+     * @throws StateRefusal for a machine that is not running, or whose last
+     *   macrostep stopped at the microstep ceiling.
+     */
+    fun save(wallNowMs: Long): SavedState = savedState(
+        savedShape,
+        linkedMapOf(
+        ),
+        wallNowMs,
+    )
+
+    /** [save] at the host's wall clock now. */
+    fun save(): SavedState = save(SavedState.wallClockMs())
+
+    /**
+     * Stand this machine where [saved] left one, in place of [initialize]: no
+     * `<onentry>` runs and no `<data>` is evaluated, since the saved run
+     * already did both. Every value is read before any is written, so a
+     * refused restore leaves the machine as it was.
+     *
+     * The delayed sends [saved] holds are armed against this machine's `clock`,
+     * which is installed before a restore as before [initialize]; [wallNowMs]
+     * is what time it is on the wall clock the saved `due`s were written
+     * against. A send comes due when its saved moment does, and one already due
+     * comes due now.
+     *
+     * @throws StateRefusal for a machine that has already started, a state
+     *   saved from a document of another shape, a configuration that is not
+     *   one of this document, or a value its variable's type cannot hold.
+     */
+    fun restore(saved: SavedState, wallNowMs: Long) {
+        // The state as one of this machine: each record saved at an earlier
+        // revision of its schema holds the defaults of the fields added since.
+        val savedGrown = beginRestore(saved, savedShape)
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    /** [restore] at the host's wall clock now. */
+    fun restore(saved: SavedState) = restore(saved, SavedState.wallClockMs())
 
     override val initialState: StaticInvokeSceSynthInvokeWorkerState = StaticInvokeSceSynthInvokeWorkerState.First
 

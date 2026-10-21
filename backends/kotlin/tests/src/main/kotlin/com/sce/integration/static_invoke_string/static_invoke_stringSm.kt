@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
+// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_invoke_string.scxml
@@ -346,8 +346,9 @@ class StaticInvokeStringStateMachine(
     private fun deferStaticInvoke(invokeId: String, state: StaticInvokeStringState) {
         when (invokeId) {
             "fits" -> run {
-                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
-                val generatedInvokeId = "running.${System.identityHashCode(this)}.fits"
+                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
+                // the platform part is the number of this start (docs/adr/0045).
+                val generatedInvokeId = "running.${nextInvokeStart("fits")}.fits"
                 deferInvoke(state, generatedInvokeId) {
 
                     val childSM = StaticInvokeStringSceSynthInvokeFitsStateMachine()
@@ -362,12 +363,13 @@ class StaticInvokeStringStateMachine(
                     childSM.acceptParams(childSeed)
 
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("fits", childSM, false, StaticInvokeStringEvent.Done.Invoke.Fits, "", generatedInvokeId)
+                    startInvoke("fits", childSM, false, StaticInvokeStringEvent.Done.Invoke.Fits, "", generatedInvokeId, "")
                 }
             }
             "over" -> run {
-                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
-                val generatedInvokeId = "running.${System.identityHashCode(this)}.over"
+                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
+                // the platform part is the number of this start (docs/adr/0045).
+                val generatedInvokeId = "running.${nextInvokeStart("over")}.over"
                 deferInvoke(state, generatedInvokeId) {
 
                     val childSM = StaticInvokeStringSceSynthInvokeOverStateMachine()
@@ -382,12 +384,13 @@ class StaticInvokeStringStateMachine(
                     childSM.acceptParams(childSeed)
 
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("over", childSM, false, StaticInvokeStringEvent.Done.Invoke.Over, "", generatedInvokeId)
+                    startInvoke("over", childSM, false, StaticInvokeStringEvent.Done.Invoke.Over, "", generatedInvokeId, "")
                 }
             }
             "wide" -> run {
-                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
-                val generatedInvokeId = "running.${System.identityHashCode(this)}.wide"
+                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
+                // the platform part is the number of this start (docs/adr/0045).
+                val generatedInvokeId = "running.${nextInvokeStart("wide")}.wide"
                 deferInvoke(state, generatedInvokeId) {
 
                     val childSM = StaticInvokeStringSceSynthInvokeWideStateMachine()
@@ -402,7 +405,7 @@ class StaticInvokeStringStateMachine(
                     childSM.acceptParams(childSeed)
 
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("wide", childSM, false, StaticInvokeStringEvent.Done.Invoke.Wide, "", generatedInvokeId)
+                    startInvoke("wide", childSM, false, StaticInvokeStringEvent.Done.Invoke.Wide, "", generatedInvokeId, "")
                 }
             }
             else -> error("the document has no child session '$invokeId' (codegen invariant)")

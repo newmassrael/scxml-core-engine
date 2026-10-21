@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
+// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -184,6 +184,10 @@ type StaticInvokeHybridSavedPolicy struct {
 	activeInvokes  map[string]*sce.ChildSession
 	childWatch sce.ChildEngine
 	pendingDoneInvokeWatch bool
+	// docs/adr/0045: how many times 'watch' has started in
+	// this session; the next start, and the id it is started under, is numbered
+	// by it, so a child's ids come from the tree alone.
+	invokeStartsWatch uint64
 	// W3C SCXML 6.4: Parent communication (unbounded — see sce.ParentEventQueue)
 	ParentExternalQueue *sce.ParentEventQueue
 	InvokeID           string
@@ -323,6 +327,11 @@ func (p *StaticInvokeHybridSavedPolicy) ExecutePendingInvokes(engine *sce.Engine
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
 			childEngine.SetCompletionCallback(func() {})
+			// Child sessions in Mesh (SCE_MESH.md): the router of the candidate
+			// this start chose, asked of this machine's factory and installed
+			// before the child initializes, since its first <onentry> may
+			// already send to a peer.
+			engine.StartChildMesh(childEngine, "watch", "static_hybrid_watcher")
 			childEngine.Initialize()
 
 			wrapper := &childEngineWrapperStaticInvokeHybridSaved_WatchStaticHybridWatcher{engine: childEngine, policy: &childPolicy}
@@ -332,6 +341,8 @@ func (p *StaticInvokeHybridSavedPolicy) ExecutePendingInvokes(engine *sce.Engine
 
 			if wrapper.IsInFinalState() {
 				p.pendingDoneInvokeWatch = true
+				// The session ended: its Mesh router is told so.
+				wrapper.DetachMesh()
 				// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 				// done.invoke.<id>._event.data.
 				sce.RaiseDoneInvoke("watch", wrapper.DonedataAtFinal(), engine)
@@ -387,6 +398,11 @@ func (p *StaticInvokeHybridSavedPolicy) ExecutePendingInvokes(engine *sce.Engine
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
 			childEngine.SetCompletionCallback(func() {})
+			// Child sessions in Mesh (SCE_MESH.md): the router of the candidate
+			// this start chose, asked of this machine's factory and installed
+			// before the child initializes, since its first <onentry> may
+			// already send to a peer.
+			engine.StartChildMesh(childEngine, "watch", "static_hybrid_holder")
 			childEngine.Initialize()
 
 			wrapper := &childEngineWrapperStaticInvokeHybridSaved_WatchStaticHybridHolder{engine: childEngine, policy: &childPolicy}
@@ -396,6 +412,8 @@ func (p *StaticInvokeHybridSavedPolicy) ExecutePendingInvokes(engine *sce.Engine
 
 			if wrapper.IsInFinalState() {
 				p.pendingDoneInvokeWatch = true
+				// The session ended: its Mesh router is told so.
+				wrapper.DetachMesh()
 				// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 				// done.invoke.<id>._event.data.
 				sce.RaiseDoneInvoke("watch", wrapper.DonedataAtFinal(), engine)
@@ -414,10 +432,15 @@ func (p *StaticInvokeHybridSavedPolicy) TickChildren(engine *sce.Engine[StaticIn
 	if !p.pendingDoneInvokeWatch && p.childWatch != nil {
 		child := p.childWatch
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "watch", engine)
+		// Child sessions in Mesh (SCE_MESH.md): what arrived for the child on
+		// the router it was given, before its macrostep.
+		child.ApplyMeshCalls()
 		child.Tick()
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "watch", engine)
 		if child.IsInFinalState() && !p.pendingDoneInvokeWatch {
 			p.pendingDoneInvokeWatch = true
+			// The session ended: its Mesh router is told so.
+			child.DetachMesh()
 			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 			// done.invoke.<id>._event.data.
 			sce.RaiseDoneInvoke("watch", child.DonedataAtFinal(), engine)
@@ -488,6 +511,8 @@ func (w *childEngineWrapperStaticInvokeHybridSaved_WatchStaticHybridWatcher) Set
 func (w *childEngineWrapperStaticInvokeHybridSaved_WatchStaticHybridWatcher) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperStaticInvokeHybridSaved_WatchStaticHybridWatcher) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 func (w *childEngineWrapperStaticInvokeHybridSaved_WatchStaticHybridWatcher) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperStaticInvokeHybridSaved_WatchStaticHybridWatcher) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperStaticInvokeHybridSaved_WatchStaticHybridWatcher) DetachMesh() { w.engine.DetachMesh() }
 type childEngineWrapperStaticInvokeHybridSaved_WatchStaticHybridHolder struct {
 	engine *sce.Engine[StaticHybridHolderState, StaticHybridHolderEvent]
 	policy *StaticHybridHolderPolicy
@@ -503,6 +528,8 @@ func (w *childEngineWrapperStaticInvokeHybridSaved_WatchStaticHybridHolder) SetC
 func (w *childEngineWrapperStaticInvokeHybridSaved_WatchStaticHybridHolder) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperStaticInvokeHybridSaved_WatchStaticHybridHolder) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 func (w *childEngineWrapperStaticInvokeHybridSaved_WatchStaticHybridHolder) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperStaticInvokeHybridSaved_WatchStaticHybridHolder) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperStaticInvokeHybridSaved_WatchStaticHybridHolder) DetachMesh() { w.engine.DetachMesh() }
 
 
 // DeliverToParent delivers a delayed `<send target="#_parent">` whose wait is
@@ -732,7 +759,8 @@ func (p *StaticInvokeHybridSavedPolicy) ExecuteEntryActions(state StaticInvokeHy
 		}()
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
-			generatedInvokeID := fmt.Sprintf("%s.%d.watch", "working", sce.NextInvokeCounter())
+			p.invokeStartsWatch++
+			generatedInvokeID := fmt.Sprintf("%s.%d.watch", "working", p.invokeStartsWatch)
 			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[StaticInvokeHybridSavedState]{
 				InvokeID:   generatedInvokeID,
 				State:      StaticInvokeHybridSavedStateWorking,
@@ -772,6 +800,11 @@ func (p *StaticInvokeHybridSavedPolicy) ExecuteExitActions(state StaticInvokeHyb
 	case StaticInvokeHybridSavedStateWorking:
 		sce.CancelInvokesForState(&p.pendingInvokes, StaticInvokeHybridSavedStateWorking)
 		if p.childWatch != nil {
+			// A cancelled candidate is exited as a static child is, which
+			// cancels its own children first; then its Mesh router is told the
+			// session ended (SCE_MESH.md, Child Sessions in Mesh).
+			p.childWatch.Stop()
+			p.childWatch.DetachMesh()
 			p.childWatch = nil
 		}
 		delete(p.activeInvokes, "watch")

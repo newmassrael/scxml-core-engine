@@ -197,6 +197,18 @@ pub struct AHybridInvokeCarriesItsArgumentsPolicy {
     child_invoke_2_keeper: Option<Box<sce_rust_runtime::Engine<super::keeper_sm::KeeperPolicy>>>,
     child_invoke_2_bare: Option<Box<sce_rust_runtime::Engine<super::bare_sm::BarePolicy>>>,
     pending_done_invoke_invoke_2: bool,
+    // docs/adr/0045: how many times '_invoke_0' has started in
+    // this session. The next start is numbered by it, and so is the id it is
+    // started under, so a child's ids come from the tree alone.
+    invoke_starts_invoke_0: u64,
+    // docs/adr/0045: how many times '_invoke_1' has started in
+    // this session. The next start is numbered by it, and so is the id it is
+    // started under, so a child's ids come from the tree alone.
+    invoke_starts_invoke_1: u64,
+    // docs/adr/0045: how many times '_invoke_2' has started in
+    // this session. The next start is numbered by it, and so is the id it is
+    // started under, so a child's ids come from the tree alone.
+    invoke_starts_invoke_2: u64,
     // W3C SCXML 6.4: Parent engine external queue for #_parent send routing
     // Always generated under std — any SM can be invoked as a child. Under
     // `--no-std` (SCE Protocol-Synthesis RFC §synth-5-J-2) the SCXML `<invoke>` element
@@ -351,6 +363,9 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
             child_invoke_2_keeper: None,
             child_invoke_2_bare: None,
             pending_done_invoke_invoke_2: false,
+            invoke_starts_invoke_0: 0,
+            invoke_starts_invoke_1: 0,
+            invoke_starts_invoke_2: 0,
             parent_external_queue: None,
             invoke_id: String::new(),
             child_session_id: String::new(),
@@ -694,9 +709,14 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
     // W3C SCXML 6.4: Defer the start of invoke '_invoke_1' of state 'namelistPhase' to macrostep end
     fn defer_invoke_invoke_1(&mut self, _engine: &mut sce_rust_runtime::Engine<Self>) {
         {
+            // docs/adr/0045: the id is the state's, the number of this start and
+            // the `<invoke>`'s, so it comes from the tree alone and is the same
+            // text on every backend (W3C test 224 reads the state's id and a dot
+            // in front of it).
+            self.invoke_starts_invoke_1 += 1;
             let generated_invoke_id = format!(
                 "{}.{}._invoke_1",
-                "namelistPhase", self as *const _ as usize
+                "namelistPhase", self.invoke_starts_invoke_1
             );
             let id_stored = true;
             if id_stored {
@@ -715,8 +735,15 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
     // W3C SCXML 6.4: Defer the start of invoke '_invoke_0' of state 'paramsPhase' to macrostep end
     fn defer_invoke_invoke_0(&mut self, _engine: &mut sce_rust_runtime::Engine<Self>) {
         {
-            let generated_invoke_id =
-                format!("{}.{}._invoke_0", "paramsPhase", self as *const _ as usize);
+            // docs/adr/0045: the id is the state's, the number of this start and
+            // the `<invoke>`'s, so it comes from the tree alone and is the same
+            // text on every backend (W3C test 224 reads the state's id and a dot
+            // in front of it).
+            self.invoke_starts_invoke_0 += 1;
+            let generated_invoke_id = format!(
+                "{}.{}._invoke_0",
+                "paramsPhase", self.invoke_starts_invoke_0
+            );
             let id_stored = true;
             if id_stored {
                 sce_rust_runtime::invoke::defer_invoke(
@@ -734,8 +761,15 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
     // W3C SCXML 6.4: Defer the start of invoke '_invoke_2' of state 'refusedPhase' to macrostep end
     fn defer_invoke_invoke_2(&mut self, _engine: &mut sce_rust_runtime::Engine<Self>) {
         {
-            let generated_invoke_id =
-                format!("{}.{}._invoke_2", "refusedPhase", self as *const _ as usize);
+            // docs/adr/0045: the id is the state's, the number of this start and
+            // the `<invoke>`'s, so it comes from the tree alone and is the same
+            // text on every backend (W3C test 224 reads the state's id and a dot
+            // in front of it).
+            self.invoke_starts_invoke_2 += 1;
+            let generated_invoke_id = format!(
+                "{}.{}._invoke_2",
+                "refusedPhase", self.invoke_starts_invoke_2
+            );
             let id_stored = true;
             if id_stored {
                 sce_rust_runtime::invoke::defer_invoke(
@@ -862,12 +896,11 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                     child_policy.invoke_id = pending.invoke_id.clone();
                     child_policy.child_session_id = child_session_id.clone();
 
+                    // W3C SCXML C.1, as for a static child: the candidate adopts the
+                    // id its parent recorded for it, which comes from the tree alone
+                    // (docs/adr/0045) — this session's id and the id of this start.
                     if child_policy.session_id.is_none() {
-                        static HYBRID_SESSION_COUNTER: core::sync::atomic::AtomicU64 =
-                            core::sync::atomic::AtomicU64::new(0);
-                        let cid = HYBRID_SESSION_COUNTER
-                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                        child_policy.session_id = Some(format!("hybrid_session_{}", cid));
+                        child_policy.session_id = Some(child_session_id.clone());
                     }
 
                     // W3C SCXML 6.4.1: Pass validated namelist values to child datamodel
@@ -909,6 +942,11 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                     // it holds, not the ones that engine invoked.
                     child_engine.set_clock(engine.clock());
                     child_engine.set_completion_callback(|| {});
+                    // Child sessions in Mesh (SCE_MESH.md): the router of the
+                    // candidate this start chose, asked of this machine's factory
+                    // and installed before the child initializes, since its first
+                    // `<onentry>` may already send to a peer.
+                    engine.start_child_mesh(&mut child_engine, "_invoke_1", "keeper");
                     child_engine.initialize();
 
                     self.child_invoke_1_keeper = Some(Box::new(child_engine));
@@ -933,6 +971,10 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                         .map_or(false, |c| c.is_in_final_state())
                     {
                         self.pending_done_invoke_invoke_1 = true;
+                        // The session ended: its Mesh router is told so.
+                        if let Some(child) = self.child_invoke_1_keeper.as_mut() {
+                            child.detach_mesh();
+                        }
                         // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                         // done.invoke.<id>._event.data.
                         let donedata = self
@@ -958,12 +1000,11 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                     child_policy.invoke_id = pending.invoke_id.clone();
                     child_policy.child_session_id = child_session_id.clone();
 
+                    // W3C SCXML C.1, as for a static child: the candidate adopts the
+                    // id its parent recorded for it, which comes from the tree alone
+                    // (docs/adr/0045) — this session's id and the id of this start.
                     if child_policy.session_id.is_none() {
-                        static HYBRID_SESSION_COUNTER: core::sync::atomic::AtomicU64 =
-                            core::sync::atomic::AtomicU64::new(0);
-                        let cid = HYBRID_SESSION_COUNTER
-                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                        child_policy.session_id = Some(format!("hybrid_session_{}", cid));
+                        child_policy.session_id = Some(child_session_id.clone());
                     }
 
                     // W3C SCXML 6.4.1: Pass validated namelist values to child datamodel
@@ -1005,6 +1046,11 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                     // it holds, not the ones that engine invoked.
                     child_engine.set_clock(engine.clock());
                     child_engine.set_completion_callback(|| {});
+                    // Child sessions in Mesh (SCE_MESH.md): the router of the
+                    // candidate this start chose, asked of this machine's factory
+                    // and installed before the child initializes, since its first
+                    // `<onentry>` may already send to a peer.
+                    engine.start_child_mesh(&mut child_engine, "_invoke_1", "bare");
                     child_engine.initialize();
 
                     self.child_invoke_1_bare = Some(Box::new(child_engine));
@@ -1029,6 +1075,10 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                         .map_or(false, |c| c.is_in_final_state())
                     {
                         self.pending_done_invoke_invoke_1 = true;
+                        // The session ended: its Mesh router is told so.
+                        if let Some(child) = self.child_invoke_1_bare.as_mut() {
+                            child.detach_mesh();
+                        }
                         // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                         // done.invoke.<id>._event.data.
                         let donedata = self
@@ -1121,12 +1171,11 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                     child_policy.invoke_id = pending.invoke_id.clone();
                     child_policy.child_session_id = child_session_id.clone();
 
+                    // W3C SCXML C.1, as for a static child: the candidate adopts the
+                    // id its parent recorded for it, which comes from the tree alone
+                    // (docs/adr/0045) — this session's id and the id of this start.
                     if child_policy.session_id.is_none() {
-                        static HYBRID_SESSION_COUNTER: core::sync::atomic::AtomicU64 =
-                            core::sync::atomic::AtomicU64::new(0);
-                        let cid = HYBRID_SESSION_COUNTER
-                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                        child_policy.session_id = Some(format!("hybrid_session_{}", cid));
+                        child_policy.session_id = Some(child_session_id.clone());
                     }
 
                     // W3C SCXML 6.4.1: Pass params to child datamodel before initialization
@@ -1242,6 +1291,11 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                     // it holds, not the ones that engine invoked.
                     child_engine.set_clock(engine.clock());
                     child_engine.set_completion_callback(|| {});
+                    // Child sessions in Mesh (SCE_MESH.md): the router of the
+                    // candidate this start chose, asked of this machine's factory
+                    // and installed before the child initializes, since its first
+                    // `<onentry>` may already send to a peer.
+                    engine.start_child_mesh(&mut child_engine, "_invoke_0", "keeper");
                     child_engine.initialize();
 
                     self.child_invoke_0_keeper = Some(Box::new(child_engine));
@@ -1266,6 +1320,10 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                         .map_or(false, |c| c.is_in_final_state())
                     {
                         self.pending_done_invoke_invoke_0 = true;
+                        // The session ended: its Mesh router is told so.
+                        if let Some(child) = self.child_invoke_0_keeper.as_mut() {
+                            child.detach_mesh();
+                        }
                         // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                         // done.invoke.<id>._event.data.
                         let donedata = self
@@ -1291,12 +1349,11 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                     child_policy.invoke_id = pending.invoke_id.clone();
                     child_policy.child_session_id = child_session_id.clone();
 
+                    // W3C SCXML C.1, as for a static child: the candidate adopts the
+                    // id its parent recorded for it, which comes from the tree alone
+                    // (docs/adr/0045) — this session's id and the id of this start.
                     if child_policy.session_id.is_none() {
-                        static HYBRID_SESSION_COUNTER: core::sync::atomic::AtomicU64 =
-                            core::sync::atomic::AtomicU64::new(0);
-                        let cid = HYBRID_SESSION_COUNTER
-                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                        child_policy.session_id = Some(format!("hybrid_session_{}", cid));
+                        child_policy.session_id = Some(child_session_id.clone());
                     }
 
                     // W3C SCXML 6.4.1: Pass params to child datamodel before initialization
@@ -1413,6 +1470,11 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                     // it holds, not the ones that engine invoked.
                     child_engine.set_clock(engine.clock());
                     child_engine.set_completion_callback(|| {});
+                    // Child sessions in Mesh (SCE_MESH.md): the router of the
+                    // candidate this start chose, asked of this machine's factory
+                    // and installed before the child initializes, since its first
+                    // `<onentry>` may already send to a peer.
+                    engine.start_child_mesh(&mut child_engine, "_invoke_0", "bare");
                     child_engine.initialize();
 
                     self.child_invoke_0_bare = Some(Box::new(child_engine));
@@ -1437,6 +1499,10 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                         .map_or(false, |c| c.is_in_final_state())
                     {
                         self.pending_done_invoke_invoke_0 = true;
+                        // The session ended: its Mesh router is told so.
+                        if let Some(child) = self.child_invoke_0_bare.as_mut() {
+                            child.detach_mesh();
+                        }
                         // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                         // done.invoke.<id>._event.data.
                         let donedata = self
@@ -1550,12 +1616,11 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                     child_policy.invoke_id = pending.invoke_id.clone();
                     child_policy.child_session_id = child_session_id.clone();
 
+                    // W3C SCXML C.1, as for a static child: the candidate adopts the
+                    // id its parent recorded for it, which comes from the tree alone
+                    // (docs/adr/0045) — this session's id and the id of this start.
                     if child_policy.session_id.is_none() {
-                        static HYBRID_SESSION_COUNTER: core::sync::atomic::AtomicU64 =
-                            core::sync::atomic::AtomicU64::new(0);
-                        let cid = HYBRID_SESSION_COUNTER
-                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                        child_policy.session_id = Some(format!("hybrid_session_{}", cid));
+                        child_policy.session_id = Some(child_session_id.clone());
                     }
 
                     // W3C SCXML 6.4.1: Pass validated namelist values to child datamodel
@@ -1630,6 +1695,11 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                     // it holds, not the ones that engine invoked.
                     child_engine.set_clock(engine.clock());
                     child_engine.set_completion_callback(|| {});
+                    // Child sessions in Mesh (SCE_MESH.md): the router of the
+                    // candidate this start chose, asked of this machine's factory
+                    // and installed before the child initializes, since its first
+                    // `<onentry>` may already send to a peer.
+                    engine.start_child_mesh(&mut child_engine, "_invoke_2", "keeper");
                     child_engine.initialize();
 
                     self.child_invoke_2_keeper = Some(Box::new(child_engine));
@@ -1654,6 +1724,10 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                         .map_or(false, |c| c.is_in_final_state())
                     {
                         self.pending_done_invoke_invoke_2 = true;
+                        // The session ended: its Mesh router is told so.
+                        if let Some(child) = self.child_invoke_2_keeper.as_mut() {
+                            child.detach_mesh();
+                        }
                         // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                         // done.invoke.<id>._event.data.
                         let donedata = self
@@ -1679,12 +1753,11 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                     child_policy.invoke_id = pending.invoke_id.clone();
                     child_policy.child_session_id = child_session_id.clone();
 
+                    // W3C SCXML C.1, as for a static child: the candidate adopts the
+                    // id its parent recorded for it, which comes from the tree alone
+                    // (docs/adr/0045) — this session's id and the id of this start.
                     if child_policy.session_id.is_none() {
-                        static HYBRID_SESSION_COUNTER: core::sync::atomic::AtomicU64 =
-                            core::sync::atomic::AtomicU64::new(0);
-                        let cid = HYBRID_SESSION_COUNTER
-                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                        child_policy.session_id = Some(format!("hybrid_session_{}", cid));
+                        child_policy.session_id = Some(child_session_id.clone());
                     }
 
                     // W3C SCXML 6.4.1: Pass validated namelist values to child datamodel
@@ -1760,6 +1833,11 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                     // it holds, not the ones that engine invoked.
                     child_engine.set_clock(engine.clock());
                     child_engine.set_completion_callback(|| {});
+                    // Child sessions in Mesh (SCE_MESH.md): the router of the
+                    // candidate this start chose, asked of this machine's factory
+                    // and installed before the child initializes, since its first
+                    // `<onentry>` may already send to a peer.
+                    engine.start_child_mesh(&mut child_engine, "_invoke_2", "bare");
                     child_engine.initialize();
 
                     self.child_invoke_2_bare = Some(Box::new(child_engine));
@@ -1784,6 +1862,10 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                         .map_or(false, |c| c.is_in_final_state())
                     {
                         self.pending_done_invoke_invoke_2 = true;
+                        // The session ended: its Mesh router is told so.
+                        if let Some(child) = self.child_invoke_2_bare.as_mut() {
+                            child.detach_mesh();
+                        }
                         // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                         // done.invoke.<id>._event.data.
                         let donedata = self
@@ -1815,6 +1897,9 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                     "_invoke_0",
                     engine,
                 );
+                // Child sessions in Mesh (SCE_MESH.md): what arrived for the
+                // child on the router it was given, before its macrostep.
+                child.apply_mesh_calls();
                 child.tick();
                 sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
                     &child.policy().parent_external_queue,
@@ -1824,6 +1909,8 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                 );
                 if child.is_in_final_state() && !self.pending_done_invoke_invoke_0 {
                     self.pending_done_invoke_invoke_0 = true;
+                    // The session ended: its Mesh router is told so.
+                    child.detach_mesh();
                     // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                     // done.invoke.<id>._event.data.
                     let donedata = child.donedata_at_final().to_string();
@@ -1845,6 +1932,9 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                     "_invoke_0",
                     engine,
                 );
+                // Child sessions in Mesh (SCE_MESH.md): what arrived for the
+                // child on the router it was given, before its macrostep.
+                child.apply_mesh_calls();
                 child.tick();
                 sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
                     &child.policy().parent_external_queue,
@@ -1854,6 +1944,8 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                 );
                 if child.is_in_final_state() && !self.pending_done_invoke_invoke_0 {
                     self.pending_done_invoke_invoke_0 = true;
+                    // The session ended: its Mesh router is told so.
+                    child.detach_mesh();
                     // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                     // done.invoke.<id>._event.data.
                     let donedata = child.donedata_at_final().to_string();
@@ -1875,6 +1967,9 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                     "_invoke_1",
                     engine,
                 );
+                // Child sessions in Mesh (SCE_MESH.md): what arrived for the
+                // child on the router it was given, before its macrostep.
+                child.apply_mesh_calls();
                 child.tick();
                 sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
                     &child.policy().parent_external_queue,
@@ -1884,6 +1979,8 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                 );
                 if child.is_in_final_state() && !self.pending_done_invoke_invoke_1 {
                     self.pending_done_invoke_invoke_1 = true;
+                    // The session ended: its Mesh router is told so.
+                    child.detach_mesh();
                     // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                     // done.invoke.<id>._event.data.
                     let donedata = child.donedata_at_final().to_string();
@@ -1905,6 +2002,9 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                     "_invoke_1",
                     engine,
                 );
+                // Child sessions in Mesh (SCE_MESH.md): what arrived for the
+                // child on the router it was given, before its macrostep.
+                child.apply_mesh_calls();
                 child.tick();
                 sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
                     &child.policy().parent_external_queue,
@@ -1914,6 +2014,8 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                 );
                 if child.is_in_final_state() && !self.pending_done_invoke_invoke_1 {
                     self.pending_done_invoke_invoke_1 = true;
+                    // The session ended: its Mesh router is told so.
+                    child.detach_mesh();
                     // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                     // done.invoke.<id>._event.data.
                     let donedata = child.donedata_at_final().to_string();
@@ -1935,6 +2037,9 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                     "_invoke_2",
                     engine,
                 );
+                // Child sessions in Mesh (SCE_MESH.md): what arrived for the
+                // child on the router it was given, before its macrostep.
+                child.apply_mesh_calls();
                 child.tick();
                 sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
                     &child.policy().parent_external_queue,
@@ -1944,6 +2049,8 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                 );
                 if child.is_in_final_state() && !self.pending_done_invoke_invoke_2 {
                     self.pending_done_invoke_invoke_2 = true;
+                    // The session ended: its Mesh router is told so.
+                    child.detach_mesh();
                     // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                     // done.invoke.<id>._event.data.
                     let donedata = child.donedata_at_final().to_string();
@@ -1965,6 +2072,9 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                     "_invoke_2",
                     engine,
                 );
+                // Child sessions in Mesh (SCE_MESH.md): what arrived for the
+                // child on the router it was given, before its macrostep.
+                child.apply_mesh_calls();
                 child.tick();
                 sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
                     &child.policy().parent_external_queue,
@@ -1974,6 +2084,8 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                 );
                 if child.is_in_final_state() && !self.pending_done_invoke_invoke_2 {
                     self.pending_done_invoke_invoke_2 = true;
+                    // The session ended: its Mesh router is told so.
+                    child.detach_mesh();
                     // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                     // done.invoke.<id>._event.data.
                     let donedata = child.donedata_at_final().to_string();
@@ -2370,11 +2482,13 @@ impl StatePolicy for AHybridInvokeCarriesItsArgumentsPolicy {
                     AHybridInvokeCarriesItsArgumentsState::NamelistPhase,
                 );
                 // W3C SCXML 6.4: Cleanup running hybrid child '_invoke_1'
-                if self.child_invoke_1_keeper.is_some() {
-                    self.child_invoke_1_keeper = None;
+                if let Some(mut child) = self.child_invoke_1_keeper.take() {
+                    child.stop();
+                    child.detach_mesh();
                 }
-                if self.child_invoke_1_bare.is_some() {
-                    self.child_invoke_1_bare = None;
+                if let Some(mut child) = self.child_invoke_1_bare.take() {
+                    child.stop();
+                    child.detach_mesh();
                 }
                 self.active_invokes.remove("_invoke_1");
                 self.pending_done_invoke_invoke_1 = false;
@@ -2388,11 +2502,13 @@ impl StatePolicy for AHybridInvokeCarriesItsArgumentsPolicy {
                     AHybridInvokeCarriesItsArgumentsState::ParamsPhase,
                 );
                 // W3C SCXML 6.4: Cleanup running hybrid child '_invoke_0'
-                if self.child_invoke_0_keeper.is_some() {
-                    self.child_invoke_0_keeper = None;
+                if let Some(mut child) = self.child_invoke_0_keeper.take() {
+                    child.stop();
+                    child.detach_mesh();
                 }
-                if self.child_invoke_0_bare.is_some() {
-                    self.child_invoke_0_bare = None;
+                if let Some(mut child) = self.child_invoke_0_bare.take() {
+                    child.stop();
+                    child.detach_mesh();
                 }
                 self.active_invokes.remove("_invoke_0");
                 self.pending_done_invoke_invoke_0 = false;
@@ -2406,11 +2522,13 @@ impl StatePolicy for AHybridInvokeCarriesItsArgumentsPolicy {
                     AHybridInvokeCarriesItsArgumentsState::RefusedPhase,
                 );
                 // W3C SCXML 6.4: Cleanup running hybrid child '_invoke_2'
-                if self.child_invoke_2_keeper.is_some() {
-                    self.child_invoke_2_keeper = None;
+                if let Some(mut child) = self.child_invoke_2_keeper.take() {
+                    child.stop();
+                    child.detach_mesh();
                 }
-                if self.child_invoke_2_bare.is_some() {
-                    self.child_invoke_2_bare = None;
+                if let Some(mut child) = self.child_invoke_2_bare.take() {
+                    child.stop();
+                    child.detach_mesh();
                 }
                 self.active_invokes.remove("_invoke_2");
                 self.pending_done_invoke_invoke_2 = false;

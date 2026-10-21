@@ -456,8 +456,9 @@ class Test244StateMachine(
     private fun deferStaticInvoke(invokeId: String, state: Test244State) {
         when (invokeId) {
             "_invoke_0" -> run {
-                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
-                val generatedInvokeId = "s0.${System.identityHashCode(this)}._invoke_0"
+                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
+                // the platform part is the number of this start (docs/adr/0045).
+                val generatedInvokeId = "s0.${nextInvokeStart("_invoke_0")}._invoke_0"
                 deferInvoke(state, generatedInvokeId) {
                         // W3C SCXML 6.4: the arguments are evaluated when the <invoke>
                         // is executed — at macrostep end, where this deferred body
@@ -475,7 +476,7 @@ class Test244StateMachine(
                     val childSM = Test244SceSynthInvokeInvoke0StateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
                     setInvokeParams(childSM, invokeParams)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("_invoke_0", childSM, false, Test244Event.Done.Invoke, "", generatedInvokeId)
+                    startInvoke("_invoke_0", childSM, false, Test244Event.Done.Invoke, "", generatedInvokeId, "")
                 }
             }
             else -> error("the document has no child session '$invokeId' (codegen invariant)")

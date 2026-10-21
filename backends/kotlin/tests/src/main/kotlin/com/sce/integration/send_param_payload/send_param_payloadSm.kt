@@ -904,13 +904,14 @@ class SendParamPayloadStateMachine(
     private fun deferStaticInvoke(invokeId: String, state: SendParamPayloadState) {
         when (invokeId) {
             "inv_emitter" -> run {
-                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
-                val generatedInvokeId = "awaitChild.${System.identityHashCode(this)}.inv_emitter"
+                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
+                // the platform part is the number of this start (docs/adr/0045).
+                val generatedInvokeId = "awaitChild.${nextInvokeStart("inv_emitter")}.inv_emitter"
                 deferInvoke(state, generatedInvokeId) {
 
                     val childSM = SendParamPayloadSceSynthInvokeInvEmitterStateMachine()
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("inv_emitter", childSM, false, SendParamPayloadEvent.Done.Invoke, "", generatedInvokeId)
+                    startInvoke("inv_emitter", childSM, false, SendParamPayloadEvent.Done.Invoke, "", generatedInvokeId, "")
                 }
             }
             else -> error("the document has no child session '$invokeId' (codegen invariant)")

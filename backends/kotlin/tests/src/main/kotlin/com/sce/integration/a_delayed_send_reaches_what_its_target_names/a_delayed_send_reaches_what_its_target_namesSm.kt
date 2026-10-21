@@ -735,23 +735,25 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
     private fun deferStaticInvoke(invokeId: String, state: ADelayedSendReachesWhatItsTargetNamesState) {
         when (invokeId) {
             "kid" -> run {
-                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
-                val generatedInvokeId = "run.${System.identityHashCode(this)}.kid"
+                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
+                // the platform part is the number of this start (docs/adr/0045).
+                val generatedInvokeId = "run.${nextInvokeStart("kid")}.kid"
                 deferInvoke(state, generatedInvokeId) {
 
                     val childSM = ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("kid", childSM, false, ADelayedSendReachesWhatItsTargetNamesEvent.Done.Invoke, "", generatedInvokeId)
+                    startInvoke("kid", childSM, false, ADelayedSendReachesWhatItsTargetNamesEvent.Done.Invoke, "", generatedInvokeId, "")
                 }
             }
             "gone" -> run {
-                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
-                val generatedInvokeId = "run.${System.identityHashCode(this)}.gone"
+                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
+                // the platform part is the number of this start (docs/adr/0045).
+                val generatedInvokeId = "run.${nextInvokeStart("gone")}.gone"
                 deferInvoke(state, generatedInvokeId) {
 
                     val childSM = ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneStateMachine()
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("gone", childSM, false, ADelayedSendReachesWhatItsTargetNamesEvent.Done.Invoke, "", generatedInvokeId)
+                    startInvoke("gone", childSM, false, ADelayedSendReachesWhatItsTargetNamesEvent.Done.Invoke, "", generatedInvokeId, "")
                 }
             }
             else -> error("the document has no child session '$invokeId' (codegen invariant)")

@@ -183,6 +183,14 @@ pub struct SessionIdsAreDistinctPolicy {
     // W3C SCXML 6.4: Static invoke child 'inv_b' (session_ids_are_distinct__sce_synth_invoke__inv_b)
     child_inv_b: Option<Box<sce_rust_runtime::Engine<super::session_ids_are_distinct__sce_synth_invoke__inv_b_sm::SessionIdsAreDistinctSceSynthInvokeInvBPolicy>>>,
     pending_done_invoke_inv_b: bool,
+    // docs/adr/0045: how many times 'inv_a' has started in
+    // this session. The next start is numbered by it, and so is the id it is
+    // started under, so a child's ids come from the tree alone.
+    invoke_starts_inv_a: u64,
+    // docs/adr/0045: how many times 'inv_b' has started in
+    // this session. The next start is numbered by it, and so is the id it is
+    // started under, so a child's ids come from the tree alone.
+    invoke_starts_inv_b: u64,
     // W3C SCXML 6.4: Parent engine external queue for #_parent send routing
     // Always generated under std — any SM can be invoked as a child. Under
     // `--no-std` (SCE Protocol-Synthesis RFC §synth-5-J-2) the SCXML `<invoke>` element
@@ -260,6 +268,8 @@ impl SessionIdsAreDistinctPolicy {
             pending_done_invoke_inv_a: false,
             child_inv_b: None,
             pending_done_invoke_inv_b: false,
+            invoke_starts_inv_a: 0,
+            invoke_starts_inv_b: 0,
             parent_external_queue: None,
             invoke_id: String::new(),
             child_session_id: String::new(),
@@ -501,7 +511,12 @@ impl SessionIdsAreDistinctPolicy {
     // W3C SCXML 6.4: Defer the start of invoke 'inv_a' of state 'phase' to macrostep end
     fn defer_invoke_inv_a(&mut self, _engine: &mut sce_rust_runtime::Engine<Self>) {
         {
-            let generated_invoke_id = format!("{}.{}.inv_a", "phase", self as *const _ as usize);
+            // docs/adr/0045: the id is the state's, the number of this start and
+            // the `<invoke>`'s, so it comes from the tree alone and is the same
+            // text on every backend (W3C test 224 reads the state's id and a dot
+            // in front of it).
+            self.invoke_starts_inv_a += 1;
+            let generated_invoke_id = format!("{}.{}.inv_a", "phase", self.invoke_starts_inv_a);
             let id_stored = true;
             if id_stored {
                 sce_rust_runtime::invoke::defer_invoke(
@@ -519,7 +534,12 @@ impl SessionIdsAreDistinctPolicy {
     // W3C SCXML 6.4: Defer the start of invoke 'inv_b' of state 'phase' to macrostep end
     fn defer_invoke_inv_b(&mut self, _engine: &mut sce_rust_runtime::Engine<Self>) {
         {
-            let generated_invoke_id = format!("{}.{}.inv_b", "phase", self as *const _ as usize);
+            // docs/adr/0045: the id is the state's, the number of this start and
+            // the `<invoke>`'s, so it comes from the tree alone and is the same
+            // text on every backend (W3C test 224 reads the state's id and a dot
+            // in front of it).
+            self.invoke_starts_inv_b += 1;
+            let generated_invoke_id = format!("{}.{}.inv_b", "phase", self.invoke_starts_inv_b);
             let id_stored = true;
             if id_stored {
                 sce_rust_runtime::invoke::defer_invoke(
@@ -604,6 +624,12 @@ impl SessionIdsAreDistinctPolicy {
                 child_engine.set_clock(engine.clock());
                 // W3C SCXML 6.4: Set completion callback so child runs final state onexit (test 236)
                 child_engine.set_completion_callback(|| {});
+                // Child sessions in Mesh (SCE_MESH.md): the child's router,
+                // asked of this machine's factory with the invoke's id and the
+                // stem of the child's document (empty for one written inline),
+                // and installed before the child initializes, since its first
+                // `<onentry>` may already send to a peer.
+                engine.start_child_mesh(&mut child_engine, "inv_a", "");
                 child_engine.initialize();
 
                 // W3C SCXML 6.4: Store child BEFORE draining events so autoforward can find it
@@ -629,6 +655,10 @@ impl SessionIdsAreDistinctPolicy {
                     .map_or(false, |c| c.is_in_final_state())
                 {
                     self.pending_done_invoke_inv_a = true;
+                    // The session ended: its Mesh router is told so.
+                    if let Some(child) = self.child_inv_a.as_mut() {
+                        child.detach_mesh();
+                    }
                     // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                     // done.invoke.<id>._event.data. Mirrors the C++ AOT contract in
                     // tools/codegen/templates/invoke_methods.jinja2 (child->donedataAtFinal()
@@ -697,6 +727,12 @@ impl SessionIdsAreDistinctPolicy {
                 child_engine.set_clock(engine.clock());
                 // W3C SCXML 6.4: Set completion callback so child runs final state onexit (test 236)
                 child_engine.set_completion_callback(|| {});
+                // Child sessions in Mesh (SCE_MESH.md): the child's router,
+                // asked of this machine's factory with the invoke's id and the
+                // stem of the child's document (empty for one written inline),
+                // and installed before the child initializes, since its first
+                // `<onentry>` may already send to a peer.
+                engine.start_child_mesh(&mut child_engine, "inv_b", "");
                 child_engine.initialize();
 
                 // W3C SCXML 6.4: Store child BEFORE draining events so autoforward can find it
@@ -722,6 +758,10 @@ impl SessionIdsAreDistinctPolicy {
                     .map_or(false, |c| c.is_in_final_state())
                 {
                     self.pending_done_invoke_inv_b = true;
+                    // The session ended: its Mesh router is told so.
+                    if let Some(child) = self.child_inv_b.as_mut() {
+                        child.detach_mesh();
+                    }
                     // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                     // done.invoke.<id>._event.data. Mirrors the C++ AOT contract in
                     // tools/codegen/templates/invoke_methods.jinja2 (child->donedataAtFinal()
@@ -753,6 +793,9 @@ impl SessionIdsAreDistinctPolicy {
                     engine,
                 );
 
+                // Child sessions in Mesh (SCE_MESH.md): what arrived for the
+                // child on the router it was given, before its macrostep.
+                child.apply_mesh_calls();
                 child.tick();
 
                 // W3C SCXML 6.4: Drain parent events sent by child AFTER tick
@@ -766,6 +809,8 @@ impl SessionIdsAreDistinctPolicy {
                 // W3C SCXML 6.4: Check if child reached final state after tick
                 if child.is_in_final_state() && !self.pending_done_invoke_inv_a {
                     self.pending_done_invoke_inv_a = true;
+                    // The session ended: its Mesh router is told so.
+                    child.detach_mesh();
                     // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                     // done.invoke.<id>._event.data.
                     let donedata = child.donedata_at_final().to_string();
@@ -789,6 +834,9 @@ impl SessionIdsAreDistinctPolicy {
                     engine,
                 );
 
+                // Child sessions in Mesh (SCE_MESH.md): what arrived for the
+                // child on the router it was given, before its macrostep.
+                child.apply_mesh_calls();
                 child.tick();
 
                 // W3C SCXML 6.4: Drain parent events sent by child AFTER tick
@@ -802,6 +850,8 @@ impl SessionIdsAreDistinctPolicy {
                 // W3C SCXML 6.4: Check if child reached final state after tick
                 if child.is_in_final_state() && !self.pending_done_invoke_inv_b {
                     self.pending_done_invoke_inv_b = true;
+                    // The session ended: its Mesh router is told so.
+                    child.detach_mesh();
                     // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                     // done.invoke.<id>._event.data.
                     let donedata = child.donedata_at_final().to_string();
@@ -1143,6 +1193,10 @@ impl StatePolicy for SessionIdsAreDistinctPolicy {
                     // cancel-drop, test252).
                     if let Some(mut child) = self.child_inv_a.take() {
                         child.stop();
+                        // Child sessions in Mesh (SCE_MESH.md): the session
+                        // ended, after the child stopped, so what it sent while
+                        // stopping was handed to its router first.
+                        child.detach_mesh();
                     }
                 }
                 self.active_invokes.remove("inv_a");
@@ -1160,6 +1214,10 @@ impl StatePolicy for SessionIdsAreDistinctPolicy {
                     // cancel-drop, test252).
                     if let Some(mut child) = self.child_inv_b.take() {
                         child.stop();
+                        // Child sessions in Mesh (SCE_MESH.md): the session
+                        // ended, after the child stopped, so what it sent while
+                        // stopping was handed to its router first.
+                        child.detach_mesh();
                     }
                 }
                 self.active_invokes.remove("inv_b");

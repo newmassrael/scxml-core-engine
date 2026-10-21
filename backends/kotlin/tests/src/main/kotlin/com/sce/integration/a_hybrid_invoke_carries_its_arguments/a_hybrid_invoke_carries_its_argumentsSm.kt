@@ -668,7 +668,9 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
                 // W3C SCXML 6.4: Hybrid invoke — runtime expression evaluation + dynamic child
                 // C++ parity: StateMachine::createFromSCXMLString() / FileLoadingHelper::loadScxmlFile()
                 run {
-                    val generatedInvokeId = "namelistPhase.${System.identityHashCode(this)}._invoke_1"
+                    // docs/adr/0045: the platform part of the id is the number of
+                    // this start, so the id comes from the tree alone.
+                    val generatedInvokeId = "namelistPhase.${nextInvokeStart("_invoke_1")}._invoke_1"
                     deferInvoke(state, generatedInvokeId) {
                         ensureScriptEngine()
                         val eng = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
@@ -719,7 +721,7 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
                         invokeParams["seed"] = engineInv.getVariable(sidInv, "seed")
 
                             setInvokeParams(childSM, invokeParams)
-                            startInvoke("_invoke_1", childSM, false, null, "", generatedInvokeId)
+                            startInvoke("_invoke_1", childSM, false, null, "", generatedInvokeId, __sceSelected)
                         } catch (_: Exception) {
                             // W3C SCXML 6.4: the child could not be started. Evaluation
                             // failure no longer reaches here — it has its own raise above,
@@ -733,7 +735,9 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
                 // W3C SCXML 6.4: Hybrid invoke — runtime expression evaluation + dynamic child
                 // C++ parity: StateMachine::createFromSCXMLString() / FileLoadingHelper::loadScxmlFile()
                 run {
-                    val generatedInvokeId = "paramsPhase.${System.identityHashCode(this)}._invoke_0"
+                    // docs/adr/0045: the platform part of the id is the number of
+                    // this start, so the id comes from the tree alone.
+                    val generatedInvokeId = "paramsPhase.${nextInvokeStart("_invoke_0")}._invoke_0"
                     deferInvoke(state, generatedInvokeId) {
                         ensureScriptEngine()
                         val eng = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
@@ -807,7 +811,7 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
                         }
 
                             setInvokeParams(childSM, invokeParams)
-                            startInvoke("_invoke_0", childSM, false, null, "", generatedInvokeId)
+                            startInvoke("_invoke_0", childSM, false, null, "", generatedInvokeId, __sceSelected)
                         } catch (_: Exception) {
                             // W3C SCXML 6.4: the child could not be started. Evaluation
                             // failure no longer reaches here — it has its own raise above,
@@ -821,7 +825,9 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
                 // W3C SCXML 6.4: Hybrid invoke — runtime expression evaluation + dynamic child
                 // C++ parity: StateMachine::createFromSCXMLString() / FileLoadingHelper::loadScxmlFile()
                 run {
-                    val generatedInvokeId = "refusedPhase.${System.identityHashCode(this)}._invoke_2"
+                    // docs/adr/0045: the platform part of the id is the number of
+                    // this start, so the id comes from the tree alone.
+                    val generatedInvokeId = "refusedPhase.${nextInvokeStart("_invoke_2")}._invoke_2"
                     deferInvoke(state, generatedInvokeId) {
                         ensureScriptEngine()
                         val eng = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
@@ -881,7 +887,7 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
                         }
 
                             setInvokeParams(childSM, invokeParams)
-                            startInvoke("_invoke_2", childSM, false, null, "", generatedInvokeId)
+                            startInvoke("_invoke_2", childSM, false, null, "", generatedInvokeId, __sceSelected)
                         } catch (_: Exception) {
                             // W3C SCXML 6.4: the child could not be started. Evaluation
                             // failure no longer reaches here — it has its own raise above,

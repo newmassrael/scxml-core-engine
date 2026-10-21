@@ -185,6 +185,10 @@ pub struct EventOriginIsALocationPolicy {
     // W3C SCXML 6.4: Static invoke child 'inv_peer' (event_origin_is_a_location__sce_synth_invoke__inv_peer)
     child_inv_peer: Option<Box<sce_rust_runtime::Engine<super::event_origin_is_a_location__sce_synth_invoke__inv_peer_sm::EventOriginIsALocationSceSynthInvokeInvPeerPolicy>>>,
     pending_done_invoke_inv_peer: bool,
+    // docs/adr/0045: how many times 'inv_peer' has started in
+    // this session. The next start is numbered by it, and so is the id it is
+    // started under, so a child's ids come from the tree alone.
+    invoke_starts_inv_peer: u64,
     // W3C SCXML 6.4: Parent engine external queue for #_parent send routing
     // Always generated under std — any SM can be invoked as a child. Under
     // `--no-std` (SCE Protocol-Synthesis RFC §synth-5-J-2) the SCXML `<invoke>` element
@@ -227,6 +231,7 @@ impl EventOriginIsALocationPolicy {
             active_invokes: std::collections::HashMap::new(),
             child_inv_peer: None,
             pending_done_invoke_inv_peer: false,
+            invoke_starts_inv_peer: 0,
             parent_external_queue: None,
             invoke_id: String::new(),
             child_session_id: String::new(),
@@ -430,7 +435,13 @@ impl EventOriginIsALocationPolicy {
     // W3C SCXML 6.4: Defer the start of invoke 'inv_peer' of state 'phase' to macrostep end
     fn defer_invoke_inv_peer(&mut self, _engine: &mut sce_rust_runtime::Engine<Self>) {
         {
-            let generated_invoke_id = format!("{}.{}.inv_peer", "phase", self as *const _ as usize);
+            // docs/adr/0045: the id is the state's, the number of this start and
+            // the `<invoke>`'s, so it comes from the tree alone and is the same
+            // text on every backend (W3C test 224 reads the state's id and a dot
+            // in front of it).
+            self.invoke_starts_inv_peer += 1;
+            let generated_invoke_id =
+                format!("{}.{}.inv_peer", "phase", self.invoke_starts_inv_peer);
             let id_stored = true;
             if id_stored {
                 sce_rust_runtime::invoke::defer_invoke(
@@ -515,6 +526,12 @@ impl EventOriginIsALocationPolicy {
                 child_engine.set_clock(engine.clock());
                 // W3C SCXML 6.4: Set completion callback so child runs final state onexit (test 236)
                 child_engine.set_completion_callback(|| {});
+                // Child sessions in Mesh (SCE_MESH.md): the child's router,
+                // asked of this machine's factory with the invoke's id and the
+                // stem of the child's document (empty for one written inline),
+                // and installed before the child initializes, since its first
+                // `<onentry>` may already send to a peer.
+                engine.start_child_mesh(&mut child_engine, "inv_peer", "");
                 child_engine.initialize();
 
                 // W3C SCXML 6.4: Store child BEFORE draining events so autoforward can find it
@@ -540,6 +557,10 @@ impl EventOriginIsALocationPolicy {
                     .map_or(false, |c| c.is_in_final_state())
                 {
                     self.pending_done_invoke_inv_peer = true;
+                    // The session ended: its Mesh router is told so.
+                    if let Some(child) = self.child_inv_peer.as_mut() {
+                        child.detach_mesh();
+                    }
                     // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                     // done.invoke.<id>._event.data. Mirrors the C++ AOT contract in
                     // tools/codegen/templates/invoke_methods.jinja2 (child->donedataAtFinal()
@@ -571,6 +592,9 @@ impl EventOriginIsALocationPolicy {
                     engine,
                 );
 
+                // Child sessions in Mesh (SCE_MESH.md): what arrived for the
+                // child on the router it was given, before its macrostep.
+                child.apply_mesh_calls();
                 child.tick();
 
                 // W3C SCXML 6.4: Drain parent events sent by child AFTER tick
@@ -584,6 +608,8 @@ impl EventOriginIsALocationPolicy {
                 // W3C SCXML 6.4: Check if child reached final state after tick
                 if child.is_in_final_state() && !self.pending_done_invoke_inv_peer {
                     self.pending_done_invoke_inv_peer = true;
+                    // The session ended: its Mesh router is told so.
+                    child.detach_mesh();
                     // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                     // done.invoke.<id>._event.data.
                     let donedata = child.donedata_at_final().to_string();
@@ -920,6 +946,10 @@ impl StatePolicy for EventOriginIsALocationPolicy {
                     // cancel-drop, test252).
                     if let Some(mut child) = self.child_inv_peer.take() {
                         child.stop();
+                        // Child sessions in Mesh (SCE_MESH.md): the session
+                        // ended, after the child stopped, so what it sent while
+                        // stopping was handed to its router first.
+                        child.detach_mesh();
                     }
                 }
                 self.active_invokes.remove("inv_peer");

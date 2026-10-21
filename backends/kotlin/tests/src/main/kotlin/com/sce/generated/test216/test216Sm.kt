@@ -460,7 +460,9 @@ class Test216StateMachine(
                 // W3C SCXML 6.4: Hybrid invoke — runtime expression evaluation + dynamic child
                 // C++ parity: StateMachine::createFromSCXMLString() / FileLoadingHelper::loadScxmlFile()
                 run {
-                    val generatedInvokeId = "s0.${System.identityHashCode(this)}._invoke_0"
+                    // docs/adr/0045: the platform part of the id is the number of
+                    // this start, so the id comes from the tree alone.
+                    val generatedInvokeId = "s0.${nextInvokeStart("_invoke_0")}._invoke_0"
                     deferInvoke(state, generatedInvokeId) {
                         ensureScriptEngine()
                         val eng = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
@@ -489,7 +491,7 @@ class Test216StateMachine(
                             @Suppress("UNUSED_VARIABLE") val _evaluated = filePath
                             val childSM = Test216Hybrid0StateMachine()
 
-                            startInvoke("_invoke_0", childSM, false, Test216Event.Done.Invoke, "", generatedInvokeId)
+                            startInvoke("_invoke_0", childSM, false, Test216Event.Done.Invoke, "", generatedInvokeId, "")
                         } catch (_: Exception) {
                             // W3C SCXML 6.4: the child could not be started. Evaluation
                             // failure no longer reaches here — it has its own raise above,

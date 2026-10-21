@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
+// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -374,6 +374,10 @@ pub struct StaticInvokeHybridSavedPolicy {
         Box<sce_rust_runtime::Engine<super::static_hybrid_holder_sm::StaticHybridHolderPolicy>>,
     >,
     pending_done_invoke_watch: bool,
+    // docs/adr/0045: how many times 'watch' has started in
+    // this session. The next start is numbered by it, and so is the id it is
+    // started under, so a child's ids come from the tree alone.
+    invoke_starts_watch: u64,
     // W3C SCXML 6.4: Parent engine external queue for #_parent send routing
     // Always generated under std — any SM can be invoked as a child. Under
     // `--no-std` (SCE Protocol-Synthesis RFC §synth-5-J-2) the SCXML `<invoke>` element
@@ -404,6 +408,7 @@ impl StaticInvokeHybridSavedPolicy {
             child_watch_static_hybrid_watcher: None,
             child_watch_static_hybrid_holder: None,
             pending_done_invoke_watch: false,
+            invoke_starts_watch: 0,
             parent_external_queue: None,
             invoke_id: String::new(),
             child_session_id: String::new(),
@@ -433,7 +438,12 @@ impl StaticInvokeHybridSavedPolicy {
     // W3C SCXML 6.4: Defer the start of invoke 'watch' of state 'working' to macrostep end
     fn defer_invoke_watch(&mut self, _engine: &mut sce_rust_runtime::Engine<Self>) {
         {
-            let generated_invoke_id = format!("{}.{}.watch", "working", self as *const _ as usize);
+            // docs/adr/0045: the id is the state's, the number of this start and
+            // the `<invoke>`'s, so it comes from the tree alone and is the same
+            // text on every backend (W3C test 224 reads the state's id and a dot
+            // in front of it).
+            self.invoke_starts_watch += 1;
+            let generated_invoke_id = format!("{}.{}.watch", "working", self.invoke_starts_watch);
             let id_stored = true;
             if id_stored {
                 sce_rust_runtime::invoke::defer_invoke(
@@ -507,12 +517,11 @@ impl StaticInvokeHybridSavedPolicy {
                     child_policy.invoke_id = pending.invoke_id.clone();
                     child_policy.child_session_id = child_session_id.clone();
 
+                    // W3C SCXML C.1, as for a static child: the candidate adopts the
+                    // id its parent recorded for it, which comes from the tree alone
+                    // (docs/adr/0045) — this session's id and the id of this start.
                     if child_policy.session_id.is_none() {
-                        static HYBRID_SESSION_COUNTER: core::sync::atomic::AtomicU64 =
-                            core::sync::atomic::AtomicU64::new(0);
-                        let cid = HYBRID_SESSION_COUNTER
-                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                        child_policy.session_id = Some(format!("hybrid_session_{}", cid));
+                        child_policy.session_id = Some(child_session_id.clone());
                     }
 
                     // W3C SCXML 6.4.1: hand the child the values this invoke names
@@ -544,6 +553,11 @@ impl StaticInvokeHybridSavedPolicy {
                     // it holds, not the ones that engine invoked.
                     child_engine.set_clock(engine.clock());
                     child_engine.set_completion_callback(|| {});
+                    // Child sessions in Mesh (SCE_MESH.md): the router of the
+                    // candidate this start chose, asked of this machine's factory
+                    // and installed before the child initializes, since its first
+                    // `<onentry>` may already send to a peer.
+                    engine.start_child_mesh(&mut child_engine, "watch", "static_hybrid_watcher");
                     child_engine.initialize();
 
                     self.child_watch_static_hybrid_watcher = Some(Box::new(child_engine));
@@ -568,6 +582,10 @@ impl StaticInvokeHybridSavedPolicy {
                         .map_or(false, |c| c.is_in_final_state())
                     {
                         self.pending_done_invoke_watch = true;
+                        // The session ended: its Mesh router is told so.
+                        if let Some(child) = self.child_watch_static_hybrid_watcher.as_mut() {
+                            child.detach_mesh();
+                        }
                         // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                         // done.invoke.<id>._event.data.
                         let donedata = self
@@ -591,12 +609,11 @@ impl StaticInvokeHybridSavedPolicy {
                     child_policy.invoke_id = pending.invoke_id.clone();
                     child_policy.child_session_id = child_session_id.clone();
 
+                    // W3C SCXML C.1, as for a static child: the candidate adopts the
+                    // id its parent recorded for it, which comes from the tree alone
+                    // (docs/adr/0045) — this session's id and the id of this start.
                     if child_policy.session_id.is_none() {
-                        static HYBRID_SESSION_COUNTER: core::sync::atomic::AtomicU64 =
-                            core::sync::atomic::AtomicU64::new(0);
-                        let cid = HYBRID_SESSION_COUNTER
-                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                        child_policy.session_id = Some(format!("hybrid_session_{}", cid));
+                        child_policy.session_id = Some(child_session_id.clone());
                     }
 
                     // W3C SCXML 6.4.1: hand the child the values this invoke names
@@ -630,6 +647,11 @@ impl StaticInvokeHybridSavedPolicy {
                     // it holds, not the ones that engine invoked.
                     child_engine.set_clock(engine.clock());
                     child_engine.set_completion_callback(|| {});
+                    // Child sessions in Mesh (SCE_MESH.md): the router of the
+                    // candidate this start chose, asked of this machine's factory
+                    // and installed before the child initializes, since its first
+                    // `<onentry>` may already send to a peer.
+                    engine.start_child_mesh(&mut child_engine, "watch", "static_hybrid_holder");
                     child_engine.initialize();
 
                     self.child_watch_static_hybrid_holder = Some(Box::new(child_engine));
@@ -654,6 +676,10 @@ impl StaticInvokeHybridSavedPolicy {
                         .map_or(false, |c| c.is_in_final_state())
                     {
                         self.pending_done_invoke_watch = true;
+                        // The session ended: its Mesh router is told so.
+                        if let Some(child) = self.child_watch_static_hybrid_holder.as_mut() {
+                            child.detach_mesh();
+                        }
                         // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                         // done.invoke.<id>._event.data.
                         let donedata = self
@@ -683,6 +709,9 @@ impl StaticInvokeHybridSavedPolicy {
                     "watch",
                     engine,
                 );
+                // Child sessions in Mesh (SCE_MESH.md): what arrived for the
+                // child on the router it was given, before its macrostep.
+                child.apply_mesh_calls();
                 child.tick();
                 sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
                     &child.policy().parent_external_queue,
@@ -692,6 +721,8 @@ impl StaticInvokeHybridSavedPolicy {
                 );
                 if child.is_in_final_state() && !self.pending_done_invoke_watch {
                     self.pending_done_invoke_watch = true;
+                    // The session ended: its Mesh router is told so.
+                    child.detach_mesh();
                     // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                     // done.invoke.<id>._event.data.
                     let donedata = child.donedata_at_final().to_string();
@@ -711,6 +742,9 @@ impl StaticInvokeHybridSavedPolicy {
                     "watch",
                     engine,
                 );
+                // Child sessions in Mesh (SCE_MESH.md): what arrived for the
+                // child on the router it was given, before its macrostep.
+                child.apply_mesh_calls();
                 child.tick();
                 sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
                     &child.policy().parent_external_queue,
@@ -720,6 +754,8 @@ impl StaticInvokeHybridSavedPolicy {
                 );
                 if child.is_in_final_state() && !self.pending_done_invoke_watch {
                     self.pending_done_invoke_watch = true;
+                    // The session ended: its Mesh router is told so.
+                    child.detach_mesh();
                     // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                     // done.invoke.<id>._event.data.
                     let donedata = child.donedata_at_final().to_string();
@@ -1020,11 +1056,13 @@ impl StatePolicy for StaticInvokeHybridSavedPolicy {
                     StaticInvokeHybridSavedState::Working,
                 );
                 // W3C SCXML 6.4: Cleanup running hybrid child 'watch'
-                if self.child_watch_static_hybrid_watcher.is_some() {
-                    self.child_watch_static_hybrid_watcher = None;
+                if let Some(mut child) = self.child_watch_static_hybrid_watcher.take() {
+                    child.stop();
+                    child.detach_mesh();
                 }
-                if self.child_watch_static_hybrid_holder.is_some() {
-                    self.child_watch_static_hybrid_holder = None;
+                if let Some(mut child) = self.child_watch_static_hybrid_holder.take() {
+                    child.stop();
+                    child.detach_mesh();
                 }
                 self.active_invokes.remove("watch");
                 self.pending_done_invoke_watch = false;

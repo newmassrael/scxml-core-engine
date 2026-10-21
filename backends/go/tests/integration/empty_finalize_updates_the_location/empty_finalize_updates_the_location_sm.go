@@ -275,6 +275,18 @@ type EmptyFinalizeUpdatesTheLocationPolicy struct {
 	pendingDoneInvokeInvAbsent bool
 	childInvUnmatched sce.ChildEngine
 	pendingDoneInvokeInvUnmatched bool
+	// docs/adr/0045: how many times 'inv_empty' has started in
+	// this session; the next start, and the id it is started under, is numbered
+	// by it, so a child's ids come from the tree alone.
+	invokeStartsInvEmpty uint64
+	// docs/adr/0045: how many times 'inv_absent' has started in
+	// this session; the next start, and the id it is started under, is numbered
+	// by it, so a child's ids come from the tree alone.
+	invokeStartsInvAbsent uint64
+	// docs/adr/0045: how many times 'inv_unmatched' has started in
+	// this session; the next start, and the id it is started under, is numbered
+	// by it, so a child's ids come from the tree alone.
+	invokeStartsInvUnmatched uint64
 	// W3C SCXML 6.4: Parent communication (unbounded — see sce.ParentEventQueue)
 	ParentExternalQueue *sce.ParentEventQueue
 	InvokeID           string
@@ -626,6 +638,12 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecutePendingInvokes(engine *sc
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
 			childEngine.SetCompletionCallback(func() {})
+			// Child sessions in Mesh (SCE_MESH.md): the child's router, asked of
+			// this machine's factory with the invoke's id and the stem of the
+			// child's document (empty for one written inline), and installed
+			// before the child initializes, since its first <onentry> may
+			// already send to a peer.
+			engine.StartChildMesh(childEngine, "inv_absent", "")
 			childEngine.Initialize()
 
 			// W3C SCXML 6.4: Store child and create wrapper
@@ -638,6 +656,8 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecutePendingInvokes(engine *sc
 			// W3C SCXML 6.4: Check if child completed during initialize
 			if wrapper.IsInFinalState() {
 				p.pendingDoneInvokeInvAbsent = true
+				// The session ended: its Mesh router is told so.
+				wrapper.DetachMesh()
 				// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 				// done.invoke.<id>._event.data. Mirrors the C++ AOT contract
 				// and the Rust raise_done_invoke(donedata) 3-arg signature.
@@ -709,6 +729,12 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecutePendingInvokes(engine *sc
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
 			childEngine.SetCompletionCallback(func() {})
+			// Child sessions in Mesh (SCE_MESH.md): the child's router, asked of
+			// this machine's factory with the invoke's id and the stem of the
+			// child's document (empty for one written inline), and installed
+			// before the child initializes, since its first <onentry> may
+			// already send to a peer.
+			engine.StartChildMesh(childEngine, "inv_empty", "")
 			childEngine.Initialize()
 
 			// W3C SCXML 6.4: Store child and create wrapper
@@ -721,6 +747,8 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecutePendingInvokes(engine *sc
 			// W3C SCXML 6.4: Check if child completed during initialize
 			if wrapper.IsInFinalState() {
 				p.pendingDoneInvokeInvEmpty = true
+				// The session ended: its Mesh router is told so.
+				wrapper.DetachMesh()
 				// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 				// done.invoke.<id>._event.data. Mirrors the C++ AOT contract
 				// and the Rust raise_done_invoke(donedata) 3-arg signature.
@@ -792,6 +820,12 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecutePendingInvokes(engine *sc
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
 			childEngine.SetCompletionCallback(func() {})
+			// Child sessions in Mesh (SCE_MESH.md): the child's router, asked of
+			// this machine's factory with the invoke's id and the stem of the
+			// child's document (empty for one written inline), and installed
+			// before the child initializes, since its first <onentry> may
+			// already send to a peer.
+			engine.StartChildMesh(childEngine, "inv_unmatched", "")
 			childEngine.Initialize()
 
 			// W3C SCXML 6.4: Store child and create wrapper
@@ -804,6 +838,8 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecutePendingInvokes(engine *sc
 			// W3C SCXML 6.4: Check if child completed during initialize
 			if wrapper.IsInFinalState() {
 				p.pendingDoneInvokeInvUnmatched = true
+				// The session ended: its Mesh router is told so.
+				wrapper.DetachMesh()
 				// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 				// done.invoke.<id>._event.data. Mirrors the C++ AOT contract
 				// and the Rust raise_done_invoke(donedata) 3-arg signature.
@@ -820,10 +856,15 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) TickChildren(engine *sce.Engine[
 	if !p.pendingDoneInvokeInvEmpty && p.childInvEmpty != nil {
 		child := p.childInvEmpty
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "inv_empty", engine)
+		// Child sessions in Mesh (SCE_MESH.md): what arrived for the child on
+		// the router it was given, before its macrostep.
+		child.ApplyMeshCalls()
 		child.Tick()
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "inv_empty", engine)
 		if child.IsInFinalState() && !p.pendingDoneInvokeInvEmpty {
 			p.pendingDoneInvokeInvEmpty = true
+			// The session ended: its Mesh router is told so.
+			child.DetachMesh()
 			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 			// done.invoke.<id>._event.data.
 			sce.RaiseDoneInvoke("inv_empty", child.DonedataAtFinal(), engine)
@@ -832,10 +873,15 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) TickChildren(engine *sce.Engine[
 	if !p.pendingDoneInvokeInvAbsent && p.childInvAbsent != nil {
 		child := p.childInvAbsent
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "inv_absent", engine)
+		// Child sessions in Mesh (SCE_MESH.md): what arrived for the child on
+		// the router it was given, before its macrostep.
+		child.ApplyMeshCalls()
 		child.Tick()
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "inv_absent", engine)
 		if child.IsInFinalState() && !p.pendingDoneInvokeInvAbsent {
 			p.pendingDoneInvokeInvAbsent = true
+			// The session ended: its Mesh router is told so.
+			child.DetachMesh()
 			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 			// done.invoke.<id>._event.data.
 			sce.RaiseDoneInvoke("inv_absent", child.DonedataAtFinal(), engine)
@@ -844,10 +890,15 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) TickChildren(engine *sce.Engine[
 	if !p.pendingDoneInvokeInvUnmatched && p.childInvUnmatched != nil {
 		child := p.childInvUnmatched
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "inv_unmatched", engine)
+		// Child sessions in Mesh (SCE_MESH.md): what arrived for the child on
+		// the router it was given, before its macrostep.
+		child.ApplyMeshCalls()
 		child.Tick()
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "inv_unmatched", engine)
 		if child.IsInFinalState() && !p.pendingDoneInvokeInvUnmatched {
 			p.pendingDoneInvokeInvUnmatched = true
+			// The session ended: its Mesh router is told so.
+			child.DetachMesh()
 			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 			// done.invoke.<id>._event.data.
 			sce.RaiseDoneInvoke("inv_unmatched", child.DonedataAtFinal(), engine)
@@ -1047,6 +1098,8 @@ func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvEmpty) SetCompleti
 func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvEmpty) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvEmpty) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvEmpty) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvEmpty) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvEmpty) DetachMesh() { w.engine.DetachMesh() }
 type childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvAbsent struct {
 	engine *sce.Engine[EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentState, EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentEvent]
 	policy *EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentPolicy
@@ -1062,6 +1115,8 @@ func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvAbsent) SetComplet
 func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvAbsent) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvAbsent) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvAbsent) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvAbsent) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvAbsent) DetachMesh() { w.engine.DetachMesh() }
 type childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvUnmatched struct {
 	engine *sce.Engine[EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState, EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedEvent]
 	policy *EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedPolicy
@@ -1077,6 +1132,8 @@ func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvUnmatched) SetComp
 func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvUnmatched) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvUnmatched) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvUnmatched) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvUnmatched) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvUnmatched) DetachMesh() { w.engine.DetachMesh() }
 
 
 // DeliverToParent delivers a delayed `<send target="#_parent">` whose wait is
@@ -1369,7 +1426,10 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecuteEntryActions(state EmptyF
 		}()
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
-			generatedInvokeID := fmt.Sprintf("%s.%d.inv_absent", "absentPhase", sce.NextInvokeCounter())
+			// docs/adr/0045: the platform part of the id is the number of this
+			// start, so the id comes from the tree alone.
+			p.invokeStartsInvAbsent++
+			generatedInvokeID := fmt.Sprintf("%s.%d.inv_absent", "absentPhase", p.invokeStartsInvAbsent)
 			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[EmptyFinalizeUpdatesTheLocationState]{
 				InvokeID:   generatedInvokeID,
 				State:      EmptyFinalizeUpdatesTheLocationStateAbsentPhase,
@@ -1399,7 +1459,10 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecuteEntryActions(state EmptyF
 		}()
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
-			generatedInvokeID := fmt.Sprintf("%s.%d.inv_empty", "emptyPhase", sce.NextInvokeCounter())
+			// docs/adr/0045: the platform part of the id is the number of this
+			// start, so the id comes from the tree alone.
+			p.invokeStartsInvEmpty++
+			generatedInvokeID := fmt.Sprintf("%s.%d.inv_empty", "emptyPhase", p.invokeStartsInvEmpty)
 			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[EmptyFinalizeUpdatesTheLocationState]{
 				InvokeID:   generatedInvokeID,
 				State:      EmptyFinalizeUpdatesTheLocationStateEmptyPhase,
@@ -1429,7 +1492,10 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecuteEntryActions(state EmptyF
 		}()
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
-			generatedInvokeID := fmt.Sprintf("%s.%d.inv_unmatched", "unmatchedPhase", sce.NextInvokeCounter())
+			// docs/adr/0045: the platform part of the id is the number of this
+			// start, so the id comes from the tree alone.
+			p.invokeStartsInvUnmatched++
+			generatedInvokeID := fmt.Sprintf("%s.%d.inv_unmatched", "unmatchedPhase", p.invokeStartsInvUnmatched)
 			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[EmptyFinalizeUpdatesTheLocationState]{
 				InvokeID:   generatedInvokeID,
 				State:      EmptyFinalizeUpdatesTheLocationStateUnmatchedPhase,
@@ -1474,6 +1540,9 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecuteExitActions(state EmptyFi
 			// states' <onexit> run -- before it is dropped; what that exit
 			// sends to #_parent is dropped with it (§scxml-6.4, test252).
 			p.childInvAbsent.Stop()
+			// Child sessions in Mesh (SCE_MESH.md): the session ended, after the
+			// child stopped, so what it sent while stopping was handed over first.
+			p.childInvAbsent.DetachMesh()
 			p.childInvAbsent = nil
 		}
 		delete(p.activeInvokes, "inv_absent")
@@ -1485,6 +1554,9 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecuteExitActions(state EmptyFi
 			// states' <onexit> run -- before it is dropped; what that exit
 			// sends to #_parent is dropped with it (§scxml-6.4, test252).
 			p.childInvEmpty.Stop()
+			// Child sessions in Mesh (SCE_MESH.md): the session ended, after the
+			// child stopped, so what it sent while stopping was handed over first.
+			p.childInvEmpty.DetachMesh()
 			p.childInvEmpty = nil
 		}
 		delete(p.activeInvokes, "inv_empty")
@@ -1496,6 +1568,9 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecuteExitActions(state EmptyFi
 			// states' <onexit> run -- before it is dropped; what that exit
 			// sends to #_parent is dropped with it (§scxml-6.4, test252).
 			p.childInvUnmatched.Stop()
+			// Child sessions in Mesh (SCE_MESH.md): the session ended, after the
+			// child stopped, so what it sent while stopping was handed over first.
+			p.childInvUnmatched.DetachMesh()
 			p.childInvUnmatched = nil
 		}
 		delete(p.activeInvokes, "inv_unmatched")

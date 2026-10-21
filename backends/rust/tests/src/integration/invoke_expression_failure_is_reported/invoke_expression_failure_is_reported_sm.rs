@@ -176,6 +176,10 @@ pub struct InvokeExpressionFailureIsReportedPolicy {
     // W3C SCXML 6.4: Hybrid invoke child '_invoke_0' (invoke_expression_failure_is_reported_hybrid0)
     child_invoke_0: Option<Box<sce_rust_runtime::Engine<super::invoke_expression_failure_is_reported_hybrid0_sm::InvokeExpressionFailureIsReportedHybrid0Policy>>>,
     pending_done_invoke_invoke_0: bool,
+    // docs/adr/0045: how many times '_invoke_0' has started in
+    // this session. The next start is numbered by it, and so is the id it is
+    // started under, so a child's ids come from the tree alone.
+    invoke_starts_invoke_0: u64,
     // W3C SCXML 6.4: Parent engine external queue for #_parent send routing
     // Always generated under std — any SM can be invoked as a child. Under
     // `--no-std` (SCE Protocol-Synthesis RFC §synth-5-J-2) the SCXML `<invoke>` element
@@ -218,6 +222,7 @@ impl InvokeExpressionFailureIsReportedPolicy {
             active_invokes: std::collections::HashMap::new(),
             child_invoke_0: None,
             pending_done_invoke_invoke_0: false,
+            invoke_starts_invoke_0: 0,
             parent_external_queue: None,
             invoke_id: String::new(),
             child_session_id: String::new(),
@@ -441,8 +446,13 @@ impl InvokeExpressionFailureIsReportedPolicy {
     // W3C SCXML 6.4: Defer the start of invoke '_invoke_0' of state 'probe' to macrostep end
     fn defer_invoke_invoke_0(&mut self, _engine: &mut sce_rust_runtime::Engine<Self>) {
         {
+            // docs/adr/0045: the id is the state's, the number of this start and
+            // the `<invoke>`'s, so it comes from the tree alone and is the same
+            // text on every backend (W3C test 224 reads the state's id and a dot
+            // in front of it).
+            self.invoke_starts_invoke_0 += 1;
             let generated_invoke_id =
-                format!("{}.{}._invoke_0", "probe", self as *const _ as usize);
+                format!("{}.{}._invoke_0", "probe", self.invoke_starts_invoke_0);
             let id_stored = true;
             if id_stored {
                 sce_rust_runtime::invoke::defer_invoke(
@@ -515,12 +525,11 @@ impl InvokeExpressionFailureIsReportedPolicy {
                 child_policy.invoke_id = pending.invoke_id.clone();
                 child_policy.child_session_id = child_session_id.clone();
 
+                // W3C SCXML C.1, as for a static child: the candidate adopts the
+                // id its parent recorded for it, which comes from the tree alone
+                // (docs/adr/0045) — this session's id and the id of this start.
                 if child_policy.session_id.is_none() {
-                    static HYBRID_SESSION_COUNTER: core::sync::atomic::AtomicU64 =
-                        core::sync::atomic::AtomicU64::new(0);
-                    let cid =
-                        HYBRID_SESSION_COUNTER.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                    child_policy.session_id = Some(format!("hybrid_session_{}", cid));
+                    child_policy.session_id = Some(child_session_id.clone());
                 }
 
                 // W3C SCXML 6.4.1: Track active invoke session
@@ -545,6 +554,11 @@ impl InvokeExpressionFailureIsReportedPolicy {
                 // it holds, not the ones that engine invoked.
                 child_engine.set_clock(engine.clock());
                 child_engine.set_completion_callback(|| {});
+                // Child sessions in Mesh (SCE_MESH.md): the router of the
+                // candidate this start chose, asked of this machine's factory
+                // and installed before the child initializes, since its first
+                // `<onentry>` may already send to a peer.
+                engine.start_child_mesh(&mut child_engine, "_invoke_0", "");
                 child_engine.initialize();
 
                 self.child_invoke_0 = Some(Box::new(child_engine));
@@ -569,6 +583,10 @@ impl InvokeExpressionFailureIsReportedPolicy {
                     .map_or(false, |c| c.is_in_final_state())
                 {
                     self.pending_done_invoke_invoke_0 = true;
+                    // The session ended: its Mesh router is told so.
+                    if let Some(child) = self.child_invoke_0.as_mut() {
+                        child.detach_mesh();
+                    }
                     // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                     // done.invoke.<id>._event.data.
                     let donedata = self
@@ -598,6 +616,9 @@ impl InvokeExpressionFailureIsReportedPolicy {
                     "_invoke_0",
                     engine,
                 );
+                // Child sessions in Mesh (SCE_MESH.md): what arrived for the
+                // child on the router it was given, before its macrostep.
+                child.apply_mesh_calls();
                 child.tick();
                 sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
                     &child.policy().parent_external_queue,
@@ -607,6 +628,8 @@ impl InvokeExpressionFailureIsReportedPolicy {
                 );
                 if child.is_in_final_state() && !self.pending_done_invoke_invoke_0 {
                     self.pending_done_invoke_invoke_0 = true;
+                    // The session ended: its Mesh router is told so.
+                    child.detach_mesh();
                     // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                     // done.invoke.<id>._event.data.
                     let donedata = child.donedata_at_final().to_string();
@@ -908,8 +931,9 @@ impl StatePolicy for InvokeExpressionFailureIsReportedPolicy {
                     InvokeExpressionFailureIsReportedState::Probe,
                 );
                 // W3C SCXML 6.4: Cleanup running hybrid child '_invoke_0'
-                if self.child_invoke_0.is_some() {
-                    self.child_invoke_0 = None;
+                if let Some(mut child) = self.child_invoke_0.take() {
+                    child.stop();
+                    child.detach_mesh();
                 }
                 self.active_invokes.remove("_invoke_0");
                 self.pending_done_invoke_invoke_0 = false;

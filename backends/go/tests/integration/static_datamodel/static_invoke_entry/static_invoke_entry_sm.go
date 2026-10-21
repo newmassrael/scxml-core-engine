@@ -196,6 +196,14 @@ type StaticInvokeEntryPolicy struct {
 	pendingDoneInvokeFirst bool
 	childSecond sce.ChildEngine
 	pendingDoneInvokeSecond bool
+	// docs/adr/0045: how many times 'first' has started in
+	// this session; the next start, and the id it is started under, is numbered
+	// by it, so a child's ids come from the tree alone.
+	invokeStartsFirst uint64
+	// docs/adr/0045: how many times 'second' has started in
+	// this session; the next start, and the id it is started under, is numbered
+	// by it, so a child's ids come from the tree alone.
+	invokeStartsSecond uint64
 	// W3C SCXML 6.4: Parent communication (unbounded — see sce.ParentEventQueue)
 	ParentExternalQueue *sce.ParentEventQueue
 	InvokeID           string
@@ -348,6 +356,12 @@ func (p *StaticInvokeEntryPolicy) ExecutePendingInvokes(engine *sce.Engine[Stati
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
 			childEngine.SetCompletionCallback(func() {})
+			// Child sessions in Mesh (SCE_MESH.md): the child's router, asked of
+			// this machine's factory with the invoke's id and the stem of the
+			// child's document (empty for one written inline), and installed
+			// before the child initializes, since its first <onentry> may
+			// already send to a peer.
+			engine.StartChildMesh(childEngine, "second", "")
 			childEngine.Initialize()
 
 			// W3C SCXML 6.4: Store child and create wrapper
@@ -360,6 +374,8 @@ func (p *StaticInvokeEntryPolicy) ExecutePendingInvokes(engine *sce.Engine[Stati
 			// W3C SCXML 6.4: Check if child completed during initialize
 			if wrapper.IsInFinalState() {
 				p.pendingDoneInvokeSecond = true
+				// The session ended: its Mesh router is told so.
+				wrapper.DetachMesh()
 				// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 				// done.invoke.<id>._event.data. Mirrors the C++ AOT contract
 				// and the Rust raise_done_invoke(donedata) 3-arg signature.
@@ -426,6 +442,12 @@ func (p *StaticInvokeEntryPolicy) ExecutePendingInvokes(engine *sce.Engine[Stati
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
 			childEngine.SetCompletionCallback(func() {})
+			// Child sessions in Mesh (SCE_MESH.md): the child's router, asked of
+			// this machine's factory with the invoke's id and the stem of the
+			// child's document (empty for one written inline), and installed
+			// before the child initializes, since its first <onentry> may
+			// already send to a peer.
+			engine.StartChildMesh(childEngine, "first", "")
 			childEngine.Initialize()
 
 			// W3C SCXML 6.4: Store child and create wrapper
@@ -438,6 +460,8 @@ func (p *StaticInvokeEntryPolicy) ExecutePendingInvokes(engine *sce.Engine[Stati
 			// W3C SCXML 6.4: Check if child completed during initialize
 			if wrapper.IsInFinalState() {
 				p.pendingDoneInvokeFirst = true
+				// The session ended: its Mesh router is told so.
+				wrapper.DetachMesh()
 				// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 				// done.invoke.<id>._event.data. Mirrors the C++ AOT contract
 				// and the Rust raise_done_invoke(donedata) 3-arg signature.
@@ -454,10 +478,15 @@ func (p *StaticInvokeEntryPolicy) TickChildren(engine *sce.Engine[StaticInvokeEn
 	if !p.pendingDoneInvokeFirst && p.childFirst != nil {
 		child := p.childFirst
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "first", engine)
+		// Child sessions in Mesh (SCE_MESH.md): what arrived for the child on
+		// the router it was given, before its macrostep.
+		child.ApplyMeshCalls()
 		child.Tick()
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "first", engine)
 		if child.IsInFinalState() && !p.pendingDoneInvokeFirst {
 			p.pendingDoneInvokeFirst = true
+			// The session ended: its Mesh router is told so.
+			child.DetachMesh()
 			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 			// done.invoke.<id>._event.data.
 			sce.RaiseDoneInvoke("first", child.DonedataAtFinal(), engine)
@@ -466,10 +495,15 @@ func (p *StaticInvokeEntryPolicy) TickChildren(engine *sce.Engine[StaticInvokeEn
 	if !p.pendingDoneInvokeSecond && p.childSecond != nil {
 		child := p.childSecond
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "second", engine)
+		// Child sessions in Mesh (SCE_MESH.md): what arrived for the child on
+		// the router it was given, before its macrostep.
+		child.ApplyMeshCalls()
 		child.Tick()
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "second", engine)
 		if child.IsInFinalState() && !p.pendingDoneInvokeSecond {
 			p.pendingDoneInvokeSecond = true
+			// The session ended: its Mesh router is told so.
+			child.DetachMesh()
 			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 			// done.invoke.<id>._event.data.
 			sce.RaiseDoneInvoke("second", child.DonedataAtFinal(), engine)
@@ -597,6 +631,8 @@ func (w *childEngineWrapperStaticInvokeEntry_First) SetCompletionCallback(cb fun
 func (w *childEngineWrapperStaticInvokeEntry_First) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperStaticInvokeEntry_First) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 func (w *childEngineWrapperStaticInvokeEntry_First) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperStaticInvokeEntry_First) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperStaticInvokeEntry_First) DetachMesh() { w.engine.DetachMesh() }
 type childEngineWrapperStaticInvokeEntry_Second struct {
 	engine *sce.Engine[StaticInvokeEntrySceSynthInvokeSecondState, StaticInvokeEntrySceSynthInvokeSecondEvent]
 	policy *StaticInvokeEntrySceSynthInvokeSecondPolicy
@@ -612,6 +648,8 @@ func (w *childEngineWrapperStaticInvokeEntry_Second) SetCompletionCallback(cb fu
 func (w *childEngineWrapperStaticInvokeEntry_Second) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperStaticInvokeEntry_Second) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 func (w *childEngineWrapperStaticInvokeEntry_Second) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperStaticInvokeEntry_Second) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperStaticInvokeEntry_Second) DetachMesh() { w.engine.DetachMesh() }
 
 
 // DeliverToParent delivers a delayed `<send target="#_parent">` whose wait is
@@ -835,7 +873,10 @@ func (p *StaticInvokeEntryPolicy) ExecuteEntryActions(state StaticInvokeEntrySta
 		//line static_invoke_entry.scxml:66
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
-			generatedInvokeID := fmt.Sprintf("%s.%d.second", "overflowing", sce.NextInvokeCounter())
+			// docs/adr/0045: the platform part of the id is the number of this
+			// start, so the id comes from the tree alone.
+			p.invokeStartsSecond++
+			generatedInvokeID := fmt.Sprintf("%s.%d.second", "overflowing", p.invokeStartsSecond)
 			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[StaticInvokeEntryState]{
 				InvokeID:   generatedInvokeID,
 				State:      StaticInvokeEntryStateOverflowing,
@@ -846,7 +887,10 @@ func (p *StaticInvokeEntryPolicy) ExecuteEntryActions(state StaticInvokeEntrySta
 		//line static_invoke_entry.scxml:37
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
-			generatedInvokeID := fmt.Sprintf("%s.%d.first", "running", sce.NextInvokeCounter())
+			// docs/adr/0045: the platform part of the id is the number of this
+			// start, so the id comes from the tree alone.
+			p.invokeStartsFirst++
+			generatedInvokeID := fmt.Sprintf("%s.%d.first", "running", p.invokeStartsFirst)
 			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[StaticInvokeEntryState]{
 				InvokeID:   generatedInvokeID,
 				State:      StaticInvokeEntryStateRunning,
@@ -890,6 +934,9 @@ func (p *StaticInvokeEntryPolicy) ExecuteExitActions(state StaticInvokeEntryStat
 			// states' <onexit> run -- before it is dropped; what that exit
 			// sends to #_parent is dropped with it (§scxml-6.4, test252).
 			p.childSecond.Stop()
+			// Child sessions in Mesh (SCE_MESH.md): the session ended, after the
+			// child stopped, so what it sent while stopping was handed over first.
+			p.childSecond.DetachMesh()
 			p.childSecond = nil
 		}
 		delete(p.activeInvokes, "second")
@@ -901,6 +948,9 @@ func (p *StaticInvokeEntryPolicy) ExecuteExitActions(state StaticInvokeEntryStat
 			// states' <onexit> run -- before it is dropped; what that exit
 			// sends to #_parent is dropped with it (§scxml-6.4, test252).
 			p.childFirst.Stop()
+			// Child sessions in Mesh (SCE_MESH.md): the session ended, after the
+			// child stopped, so what it sent while stopping was handed over first.
+			p.childFirst.DetachMesh()
 			p.childFirst = nil
 		}
 		delete(p.activeInvokes, "first")

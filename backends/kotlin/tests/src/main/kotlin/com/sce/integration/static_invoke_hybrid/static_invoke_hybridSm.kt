@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
+// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_invoke_hybrid.scxml
@@ -511,7 +511,9 @@ class StaticInvokeHybridStateMachine(
                 // W3C SCXML 6.4: Hybrid invoke — runtime expression evaluation + dynamic child
                 // C++ parity: StateMachine::createFromSCXMLString() / FileLoadingHelper::loadScxmlFile()
                 run {
-                    val generatedInvokeId = "first.${System.identityHashCode(this)}.first_run"
+                    // docs/adr/0045: the platform part of the id is the number of
+                    // this start, so the id comes from the tree alone.
+                    val generatedInvokeId = "first.${nextInvokeStart("first_run")}.first_run"
                     deferInvoke(state, generatedInvokeId) {
                         try {
                             // §scxml-6.4: the `srcexpr` names the document to start.
@@ -560,7 +562,7 @@ class StaticInvokeHybridStateMachine(
                                 }
                             }
 
-                            startInvoke("first_run", childSM, false, StaticInvokeHybridEvent.Done.Invoke.FirstRun, "", generatedInvokeId)
+                            startInvoke("first_run", childSM, false, StaticInvokeHybridEvent.Done.Invoke.FirstRun, "", generatedInvokeId, __sceSelected)
                         } catch (_: Exception) {
                             // W3C SCXML 6.4: the child could not be started. Evaluation
                             // failure no longer reaches here — it has its own raise above,
@@ -574,7 +576,9 @@ class StaticInvokeHybridStateMachine(
                 // W3C SCXML 6.4: Hybrid invoke — runtime expression evaluation + dynamic child
                 // C++ parity: StateMachine::createFromSCXMLString() / FileLoadingHelper::loadScxmlFile()
                 run {
-                    val generatedInvokeId = "lossy.${System.identityHashCode(this)}.lossy_run"
+                    // docs/adr/0045: the platform part of the id is the number of
+                    // this start, so the id comes from the tree alone.
+                    val generatedInvokeId = "lossy.${nextInvokeStart("lossy_run")}.lossy_run"
                     deferInvoke(state, generatedInvokeId) {
                         try {
                             // §scxml-6.4: the `srcexpr` names the document to start.
@@ -623,7 +627,7 @@ class StaticInvokeHybridStateMachine(
                                 }
                             }
 
-                            startInvoke("lossy_run", childSM, false, StaticInvokeHybridEvent.Done.Invoke.LossyRun, "", generatedInvokeId)
+                            startInvoke("lossy_run", childSM, false, StaticInvokeHybridEvent.Done.Invoke.LossyRun, "", generatedInvokeId, __sceSelected)
                         } catch (_: Exception) {
                             // W3C SCXML 6.4: the child could not be started. Evaluation
                             // failure no longer reaches here — it has its own raise above,
@@ -637,7 +641,9 @@ class StaticInvokeHybridStateMachine(
                 // W3C SCXML 6.4: Hybrid invoke — runtime expression evaluation + dynamic child
                 // C++ parity: StateMachine::createFromSCXMLString() / FileLoadingHelper::loadScxmlFile()
                 run {
-                    val generatedInvokeId = "missing.${System.identityHashCode(this)}.missing_run"
+                    // docs/adr/0045: the platform part of the id is the number of
+                    // this start, so the id comes from the tree alone.
+                    val generatedInvokeId = "missing.${nextInvokeStart("missing_run")}.missing_run"
                     deferInvoke(state, generatedInvokeId) {
                         try {
                             // §scxml-6.4: the `srcexpr` names the document to start.
@@ -672,7 +678,7 @@ class StaticInvokeHybridStateMachine(
                                 }
                             }
 
-                            startInvoke("missing_run", childSM, false, StaticInvokeHybridEvent.Done.Invoke.MissingRun, "", generatedInvokeId)
+                            startInvoke("missing_run", childSM, false, StaticInvokeHybridEvent.Done.Invoke.MissingRun, "", generatedInvokeId, __sceSelected)
                         } catch (_: Exception) {
                             // W3C SCXML 6.4: the child could not be started. Evaluation
                             // failure no longer reaches here — it has its own raise above,
@@ -686,7 +692,9 @@ class StaticInvokeHybridStateMachine(
                 // W3C SCXML 6.4: Hybrid invoke — runtime expression evaluation + dynamic child
                 // C++ parity: StateMachine::createFromSCXMLString() / FileLoadingHelper::loadScxmlFile()
                 run {
-                    val generatedInvokeId = "second.${System.identityHashCode(this)}.second_run"
+                    // docs/adr/0045: the platform part of the id is the number of
+                    // this start, so the id comes from the tree alone.
+                    val generatedInvokeId = "second.${nextInvokeStart("second_run")}.second_run"
                     deferInvoke(state, generatedInvokeId) {
                         try {
                             // §scxml-6.4: the `srcexpr` names the document to start.
@@ -735,7 +743,7 @@ class StaticInvokeHybridStateMachine(
                                 }
                             }
 
-                            startInvoke("second_run", childSM, false, StaticInvokeHybridEvent.Done.Invoke.SecondRun, "", generatedInvokeId)
+                            startInvoke("second_run", childSM, false, StaticInvokeHybridEvent.Done.Invoke.SecondRun, "", generatedInvokeId, __sceSelected)
                         } catch (_: Exception) {
                             // W3C SCXML 6.4: the child could not be started. Evaluation
                             // failure no longer reaches here — it has its own raise above,

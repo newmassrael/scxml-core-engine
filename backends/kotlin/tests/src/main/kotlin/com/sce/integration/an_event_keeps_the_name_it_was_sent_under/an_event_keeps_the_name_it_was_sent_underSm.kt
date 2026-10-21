@@ -455,13 +455,14 @@ class AnEventKeepsTheNameItWasSentUnderStateMachine(
     private fun deferStaticInvoke(invokeId: String, state: AnEventKeepsTheNameItWasSentUnderState) {
         when (invokeId) {
             "listener" -> run {
-                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
-                val generatedInvokeId = "phase.${System.identityHashCode(this)}.listener"
+                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
+                // the platform part is the number of this start (docs/adr/0045).
+                val generatedInvokeId = "phase.${nextInvokeStart("listener")}.listener"
                 deferInvoke(state, generatedInvokeId) {
 
                     val childSM = AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("listener", childSM, false, AnEventKeepsTheNameItWasSentUnderEvent.Done.Invoke, "", generatedInvokeId)
+                    startInvoke("listener", childSM, false, AnEventKeepsTheNameItWasSentUnderEvent.Done.Invoke, "", generatedInvokeId, "")
                 }
             }
             else -> error("the document has no child session '$invokeId' (codegen invariant)")

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
+// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -20,7 +20,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: static_invoke.scxml:22 :: _machine
+// SCE-MAP: static_invoke.scxml:26 :: _machine
 
 package static_invoke
 
@@ -199,6 +199,10 @@ type StaticInvokePolicy struct {
 	activeInvokes  map[string]*sce.ChildSession
 	childWorker sce.ChildEngine
 	pendingDoneInvokeWorker bool
+	// docs/adr/0045: how many times 'worker' has started in
+	// this session; the next start, and the id it is started under, is numbered
+	// by it, so a child's ids come from the tree alone.
+	invokeStartsWorker uint64
 	// W3C SCXML 6.4: Parent communication (unbounded — see sce.ParentEventQueue)
 	ParentExternalQueue *sce.ParentEventQueue
 	InvokeID           string
@@ -302,6 +306,12 @@ func (p *StaticInvokePolicy) ExecutePendingInvokes(engine *sce.Engine[StaticInvo
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
 			childEngine.SetCompletionCallback(func() {})
+			// Child sessions in Mesh (SCE_MESH.md): the child's router, asked of
+			// this machine's factory with the invoke's id and the stem of the
+			// child's document (empty for one written inline), and installed
+			// before the child initializes, since its first <onentry> may
+			// already send to a peer.
+			engine.StartChildMesh(childEngine, "worker", "")
 			childEngine.Initialize()
 
 			// W3C SCXML 6.4: Store child and create wrapper
@@ -314,6 +324,8 @@ func (p *StaticInvokePolicy) ExecutePendingInvokes(engine *sce.Engine[StaticInvo
 			// W3C SCXML 6.4: Check if child completed during initialize
 			if wrapper.IsInFinalState() {
 				p.pendingDoneInvokeWorker = true
+				// The session ended: its Mesh router is told so.
+				wrapper.DetachMesh()
 				// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 				// done.invoke.<id>._event.data. Mirrors the C++ AOT contract
 				// and the Rust raise_done_invoke(donedata) 3-arg signature.
@@ -330,10 +342,15 @@ func (p *StaticInvokePolicy) TickChildren(engine *sce.Engine[StaticInvokeState, 
 	if !p.pendingDoneInvokeWorker && p.childWorker != nil {
 		child := p.childWorker
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "worker", engine)
+		// Child sessions in Mesh (SCE_MESH.md): what arrived for the child on
+		// the router it was given, before its macrostep.
+		child.ApplyMeshCalls()
 		child.Tick()
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "worker", engine)
 		if child.IsInFinalState() && !p.pendingDoneInvokeWorker {
 			p.pendingDoneInvokeWorker = true
+			// The session ended: its Mesh router is told so.
+			child.DetachMesh()
 			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 			// done.invoke.<id>._event.data.
 			sce.RaiseDoneInvoke("worker", child.DonedataAtFinal(), engine)
@@ -457,6 +474,8 @@ func (w *childEngineWrapperStaticInvoke_Worker) SetCompletionCallback(cb func())
 func (w *childEngineWrapperStaticInvoke_Worker) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperStaticInvoke_Worker) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 func (w *childEngineWrapperStaticInvoke_Worker) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperStaticInvoke_Worker) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperStaticInvoke_Worker) DetachMesh() { w.engine.DetachMesh() }
 
 
 // DeliverToParent delivers a delayed `<send target="#_parent">` whose wait is
@@ -679,14 +698,17 @@ func (p *StaticInvokePolicy) ClearEventMetadata() {
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line static_invoke.scxml:22
+//line static_invoke.scxml:26
 func (p *StaticInvokePolicy) ExecuteEntryActions(state StaticInvokeState, engine *sce.Engine[StaticInvokeState, StaticInvokeEvent], isDefaultEntry bool) {
 	switch state {
 	case StaticInvokeStateWorking:
-		//line static_invoke.scxml:27
+		//line static_invoke.scxml:31
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
-			generatedInvokeID := fmt.Sprintf("%s.%d.worker", "working", sce.NextInvokeCounter())
+			// docs/adr/0045: the platform part of the id is the number of this
+			// start, so the id comes from the tree alone.
+			p.invokeStartsWorker++
+			generatedInvokeID := fmt.Sprintf("%s.%d.worker", "working", p.invokeStartsWorker)
 			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[StaticInvokeState]{
 				InvokeID:   generatedInvokeID,
 				State:      StaticInvokeStateWorking,
@@ -703,7 +725,7 @@ func (p *StaticInvokePolicy) ExecuteEntryActions(state StaticInvokeState, engine
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line static_invoke.scxml:22
+//line static_invoke.scxml:26
 func (p *StaticInvokePolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[StaticInvokeState, StaticInvokeEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -711,7 +733,7 @@ func (p *StaticInvokePolicy) ExecuteHistoryDefaultContent(history sce.HistoryID,
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line static_invoke.scxml:22
+//line static_invoke.scxml:26
 func (p *StaticInvokePolicy) ExecuteExitActions(state StaticInvokeState, engine *sce.Engine[StaticInvokeState, StaticInvokeEvent], configurationBeforeExit []StaticInvokeState) {
 	// §scxml-D-exitStates orders one state's exit as onexit, then
 	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
@@ -730,6 +752,9 @@ func (p *StaticInvokePolicy) ExecuteExitActions(state StaticInvokeState, engine 
 			// states' <onexit> run -- before it is dropped; what that exit
 			// sends to #_parent is dropped with it (§scxml-6.4, test252).
 			p.childWorker.Stop()
+			// Child sessions in Mesh (SCE_MESH.md): the session ended, after the
+			// child stopped, so what it sent while stopping was handed over first.
+			p.childWorker.DetachMesh()
 			p.childWorker = nil
 		}
 		delete(p.activeInvokes, "worker")
@@ -743,7 +768,7 @@ func (p *StaticInvokePolicy) ExecuteExitActions(state StaticInvokeState, engine 
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line static_invoke.scxml:22
+//line static_invoke.scxml:26
 func (p *StaticInvokePolicy) BindCurrentEvent(event StaticInvokeEvent, engine *sce.Engine[StaticInvokeState, StaticInvokeEvent]) {
 	// This document's guards never read _event, so there is nothing to bind.
 }
@@ -753,7 +778,7 @@ func (p *StaticInvokePolicy) BindCurrentEvent(event StaticInvokeEvent, engine *s
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line static_invoke.scxml:22
+//line static_invoke.scxml:26
 func (p *StaticInvokePolicy) FirstEnabledTransition(state StaticInvokeState, event StaticInvokeEvent, engine *sce.Engine[StaticInvokeState, StaticInvokeEvent]) (sce.EnabledTransition[StaticInvokeState, sce.HistoryID], bool) {
 	switch state {
 	case StaticInvokeStateWorking:
@@ -815,13 +840,13 @@ func (p *StaticInvokePolicy) FirstEnabledTransition(state StaticInvokeState, eve
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line static_invoke.scxml:22
+//line static_invoke.scxml:26
 func (p *StaticInvokePolicy) ExecuteTransitionContent(source StaticInvokeState, transitionIndex int, engine *sce.Engine[StaticInvokeState, StaticInvokeEvent]) {
 	switch source {
 	case StaticInvokeStateWorking:
 		switch transitionIndex {
 		case 2:
-			//line static_invoke.scxml:46
+			//line static_invoke.scxml:50
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

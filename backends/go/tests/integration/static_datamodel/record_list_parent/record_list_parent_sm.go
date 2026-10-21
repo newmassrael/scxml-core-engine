@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
+// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -526,6 +526,10 @@ type RecordListParentPolicy struct {
 	activeInvokes  map[string]*sce.ChildSession
 	childList sce.ChildEngine
 	pendingDoneInvokeList bool
+	// docs/adr/0045: how many times 'list' has started in
+	// this session; the next start, and the id it is started under, is numbered
+	// by it, so a child's ids come from the tree alone.
+	invokeStartsList uint64
 	// W3C SCXML 6.4: Parent communication (unbounded — see sce.ParentEventQueue)
 	ParentExternalQueue *sce.ParentEventQueue
 	InvokeID           string
@@ -654,6 +658,12 @@ func (p *RecordListParentPolicy) ExecutePendingInvokes(engine *sce.Engine[Record
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
 			childEngine.SetCompletionCallback(func() {})
+			// Child sessions in Mesh (SCE_MESH.md): the child's router, asked of
+			// this machine's factory with the invoke's id and the stem of the
+			// child's document (empty for one written inline), and installed
+			// before the child initializes, since its first <onentry> may
+			// already send to a peer.
+			engine.StartChildMesh(childEngine, "list", "")
 			childEngine.Initialize()
 
 			// W3C SCXML 6.4: Store child and create wrapper
@@ -666,6 +676,8 @@ func (p *RecordListParentPolicy) ExecutePendingInvokes(engine *sce.Engine[Record
 			// W3C SCXML 6.4: Check if child completed during initialize
 			if wrapper.IsInFinalState() {
 				p.pendingDoneInvokeList = true
+				// The session ended: its Mesh router is told so.
+				wrapper.DetachMesh()
 				// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 				// done.invoke.<id>._event.data. Mirrors the C++ AOT contract
 				// and the Rust raise_done_invoke(donedata) 3-arg signature.
@@ -682,10 +694,15 @@ func (p *RecordListParentPolicy) TickChildren(engine *sce.Engine[RecordListParen
 	if !p.pendingDoneInvokeList && p.childList != nil {
 		child := p.childList
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "list", engine)
+		// Child sessions in Mesh (SCE_MESH.md): what arrived for the child on
+		// the router it was given, before its macrostep.
+		child.ApplyMeshCalls()
 		child.Tick()
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "list", engine)
 		if child.IsInFinalState() && !p.pendingDoneInvokeList {
 			p.pendingDoneInvokeList = true
+			// The session ended: its Mesh router is told so.
+			child.DetachMesh()
 			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 			// done.invoke.<id>._event.data.
 			sce.RaiseDoneInvoke("list", child.DonedataAtFinal(), engine)
@@ -789,6 +806,8 @@ func (w *childEngineWrapperRecordListParent_List) SetCompletionCallback(cb func(
 func (w *childEngineWrapperRecordListParent_List) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperRecordListParent_List) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 func (w *childEngineWrapperRecordListParent_List) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperRecordListParent_List) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperRecordListParent_List) DetachMesh() { w.engine.DetachMesh() }
 
 
 // DeliverToParent delivers a delayed `<send target="#_parent">` whose wait is
@@ -1213,7 +1232,10 @@ func (p *RecordListParentPolicy) ExecuteEntryActions(state RecordListParentState
 		//line record_list_parent.scxml:62
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
-			generatedInvokeID := fmt.Sprintf("%s.%d.list", "holding", sce.NextInvokeCounter())
+			// docs/adr/0045: the platform part of the id is the number of this
+			// start, so the id comes from the tree alone.
+			p.invokeStartsList++
+			generatedInvokeID := fmt.Sprintf("%s.%d.list", "holding", p.invokeStartsList)
 			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[RecordListParentState]{
 				InvokeID:   generatedInvokeID,
 				State:      RecordListParentStateHolding,
@@ -1257,6 +1279,9 @@ func (p *RecordListParentPolicy) ExecuteExitActions(state RecordListParentState,
 			// states' <onexit> run -- before it is dropped; what that exit
 			// sends to #_parent is dropped with it (§scxml-6.4, test252).
 			p.childList.Stop()
+			// Child sessions in Mesh (SCE_MESH.md): the session ended, after the
+			// child stopped, so what it sent while stopping was handed over first.
+			p.childList.DetachMesh()
 			p.childList = nil
 		}
 		delete(p.activeInvokes, "list")

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 438f3c44a0f49109d71c51cacca59b20d771e2147409672affa707c8d139f3c1
+// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_child_host_hybrid.scxml
@@ -386,7 +386,9 @@ class StaticChildHostHybridStateMachine(
                 // W3C SCXML 6.4: Hybrid invoke — runtime expression evaluation + dynamic child
                 // C++ parity: StateMachine::createFromSCXMLString() / FileLoadingHelper::loadScxmlFile()
                 run {
-                    val generatedInvokeId = "working.${System.identityHashCode(this)}.work"
+                    // docs/adr/0045: the platform part of the id is the number of
+                    // this start, so the id comes from the tree alone.
+                    val generatedInvokeId = "working.${nextInvokeStart("work")}.work"
                     deferInvoke(state, generatedInvokeId) {
                         try {
                             // §scxml-6.4: the `srcexpr` names the document to start.
@@ -407,7 +409,7 @@ class StaticChildHostHybridStateMachine(
                                 }
                             }
 
-                            startInvoke("work", childSM, false, StaticChildHostHybridEvent.Done.Invoke.Work, "", generatedInvokeId)
+                            startInvoke("work", childSM, false, StaticChildHostHybridEvent.Done.Invoke.Work, "", generatedInvokeId, __sceSelected)
                         } catch (_: Exception) {
                             // W3C SCXML 6.4: the child could not be started. Evaluation
                             // failure no longer reaches here — it has its own raise above,

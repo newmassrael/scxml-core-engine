@@ -628,8 +628,9 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
     private fun deferStaticInvoke(invokeId: String, state: ABadInvokeArgumentIsReportedOnceState) {
         when (invokeId) {
             "inv1" -> run {
-                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
-                val generatedInvokeId = "s0.${System.identityHashCode(this)}.inv1"
+                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
+                // the platform part is the number of this start (docs/adr/0045).
+                val generatedInvokeId = "s0.${nextInvokeStart("inv1")}.inv1"
                 deferInvoke(state, generatedInvokeId) {
                         // W3C SCXML 6.4: the arguments are evaluated when the <invoke>
                         // is executed — at macrostep end, where this deferred body
@@ -670,12 +671,13 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
                     val childSM = ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1StateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
                     setInvokeParams(childSM, invokeParams)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("inv1", childSM, false, ABadInvokeArgumentIsReportedOnceEvent.Done.Invoke, "", generatedInvokeId)
+                    startInvoke("inv1", childSM, false, ABadInvokeArgumentIsReportedOnceEvent.Done.Invoke, "", generatedInvokeId, "")
                 }
             }
             "inv2" -> run {
-                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
-                val generatedInvokeId = "s1.${System.identityHashCode(this)}.inv2"
+                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
+                // the platform part is the number of this start (docs/adr/0045).
+                val generatedInvokeId = "s1.${nextInvokeStart("inv2")}.inv2"
                 deferInvoke(state, generatedInvokeId) {
                         // W3C SCXML 6.4: the arguments are evaluated when the <invoke>
                         // is executed — at macrostep end, where this deferred body
@@ -694,12 +696,13 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
                     val childSM = ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2StateMachine()
                     setInvokeParams(childSM, invokeParams)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("inv2", childSM, false, ABadInvokeArgumentIsReportedOnceEvent.Done.Invoke, "", generatedInvokeId)
+                    startInvoke("inv2", childSM, false, ABadInvokeArgumentIsReportedOnceEvent.Done.Invoke, "", generatedInvokeId, "")
                 }
             }
             "inv3" -> run {
-                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
-                val generatedInvokeId = "s1.${System.identityHashCode(this)}.inv3"
+                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
+                // the platform part is the number of this start (docs/adr/0045).
+                val generatedInvokeId = "s1.${nextInvokeStart("inv3")}.inv3"
                 deferInvoke(state, generatedInvokeId) {
                         // W3C SCXML 6.4: the arguments are evaluated when the <invoke>
                         // is executed — at macrostep end, where this deferred body
@@ -726,7 +729,7 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
                     val childSM = ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3StateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
                     setInvokeParams(childSM, invokeParams)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("inv3", childSM, false, ABadInvokeArgumentIsReportedOnceEvent.Done.Invoke, "", generatedInvokeId)
+                    startInvoke("inv3", childSM, false, ABadInvokeArgumentIsReportedOnceEvent.Done.Invoke, "", generatedInvokeId, "")
                 }
             }
             else -> error("the document has no child session '$invokeId' (codegen invariant)")

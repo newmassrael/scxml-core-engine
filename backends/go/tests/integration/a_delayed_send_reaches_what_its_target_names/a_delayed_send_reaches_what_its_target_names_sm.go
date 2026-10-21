@@ -228,6 +228,14 @@ type ADelayedSendReachesWhatItsTargetNamesPolicy struct {
 	pendingDoneInvokeKid bool
 	childGone sce.ChildEngine
 	pendingDoneInvokeGone bool
+	// docs/adr/0045: how many times 'kid' has started in
+	// this session; the next start, and the id it is started under, is numbered
+	// by it, so a child's ids come from the tree alone.
+	invokeStartsKid uint64
+	// docs/adr/0045: how many times 'gone' has started in
+	// this session; the next start, and the id it is started under, is numbered
+	// by it, so a child's ids come from the tree alone.
+	invokeStartsGone uint64
 	// W3C SCXML 6.4: Parent communication (unbounded — see sce.ParentEventQueue)
 	ParentExternalQueue *sce.ParentEventQueue
 	InvokeID           string
@@ -690,6 +698,12 @@ func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) ExecutePendingInvokes(engi
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
 			childEngine.SetCompletionCallback(func() {})
+			// Child sessions in Mesh (SCE_MESH.md): the child's router, asked of
+			// this machine's factory with the invoke's id and the stem of the
+			// child's document (empty for one written inline), and installed
+			// before the child initializes, since its first <onentry> may
+			// already send to a peer.
+			engine.StartChildMesh(childEngine, "kid", "")
 			childEngine.Initialize()
 
 			// W3C SCXML 6.4: Store child and create wrapper
@@ -702,6 +716,8 @@ func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) ExecutePendingInvokes(engi
 			// W3C SCXML 6.4: Check if child completed during initialize
 			if wrapper.IsInFinalState() {
 				p.pendingDoneInvokeKid = true
+				// The session ended: its Mesh router is told so.
+				wrapper.DetachMesh()
 				// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 				// done.invoke.<id>._event.data. Mirrors the C++ AOT contract
 				// and the Rust raise_done_invoke(donedata) 3-arg signature.
@@ -751,6 +767,12 @@ func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) ExecutePendingInvokes(engi
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
 			childEngine.SetCompletionCallback(func() {})
+			// Child sessions in Mesh (SCE_MESH.md): the child's router, asked of
+			// this machine's factory with the invoke's id and the stem of the
+			// child's document (empty for one written inline), and installed
+			// before the child initializes, since its first <onentry> may
+			// already send to a peer.
+			engine.StartChildMesh(childEngine, "gone", "")
 			childEngine.Initialize()
 
 			// W3C SCXML 6.4: Store child and create wrapper
@@ -763,6 +785,8 @@ func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) ExecutePendingInvokes(engi
 			// W3C SCXML 6.4: Check if child completed during initialize
 			if wrapper.IsInFinalState() {
 				p.pendingDoneInvokeGone = true
+				// The session ended: its Mesh router is told so.
+				wrapper.DetachMesh()
 				// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 				// done.invoke.<id>._event.data. Mirrors the C++ AOT contract
 				// and the Rust raise_done_invoke(donedata) 3-arg signature.
@@ -779,10 +803,15 @@ func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) TickChildren(engine *sce.E
 	if !p.pendingDoneInvokeKid && p.childKid != nil {
 		child := p.childKid
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "kid", engine)
+		// Child sessions in Mesh (SCE_MESH.md): what arrived for the child on
+		// the router it was given, before its macrostep.
+		child.ApplyMeshCalls()
 		child.Tick()
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "kid", engine)
 		if child.IsInFinalState() && !p.pendingDoneInvokeKid {
 			p.pendingDoneInvokeKid = true
+			// The session ended: its Mesh router is told so.
+			child.DetachMesh()
 			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 			// done.invoke.<id>._event.data.
 			sce.RaiseDoneInvoke("kid", child.DonedataAtFinal(), engine)
@@ -791,10 +820,15 @@ func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) TickChildren(engine *sce.E
 	if !p.pendingDoneInvokeGone && p.childGone != nil {
 		child := p.childGone
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "gone", engine)
+		// Child sessions in Mesh (SCE_MESH.md): what arrived for the child on
+		// the router it was given, before its macrostep.
+		child.ApplyMeshCalls()
 		child.Tick()
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "gone", engine)
 		if child.IsInFinalState() && !p.pendingDoneInvokeGone {
 			p.pendingDoneInvokeGone = true
+			// The session ended: its Mesh router is told so.
+			child.DetachMesh()
 			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 			// done.invoke.<id>._event.data.
 			sce.RaiseDoneInvoke("gone", child.DonedataAtFinal(), engine)
@@ -922,6 +956,8 @@ func (w *childEngineWrapperADelayedSendReachesWhatItsTargetNames_Kid) SetComplet
 func (w *childEngineWrapperADelayedSendReachesWhatItsTargetNames_Kid) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperADelayedSendReachesWhatItsTargetNames_Kid) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 func (w *childEngineWrapperADelayedSendReachesWhatItsTargetNames_Kid) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperADelayedSendReachesWhatItsTargetNames_Kid) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperADelayedSendReachesWhatItsTargetNames_Kid) DetachMesh() { w.engine.DetachMesh() }
 type childEngineWrapperADelayedSendReachesWhatItsTargetNames_Gone struct {
 	engine *sce.Engine[ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneState, ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEvent]
 	policy *ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGonePolicy
@@ -937,6 +973,8 @@ func (w *childEngineWrapperADelayedSendReachesWhatItsTargetNames_Gone) SetComple
 func (w *childEngineWrapperADelayedSendReachesWhatItsTargetNames_Gone) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperADelayedSendReachesWhatItsTargetNames_Gone) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 func (w *childEngineWrapperADelayedSendReachesWhatItsTargetNames_Gone) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperADelayedSendReachesWhatItsTargetNames_Gone) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperADelayedSendReachesWhatItsTargetNames_Gone) DetachMesh() { w.engine.DetachMesh() }
 
 
 // DeliverToParent delivers a delayed `<send target="#_parent">` whose wait is
@@ -1261,7 +1299,10 @@ func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) ExecuteEntryActions(state 
 		}()
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
-			generatedInvokeID := fmt.Sprintf("%s.%d.kid", "run", sce.NextInvokeCounter())
+			// docs/adr/0045: the platform part of the id is the number of this
+			// start, so the id comes from the tree alone.
+			p.invokeStartsKid++
+			generatedInvokeID := fmt.Sprintf("%s.%d.kid", "run", p.invokeStartsKid)
 			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[ADelayedSendReachesWhatItsTargetNamesState]{
 				InvokeID:   generatedInvokeID,
 				State:      ADelayedSendReachesWhatItsTargetNamesStateRun,
@@ -1269,7 +1310,10 @@ func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) ExecuteEntryActions(state 
 			})
 		}
 		{
-			generatedInvokeID := fmt.Sprintf("%s.%d.gone", "run", sce.NextInvokeCounter())
+			// docs/adr/0045: the platform part of the id is the number of this
+			// start, so the id comes from the tree alone.
+			p.invokeStartsGone++
+			generatedInvokeID := fmt.Sprintf("%s.%d.gone", "run", p.invokeStartsGone)
 			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[ADelayedSendReachesWhatItsTargetNamesState]{
 				InvokeID:   generatedInvokeID,
 				State:      ADelayedSendReachesWhatItsTargetNamesStateRun,
@@ -1314,6 +1358,9 @@ func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) ExecuteExitActions(state A
 			// states' <onexit> run -- before it is dropped; what that exit
 			// sends to #_parent is dropped with it (§scxml-6.4, test252).
 			p.childKid.Stop()
+			// Child sessions in Mesh (SCE_MESH.md): the session ended, after the
+			// child stopped, so what it sent while stopping was handed over first.
+			p.childKid.DetachMesh()
 			p.childKid = nil
 		}
 		delete(p.activeInvokes, "kid")
@@ -1323,6 +1370,9 @@ func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) ExecuteExitActions(state A
 			// states' <onexit> run -- before it is dropped; what that exit
 			// sends to #_parent is dropped with it (§scxml-6.4, test252).
 			p.childGone.Stop()
+			// Child sessions in Mesh (SCE_MESH.md): the session ended, after the
+			// child stopped, so what it sent while stopping was handed over first.
+			p.childGone.DetachMesh()
 			p.childGone = nil
 		}
 		delete(p.activeInvokes, "gone")

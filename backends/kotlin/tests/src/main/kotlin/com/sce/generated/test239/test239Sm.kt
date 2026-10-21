@@ -258,23 +258,25 @@ class Test239StateMachine(
     private fun deferStaticInvoke(invokeId: String, state: Test239State) {
         when (invokeId) {
             "_invoke_0" -> run {
-                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
-                val generatedInvokeId = "s01.${System.identityHashCode(this)}._invoke_0"
+                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
+                // the platform part is the number of this start (docs/adr/0045).
+                val generatedInvokeId = "s01.${nextInvokeStart("_invoke_0")}._invoke_0"
                 deferInvoke(state, generatedInvokeId) {
 
                     val childSM = Test239sub1StateMachine()
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("_invoke_0", childSM, false, Test239Event.Done.Invoke, "", generatedInvokeId)
+                    startInvoke("_invoke_0", childSM, false, Test239Event.Done.Invoke, "", generatedInvokeId, "test239sub1")
                 }
             }
             "_invoke_1" -> run {
-                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
-                val generatedInvokeId = "s02.${System.identityHashCode(this)}._invoke_1"
+                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format;
+                // the platform part is the number of this start (docs/adr/0045).
+                val generatedInvokeId = "s02.${nextInvokeStart("_invoke_1")}._invoke_1"
                 deferInvoke(state, generatedInvokeId) {
 
                     val childSM = Test239SceSynthInvokeInvoke1StateMachine()
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("_invoke_1", childSM, false, Test239Event.Done.Invoke, "", generatedInvokeId)
+                    startInvoke("_invoke_1", childSM, false, Test239Event.Done.Invoke, "", generatedInvokeId, "")
                 }
             }
             else -> error("the document has no child session '$invokeId' (codegen invariant)")

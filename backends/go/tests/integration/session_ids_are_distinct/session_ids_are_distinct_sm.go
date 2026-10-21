@@ -222,6 +222,14 @@ type SessionIdsAreDistinctPolicy struct {
 	pendingDoneInvokeInvA bool
 	childInvB sce.ChildEngine
 	pendingDoneInvokeInvB bool
+	// docs/adr/0045: how many times 'inv_a' has started in
+	// this session; the next start, and the id it is started under, is numbered
+	// by it, so a child's ids come from the tree alone.
+	invokeStartsInvA uint64
+	// docs/adr/0045: how many times 'inv_b' has started in
+	// this session; the next start, and the id it is started under, is numbered
+	// by it, so a child's ids come from the tree alone.
+	invokeStartsInvB uint64
 	// W3C SCXML 6.4: Parent communication (unbounded — see sce.ParentEventQueue)
 	ParentExternalQueue *sce.ParentEventQueue
 	InvokeID           string
@@ -533,6 +541,12 @@ func (p *SessionIdsAreDistinctPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
 			childEngine.SetCompletionCallback(func() {})
+			// Child sessions in Mesh (SCE_MESH.md): the child's router, asked of
+			// this machine's factory with the invoke's id and the stem of the
+			// child's document (empty for one written inline), and installed
+			// before the child initializes, since its first <onentry> may
+			// already send to a peer.
+			engine.StartChildMesh(childEngine, "inv_a", "")
 			childEngine.Initialize()
 
 			// W3C SCXML 6.4: Store child and create wrapper
@@ -545,6 +559,8 @@ func (p *SessionIdsAreDistinctPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 			// W3C SCXML 6.4: Check if child completed during initialize
 			if wrapper.IsInFinalState() {
 				p.pendingDoneInvokeInvA = true
+				// The session ended: its Mesh router is told so.
+				wrapper.DetachMesh()
 				// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 				// done.invoke.<id>._event.data. Mirrors the C++ AOT contract
 				// and the Rust raise_done_invoke(donedata) 3-arg signature.
@@ -595,6 +611,12 @@ func (p *SessionIdsAreDistinctPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
 			childEngine.SetCompletionCallback(func() {})
+			// Child sessions in Mesh (SCE_MESH.md): the child's router, asked of
+			// this machine's factory with the invoke's id and the stem of the
+			// child's document (empty for one written inline), and installed
+			// before the child initializes, since its first <onentry> may
+			// already send to a peer.
+			engine.StartChildMesh(childEngine, "inv_b", "")
 			childEngine.Initialize()
 
 			// W3C SCXML 6.4: Store child and create wrapper
@@ -607,6 +629,8 @@ func (p *SessionIdsAreDistinctPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 			// W3C SCXML 6.4: Check if child completed during initialize
 			if wrapper.IsInFinalState() {
 				p.pendingDoneInvokeInvB = true
+				// The session ended: its Mesh router is told so.
+				wrapper.DetachMesh()
 				// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 				// done.invoke.<id>._event.data. Mirrors the C++ AOT contract
 				// and the Rust raise_done_invoke(donedata) 3-arg signature.
@@ -623,10 +647,15 @@ func (p *SessionIdsAreDistinctPolicy) TickChildren(engine *sce.Engine[SessionIds
 	if !p.pendingDoneInvokeInvA && p.childInvA != nil {
 		child := p.childInvA
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "inv_a", engine)
+		// Child sessions in Mesh (SCE_MESH.md): what arrived for the child on
+		// the router it was given, before its macrostep.
+		child.ApplyMeshCalls()
 		child.Tick()
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "inv_a", engine)
 		if child.IsInFinalState() && !p.pendingDoneInvokeInvA {
 			p.pendingDoneInvokeInvA = true
+			// The session ended: its Mesh router is told so.
+			child.DetachMesh()
 			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 			// done.invoke.<id>._event.data.
 			sce.RaiseDoneInvoke("inv_a", child.DonedataAtFinal(), engine)
@@ -635,10 +664,15 @@ func (p *SessionIdsAreDistinctPolicy) TickChildren(engine *sce.Engine[SessionIds
 	if !p.pendingDoneInvokeInvB && p.childInvB != nil {
 		child := p.childInvB
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "inv_b", engine)
+		// Child sessions in Mesh (SCE_MESH.md): what arrived for the child on
+		// the router it was given, before its macrostep.
+		child.ApplyMeshCalls()
 		child.Tick()
 		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "inv_b", engine)
 		if child.IsInFinalState() && !p.pendingDoneInvokeInvB {
 			p.pendingDoneInvokeInvB = true
+			// The session ended: its Mesh router is told so.
+			child.DetachMesh()
 			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
 			// done.invoke.<id>._event.data.
 			sce.RaiseDoneInvoke("inv_b", child.DonedataAtFinal(), engine)
@@ -766,6 +800,8 @@ func (w *childEngineWrapperSessionIdsAreDistinct_InvA) SetCompletionCallback(cb 
 func (w *childEngineWrapperSessionIdsAreDistinct_InvA) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperSessionIdsAreDistinct_InvA) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 func (w *childEngineWrapperSessionIdsAreDistinct_InvA) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperSessionIdsAreDistinct_InvA) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperSessionIdsAreDistinct_InvA) DetachMesh() { w.engine.DetachMesh() }
 type childEngineWrapperSessionIdsAreDistinct_InvB struct {
 	engine *sce.Engine[SessionIdsAreDistinctSceSynthInvokeInvBState, SessionIdsAreDistinctSceSynthInvokeInvBEvent]
 	policy *SessionIdsAreDistinctSceSynthInvokeInvBPolicy
@@ -781,6 +817,8 @@ func (w *childEngineWrapperSessionIdsAreDistinct_InvB) SetCompletionCallback(cb 
 func (w *childEngineWrapperSessionIdsAreDistinct_InvB) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperSessionIdsAreDistinct_InvB) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 func (w *childEngineWrapperSessionIdsAreDistinct_InvB) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperSessionIdsAreDistinct_InvB) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperSessionIdsAreDistinct_InvB) DetachMesh() { w.engine.DetachMesh() }
 
 
 // DeliverToParent delivers a delayed `<send target="#_parent">` whose wait is
@@ -1030,7 +1068,10 @@ func (p *SessionIdsAreDistinctPolicy) ExecuteEntryActions(state SessionIdsAreDis
 		//line session_ids_are_distinct.scxml:70
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
-			generatedInvokeID := fmt.Sprintf("%s.%d.inv_a", "phase", sce.NextInvokeCounter())
+			// docs/adr/0045: the platform part of the id is the number of this
+			// start, so the id comes from the tree alone.
+			p.invokeStartsInvA++
+			generatedInvokeID := fmt.Sprintf("%s.%d.inv_a", "phase", p.invokeStartsInvA)
 			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[SessionIdsAreDistinctState]{
 				InvokeID:   generatedInvokeID,
 				State:      SessionIdsAreDistinctStatePhase,
@@ -1038,7 +1079,10 @@ func (p *SessionIdsAreDistinctPolicy) ExecuteEntryActions(state SessionIdsAreDis
 			})
 		}
 		{
-			generatedInvokeID := fmt.Sprintf("%s.%d.inv_b", "phase", sce.NextInvokeCounter())
+			// docs/adr/0045: the platform part of the id is the number of this
+			// start, so the id comes from the tree alone.
+			p.invokeStartsInvB++
+			generatedInvokeID := fmt.Sprintf("%s.%d.inv_b", "phase", p.invokeStartsInvB)
 			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[SessionIdsAreDistinctState]{
 				InvokeID:   generatedInvokeID,
 				State:      SessionIdsAreDistinctStatePhase,
@@ -1083,6 +1127,9 @@ func (p *SessionIdsAreDistinctPolicy) ExecuteExitActions(state SessionIdsAreDist
 			// states' <onexit> run -- before it is dropped; what that exit
 			// sends to #_parent is dropped with it (§scxml-6.4, test252).
 			p.childInvA.Stop()
+			// Child sessions in Mesh (SCE_MESH.md): the session ended, after the
+			// child stopped, so what it sent while stopping was handed over first.
+			p.childInvA.DetachMesh()
 			p.childInvA = nil
 		}
 		delete(p.activeInvokes, "inv_a")
@@ -1092,6 +1139,9 @@ func (p *SessionIdsAreDistinctPolicy) ExecuteExitActions(state SessionIdsAreDist
 			// states' <onexit> run -- before it is dropped; what that exit
 			// sends to #_parent is dropped with it (§scxml-6.4, test252).
 			p.childInvB.Stop()
+			// Child sessions in Mesh (SCE_MESH.md): the session ended, after the
+			// child stopped, so what it sent while stopping was handed over first.
+			p.childInvB.DetachMesh()
 			p.childInvB = nil
 		}
 		delete(p.activeInvokes, "inv_b")
