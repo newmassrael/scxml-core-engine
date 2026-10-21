@@ -169,3 +169,93 @@ fn a_number_is_sent_where_the_child_reads_a_number() {
     let (ok, out) = check(&parent("", "#_list", "_event.data.id"));
     assert!(ok, "a uint32 sent to an int64 field is accepted:\n{out}");
 }
+
+/// A statechart that holds a written record of the list (`record_write`, whose text
+/// is 96 bytes, `merge_text`) and a string of `capacity` bytes, and on `moved` sends
+/// the list `record_list.edit` (whose text is 32, `shared_typed_text`) with `text` as
+/// its text.
+fn text_parent(capacity: u32, text: &str) -> String {
+    format!(
+        r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="holding" datamodel="sce-static" name="probe">
+  <sce:import kind="event-schema" src="probe_moved.scxml" as="Moved"/>
+  <sce:import kind="enum" src="probe_status.scxml" as="Status"/>
+  <sce:import kind="event-schema" src="sce:std/shared/record_write.scxml" as="Write"/>
+  <datamodel>
+    <data id="note" sce:type="string" sce:capacity="{capacity}" expr="'x'"/>
+    <data id="written" sce:type="record:Write">
+      <sce:set name="id" expr="0"/>
+      <sce:set name="field" expr="0"/>
+      <sce:set name="value" expr="0"/>
+      <sce:set name="text" expr="''"/>
+      <sce:set name="wallTime" expr="0"/>
+      <sce:set name="counter" expr="0"/>
+      <sce:set name="nodeId" expr="0"/>
+      <sce:set name="parts" expr="1"/>
+    </data>
+  </datamodel>
+  <state id="holding">
+    <invoke type="scxml" id="list" src="sce:std/shared/record_list.scxml">
+      <param name="announce" expr="true"/>
+    </invoke>
+    <transition event="moved" type="internal">
+      <send target="#_list" event="record_list.edit">
+        <param name="id" expr="_event.data.id"/>
+        <param name="field" expr="1"/>
+        <param name="value" expr="0"/>
+        <param name="text" expr="{text}"/>
+        <param name="now" expr="0"/>
+      </send>
+    </transition>
+  </state>
+</scxml>
+"##
+    )
+}
+
+/// The defect an application found (docs/adr/0050): the text of a record of 96 bytes
+/// was sent as the list's 32-byte edit text, and `check` answered ok; the bound was
+/// held only where the list read the delivery, which refused every one past 32.
+#[test]
+fn a_record_text_past_the_receivers_bound_is_refused() {
+    refused(
+        &text_parent(32, "written.text"),
+        &[
+            "reads it as its field `text`",
+            "may hold 96 UTF-8 bytes",
+            "holds at most 32",
+            "sce:capacity of 32 or less",
+        ],
+    );
+}
+
+/// A variable's `sce:capacity` is the bound it declares, and a literal's is its own
+/// length; one within the field's bound is sent as it is.
+#[test]
+fn a_text_is_held_to_the_bound_its_declaration_states() {
+    refused(&text_parent(33, "note"), &["may hold 33 UTF-8 bytes"]);
+    let (ok, out) = check(&text_parent(32, "note"));
+    assert!(ok, "a 32-byte text into a 32-byte field is sent:\n{out}");
+    let long = "'a text of thirty-three bytes ok!!'";
+    refused(&text_parent(32, long), &["may hold 33 UTF-8 bytes"]);
+    let (ok, out) = check(&text_parent(32, "note + 'x'"));
+    assert!(!ok, "a join of 32 and 1 bytes is 33:\n{out}");
+}
+
+/// The narrowing the language offers is an assignment: a text taken into a variable
+/// of the receiver's bound first (which fails as error.execution when it does not
+/// fit) is sent as that variable.
+#[test]
+fn a_text_narrowed_into_a_variable_of_the_bound_is_sent() {
+    let narrowed = text_parent(32, "note").replace(
+        r##"<send target="#_list" event="record_list.edit">"##,
+        r##"<assign location="note" expr="written.text"/>
+      <send target="#_list" event="record_list.edit">"##,
+    );
+    let (ok, out) = check(&narrowed);
+    assert!(
+        ok,
+        "the record's text narrowed by an assignment is sent:\n{out}"
+    );
+}

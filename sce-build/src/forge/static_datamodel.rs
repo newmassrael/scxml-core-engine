@@ -646,13 +646,27 @@ impl<'a> Receivers<'a> {
 }
 
 /// A value a `<send>` carries, as a field that reads it holds it to: a value of an
-/// enum, by the enum the sender holds it in, or a value of another type.
+/// enum, by the enum the sender holds it in, or a value of another type, with the
+/// most bytes a text or a byte string can hold where a declaration states it
+/// ([`Judge::text_bound`]).
 enum SentValue<'m> {
     Enum {
         alias: String,
         model: Option<&'m crate::forge::model::EnumModel>,
     },
-    Typed(InferredType),
+    Typed {
+        ty: InferredType,
+        bound: Option<u32>,
+    },
+}
+
+/// Why a field cannot hold a value a `<send>` carries ([`SentValue::misfit`]).
+enum Misfit {
+    /// The value is of a kind the field never holds: no delivery of it fits.
+    Kind(String),
+    /// The value is a text or a byte string whose declared bound is past the field's:
+    /// a delivery past the field's bound is refused where it arrives.
+    Bound(String),
 }
 
 impl SentValue<'_> {
@@ -660,12 +674,15 @@ impl SentValue<'_> {
     /// value as it crosses — as text, a number or a truth value, an enum's value as
     /// the name its variant declares — or `None` when it can. The width of a number
     /// is held when the delivery is read, as every payload is; the kind of a value
-    /// is the sender's to get right, since no delivery of it ever fits.
+    /// is the sender's to get right, since no delivery of it ever fits. So is the
+    /// bound of a text or a byte string whose own bound is declared: a source that
+    /// may hold more than the field is a send that is refused whenever it does, and
+    /// the narrowing is the sender's to write (docs/adr/0050).
     fn misfit(
         &self,
         field: &crate::forge::model::ForgeField,
         field_enum: Option<&crate::forge::model::EnumModel>,
-    ) -> Option<String> {
+    ) -> Option<Misfit> {
         use crate::forge::model::SceType;
         let declared = field.sce_type.as_attr();
         match (self, &field.sce_type) {
@@ -674,22 +691,39 @@ impl SentValue<'_> {
                     return None;
                 };
                 crate::forge::schema_revision::enum_divergence(sent, read).map(|_| {
-                    format!(
+                    Misfit::Kind(format!(
                         "the value is of the enum `{}`, and the field holds `{}`, which does not \
                          declare the same variants with the same values (a value crosses as the \
                          name its variant declares, and a name the field's enum does not declare \
                          is refused when it arrives)",
                         sent.name, read.name
-                    )
+                    ))
                 })
             }
-            (SentValue::Enum { alias, .. }, _) => Some(format!(
+            (SentValue::Enum { alias, .. }, _) => Some(Misfit::Kind(format!(
                 "the value is of the enum `{alias}`, which crosses as the name its variant \
                  declares, and the field is {declared} (`{alias}.toNumber(value)` is the number \
                  its variant declares)"
-            )),
-            (SentValue::Typed(ty), _) => {
+            ))),
+            (SentValue::Typed { ty, bound }, _) => {
                 let want = InferredType::from_sce_type(&field.sce_type);
+                // A text or a byte string the sender declares a bound for, past the
+                // bound the field declares: refused unless the sender narrows it.
+                if let (InferredType::Str | InferredType::Bytes, Some(held), Some(max)) =
+                    (want, *bound, field.max_size)
+                {
+                    if *ty == want && held > max {
+                        let unit = if want == InferredType::Str {
+                            "UTF-8 bytes"
+                        } else {
+                            "bytes"
+                        };
+                        return Some(Misfit::Bound(format!(
+                            "the value may hold {held} {unit}, the bound its declaration states, \
+                             and the field holds at most {max} (its sce:max-size)"
+                        )));
+                    }
+                }
                 let fits = match (want, *ty) {
                     (_, InferredType::Unknown) => true,
                     // An enum field reads the name of a variant, which no value of
@@ -703,10 +737,10 @@ impl SentValue<'_> {
                     _ => true,
                 };
                 (!fits).then(|| {
-                    format!(
+                    Misfit::Kind(format!(
                         "the value is {}, and the field is {declared}",
                         ty.describe()
-                    )
+                    ))
                 })
             }
         }
@@ -2020,6 +2054,102 @@ impl<'a> Judge<'a> {
         crate::forge::static_enum::value_enum(written, ctx, &reading)
     }
 
+    /// The most bytes the text or byte string `written` can hold, where a declaration
+    /// states it: a literal's own length; a string or byte-string variable's
+    /// `sce:capacity`; a field of a record variable, of the element a list of records
+    /// is indexed at, of a `<foreach>`'s record item or of the payload, by the
+    /// `sce:max-size` its schema declares; the larger of a conditional's two values;
+    /// and the sum of a join's two. `None` for any other value (a call, a value whose
+    /// length nothing declares), which a field holds to its bound where it arrives.
+    fn text_bound(&self, written: &str) -> Option<u32> {
+        let ast = crate::forge::expr::parse_to_ast(written).ok()?;
+        self.node_text_bound(&ast)
+    }
+
+    /// [`Self::text_bound`] of one node of a parsed value.
+    fn node_text_bound(&self, node: &crate::forge::expr::TypedExpr) -> Option<u32> {
+        use crate::forge::expr::{BinOp, ExprKind};
+        use crate::forge::model::{ListElemType, SceType};
+        let schema_field = |alias: &str, field: &str| -> Option<u32> {
+            self.schemas
+                .get(alias)?
+                .fields
+                .iter()
+                .find(|f| f.id == field)?
+                .max_size
+        };
+        let variable = |name: &str| self.scope.variables.iter().find(|v| v.id == name);
+        match &node.kind {
+            ExprKind::StringLit { value, .. } => u32::try_from(value.len()).ok(),
+            ExprKind::Ident(name) => {
+                let var = variable(name)?;
+                match var.value_type.as_ref()?.scalar()? {
+                    SceType::String | SceType::Bytes => var.capacity,
+                    _ => None,
+                }
+            }
+            ExprKind::Member { object, property } => {
+                if let Some(path) = crate::forge::expr::dotted_path(node) {
+                    if let Some(field) = path.strip_prefix("_event.data.") {
+                        if field.contains('.') {
+                            return None;
+                        }
+                        let payload = self.payload_schema.borrow();
+                        return payload
+                            .as_ref()?
+                            .fields
+                            .iter()
+                            .find(|f| f.id == field)?
+                            .max_size;
+                    }
+                }
+                match &object.kind {
+                    ExprKind::Ident(holder) => {
+                        if let Some(alias) = variable(holder)
+                            .and_then(|v| v.value_type.as_ref())
+                            .and_then(|t| t.record_alias())
+                        {
+                            return schema_field(alias, property);
+                        }
+                        let alias = self
+                            .loop_records
+                            .borrow()
+                            .iter()
+                            .find(|(item, _)| item == holder)
+                            .map(|(_, alias)| alias.clone())?;
+                        schema_field(&alias, property)
+                    }
+                    ExprKind::Index { object: list, .. } => {
+                        let ExprKind::Ident(list) = &list.kind else {
+                            return None;
+                        };
+                        match variable(list)?.value_type.as_ref()?.list_elem()? {
+                            ListElemType::Record { alias } => schema_field(alias, property),
+                            ListElemType::Scalar(_) => None,
+                        }
+                    }
+                    _ => None,
+                }
+            }
+            ExprKind::Conditional {
+                consequent,
+                alternate,
+                ..
+            } => Some(
+                self.node_text_bound(consequent)?
+                    .max(self.node_text_bound(alternate)?),
+            ),
+            ExprKind::Binary {
+                op: BinOp::Add,
+                left,
+                right,
+            } => self
+                .node_text_bound(left)?
+                .checked_add(self.node_text_bound(right)?),
+            _ => None,
+        }
+    }
+
     /// A value a `<send>` carries under the name `param.name`, held to each field
     /// that reads it where the build knows the reader ([`Receivers`]): the field
     /// of the schema this document imports for the event, and the field of the
@@ -2087,12 +2217,20 @@ impl<'a> Judge<'a> {
                 model: self.receivers.own_enums.get(&alias),
                 alias,
             },
-            Ok(None) => SentValue::Typed(self.expr(
-                ctx,
-                written,
-                param.spelling,
-                Expected::Hint(InferredType::Unknown),
-            )?),
+            Ok(None) => {
+                let ty = self.expr(
+                    ctx,
+                    written,
+                    param.spelling,
+                    Expected::Hint(InferredType::Unknown),
+                )?;
+                let bound = if matches!(ty, InferredType::Str | InferredType::Bytes) {
+                    self.text_bound(written)
+                } else {
+                    None
+                };
+                SentValue::Typed { ty, bound }
+            }
             Err(_) => return Ok(()),
         };
         let (line, col) = match (param.source_location, param.spelling) {
@@ -2101,15 +2239,27 @@ impl<'a> Judge<'a> {
             (None, None) => (None, None),
         };
         for (reader, field, held) in readers {
-            if let Some(why) = value.misfit(field, held) {
+            if let Some(misfit) = value.misfit(field, held) {
+                let consequence = match misfit {
+                    Misfit::Kind(why) => format!(
+                        "{why}: no delivery of it fits that schema, so each would be refused \
+                         where it arrives"
+                    ),
+                    Misfit::Bound(why) => format!(
+                        "{why}: a delivery past it is refused where it arrives, so the narrowing \
+                         is the sender's (assign the value to a variable declared with \
+                         sce:capacity of {} or less, where an assignment past it fails as \
+                         error.execution, and send that variable)",
+                        field.max_size.unwrap_or_default()
+                    ),
+                };
                 return Err(self.rule_at(
                     format!(
                         "<param name=\"{}\"> of <send event=\"{}\">",
                         param.name, action.event
                     ),
                     &format!(
-                        "{reader} reads it as its field `{}`, and {why}: no delivery of it fits \
-                         that schema, so each would be refused where it arrives",
+                        "{reader} reads it as its field `{}`, and {consequence}",
                         field.id
                     ),
                     line,

@@ -3248,6 +3248,7 @@ line of the element or attribute that breaks it:
 | a `<param>` or a `namelist` name of an `<invoke type="scxml">` whose child is not a `sce-static` document this build read, does not declare the name as a top-level `<data>`, declares it as a list, a record, an enum or bytes, is handed it twice, or is handed a value not of the variable's type | See **Child sessions** below. Refused at the `<param>` as `scxml/static-datamodel-rule` (a value of the wrong type as the expression's own refusal) rather than accepted and never delivered |
 | a `<finalize>` of an `<invoke type="scxml">` | §6.5 runs it in the invoking machine before a child's event is processed, but the model keeps its body as one script text and the generated code hands that text to a script engine this model never builds (measured 2026-10-01: the Rust body is an empty block, Kotlin finds no engine): the assignment would be accepted and never run. Refused at the `<invoke>` as `scxml/static-datamodel-rule`; the invoking state takes what the child sent in a transition. An EMPTY `<finalize/>` beside a `<param location>` or a `namelist` is the same refusal: §6.5.2 gives it the meaning "update each from the event's data of that name", which the model writes out as that script text. Lowering a body is not the obstacle — a `<finalize>` runs before any child event is processed, to read that event's `_event.data`, and no type rule reaches a payload that arrives from whichever event comes next; a body that reads none has no consumer. Under `ecmascript` the same document runs it |
 | a `<param>` or a `namelist` name of a `<send>` whose value is of a kind the field that reads it cannot hold — a field of the schema this document declares the event by, or of the schema a child the send is delivered to (`#_<id>`) declares it by | See **Child sessions** below ("What a send carries is held to the field that reads it"). Refused at the `<param>` as `scxml/static-datamodel-rule`: no delivery of it fits the schema |
+| a `<param>` or a `namelist` name of a `<send>` whose text or byte string has a declared bound past the `sce:max-size` of the field that reads it | See **Child sessions** below ("A text is held to the bound of the field that reads it", docs/adr/0050). Refused at the `<param>` as `scxml/static-datamodel-rule`, naming both bounds and the narrowing: an assignment to a variable of the field's bound |
 | a `<param>` of a `<send>`, of a host-run `<invoke>` or of a `<donedata>` whose value is not a bool, a string, a byte string, an integer, a real or an enum value held by a variable, a field of a record variable or a field of the payload, or reads a payload that is not in scope | See **Params** below. Refused at the `<param>` as `scxml/static-datamodel-rule`. An `<invoke>` typed by `sce:request` is held to its record: a literal where it is written, a computed value by its type (below) |
 
 **Expressions.** Every other expression is a forge expression judged
@@ -3685,7 +3686,23 @@ child's state untouched and the parent told nothing. Measured 2026-10-21, before
 a parent sending `<param name="value" expr="_event.data.status"/>` (a value of an enum)
 to `sce:std/shared/record_list.scxml`, whose `value` is an `int64`, passed `check` on
 every backend; only a literal was ever held to a schema, and only to the sender's own.
-`sce-build/tests/a_send_is_held_to_the_schema_its_receiver_reads.rs` holds this.
+
+**A text is held to the bound of the field that reads it** the same way (docs/adr/0050).
+A string or a byte string whose most bytes a declaration states is refused where it is
+sent when that bound is past the `sce:max-size` of the field that reads it: a literal by
+its own length, a string or byte-string variable by its `sce:capacity`, a field of a
+record variable, of the element a list of records is indexed at, of a `<foreach>`'s
+record item or of the payload by the `sce:max-size` its schema declares, a conditional
+by the larger of its two values and a join by the sum of its two, each bound as the
+build resolves it (`sce:limit`, so `--limit` moves the two sides together). A value
+whose length no declaration states (a call) is held where it arrives, as before. The
+narrowing the language offers is the assignment: the value taken into a variable whose
+`sce:capacity` is the field's bound or less, which fails as `error.execution` when it
+does not fit, is then sent. Measured 2026-10-21, before the rule: a parent that sent
+the 96-byte `text` of a record of `record_write` as the 32-byte `text` of
+`record_list.edit` passed `check`, and the list refused every delivery past 32 bytes
+when it read it. `sce-build/tests/a_send_is_held_to_the_schema_its_receiver_reads.rs`
+holds both rules.
 
 A child may be a statechart of the standard library, named as an import names a
 standard document: `<invoke type="scxml" src="sce:std/shared/record_list.scxml">`
