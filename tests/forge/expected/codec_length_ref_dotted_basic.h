@@ -33,6 +33,7 @@ struct CodecLengthRefDottedBasic {
         const std::uint8_t* raw = cursor.peek_slice(_frame_len);
         if (raw == nullptr) return std::nullopt;
         uint8_t carrier = raw[0];
+        if (_frame_len < static_cast<std::size_t>(1 + ((carrier >> 4) & 0xF))) return std::nullopt;
         std::vector<uint8_t> payload = std::vector<uint8_t>(raw + 1, raw + 1 + ((carrier >> 4) & 0xF));
         CodecLengthRefDottedBasic _decoded{
             .carrier = carrier,

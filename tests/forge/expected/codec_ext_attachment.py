@@ -32,6 +32,8 @@ class CodecExtAttachment:
         except NeedMoreBytes:
             return None
         f_length = raw[0]
+        if _frame_len < 1 + f_length:
+            return None
         f_body = raw[1:1 + f_length]
         value = cls(
             length=f_length,

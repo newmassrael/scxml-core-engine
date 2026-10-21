@@ -32,6 +32,8 @@ class CodecScoutZidBody:
         except NeedMoreBytes:
             return None
         f_zid_len_m1 = raw[0]
+        if _frame_len < 1 + f_zid_len_m1 + 1:
+            return None
         f_zid = raw[1:1 + f_zid_len_m1 + 1]
         value = cls(
             zid_len_m1=f_zid_len_m1,

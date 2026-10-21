@@ -32,6 +32,8 @@ class CodecLengthRefDottedBasic:
         except NeedMoreBytes:
             return None
         f_carrier = raw[0]
+        if _frame_len < 1 + ((f_carrier >> 4) & 0xF):
+            return None
         f_payload = raw[1:1 + ((f_carrier >> 4) & 0xF)]
         value = cls(
             carrier=f_carrier,

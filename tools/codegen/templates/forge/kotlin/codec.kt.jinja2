@@ -12,6 +12,9 @@
     The statement carries its own indentation because the three call
     sites below share it. #}
 {% macro decode_field(field) %}
+{% if field.length_ref_end is defined %}
+            if (frameLen < {{ field.length_ref_end }}) return null
+{% endif %}
 {% if field.is_enum and field.enum_is_open %}
             val {{ field.id }} = {{ field.enum_from_underlying }}({{ field.decode_expr }})
 {%- elif field.is_enum %}

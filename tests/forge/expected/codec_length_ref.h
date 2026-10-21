@@ -35,6 +35,7 @@ struct CodecLengthRef {
         if (raw == nullptr) return std::nullopt;
         uint8_t msgId = raw[0];
         uint8_t len = raw[1];
+        if (_frame_len < static_cast<std::size_t>(2 + len)) return std::nullopt;
         std::vector<uint8_t> payload = std::vector<uint8_t>(raw + 2, raw + 2 + len);
         CodecLengthRef _decoded{
             .msgId = msgId,

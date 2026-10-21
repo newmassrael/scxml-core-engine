@@ -34,6 +34,8 @@ class CodecTlvEntry:
             return None
         f_entry_type = raw[0]
         f_entry_len = raw[1]
+        if _frame_len < 2 + f_entry_len:
+            return None
         f_entry_body = raw[2:2 + f_entry_len]
         value = cls(
             entry_type=f_entry_type,

@@ -56,6 +56,7 @@ data class CodecTlvEntry(
             val raw = cursor.peekSlice(frameLen) ?: return null
             val entry_type = raw[0].toUByte()
             val entry_len = raw[1].toUByte()
+            if (frameLen < 2 + entry_len.toInt()) return null
             val entry_body = raw.copyOfRange(2, 2 + entry_len.toInt())
             if (!cursor.advance(frameLen)) return null
             // Construct in the `return` (no intermediate local) so a field

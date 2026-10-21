@@ -33,6 +33,9 @@ func DecodeCodecTlvEntry(cursor *codec.SceCursor) (*CodecTlvEntry, error) {
 	}
 	EntryType := raw[0]
 	EntryLen := raw[1]
+	if frameLen < 2+int(EntryLen) {
+		return nil, codec.ErrNeedMoreBytes
+	}
 	EntryBody := raw[2:2+int(EntryLen)]
 	value := &CodecTlvEntry{
 		EntryType: EntryType,

@@ -33,6 +33,7 @@ struct CodecLengthRefUint32Le {
         const std::uint8_t* raw = cursor.peek_slice(_frame_len);
         if (raw == nullptr) return std::nullopt;
         uint32_t payload_len = static_cast<uint32_t>(raw[0] | (static_cast<uint32_t>(raw[1]) << 8) | (static_cast<uint32_t>(raw[2]) << 16) | (static_cast<uint32_t>(raw[3]) << 24));
+        if (_frame_len < static_cast<std::size_t>(4 + payload_len)) return std::nullopt;
         std::vector<uint8_t> payload = std::vector<uint8_t>(raw + 4, raw + 4 + payload_len);
         CodecLengthRefUint32Le _decoded{
             .payload_len = payload_len,

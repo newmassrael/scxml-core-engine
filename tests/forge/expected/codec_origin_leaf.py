@@ -32,6 +32,8 @@ class CodecOriginLeaf:
         except NeedMoreBytes:
             return None
         f_len = raw[0]
+        if _frame_len < 1 + f_len:
+            return None
         f_data = raw[1:1 + f_len]
         value = cls(
             len=f_len,

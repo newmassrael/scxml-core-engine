@@ -34,6 +34,8 @@ class CodecLengthRef:
             return None
         f_msg_id = raw[0]
         f_len = raw[1]
+        if _frame_len < 2 + f_len:
+            return None
         f_payload = raw[2:2 + f_len]
         value = cls(
             msg_id=f_msg_id,

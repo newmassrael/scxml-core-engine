@@ -6683,6 +6683,13 @@ fn render_codec(
                     };
                     obj.insert("bit_size_kind".into(), kind.into());
                     if matches!(f.bit_size, BitSize::LengthRef) {
+                        // Where the field ends in the frame: the positional
+                        // decode checks the frame is that long before it
+                        // slices (see `length_ref_end`).
+                        obj.insert(
+                            "length_ref_end".into(),
+                            length_ref_end(f, &m.fields, lang).into(),
+                        );
                         if let Some(lf) = &f.length_field {
                             obj.insert("length_field".into(), l.codec_field_id(lf).into());
                             // RFC §synth-5-B `sce:length-arith` + dotted-path `sce:length-field`:
@@ -17126,71 +17133,23 @@ fn generate_decode_expr(
             // dotted-path form `<carrier>.<flag>`, the carrier local
             // is shifted + masked to extract the multi-bit subfield
             // value. Plain bare-id form reads the sibling local as-is.
-            let arith = field.length_arith.unwrap_or(0);
-            let suffix_signed = match arith {
-                0 => String::new(),
-                n if n > 0 => format!(" + {n}"),
-                n => format!(" - {}", -n),
-            };
-            // Resolve the sibling (or dotted-path carrier) and its
-            // per-language local name. The local was bound by an
-            // earlier `let <id> = ...;` line in the same decode body,
-            // so we just emit the language-natural identifier.
-            let (sibling_id, shift_opt, mask_opt) = match field.length_field.as_deref() {
-                Some(s) => match dotted_length_field(s) {
-                    Some((c, f)) => {
-                        let (shift, mask) = dotted_length_resolve(c, f, fields);
-                        (c, Some(shift), Some(mask))
-                    }
-                    None => (s, None, None),
-                },
-                None => unreachable!("LengthRef bit_size requires sce:length-field attribute"),
-            };
-            let sibling_local = codec_field_decode_local(sibling_id, lang);
-            let len_value_cpp = match (shift_opt, mask_opt) {
-                (Some(shift), Some(mask)) => {
-                    format!("(({sibling_local} >> {shift}) & 0x{mask:X})")
-                }
-                _ => sibling_local.clone(),
-            };
-            let len_value_kotlin = match (shift_opt, mask_opt) {
-                (Some(shift), Some(mask)) => {
-                    format!("(({sibling_local}.toInt() ushr {shift}) and 0x{mask:X})")
-                }
-                _ => format!("{sibling_local}.toInt()"),
-            };
-            let len_value_rust = match (shift_opt, mask_opt) {
-                (Some(shift), Some(mask)) => {
-                    format!("((({sibling_local} >> {shift}) & 0x{mask:X}) as usize)")
-                }
-                _ => format!("{sibling_local} as usize"),
-            };
-            let len_value_go = match (shift_opt, mask_opt) {
-                (Some(shift), Some(mask)) => {
-                    format!("int(({sibling_local} >> {shift}) & 0x{mask:X})")
-                }
-                _ => format!("int({sibling_local})"),
-            };
-            let len_value_python = match (shift_opt, mask_opt) {
-                (Some(shift), Some(mask)) => {
-                    format!("(({sibling_local} >> {shift}) & 0x{mask:X})")
-                }
-                _ => sibling_local.clone(),
-            };
+            let end = length_ref_end(field, fields, lang);
             match lang {
-                Language::Cpp =>
-                    format!("std::vector<uint8_t>(raw + {byte_off}, raw + {byte_off} + {len_value_cpp}{suffix_signed})"),
-                Language::Kotlin =>
-                    format!("raw.copyOfRange({byte_off}, {byte_off} + {len_value_kotlin}{suffix_signed})"),
+                // C++, Go and Python read the slice as written, so the
+                // template guards the frame first (`length_ref_end` on the
+                // field): a slice past the frame reads what is not the frame's
+                // (C++, Go with spare capacity), panics (Go), or is cut short
+                // without a word (Python).
+                Language::Cpp => format!("std::vector<uint8_t>(raw + {byte_off}, raw + {end})"),
+                Language::Kotlin => format!("raw.copyOfRange({byte_off}, {end})"),
                 // The length is the wire's, and a frame may hold fewer bytes
                 // than it says: a slice index would panic on it, where the
                 // decode refuses a short frame with `NeedMoreBytes`.
-                Language::Rust =>
-                    format!("raw.get({byte_off}..{byte_off} + {len_value_rust}{suffix_signed}).ok_or(CodecError::NeedMoreBytes)?"),
-                Language::Go =>
-                    format!("raw[{byte_off}:{byte_off}+{len_value_go}{suffix_signed}]"),
-                Language::Python =>
-                    format!("raw[{byte_off}:{byte_off} + {len_value_python}{suffix_signed}]"),
+                Language::Rust => {
+                    format!("raw.get({byte_off}..{end}).ok_or(CodecError::NeedMoreBytes)?")
+                }
+                Language::Go => format!("raw[{byte_off}:{end}]"),
+                Language::Python => format!("raw[{byte_off}:{end}]"),
                 Language::C11 => String::new(),
                 Language::Swift => no_swift_emitter("generate_decode_expr"),
             }
@@ -17214,6 +17173,86 @@ fn generate_decode_expr(
             // never needs a single-expr form.
             String::new()
         }
+    }
+}
+
+/// Where a length-referenced field ends in the frame, as an expression of the
+/// language: its offset plus the length the sibling (or the dotted-path flag of
+/// a carrier) holds, adjusted by `sce:length-arith`. The frame is long enough
+/// for the field exactly when it is at least this long, which the positional
+/// decode of C++, Kotlin, Go and Python checks before it slices
+/// (`length_ref_end` on the field) and the Rust one folds into its slice
+/// (`get(..)`).
+///
+/// The sibling local was bound by an earlier statement of the same decode
+/// body (field order is parser-enforced by `validate_codec_length_field_refs`),
+/// so the language-natural identifier is all this writes. C11 reads the field in
+/// a statement block of its own and Swift has no emitter: both get nothing.
+fn length_ref_end(
+    field: &CodecField,
+    fields: &[CodecField],
+    lang: crate::generator::Language,
+) -> String {
+    use crate::generator::Language;
+    let byte_off = field.byte_offset;
+    // RFC §synth-5-B: `length-arith="+1"|"-1"` adjusts the byte count read
+    // from the sibling local; the additive term folds into the end expression
+    // with a literal `+ N`/`- N`.
+    let suffix_signed = match field.length_arith.unwrap_or(0) {
+        0 => String::new(),
+        n if n > 0 => format!(" + {n}"),
+        n => format!(" - {}", -n),
+    };
+    // RFC §synth-5-B dotted-path length-field: when the length_field is the
+    // dotted-path form `<carrier>.<flag>`, the carrier local is shifted +
+    // masked to extract the multi-bit subfield value. Plain bare-id form reads
+    // the sibling local as-is.
+    let (sibling_id, shift_opt, mask_opt) = match field.length_field.as_deref() {
+        Some(s) => match dotted_length_field(s) {
+            Some((c, f)) => {
+                let (shift, mask) = dotted_length_resolve(c, f, fields);
+                (c, Some(shift), Some(mask))
+            }
+            None => (s, None, None),
+        },
+        None => unreachable!("LengthRef bit_size requires sce:length-field attribute"),
+    };
+    let sibling_local = codec_field_decode_local(sibling_id, lang);
+    let bits = shift_opt.zip(mask_opt);
+    match lang {
+        Language::Cpp | Language::Python => {
+            let len = match bits {
+                Some((shift, mask)) => format!("(({sibling_local} >> {shift}) & 0x{mask:X})"),
+                None => sibling_local,
+            };
+            format!("{byte_off} + {len}{suffix_signed}")
+        }
+        Language::Kotlin => {
+            let len = match bits {
+                Some((shift, mask)) => {
+                    format!("(({sibling_local}.toInt() ushr {shift}) and 0x{mask:X})")
+                }
+                None => format!("{sibling_local}.toInt()"),
+            };
+            format!("{byte_off} + {len}{suffix_signed}")
+        }
+        Language::Rust => {
+            let len = match bits {
+                Some((shift, mask)) => {
+                    format!("((({sibling_local} >> {shift}) & 0x{mask:X}) as usize)")
+                }
+                None => format!("{sibling_local} as usize"),
+            };
+            format!("{byte_off} + {len}{suffix_signed}")
+        }
+        Language::Go => {
+            let len = match bits {
+                Some((shift, mask)) => format!("int(({sibling_local} >> {shift}) & 0x{mask:X})"),
+                None => format!("int({sibling_local})"),
+            };
+            format!("{byte_off}+{len}{suffix_signed}")
+        }
+        Language::C11 | Language::Swift => String::new(),
     }
 }
 

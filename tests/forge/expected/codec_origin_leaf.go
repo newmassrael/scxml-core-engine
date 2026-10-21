@@ -31,6 +31,9 @@ func DecodeCodecOriginLeaf(cursor *codec.SceCursor) (*CodecOriginLeaf, error) {
 		return nil, err
 	}
 	Len := raw[0]
+	if frameLen < 1+int(Len) {
+		return nil, codec.ErrNeedMoreBytes
+	}
 	Data := raw[1:1+int(Len)]
 	value := &CodecOriginLeaf{
 		Len: Len,

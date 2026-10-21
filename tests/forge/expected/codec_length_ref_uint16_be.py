@@ -32,6 +32,8 @@ class CodecLengthRefUint16Be:
         except NeedMoreBytes:
             return None
         f_payload_len = (raw[0] << 8) | raw[1]
+        if _frame_len < 2 + f_payload_len:
+            return None
         f_payload = raw[2:2 + f_payload_len]
         value = cls(
             payload_len=f_payload_len,

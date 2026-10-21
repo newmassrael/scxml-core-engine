@@ -31,6 +31,9 @@ func DecodeCodecLengthRefUint32Le(cursor *codec.SceCursor) (*CodecLengthRefUint3
 		return nil, err
 	}
 	PayloadLen := uint32(raw[0]) | uint32(raw[1])<<8 | uint32(raw[2])<<16 | uint32(raw[3])<<24
+	if frameLen < 4+int(PayloadLen) {
+		return nil, codec.ErrNeedMoreBytes
+	}
 	Payload := raw[4:4+int(PayloadLen)]
 	value := &CodecLengthRefUint32Le{
 		PayloadLen: PayloadLen,

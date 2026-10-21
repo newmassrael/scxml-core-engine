@@ -56,6 +56,7 @@ data class CodecLengthRefUint32Le(
             if (frameLen < 4) return null
             val raw = cursor.peekSlice(frameLen) ?: return null
             val payload_len = ((raw[0].toInt() and 0xFF) or ((raw[1].toInt() and 0xFF) shl 8) or ((raw[2].toInt() and 0xFF) shl 16) or ((raw[3].toInt() and 0xFF) shl 24)).toUInt()
+            if (frameLen < 4 + payload_len.toInt()) return null
             val payload = raw.copyOfRange(4, 4 + payload_len.toInt())
             if (!cursor.advance(frameLen)) return null
             // Construct in the `return` (no intermediate local) so a field

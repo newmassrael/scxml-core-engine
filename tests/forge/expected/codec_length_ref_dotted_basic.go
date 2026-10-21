@@ -31,6 +31,9 @@ func DecodeCodecLengthRefDottedBasic(cursor *codec.SceCursor) (*CodecLengthRefDo
 		return nil, err
 	}
 	Carrier := raw[0]
+	if frameLen < 1+int((Carrier >> 4) & 0xF) {
+		return nil, codec.ErrNeedMoreBytes
+	}
 	Payload := raw[1:1+int((Carrier >> 4) & 0xF)]
 	value := &CodecLengthRefDottedBasic{
 		Carrier: Carrier,

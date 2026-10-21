@@ -35759,6 +35759,18 @@
           ],
           "note": "len=5"
         }
+      ],
+      "rejects": [
+        {
+          "why": "the length byte says 200 and the frame holds two payload bytes",
+          "encoded": [1, 200, 9, 9],
+          "error": "need-more-bytes"
+        },
+        {
+          "why": "the frame is one byte short of the payload its length byte declares",
+          "encoded": [1, 3, 10, 20],
+          "error": "need-more-bytes"
+        }
       ]
     },
     "codec_vle_zint_u64": {
@@ -36366,6 +36378,18 @@
             14
           ],
           "note": "carrier=0xF5 (hdr=5, payload_len=15 = max for 4-bit width) — 15-byte payload"
+        }
+      ],
+      "rejects": [
+        {
+          "why": "the carrier says a 3-byte payload and the frame holds one",
+          "encoded": [48, 9],
+          "error": "need-more-bytes"
+        },
+        {
+          "why": "the carrier says the 15-byte maximum and the frame holds none",
+          "encoded": [240],
+          "error": "need-more-bytes"
         }
       ]
     }
