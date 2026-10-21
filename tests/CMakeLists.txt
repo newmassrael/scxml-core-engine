@@ -403,7 +403,7 @@ target_compile_definitions(static_datamodel_generated_cpp_test
 
 apply_sce_test_policies(static_datamodel_generated_cpp_test)
 
-foreach(_STATIC_CPP_MACHINE static_child_host static_child_host_hybrid static_child_mesh static_counter static_event_arrival static_event_wildcard static_overflow static_block_ends static_host_call static_host_duty static_payload static_enum static_enum_number static_forge_calls static_list static_list_assign static_list_index static_foreach static_history static_block_ends_list static_bytes static_bytes_wire static_record_fields static_record_list static_record_list_index static_record_enum static_record sync_client static_donedata static_donedata_content static_donedata_record static_invoke static_invoke_hybrid static_invoke_hybrid_saved static_invoke_params static_invoke_string static_cancel_expr static_send_content static_send_delay static_send_event static_send_http static_send_idlocation static_send_namelist static_send_params static_send_target static_send_type static_string_capacity static_timers static_real static_real32 static_record_real static_record_real32 static_record_bytes static_record_string static_payload_bytes static_payload_enum static_payload_relay static_whole_payload static_schema_revision static_wire_enum static_state_algorithm static_state_algorithm_enum static_text_record static_wire_wide static_optional todo_peer sheet_peer presence_peer record_list_parent)
+foreach(_STATIC_CPP_MACHINE static_child_host static_child_host_hybrid static_child_mesh static_counter static_event_arrival static_event_wildcard static_overflow static_block_ends static_host_call static_host_duty static_payload static_enum static_enum_number static_forge_calls static_list static_list_assign static_list_index static_foreach static_history static_block_ends_list static_bytes static_bytes_wire static_record_fields static_record_list static_record_list_index static_record_enum static_record sync_client static_donedata static_donedata_content static_donedata_record static_invoke static_invoke_hybrid static_invoke_hybrid_saved static_invoke_params static_invoke_string static_cancel_expr static_send_content static_send_delay static_send_event static_send_http static_send_idlocation static_send_namelist static_send_params static_send_target static_send_type static_string_capacity static_timers static_real static_real32 static_record_real static_record_real32 static_record_bytes static_record_string static_payload_bytes static_payload_enum static_payload_relay static_whole_payload static_schema_revision static_wire_enum static_state_algorithm static_state_algorithm_enum static_state_algorithm_optional static_text_record static_wire_wide static_optional todo_peer sheet_peer presence_peer record_list_parent)
     sce_add_state_machine(
         TARGET static_datamodel_generated_cpp_test
         SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_STATIC_CPP_MACHINE}.scxml
@@ -468,6 +468,21 @@ sce_add_algorithm(
     HEADER enum_item_status.h
 )
 foreach(_STATE_ALGORITHM item_status_set item_status_count item_status_of)
+    sce_add_algorithm(
+        TARGET static_datamodel_generated_cpp_test
+        SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/algorithm_${_STATE_ALGORITHM}.scxml
+        HEADER ${_STATE_ALGORITHM}.h
+    )
+endforeach()
+# static_state_algorithm_optional's: the record whose `day` may be absent, and the
+# algorithms that take a list of it or an optional day and answer one
+# (docs/adr/0055).
+sce_add_algorithm(
+    TARGET static_datamodel_generated_cpp_test
+    SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/schema_goal.scxml
+    HEADER schema_goal.h
+)
+foreach(_STATE_ALGORITHM goal_earliest goal_until goal_undated goal_day_sum)
     sce_add_algorithm(
         TARGET static_datamodel_generated_cpp_test
         SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/algorithm_${_STATE_ALGORITHM}.scxml

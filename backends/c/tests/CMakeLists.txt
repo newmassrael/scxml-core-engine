@@ -2655,7 +2655,8 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     )
     set(_STATE_ALGORITHM_HEADERS "")
     foreach(_STATE_HEADER schema_entry schema_total ledger_add ledger_total ledger_amount ledger_bump ledger_ids
-                          schema_item enum_item_status item_status_set item_status_count item_status_of)
+                          schema_item enum_item_status item_status_set item_status_count item_status_of
+                          schema_goal goal_earliest goal_until goal_undated goal_day_sum)
         if(_STATE_HEADER MATCHES "^(schema|enum)_")
             set(_STATE_SOURCE
                 "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_STATE_HEADER}.scxml")
@@ -2769,6 +2770,16 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_optional.scxml"
         STAGE_ALSO schema_due.scxml schema_due_sent.scxml enum_item_status.scxml
+    )
+    # A machine hands algorithms values that may be absent (docs/adr/0055): a list of
+    # records whose day may be absent, and an optional day, in and out. The schema's
+    # and each algorithm's header is generated beside it (`_STATE_ALGORITHM_HEADERS`).
+    sce_generate_static_integration_c_test(static_state_algorithm_optional
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_state_algorithm_optional.scxml"
+        STAGE_ALSO schema_goal.scxml
+                   algorithm_goal_earliest.scxml algorithm_goal_until.scxml
+                   algorithm_goal_undated.scxml algorithm_goal_day_sum.scxml
     )
     # A delivery of an earlier revision of a schema that grew takes the defaults of
     # the fields added since; the schema imports the enum its added field holds.
@@ -3133,6 +3144,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_record_enum_SOURCES}
         ${INTEGRATION_C_TEST_static_whole_payload_SOURCES}
         ${INTEGRATION_C_TEST_static_optional_SOURCES}
+        ${INTEGRATION_C_TEST_static_state_algorithm_optional_SOURCES}
         ${INTEGRATION_C_TEST_static_schema_revision_SOURCES}
         ${INTEGRATION_C_TEST_static_wire_wide_SOURCES}
         ${INTEGRATION_C_TEST_static_wire_enum_SOURCES}

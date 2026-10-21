@@ -1,0 +1,55 @@
+{
+  "machine": "static_state_algorithm_optional",
+  "about": "A statechart hands imported algorithms values that may be absent and holds the ones they give back (docs/adr/0055): goals whose `day` may be absent are kept in `goals`, a list of records, and each one that comes in is appended, then `Earliest` answers the earliest day of the list (absent when no goal has one: an optional local, `.value` read where a test in the same condition proves it present, an optional return), `Until` the days from `today` (100) to that day (an optional parameter, an early return of `null` that proves it present after it, an optional return), `Undated` how many goals have no day (the list filtered by a test of the optional field) and `DaySum` the days added up, a goal with no day counted as 0 (`??` in the body). `until.none` hands `Until` the literal `null` and takes back an absent value; `until.at` hands it 150, an int64 lifted into the optional parameter. A fifth goal does not fit the four the list holds: the append fails, nothing after it runs, and error.execution is raised. `clear` empties the list, and every algorithm answers what an empty list is. A variable's int64 is a number, and a record field's int64 the text of its digits; an absent value is `null`. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "note": "nothing yet: `first` starts absent and `left` present",
+      "expect": { "state": "tracking", "variables": {
+        "goals": [], "first": null, "left": 0, "undated": 0, "total": 0, "errors": 0 } } },
+
+    { "note": "a goal with no day: no goal has a day, so the earliest is absent, and an absent day handed to Until answers absent; one goal is undated and counts 0 in the sum",
+      "event": "goal.added", "data": { "id": 1, "day": null, "weight": 2 },
+      "expect": { "variables": {
+        "goals": [ { "id": 1, "day": null, "weight": 2 } ],
+        "first": null, "left": null, "undated": 1, "total": 0, "errors": 0 } } },
+
+    { "note": "a goal due on day 130: it is the earliest, 30 days from today, and the sum is its day",
+      "event": "goal.added", "data": { "id": 2, "day": "130", "weight": 3 },
+      "expect": { "variables": {
+        "goals": [ { "id": 1, "day": null, "weight": 2 }, { "id": 2, "day": "130", "weight": 3 } ],
+        "first": 130, "left": 30, "undated": 1, "total": 130, "errors": 0 } } },
+
+    { "note": "a goal due on day 115 is earlier than 130",
+      "event": "goal.added", "data": { "id": 3, "day": "115", "weight": 1 },
+      "expect": { "variables": {
+        "goals": [ { "id": 1, "day": null, "weight": 2 }, { "id": 2, "day": "130", "weight": 3 },
+                   { "id": 3, "day": "115", "weight": 1 } ],
+        "first": 115, "left": 15, "undated": 1, "total": 245, "errors": 0 } } },
+
+    { "note": "a goal due on day 90, before today: the earliest, and 10 days past",
+      "event": "goal.added", "data": { "id": 4, "day": "90", "weight": 5 },
+      "expect": { "variables": {
+        "goals": [ { "id": 1, "day": null, "weight": 2 }, { "id": 2, "day": "130", "weight": 3 },
+                   { "id": 3, "day": "115", "weight": 1 }, { "id": 4, "day": "90", "weight": 5 } ],
+        "first": 90, "left": -10, "undated": 1, "total": 335, "errors": 0 } } },
+
+    { "note": "`null` handed to Until: an absent value passed in, and an absent value taken back",
+      "event": "until.none",
+      "expect": { "variables": { "first": 90, "left": null, "errors": 0 } } },
+
+    { "note": "150 handed to Until: a value of int64 lifted into the optional parameter, read as 50 days from today",
+      "event": "until.at",
+      "expect": { "variables": { "first": 90, "left": 50, "errors": 0 } } },
+
+    { "note": "a fifth goal does not fit: the append fails, nothing after it runs, and error.execution says so",
+      "event": "goal.added", "data": { "id": 5, "day": "80", "weight": 1 },
+      "expect": { "variables": {
+        "goals": [ { "id": 1, "day": null, "weight": 2 }, { "id": 2, "day": "130", "weight": 3 },
+                   { "id": 3, "day": "115", "weight": 1 }, { "id": 4, "day": "90", "weight": 5 } ],
+        "first": 90, "left": 50, "undated": 1, "total": 335, "errors": 1 } } },
+
+    { "note": "the list emptied: no earliest day, so Until answers absent, none undated and a sum of 0",
+      "event": "clear",
+      "expect": { "variables": {
+        "goals": [], "first": null, "left": null, "undated": 0, "total": 0, "errors": 1 } } }
+  ]
+}

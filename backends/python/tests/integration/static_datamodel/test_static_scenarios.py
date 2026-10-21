@@ -1055,3 +1055,11 @@ def test_a_final_hands_its_done_event_the_value_its_content_names() -> None:
 # lacks a first-revision key refused.
 def test_a_value_that_may_be_absent_is_held_tested_and_carried_as_null() -> None:
     replay("static_optional")
+
+
+# docs/adr/0055: a statechart hands algorithms values that may be absent and holds
+# the ones they give back -- a list of records whose day may be absent, ordered,
+# filtered and summed, and an optional day handed in and taken back, `None` among
+# them.
+def test_a_statechart_hands_an_algorithm_a_value_that_may_be_absent() -> None:
+    replay("static_state_algorithm_optional")

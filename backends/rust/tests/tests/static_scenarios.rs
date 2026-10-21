@@ -1171,6 +1171,22 @@ fn static_optional_holds_tests_reads_and_carries_a_value_that_may_be_absent() {
     );
 }
 
+// A statechart hands algorithms values that may be absent and holds the ones they
+// give back (docs/adr/0055): a list of records whose day may be absent, ordered,
+// filtered and summed, an optional day handed in and taken back, `null` among
+// them. Read back through its saved state, as static_optional is.
+#[test]
+fn static_state_algorithm_optional_hands_an_algorithm_a_value_that_may_be_absent() {
+    use sce_rust_scenarios::integration::static_datamodel::static_state_algorithm_optional_sm::StaticStateAlgorithmOptionalPolicy;
+    replay(
+        Engine::new(StaticStateAlgorithmOptionalPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_state_algorithm_optional.json"
+        ),
+    );
+}
+
 // A run of several machines, one machine at a time. The scenarios below are a
 // run of the world simulation (`backends/rust/world`), written out by
 // `a_world_run_is_what_every_backend_replays.rs` as what each copy of a shared

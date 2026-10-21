@@ -94,6 +94,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_type"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_state_algorithm"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_state_algorithm_enum"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_state_algorithm_optional"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_string_capacity"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_text_record"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_timers"
@@ -1531,6 +1532,38 @@ func TestAValueThatMayBeAbsentIsHeldTestedAndRead(t *testing.T) {
 		"echoStatus": func() any { return optionalNameJSON(policy.EchoStatus()) },
 		"fallbacks":  func() any { return policy.Fallbacks() },
 		"errors":     func() any { return policy.Errors() },
+	}))
+}
+
+// A statechart hands algorithms values that may be absent and holds the ones they
+// give back (docs/adr/0055): a list of records whose day may be absent, ordered,
+// filtered and summed, and an optional day handed in and taken back, `null` among
+// them.
+func TestAStatechartHandsAnAlgorithmAValueThatMayBeAbsent(t *testing.T) {
+	policy := static_state_algorithm_optional.NewStaticStateAlgorithmOptionalPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	goalJSON := func(goal static_state_algorithm_optional.StaticStateAlgorithmOptionalGoalRecord) any {
+		// A record's 64-bit field is the text of its digits.
+		var day any
+		if v, ok := goal.Day().Get(); ok {
+			day = signedDigits(v)
+		}
+		return map[string]any{"id": goal.Id(), "day": day, "weight": goal.Weight()}
+	}
+	replay(t, "static_state_algorithm_optional", drive[static_state_algorithm_optional.StaticStateAlgorithmOptionalState, static_state_algorithm_optional.StaticStateAlgorithmOptionalEvent](&policy, map[string]func() any{
+		"goals": func() any {
+			goals := policy.Goals()
+			out := make([]any, len(goals))
+			for i, goal := range goals {
+				out[i] = goalJSON(goal)
+			}
+			return out
+		},
+		"first":   func() any { return optionalJSON(policy.First()) },
+		"left":    func() any { return optionalJSON(policy.Left()) },
+		"undated": func() any { return policy.Undated() },
+		"total":   func() any { return policy.Total() },
+		"errors":  func() any { return policy.Errors() },
 	}))
 }
 

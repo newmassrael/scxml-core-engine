@@ -72,6 +72,8 @@
 //     records; it is tested, read where a test proves it present, read with a default
 //     evaluated only when it is absent, and compared; a payload carries it as a value
 //     or `null` and is refused without its key, and a send and the done data write it.
+//   * `static_state_algorithm_optional`: the same struct handed to an algorithm and
+//     taken back — a list of records whose day may be absent, and an optional day.
 //   * `static_donedata`: a top-level final writes the pairs of its `<donedata>`, each
 //     read from the machine's own fields, as the JSON object of the done event's
 //     data; a pair whose value failed to compute is left out and the others cross.
@@ -180,6 +182,7 @@
 #include "static_send_target_sm.h"
 #include "static_send_type_sm.h"
 #include "static_state_algorithm_enum_sm.h"
+#include "static_state_algorithm_optional_sm.h"
 #include "static_state_algorithm_sm.h"
 #include "static_string_capacity_sm.h"
 #include "static_text_record_sm.h"
@@ -2063,6 +2066,110 @@ static const record_variable_t optional_records[] = {
 STATIC_OPTIONAL_SCENARIO(static_optional, optional_states, optional_variables, static_optional_text, optional_records,
                          static_optional_done, static_optional_presence)
 
+// static_state_algorithm_optional: a statechart hands algorithms values that may be
+// absent (docs/adr/0055) and holds the ones they give back. A goal's day is the
+// struct `sce/forge/optional.h` declares for an int64, in the machine's record, in
+// the algorithm's and in the optional days the machine holds, read as
+// static_optional's are once the presence reader has said it is there.
+VARIABLE_READER(static_state_algorithm_optional, undated)
+VARIABLE_READER(static_state_algorithm_optional, total)
+VARIABLE_READER(static_state_algorithm_optional, errors)
+
+// The present value of an optional day, read only where it is present.
+static int64_t static_state_algorithm_optional_read_first(const void *sm) {
+    return static_state_algorithm_optional_get_first((const static_state_algorithm_optional_t *)sm).value;
+}
+
+static int64_t static_state_algorithm_optional_read_left(const void *sm) {
+    return static_state_algorithm_optional_get_left((const static_state_algorithm_optional_t *)sm).value;
+}
+
+// Element `index` of the list `goals`: false for any other name and for an element
+// the list does not hold.
+static bool optional_goal(const static_state_algorithm_optional_t *machine, const char *name, size_t index,
+                          static_state_algorithm_optional_record_goal_t *out) {
+    if (strcmp(name, "goals") != 0) {
+        return false;
+    }
+    const static_state_algorithm_optional_record_goal_view_t view = static_state_algorithm_optional_get_goals(machine);
+    if (index >= view.len) {
+        return false;
+    }
+    *out = view.data[index];
+    return true;
+}
+
+static bool static_state_algorithm_optional_read_goal(const void *sm, size_t index, const char *field, int64_t *out) {
+    static_state_algorithm_optional_record_goal_t goal;
+    if (!optional_goal((const static_state_algorithm_optional_t *)sm, "goals", index, &goal)) {
+        return false;
+    }
+    if (strcmp(field, "id") == 0) {
+        *out = (int64_t)goal.id;
+        return true;
+    }
+    if (strcmp(field, "day") == 0 && goal.day.present) {
+        *out = goal.day.value;
+        return true;
+    }
+    if (strcmp(field, "weight") == 0) {
+        *out = (int64_t)goal.weight;
+        return true;
+    }
+    return false;
+}
+
+// A goal holds no text and no value of an enum.
+static const char *static_state_algorithm_optional_text_goal(const void *sm, size_t index, const char *field) {
+    (void)sm;
+    (void)index;
+    (void)field;
+    return NULL;
+}
+
+static size_t static_state_algorithm_optional_count_goals(const void *sm) {
+    return static_state_algorithm_optional_get_goals((const static_state_algorithm_optional_t *)sm).len;
+}
+
+// Whether the optional value a step names is present: 1, 0, or -1 for a place that
+// holds no optional value.
+static int static_state_algorithm_optional_presence(void *sm, const char *name, size_t index, const char *field) {
+    const static_state_algorithm_optional_t *machine = (const static_state_algorithm_optional_t *)sm;
+    if (field == NULL) {
+        if (strcmp(name, "first") == 0) {
+            return static_state_algorithm_optional_get_first(machine).present ? 1 : 0;
+        }
+        if (strcmp(name, "left") == 0) {
+            return static_state_algorithm_optional_get_left(machine).present ? 1 : 0;
+        }
+        return -1;
+    }
+    static_state_algorithm_optional_record_goal_t goal;
+    if (!optional_goal(machine, name, index, &goal)) {
+        return -1;
+    }
+    if (strcmp(field, "day") == 0) {
+        return goal.day.present ? 1 : 0;
+    }
+    return -1;
+}
+
+static const name_value_t state_algorithm_optional_states[] = {
+    {"tracking", STATIC_STATE_ALGORITHM_OPTIONAL_STATE_TRACKING},
+};
+static const variable_t state_algorithm_optional_variables[] = {
+    {"first", static_state_algorithm_optional_read_first},     {"left", static_state_algorithm_optional_read_left},
+    {"undated", static_state_algorithm_optional_read_undated}, {"total", static_state_algorithm_optional_read_total},
+    {"errors", static_state_algorithm_optional_read_errors},
+};
+static const record_variable_t state_algorithm_optional_records[] = {
+    {"goals", static_state_algorithm_optional_read_goal, static_state_algorithm_optional_text_goal,
+     static_state_algorithm_optional_count_goals},
+    {NULL, NULL, NULL, NULL}};
+STATIC_OPTIONAL_SCENARIO(static_state_algorithm_optional, state_algorithm_optional_states,
+                         state_algorithm_optional_variables, NULL, state_algorithm_optional_records, NULL,
+                         static_state_algorithm_optional_presence)
+
 // static_schema_revision: a delivery written against an earlier revision of a
 // schema that grew lacks the fields a later revision added, and takes their
 // defaults; a delivery that lacks a field of the first revision is refused, and a
@@ -3228,6 +3335,7 @@ int main(void) {
     bad |= static_record_enum_scenario("static_record_enum", 29);
     bad |= static_whole_payload_scenario("static_whole_payload", 9);
     bad |= static_optional_scenario("static_optional", 16);
+    bad |= static_state_algorithm_optional_scenario("static_state_algorithm_optional", 9);
     bad |= static_schema_revision_scenario("static_schema_revision", 9);
     bad |= static_wire_wide_scenario("static_wire_wide", 9);
     bad |= static_wire_enum_scenario("static_wire_enum", 7);

@@ -869,6 +869,11 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheInterpreterDoesWha
     // the scan above would let pass does not stand for its lowering.
     EXPECT_NE(std::find(replayed.begin(), replayed.end(), "static_optional"), replayed.end())
         << "static_optional was not replayed: an optional value has no lowering for the Interpreter";
+    // ... and the algorithms handed values that may be absent: a list of records
+    // whose day may be absent, and an optional day, each in and out.
+    EXPECT_NE(std::find(replayed.begin(), replayed.end(), "static_state_algorithm_optional"), replayed.end())
+        << "static_state_algorithm_optional was not replayed: an algorithm's optional value has no lowering for "
+        << "the Interpreter";
     // ... and the copies of the list of who is online, whose entries are let go by the
     // machine's own delayed send, which the Interpreter's scheduler releases as the
     // scenario moves its logical clock on.

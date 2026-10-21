@@ -92,6 +92,7 @@
 #include "static_send_target_sm.h"
 #include "static_send_type_sm.h"
 #include "static_state_algorithm_enum_sm.h"
+#include "static_state_algorithm_optional_sm.h"
 #include "static_state_algorithm_sm.h"
 #include "static_string_capacity_sm.h"
 #include "static_text_record_sm.h"
@@ -2645,6 +2646,27 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, AValueThatMayBeAbsentIsHeldTestedAndC
         {"errors", [](const Machine &m) { return json(m.errors()); }},
     });
     replay("static_optional", driver);
+}
+
+// docs/adr/0055: a statechart hands algorithms values that may be absent and holds
+// the ones they give back: a list of records whose day may be absent, ordered,
+// filtered and summed, and an optional day handed in and taken back, `null` among
+// them.
+TEST(AStaticDatamodelRunsGeneratedCppTest, AStatechartHandsAnAlgorithmAValueThatMayBeAbsent) {
+    using Machine = G::static_state_algorithm_optional::static_state_algorithm_optional;
+    const auto day = [](const auto &value) { return optionalJson(value, [](std::int64_t d) { return json(d); }); };
+    const auto goal = [=](const auto &record) {
+        return json{{"id", record.id}, {"day", day(record.day)}, {"weight", record.weight}};
+    };
+    Driver<Machine> driver({
+        {"goals", [=](const Machine &m) { return listedJson(m.goals(), goal); }},
+        {"first", [=](const Machine &m) { return day(m.first()); }},
+        {"left", [=](const Machine &m) { return day(m.left()); }},
+        {"undated", [](const Machine &m) { return json(m.undated()); }},
+        {"total", [](const Machine &m) { return json(m.total()); }},
+        {"errors", [](const Machine &m) { return json(m.errors()); }},
+    });
+    replay("static_state_algorithm_optional", driver);
 }
 
 namespace {

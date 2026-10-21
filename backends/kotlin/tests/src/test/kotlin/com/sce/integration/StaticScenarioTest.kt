@@ -85,6 +85,7 @@ import com.sce.integration.static_record_string.StaticRecordStringStateMachine
 import com.sce.integration.static_schema_revision.StaticSchemaRevisionStateMachine
 import com.sce.integration.static_state_algorithm.StaticStateAlgorithmStateMachine
 import com.sce.integration.static_state_algorithm_enum.StaticStateAlgorithmEnumStateMachine
+import com.sce.integration.static_state_algorithm_optional.StaticStateAlgorithmOptionalStateMachine
 import com.sce.integration.static_string_capacity.StaticStringCapacityStateMachine
 import com.sce.integration.static_text_record.StaticTextRecordStateMachine
 import com.sce.integration.static_timers.StaticTimersStateMachine
@@ -1326,6 +1327,26 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_state_algorithm_enum"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // A statechart hands algorithms values that may be absent and holds the ones
+    // they give back (docs/adr/0055): a list of records whose day may be absent,
+    // ordered, filtered and summed, and an optional day handed in and taken back.
+    @Test
+    fun staticStateAlgorithmOptionalHandsAnAlgorithmAValueThatMayBeAbsent() {
+        val sm = StaticStateAlgorithmOptionalStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_state_algorithm_optional"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },
