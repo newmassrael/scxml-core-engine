@@ -89,6 +89,22 @@ impl<'a> CodecZenohDeclaration<'a> {
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §synth-5-B L494-519).
     pub fn decode(cursor: &mut SceCursor<'a>) -> Result<Self, CodecError> {
+        let mut _out = Self::default();
+        Self::decode_into(cursor, &mut _out)?;
+        Ok(_out)
+    }
+
+    /// Decode the next frame from `cursor` into `_out`: the bytes, the bounds
+    /// and the errors of [`Self::decode`], with each bounded list and embedded
+    /// body built in the field where it will live.
+    ///
+    /// `decode` returns its value, and a `heapless::Vec` moves by copying its
+    /// whole declared capacity, so every hop a decoded list takes on the way
+    /// up (the struct literal, `Ok(..)`, a variant wrapper, the caller's own
+    /// binding) copies the declared maximum however few entries the wire held.
+    /// A caller on a path where that shows decodes into a destination it owns.
+    /// On `Err`, `_out` holds the fields decoded so far and is not to be read.
+    pub fn decode_into(cursor: &mut SceCursor<'a>, _out: &mut Self) -> Result<(), CodecError> {
         // Decode fixed prefix (RFC §synth-5-B variant primitive: fields
         // sit before the variant suffix on the wire).
         let raw = cursor.peek_slice(1)?;
@@ -98,25 +114,76 @@ impl<'a> CodecZenohDeclaration<'a> {
         // from the cursor. The default arm (when declared) carries the
         // runtime tag value so encode can round-trip it back onto the
         // wire.
-        let body = match header & 0x1F {
-            0u8 => CodecZenohDeclarationVariant::CodecZenohDeclKexpr(CodecZenohDeclKexpr::decode(cursor, (header >> 5) & 0x1)?),
-            1u8 => CodecZenohDeclarationVariant::CodecZenohUndeclKexpr(CodecZenohUndeclKexpr::decode(cursor)?),
-            2u8 => CodecZenohDeclarationVariant::CodecZenohDeclSubscriber(CodecZenohDeclSubscriber::decode(cursor, (header >> 5) & 0x1)?),
-            3u8 => CodecZenohDeclarationVariant::CodecZenohUndeclSubscriber(CodecZenohUndeclSubscriber::decode(cursor, (header >> 7) & 0x1)?),
-            4u8 => CodecZenohDeclarationVariant::CodecZenohDeclQueryable(CodecZenohDeclQueryable::decode(cursor, (header >> 5) & 0x1, (header >> 7) & 0x1)?),
-            5u8 => CodecZenohDeclarationVariant::CodecZenohUndeclQueryable(CodecZenohUndeclQueryable::decode(cursor, (header >> 7) & 0x1)?),
-            6u8 => CodecZenohDeclarationVariant::CodecZenohDeclToken(CodecZenohDeclToken::decode(cursor, (header >> 5) & 0x1)?),
-            7u8 => CodecZenohDeclarationVariant::CodecZenohUndeclToken(CodecZenohUndeclToken::decode(cursor, (header >> 7) & 0x1)?),
-            26u8 => CodecZenohDeclarationVariant::CodecZenohDeclFinal(CodecZenohDeclFinal::decode(cursor)?),
-            other => CodecZenohDeclarationVariant::Default {
-                tag: other,
-                body: CodecZenohDeclFinal::decode(cursor)?,
-            },
-        };
-        Ok(Self {
-            header,
-            body,
-        })
+        // Each arm is installed in `_out.body` holding its body's default and
+        // that body is decoded where it sits, so no arm body is returned up
+        // through the variant wrapper.
+        match header & 0x1F {
+            0u8 => {
+                _out.body = CodecZenohDeclarationVariant::CodecZenohDeclKexpr(CodecZenohDeclKexpr::default());
+                if let CodecZenohDeclarationVariant::CodecZenohDeclKexpr(_b) = &mut _out.body {
+                    CodecZenohDeclKexpr::decode_into(cursor, _b, (header >> 5) & 0x1)?;
+                }
+            }
+            1u8 => {
+                _out.body = CodecZenohDeclarationVariant::CodecZenohUndeclKexpr(CodecZenohUndeclKexpr::default());
+                if let CodecZenohDeclarationVariant::CodecZenohUndeclKexpr(_b) = &mut _out.body {
+                    CodecZenohUndeclKexpr::decode_into(cursor, _b)?;
+                }
+            }
+            2u8 => {
+                _out.body = CodecZenohDeclarationVariant::CodecZenohDeclSubscriber(CodecZenohDeclSubscriber::default());
+                if let CodecZenohDeclarationVariant::CodecZenohDeclSubscriber(_b) = &mut _out.body {
+                    CodecZenohDeclSubscriber::decode_into(cursor, _b, (header >> 5) & 0x1)?;
+                }
+            }
+            3u8 => {
+                _out.body = CodecZenohDeclarationVariant::CodecZenohUndeclSubscriber(CodecZenohUndeclSubscriber::default());
+                if let CodecZenohDeclarationVariant::CodecZenohUndeclSubscriber(_b) = &mut _out.body {
+                    CodecZenohUndeclSubscriber::decode_into(cursor, _b, (header >> 7) & 0x1)?;
+                }
+            }
+            4u8 => {
+                _out.body = CodecZenohDeclarationVariant::CodecZenohDeclQueryable(CodecZenohDeclQueryable::default());
+                if let CodecZenohDeclarationVariant::CodecZenohDeclQueryable(_b) = &mut _out.body {
+                    CodecZenohDeclQueryable::decode_into(cursor, _b, (header >> 5) & 0x1, (header >> 7) & 0x1)?;
+                }
+            }
+            5u8 => {
+                _out.body = CodecZenohDeclarationVariant::CodecZenohUndeclQueryable(CodecZenohUndeclQueryable::default());
+                if let CodecZenohDeclarationVariant::CodecZenohUndeclQueryable(_b) = &mut _out.body {
+                    CodecZenohUndeclQueryable::decode_into(cursor, _b, (header >> 7) & 0x1)?;
+                }
+            }
+            6u8 => {
+                _out.body = CodecZenohDeclarationVariant::CodecZenohDeclToken(CodecZenohDeclToken::default());
+                if let CodecZenohDeclarationVariant::CodecZenohDeclToken(_b) = &mut _out.body {
+                    CodecZenohDeclToken::decode_into(cursor, _b, (header >> 5) & 0x1)?;
+                }
+            }
+            7u8 => {
+                _out.body = CodecZenohDeclarationVariant::CodecZenohUndeclToken(CodecZenohUndeclToken::default());
+                if let CodecZenohDeclarationVariant::CodecZenohUndeclToken(_b) = &mut _out.body {
+                    CodecZenohUndeclToken::decode_into(cursor, _b, (header >> 7) & 0x1)?;
+                }
+            }
+            26u8 => {
+                _out.body = CodecZenohDeclarationVariant::CodecZenohDeclFinal(CodecZenohDeclFinal::default());
+                if let CodecZenohDeclarationVariant::CodecZenohDeclFinal(_b) = &mut _out.body {
+                    CodecZenohDeclFinal::decode_into(cursor, _b)?;
+                }
+            }
+            other => {
+                _out.body = CodecZenohDeclarationVariant::Default {
+                    tag: other,
+                    body: CodecZenohDeclFinal::default(),
+                };
+                if let CodecZenohDeclarationVariant::Default { body: _b, .. } = &mut _out.body {
+                    CodecZenohDeclFinal::decode_into(cursor, _b)?;
+                }
+            }
+        }
+        _out.header = header;
+        Ok(())
     }
 
     // RFC §synth-5-B flags primitive: per-bit-range accessors over

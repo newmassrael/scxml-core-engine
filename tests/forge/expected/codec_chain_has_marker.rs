@@ -59,6 +59,22 @@ impl<'a> CodecChainHasMarker<'a> {
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §synth-5-B L494-519).
     pub fn decode(cursor: &mut SceCursor<'a>) -> Result<Self, CodecError> {
+        let mut _out = Self::default();
+        Self::decode_into(cursor, &mut _out)?;
+        Ok(_out)
+    }
+
+    /// Decode the next frame from `cursor` into `_out`: the bytes, the bounds
+    /// and the errors of [`Self::decode`], with each bounded list and embedded
+    /// body built in the field where it will live.
+    ///
+    /// `decode` returns its value, and a `heapless::Vec` moves by copying its
+    /// whole declared capacity, so every hop a decoded list takes on the way
+    /// up (the struct literal, `Ok(..)`, a variant wrapper, the caller's own
+    /// binding) copies the declared maximum however few entries the wire held.
+    /// A caller on a path where that shows decodes into a destination it owns.
+    /// On `Err`, `_out` holds the fields decoded so far and is not to be read.
+    pub fn decode_into(cursor: &mut SceCursor<'a>, _out: &mut Self) -> Result<(), CodecError> {
         // Streaming cursor decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
         // field's absolute offset is fixed at codegen time; this branch
@@ -77,8 +93,8 @@ impl<'a> CodecChainHasMarker<'a> {
             cursor.advance(1)?;
             _v
         };
-        let extensions = if (header & 0x80u8) != 0 {
-            let mut _vec: HeaplessVec<CodecZenohExtEntry<'a>, 4> = HeaplessVec::new();
+        if (header & 0x80u8) != 0 {
+            let _vec = _out.extensions.insert(HeaplessVec::<CodecZenohExtEntry<'a>, 4>::new());
             let mut _more = false;
             for _ in 0..4u32 {
                 if cursor.remaining() == 0 { break; }
@@ -96,11 +112,10 @@ impl<'a> CodecChainHasMarker<'a> {
             if _more {
                 return Err(CodecError::TlvChainOverflow);
             }
-            Some(_vec)
         } else {
-            None
-        };
-        let _has_extensions_18 = extensions.as_ref().is_some_and(|_c| _c.iter().any(|_e| (u64::from(_e.header) & 127u64) == 18u64));
+            _out.extensions = None;
+        }
+        let _has_extensions_18 = _out.extensions.as_ref().is_some_and(|_c| _c.iter().any(|_e| (u64::from(_e.header) & 127u64) == 18u64));
         let payload_len = if !_has_extensions_18 {
             let _v = cursor.read_vle_u64()?;
             Some(_v)
@@ -122,25 +137,21 @@ impl<'a> CodecChainHasMarker<'a> {
         } else {
             None
         };
-        let slices = if _has_extensions_18 {
+        if _has_extensions_18 {
             let _n = slice_count.expect("co-gating: count present-if matches repeat");
-            let mut _vec: HeaplessVec<CodecChainHasMarkerSlice<'a>, 4> = HeaplessVec::new();
+            let _vec = _out.slices.insert(HeaplessVec::<CodecChainHasMarkerSlice<'a>, 4>::new());
             for _ in 0.._n {
                 _vec.push(CodecChainHasMarkerSlice::decode(cursor)?)
                     .map_err(|_| CodecError::TooManyElements)?;
             }
-            Some(_vec)
         } else {
-            None
-        };
-        Ok(Self {
-            header,
-            extensions,
-            payload_len,
-            payload,
-            slice_count,
-            slices,
-        })
+            _out.slices = None;
+        }
+        _out.header = header;
+        _out.payload_len = payload_len;
+        _out.payload = payload;
+        _out.slice_count = slice_count;
+        Ok(())
     }
 
     // RFC §synth-5-B flags primitive: per-bit-range accessors over

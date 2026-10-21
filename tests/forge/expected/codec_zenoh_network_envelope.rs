@@ -84,6 +84,22 @@ impl<'a> CodecZenohNetworkEnvelope<'a> {
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §synth-5-B L494-519).
     pub fn decode(cursor: &mut SceCursor<'a>) -> Result<Self, CodecError> {
+        let mut _out = Self::default();
+        Self::decode_into(cursor, &mut _out)?;
+        Ok(_out)
+    }
+
+    /// Decode the next frame from `cursor` into `_out`: the bytes, the bounds
+    /// and the errors of [`Self::decode`], with each bounded list and embedded
+    /// body built in the field where it will live.
+    ///
+    /// `decode` returns its value, and a `heapless::Vec` moves by copying its
+    /// whole declared capacity, so every hop a decoded list takes on the way
+    /// up (the struct literal, `Ok(..)`, a variant wrapper, the caller's own
+    /// binding) copies the declared maximum however few entries the wire held.
+    /// A caller on a path where that shows decodes into a destination it owns.
+    /// On `Err`, `_out` holds the fields decoded so far and is not to be read.
+    pub fn decode_into(cursor: &mut SceCursor<'a>, _out: &mut Self) -> Result<(), CodecError> {
         // RFC §synth-5-B peek-byte / streaming-prefix:
         // streaming prefix decode (variable-length fields supported via
         // per-field present_if/tlv-chain/embed/repeat helpers). Peek-byte
@@ -96,22 +112,63 @@ impl<'a> CodecZenohNetworkEnvelope<'a> {
         // from the cursor. The default arm (when declared) carries the
         // runtime tag value so encode can round-trip it back onto the
         // wire.
-        let body = match _peek & 0x1F {
-            25u8 => CodecZenohNetworkEnvelopeVariant::CodecZenohInterest(CodecZenohInterest::decode(cursor)?),
-            26u8 => CodecZenohNetworkEnvelopeVariant::CodecZenohResponseFinal(CodecZenohResponseFinal::decode(cursor)?),
-            27u8 => CodecZenohNetworkEnvelopeVariant::CodecZenohResponse(CodecZenohResponse::decode(cursor)?),
-            28u8 => CodecZenohNetworkEnvelopeVariant::CodecZenohRequest(CodecZenohRequest::decode(cursor)?),
-            29u8 => CodecZenohNetworkEnvelopeVariant::CodecZenohPush(CodecZenohPush::decode(cursor)?),
-            30u8 => CodecZenohNetworkEnvelopeVariant::CodecZenohDeclare(CodecZenohDeclare::decode(cursor)?),
-            31u8 => CodecZenohNetworkEnvelopeVariant::CodecZenohOam(CodecZenohOam::decode(cursor)?),
-            other => CodecZenohNetworkEnvelopeVariant::Default {
-                tag: other,
-                body: CodecZenohOam::decode(cursor)?,
-            },
-        };
-        Ok(Self {
-            body,
-        })
+        // Each arm is installed in `_out.body` holding its body's default and
+        // that body is decoded where it sits, so no arm body is returned up
+        // through the variant wrapper.
+        match _peek & 0x1F {
+            25u8 => {
+                _out.body = CodecZenohNetworkEnvelopeVariant::CodecZenohInterest(CodecZenohInterest::default());
+                if let CodecZenohNetworkEnvelopeVariant::CodecZenohInterest(_b) = &mut _out.body {
+                    CodecZenohInterest::decode_into(cursor, _b)?;
+                }
+            }
+            26u8 => {
+                _out.body = CodecZenohNetworkEnvelopeVariant::CodecZenohResponseFinal(CodecZenohResponseFinal::default());
+                if let CodecZenohNetworkEnvelopeVariant::CodecZenohResponseFinal(_b) = &mut _out.body {
+                    CodecZenohResponseFinal::decode_into(cursor, _b)?;
+                }
+            }
+            27u8 => {
+                _out.body = CodecZenohNetworkEnvelopeVariant::CodecZenohResponse(CodecZenohResponse::default());
+                if let CodecZenohNetworkEnvelopeVariant::CodecZenohResponse(_b) = &mut _out.body {
+                    CodecZenohResponse::decode_into(cursor, _b)?;
+                }
+            }
+            28u8 => {
+                _out.body = CodecZenohNetworkEnvelopeVariant::CodecZenohRequest(CodecZenohRequest::default());
+                if let CodecZenohNetworkEnvelopeVariant::CodecZenohRequest(_b) = &mut _out.body {
+                    CodecZenohRequest::decode_into(cursor, _b)?;
+                }
+            }
+            29u8 => {
+                _out.body = CodecZenohNetworkEnvelopeVariant::CodecZenohPush(CodecZenohPush::default());
+                if let CodecZenohNetworkEnvelopeVariant::CodecZenohPush(_b) = &mut _out.body {
+                    CodecZenohPush::decode_into(cursor, _b)?;
+                }
+            }
+            30u8 => {
+                _out.body = CodecZenohNetworkEnvelopeVariant::CodecZenohDeclare(CodecZenohDeclare::default());
+                if let CodecZenohNetworkEnvelopeVariant::CodecZenohDeclare(_b) = &mut _out.body {
+                    CodecZenohDeclare::decode_into(cursor, _b)?;
+                }
+            }
+            31u8 => {
+                _out.body = CodecZenohNetworkEnvelopeVariant::CodecZenohOam(CodecZenohOam::default());
+                if let CodecZenohNetworkEnvelopeVariant::CodecZenohOam(_b) = &mut _out.body {
+                    CodecZenohOam::decode_into(cursor, _b)?;
+                }
+            }
+            other => {
+                _out.body = CodecZenohNetworkEnvelopeVariant::Default {
+                    tag: other,
+                    body: CodecZenohOam::default(),
+                };
+                if let CodecZenohNetworkEnvelopeVariant::Default { body: _b, .. } = &mut _out.body {
+                    CodecZenohOam::decode_into(cursor, _b)?;
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Worst-case encoded byte count for this codec — the upper bound

@@ -48,6 +48,22 @@ impl<'a> CodecZenohOpenBody<'a> {
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §synth-5-B L494-519).
     pub fn decode(cursor: &mut SceCursor<'a>, a: u8) -> Result<Self, CodecError> {
+        let mut _out = Self::default();
+        Self::decode_into(cursor, &mut _out, a)?;
+        Ok(_out)
+    }
+
+    /// Decode the next frame from `cursor` into `_out`: the bytes, the bounds
+    /// and the errors of [`Self::decode`], with each bounded list and embedded
+    /// body built in the field where it will live.
+    ///
+    /// `decode` returns its value, and a `heapless::Vec` moves by copying its
+    /// whole declared capacity, so every hop a decoded list takes on the way
+    /// up (the struct literal, `Ok(..)`, a variant wrapper, the caller's own
+    /// binding) copies the declared maximum however few entries the wire held.
+    /// A caller on a path where that shows decodes into a destination it owns.
+    /// On `Err`, `_out` holds the fields decoded so far and is not to be read.
+    pub fn decode_into(cursor: &mut SceCursor<'a>, _out: &mut Self, a: u8) -> Result<(), CodecError> {
         // Declared-but-unconsumed flag inputs: defensive suppress per declared
         // `<sce:flag-input>` so codecs that haven't (yet) consumed an
         // input via `present-if` compile cleanly. The validator enforces
@@ -82,12 +98,11 @@ impl<'a> CodecZenohOpenBody<'a> {
         } else {
             None
         };
-        Ok(Self {
-            lease,
-            initial_sn,
-            cookie_len,
-            cookie,
-        })
+        _out.lease = lease;
+        _out.initial_sn = initial_sn;
+        _out.cookie_len = cookie_len;
+        _out.cookie = cookie;
+        Ok(())
     }
 
     /// Worst-case encoded byte count for this codec — the upper bound

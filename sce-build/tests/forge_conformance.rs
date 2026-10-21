@@ -12072,7 +12072,7 @@ fn forge_parent_tag_round_trip_local_nonlocal_rust() {
     .map(|(_, body)| body.clone())
     .expect("keyexpr codec emit");
     assert!(
-        keyexpr_rust.contains("let body = match tag {"),
+        keyexpr_rust.contains("match tag {"),
         "β leaf variant decode must dispatch on caller-tag `match tag {{}}`\n{keyexpr_rust}"
     );
     assert!(
@@ -12469,7 +12469,7 @@ fn forge_parent_tag_inversion_beta_emits_caller_tag_signature() {
     );
     // β leaf dispatches by matching the `tag` parameter directly.
     assert!(
-        leaf_rust.contains("let body = match tag {"),
+        leaf_rust.contains("match tag {"),
         "β leaf decode must `match tag {{}}`\n{leaf_rust}"
     );
 
@@ -13019,11 +13019,11 @@ fn forge_parent_tag_consumer_parity_chain_forwarding_resolves() {
     // Decode site: arm body's decode receives the dispatcher's `n`
     // input verbatim (FlagBindSource::Input passthrough).
     assert!(
-        disp_rust.contains("B5nuChainArmA::decode(cursor, n)"),
+        disp_rust.contains("B5nuChainArmA::decode_into(cursor, _b, n)"),
         "dispatcher decode must pass `n` to arm_a; got:\n{disp_rust}"
     );
     assert!(
-        !disp_rust.contains("B5nuChainArmA::decode(cursor, header)"),
+        !disp_rust.contains("B5nuChainArmA::decode_into(cursor, _b, header)"),
         "dispatcher decode must NOT pass bare `header`;\n{disp_rust}"
     );
     // Encode site: arm body's encode invocation reads `n` from the
@@ -20157,12 +20157,13 @@ fn flag_inversion_variant_arm_flag_bind_threading() {
 
     // Arm dispatch decode site must extract S from `header` and thread.
     assert!(
-        parent_rust.contains("CodecAxis1D1WithInput::decode(cursor, (header >> 6) & 0x1)?"),
+        parent_rust
+            .contains("CodecAxis1D1WithInput::decode_into(cursor, _b, (header >> 6) & 0x1)?"),
         "variant arm decode must thread `(header >> 6) & 0x1`:\n{parent_rust}"
     );
     // No-input arm must NOT pick up any spurious arg.
     assert!(
-        parent_rust.contains("CodecAxis1D1NoInput::decode(cursor)?"),
+        parent_rust.contains("CodecAxis1D1NoInput::decode_into(cursor, _b)?"),
         "no-input arm decode must remain arg-less:\n{parent_rust}"
     );
     // Encode site reads through `self.header` and threads through the sink.
@@ -20939,7 +20940,7 @@ fn axis1_inversion_multi_flag_input_order() {
         .expect("parent emit");
     assert!(
         parent_body.contains(
-            "CodecMultiDisp::decode(cursor, \
+            "CodecMultiDisp::decode_into(cursor, &mut _out.payload, \
              (header >> 5) & 0x1, \
              (header >> 6) & 0x1, \
              (header >> 7) & 0x1)?"

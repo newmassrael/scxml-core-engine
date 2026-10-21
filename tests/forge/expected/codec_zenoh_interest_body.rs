@@ -48,6 +48,22 @@ impl<'a> CodecZenohInterestBody<'a> {
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §synth-5-B L494-519).
     pub fn decode(cursor: &mut SceCursor<'a>) -> Result<Self, CodecError> {
+        let mut _out = Self::default();
+        Self::decode_into(cursor, &mut _out)?;
+        Ok(_out)
+    }
+
+    /// Decode the next frame from `cursor` into `_out`: the bytes, the bounds
+    /// and the errors of [`Self::decode`], with each bounded list and embedded
+    /// body built in the field where it will live.
+    ///
+    /// `decode` returns its value, and a `heapless::Vec` moves by copying its
+    /// whole declared capacity, so every hop a decoded list takes on the way
+    /// up (the struct literal, `Ok(..)`, a variant wrapper, the caller's own
+    /// binding) copies the declared maximum however few entries the wire held.
+    /// A caller on a path where that shows decodes into a destination it owns.
+    /// On `Err`, `_out` holds the fields decoded so far and is not to be read.
+    pub fn decode_into(cursor: &mut SceCursor<'a>, _out: &mut Self) -> Result<(), CodecError> {
         // Streaming cursor decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
         // field's absolute offset is fixed at codegen time; this branch
@@ -66,15 +82,13 @@ impl<'a> CodecZenohInterestBody<'a> {
             cursor.advance(1)?;
             _v
         };
-        let keyexpr = if (header & 0x10u8) != 0 {
-            Some(CodecZenohWireexpr::decode(cursor, (header >> 5) & 0x1)?)
+        if (header & 0x10u8) != 0 {
+            CodecZenohWireexpr::decode_into(cursor, _out.keyexpr.insert(CodecZenohWireexpr::default()), (header >> 5) & 0x1)?;
         } else {
-            None
-        };
-        Ok(Self {
-            header,
-            keyexpr,
-        })
+            _out.keyexpr = None;
+        }
+        _out.header = header;
+        Ok(())
     }
 
     // RFC §synth-5-B flags primitive: per-bit-range accessors over

@@ -277,6 +277,15 @@ impl<'a> Envelope<'a> {
         Ok(value)
     }
 
+    /// [`Self::decode`] into a destination the caller owns, the one surface
+    /// every codec offers so a codec that embeds this one decodes it where it
+    /// will live. A map holds no bounded list to build in place, so this
+    /// decodes and stores.
+    pub fn decode_into(cursor: &mut SceCursor<'a>, _out: &mut Self) -> Result<(), CodecError> {
+        *_out = Self::decode(cursor)?;
+        Ok(())
+    }
+
     /// Encode this map into `w`. An entry whose value breaks its declared
     /// bound — an exact length, a maximum size — is refused, not written.
     pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {

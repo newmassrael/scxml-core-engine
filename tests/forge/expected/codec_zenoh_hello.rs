@@ -57,6 +57,22 @@ impl<'a> CodecZenohHello<'a> {
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §synth-5-B L494-519).
     pub fn decode(cursor: &mut SceCursor<'a>, l: u8) -> Result<Self, CodecError> {
+        let mut _out = Self::default();
+        Self::decode_into(cursor, &mut _out, l)?;
+        Ok(_out)
+    }
+
+    /// Decode the next frame from `cursor` into `_out`: the bytes, the bounds
+    /// and the errors of [`Self::decode`], with each bounded list and embedded
+    /// body built in the field where it will live.
+    ///
+    /// `decode` returns its value, and a `heapless::Vec` moves by copying its
+    /// whole declared capacity, so every hop a decoded list takes on the way
+    /// up (the struct literal, `Ok(..)`, a variant wrapper, the caller's own
+    /// binding) copies the declared maximum however few entries the wire held.
+    /// A caller on a path where that shows decodes into a destination it owns.
+    /// On `Err`, `_out` holds the fields decoded so far and is not to be read.
+    pub fn decode_into(cursor: &mut SceCursor<'a>, _out: &mut Self, l: u8) -> Result<(), CodecError> {
         // Declared-but-unconsumed flag inputs: defensive suppress per declared
         // `<sce:flag-input>` so codecs that haven't (yet) consumed an
         // input via `present-if` compile cleanly. The validator enforces
@@ -99,24 +115,21 @@ impl<'a> CodecZenohHello<'a> {
         } else {
             None
         };
-        let locators = if (l & 0x01u8) != 0 {
+        if (l & 0x01u8) != 0 {
             let _n = num_locators.expect("co-gating: count present-if matches repeat");
-            let mut _vec: HeaplessVec<CodecZenohLocator<'a>, 64> = HeaplessVec::new();
+            let _vec = _out.locators.insert(HeaplessVec::<CodecZenohLocator<'a>, 64>::new());
             for _ in 0.._n {
                 _vec.push(CodecZenohLocator::decode(cursor)?)
                     .map_err(|_| CodecError::TooManyElements)?;
             }
-            Some(_vec)
         } else {
-            None
-        };
-        Ok(Self {
-            version,
-            cbyte,
-            zid,
-            num_locators,
-            locators,
-        })
+            _out.locators = None;
+        }
+        _out.version = version;
+        _out.cbyte = cbyte;
+        _out.zid = zid;
+        _out.num_locators = num_locators;
+        Ok(())
     }
 
     // RFC §synth-5-B flags primitive: per-bit-range accessors over

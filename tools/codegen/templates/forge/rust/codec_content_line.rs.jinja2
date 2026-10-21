@@ -282,6 +282,15 @@ impl {{ struct_name }} {
         Ok(value)
     }
 
+    /// [`Self::decode`] into a destination the caller owns, the one surface
+    /// every codec offers so a codec that embeds this one decodes it where it
+    /// will live. A component holds no bounded list to build in place, so this
+    /// decodes and stores.
+    pub fn decode_into(cursor: &mut SceCursor<'_>, _out: &mut Self) -> Result<(), CodecError> {
+        *_out = Self::decode(cursor)?;
+        Ok(())
+    }
+
     /// Encode this component into `w`. A value past its declared bound, or one
     /// a line could not carry, is refused (SCE_FORGE.md §4.6.4).
     pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {

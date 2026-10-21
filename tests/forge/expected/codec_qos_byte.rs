@@ -54,6 +54,15 @@ impl CodecQosByte {
         Ok(value)
     }
 
+    /// [`Self::decode`] into a destination the caller owns, so a codec that
+    /// embeds or dispatches to this one decodes it where it will live (see
+    /// `decode_into` on a codec that holds a bounded list). This body has no
+    /// list of its own to build in place, so it decodes and stores.
+    pub fn decode_into(cursor: &mut SceCursor<'_>, _out: &mut Self) -> Result<(), CodecError> {
+        *_out = Self::decode(cursor)?;
+        Ok(())
+    }
+
     // RFC §synth-5-B flags primitive: per-bit-range accessors over
     // the carrier field. Single-bit (width=1) reads as bool; multi-bit
     // (width>=2) reads as the smallest unsigned integer that fits the

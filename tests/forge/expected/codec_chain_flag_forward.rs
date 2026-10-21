@@ -54,6 +54,22 @@ impl CodecChainFlagForward {
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §synth-5-B L494-519).
     pub fn decode(cursor: &mut SceCursor<'_>, wide: u8) -> Result<Self, CodecError> {
+        let mut _out = Self::default();
+        Self::decode_into(cursor, &mut _out, wide)?;
+        Ok(_out)
+    }
+
+    /// Decode the next frame from `cursor` into `_out`: the bytes, the bounds
+    /// and the errors of [`Self::decode`], with each bounded list and embedded
+    /// body built in the field where it will live.
+    ///
+    /// `decode` returns its value, and a `heapless::Vec` moves by copying its
+    /// whole declared capacity, so every hop a decoded list takes on the way
+    /// up (the struct literal, `Ok(..)`, a variant wrapper, the caller's own
+    /// binding) copies the declared maximum however few entries the wire held.
+    /// A caller on a path where that shows decodes into a destination it owns.
+    /// On `Err`, `_out` holds the fields decoded so far and is not to be read.
+    pub fn decode_into(cursor: &mut SceCursor<'_>, _out: &mut Self, wide: u8) -> Result<(), CodecError> {
         // Declared-but-unconsumed flag inputs: defensive suppress per declared
         // `<sce:flag-input>` so codecs that haven't (yet) consumed an
         // input via `present-if` compile cleanly. The validator enforces
@@ -77,8 +93,8 @@ impl CodecChainFlagForward {
             cursor.advance(1)?;
             _v
         };
-        let entries = if (head & 0x01u8) != 0 {
-            let mut _vec: HeaplessVec<CodecChainFlagEntry, 4> = HeaplessVec::new();
+        if (head & 0x01u8) != 0 {
+            let _vec = _out.entries.insert(HeaplessVec::<CodecChainFlagEntry, 4>::new());
             let mut _more = false;
             for _ in 0..4u32 {
                 if cursor.remaining() == 0 { break; }
@@ -96,14 +112,11 @@ impl CodecChainFlagForward {
             if _more {
                 return Err(CodecError::TlvChainOverflow);
             }
-            Some(_vec)
         } else {
-            None
-        };
-        Ok(Self {
-            head,
-            entries,
-        })
+            _out.entries = None;
+        }
+        _out.head = head;
+        Ok(())
     }
 
     // RFC §synth-5-B flags primitive: per-bit-range accessors over

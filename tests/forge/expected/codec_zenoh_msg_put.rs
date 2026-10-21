@@ -80,6 +80,22 @@ impl<'a> CodecZenohMsgPut<'a> {
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §synth-5-B L494-519).
     pub fn decode(cursor: &mut SceCursor<'a>) -> Result<Self, CodecError> {
+        let mut _out = Self::default();
+        Self::decode_into(cursor, &mut _out)?;
+        Ok(_out)
+    }
+
+    /// Decode the next frame from `cursor` into `_out`: the bytes, the bounds
+    /// and the errors of [`Self::decode`], with each bounded list and embedded
+    /// body built in the field where it will live.
+    ///
+    /// `decode` returns its value, and a `heapless::Vec` moves by copying its
+    /// whole declared capacity, so every hop a decoded list takes on the way
+    /// up (the struct literal, `Ok(..)`, a variant wrapper, the caller's own
+    /// binding) copies the declared maximum however few entries the wire held.
+    /// A caller on a path where that shows decodes into a destination it owns.
+    /// On `Err`, `_out` holds the fields decoded so far and is not to be read.
+    pub fn decode_into(cursor: &mut SceCursor<'a>, _out: &mut Self) -> Result<(), CodecError> {
         // Streaming cursor decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
         // field's absolute offset is fixed at codegen time; this branch
@@ -98,18 +114,18 @@ impl<'a> CodecZenohMsgPut<'a> {
             cursor.advance(1)?;
             _v
         };
-        let timestamp = if (header & 0x20u8) != 0 {
-            Some(CodecZenohTimestamp::decode(cursor)?)
+        if (header & 0x20u8) != 0 {
+            CodecZenohTimestamp::decode_into(cursor, _out.timestamp.insert(CodecZenohTimestamp::default()))?;
         } else {
-            None
-        };
-        let encoding = if (header & 0x40u8) != 0 {
-            Some(CodecZenohEncoding::decode(cursor)?)
+            _out.timestamp = None;
+        }
+        if (header & 0x40u8) != 0 {
+            CodecZenohEncoding::decode_into(cursor, _out.encoding.insert(CodecZenohEncoding::default()))?;
         } else {
-            None
-        };
-        let extensions = if (header & 0x80u8) != 0 {
-            let mut _vec: HeaplessVec<CodecZenohExtEntry<'a>, 8> = HeaplessVec::new();
+            _out.encoding = None;
+        }
+        if (header & 0x80u8) != 0 {
+            let _vec = _out.extensions.insert(HeaplessVec::<CodecZenohExtEntry<'a>, 8>::new());
             let mut _more = false;
             for _ in 0..8u32 {
                 if cursor.remaining() == 0 { break; }
@@ -127,10 +143,9 @@ impl<'a> CodecZenohMsgPut<'a> {
             if _more {
                 return Err(CodecError::TlvChainOverflow);
             }
-            Some(_vec)
         } else {
-            None
-        };
+            _out.extensions = None;
+        }
         let payload_len = cursor.read_vle_u64()?;
         let payload = {
             let _n = payload_len as usize;
@@ -139,14 +154,10 @@ impl<'a> CodecZenohMsgPut<'a> {
             cursor.advance(_n)?;
             _v
         };
-        Ok(Self {
-            header,
-            timestamp,
-            encoding,
-            extensions,
-            payload_len,
-            payload,
-        })
+        _out.header = header;
+        _out.payload_len = payload_len;
+        _out.payload = payload;
+        Ok(())
     }
 
     // RFC §synth-5-B flags primitive: per-bit-range accessors over

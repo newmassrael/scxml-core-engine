@@ -55,6 +55,22 @@ impl CodecRepeatFlagCarrier {
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §synth-5-B L494-519).
     pub fn decode(cursor: &mut SceCursor<'_>) -> Result<Self, CodecError> {
+        let mut _out = Self::default();
+        Self::decode_into(cursor, &mut _out)?;
+        Ok(_out)
+    }
+
+    /// Decode the next frame from `cursor` into `_out`: the bytes, the bounds
+    /// and the errors of [`Self::decode`], with each bounded list and embedded
+    /// body built in the field where it will live.
+    ///
+    /// `decode` returns its value, and a `heapless::Vec` moves by copying its
+    /// whole declared capacity, so every hop a decoded list takes on the way
+    /// up (the struct literal, `Ok(..)`, a variant wrapper, the caller's own
+    /// binding) copies the declared maximum however few entries the wire held.
+    /// A caller on a path where that shows decodes into a destination it owns.
+    /// On `Err`, `_out` holds the fields decoded so far and is not to be read.
+    pub fn decode_into(cursor: &mut SceCursor<'_>, _out: &mut Self) -> Result<(), CodecError> {
         // Streaming cursor decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
         // field's absolute offset is fixed at codegen time; this branch
@@ -79,19 +95,17 @@ impl CodecRepeatFlagCarrier {
             cursor.advance(1)?;
             _v
         };
-        let entries = {
-            let mut _vec: HeaplessVec<CodecChainFlagEntry, 4> = HeaplessVec::new();
+        {
+            let _vec = &mut _out.entries;
+            _vec.clear();
             for _ in 0..count {
                 _vec.push(CodecChainFlagEntry::decode(cursor, head & 0x1)?)
                     .map_err(|_| CodecError::TooManyElements)?;
             }
-            _vec
-        };
-        Ok(Self {
-            head,
-            count,
-            entries,
-        })
+        }
+        _out.head = head;
+        _out.count = count;
+        Ok(())
     }
 
     // RFC §synth-5-B flags primitive: per-bit-range accessors over

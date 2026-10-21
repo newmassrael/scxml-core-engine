@@ -77,6 +77,22 @@ impl<'a> CodecZenohValueEntry<'a> {
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §synth-5-B L494-519).
     pub fn decode(cursor: &mut SceCursor<'a>, after_shm: u8) -> Result<Self, CodecError> {
+        let mut _out = Self::default();
+        Self::decode_into(cursor, &mut _out, after_shm)?;
+        Ok(_out)
+    }
+
+    /// Decode the next frame from `cursor` into `_out`: the bytes, the bounds
+    /// and the errors of [`Self::decode`], with each bounded list and embedded
+    /// body built in the field where it will live.
+    ///
+    /// `decode` returns its value, and a `heapless::Vec` moves by copying its
+    /// whole declared capacity, so every hop a decoded list takes on the way
+    /// up (the struct literal, `Ok(..)`, a variant wrapper, the caller's own
+    /// binding) copies the declared maximum however few entries the wire held.
+    /// A caller on a path where that shows decodes into a destination it owns.
+    /// On `Err`, `_out` holds the fields decoded so far and is not to be read.
+    pub fn decode_into(cursor: &mut SceCursor<'a>, _out: &mut Self, after_shm: u8) -> Result<(), CodecError> {
         // Declared-but-unconsumed flag inputs: defensive suppress per declared
         // `<sce:flag-input>` so codecs that haven't (yet) consumed an
         // input via `present-if` compile cleanly. The validator enforces
@@ -91,19 +107,40 @@ impl<'a> CodecZenohValueEntry<'a> {
         // from the cursor. The default arm (when declared) carries the
         // runtime tag value so encode can round-trip it back onto the
         // wire.
-        let body = match (header >> 5) & 0x03 {
-            0u8 => CodecZenohValueEntryVariant::CodecZenohExtUnit(CodecZenohExtUnit::decode(cursor)?),
-            1u8 => CodecZenohValueEntryVariant::CodecZenohExtZint(CodecZenohExtZint::decode(cursor)?),
-            2u8 => CodecZenohValueEntryVariant::CodecZenohValueZbuf(CodecZenohValueZbuf::decode(cursor, after_shm)?),
-            other => CodecZenohValueEntryVariant::Default {
-                tag: other,
-                body: CodecZenohExtUnit::decode(cursor)?,
-            },
-        };
-        Ok(Self {
-            header,
-            body,
-        })
+        // Each arm is installed in `_out.body` holding its body's default and
+        // that body is decoded where it sits, so no arm body is returned up
+        // through the variant wrapper.
+        match (header >> 5) & 0x03 {
+            0u8 => {
+                _out.body = CodecZenohValueEntryVariant::CodecZenohExtUnit(CodecZenohExtUnit::default());
+                if let CodecZenohValueEntryVariant::CodecZenohExtUnit(_b) = &mut _out.body {
+                    CodecZenohExtUnit::decode_into(cursor, _b)?;
+                }
+            }
+            1u8 => {
+                _out.body = CodecZenohValueEntryVariant::CodecZenohExtZint(CodecZenohExtZint::default());
+                if let CodecZenohValueEntryVariant::CodecZenohExtZint(_b) = &mut _out.body {
+                    CodecZenohExtZint::decode_into(cursor, _b)?;
+                }
+            }
+            2u8 => {
+                _out.body = CodecZenohValueEntryVariant::CodecZenohValueZbuf(CodecZenohValueZbuf::default());
+                if let CodecZenohValueEntryVariant::CodecZenohValueZbuf(_b) = &mut _out.body {
+                    CodecZenohValueZbuf::decode_into(cursor, _b, after_shm)?;
+                }
+            }
+            other => {
+                _out.body = CodecZenohValueEntryVariant::Default {
+                    tag: other,
+                    body: CodecZenohExtUnit::default(),
+                };
+                if let CodecZenohValueEntryVariant::Default { body: _b, .. } = &mut _out.body {
+                    CodecZenohExtUnit::decode_into(cursor, _b)?;
+                }
+            }
+        }
+        _out.header = header;
+        Ok(())
     }
 
     // RFC §synth-5-B flags primitive: per-bit-range accessors over

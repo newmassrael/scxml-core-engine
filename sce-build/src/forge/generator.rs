@@ -6033,7 +6033,6 @@ fn render_codec(
                         tlv_chain_streaming_decode_stmt(TlvChainDecode {
                             field: f,
                             body_type: &body_type,
-                            body_lt,
                             body_decoder: &body_decoder,
                             decode_arg: &entry_thread.decode_arg,
                             entry_binds: &entry_binds,
@@ -6949,6 +6948,20 @@ fn render_codec(
         dispatch_tag_param_first.into(),
     );
     ctx.insert("has_caller_tag".into(), has_caller_tag.into());
+    // Call-side form of the decode signature's trailing parameters (flag
+    // inputs, then the caller's tag), for a body that forwards its own
+    // parameters to a sibling decode: Rust `decode` over `decode_into`, and
+    // the reverse for a codec with no list to build in place. Leading-comma
+    // form, empty when the codec declares neither.
+    ctx.insert(
+        "decode_forward_args_with_comma".into(),
+        format!(
+            "{}{}",
+            compute_flag_input_call_args(&m.flag_inputs, lang),
+            if has_caller_tag { ", tag" } else { "" }
+        )
+        .into(),
+    );
     ctx.insert("encode_exprs".into(), serde_json::json!(encode_exprs));
     // RFC §synth-5-B parent-tag carriers — per-codec derivation locals block.
     // Templates render `{{ parent_tag_derivation_block }}` immediately
@@ -9554,26 +9567,28 @@ fn repeat_streaming_decode_stmt(ctx: RepeatDecode<'_>) -> String {
             // prior decode_stmt, so the loop bound must read the
             // snake-cased name. Idempotent for already-snake ids.
             let len_field_snake = filters::to_snake_case(len_field.clone());
+            // Built in the destination field, not moved into it afterwards;
+            // see `RUST_DECODE_OUT`.
             format!(
-                "let {id} = {{\n            \
-                     let mut _vec: HeaplessVec<{body_type}{body_lt}, {max_count}> = HeaplessVec::new();\n            \
+                "{{\n            \
+                     let _vec = &mut {RUST_DECODE_OUT}.{id};\n            \
+                     _vec.clear();\n            \
                      for _ in 0..{len_field_snake} {{\n                \
                          _vec.push({body_type}::decode(cursor{decode_arg})?)\n                    \
                          .map_err(|_| CodecError::TooManyElements)?;\n            \
-                     }}\n            \
-                     _vec\n        \
-                 }};"
+                     }}\n        \
+                 }}"
             )
         }
         (Language::Rust, CountRef::UntilEof) => format!(
-            "let {id} = {{\n            \
-                 let mut _vec: HeaplessVec<{body_type}{body_lt}, {max_count}> = HeaplessVec::new();\n            \
+            "{{\n            \
+                 let _vec = &mut {RUST_DECODE_OUT}.{id};\n            \
+                 _vec.clear();\n            \
                  while cursor.remaining() > 0 {{\n                \
                      _vec.push({body_type}::decode(cursor{decode_arg})?)\n                    \
                      .map_err(|_| CodecError::TooManyElements)?;\n            \
-                 }}\n            \
-                 _vec\n        \
-             }};"
+                 }}\n        \
+             }}"
         ),
         // Cpp: each `body_type::decode(cursor)` returns
         // `std::optional<body_type>`. Mirror the variant arm pattern:
@@ -9889,37 +9904,37 @@ fn embed_streaming_decode_stmt(
     match lang {
         Language::Swift => no_swift_emitter("embed_streaming_decode_stmt"),
         Language::Rust => match (&test_lit, len_expr(Language::Rust)) {
+            // The body is decoded into the field where it will live, not
+            // returned and moved into it; see `RUST_DECODE_OUT`.
             (None, None) => format!(
-                "let {id} = {body_type}::decode(cursor{thread_arg})?;"
+                "{body_type}::decode_into(cursor, &mut {RUST_DECODE_OUT}.{id}{thread_arg})?;"
             ),
             (Some(test), None) => format!(
-                "let {id} = if {test} {{\n            \
-                     Some({body_type}::decode(cursor{thread_arg})?)\n        \
+                "if {test} {{\n            \
+                     {body_type}::decode_into(cursor, {RUST_DECODE_OUT}.{id}.insert({body_type}::default()){thread_arg})?;\n        \
                  }} else {{\n            \
-                     None\n        \
-                 }};"
+                     {RUST_DECODE_OUT}.{id} = None;\n        \
+                 }}"
             ),
             (None, Some(sibling)) => format!(
-                "let {id} = {{\n            \
+                "{{\n            \
                      let _len = {sibling} as usize;\n            \
                      let _raw = cursor.peek_slice(_len)?;\n            \
                      let mut _inner = SceCursor::new(_raw);\n            \
-                     let _v = {body_type}::decode(&mut _inner{thread_arg})?;\n            \
-                     cursor.advance(_len)?;\n            \
-                     _v\n        \
-                 }};"
+                     {body_type}::decode_into(&mut _inner, &mut {RUST_DECODE_OUT}.{id}{thread_arg})?;\n            \
+                     cursor.advance(_len)?;\n        \
+                 }}"
             ),
             (Some(test), Some(sibling)) => format!(
-                "let {id} = if {test} {{\n            \
+                "if {test} {{\n            \
                      let _len = {sibling} as usize;\n            \
                      let _raw = cursor.peek_slice(_len)?;\n            \
                      let mut _inner = SceCursor::new(_raw);\n            \
-                     let _v = {body_type}::decode(&mut _inner{thread_arg})?;\n            \
-                     cursor.advance(_len)?;\n            \
-                     Some(_v)\n        \
+                     {body_type}::decode_into(&mut _inner, {RUST_DECODE_OUT}.{id}.insert({body_type}::default()){thread_arg})?;\n            \
+                     cursor.advance(_len)?;\n        \
                  }} else {{\n            \
-                     None\n        \
-                 }};"
+                     {RUST_DECODE_OUT}.{id} = None;\n        \
+                 }}"
             ),
         },
         Language::Cpp => match (&test_lit, len_expr(Language::Cpp)) {
@@ -10878,30 +10893,28 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
                 len_field_snake.clone()
             };
             format!(
-                "let {id} = if {test} {{\n            \
+                "if {test} {{\n            \
                      let _n = {count_read};\n            \
-                     let mut _vec: HeaplessVec<{body_type}{body_lt}, {max_count}> = HeaplessVec::new();\n            \
+                     let _vec = {RUST_DECODE_OUT}.{id}.insert(HeaplessVec::<{body_type}{body_lt}, {max_count}>::new());\n            \
                      for _ in 0.._n {{\n                \
                          _vec.push({body_type}::decode(cursor{decode_arg})?)\n                    \
                          .map_err(|_| CodecError::TooManyElements)?;\n            \
-                     }}\n            \
-                     Some(_vec)\n        \
+                     }}\n        \
                  }} else {{\n            \
-                     None\n        \
-                 }};"
+                     {RUST_DECODE_OUT}.{id} = None;\n        \
+                 }}"
             )
         }
         (Language::Rust, CountRef::UntilEof) => format!(
-            "let {id} = if {test} {{\n            \
-                 let mut _vec: HeaplessVec<{body_type}{body_lt}, {max_count}> = HeaplessVec::new();\n            \
+            "if {test} {{\n            \
+                 let _vec = {RUST_DECODE_OUT}.{id}.insert(HeaplessVec::<{body_type}{body_lt}, {max_count}>::new());\n            \
                  while cursor.remaining() > 0 {{\n                \
                      _vec.push({body_type}::decode(cursor{decode_arg})?)\n                    \
                      .map_err(|_| CodecError::TooManyElements)?;\n            \
-                 }}\n            \
-                 Some(_vec)\n        \
+                 }}\n        \
              }} else {{\n            \
-                 None\n        \
-             }};"
+                 {RUST_DECODE_OUT}.{id} = None;\n        \
+             }}"
         ),
         // Cpp: pre-declare std::optional<vector>, populate inside the
         // True arm. Co-gated count unwraps via `.value()` (sound by
@@ -11205,15 +11218,15 @@ fn repeat_streaming_encode_block_gated(
 /// List), not at any hardware constraint.
 /// Non-gated tlv-chain decode args, bundled into a struct mirroring
 /// [`TlvChainDecodeGated`] — keeps the call surface under the
-/// `too_many_arguments` bound (the `body_lt` borrowed-zero-copy field
-/// pushed the loose-arg form to 8) and stays SSOT-consistent with the
-/// gated variant's shape.
+/// `too_many_arguments` bound and stays SSOT-consistent with the gated
+/// variant's shape.
+///
+/// Unlike the gated form this carries no borrowed-entry lifetime: the list is
+/// built in the field the struct already declares, so the element type is
+/// never spelled at the decode site.
 struct TlvChainDecode<'a> {
     field: &'a CodecField,
     body_type: &'a str,
-    // Borrowed zero-copy: `"<'a>"` for a borrowed entry codec (Rust),
-    // applied to the `Vec<Entry<'a>>` element type annotation.
-    body_lt: &'a str,
     body_decoder: &'a str,
     /// What the entry's `decode` is handed after the cursor: one argument per
     /// `<sce:flag-input>` the entry codec declares, spelled for `lang` with a
@@ -11245,6 +11258,20 @@ const RUST_CHAIN_PUSH_NOTE: &str =
     "// Bounded by max-depth on both sides — loop count and `_vec`\n                \
      // capacity are the same literal — so this push cannot fail. An\n                \
      // over-long chain is refused by the guard after the loop.\n                ";
+
+/// The destination a Rust codec's `decode_into` fills, spelled where a
+/// list, embed or variant statement writes straight into it.
+///
+/// A bounded list (`heapless::Vec<T, N>`) and a body embedded by value move by
+/// copying their whole declared size, so a decode that builds one in a local
+/// and hands it up through `Some(..)`, the struct literal, `Ok(..)` and a
+/// variant wrapper copies the declared maximum at every hop, however little
+/// the wire held. Writing the field where it will live removes the hops.
+///
+/// Underscore-led, like the other names a decode body introduces (`_vec`,
+/// `_peek`), because an author's field is a local of the same body and may be
+/// called `out`.
+const RUST_DECODE_OUT: &str = "_out";
 
 /// "The cursor has no bytes left", in each backend's runtime spelling.
 fn chain_cursor_empty(lang: crate::generator::Language) -> &'static str {
@@ -11408,7 +11435,6 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
     let TlvChainDecode {
         field,
         body_type,
-        body_lt,
         body_decoder,
         decode_arg,
         entry_binds,
@@ -11469,13 +11495,18 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
                 }
             };
             let more_decl = more_decl_line(lang, &entry_flag_acc, entry_binds, "            ");
+            // The list is built in the destination field, not in a local that
+            // is later moved into it: a `heapless::Vec` moves by copying its
+            // whole capacity, so every hop between the local and the returned
+            // value would copy the declared maximum however few entries the
+            // wire held. See `RUST_DECODE_OUT`.
             format!(
-                "let {id} = {{\n            \
-                     let mut _vec: HeaplessVec<{body_type}{body_lt}, {max_depth}> = HeaplessVec::new();\n            \
+                "{{\n            \
+                     let _vec = &mut {RUST_DECODE_OUT}.{id};\n            \
+                     _vec.clear();\n            \
                      {more_decl}for _ in 0..{max_depth}u32 {{\n{body}\
-                     }}{overflow_check}\n            \
-                     _vec\n        \
-                 }};"
+                     }}{overflow_check}\n        \
+                 }}"
             )
         }
         // C11: same shape as repeat (fixed-array `T elems[max_depth]`
@@ -11952,15 +11983,15 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
                 }
             };
             let more_decl = more_decl_line(lang, &entry_flag_acc, entry_binds, "            ");
+            // Built in the destination field; see the ungated emit above.
             format!(
-                "let {id} = if {test} {{\n            \
-                     let mut _vec: HeaplessVec<{body_type}{body_lt}, {max_depth}> = HeaplessVec::new();\n            \
+                "if {test} {{\n            \
+                     let _vec = {RUST_DECODE_OUT}.{id}.insert(HeaplessVec::<{body_type}{body_lt}, {max_depth}>::new());\n            \
                      {more_decl}for _ in 0..{max_depth}u32 {{\n{body}\
-                     }}{overflow_check}\n            \
-                     Some(_vec)\n        \
+                     }}{overflow_check}\n        \
                  }} else {{\n            \
-                     None\n        \
-                 }};"
+                     {RUST_DECODE_OUT}.{id} = None;\n        \
+                 }}"
             )
         }
         Language::Cpp => {
@@ -15700,7 +15731,13 @@ fn chain_has_decl_lines(
     let encode = site == PresentIfSite::Encode;
     match lang {
         Language::Rust => {
-            let list = if encode { format!("self.{id}") } else { id };
+            // The decode site reads the chain where `decode_into` built it,
+            // in the destination (`RUST_DECODE_OUT`), not in a local.
+            let list = if encode {
+                format!("self.{id}")
+            } else {
+                format!("{RUST_DECODE_OUT}.{id}")
+            };
             let found = test("_e");
             vec![if gated {
                 format!(

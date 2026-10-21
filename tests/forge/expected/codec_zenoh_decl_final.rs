@@ -52,6 +52,15 @@ impl CodecZenohDeclFinal {
         Ok(Self {})
     }
 
+    /// [`Self::decode`] into a destination the caller owns, so a codec that
+    /// embeds or dispatches to this one decodes it where it will live (see
+    /// `decode_into` on a codec that holds a bounded list). This body has no
+    /// list of its own to build in place, so it decodes and stores.
+    pub fn decode_into(cursor: &mut SceCursor<'_>, _out: &mut Self) -> Result<(), CodecError> {
+        *_out = Self::decode(cursor)?;
+        Ok(())
+    }
+
     /// Worst-case encoded byte count for this codec — the upper bound
     /// against which `VecSink::new` reserves capacity in the
     /// `encode_to_vec` facade, and the natural reserve hint for

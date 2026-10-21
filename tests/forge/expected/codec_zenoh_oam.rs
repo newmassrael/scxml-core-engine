@@ -104,6 +104,22 @@ impl<'a> CodecZenohOam<'a> {
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §synth-5-B L494-519).
     pub fn decode(cursor: &mut SceCursor<'a>) -> Result<Self, CodecError> {
+        let mut _out = Self::default();
+        Self::decode_into(cursor, &mut _out)?;
+        Ok(_out)
+    }
+
+    /// Decode the next frame from `cursor` into `_out`: the bytes, the bounds
+    /// and the errors of [`Self::decode`], with each bounded list and embedded
+    /// body built in the field where it will live.
+    ///
+    /// `decode` returns its value, and a `heapless::Vec` moves by copying its
+    /// whole declared capacity, so every hop a decoded list takes on the way
+    /// up (the struct literal, `Ok(..)`, a variant wrapper, the caller's own
+    /// binding) copies the declared maximum however few entries the wire held.
+    /// A caller on a path where that shows decodes into a destination it owns.
+    /// On `Err`, `_out` holds the fields decoded so far and is not to be read.
+    pub fn decode_into(cursor: &mut SceCursor<'a>, _out: &mut Self) -> Result<(), CodecError> {
         // RFC §synth-5-B peek-byte / streaming-prefix:
         // streaming prefix decode (variable-length fields supported via
         // per-field present_if/tlv-chain/embed/repeat helpers). Peek-byte
@@ -118,8 +134,8 @@ impl<'a> CodecZenohOam<'a> {
             _v
         };
         let id = cursor.read_vle_u16()?;
-        let extensions = if (header & 0x80u8) != 0 {
-            let mut _vec: HeaplessVec<CodecZenohExtEntry<'a>, 4> = HeaplessVec::new();
+        if (header & 0x80u8) != 0 {
+            let _vec = _out.extensions.insert(HeaplessVec::<CodecZenohExtEntry<'a>, 4>::new());
             let mut _more = false;
             for _ in 0..4u32 {
                 if cursor.remaining() == 0 { break; }
@@ -137,29 +153,48 @@ impl<'a> CodecZenohOam<'a> {
             if _more {
                 return Err(CodecError::TlvChainOverflow);
             }
-            Some(_vec)
         } else {
-            None
-        };
+            _out.extensions = None;
+        }
         // Dispatch on the tag field; each arm decodes its body codec
         // from the cursor. The default arm (when declared) carries the
         // runtime tag value so encode can round-trip it back onto the
         // wire.
-        let body = match (header >> 5) & 0x03 {
-            0u8 => CodecZenohOamVariant::CodecZenohExtUnit(CodecZenohExtUnit::decode(cursor)?),
-            1u8 => CodecZenohOamVariant::CodecZenohExtZint(CodecZenohExtZint::decode(cursor)?),
-            2u8 => CodecZenohOamVariant::CodecZenohExtZbuf(CodecZenohExtZbuf::decode(cursor)?),
-            other => CodecZenohOamVariant::Default {
-                tag: other,
-                body: CodecZenohExtUnit::decode(cursor)?,
-            },
-        };
-        Ok(Self {
-            header,
-            id,
-            extensions,
-            body,
-        })
+        // Each arm is installed in `_out.body` holding its body's default and
+        // that body is decoded where it sits, so no arm body is returned up
+        // through the variant wrapper.
+        match (header >> 5) & 0x03 {
+            0u8 => {
+                _out.body = CodecZenohOamVariant::CodecZenohExtUnit(CodecZenohExtUnit::default());
+                if let CodecZenohOamVariant::CodecZenohExtUnit(_b) = &mut _out.body {
+                    CodecZenohExtUnit::decode_into(cursor, _b)?;
+                }
+            }
+            1u8 => {
+                _out.body = CodecZenohOamVariant::CodecZenohExtZint(CodecZenohExtZint::default());
+                if let CodecZenohOamVariant::CodecZenohExtZint(_b) = &mut _out.body {
+                    CodecZenohExtZint::decode_into(cursor, _b)?;
+                }
+            }
+            2u8 => {
+                _out.body = CodecZenohOamVariant::CodecZenohExtZbuf(CodecZenohExtZbuf::default());
+                if let CodecZenohOamVariant::CodecZenohExtZbuf(_b) = &mut _out.body {
+                    CodecZenohExtZbuf::decode_into(cursor, _b)?;
+                }
+            }
+            other => {
+                _out.body = CodecZenohOamVariant::Default {
+                    tag: other,
+                    body: CodecZenohExtUnit::default(),
+                };
+                if let CodecZenohOamVariant::Default { body: _b, .. } = &mut _out.body {
+                    CodecZenohExtUnit::decode_into(cursor, _b)?;
+                }
+            }
+        }
+        _out.header = header;
+        _out.id = id;
+        Ok(())
     }
 
     // RFC §synth-5-B flags primitive: per-bit-range accessors over

@@ -57,6 +57,22 @@ impl<'a> CodecNestedParent<'a> {
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §synth-5-B L494-519).
     pub fn decode(cursor: &mut SceCursor<'a>) -> Result<Self, CodecError> {
+        let mut _out = Self::default();
+        Self::decode_into(cursor, &mut _out)?;
+        Ok(_out)
+    }
+
+    /// Decode the next frame from `cursor` into `_out`: the bytes, the bounds
+    /// and the errors of [`Self::decode`], with each bounded list and embedded
+    /// body built in the field where it will live.
+    ///
+    /// `decode` returns its value, and a `heapless::Vec` moves by copying its
+    /// whole declared capacity, so every hop a decoded list takes on the way
+    /// up (the struct literal, `Ok(..)`, a variant wrapper, the caller's own
+    /// binding) copies the declared maximum however few entries the wire held.
+    /// A caller on a path where that shows decodes into a destination it owns.
+    /// On `Err`, `_out` holds the fields decoded so far and is not to be read.
+    pub fn decode_into(cursor: &mut SceCursor<'a>, _out: &mut Self) -> Result<(), CodecError> {
         // Streaming cursor decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
         // field's absolute offset is fixed at codegen time; this branch
@@ -81,27 +97,23 @@ impl<'a> CodecNestedParent<'a> {
             cursor.advance(1)?;
             _v
         };
-        let required_body = CodecNestedBody::decode(cursor)?;
-        let optional_body = if (hdr & 0x01u8) != 0 {
-            Some(CodecNestedBody::decode(cursor)?)
+        CodecNestedBody::decode_into(cursor, &mut _out.required_body)?;
+        if (hdr & 0x01u8) != 0 {
+            CodecNestedBody::decode_into(cursor, _out.optional_body.insert(CodecNestedBody::default()))?;
         } else {
-            None
-        };
-        let body_list = {
-            let mut _vec: HeaplessVec<CodecNestedBody<'a>, 4> = HeaplessVec::new();
+            _out.optional_body = None;
+        }
+        {
+            let _vec = &mut _out.body_list;
+            _vec.clear();
             for _ in 0..m {
                 _vec.push(CodecNestedBody::decode(cursor)?)
                     .map_err(|_| CodecError::TooManyElements)?;
             }
-            _vec
-        };
-        Ok(Self {
-            hdr,
-            m,
-            required_body,
-            optional_body,
-            body_list,
-        })
+        }
+        _out.hdr = hdr;
+        _out.m = m;
+        Ok(())
     }
 
     // RFC §synth-5-B flags primitive: per-bit-range accessors over

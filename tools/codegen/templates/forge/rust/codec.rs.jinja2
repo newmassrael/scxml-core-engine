@@ -20,6 +20,11 @@
         let {{ field.id }} = {{ field.decode_expr }};
 {%- endif %}
 {% endmacro %}
+{#- A codec that dispatches to a body or holds a bounded list / embedded body
+    decodes into its destination (`decode_into` is the body, `decode` wraps it);
+    any other shape keeps its body in `decode` and gets a `decode_into` that
+    stores the result. Same branch order as the decode body below. #}
+{%- set decode_in_place = (not has_no_fields) and (has_variant or needs_streaming) %}
 {{ sce_map.source_marker(source_location, "rust", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
@@ -176,7 +181,27 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §synth-5-B L494-519).
+{% if decode_in_place %}
     pub fn decode(cursor: &mut SceCursor<{{ cursor_lifetime }}>{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}) -> Result<Self, CodecError> {
+        let mut _out = Self::default();
+        Self::decode_into(cursor, &mut _out{{ decode_forward_args_with_comma }})?;
+        Ok(_out)
+    }
+
+    /// Decode the next frame from `cursor` into `_out`: the bytes, the bounds
+    /// and the errors of [`Self::decode`], with each bounded list and embedded
+    /// body built in the field where it will live.
+    ///
+    /// `decode` returns its value, and a `heapless::Vec` moves by copying its
+    /// whole declared capacity, so every hop a decoded list takes on the way
+    /// up (the struct literal, `Ok(..)`, a variant wrapper, the caller's own
+    /// binding) copies the declared maximum however few entries the wire held.
+    /// A caller on a path where that shows decodes into a destination it owns.
+    /// On `Err`, `_out` holds the fields decoded so far and is not to be read.
+    pub fn decode_into(cursor: &mut SceCursor<{{ cursor_lifetime }}>, _out: &mut Self{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}) -> Result<(), CodecError> {
+{% else %}
+    pub fn decode(cursor: &mut SceCursor<{{ cursor_lifetime }}>{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}) -> Result<Self, CodecError> {
+{% endif %}
 {% if has_parent_flags %}
         // RFC §synth-5-B: `parent_flags` is the parent codec's flags
         // carrier value, threaded through by the variant arm dispatcher.
@@ -245,27 +270,40 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
         // from the cursor. The default arm (when declared) carries the
         // runtime tag value so encode can round-trip it back onto the
         // wire.
-        let body = match {{ variant.tag_match_expr }} {
+        // Each arm is installed in `_out.body` holding its body's default and
+        // that body is decoded where it sits, so no arm body is returned up
+        // through the variant wrapper.
+        match {{ variant.tag_match_expr }} {
 {% for arm in variant.arms %}
-            {{ arm.value_literal }} => {{ struct_name }}Variant::{{ arm.variant_name }}({{ arm.body_type }}::decode(cursor{{ arm.body_decode_args_after_cursor }})?),
+            {{ arm.value_literal }} => {
+                _out.body = {{ struct_name }}Variant::{{ arm.variant_name }}({{ arm.body_type }}::default());
+                if let {{ struct_name }}Variant::{{ arm.variant_name }}(_b) = &mut _out.body {
+                    {{ arm.body_type }}::decode_into(cursor, _b{{ arm.body_decode_args_after_cursor }})?;
+                }
+            }
 {% endfor %}
 {% if variant.default_arm %}
-            other => {{ struct_name }}Variant::{{ variant.default_arm.variant_name }} {
-                tag: other,
-                body: {{ variant.default_arm.body_type }}::decode(cursor{{ variant.default_arm.body_decode_args_after_cursor }})?,
-            },
+            other => {
+                _out.body = {{ struct_name }}Variant::{{ variant.default_arm.variant_name }} {
+                    tag: other,
+                    body: {{ variant.default_arm.body_type }}::default(),
+                };
+                if let {{ struct_name }}Variant::{{ variant.default_arm.variant_name }} { body: _b, .. } = &mut _out.body {
+                    {{ variant.default_arm.body_type }}::decode_into(cursor, _b{{ variant.default_arm.body_decode_args_after_cursor }})?;
+                }
+            }
 {% else %}
             // Build-time `codec/variant-arm-unreachable` proves the
             // arm set covers the tag domain without a default.
             _ => unreachable!("variant exhaustiveness gated by codec/variant-arm-unreachable at parse time"),
 {% endif %}
-        };
-        Ok(Self {
+        }
 {% for field in fields %}
-            {{ field.id }},
+{% if not (field.is_repeat or field.is_tlv_chain or field.is_embed) %}
+        _out.{{ field.id }} = {{ field.id }};
+{% endif %}
 {% endfor %}
-            body,
-        })
+        Ok(())
 {% elif needs_streaming %}
         // Streaming cursor decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
@@ -290,11 +328,12 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
         {{ field.present_if_decode_stmt }}
 {% endif %}
 {% endfor %}
-        Ok(Self {
 {% for field in fields %}
-            {{ field.id }},
+{% if not (field.is_repeat or field.is_tlv_chain or field.is_embed) %}
+        _out.{{ field.id }} = {{ field.id }};
+{% endif %}
 {% endfor %}
-        })
+        Ok(())
 {% elif has_variable_fields %}
         // Variable-length codec. RFC §synth-5-B B3 stream-correct shape:
         // a codec without `<sce:field sce:bit-size="tail">` consumes
@@ -356,6 +395,17 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
         Ok(value)
 {% endif %}
     }
+{% if not decode_in_place %}
+
+    /// [`Self::decode`] into a destination the caller owns, so a codec that
+    /// embeds or dispatches to this one decodes it where it will live (see
+    /// `decode_into` on a codec that holds a bounded list). This body has no
+    /// list of its own to build in place, so it decodes and stores.
+    pub fn decode_into(cursor: &mut SceCursor<{{ cursor_lifetime }}>, _out: &mut Self{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}) -> Result<(), CodecError> {
+        *_out = Self::decode(cursor{{ decode_forward_args_with_comma }})?;
+        Ok(())
+    }
+{% endif %}
 
 {% if has_quantity %}
     // NL→IR Mapping Roadmap Item 4 — physical-quantity raw↔physical
