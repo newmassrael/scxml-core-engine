@@ -2056,8 +2056,8 @@ mod tests {
     }
 
     /// An optional value is `null` where it is absent and the value itself where
-    /// it is present (docs/adr/0055): `null` and a present initial value are
-    /// left as written, a present text is held to the bound of the place it is
+    /// it is present (docs/adr/0055): `null` is left as written, a present
+    /// initial value as a value of `T` is, a present text is held to the bound of the place it is
     /// written to, an optional text through `mapPresent`, which keeps `null`, an
     /// optional 64-bit integer leaves the expressions through `out`, a proven
     /// read is the value, and `??` is the library's `otherwise`.
@@ -2065,7 +2065,13 @@ mod tests {
     fn an_optional_value_is_null_or_the_value_itself() {
         let out = lowered(OPTIONALS);
         assert_eq!(exprs_of(&out, "data", "id", "due"), ["null"], "{out}");
-        assert_eq!(exprs_of(&out, "data", "id", "other"), ["7"], "{out}");
+        // A literal landing as the present value of an optional 64-bit integer
+        // leaves through `out`, as one landing in an `int64` place does.
+        assert_eq!(
+            exprs_of(&out, "data", "id", "other"),
+            ["SceStatic.out(7)"],
+            "{out}"
+        );
         assert_eq!(
             exprs_of(&out, "assign", "location", "due"),
             ["null"],
