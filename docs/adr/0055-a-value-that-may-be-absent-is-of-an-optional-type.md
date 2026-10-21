@@ -3,7 +3,8 @@
 - Status: Accepted (2026-10-21). The owner decided every question the proposal left open ("The
   owner's answers", below), under the standing rule: the most long-term correct structure, cost
   ignored; never a sentinel number and never a companion flag that admits impossible states. Steps
-  1 to 6 are implemented; the others follow in the order section 9 gives. Section 8 and step 12 amended the
+  1 to 6 are implemented, and step 7 but for the restore's refusal of a `null` saved before a
+  widening (its "as built" note); the others follow in the order section 9 gives. Section 8 and step 12 amended the
   same day by that rule: a codec document declares its format, and format 1 is refused for good.
 - Date: 2026-10-21
 - Amends: ADR 0044 decisions 1 and 3 (a revision may widen a field from `T` to `optional<T>`);
@@ -702,6 +703,35 @@ documents, not observed from a backend.
    revision-2 build and one holding `null` at revision 1 refused; the Mesh check over two machines
    built from the two revisions. Docs: ADR 0044's amendments in docs/SCE_ACCEPTED_SUBSET.md "An event
    schema that grows" and "What a revision does not make safe".
+   As built, `sce:optional-since` is `ForgeField::optional_since`, read only on an optional field of
+   an event schema (`read_optional_since`; on a field of `T` it is unread, so
+   `validation/sce-attribute-unread`), declared in `schemas/sce-forge-ext.xsd`, on the forge roster of
+   known names, and rendered and read back as the field clause `optional-since <n>`. The rule is
+   `forge::schema_revision::divergence` with `field_at`, a field as a given revision declares it (of
+   its present type before the revision that widened it): two fields of one id are alike as
+   declared, or alike at the revision of the schema that predates the other's widening.
+   `Divergence::Redeclared` carries each side's `DeclaredType` (the `sce:type` and the widening
+   revision), which `mesh/event-schema-mismatch` names in its reason; its id is unchanged. The
+   per-revision digests already named each field by its present type (`revision_digest`), so a
+   revision that only widens writes the digest of the one before it. The absent default is
+   `schema_revision::default_wire` answering `null` for an optional field a later revision added
+   with no `sce:default`: every generated lift's defaults object holds it, the Interpreter's `field`
+   is handed it as its fourth argument, and a saved record grows the field as `null`. The fixtures
+   are `schema_due_widened_first.scxml` and `schema_due_widened.scxml`, the two revisions of
+   `due.widened`, and the machine `static_optional_widened.scxml` over the second; the scenario
+   holds variables only, so the seven drivers read the day and the reminder as they read
+   `static_optional`'s optional variables. The Mesh check is
+   `a_field_widened_by_a_later_revision_builds_as_one_deployment_in_either_direction` and
+   `a_change_of_type_other_than_a_widening_is_refused_with_both_types` in
+   `sce-build/tests/event_schema_kind.rs`. An older receiver's refusal of `null` is each runtime's
+   reader of `T` (the Rust runtime's
+   `a_field_of_t_refuses_null_as_an_older_receiver_of_a_widened_field_does`); the scenario
+   vocabulary admits `null` only where the machine's field is optional, so no scenario states it.
+   Not yet built: the restore's refusal of a `null` a record field holds in a state saved at a
+   revision before the one that widened the field. Such a state is one no build writes (the field
+   was `T` there), and the restore reads it absent; refusing it needs the widened fields and their
+   revisions in the shape constant the Rust and Kotlin templates write, and in each runtime's
+   `upgrade`.
 8. **Algorithms** (implemented). Optional parameters, returns and locals (the algorithm reader stops refusing
    them); the adapters' copy of an optional field and of an optional enum crossing by name; section
    3 in a body. Tests: `scenarios/static_state_algorithm_optional.json` (an algorithm that answers

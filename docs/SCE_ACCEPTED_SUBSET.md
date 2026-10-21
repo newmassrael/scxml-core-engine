@@ -7895,9 +7895,32 @@ lacks it takes, and the lift reads that default in its place.
   before.
 - `sce:since` outside `2..=revision` (including any `sce:since` on a schema that
   declares no revision past the first) is `validation/attribute-rule-violated`;
-  `sce:since` without `sce:default` is `validation/missing-attribute`;
-  `sce:default` without `sce:since` is `validation/attribute-rule-violated`,
-  because a default is only ever read for a field a delivery may lack.
+  `sce:since` without `sce:default` is `validation/missing-attribute`, but for an
+  `optional<T>` field (below); `sce:default` without `sce:since` is
+  `validation/attribute-rule-violated`, because a default is only ever read for a
+  field a delivery may lack.
+- An `optional<T>` field a later revision added may leave `sce:default` out
+  (docs/adr/0055, section 4): a delivery written before the field existed said
+  nothing about it, which is what absent means, so it reads the field absent.
+  Written, the default is a value of `T`, never a spelling of absence:
+  `sce:default="null"` of an `optional<int64>` is no integer and is refused as an
+  unfit default is, and of an `optional<string>` it is the four-letter text.
+- A later revision may widen a field from `T` to `optional<T>`, the one change of
+  type a revision may make (docs/adr/0055, section 6), and says which revision
+  did with `sce:optional-since`: an integer past the revision that added the
+  field (its `sce:since`, or 1 for a field of the first revision) and at most
+  the root's revision. At a revision before it the field is of `T`, from it on
+  of `optional<T>`. A field optional from the revision that added it declares
+  none.
+
+  ```xml
+  <data id="due" sce:type="optional&lt;int64&gt;" sce:direction="in"
+        sce:optional-since="2"/>
+  ```
+
+  Out of that range it is `validation/attribute-rule-violated`. On a field of
+  `T`, and on any other kind's `<data>`, nothing reads it, and it is refused as
+  `validation/sce-attribute-unread`.
 - A default is a value of its field, held to the rules a delivered value is held
   to: an integer within its width (decimal, `0x` or `0b`, as every typed numeric
   attribute reads one), a real that is finite and within its width, `true` or
@@ -7924,6 +7947,25 @@ field, so it is read as one that names none: refused when the schema has a field
 of the first revision, and read entirely from the defaults when every field came
 later. A delivery that is not an object of named fields (a bare value) is refused
 as before.
+
+A field widened from `T` to `optional<T>` is read as the optional field it is: a
+delivery written before the widening carries a value of `T`, which reads present,
+and one written after it may carry `null`, which reads absent. A field of the
+first revision is still carried by every delivery, widened or not, so a delivery
+that lacks its key is refused: `null` is the one spelling of absence, and a
+missing key says the sender's revision has no such field. An `optional<T>` field a
+later revision added with no default reads absent where the delivery lacks it: the
+schema's defaults hold `null` for it, which every engine reads with the reader it
+reads a delivered `null` with. A receiver built before the widening reads the
+field as `T`, and a newer sender's `null` is no value of it: the delivery is
+refused there (`error.execution`, nothing written), as an older receiver refuses a
+variant added after it. So a deployment that widens a field upgrades the machines
+that receive the event before the ones that send absence; the build names the
+machines that exchange it, and nothing at run time orders the upgrade.
+`scenarios/static_optional_widened.json` holds all seven engines to reading an
+entry of the earlier revision present, one of the later carrying `null` absent, a
+reminder the later revision added with no default absent, and an entry without a
+first-revision field refused.
 
 A field the schema does not name is not read, on every engine: a newer sender's
 delivery reads on an older machine, taking what the older schema names. This was
@@ -7970,7 +8012,15 @@ to one answer.
   cross-machine validation" above; docs/adr/0044): the devices of a
   deployment being upgraded run different builds. A field's `since` and default
   are part of what two schemas must declare alike, since a receiver reads that
-  default for every older delivery.
+  default for every older delivery, and so is its `sce:optional-since`. The one
+  difference of type two revisions may hold is a widening: one schema declares
+  `T` and the other `optional<T>` widened at a revision past the revision of the
+  one that declares `T` (docs/adr/0055, section 6). A narrowing, a widening to
+  the optional of another type, a schema whose own revision includes the
+  widening while it declares `T`, and two builds that disagree about which
+  revision widened the field are refused, the reason naming the field, the type
+  each side declares it with (`int64`, `optional<int64> widened at revision 2`)
+  and the two revisions.
 - A schema that grew is read by a `datamodel="sce-static"` machine only. Under
   any other data model the script engine binds `_event.data` to the delivery as
   it came, so an `<assign expr="_event.data.urgent">` would read nothing for a
@@ -7987,7 +8037,16 @@ one, is not made safe by any of this: a delivery of the earlier revision carries
 a value of the old type, or under the old name, and is refused, or reads the new
 name's default where the old name's value was meant. Such a change is a new field
 (a new name with its own `sce:since` and default), not a revision of the old
-one. Removing a field is not a revision either: a lift would walk past it in an
+one. The one exception is a widening from `T` to `optional<T>` declared with
+`sce:optional-since` (above): every value of `T` is a value of `optional<T>` and
+is written the same on the wire and in a saved state, so everything written before
+the widening reads after it, as present. What it does not make safe is the other
+direction in time: a receiver built before the widening refuses a `null` a newer
+sender writes, so its receivers are upgraded first. A narrowing, from
+`optional<T>` to `T`, is refused like any other change of type. The language does
+not reinterpret what a logged entry holds: a number an application once wrote to
+mean "none" replays as the day it is, and turning it into absence is the
+application's own migration of its log. Removing a field is not a revision either: a lift would walk past it in an
 older delivery, but "revision N" would no longer name one set of fields, which
 the Mesh check and a saved state both rely on (docs/adr/0044), so two machines of
 one deployment whose schemas part this way are refused at the build, and a state
