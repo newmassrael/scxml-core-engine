@@ -8982,6 +8982,52 @@ fn python_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
         // ([`ExprTarget::local_spelling`]).
         ExprKind::Ident(s) => ExprTarget::Python.local_spelling(s),
         ExprKind::Raw(s) => s.clone(),
+        // `x ?? d` (docs/adr/0055): the runtime's `otherwise` is handed `x`, read
+        // once as an argument, and `d` as a `lambda` it calls only when `x` is
+        // absent, so a default that fails fails only then. Python's own `or`
+        // is no reading of it: a present `0`, `''` or `False` is falsy.
+        ExprKind::Binary {
+            op: BinOp::Coalesce,
+            left,
+            right,
+        } => format!(
+            "sce_algorithm.otherwise({}, lambda: {})",
+            emit_python(left, left.ty)?,
+            emit_python(right, expr.ty)?
+        ),
+        // A test of presence is an identity test against `None`, never `==`
+        // and never a truth test: a present `0`, `''` or `False` is a value.
+        ExprKind::Binary {
+            op: op @ (BinOp::StrictEq | BinOp::StrictNeq),
+            left,
+            right,
+        } if matches!(left.kind, ExprKind::NullLit) || matches!(right.kind, ExprKind::NullLit) => {
+            let tested = if matches!(left.kind, ExprKind::NullLit) {
+                right
+            } else {
+                left
+            };
+            let text = emit_python(tested, tested.ty)?;
+            let text = if child_needs_parens(tested, *op, true, python_precedence) {
+                format!("({text})")
+            } else {
+                text
+            };
+            let test = if *op == BinOp::StrictEq {
+                "is None"
+            } else {
+                "is not None"
+            };
+            format!("{text} {test}")
+        }
+        // `x.value` of an optional `x` the build proved present
+        // (docs/adr/0055, section 3): Python holds a present value as the value
+        // itself, so the read is `x`.
+        ExprKind::Member { object, property }
+            if property == OPTIONAL_VALUE && object.ty.is_optional() =>
+        {
+            emit_python(object, InferredType::Unknown)?
+        }
         ExprKind::Binary { op, left, right } if is_string_concatenation(*op, left.ty, right.ty) => {
             // `'E' + 5` is a `TypeError` in Python; `str(int)` is the
             // decimal digits, the one text ECMA-262 13.15.3 gives an integer.
@@ -9303,9 +9349,16 @@ fn python_binop(op: BinOp) -> &'static str {
         BinOp::Shl => "<<",
         BinOp::Shr => ">>",
         BinOp::UShr => ">>",
-        BinOp::Coalesce => unreachable!("{COALESCE_NOT_SPELLED}"),
+        BinOp::Coalesce => unreachable!("{PYTHON_COALESCE_IS_A_CALL}"),
     }
 }
+
+/// Why Python's operator table does not spell `??`: [`python_emit_node`]
+/// writes it as a call of the runtime's `otherwise` before any operator is
+/// looked up, because no Python operator evaluates its right side only when
+/// its left one is `None`.
+const PYTHON_COALESCE_IS_A_CALL: &str =
+    "`??` is written as `sce_algorithm.otherwise` before an operator is looked up";
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Emitter — ECMAScript (the Interpreter's script engine)
@@ -10493,6 +10546,125 @@ mod tests {
                 ExprTarget::Python
             ),
             "ignition == True and engine_stop == False"
+        );
+    }
+
+    /// What the Python emitter writes of `expr`, an expression that holds an
+    /// optional value (docs/adr/0055), typed and judged against `ctx` as the
+    /// statechart's judge types and judges it, and its integer operations
+    /// checked where `ctx` receives failures. It is emitted past the step that
+    /// refuses an optional value on a target whose lowering of the type has
+    /// not landed, so these hold the emitter's own spelling.
+    fn python_optional(expr: &str, ctx: &TypeCtx<'_>, expected: InferredType) -> String {
+        let mut ast = parse_to_ast(expr).expect("the expression parses");
+        resolve_names(&mut ast, ctx, expr).expect("the expression is judged fit");
+        if ctx.receives_failures {
+            check_integer_arithmetic(&mut ast, expected);
+        }
+        emit_python(&ast, expected).expect("the Python emitter spells it")
+    }
+
+    /// Two optional days, an optional text and a day that is never absent.
+    fn optional_ctx() -> TypeCtx<'static> {
+        let day = InferredType::Optional(OptionalElem::of(&crate::forge::model::SceType::Int64));
+        let mut ctx = TypeCtx::new();
+        ctx.insert_var("due", day);
+        ctx.insert_var("later", day);
+        ctx.insert_var("label", InferredType::Optional(OptionalElem::Str));
+        ctx.insert_var("huge", int(true, 64));
+        ctx
+    }
+
+    /// A test of presence is an identity test against `None`, whichever side
+    /// `null` is written on: `==` would do for `None` itself, but a truth test
+    /// would read a present `0`, `''` or `False` as absent.
+    #[test]
+    fn python_tests_an_optional_value_against_none_by_identity() {
+        let ctx = optional_ctx();
+        let bool_slot = InferredType::Bool;
+        assert_eq!(
+            python_optional("due === null", &ctx, bool_slot),
+            "due is None"
+        );
+        assert_eq!(
+            python_optional("due !== null", &ctx, bool_slot),
+            "due is not None"
+        );
+        assert_eq!(
+            python_optional("null === due", &ctx, bool_slot),
+            "due is None"
+        );
+        assert_eq!(
+            python_optional("null !== label", &ctx, bool_slot),
+            "label is not None"
+        );
+    }
+
+    /// `x.value` where a test proves `x` present is `x` itself, in each place
+    /// a test proves it: the right operand of `&&` and of `||`, the branches
+    /// of a conditional, one under `!`, and a block the facts of an `<if>`
+    /// reach.
+    #[test]
+    fn python_reads_a_proven_optional_value_as_the_value_itself() {
+        let ctx = optional_ctx();
+        let day = int(true, 64);
+        assert_eq!(
+            python_optional("due !== null ? due.value : 0", &ctx, day),
+            "due if due is not None else 0"
+        );
+        assert_eq!(
+            python_optional("due !== null && due.value > 10", &ctx, InferredType::Bool),
+            "due is not None and due > 10"
+        );
+        assert_eq!(
+            python_optional("due === null || due.value < 3", &ctx, InferredType::Bool),
+            "due is None or due < 3"
+        );
+        assert_eq!(
+            python_optional("!(due === null) ? due.value + 1 : 0", &ctx, day),
+            "due + 1 if not (due is None) else 0"
+        );
+        let proven = ctx.proving(crate::forge::narrowing::proves_written(
+            "label !== null",
+            true,
+        ));
+        assert_eq!(
+            python_optional("label.value", &proven, InferredType::Str),
+            "label"
+        );
+    }
+
+    /// `x ?? d` hands the runtime's `otherwise` the value and the default as a
+    /// `lambda`, so the default — here a product that overflows an int64 — is
+    /// computed only when the value is absent, and a present `0` is not read as
+    /// absent, as Python's `or` would read it.
+    #[test]
+    fn python_defers_the_default_of_an_absent_value_to_a_lambda() {
+        let mut ctx = optional_ctx();
+        assert_eq!(
+            python_optional("label ?? 'none'", &ctx, InferredType::Str),
+            "sce_algorithm.otherwise(label, lambda: 'none')"
+        );
+        ctx.receives_failures = true;
+        assert_eq!(
+            python_optional("due ?? (huge * huge)", &ctx, int(true, 64)),
+            "sce_algorithm.otherwise(due, lambda: sce_algorithm.I64.mul(huge, huge))"
+        );
+    }
+
+    /// Equality between optional values is Python's `==`, which is total over
+    /// `None`: two absent values are equal and an absent one equals no present
+    /// one.
+    #[test]
+    fn python_compares_optional_values_with_equality() {
+        let ctx = optional_ctx();
+        assert_eq!(
+            python_optional("due === later", &ctx, InferredType::Bool),
+            "due == later"
+        );
+        assert_eq!(
+            python_optional("due !== later", &ctx, InferredType::Bool),
+            "due != later"
         );
     }
 
