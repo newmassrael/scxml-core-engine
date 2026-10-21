@@ -1022,13 +1022,23 @@ fn a_32_bit_real_is_held_by_every_backend_alone_in_a_list_and_as_a_record_field(
 /// A `sce-static` machine with two variables — `count: uint32` on line 5,
 /// `ready: bool` on line 6 — and `states`, which open on line 8.
 fn machine(states: &str) -> String {
+    machine_holding(
+        r#"<data id="count" sce:type="uint32" expr="0"/>
+    <data id="ready" sce:type="bool" expr="false"/>"#,
+        states,
+    )
+}
+
+/// [`machine`], holding `data` in place of its two variables: `data` starts on
+/// line 5, and `states` on the line after the last line of `data` and the
+/// `</datamodel>` that closes it.
+fn machine_holding(data: &str, states: &str) -> String {
     format!(
         r##"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="s" datamodel="sce-static">
   <datamodel>
-    <data id="count" sce:type="uint32" expr="0"/>
-    <data id="ready" sce:type="bool" expr="false"/>
+    {data}
   </datamodel>
   {states}
   <final id="done"/>
@@ -1815,9 +1825,19 @@ fn invoking(params: &str) -> String {
 /// [`invoking`], with `invoke_attrs` on the `<invoke>` and `child_data` as the
 /// child's `<datamodel>`.
 fn invoking_with(invoke_attrs: &str, params: &str, child_data: &str) -> String {
-    machine(&format!(
+    machine(&invoke_state(
+        &format!(r#"id="child" {invoke_attrs}"#),
+        params,
+        child_data,
+    ))
+}
+
+/// The state `s` of [`invoking_with`], whose `<invoke>` carries `attrs` whole
+/// (its `id` among them, or not): on the line after the `<state>`.
+fn invoke_state(attrs: &str, params: &str, child_data: &str) -> String {
+    format!(
         r#"<state id="s">
-    <invoke type="scxml" id="child" {invoke_attrs}>
+    <invoke type="scxml" {attrs}>
       {params}
       <content>
         <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
@@ -1830,7 +1850,7 @@ fn invoking_with(invoke_attrs: &str, params: &str, child_data: &str) -> String {
     </invoke>
     <transition event="done.invoke.child" target="done"/>
   </state>"#
-    ))
+    )
 }
 
 #[test]
@@ -3635,20 +3655,17 @@ fn a_send_idlocation_names_a_string_variable_the_id_fits() {
     }
 }
 
-/// A machine whose state `s` starts an in-line child session with no `id`,
-/// writing the id each start is started under to `idlocation`; `data` declares
-/// the machine's variables. The `<invoke>` is on line 6.
-fn invoking(data: &str, idlocation: &str) -> String {
-    format!(
-        r##"<?xml version="1.0"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="s" datamodel="sce-static">
-  <datamodel>
-    {data}
-  </datamodel>
-  <state id="s"><invoke type="scxml" idlocation="{idlocation}"><content><scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="c" datamodel="sce-static"><final id="c"/></scxml></content></invoke></state>
-  <final id="done"/>
-</scxml>
-"##
+/// [`invoking_with`]'s state, its `<invoke>` writing no `id` and keeping the id
+/// each start is started under in `held`, in a machine whose one variable `data`
+/// declares: the `<invoke>` is on line 8.
+fn invoking_into_held(data: &str) -> String {
+    machine_holding(
+        data,
+        &invoke_state(
+            r#"idlocation="held""#,
+            "",
+            r#"<data id="start" sce:type="uint32" expr="0"/>"#,
+        ),
     )
 }
 
@@ -3676,7 +3693,7 @@ fn an_invoke_idlocation_names_a_string_variable_the_started_id_fits() {
     // which `check` asks of the document it is given: a run that generated the
     // document and failed on its child would stop a regeneration midway.
     let held = r#"<data id="held" sce:type="string" sce:capacity="64" expr="''"/>"#;
-    for document in [invoking(held, "held"), invoking_below(held)] {
+    for document in [invoking_into_held(held), invoking_below(held)] {
         let (ok, out) = run(&["check", "-l", "rust"], &document);
         assert!(ok, "the started id has a place to go:\n{out}");
         let (ok, out) = run(&["check", "-l", "kotlin"], &document);
@@ -3692,24 +3709,17 @@ fn an_invoke_idlocation_names_a_string_variable_the_started_id_fits() {
 fn a_host_run_invoke_idlocation_is_refused_on_its_line() {
     // A host-run invocation is started under the id the build wrote, so there is
     // no started id to keep: `id` names it.
-    let document = format!(
-        r##"<?xml version="1.0"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="s" datamodel="sce-static">
-  <datamodel>
-    {held}
-  </datamodel>
-  <state id="s"><invoke type="x-job" idlocation="held"/></state>
-  <final id="done"/>
-</scxml>
-"##,
-        held = r#"<data id="held" sce:type="string" sce:capacity="64" expr="''"/>"#
+    // The `<invoke>` is on line 7.
+    let document = machine_holding(
+        r#"<data id="held" sce:type="string" sce:capacity="64" expr="''"/>"#,
+        r#"<state id="s"><invoke type="x-job" idlocation="held"/></state>"#,
     );
     let (ok, out) = run(
         &["check", "-l", "rust", "--host-invoker", "x-job"],
         &document,
     );
     assert!(!ok, "a host-run invocation has no started id:\n{out}");
-    assert_refused_at(&out, "scxml/static-datamodel-rule", 6);
+    assert_refused_at(&out, "scxml/static-datamodel-rule", 7);
     assert!(out.contains("write `id`"), "it says what to write:\n{out}");
 }
 
@@ -3729,9 +3739,9 @@ fn an_invoke_idlocation_that_cannot_hold_the_started_id_or_names_no_string_is_re
             r#"<data id="other" sce:type="string" sce:capacity="64" expr="''"/>"#,
         ),
     ] {
-        let (ok, out) = run(&["check", "-l", "rust"], &invoking(data, "held"));
+        let (ok, out) = run(&["check", "-l", "rust"], &invoking_into_held(data));
         assert!(!ok, "{what}: the started id has nowhere to go:\n{out}");
-        assert_refused_at(&out, "scxml/static-datamodel-rule", 6);
+        assert_refused_at(&out, "scxml/static-datamodel-rule", 8);
         assert!(out.contains("idlocation"), "{what}: {out}");
     }
 }
