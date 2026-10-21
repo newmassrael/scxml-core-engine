@@ -119,7 +119,12 @@ impl Unit {
 pub struct Refusal {
     /// The refusal, located where the reference is written, in the words the
     /// importing document's own generation would use.
-    pub error: Located<ForgeError>,
+    ///
+    /// Boxed, as the crate keeps every returned error under clippy's
+    /// `result_large_err` threshold (128 B, `forge::error::ForgeError`): a
+    /// `Located<ForgeError>` already sits near it, and the chain beside it
+    /// would carry the whole `Result` of every walk over it.
+    pub error: Box<Located<ForgeError>>,
     /// The references that brought the document holding that reference into
     /// the run, the document named on the command line first, each a
     /// `reached-from` site (SCE_ERROR_CONTRACT §2.4). Empty when the
@@ -132,7 +137,7 @@ impl Refusal {
     pub fn into_located(self) -> Located<ForgeError> {
         self.reached_from
             .into_iter()
-            .fold(self.error, |error, site| error.related_to(site))
+            .fold(*self.error, |error, site| error.related_to(site))
     }
 }
 
@@ -174,7 +179,7 @@ pub fn walk(named: &[String], options: WalkOptions<'_>) -> Result<Vec<Unit>, Ref
             continue;
         }
         let refused = |error: Located<ForgeError>| Refusal {
-            error,
+            error: Box::new(error),
             reached_from: next.reached_from.clone(),
         };
         let loaded = crate::load_forge_source(Path::new(&next.document), options.include_dirs)
@@ -563,7 +568,7 @@ mod tests {
             ),
         );
 
-        let units = walked(&[machine.clone()]);
+        let units = walked(std::slice::from_ref(&machine));
         let names: Vec<(&str, &Role)> = units
             .iter()
             .map(|unit| (unit.name.as_str(), &unit.role))
@@ -624,9 +629,8 @@ mod tests {
             ),
         );
 
-        let refusal = walk(&[machine.clone()], WalkOptions::default())
-            .err()
-            .expect("an import of a file that is not there is refused");
+        let refusal = walk(std::slice::from_ref(&machine), WalkOptions::default())
+            .expect_err("an import of a file that is not there is refused");
         assert!(
             matches!(
                 refusal.error.error,
