@@ -284,13 +284,14 @@ var {{ machine_name }}Transitions = [...]{{ machine_name }}Transition{
 
 // {{ machine_name }}SavedShapeFormat2 is the shape a format-2 saved state of
 // this machine names when every record schema it holds is in its first
-// revision, and {{ machine_name }}SavedShapeFormat2Revised the one it names
-// when it names a later revision (docs/adr/0045, section 2). The generator
-// computes both once, so they are the texts every backend's constants are.
-const (
-	{{ machine_name }}SavedShapeFormat2        = "{{ static_format2_shape.first }}"
-	{{ machine_name }}SavedShapeFormat2Revised = "{{ static_format2_shape.revised }}"
-)
+// revision (docs/adr/0045, section 2). The generator computes it once, so it is
+// the text every backend's constant is.
+const {{ machine_name }}SavedShapeFormat2 = "{{ static_format2_shape.first }}"
+
+// {{ machine_name }}SavedShapeFormat2Revised is the shape a format-2 saved state
+// of this machine names when it names a later revision of a record schema or
+// an enum.
+const {{ machine_name }}SavedShapeFormat2Revised = "{{ static_format2_shape.revised }}"
 
 // {{ machine_name }}SavedEnumKeys names each enum a value of a saved state of
 // this machine is of, by its document (docs/adr/0044): the key `revisions`

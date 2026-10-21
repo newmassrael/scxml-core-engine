@@ -1812,7 +1812,9 @@ mod tests {
         );
 
         // Per backend: what introduces the format-2 shape, the revised one, and
-        // the list of enum keys, with what ends that list.
+        // the list of enum keys, with what ends that list. Each marker is the
+        // declaration, ` = ` included where the language writes one, so a doc
+        // comment that names the constant is not read as the constant.
         type Markers = (&'static str, &'static str, &'static str, &'static str);
         let markers = |language: Language| -> Markers {
             match language {
@@ -1829,8 +1831,8 @@ mod tests {
                     "fun save(",
                 ),
                 Language::Go => (
-                    "SavedShapeFormat2 ",
-                    "SavedShapeFormat2Revised ",
+                    "SavedShapeFormat2 = ",
+                    "SavedShapeFormat2Revised = ",
                     "SavedEnumKeys = [...]string{",
                     "}",
                 ),
