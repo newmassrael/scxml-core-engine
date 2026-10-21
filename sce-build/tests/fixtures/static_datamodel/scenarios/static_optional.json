@@ -21,11 +21,11 @@
       "expect": { "variables": { "label": "none", "days": 0, "fallbacks": 0, "errors": 1 } } },
 
     { "note": "a delivery whose optional fields each carry a value: the variables, the record taken whole and the list hold them",
-      "event": "due.set", "data": { "id": 1, "due": 12, "title": "soon", "status": "done" },
+      "event": "due.set", "data": { "id": 1, "due": "12", "title": "soon", "status": "done" },
       "expect": { "variables": {
         "due": 12, "title": "soon", "status": "done",
-        "item": { "id": 1, "due": 12, "title": "soon", "status": "done" },
-        "items": [ { "id": 1, "due": 12, "title": "soon", "status": "done" } ], "errors": 1 } } },
+        "item": { "id": 1, "due": "12", "title": "soon", "status": "done" },
+        "items": [ { "id": 1, "due": "12", "title": "soon", "status": "done" } ], "errors": 1 } } },
 
     { "note": "every read finds the values present: 12 > 10, not 12 < 3, 12 + 1, the <elseif> for 'soon', the variant, the record's day, and the list's one present day",
       "event": "due.read",
@@ -43,7 +43,7 @@
         "due": null, "title": "later", "status": null,
         "item": { "id": 2, "due": null, "title": "later", "status": null },
         "items": [
-          { "id": 1, "due": 12, "title": "soon", "status": "done" },
+          { "id": 1, "due": "12", "title": "soon", "status": "done" },
           { "id": 2, "due": null, "title": "later", "status": null } ], "errors": 1 } } },
 
     { "note": "`due` is absent again; the title is neither absent nor 'soon', so the <else> reads it; `status` and the record's day are absent, so `plain` and `kept` keep their values; the list holds one present day and one absent",
@@ -58,7 +58,7 @@
         "due": null, "title": "later", "status": null,
         "item": { "id": 2, "due": null, "title": "later", "status": null },
         "items": [
-          { "id": 1, "due": 12, "title": "soon", "status": "done" },
+          { "id": 1, "due": "12", "title": "soon", "status": "done" },
           { "id": 2, "due": null, "title": "later", "status": null } ], "errors": 2 } } },
 
     { "note": "the absent day and status cross a send as `null` and the title as its text: the transition that proves the day present is not taken, the other writes -1",
@@ -66,14 +66,14 @@
       "expect": { "variables": { "echoed": -1, "echoTitle": "later", "echoStatus": null, "errors": 2 } } },
 
     { "note": "a third record fills the list to its capacity of three",
-      "event": "due.set", "data": { "id": 4, "due": 7, "title": "next", "status": "in_progress" },
+      "event": "due.set", "data": { "id": 4, "due": "7", "title": "next", "status": "in_progress" },
       "expect": { "variables": {
         "due": 7, "title": "next", "status": "in_progress",
-        "item": { "id": 4, "due": 7, "title": "next", "status": "in_progress" },
+        "item": { "id": 4, "due": "7", "title": "next", "status": "in_progress" },
         "items": [
-          { "id": 1, "due": 12, "title": "soon", "status": "done" },
+          { "id": 1, "due": "12", "title": "soon", "status": "done" },
           { "id": 2, "due": null, "title": "later", "status": null },
-          { "id": 4, "due": 7, "title": "next", "status": "in_progress" } ], "errors": 2 } } },
+          { "id": 4, "due": "7", "title": "next", "status": "in_progress" } ], "errors": 2 } } },
 
     { "note": "7 is neither > 10 nor < 3; the <else> reads 'next'; the list's present days are 12 and 7; `due` equals the present `other` it holds the value of",
       "event": "due.read",

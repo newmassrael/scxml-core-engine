@@ -1487,9 +1487,15 @@ func TestAValueThatMayBeAbsentIsHeldTestedAndRead(t *testing.T) {
 	policy := static_optional.NewStaticOptionalPolicy()
 	policy.SessionID = sce.GenerateSessionID()
 	dueJSON := func(item static_optional.StaticOptionalDueRecord) any {
+		// A record's 64-bit field is the text of its digits, as every other
+		// record a scenario states holds one.
+		var due any
+		if v, ok := item.Due().Get(); ok {
+			due = signedDigits(v)
+		}
 		return map[string]any{
 			"id":     item.Id(),
-			"due":    optionalJSON(item.Due()),
+			"due":    due,
 			"title":  optionalJSON(item.Title()),
 			"status": optionalNameJSON(item.Status()),
 		}
@@ -1805,7 +1811,7 @@ func (b *childHostBook) take() []any {
 // through.
 type recordedWorkerHost struct{ child *bookedChild }
 
-func (h recordedWorkerHost) Started()               { h.child.call("started") }
+func (h recordedWorkerHost) Started()              { h.child.call("started") }
 func (h recordedWorkerHost) Finished(steps uint32) { h.child.call("finished", steps) }
 
 // recordingParentHost is the host of `static_child_host`: it declares no act of
