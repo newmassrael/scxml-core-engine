@@ -52,8 +52,8 @@ PY
 
 mutation_case "a saved byte string is read back by the list reader" <<'PY'
 edit("tools/codegen/templates/rust/state_machine.rs.jinja2",
-     "{% elif field.bound is not none and field.saved_type == \"bytes\" %}",
-     "{% elif false %}")
+     "{%- elif field.bound is not none and field.saved_type == \"bytes\" -%}",
+     "{%- elif false -%}")
 PY
 
 mutation_case "a saved byte string past the bound is read back" <<'PY'

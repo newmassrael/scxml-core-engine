@@ -12,12 +12,13 @@
   `working`, so a machine saved after its child ended stands in the state that
   invokes it with no child running; `finish` leaves for `finished`.
 
-  A restored machine starts `worker` again from its beginning (W3C SCXML 6.4:
-  the invocation lives as long as its state is active, and the process that ran
-  it is gone), under the same `<invoke>` id. So a machine saved after `a` and
-  restored needs `a` again before `b` ends the child: `b` alone leaves it in
-  `working`. `abort` leaves `working`, which cancels the child, and `idle` has no
-  <invoke> — a saved machine there restarts nothing.
+  A format-2 saved state holds `worker` with its whole state, and a restore
+  resumes it where it stood (docs/adr/0045): a machine saved after `a` and
+  restored ends the child on `b` alone. A format-1 state named the invocation by
+  its id alone, and its restore starts `worker` again from its beginning (W3C
+  SCXML 6.4: the invocation lives as long as its state is active), so `a` is
+  needed again. `abort` leaves `working`, which cancels the child, and `idle` has
+  no <invoke> — a saved machine there resumes and restarts nothing.
 
   The child is a datamodel="sce-static" document: a parent saves only when
   every child it can start can be saved too (docs/adr/0045, "Which documents

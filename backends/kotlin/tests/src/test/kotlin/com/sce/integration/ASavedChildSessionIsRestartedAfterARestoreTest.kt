@@ -38,7 +38,7 @@ class ASavedChildSessionIsRestartedAfterARestoreTest {
     /** The wall-clock moment the shared instance was saved at: 2023-11-14T22:13:20Z. */
     private val savedAtMs = 1_700_000_000_000L
 
-    private val shared: String = File(repoRoot(), "sce-build/tests/fixtures/static_datamodel/saved/static_invoke_working.json")
+    private val shared: String = File(repoRoot(), "sce-build/tests/fixtures/static_datamodel/saved/format1/static_invoke_working.json")
         .readText().trim()
 
     private fun repoRoot(): File =

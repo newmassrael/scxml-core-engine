@@ -6,18 +6,53 @@
 // its instances.
 //
 // The shared fixtures under `tests/fixtures/static_datamodel/saved/` are the
-// text every backend must save after the same run and must restore from —
-// the Rust and Kotlin static suites each assert both. So they are the
-// surface's instances, and each one must be what the schema says a saved
-// state is. The directory is swept rather than listed, so a fixture added
-// for a new backend or machine is held to the schema without an edit here.
+// text every backend must save after the same run and must restore from. So
+// they are the surface's instances, and each one must be what the schema says
+// a saved state is. Each directory is swept rather than listed, so a fixture
+// added for a new backend or machine is held to the schema without an edit
+// here.
 //
-// Format 2 (docs/adr/0045) is a tree of sessions. No backend writes it yet,
-// so its instance is written here by hand, as the observation trace's was
-// before any driver existed; the shared fixtures take format-2 texts when the
-// first backend writes them.
+// Format 2 (docs/adr/0045) is a tree of sessions, the format the Rust backend
+// writes: the texts directly under `saved/` are format 2 and are held to the
+// format-2 schema. The format-1 texts every backend saved before moved to
+// `saved/format1/`, where a backend that writes format 2 still restores them
+// and one that has not yet moved still saves them, and they are held to the
+// format-1 schema. A hand-written tree below exercises every member format 2
+// adds.
 
 use std::path::{Path, PathBuf};
+
+/// The `.json` files directly under each of `dirs`, sorted.
+fn instances(dirs: &[PathBuf]) -> Vec<PathBuf> {
+    let mut fixtures: Vec<PathBuf> = dirs
+        .iter()
+        .flat_map(|dir| {
+            std::fs::read_dir(dir)
+                .unwrap_or_else(|e| panic!("read {}: {e}", dir.display()))
+                .map(|entry| entry.expect("directory entry").path())
+                .filter(|p| p.extension().is_some_and(|x| x == "json"))
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    fixtures.sort();
+    fixtures
+}
+
+/// Hold every file of `fixtures` to `validator`.
+fn each_is_a_saved_state(validator: &jsonschema::JSONSchema, fixtures: Vec<PathBuf>) {
+    for path in fixtures {
+        let text = std::fs::read_to_string(&path).expect("read fixture");
+        let instance: serde_json::Value = serde_json::from_str(&text)
+            .unwrap_or_else(|e| panic!("{} is not JSON: {e}", path.display()));
+        let found = errors(validator, &instance);
+        assert!(
+            found.is_empty(),
+            "{} is not a saved state:\n{}",
+            path.display(),
+            found.join("\n")
+        );
+    }
+}
 
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -54,43 +89,32 @@ fn errors(validator: &jsonschema::JSONSchema, instance: &serde_json::Value) -> V
 
 #[test]
 fn every_shared_saved_state_fixture_is_a_saved_state() {
-    let validator = validator();
     // The shared instances of the static data model and of the host-run
     // invocation fixture, which lives with the other host fixtures.
-    let dirs = [
+    let format1 = [
+        repo_root().join("sce-build/tests/fixtures/static_datamodel/saved/format1"),
+        repo_root().join("sce-build/tests/fixtures/host_processor/saved/format1"),
+    ];
+    let format2 = [
         repo_root().join("sce-build/tests/fixtures/static_datamodel/saved"),
         repo_root().join("sce-build/tests/fixtures/host_processor/saved"),
     ];
-    let mut fixtures: Vec<PathBuf> = dirs
-        .iter()
-        .flat_map(|dir| {
-            std::fs::read_dir(dir)
-                .unwrap_or_else(|e| panic!("read {}: {e}", dir.display()))
-                .map(|entry| entry.expect("directory entry").path())
-                .filter(|p| p.extension().is_some_and(|x| x == "json"))
-                .collect::<Vec<_>>()
-        })
-        .collect();
-    fixtures.sort();
-    // A sweep over nothing certifies nothing: a record and a list when this
-    // floor was set, and the host invocation's instance since.
+    let (old, new) = (instances(&format1), instances(&format2));
+    // A sweep over nothing certifies nothing: the sixteen texts every backend
+    // saved before trees moved to `format1/`, and the twelve the Rust backend
+    // writes as format 2 when this floor was set.
     assert!(
-        fixtures.len() >= 3,
-        "swept only {} saved-state fixture(s) in {dirs:?}",
-        fixtures.len(),
+        old.len() >= 16,
+        "swept only {} format-1 fixture(s) in {format1:?}",
+        old.len()
     );
-    for path in fixtures {
-        let text = std::fs::read_to_string(&path).expect("read fixture");
-        let instance: serde_json::Value = serde_json::from_str(&text)
-            .unwrap_or_else(|e| panic!("{} is not JSON: {e}", path.display()));
-        let found = errors(&validator, &instance);
-        assert!(
-            found.is_empty(),
-            "{} is not a saved state:\n{}",
-            path.display(),
-            found.join("\n")
-        );
-    }
+    assert!(
+        new.len() >= 12,
+        "swept only {} format-2 fixture(s) in {format2:?}",
+        new.len()
+    );
+    each_is_a_saved_state(&validator(), old);
+    each_is_a_saved_state(&validator_v2(), new);
 }
 
 #[test]

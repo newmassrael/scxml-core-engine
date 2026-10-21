@@ -131,8 +131,15 @@ fn advance_to(engine: &mut Engine<Policy>, now: &Arc<Mutex<u64>>, to_ms: u64) {
 }
 
 fn saved_through_json(engine: &Engine<Policy>) -> SavedState {
-    let saved = saved_state::save(engine, &SHAPE, Vec::new(), Vec::new(), SAVED_AT_MS)
-        .expect("a running machine saves");
+    let saved = saved_state::save(
+        engine,
+        &SHAPE,
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        SAVED_AT_MS,
+    )
+    .expect("a running machine saves");
     SavedState::from_json(&saved.to_json()).expect("a saved state reads back")
 }
 
@@ -267,36 +274,113 @@ fn a_host_send_already_due_when_the_machine_comes_back_is_performed_in_its_order
 fn a_machine_restored_from_a_text_saves_that_text_again() {
     let saved = saved_through_json(&armed());
     let (engine, _log, _now) = restored(&saved, 0);
-    let again = saved_state::save(&engine, &SHAPE, Vec::new(), Vec::new(), SAVED_AT_MS)
-        .expect("saves again");
+    let again = saved_state::save(
+        &engine,
+        &SHAPE,
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        SAVED_AT_MS,
+    )
+    .expect("saves again");
+    // The restored machine carries on under the id it was saved with, though
+    // it was built with an id of its own (docs/adr/0045).
+    assert_eq!(again.session_id, saved.session_id);
     assert_eq!(again.to_json(), saved.to_json());
 }
 
-/// What a machine built by hand can hold that a generated one cannot: a delayed
-/// send routed to a session the saved state does not carry. Leaving it out would
-/// restore a machine that never delivers it and say nothing, so the save is
-/// refused and says which send.
+/// docs/adr/0045: a delayed send to the parent waits on a session the saved
+/// tree holds, so it is saved as the act that delivers it there, with what the
+/// send carries.
 #[test]
-fn a_delayed_send_to_the_parent_refuses_the_save() {
+fn a_delayed_send_to_the_parent_is_saved_as_a_send_to_the_parent() {
     let mut engine = armed();
     engine.schedule_routed_event(
         None,
         Duration::from_millis(300),
         "to_parent",
-        "",
-        "",
+        "{\"n\":1}",
+        "me",
         ScheduledRoute::Parent {
             event_name: "report".to_string(),
         },
     );
-    let refusal = match saved_state::save(&engine, &SHAPE, Vec::new(), Vec::new(), SAVED_AT_MS) {
+    let saved = saved_through_json(&engine);
+    assert!(
+        saved
+            .pending
+            .iter()
+            .any(|send| send.due == SAVED_AT_MS + 300
+                && send.act
+                    == SavedAct::Parent {
+                        event: "report".to_string(),
+                        data: "{\"n\":1}".to_string(),
+                        send_id: "to_parent".to_string(),
+                        origin: "me".to_string(),
+                    }),
+        "{:?}",
+        saved.pending
+    );
+}
+
+/// What a machine built by hand can hold that a generated one cannot: a delayed
+/// send routed to a session by its id, which the saved tree does not carry.
+/// Leaving it out would restore a machine that never delivers it and say
+/// nothing, so the save is refused and says which send.
+#[test]
+fn a_delayed_send_to_a_session_by_its_id_refuses_the_save() {
+    let mut engine = armed();
+    engine.schedule_routed_event(
+        None,
+        Duration::from_millis(300),
+        "to_elsewhere",
+        "",
+        "",
+        ScheduledRoute::Session {
+            session_id: "elsewhere".to_string(),
+            event_name: "report".to_string(),
+        },
+    );
+    let refusal = match saved_state::save(
+        &engine,
+        &SHAPE,
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        SAVED_AT_MS,
+    ) {
         Ok(saved) => panic!("the save was expected to be refused: {saved:?}"),
         Err(refusal) => refusal,
     };
-    assert!(refusal.reason().contains("to_parent"), "{refusal}");
+    assert!(refusal.reason().contains("to_elsewhere"), "{refusal}");
     assert!(
         refusal.reason().contains("does not carry"),
         "the refusal says why: {refusal}"
+    );
+}
+
+/// A saved send to a child names the child by its `<invoke>`, and this
+/// document invokes nothing: the restore refuses before it arms anything.
+#[test]
+fn a_saved_send_to_a_child_the_document_does_not_invoke_is_refused() {
+    let mut saved = saved_through_json(&armed());
+    saved.pending[0].act = SavedAct::Child {
+        invoke_id: "nobody".to_string(),
+        event: "report".to_string(),
+        data: String::new(),
+        send_id: String::new(),
+        origin: String::new(),
+    };
+    let refusal = match saved_state::enter(Policy::new(), &saved, SceClock::Manual(0), SAVED_AT_MS)
+    {
+        Ok(_) => panic!("the restore was expected to be refused"),
+        Err(refusal) => refusal,
+    };
+    assert!(
+        refusal
+            .reason()
+            .contains("pending[0] is a send to the child 'nobody'"),
+        "{refusal}"
     );
 }
 

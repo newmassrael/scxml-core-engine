@@ -35,8 +35,12 @@
 {% endif -%}
 {% endmacro %}
 {% if model.needs_script_engine %}
-    // W3C SCXML 5.10: Ensure session ID is initialized
-    // Uses atomic counter (1:1 with C++ UniqueIdGenerator::generateSessionId)
+    // W3C SCXML 5.10: the session's id, which the script engine's session is
+    // named by. It is bound when the policy is built (docs/adr/0045): drawn,
+    // given by the host, or given by the parent. Only a machine on a target
+    // with no source of randomness whose host gave none reaches the counter
+    // here, which names the script session and is no address another process
+    // could know.
     fn ensure_session_id(&mut self) {
         if self.session_id.is_none() {
             static SESSION_COUNTER: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);

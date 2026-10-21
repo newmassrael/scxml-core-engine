@@ -56,7 +56,7 @@ fn a_child_is_handed_the_values_its_invoke_names() {
 }
 
 #[test]
-fn a_restored_child_is_handed_the_values_the_restored_machine_holds() {
+fn a_restored_child_keeps_the_values_it_was_handed() {
     let mut engine = started();
     settle(&mut engine);
     // `bump` makes `base` 8 while `watcher` runs with the 7 it was handed once,
@@ -65,8 +65,9 @@ fn a_restored_child_is_handed_the_values_the_restored_machine_holds() {
     settle(&mut engine);
     assert_eq!(engine.policy().completed(), 1);
 
-    // A restored child is started again from its beginning, and a start
-    // evaluates its arguments: the new `watcher` is handed 8, and ends.
+    // docs/adr/0045: a restored child is resumed where it stood, not started
+    // again, so no argument is evaluated: `watcher` holds the 7 it was handed,
+    // not the 8 `base` holds now, and still does not end.
     let saved = engine.save_at(SAVED_AT_MS).expect("saves");
     let mut restored = Engine::<StaticInvokeParamsPolicy>::restore_with(
         StaticInvokeParamsPolicy::new(),
@@ -76,7 +77,17 @@ fn a_restored_child_is_handed_the_values_the_restored_machine_holds() {
     )
     .expect("restores");
     settle(&mut restored);
-    assert_eq!(restored.policy().completed(), 11);
+    assert_eq!(restored.policy().completed(), 1);
+    let again = restored.save_at(SAVED_AT_MS).expect("saves");
+    assert_eq!(
+        again.invokes.ids(),
+        saved.invokes.ids(),
+        "the same children run"
+    );
+    assert_eq!(
+        again.invoke_starts, saved.invoke_starts,
+        "none started again"
+    );
 }
 
 #[test]

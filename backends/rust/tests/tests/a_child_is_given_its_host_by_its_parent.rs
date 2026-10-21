@@ -14,8 +14,8 @@
 // the type of the child's host (`ActionsForWorker`) because the child's machine
 // is generic over it. `static_child_host_hybrid.scxml` invokes whichever of two
 // candidates its `srcexpr` names, each with an act of its own, and the host
-// answered is the one for THAT candidate. A restore starts the child again, so
-// the parent's host is asked again.
+// answered is the one for THAT candidate. A restore resumes the child in a new
+// process, whose parent's host is asked for the child's host again.
 //
 // The parent's recording host is the generated one: it takes the function that
 // answers each child's host and records each question beside the acts.
@@ -144,15 +144,17 @@ fn a_state_invoked_again_is_given_a_host_of_its_own() {
 }
 
 #[test]
-fn a_restored_machine_starts_its_child_again_with_a_host_from_its_own_parent() {
+fn a_restored_machine_resumes_its_child_with_a_host_from_its_own_parent() {
     let before = Workers::default();
     let mut first = started(&before);
     send(&mut first, "a");
     let saved = first.save_at(1_700_000_000_000).expect("saves");
     assert_eq!(saved.invokes.ids(), ["worker"], "the child was running");
 
-    // A restore is another machine with another host: the child is started over,
-    // and what is asked of the host is asked of that one.
+    // A restore is another machine with another host: the host the child had is
+    // gone with the process, so the new parent's host is asked for one, and the
+    // child is resumed where it stood (docs/adr/0045). Nothing it did at its start
+    // is done again: its `<onentry>` act is not performed a second time.
     let after = Workers::default();
     let mut engine = Engine::<Parent>::restore_with(
         parent(&after),
@@ -168,12 +170,17 @@ fn a_restored_machine_starts_its_child_again_with_a_host_from_its_own_parent() {
         engine.policy().actions().calls(),
         &[StaticChildHostActionsCall::ActionsForWorker]
     );
-    assert_eq!(calls(&after, 0), ["started"]);
+    assert!(
+        calls(&after, 0).is_empty(),
+        "a resumed child runs no <onentry>: {:?}",
+        calls(&after, 0)
+    );
 
-    send(&mut engine, "a");
+    // It had taken `a`, so `b` ends it, and the steps it counted before the save
+    // are counted on.
     send(&mut engine, "b");
     assert_eq!(engine.policy().completed(), 1);
-    assert_eq!(calls(&after, 0), ["started", "finished(2)"]);
+    assert_eq!(calls(&after, 0), ["finished(2)"]);
     // The machine that was saved is not asked for anything more.
     assert_eq!(calls(&before, 0), ["started"]);
     assert_eq!(first.policy().actions().calls().len(), 1);

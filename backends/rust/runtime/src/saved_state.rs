@@ -73,7 +73,7 @@ pub const FORMAT_2: u32 = 2;
 
 /// The format version this runtime writes. It reads [`FORMAT_1`] and
 /// [`FORMAT_2`].
-pub const FORMAT: u32 = FORMAT_1;
+pub const FORMAT: u32 = FORMAT_2;
 
 /// The stability status of the saved-state wire surface, held in lockstep
 /// with `x-sce-schema-status` in `schemas/sce-saved-state.v1.schema.json`
@@ -918,6 +918,14 @@ impl SavedState {
         }
     }
 
+    /// The id a restore binds the session to: the saved one, for a format-2
+    /// state, since the session carries on and every child's id and a peer's
+    /// address name it (docs/adr/0045); `None` for a format-1 state, which
+    /// holds none, so the restored machine keeps the id it was created with.
+    pub fn bound_session_id(&self) -> Option<&str> {
+        (self.format() == FORMAT_2).then_some(self.session_id.as_str())
+    }
+
     /// How many times the `<invoke>` `id` had started in this session when it
     /// was saved: 0 for one that had not, and for every one of a format-1
     /// state, which holds no count.
@@ -1568,18 +1576,26 @@ fn clamp_to_i64(ms: u64) -> u64 {
 ///
 /// A machine any of whose record schemas is past its first revision names each
 /// such revision in `revisions` and writes the revised shape; any other writes
-/// the first shape and no `revisions`, the text it wrote before schemas had
-/// revisions.
+/// the first shape and no `revisions`.
+///
+/// The state is format 2 (docs/adr/0045): the machine's own id, how many times
+/// each `<invoke>` has started, and `children`, each running child with its
+/// whole state, which the generated machine saved through the child's own
+/// document, in document order. The shape is the format-2 one, which names an
+/// enum by its document.
 ///
 /// Refused for a machine that is not running — never started, or ended at a
-/// top-level `<final>`, where there is nothing left to resume — and for one
-/// whose last macrostep stopped at the microstep ceiling: its configuration
-/// is not a settled one, and a restore would resume it as if it were.
+/// top-level `<final>`, where there is nothing left to resume — for one whose
+/// last macrostep stopped at the microstep ceiling: its configuration is not a
+/// settled one, and a restore would resume it as if it were — for one with no
+/// id (a machine on a target with no source of randomness whose host gave it
+/// none), and when `children` are not the children the machine is running.
 pub fn save<P: StatePolicy>(
     engine: &Engine<P>,
     shape: &SavedShape,
     variables: Vec<(String, Value)>,
     history: Vec<(String, Vec<String>)>,
+    children: Vec<SavedChild>,
     wall_now_ms: u64,
 ) -> Result<SavedState, StateRefusal> {
     if !engine.is_running() {
@@ -1592,6 +1608,23 @@ pub fn save<P: StatePolicy>(
             "the machine's last macrostep stopped at the microstep ceiling, so it does \
              not stand at a settled configuration",
         ));
+    }
+    let session_id = engine.policy().own_session_id().to_string();
+    if session_id.is_empty() {
+        return Err(StateRefusal::new(
+            "the machine has no session id: on a target with no source of randomness its \
+             host gives one when it creates the machine",
+        ));
+    }
+    // What the generated machine saved is every child it runs, and nothing
+    // else: one left out would restore a parent whose child is gone.
+    let running = engine.policy().running_invokes();
+    let saved_ids: Vec<&str> = children.iter().map(|child| child.id.as_str()).collect();
+    if saved_ids != running {
+        return Err(StateRefusal::new(format!(
+            "the machine runs the children {running:?} and the save holds {saved_ids:?}, a \
+             defect of its generated save"
+        )));
     }
     // Read before anything is built, so a delayed send this state cannot carry
     // refuses the save instead of leaving it out.
@@ -1627,9 +1660,9 @@ pub fn save<P: StatePolicy>(
         .collect();
     Ok(SavedState {
         shape: if revisions.is_empty() {
-            shape.first
+            shape.format2_first
         } else {
-            shape.revised
+            shape.format2_revised
         }
         .to_string(),
         revisions,
@@ -1641,18 +1674,16 @@ pub fn save<P: StatePolicy>(
         variables,
         history,
         pending,
-        // §scxml-6.4: the children that are running, which a restore starts
-        // again. The policy lists them in document order.
-        invokes: SavedInvokes::Restarted(
-            engine
-                .policy()
-                .running_invokes()
-                .into_iter()
-                .map(str::to_string)
-                .collect(),
-        ),
-        session_id: String::new(),
-        invoke_starts: Vec::new(),
+        // §scxml-6.4: the children that are running, each with its whole
+        // state, which a restore resumes.
+        invokes: SavedInvokes::Resumed(children),
+        session_id,
+        invoke_starts: engine
+            .policy()
+            .invoke_starts()
+            .into_iter()
+            .map(|(id, count)| (id.to_string(), count))
+            .collect(),
         host_invokes: save_host_invokes(engine, wall_now_ms),
         host_invoke_token: engine.next_host_invoke_token(),
         auto_send_seq: engine.auto_send_seq(),
@@ -1711,11 +1742,13 @@ fn save_host_invokes<P: StatePolicy>(engine: &Engine<P>, wall_now_ms: u64) -> Ve
 /// written as the wall-clock moment it comes due, in the order the machine
 /// would deliver them.
 ///
-/// A send the format cannot carry — one routed to a parent or a child session —
-/// refuses the save. A document that makes one is generated without the save
-/// API, so no generated machine reaches this; the refusal is for a machine
-/// built by hand, where leaving the entry out would restore a machine that
-/// never delivers it and say nothing.
+/// A send to the parent or to a child of this session is held as the act that
+/// delivers it to the session the restored tree holds there (docs/adr/0045). A
+/// send the format cannot carry — one routed to a session by its id — refuses
+/// the save. A document that makes one is generated without the save API, so
+/// no generated machine reaches this; the refusal is for a machine built by
+/// hand, where leaving the entry out would restore a machine that never
+/// delivers it and say nothing.
 ///
 /// The deadline of a running host-run invocation is not a send: it is saved with
 /// the invocation, as its `due` ([`save_host_invokes`]), and left out here. One
@@ -1761,6 +1794,37 @@ fn save_pending<P: StatePolicy>(
                     ..
                 } => SavedAct::Internal {
                     event: name(event),
+                    data: event_data.clone(),
+                    send_id: send_id.clone(),
+                    origin: origin.clone(),
+                },
+                // docs/adr/0045: the parent and a child of this session are
+                // sessions the saved tree holds.
+                ScheduledAct::Routed {
+                    event_data,
+                    send_id,
+                    origin,
+                    route: ScheduledRoute::Parent { event_name },
+                    ..
+                } => SavedAct::Parent {
+                    event: event_name.clone(),
+                    data: event_data.clone(),
+                    send_id: send_id.clone(),
+                    origin: origin.clone(),
+                },
+                ScheduledAct::Routed {
+                    event_data,
+                    send_id,
+                    origin,
+                    route:
+                        ScheduledRoute::Invocation {
+                            invoke_id,
+                            event_name,
+                        },
+                    ..
+                } => SavedAct::Child {
+                    invoke_id: invoke_id.clone(),
+                    event: event_name.clone(),
                     data: event_data.clone(),
                     send_id: send_id.clone(),
                     origin: origin.clone(),
@@ -2191,6 +2255,12 @@ pub fn enter<P: StatePolicy>(
     wall_now_ms: u64,
 ) -> Result<Engine<P>, StateRefusal> {
     let judged = judge_session::<P>(saved)?;
+    // The session carries on under the id it was saved with; a format-1 state
+    // holds none, and the machine keeps the one it was created with.
+    let mut policy = policy;
+    if let Some(id) = saved.bound_session_id() {
+        policy.bind_session_id(id);
+    }
     let mut engine = Engine::new(policy);
     engine.set_clock(clock);
     engine

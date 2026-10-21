@@ -237,7 +237,11 @@ fn day(year: u16, month: u8, day_of_month: u8) -> StaticRecordDayRecord {
 }
 
 fn record() -> Engine<StaticRecordPolicy> {
-    let mut engine = Engine::new(StaticRecordPolicy::new());
+    let mut engine = Engine::new(
+        StaticRecordPolicy::new()
+            .with_session_id(ROOT)
+            .expect("an Nmtoken"),
+    );
     engine.initialize();
     engine
 }
@@ -330,7 +334,11 @@ fn a_delivery_without_the_payload_runs_none_of_the_content() {
 // ── static_list: a list variable, appended to, cleared, held to its bound ──
 
 fn list() -> Engine<StaticListPolicy> {
-    let mut engine = Engine::new(StaticListPolicy::new());
+    let mut engine = Engine::new(
+        StaticListPolicy::new()
+            .with_session_id(ROOT)
+            .expect("an Nmtoken"),
+    );
     engine.initialize();
     engine
 }
@@ -484,6 +492,16 @@ fn the_snapshot_names_the_state_a_guard_held_the_machine_in() {
 //
 // Each saved state goes through its JSON text and back before it is
 // restored, as one that crossed a process boundary would.
+//
+// The machine writes format 2 (docs/adr/0045), and a format-2 state names the
+// session's id. A machine a host creates draws one, so a run whose text is held
+// to a shared fixture is given the id the fixtures name their root by, as a
+// host may give one; no case reads the value of a drawn id. The format-1 texts
+// every backend saved before trees are under `saved/format1/`, and each still
+// restores.
+
+/// The session id the shared format-2 fixtures give their root.
+const ROOT: &str = "fixture-root";
 
 fn through_json(saved: &SavedState) -> SavedState {
     SavedState::from_json(&saved.to_json()).expect("a saved state reads back")
@@ -597,6 +615,13 @@ const SHARED_RECORD: &str =
     include_str!("../../../../sce-build/tests/fixtures/static_datamodel/saved/static_record.json");
 const SHARED_LIST: &str =
     include_str!("../../../../sce-build/tests/fixtures/static_datamodel/saved/static_list.json");
+/// The same runs as format-1 texts, which a backend saved before trees.
+const FORMAT1_RECORD: &str = include_str!(
+    "../../../../sce-build/tests/fixtures/static_datamodel/saved/format1/static_record.json"
+);
+const FORMAT1_LIST: &str = include_str!(
+    "../../../../sce-build/tests/fixtures/static_datamodel/saved/format1/static_list.json"
+);
 
 #[test]
 fn a_record_and_a_list_save_the_text_every_backend_saves() {
@@ -617,25 +642,72 @@ fn a_record_and_a_list_save_the_text_every_backend_saves() {
 
 #[test]
 fn a_state_another_backend_saved_is_restored() {
-    let restored = Engine::<StaticRecordPolicy>::restore(
-        StaticRecordPolicy::new(),
-        &SavedState::from_json(SHARED_RECORD).expect("reads"),
-    )
-    .expect("restores");
-    assert_eq!(restored.policy().shown(), day(2027, 2, 27));
+    // A format-2 text, and the format-1 text of the same run.
+    for (record, list) in [(SHARED_RECORD, SHARED_LIST), (FORMAT1_RECORD, FORMAT1_LIST)] {
+        let restored = Engine::<StaticRecordPolicy>::restore(
+            StaticRecordPolicy::new(),
+            &SavedState::from_json(record).expect("reads"),
+        )
+        .expect("restores");
+        assert_eq!(restored.policy().shown(), day(2027, 2, 27));
 
-    let mut restored = Engine::<StaticListPolicy>::restore(
+        let mut restored = Engine::<StaticListPolicy>::restore(
+            StaticListPolicy::new(),
+            &SavedState::from_json(list).expect("reads"),
+        )
+        .expect("restores");
+        assert_eq!(restored.policy().picked(), &[4, 2]);
+        pick(&mut restored, 6);
+        assert_eq!(
+            restored.policy().count(),
+            3,
+            "the restored machine runs on from the saved values"
+        );
+    }
+}
+
+#[test]
+fn a_restored_machine_carries_on_under_the_session_id_it_was_saved_with() {
+    // docs/adr/0045: a restore binds the saved id in place of the one the new
+    // policy drew, and a format-1 text, which holds none, leaves the policy's.
+    let restored = Engine::<StaticListPolicy>::restore(
         StaticListPolicy::new(),
         &SavedState::from_json(SHARED_LIST).expect("reads"),
     )
     .expect("restores");
-    assert_eq!(restored.policy().picked(), &[4, 2]);
-    pick(&mut restored, 6);
-    assert_eq!(
-        restored.policy().count(),
-        3,
-        "the restored machine runs on from the saved values"
-    );
+    assert_eq!(restored.save().expect("saves").session_id, ROOT);
+
+    let restored = Engine::<StaticListPolicy>::restore(
+        StaticListPolicy::new()
+            .with_session_id("another-host")
+            .expect("an Nmtoken"),
+        &SavedState::from_json(FORMAT1_LIST).expect("reads"),
+    )
+    .expect("restores");
+    assert_eq!(restored.save().expect("saves").session_id, "another-host");
+}
+
+#[test]
+fn a_machine_a_host_creates_draws_a_session_id_and_one_it_gives_is_held_to_the_rule() {
+    // A drawn id is a UUID version 4 in lowercase hexadecimal with hyphens; its
+    // value is no case's to read.
+    let mut engine = Engine::new(StaticListPolicy::new());
+    engine.initialize();
+    let drawn = engine.save().expect("saves").session_id;
+    assert_eq!(drawn.len(), 36, "{drawn}");
+    assert_eq!(&drawn[14..15], "4", "{drawn}");
+    let mut other = Engine::new(StaticListPolicy::new());
+    other.initialize();
+    assert_ne!(other.save().expect("saves").session_id, drawn);
+
+    // An id a host gives is an Nmtoken, refused with the reason otherwise.
+    for bad in ["", "two words", "a#b"] {
+        let refusal = StaticListPolicy::new()
+            .with_session_id(bad)
+            .err()
+            .unwrap_or_else(|| panic!("{bad:?} was taken as a session id"));
+        assert!(refusal.reason().contains("Nmtoken"), "{bad:?}: {refusal}");
+    }
 }
 
 // ── static_schema_revision: a state saved at an earlier revision of a schema ──
@@ -649,19 +721,27 @@ fn a_state_another_backend_saved_is_restored() {
 const SHARED_REVISED: &str = include_str!(
     "../../../../sce-build/tests/fixtures/static_datamodel/saved/static_schema_revision.json"
 );
+/// What the builds of earlier revisions saved, before trees: format-1 texts.
+const FORMAT1_REVISED: &str = include_str!(
+    "../../../../sce-build/tests/fixtures/static_datamodel/saved/format1/static_schema_revision.json"
+);
 const SHARED_REVISED_FIRST: &str = include_str!(
-    "../../../../sce-build/tests/fixtures/static_datamodel/saved/static_schema_revision_first.json"
+    "../../../../sce-build/tests/fixtures/static_datamodel/saved/format1/static_schema_revision_first.json"
 );
 const SHARED_REVISED_SECOND: &str = include_str!(
-    "../../../../sce-build/tests/fixtures/static_datamodel/saved/static_schema_revision_second.json"
+    "../../../../sce-build/tests/fixtures/static_datamodel/saved/format1/static_schema_revision_second.json"
 );
 const SHARED_REVISED_FIRST_QUEUED: &str = include_str!(
-    "../../../../sce-build/tests/fixtures/static_datamodel/saved/static_schema_revision_first_queued.json"
+    "../../../../sce-build/tests/fixtures/static_datamodel/saved/format1/static_schema_revision_first_queued.json"
 );
 
+/// `text` restored into a machine given the root's id, so a format-1 text,
+/// which holds no id, saves again as the shared format-2 text does.
 fn revised_restored(text: &str) -> Engine<StaticSchemaRevisionPolicy> {
     Engine::<StaticSchemaRevisionPolicy>::restore(
-        StaticSchemaRevisionPolicy::new(),
+        StaticSchemaRevisionPolicy::new()
+            .with_session_id(ROOT)
+            .expect("an Nmtoken"),
         &SavedState::from_json(text).expect("reads"),
     )
     .expect("restores")
@@ -685,7 +765,11 @@ fn json_value(text: &str) -> sce_rust_runtime::json::Value {
 fn a_record_of_a_schema_that_grew_saves_the_text_every_backend_saves() {
     // A delivery of the first revision, as the scenario's first step: the
     // machine is at the third, so it names that revision and the revised shape.
-    let mut engine = Engine::new(StaticSchemaRevisionPolicy::new());
+    let mut engine = Engine::new(
+        StaticSchemaRevisionPolicy::new()
+            .with_session_id(ROOT)
+            .expect("an Nmtoken"),
+    );
     engine.initialize();
     engine.raise_external_by_name("reading.revised", r#"{"level":4}"#);
     engine.step();
@@ -743,12 +827,13 @@ fn a_state_of_a_later_or_another_revision_is_refused() {
             &SavedState::from_json(text).expect("reads"),
         ))
     };
-    // Saved by a build of a fourth revision this one does not know.
-    let later = SHARED_REVISED
-        .trim()
-        .replace(r#""revision":3"#, r#""revision":4"#);
-    let refusal = refusal_of(&later);
-    assert!(refusal.reason().contains("later than"), "{refusal}");
+    // Saved by a build of a fourth revision this one does not know, in either
+    // format.
+    for text in [SHARED_REVISED, FORMAT1_REVISED] {
+        let later = text.trim().replace(r#""revision":3"#, r#""revision":4"#);
+        let refusal = refusal_of(&later);
+        assert!(refusal.reason().contains("later than"), "{refusal}");
+    }
     // A second revision that declared other fields than this build's second.
     let other = SHARED_REVISED_SECOND.trim().replace(
         "d9ba6a71207a3f219929c8fda298d7a35c76cb7950cc287ae2fa8a8b8ff45ad7",
@@ -770,7 +855,7 @@ fn a_state_of_a_later_or_another_revision_is_refused() {
     );
     // A state that names its revision under the first shape, which a reader that
     // predates revisions would have taken.
-    let unmarked = SHARED_REVISED.trim().replace(
+    let unmarked = FORMAT1_REVISED.trim().replace(
         "cb771df5efc33bf380bfd5a267ca027b408f8cd064bbc7eec5ca0266e23d06f5",
         "11dbc3cc8b1f883cc9da011d2d5c3968ac0eeb404a0f494deede91552cd6623d",
     );
@@ -789,7 +874,7 @@ fn a_state_of_a_later_or_another_revision_is_refused() {
 // the same.
 
 const SHARED_PENDING_FIRST: &str = include_str!(
-    "../../../../sce-build/tests/fixtures/static_datamodel/saved/static_schema_pending_first.json"
+    "../../../../sce-build/tests/fixtures/static_datamodel/saved/format1/static_schema_pending_first.json"
 );
 
 /// The fixture restored at the wall-clock moment it was saved, into a process
@@ -847,9 +932,12 @@ fn a_waiting_send_saved_at_the_first_revision_is_delivered_with_the_later_defaul
         named,
         [("signal.raised", 2), ("enum:enum_signal_level.scxml", 2)]
     );
+    // The format-2 revised shape, which spells the level's enum by its document
+    // (docs/adr/0045, section 2); the format-1 one spelled it by its alias
+    // (`2619b075...`).
     assert_eq!(
         saved.shape,
-        "2619b075d4aa2597ecf884cba0f3b6d95715e5dbdca9bb22dc2d20be2f4dead2"
+        "3fbeae2b4200145eef7af1a2e393f315a5466a7f5ff65b7bcabbb7ed2e75c9fa"
     );
 }
 
@@ -869,9 +957,16 @@ fn a_value_of_a_variant_its_saved_revision_lacks_is_refused() {
 
 const SHARED_ENUM: &str =
     include_str!("../../../../sce-build/tests/fixtures/static_datamodel/saved/static_enum.json");
+const FORMAT1_ENUM: &str = include_str!(
+    "../../../../sce-build/tests/fixtures/static_datamodel/saved/format1/static_enum.json"
+);
 
 fn layouts() -> Engine<StaticEnumPolicy> {
-    let mut engine = Engine::new(StaticEnumPolicy::new());
+    let mut engine = Engine::new(
+        StaticEnumPolicy::new()
+            .with_session_id(ROOT)
+            .expect("an Nmtoken"),
+    );
     engine.initialize();
     engine
 }
@@ -906,18 +1001,45 @@ fn an_enum_variable_is_saved_as_the_name_the_document_declares() {
 
 #[test]
 fn a_state_another_backend_saved_holds_an_enum_that_is_restored() {
-    let mut restored = Engine::<StaticEnumPolicy>::restore(
-        StaticEnumPolicy::new(),
-        &SavedState::from_json(SHARED_ENUM).expect("reads"),
-    )
-    .expect("restores");
-    assert_eq!(
-        restored.policy().layout(),
-        StaticEnumViewModeEnum::AgendaList
-    );
-    // `previous` is the machine's own and was restored too: back goes to it.
-    send(&mut restored, "back");
-    assert_eq!(restored.policy().layout(), StaticEnumViewModeEnum::Week);
+    // The format-2 text's shape names the enum by its document, the format-1
+    // text's by its alias: each is judged by the shape of its own format.
+    for text in [SHARED_ENUM, FORMAT1_ENUM] {
+        let mut restored = Engine::<StaticEnumPolicy>::restore(
+            StaticEnumPolicy::new(),
+            &SavedState::from_json(text).expect("reads"),
+        )
+        .expect("restores");
+        assert_eq!(
+            restored.policy().layout(),
+            StaticEnumViewModeEnum::AgendaList
+        );
+        // `previous` is the machine's own and was restored too: back goes to it.
+        send(&mut restored, "back");
+        assert_eq!(restored.policy().layout(), StaticEnumViewModeEnum::Week);
+    }
+}
+
+#[test]
+fn a_shape_of_one_format_does_not_stand_for_the_other() {
+    // The format-2 text under the format-1 shape, and the format-1 text under the
+    // format-2 one: a state is bound to the shape its own format names.
+    let crossed = [
+        SHARED_ENUM.trim().replace(
+            "f4b82d70d61f1a107887fbbef7b3f95ff21face9f668501207e0d75867026323",
+            "520180e6f3f0c0a8ba6940f472c5d101a70edffe748e29d09589295b8c6ea8eb",
+        ),
+        FORMAT1_ENUM.trim().replace(
+            "520180e6f3f0c0a8ba6940f472c5d101a70edffe748e29d09589295b8c6ea8eb",
+            "f4b82d70d61f1a107887fbbef7b3f95ff21face9f668501207e0d75867026323",
+        ),
+    ];
+    for text in crossed {
+        let refusal = refused(Engine::<StaticEnumPolicy>::restore(
+            StaticEnumPolicy::new(),
+            &SavedState::from_json(&text).expect("reads"),
+        ));
+        assert!(refusal.reason().contains("of shape"), "{refusal}");
+    }
 }
 
 #[test]
@@ -1163,7 +1285,11 @@ const HISTORY_RUN: [&str; 7] = [
 ];
 
 fn history_machine() -> Engine<StaticHistoryPolicy> {
-    let mut engine = Engine::new(StaticHistoryPolicy::new());
+    let mut engine = Engine::new(
+        StaticHistoryPolicy::new()
+            .with_session_id(ROOT)
+            .expect("an Nmtoken"),
+    );
     engine.initialize();
     engine
 }
@@ -1191,6 +1317,20 @@ fn a_history_is_saved_with_the_machine_as_the_text_every_backend_saves() {
         engine.save().expect("saves").to_json(),
         SHARED_HISTORY.trim()
     );
+}
+
+#[test]
+fn a_history_saved_in_format_1_is_restored() {
+    const FORMAT1_HISTORY: &str = include_str!(
+        "../../../../sce-build/tests/fixtures/static_datamodel/saved/format1/static_history.json"
+    );
+    let mut engine = Engine::<StaticHistoryPolicy>::restore(
+        StaticHistoryPolicy::new(),
+        &SavedState::from_json(FORMAT1_HISTORY).expect("reads"),
+    )
+    .expect("restores");
+    history_run(&mut engine, &["resume_deep"]);
+    assert_eq!(engine.get_current_state(), StaticHistoryState::Burst);
 }
 
 #[test]
@@ -1373,7 +1513,11 @@ const SHARED_TIMERS_MIDWAY: &str = include_str!(
 const SAVED_AT_MS: u64 = 1_700_000_000_000;
 
 fn timers() -> Engine<StaticTimersPolicy> {
-    let mut engine = Engine::new(StaticTimersPolicy::new());
+    let mut engine = Engine::new(
+        StaticTimersPolicy::new()
+            .with_session_id(ROOT)
+            .expect("an Nmtoken"),
+    );
     engine.set_clock(SceClock::Manual(0));
     engine.initialize();
     engine
@@ -1450,6 +1594,20 @@ fn a_restored_machine_delivers_each_waiting_send_when_its_moment_comes() {
     engine.advance_time_ms(3000);
     assert_eq!(engine.policy().trace(), 1243, "`timeout`, at 4500 ms");
     assert!(engine.is_in_final_state());
+}
+
+#[test]
+fn a_waiting_send_saved_in_format_1_is_delivered_when_its_moment_comes() {
+    const FORMAT1_TIMERS: &str = include_str!(
+        "../../../../sce-build/tests/fixtures/static_datamodel/saved/format1/static_timers.json"
+    );
+    let mut engine = timers_restored(FORMAT1_TIMERS, 500);
+    engine.advance_time_ms(499);
+    assert_eq!(engine.policy().trace(), 0, "`inner` is not due yet");
+    engine.advance_time_ms(1);
+    assert_eq!(engine.policy().trace(), 1, "`inner`, at 500 ms");
+    engine.advance_time_ms(4000);
+    assert_eq!(engine.policy().trace(), 1243);
 }
 
 #[test]

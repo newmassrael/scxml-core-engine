@@ -4,6 +4,7 @@
 {% include 'license_header.rs.jinja2' %}
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
 {%- import '_macros/rust_entry_target.jinja2' as et %}
+{%- from 'invoke_macros.rs.jinja2' import child_engine_type, child_persist_trait %}
 
 {% if no_std %}
 // SCE Protocol-Synthesis RFC §synth-5-J-2: no_std variant of the statechart
@@ -290,6 +291,20 @@ impl{{ policy_generics_decl }} {{ machine_name }}Observe for Engine<{{ machine_n
 
 {% if static_saved_shape and not no_std %}
 {% set history_type = (machine_name ~ "History") if model.history_states else "::sce_rust_runtime::NoHistory" %}
+{# The value a saved state holds for the variable `field`, read as the field's
+   own type — one spelling for the judge of a saved state and for the restore
+   that writes what it read. #}
+{% macro saved_read(field) -%}
+{% if field.bound is not none and field.saved_type == "string" -%}
+::sce_rust_runtime::saved_state::bounded_string(saved.variable("{{ field.id }}")?, "{{ field.id }}", {{ field.bound }})?
+{%- elif field.bound is not none and field.saved_type == "bytes" -%}
+::sce_rust_runtime::saved_state::bounded_bytes(saved.variable("{{ field.id }}")?, "{{ field.id }}", {{ field.bound }})?
+{%- elif field.bound is not none -%}
+::sce_rust_runtime::saved_state::bounded(saved.variable("{{ field.id }}")?, "{{ field.id }}", {{ field.bound }})?
+{%- else -%}
+::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("{{ field.id }}")?, "{{ field.id }}")?
+{%- endif %}
+{%- endmacro %}
 // ── SCE Accepted Subset §2.15: saving a sce-static machine and restoring it ──
 {% for enum in static_enums %}
 
@@ -382,9 +397,11 @@ pub trait {{ machine_name }}Persist: Sized {
 
     /// The machine's whole state, each delayed `<send>` still waiting written
     /// as the moment it comes due on the wall clock whose reading now is
-    /// `wall_now_ms`, in milliseconds since the Unix epoch. Refused for a
-    /// machine that is not running, and for one whose last macrostep stopped
-    /// at the microstep ceiling.
+    /// `wall_now_ms`, in milliseconds since the Unix epoch, and each running
+    /// child saved inside it with its own whole state (docs/adr/0045). Refused
+    /// for a machine that is not running, for one whose last macrostep, or a
+    /// child's, stopped at the microstep ceiling, and for one with no session
+    /// id (`with_session_id`).
     fn save_at(&self, wall_now_ms: u64) -> Result<::sce_rust_runtime::saved_state::SavedState, ::sce_rust_runtime::saved_state::StateRefusal>;
 
     /// [`save_at`](Self::save_at) at the host's wall clock now.
@@ -396,12 +413,24 @@ pub trait {{ machine_name }}Persist: Sized {
         self.save_at(::sce_rust_runtime::saved_state::wall_clock_ms())
     }
 
+    /// Refuse `saved` unless a machine of this document could restore it —
+    /// its shape and revisions, its history, every variable, its
+    /// configuration, queues and invocations, and each running child by the
+    /// document that child runs, to any depth — building nothing
+    /// (docs/adr/0045, section 3, step 1). What a parent's restore asks of
+    /// each child it holds before it builds any of them.
+    fn judge(
+        saved: &::sce_rust_runtime::saved_state::SavedState,
+    ) -> Result<(), ::sce_rust_runtime::saved_state::StateRefusal>;
+
     /// A machine of `policy` standing where `saved` left one, measuring time
     /// by `clock` and told by `wall_now_ms` what time it is on the wall clock
     /// the saved `due`s were written against: a waiting send comes due when
     /// its saved moment does, and one already due comes due now. No
     /// `<onentry>` runs and no `<data>` is evaluated: the saved run already
-    /// did both.
+    /// did both. The session carries on under its saved id, and each running
+    /// child a format-2 state holds is resumed where it stood; a format-1
+    /// state's children start again from their beginning.
     fn restore_with(
         policy: Self::Policy,
         saved: &::sce_rust_runtime::saved_state::SavedState,
@@ -526,12 +555,32 @@ impl{{ policy_generics_decl }} {{ machine_name }}Persist for Engine<{{ machine_n
 {% endfor %}
             ],
             ::sce_rust_runtime::saved_state::save_history(self.policy(), Self::HISTORIES),
+{% if model.invokes | scxml_family %}
+            // docs/adr/0045: each running child, with its whole state.
+            self.policy().saved_children(wall_now_ms)?,
+{% else %}
+            Vec::new(),
+{% endif %}
             wall_now_ms,
         )
     }
 
+    fn judge(
+        saved: &::sce_rust_runtime::saved_state::SavedState,
+    ) -> Result<(), ::sce_rust_runtime::saved_state::StateRefusal> {
+        // What a restore reads, read and let go: the shape and the revisions,
+        // the history, every variable, and then the configuration, the queues,
+        // the invocations and each running child by its own document.
+        let saved = &::sce_rust_runtime::saved_state::upgrade(saved, &Self::SHAPE)?;
+        ::sce_rust_runtime::saved_state::restore_history::<{{ machine_name }}Policy{{ policy_generics_use }}>(saved, Self::HISTORIES)?;
+{% for field in static_fields %}
+        let _: {{ field.ty }} = {{ saved_read(field) }};
+{% endfor %}
+        ::sce_rust_runtime::saved_state::judge::<{{ machine_name }}Policy{{ policy_generics_use }}>(saved)
+    }
+
     fn restore_with(
-{% if static_fields or model.history_states %}
+{% if static_fields or model.history_states or model.invokes | scxml_family %}
         mut policy: {{ machine_name }}Policy{{ policy_generics_use }},
 {% else %}
         policy: {{ machine_name }}Policy{{ policy_generics_use }},
@@ -553,15 +602,7 @@ impl{{ policy_generics_decl }} {{ machine_name }}Persist for Engine<{{ machine_n
         ::sce_rust_runtime::saved_state::restore_history::<{{ machine_name }}Policy{{ policy_generics_use }}>(saved, Self::HISTORIES)?;
 {% endif %}
 {% for field in static_fields %}
-{% if field.bound is not none and field.saved_type == "string" %}
-        policy.{{ field.name }} = ::sce_rust_runtime::saved_state::bounded_string(saved.variable("{{ field.id }}")?, "{{ field.id }}", {{ field.bound }})?;
-{% elif field.bound is not none and field.saved_type == "bytes" %}
-        policy.{{ field.name }} = ::sce_rust_runtime::saved_state::bounded_bytes(saved.variable("{{ field.id }}")?, "{{ field.id }}", {{ field.bound }})?;
-{% elif field.bound is not none %}
-        policy.{{ field.name }} = ::sce_rust_runtime::saved_state::bounded(saved.variable("{{ field.id }}")?, "{{ field.id }}", {{ field.bound }})?;
-{% else %}
-        policy.{{ field.name }} = ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("{{ field.id }}")?, "{{ field.id }}")?;
-{% endif %}
+        policy.{{ field.name }} = {{ saved_read(field) }};
 {% endfor %}
 {% if model.history_states %}
         for (recorded, states) in history {
@@ -572,6 +613,10 @@ impl{{ policy_generics_decl }} {{ machine_name }}Persist for Engine<{{ machine_n
             }
         }
 {% endif %}
+{% for invoke_info in model.invokes | scxml_family %}
+        // A start after the restore is numbered on from the saved count.
+        policy.invoke_starts_{{ invoke_info.field_suffix }} = saved.invoke_start("{{ invoke_info.invoke_id | escape_rust }}");
+{% endfor %}
         ::sce_rust_runtime::saved_state::enter(policy, saved, clock, wall_now_ms)
     }
 }
@@ -886,7 +931,10 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
             {{ field.name }},
 {% endfor %}
 {% if not no_std %}
-            session_id: None,
+            // docs/adr/0045: an id bound at load, drawn where the target has a
+            // source of randomness; the host gives one with `with_session_id`,
+            // and a parent gives its child `<parent>.<invokeid>`.
+            session_id: ::sce_rust_runtime::helpers::session_id::drawn(),
 {% endif %}
 {% if model.needs_script_engine %}
             script_engine_initialized: false,
@@ -961,6 +1009,30 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
         Self::construct(actions)
     }
 {% endif %}
+{% endif %}
+{% if not no_std %}
+
+    /// This session's id given by its host, in place of the one drawn when the
+    /// machine was built (docs/adr/0045, "Questions the owner answered" 2): the
+    /// host's own name for the machine, say, or a fixed id a test holds a saved
+    /// text to. Called before the machine starts, since `_sessionid` is bound
+    /// at load and kept until the session ends.
+    ///
+    /// On a target with no source of randomness (`wasm32-unknown-unknown`) no
+    /// id is drawn, and the host gives one here: a machine there that is given
+    /// none has no id to save or to be addressed by.
+    ///
+    /// # Errors
+    ///
+    /// An id that is not an XML Nmtoken (the empty text, a space, a `#`) is
+    /// refused with the reason, and nothing replaces it.
+    pub fn with_session_id(
+        mut self,
+        session_id: &str,
+    ) -> Result<Self, ::sce_rust_runtime::helpers::session_id::SessionIdRefusal> {
+        self.session_id = Some(::sce_rust_runtime::helpers::session_id::given(session_id)?);
+        Ok(self)
+    }
 {% endif %}
 {% if has_native_actions %}
 
@@ -1412,9 +1484,11 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
 {% if static_saved_shape and not no_std and model.invokes | scxml_family %}
 
     // SCE Accepted Subset 2.15, "Saving and restoring": a saved state names the
-    // `<invoke>`s whose child is running, and a restore starts each again. This
-    // document saves only when every invoke is a static child session, a hybrid
-    // one among declared candidates, or one a declared host invoker serves.
+    // `<invoke>`s whose child is running — a format-2 one with the child's whole
+    // state, which a restore resumes; a format-1 one by id, which a restore
+    // starts again. This document saves only when every invoke is a static
+    // child session, a hybrid one among declared candidates, or one a declared
+    // host invoker serves, and every child it can start saves too.
     fn invoke_owner(invoke_id: &str) -> Option<Self::State> {
         match invoke_id {
 {% for invoke_info in model.invokes | scxml_family %}
@@ -1450,6 +1524,50 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
 {% endfor %}
             _ => {}
         }
+    }
+
+    // docs/adr/0045: how many times each `<invoke>` has started here, for each
+    // started at least once, in document order.
+    fn invoke_starts(&self) -> Vec<(&'static str, u64)> {
+        let mut starts = Vec::new();
+{% for invoke_info in model.invokes | scxml_family %}
+        if self.invoke_starts_{{ invoke_info.field_suffix }} > 0 {
+            starts.push(("{{ invoke_info.invoke_id | escape_rust }}", self.invoke_starts_{{ invoke_info.field_suffix }}));
+        }
+{% endfor %}
+        starts
+    }
+
+    // docs/adr/0045, section 3, step 1: a running child a saved state holds,
+    // judged by the document its `<invoke>` starts there, building nothing.
+    fn judge_child(
+        child: &::sce_rust_runtime::saved_state::SavedChild,
+    ) -> Result<(), ::sce_rust_runtime::saved_state::StateRefusal> {
+        match (child.id.as_str(), child.document.as_str()) {
+{% for invoke_info in model.invokes | scxml_family %}
+{% if invoke_info.candidates %}
+{% for candidate in invoke_info.candidates %}
+            ("{{ invoke_info.invoke_id | escape_rust }}", "{{ candidate.stem | escape_rust }}") => <{{ child_engine_type(candidate.stem, candidate.child_host_type) }} as {{ child_persist_trait(candidate.stem) }}>::judge(&child.session),
+{% endfor %}
+{% else %}
+            ("{{ invoke_info.invoke_id | escape_rust }}", "{{ invoke_info.child_name | escape_rust }}") => <{{ child_engine_type(invoke_info.child_name, invoke_info.child_host_type) }} as {{ child_persist_trait(invoke_info.child_name) }}>::judge(&child.session),
+{% endif %}
+{% endfor %}
+            (id, document) => Err(::sce_rust_runtime::saved_state::StateRefusal::new(format!(
+                "invokes names '{id}' running '{document}', a document that `<invoke>` does not start"
+            ))),
+        }
+    }
+
+    // docs/adr/0045, section 3, step 3: a running child built as starting it
+    // builds it, then restored where it stood in place of initialized.
+    fn resume_child(
+        &mut self,
+        child: &::sce_rust_runtime::saved_state::SavedChild,
+        engine: &mut Engine<Self>,
+        wall_now_ms: u64,
+    ) -> Result<(), ::sce_rust_runtime::saved_state::StateRefusal> {
+        self.do_resume_child(child, engine, wall_now_ms)
     }
 {% endif %}
 {% if static_saved_shape and not no_std and model.invokes | host_invoker %}
@@ -1578,6 +1696,16 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
     // invoking parent installs is the link to it.
     fn has_parent_session(&self) -> bool {
         self.parent_external_queue.is_some()
+    }
+
+    // docs/adr/0045: this session's own id, as a saved state holds it.
+    fn own_session_id(&self) -> &str {
+        self.session_id.as_deref().unwrap_or("")
+    }
+
+    // docs/adr/0045: a restored session carries on under its saved id.
+    fn bind_session_id(&mut self, session_id: &str) {
+        self.session_id = Some(session_id.to_string());
     }
 {% endif %}
 {% if model.invokes | scxml or model.invokes | hybrid %}

@@ -29,16 +29,29 @@
 {% endif %}
 {% endmacro %}
 
+{# docs/adr/0045: the engine of a child session, named by the stem of the
+   document it runs and the type of the host it is built with (absent for a
+   child that declares no act), as the parent's slot for it names it; and the
+   trait that engine is saved and restored through. #}
+{% macro child_engine_type(stem, host_type) -%}
+::sce_rust_runtime::Engine<super::{{ stem }}_sm::{{ stem | to_machine_name }}Policy{% if host_type %}<{{ host_type }}>{% endif %}>
+{%- endmacro %}
+{% macro child_persist_trait(stem) -%}
+super::{{ stem }}_sm::{{ stem | to_machine_name }}Persist
+{%- endmacro %}
+
 {# W3C SCXML 6.4: defer the start of the static `<invoke type="scxml">`
    `invoke_info`, held by the state `state_id`, to the end of the macrostep.
 
    One body for the two things that start a child. Entering the state defers it
-   from `execute_entry_actions`; a restore (SCE Accepted Subset 2.15, "Saving
-   and restoring") defers each running invocation of a saved state from
-   `restart_invoke`. The child is not saved, so what a restore needs is exactly
-   what entering the state does, and two spellings of it would be two places a
-   change to one is forgotten in the other. A state that exits before the
-   macrostep ends cancels the entry (`cancel_invokes_for_state`) in either case.
+   from `execute_entry_actions`; a restore of a format-1 state (SCE Accepted
+   Subset 2.15, "Saving and restoring") defers each running invocation it lists
+   from `restart_invoke`. Such a state holds nothing of the child, so what that
+   restore needs is exactly what entering the state does, and two spellings of
+   it would be two places a change to one is forgotten in the other. A format-2
+   state holds the child, which a restore resumes instead (`do_resume_child`).
+   A state that exits before the macrostep ends cancels the entry
+   (`cancel_invokes_for_state`) in either case.
 
    Emitted as an inherent method of the policy, once per invoke, named by the
    invoke's `field_suffix`. #}

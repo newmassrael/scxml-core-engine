@@ -15,8 +15,9 @@
 //
 // Driven entirely on `SceClock::Manual`: no case sleeps, and none can be decided
 // by how loaded the build machine is. The shared instance
-// `saved/statechart_static_host_invoke_running.json` is the text the Kotlin suite
-// writes and restores too.
+// `saved/statechart_static_host_invoke_running.json` is the format-2 text every
+// backend writes (docs/adr/0045); the format-1 text of the same run, under
+// `saved/format1/`, still restores.
 
 use std::sync::{Arc, Mutex};
 
@@ -81,10 +82,15 @@ fn starts(log: &Log) -> Vec<HostInvokeRequest> {
         .collect()
 }
 
-/// A machine standing in `working`, its invocation started with token 0.
+/// A machine standing in `working`, its invocation started with token 0, given
+/// the session id the shared format-2 fixtures name their root by.
 fn working() -> (Engine<Policy>, Log) {
     let log = Log::default();
-    let mut engine = Engine::new(Policy::new());
+    let mut engine = Engine::new(
+        Policy::new()
+            .with_session_id("fixture-root")
+            .expect("an Nmtoken"),
+    );
     engine.set_clock(SceClock::Manual(0));
     register(&mut engine, &log);
     engine.initialize();
@@ -147,14 +153,20 @@ fn a_machine_is_saved_with_the_request_its_invocation_was_started_with() {
 
 #[test]
 fn a_restore_asks_nothing_of_the_host_until_the_machine_is_driven() {
-    let (mut engine, log) = restored(SHARED_RUNNING, 1000);
-    assert!(told(&log).is_empty(), "the restore itself calls nobody");
-    assert_eq!(standing_in(&engine), [State::Working]);
+    const FORMAT1_RUNNING: &str = include_str!(
+        "../../../../sce-build/tests/fixtures/host_processor/saved/format1/statechart_static_host_invoke_running.json"
+    );
+    // From the format-2 text, and from the format-1 text of the same run.
+    for text in [SHARED_RUNNING, FORMAT1_RUNNING] {
+        let (mut engine, log) = restored(text, 1000);
+        assert!(told(&log).is_empty(), "the restore itself calls nobody");
+        assert_eq!(standing_in(&engine), [State::Working]);
 
-    // The first macrostep starts it, where an invocation the document entered
-    // would have started.
-    engine.tick();
-    assert_eq!(starts(&log).len(), 1);
+        // The first macrostep starts it, where an invocation the document entered
+        // would have started.
+        engine.tick();
+        assert_eq!(starts(&log).len(), 1);
+    }
 }
 
 #[test]

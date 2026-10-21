@@ -611,10 +611,11 @@ class StaticDatamodelTest {
     /**
      * The saved state the shared fixture holds — the text every backend must
      * save after the same run and must restore from, which is what makes a
-     * state saved by one backend a state another can read.
+     * state saved by one backend a state another can read. Format 1, which
+     * this backend writes until its step of docs/adr/0045 moves it to format 2.
      */
     private fun sharedFixture(machine: String): String =
-        File(repoRoot(), "sce-build/tests/fixtures/static_datamodel/saved/$machine.json").readText().trim()
+        File(repoRoot(), "sce-build/tests/fixtures/static_datamodel/saved/format1/$machine.json").readText().trim()
 
     // Found by walking up rather than by a fixed depth, because Gradle's
     // working directory is the project's and that is a build detail.

@@ -36,7 +36,7 @@ class AGeneratedSendIdSurvivesARestoreTest {
 
     private val shared: String = File(
         repoRoot(),
-        "sce-build/tests/fixtures/static_datamodel/saved/static_send_idlocation_armed.json",
+        "sce-build/tests/fixtures/static_datamodel/saved/format1/static_send_idlocation_armed.json",
     ).readText().trim()
 
     private fun repoRoot(): File =

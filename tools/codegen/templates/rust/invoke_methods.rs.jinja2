@@ -1,7 +1,7 @@
 {# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 {% from 'param_macros.rs.jinja2' import collect_params_into, collect_typed_param_into %}
-{% from 'invoke_macros.rs.jinja2' import defer_scxml_invoke_fn %}
+{% from 'invoke_macros.rs.jinja2' import defer_scxml_invoke_fn, child_engine_type, child_persist_trait %}
 
 {% macro hybrid_child_tick(invoke_info, slot) %}
         if !self.pending_done_invoke_{{ invoke_info.field_suffix }} {
@@ -248,27 +248,149 @@
 {% macro invoke_seed_static_child(invoke_info, model, machine_name) %}
 {{ seed_static_child(invoke_info.child_name, invoke_info.params, [], model, machine_name) }}
 {% endmacro %}
-{% macro hybrid_child_start(invoke_info, child, child_mod, child_policy_type, slot, model, machine_name) %}
-                // W3C SCXML 6.4: Create pre-generated child (Rust AOT: child resolved at codegen time)
-                // Engine DI Parity RFC: pass parent's script engine when child needs it.
-{# The host the child performs its acts through is asked of the parent's own host
-   here, where the invocation starts, so a state invoked again is given a fresh
-   one (docs/adr/0005, decision 6). It leads the policy's parameters. #}
+{#
+    W3C SCXML 6.4 + docs/adr/0045: build the policy of the child session that
+    `child` describes — the invoke itself for a static child, the chosen
+    candidate for a hybrid one — and link it to this session. One body for the
+    two things that build a child: the invocation starting it, and a restore
+    resuming it where it stood (`do_resume_child`).
+
+    The child takes the host its parent's host answers for it, the buffer its
+    `#_parent` events wait in, the id it is started under (`started_under`, an
+    expression: the start's `pending.invoke_id`, or the id a saved state
+    carries) and its session id, `<this session>.<started under>`. Binds
+    `child_policy` and `child_session_id`.
+#}
+{% macro build_child_policy(child, child_mod, child_policy_type, started_under) %}
+                // W3C SCXML 6.5: Generate child session ID for finalize origin matching
+                let child_session_id = format!("{}.{}",
+                    self.session_id.as_deref().unwrap_or(""),
+                    {{ started_under }});
+
+                // W3C SCXML 6.4: Create child state machine
+                // Engine DI Parity RFC: forward parent's script engine to child when the
+                // child Policy was generated with `model.needs_script_engine = true`.
 {% if child.child_needs_script_engine %}
                 let mut child_policy = super::{{ child_mod }}::{{ child_policy_type }}Policy::new({% if child.child_host_call %}{{ child.child_host_call }}, {% endif %}self.script_engine.clone());
 {% else %}
                 let mut child_policy = super::{{ child_mod }}::{{ child_policy_type }}Policy::new({{ child.child_host_call }});
 {% endif %}
+                // W3C SCXML 6.4: Pass parent session info to child for #_parent routing
                 child_policy.parent_external_queue = Some(engine.get_external_queue_handle());
-                child_policy.invoke_id = pending.invoke_id.clone();
+                child_policy.invoke_id = {{ started_under }}.clone();
                 child_policy.child_session_id = child_session_id.clone();
 
-                // W3C SCXML C.1, as for a static child: the candidate adopts the
-                // id its parent recorded for it, which comes from the tree alone
-                // (docs/adr/0045) — this session's id and the id of this start.
-                if child_policy.session_id.is_none() {
-                    child_policy.session_id = Some(child_session_id.clone());
-                }
+                // W3C SCXML C.1: the child adopts the id its parent recorded
+                // for it. The parent mints `parentSession.invokeId` and keys
+                // `active_invokes` on it, so an event from this child reaches
+                // the parent carrying that id as its origin; if the child also
+                // minted an id of its own, the location it publishes in
+                // `_ioprocessors` and the origin the parent sees would be two
+                // names for one session that can never be compared — which is
+                // exactly what C.1 requires of them. It replaces the id drawn
+                // when the child's policy was built (docs/adr/0045): a child's
+                // id comes from the tree alone.
+                child_policy.session_id = Some(child_session_id.clone());
+{% endmacro %}
+{# §scxml-6.5: the `<finalize>` body of the static invoke `invoke_info`, as
+   the expression `track_child` stores. It is AUTHORED content and reaches the
+   engine like every other authored expression — through the ECMAScript
+   frontend. The parser hands it over as JavaScript
+   (`actions_to_javascript`), and this line used to escape that text and
+   pass it to a Lua engine unlowered, so a `<finalize>` worked only when
+   its JavaScript happened to be valid Lua as well. W3C test233's body is
+   one bare assignment (`Var1 = _event.data.aParam`), which is valid in
+   both, and it is the only `<finalize>` document with executable content
+   in the whole corpus — so the surface passed on a coincidence.
+   The C++ Interpreter never had the gap: it keeps the finalize as XML and
+   re-parses it as executable content, which lowers each action normally. #}
+{% macro static_finalize(invoke_info) -%}
+"{{ invoke_info.finalize_content | to_lua_script | escape_rust }}".to_string()
+{%- endmacro %}
+{#
+    W3C SCXML 6.4.1: track the child session of the invoke `invoke_info` in
+    `active_invokes`, before it initializes or is restored, under the id
+    `_event.invokeid` names it by: the id it was started under
+    (`started_under`) for an invoke that keeps it in an `idlocation`, the
+    document's own id otherwise. `finalize` is the `<finalize>` body the
+    parent runs for the child's events, as an expression. Takes
+    `child_session_id`.
+#}
+{% macro track_child(invoke_info, started_under, finalize, keyed_by_started_id) %}
+                self.active_invokes.insert("{{ invoke_info.invoke_id }}".to_string(),
+                    sce_rust_runtime::invoke::ChildSession {
+                        session_id: child_session_id,
+{% if keyed_by_started_id %}
+                        // W3C SCXML 6.4.1: idlocation uses full runtime ID for _event.invokeid (test 338)
+                        invoke_id: {{ started_under }}.clone(),
+{% else %}
+                        // W3C SCXML 6.4: Element invoke_id for _event.invokeid (test 228)
+                        invoke_id: "{{ invoke_info.invoke_id }}".to_string(),
+{% endif %}
+                        parent_session_id: self.session_id.clone().unwrap_or_default(),
+                        autoforward: {{ 'true' if invoke_info.autoforward else 'false' }},
+                        finalize_script: {{ finalize }},
+                    },
+                );
+{% endmacro %}
+{#
+    docs/adr/0045, section 3, step 3: resume the child a saved state holds for
+    the invoke `invoke_info` in `slot`, from the document whose stem is
+    `stem`: built as starting it builds it (`build_child_policy`,
+    `track_child`), then restored from its saved session in place of
+    initialized — no `<onentry>`, no `<data>`, no argument read, no
+    `idlocation` written, nothing sent.
+#}
+{% macro resume_child_arm(invoke_info, child, stem, host_type, slot, finalize, keyed_by_started_id, mesh_document) %}
+            ("{{ invoke_info.invoke_id | escape_rust }}", "{{ stem | escape_rust }}") => {
+{{ build_child_policy(child, stem ~ "_sm", stem | to_machine_name, "child.invoke_id") }}
+{{ track_child(invoke_info, "child.invoke_id", finalize, keyed_by_started_id) }}
+                let mut child_engine = <{{ child_engine_type(stem, host_type) }} as {{ child_persist_trait(stem) }}>::restore_with(
+                    child_policy,
+                    &child.session,
+                    engine.clock(),
+                    wall_now_ms,
+                )?;
+                child_engine.set_completion_callback(|| {});
+                // Child sessions in Mesh (SCE_MESH.md): the router of the
+                // resumed child, asked of this machine's factory as a start
+                // asks it.
+                engine.start_child_mesh(&mut child_engine, "{{ invoke_info.invoke_id }}", "{{ mesh_document }}");
+                self.{{ slot }} = Some(Box::new(child_engine));
+                Ok(())
+            }
+{% endmacro %}
+{#
+    docs/adr/0045: the running child of the invoke `invoke_info` in `slot`, from
+    the document whose stem is `stem`, saved through that document with its
+    whole state. A child whose `#_parent` events still wait in its buffer
+    refuses the save, which the generated drive never leaves it in.
+#}
+{% macro saved_child(invoke_info, stem, host_type, slot) %}
+        if !self.pending_done_invoke_{{ invoke_info.field_suffix }} {
+            if let Some(ref child) = self.{{ slot }} {
+                ::sce_rust_runtime::helpers::invoke_processing::nothing_in_transit(
+                    &child.policy().parent_external_queue,
+                    "{{ invoke_info.invoke_id | escape_rust }}",
+                )?;
+                let index = children.len();
+                children.push(::sce_rust_runtime::saved_state::SavedChild {
+                    id: "{{ invoke_info.invoke_id | escape_rust }}".to_string(),
+                    start: self.invoke_starts_{{ invoke_info.field_suffix }},
+                    invoke_id: child.policy().invoke_id.clone(),
+                    document: "{{ stem | escape_rust }}".to_string(),
+                    session: <{{ child_engine_type(stem, host_type) }} as {{ child_persist_trait(stem) }}>::save_at(child, wall_now_ms)
+                        .map_err(|refusal| refusal.within(&format!("invokes[{index}].session")))?,
+                });
+            }
+        }
+{% endmacro %}
+{% macro hybrid_child_start(invoke_info, child, child_mod, child_policy_type, slot, model, machine_name) %}
+                // W3C SCXML 6.4: Create pre-generated child (Rust AOT: child resolved at codegen time)
+{# The host the child performs its acts through is asked of the parent's own host
+   here, where the invocation starts, so a state invoked again is given a fresh
+   one (docs/adr/0005, decision 6). It leads the policy's parameters. #}
+{{ build_child_policy(child, child_mod, child_policy_type, "pending.invoke_id") }}
 
 {{ invoke_seed_child(invoke_info, child, model, machine_name) }}
 {% if child.seeds or child.unkept %}
@@ -276,15 +398,7 @@
 {% endif %}
 
                 // W3C SCXML 6.4.1: Track active invoke session
-                self.active_invokes.insert("{{ invoke_info.invoke_id }}".to_string(),
-                    sce_rust_runtime::invoke::ChildSession {
-                        session_id: child_session_id,
-                        invoke_id: "{{ invoke_info.invoke_id }}".to_string(),
-                        parent_session_id: self.session_id.clone().unwrap_or_default(),
-                        autoforward: {{ 'true' if invoke_info.autoforward else 'false' }},
-                        finalize_script: String::new(),
-                    },
-                );
+{{ track_child(invoke_info, "pending.invoke_id", "String::new()", false) }}
 
                 let mut child_engine = sce_rust_runtime::Engine::new(child_policy);
                 // §scxml-6.4: the child's delayed sends are measured against
@@ -375,36 +489,7 @@
 {% for invoke_info in state.invokes | scxml %}
             if pending.document_id == "{{ invoke_info.invoke_id }}" {
 {{ invoke_namelist_guard(invoke_info, model, machine_name) }}
-
-                // W3C SCXML 6.5: Generate child session ID for finalize origin matching
-                let child_session_id = format!("{}.{}",
-                    self.session_id.as_deref().unwrap_or(""),
-                    pending.invoke_id);
-
-                // W3C SCXML 6.4: Create child state machine
-                // Engine DI Parity RFC: forward parent's script engine to child when the
-                // child Policy was generated with `model.needs_script_engine = true`.
-{% if invoke_info.child_needs_script_engine %}
-                let mut child_policy = super::{{ invoke_info.child_name }}_sm::{{ invoke_info.child_name | to_machine_name }}Policy::new({% if invoke_info.child_host_call %}{{ invoke_info.child_host_call }}, {% endif %}self.script_engine.clone());
-{% else %}
-                let mut child_policy = super::{{ invoke_info.child_name }}_sm::{{ invoke_info.child_name | to_machine_name }}Policy::new({{ invoke_info.child_host_call }});
-{% endif %}
-                // W3C SCXML 6.4: Pass parent session info to child for #_parent routing
-                child_policy.parent_external_queue = Some(engine.get_external_queue_handle());
-                child_policy.invoke_id = pending.invoke_id.clone();
-                child_policy.child_session_id = child_session_id.clone();
-
-                // W3C SCXML C.1: the child adopts the id its parent recorded
-                // for it. The parent mints `parentSession.invokeId` and keys
-                // `active_invokes` on it, so an event from this child reaches
-                // the parent carrying that id as its origin; if the child also
-                // minted an id of its own, the location it publishes in
-                // `_ioprocessors` and the origin the parent sees would be two
-                // names for one session that can never be compared — which is
-                // exactly what C.1 requires of them.
-                if child_policy.session_id.is_none() {
-                    child_policy.session_id = Some(child_session_id.clone());
-                }
+{{ build_child_policy(invoke_info, invoke_info.child_name ~ "_sm", invoke_info.child_name | to_machine_name, "pending.invoke_id") }}
 
 {{ invoke_seed_child(invoke_info, invoke_info, model, machine_name) }}
 {% if static_fields %}
@@ -412,32 +497,7 @@
 {% endif %}
 
                 // W3C SCXML 6.4.1: Track active invoke session BEFORE initialize
-                self.active_invokes.insert("{{ invoke_info.invoke_id }}".to_string(),
-                    sce_rust_runtime::invoke::ChildSession {
-                        session_id: child_session_id,
-{% if invoke_info.idlocation %}
-                        // W3C SCXML 6.4.1: idlocation uses full runtime ID for _event.invokeid (test 338)
-                        invoke_id: pending.invoke_id.clone(),
-{% else %}
-                        // W3C SCXML 6.4: Element invoke_id for _event.invokeid (test 228)
-                        invoke_id: "{{ invoke_info.invoke_id }}".to_string(),
-{% endif %}
-                        parent_session_id: self.session_id.clone().unwrap_or_default(),
-                        autoforward: {{ 'true' if invoke_info.autoforward else 'false' }},
-{# §scxml-6.5: the `<finalize>` body is AUTHORED content and reaches the
-   engine like every other authored expression — through the ECMAScript
-   frontend. The parser hands it over as JavaScript
-   (`actions_to_javascript`), and this line used to escape that text and
-   pass it to a Lua engine unlowered, so a `<finalize>` worked only when
-   its JavaScript happened to be valid Lua as well. W3C test233's body is
-   one bare assignment (`Var1 = _event.data.aParam`), which is valid in
-   both, and it is the only `<finalize>` document with executable content
-   in the whole corpus — so the surface passed on a coincidence.
-   The C++ Interpreter never had the gap: it keeps the finalize as XML and
-   re-parses it as executable content, which lowers each action normally. #}
-                        finalize_script: "{{ invoke_info.finalize_content | to_lua_script | escape_rust }}".to_string(),
-                    },
-                );
+{{ track_child(invoke_info, "pending.invoke_id", static_finalize(invoke_info), invoke_info.idlocation) }}
 
                 let mut child_engine = sce_rust_runtime::Engine::new(child_policy);
                 // §scxml-6.4: the child's delayed sends are measured against
@@ -599,11 +659,6 @@
                 }
 {% endif %}
 {{ invoke_namelist_guard(invoke_info, model, machine_name) }}
-
-                // W3C SCXML 6.5: Generate child session ID
-                let child_session_id = format!("{}.{}",
-                    self.session_id.as_deref().unwrap_or(""),
-                    pending.invoke_id);
 
 {% if invoke_info.candidates %}
                 // §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: the value chooses
@@ -997,6 +1052,55 @@
             // Execute the finalize script
             let _ = se.evaluate_expression(&sid, &finalize_script);
 {% endif %}
+        }
+    }
+{% endif %}
+{% if static_saved_shape and not no_std and model.invokes | scxml_family %}
+
+    /// docs/adr/0045: each running child, saved through the document it runs
+    /// with its whole state, in document order — what a saved state holds in
+    /// place of the ids of format 1, and what a restore resumes.
+    pub fn saved_children(
+        &self,
+        wall_now_ms: u64,
+    ) -> Result<Vec<::sce_rust_runtime::saved_state::SavedChild>, ::sce_rust_runtime::saved_state::StateRefusal> {
+        let mut children = Vec::new();
+{% for invoke_info in model.invokes | scxml_family %}
+{% if invoke_info.candidates %}
+{% for candidate in invoke_info.candidates %}
+{{ saved_child(invoke_info, candidate.stem, candidate.child_host_type, "child_" ~ invoke_info.field_suffix ~ "_" ~ candidate.stem) }}
+{% endfor %}
+{% else %}
+{{ saved_child(invoke_info, invoke_info.child_name, invoke_info.child_host_type, "child_" ~ invoke_info.field_suffix) }}
+{% endif %}
+{% endfor %}
+        Ok(children)
+    }
+
+    // docs/adr/0045, section 3, step 3: the child a saved state holds, built as
+    // its start builds it and restored where it stood.
+    fn do_resume_child(
+        &mut self,
+        child: &::sce_rust_runtime::saved_state::SavedChild,
+        engine: &mut sce_rust_runtime::Engine<Self>,
+        wall_now_ms: u64,
+    ) -> Result<(), ::sce_rust_runtime::saved_state::StateRefusal> {
+        match (child.id.as_str(), child.document.as_str()) {
+{% for invoke_info in model.invokes | scxml_family %}
+{% if invoke_info.candidates %}
+{% for candidate in invoke_info.candidates %}
+{{ resume_child_arm(invoke_info, candidate, candidate.stem, candidate.child_host_type, "child_" ~ invoke_info.field_suffix ~ "_" ~ candidate.stem, "String::new()", false, candidate.stem) }}
+{% endfor %}
+{% elif invoke_info.kind == "Hybrid" %}
+{{ resume_child_arm(invoke_info, invoke_info, invoke_info.child_name, invoke_info.child_host_type, "child_" ~ invoke_info.field_suffix, "String::new()", false, "") }}
+{% else %}
+{% set mesh_document = invoke_info.child_name if not invoke_info.src.startswith('#') else "" %}
+{{ resume_child_arm(invoke_info, invoke_info, invoke_info.child_name, invoke_info.child_host_type, "child_" ~ invoke_info.field_suffix, static_finalize(invoke_info), invoke_info.idlocation, mesh_document) }}
+{% endif %}
+{% endfor %}
+            (id, document) => Err(::sce_rust_runtime::saved_state::StateRefusal::new(format!(
+                "invokes names '{id}' running '{document}', a document that `<invoke>` does not start"
+            ))),
         }
     }
 {% endif %}

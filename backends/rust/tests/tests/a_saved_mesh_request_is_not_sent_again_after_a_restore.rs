@@ -14,8 +14,9 @@
 // `error.invoke.ask` each leave it, counting in `answered` and `failed`.
 //
 // Driven entirely on `SceClock::Manual`: no case sleeps. The shared instance
-// `saved/statechart_static_mesh_request_asking.json` is the text the Kotlin suite
-// writes and restores too.
+// `saved/statechart_static_mesh_request_asking.json` is the format-2 text every
+// backend writes (docs/adr/0045); `saved/format1/` holds the format-1 text of the
+// same run.
 
 use std::sync::{Arc, Mutex};
 
@@ -45,10 +46,15 @@ fn register(engine: &mut Engine<Policy>, log: &Log) {
     });
 }
 
-/// A machine whose request to `#motor` is in flight, the router having been handed it.
+/// A machine whose request to `#motor` is in flight, the router having been handed
+/// it, given the session id the shared format-2 fixtures name their root by.
 fn asking() -> (Engine<Policy>, Log) {
     let log = Log::default();
-    let mut engine = Engine::new(Policy::new());
+    let mut engine = Engine::new(
+        Policy::new()
+            .with_session_id("fixture-root")
+            .expect("an Nmtoken"),
+    );
     engine.set_clock(SceClock::Manual(0));
     register(&mut engine, &log);
     engine.initialize();

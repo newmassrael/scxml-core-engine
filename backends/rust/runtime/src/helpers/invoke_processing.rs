@@ -31,6 +31,36 @@ use crate::Engine;
 /// Matches the `parent_external_queue` field on generated policies.
 pub type ParentEventQueue = Arc<Mutex<Vec<(String, String)>>>;
 
+/// docs/adr/0045, section 3: refuse the save of the child the invoke
+/// `invoke_id` started while an event it sent to `#_parent` is still in its
+/// buffer, `queue`, neither in the child's past nor in the parent's queue.
+///
+/// The generated parent drains the buffer after every drive of the child, so a
+/// tree saved at a boundary of its root holds nothing in transit, and this is
+/// never reached by generated code: a refusal is a defect of the generator,
+/// never a timing a host can meet, and leaving the event out would lose it.
+pub fn nothing_in_transit(
+    queue: &Option<ParentEventQueue>,
+    invoke_id: &str,
+) -> Result<(), crate::saved_state::StateRefusal> {
+    let held = queue
+        .as_ref()
+        .map_or(0, |q| q.lock().expect(PARENT_QUEUE_HELD).len());
+    if held == 0 {
+        Ok(())
+    } else {
+        Err(crate::saved_state::StateRefusal::new(format!(
+            "{held} event(s) the child '{invoke_id}' sent to its parent are in transit, which \
+             the generated parent drains after every drive of its child"
+        )))
+    }
+}
+
+/// Why a child's buffer of events for its parent can always be locked: no
+/// thread holds it across a panic, so a poisoned one is a defect.
+const PARENT_QUEUE_HELD: &str =
+    "a child's buffer of events for its parent is never held across a panic";
+
 /// §scxml-6.4: Drain child-to-parent events and raise them in the parent engine.
 ///
 /// 1:1 port of the C++ event draining pattern from `InvokeProcessingAlgorithms`.

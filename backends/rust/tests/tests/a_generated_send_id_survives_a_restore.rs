@@ -13,8 +13,9 @@
 // `second.due`, each under an id written to `first` and `second`, and
 // `cancel.first` and `cancel.second` remove the send whose id the variable holds.
 // Everything runs on a host-owned clock, so no case sleeps. The shared fixture
-// `saved/static_send_idlocation_armed.json` is the text the Kotlin suite writes
-// and restores too.
+// `saved/static_send_idlocation_armed.json` is the format-2 text every backend
+// writes (docs/adr/0045), its root given the id the fixtures name it by, and
+// `saved/format1/` holds the format-1 text of the same run, which still restores.
 
 use sce_rust_runtime::saved_state::SavedState;
 use sce_rust_runtime::{Engine, SceClock};
@@ -25,13 +26,19 @@ use sce_rust_tests::integration::static_datamodel::static_send_idlocation_sm::{
 const SHARED_ARMED: &str = include_str!(
     "../../../../sce-build/tests/fixtures/static_datamodel/saved/static_send_idlocation_armed.json"
 );
+const FORMAT1_ARMED: &str = include_str!(
+    "../../../../sce-build/tests/fixtures/static_datamodel/saved/format1/static_send_idlocation_armed.json"
+);
+
+/// The session id the shared format-2 fixtures give their root.
+const ROOT: &str = "fixture-root";
 
 /// The wall-clock moment the shared fixture was saved at: 2023-11-14T22:13:20Z.
 const SAVED_AT_MS: u64 = 1_700_000_000_000;
 
 /// A machine that has run `arm` once, on a clock the test owns.
 fn armed() -> Engine<Policy> {
-    let mut engine = Engine::new(Policy::new());
+    let mut engine = Engine::new(Policy::new().with_session_id(ROOT).expect("an Nmtoken"));
     engine.set_clock(SceClock::Manual(0));
     engine.initialize();
     send(&mut engine, "arm");
@@ -39,9 +46,13 @@ fn armed() -> Engine<Policy> {
 }
 
 fn restored() -> Engine<Policy> {
+    restored_from(SHARED_ARMED)
+}
+
+fn restored_from(text: &str) -> Engine<Policy> {
     Engine::<Policy>::restore_with(
         Policy::new(),
-        &SavedState::from_json(SHARED_ARMED).expect("reads"),
+        &SavedState::from_json(text).expect("reads"),
         SceClock::Manual(0),
         SAVED_AT_MS,
     )
@@ -73,11 +84,14 @@ fn a_machine_that_armed_two_sends_saves_the_ids_it_generated() {
 
 #[test]
 fn a_restored_send_is_cancelled_by_the_id_the_document_holds() {
-    let mut engine = restored();
-    send(&mut engine, "cancel.first");
-    engine.advance_time_ms(250);
-    assert_eq!(engine.policy().first_fired(), 0, "its send was removed");
-    assert_eq!(engine.policy().second_fired(), 1, "the other came due");
+    // From the format-2 text, and from the format-1 text of the same run.
+    for text in [SHARED_ARMED, FORMAT1_ARMED] {
+        let mut engine = restored_from(text);
+        send(&mut engine, "cancel.first");
+        engine.advance_time_ms(250);
+        assert_eq!(engine.policy().first_fired(), 0, "its send was removed");
+        assert_eq!(engine.policy().second_fired(), 1, "the other came due");
+    }
 }
 
 #[test]

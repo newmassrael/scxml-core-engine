@@ -40,7 +40,7 @@ class ASavedMeshRequestIsNotSentAgainAfterARestoreTest {
 
     private val shared: String = File(
         repoRoot(),
-        "sce-build/tests/fixtures/host_processor/saved/statechart_static_mesh_request_asking.json",
+        "sce-build/tests/fixtures/host_processor/saved/format1/statechart_static_mesh_request_asking.json",
     ).readText().trim()
 
     private fun repoRoot(): File =

@@ -1734,7 +1734,7 @@ mod tests {
             .expect("the machine saves");
         assert_eq!(
             shape.first, "f7e359f42783c9931d2c1dbf44f80fee16a403f0e56b70bbc26ff6874c901834",
-            "the first shape the shared fixture `saved/static_schema_pending_first.json` names"
+            "the first shape the shared fixture `saved/format1/static_schema_pending_first.json` names"
         );
         let records: Vec<(&str, u32, usize)> = shape
             .records

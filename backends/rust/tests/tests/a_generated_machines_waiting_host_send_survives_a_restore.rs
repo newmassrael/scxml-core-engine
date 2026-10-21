@@ -12,8 +12,11 @@
 // document, generated with the declaration: the send is armed by the code the
 // generator emitted, with its two typed `<param>`s read from the machine's
 // fields, and saved and restored by the `Persist` the generator emitted. The
-// Kotlin twin is `AGeneratedMachinesWaitingHostSendSurvivesARestoreTest`; the
-// text both write and read is `saved/statechart_static_delayed_host_send_waiting.json`.
+// Kotlin twin is `AGeneratedMachinesWaitingHostSendSurvivesARestoreTest`. The
+// text this backend writes is the format-2
+// `saved/statechart_static_delayed_host_send_waiting.json` (docs/adr/0045), its
+// root given the id the fixtures name it by; the format-1 text of the same run,
+// under `saved/format1/`, still restores.
 //
 // The run `start`, `bump` changes `job` after the send was armed, so the request
 // the wait carries (`job` 7) is told from one evaluated again when the wait ends
@@ -37,6 +40,12 @@ const DECLARED_TYPE: &str = "x-sce-host";
 const SHARED_WAITING: &str = include_str!(
     "../../../../sce-build/tests/fixtures/host_processor/saved/statechart_static_delayed_host_send_waiting.json"
 );
+const FORMAT1_WAITING: &str = include_str!(
+    "../../../../sce-build/tests/fixtures/host_processor/saved/format1/statechart_static_delayed_host_send_waiting.json"
+);
+
+/// The session id the shared format-2 fixtures give their root.
+const ROOT: &str = "fixture-root";
 
 /// The wall-clock moment the shared instance was saved at.
 const SAVED_AT_MS: u64 = 1_700_000_000_000;
@@ -92,7 +101,7 @@ fn drive(engine: &mut Engine<Policy>, event: &str) {
 /// A machine that armed its send with `job` 7, saw `bump`, and has waited
 /// `WAITED_MS` of the `WAIT_MS`.
 fn waiting() -> Engine<Policy> {
-    let mut engine = Engine::new(Policy::new());
+    let mut engine = Engine::new(Policy::new().with_session_id(ROOT).expect("an Nmtoken"));
     engine.set_clock(SceClock::Manual(0));
     engine.register_event_processor(DECLARED_TYPE, |_| Vec::new());
     engine.initialize();
@@ -184,6 +193,16 @@ fn a_restored_send_is_made_when_its_moment_comes_with_the_job_it_was_armed_with(
         "the request the document made, not one evaluated again with the `job` the machine holds now"
     );
     assert_eq!(request.event_data, r#"{"job":7,"label":"report"}"#);
+}
+
+#[test]
+fn a_waiting_send_saved_in_format_1_is_made_when_its_moment_comes() {
+    // The format-1 text of the same run, which a backend wrote before trees.
+    let (mut engine, host) = restored(FORMAT1_WAITING, 50);
+    host.advance_to(&mut engine, 350);
+    let asked = host.asked();
+    let jobs: Vec<Option<&str>> = asked.iter().map(|(_, request)| job_of(request)).collect();
+    assert_eq!(jobs, vec![Some("7")], "{asked:?}");
 }
 
 #[test]

@@ -786,6 +786,22 @@ pub trait StatePolicy: Sized + 'static {
         false
     }
 
+    /// This session's own id (`_sessionid`; docs/adr/0045): the one its host
+    /// gave or the runtime drew when it was created, the one its parent gave a
+    /// child, or the one a restore bound. The empty text for a session that has
+    /// none bound, which a `no_std` policy never has.
+    fn own_session_id(&self) -> &str {
+        ""
+    }
+
+    /// Bind this session to `session_id`, the id a format-2 saved state holds
+    /// for it, in place of the one it was created with: a restored session
+    /// carries on, so every child's id and a peer's `#_scxml_<id>` address
+    /// still name it (docs/adr/0045). A policy that holds no id has none to
+    /// bind, which is what the default says.
+    #[cfg(not(feature = "no_std"))]
+    fn bind_session_id(&mut self, _session_id: &str) {}
+
     /// §scxml-C-1: deliver a send addressed to one of this machine's children
     /// by the session id its published location names.
     ///

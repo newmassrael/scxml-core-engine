@@ -2685,11 +2685,14 @@ drive it (`a_static_hybrid_invoke_starts_the_candidate_its_value_names` in each)
 and each is held to the stem table.
 
 A machine that holds a hybrid `<invoke>` has the save API (§2.15, "Saving and
-restoring"). A saved state names the invocation by its id and not the candidate
-that was running, and a restore starts it again as entering the state would: the
-start reads `srcexpr` from the restored variables and hands the arguments'
-current values to every candidate. Rust and Kotlin, the backends that have the
-API, drive it (`a_static_hybrid_invoke_is_started_again_by_a_restore` in each).
+restoring"). A format-1 saved state names the invocation by its id and not the
+candidate that was running, and a restore starts it again as entering the state
+would: the start reads `srcexpr` from the restored variables and hands the
+arguments' current values to every candidate. A format-2 state records the
+candidate that was running with its whole state, and a restore resumes it whatever
+`srcexpr` reads now (docs/adr/0045). Rust and Kotlin, the backends that have the
+API, drive it (`a_static_hybrid_invoke_is_started_again_by_a_restore` in each;
+Rust writes format 2 and holds both).
 
 The Interpreter runs one once it is lowered (§2.15, "It runs once lowered"):
 `sce-codegen lower --out-dir` writes the document and each candidate, lowered,
@@ -3721,9 +3724,11 @@ machine is generic over its host and the parent's field names it
 `<A as ParentActions>::ActionsForWorker`), and for
 each candidate of a hybrid `<invoke>` that declares acts one of its own
 (`actionsForWork0jStaticHostedFirst`, named after the candidate's identifier, above),
-since each candidate is a document with acts of its own. The machine calls it each time the invocation starts — on entry of the
-invoking state, and on a restore, which starts the child again from its beginning —
-and builds the child with what it returns, so a state invoked again is given a host of
+since each candidate is a document with acts of its own. The machine calls it each time
+it builds the child — on entry of the invoking state, and on a restore, which resumes the
+child of a format-2 state where it stood and starts the child of a format-1 one again
+from its beginning, in a process whose host the one answered before is gone with — and
+builds the child with what it returns, so a state invoked again is given a host of
 its own and nothing a host kept for one child is carried into the next
 (docs/adr/0005, decision 6; `static_child_host` and `static_child_host_hybrid`, driven
 by `AChildIsGivenItsHostByItsParentTest` and
@@ -5115,9 +5120,10 @@ not judged against another — and an entry already due when the machine comes
 back is armed to come due now, behind the ones due before it, so the next tick
 delivers them in the order the saved machine would have, one macrostep apart. A
 host that owns time (`SceClock::Manual`, `ManualClock`) passes whatever its
-notion of the wall is. The same run saves the same text on every backend,
-`pending` included: `static_timers.json` and `static_timers_midway.json` in the
-shared instances are the text each backend writes, and each restores from them.
+notion of the wall is. The same run saves the same text on every backend of one
+format, `pending` included: `static_timers.json` and `static_timers_midway.json`
+in the shared instances are the text each backend writes (the format-2 texts in
+`saved/`, the format-1 ones in `saved/format1/`), and each restores from them.
 A `host` entry is held the same way through the machine a generator wrote:
 `sce-build/tests/fixtures/host_processor/statechart_static_delayed_host_send.scxml`
 and `saved/statechart_static_delayed_host_send_waiting.json` carry a host-served
@@ -5147,7 +5153,9 @@ an id the document does not invoke, one whose state the saved configuration does
 not stand in, and one named twice. The field is always present, as `pending` is:
 a document with an `<invoke>` that restored from a state with no `invokes` would
 stand in "working" with nobody working. `sce-build/tests/fixtures/static_datamodel/static_invoke.scxml`
-and `saved/static_invoke_working.json` hold it on both backends.
+and `saved/format1/static_invoke_working.json` hold it on both backends; a format-2
+state holds the child itself, and `saved/static_invoke_working.json` is the tree
+the Rust backend writes and resumes (format 2, below).
 
 A hybrid `<invoke>` (§2.13) is listed the same way in format 1, by its id, and the candidate
 that was running is not recorded: a restore runs the start again, which reads
@@ -5160,17 +5168,23 @@ child has, and one the document can see. `static_invoke_hybrid_saved.scxml` and
 its two candidates run all three on both backends: the same candidate again with
 a changed argument, the other candidate once `srcexpr` names it, and the
 unchanged arguments again, and show a child that ended not started a second
-time.
+time. On Rust, which writes format 2, the same document shows the candidate that
+was running resumed with the arguments it was handed, and the three cases above
+run on a format-1 state of the same moment.
 
 **Format 2: a tree of sessions.** The loss above is format 1's, and format 2
 removes it (docs/adr/0045). A child that holds state worth keeping, such as a
 shared record list (docs/adr/0042), would otherwise lose it on every restore, and
 for good where no peer holds a copy. Format 2 is specified by
-`schemas/sce-saved-state.v2.schema.json`; no backend writes it yet. The Rust and
-Kotlin backends write format 1 until their steps of the ADR land (steps 3 and 4),
-and a reader that reads format 2 keeps reading format 1, whose children it starts
-from the beginning because that is all a format-1 text holds. What follows is
-the format and the restore every backend moves to.
+`schemas/sce-saved-state.v2.schema.json`. The Rust backend writes it and reads
+both formats (step 3 of the ADR); Kotlin writes format 1 until its step lands
+(step 4), and the other backends gain a saved state in step 5. A reader that
+reads format 2 keeps reading format 1, whose children it starts from the
+beginning because that is all a format-1 text holds. The shared instances under
+`saved/` are format 2, each root given the id `fixture-root` as a host may give
+one, and the format-1 texts every backend saved before are under
+`saved/format1/`, where each still restores. What follows is the format and the
+restore every backend moves to.
 
 - **What it holds.** A saved state is one root session; a session holds what a
   format-1 state holds, its `sessionid`, and in place of the list of ids each
@@ -5191,8 +5205,10 @@ the format and the restore every backend moves to.
   (a `no_std` build, `wasm32-unknown-unknown`) takes it from the host. A restore binds
   the saved id, so the session carries on under the address its peers know
   (docs/adr/0045, "Questions the owner answered" 2). Each backend moves to this with
-  its format-2 step; until then a `sce-static` root on Rust and Kotlin has the empty
-  id.
+  its format-2 step. Rust draws the id when the policy is built (`Policy::new`) and
+  takes one from the host through `with_session_id`; on `wasm32-unknown-unknown` it
+  draws none, and a machine there whose host gave none refuses to save. Until its
+  step a `sce-static` root on Kotlin has the empty id.
 - **The shape of a tree.** Each session carries the shape of its own document,
   computed as today, and is judged against the document its parent's `<invoke>`
   names there, with its own `revisions` (docs/adr/0044). A session of another shape
@@ -5210,9 +5226,10 @@ the format and the restore every backend moves to.
   raises its `done.invoke` once, when it ends.
 - **Sends between the sessions of a tree.** `pending` gains `parent` (a delayed
   `<send>` to `#_parent`) and `child` (one to `#_<invokeid>` of a running child), so
-  a document that makes either keeps its save API. Until its backend writes format
-  2, a save taken while such a send is waiting is refused with a reason naming
-  the send (format 1 has no act for it); one taken while none is waiting succeeds.
+  a document that makes either keeps its save API. On a backend that still writes
+  format 1, a save taken while such a send is waiting is refused with a reason
+  naming the send (format 1 has no act for it); one taken while none is waiting
+  succeeds.
 - **What is not in it.** A Mesh endpoint's state (sequence counters, duplicate
   windows, ordering buffers, envelopes held for a peer) changes with the network,
   not with a session's steps, and is saved by the host core beside the tree in one
