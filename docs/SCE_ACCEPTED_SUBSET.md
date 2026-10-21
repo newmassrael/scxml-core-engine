@@ -4229,7 +4229,14 @@ string variable, or a field of the event's payload.
 the model: `copy` assigns a sixteen-byte `body` to a four-byte `title`, and an `é`
 and a `€` (five bytes in two characters) are refused where two `é` (four bytes)
 are not. The refusal is the checked helpers' own (`capacity-exceeded`), so each
-backend reports it as it reports any checked failure.
+backend reports it as it reports any checked failure. `len(s)` of a string is the
+same count, its UTF-8 bytes, on every backend: Rust's `len`, C++'s `size` and Go's
+`len` count them already, and Kotlin (`encodeToByteArray().size`), Python
+(`len(s.encode("utf-8"))`), C (`strlen`) and the Interpreter (`SceStatic.utf8Length`)
+measure the encoding, so a guard that compares a text to its bound reads what the
+bound counts; the same scenario's `measure` reads five for `hello` and for `é€`, and
+four for `éé`. Measured 2026-10-21, before this was held, Kotlin wrote `.size` of a
+`String`, which does not compile.
 
 **List variables.** `sce:type="list<T>"` (in XML `list&lt;T&gt;`) holds a
 sequence of `T`, a fixed-width number or `bool` — the element an algorithm's

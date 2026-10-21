@@ -1994,6 +1994,7 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, AStringIsHeldToItsBytes) {
         {"title", [](const Machine &m) { return json(m.title()); }},
         {"body", [](const Machine &m) { return json(m.body()); }},
         {"copied", [](const Machine &m) { return json(m.copied()); }},
+        {"measured", [](const Machine &m) { return json(m.measured()); }},
         {"refusals", [](const Machine &m) { return json(m.refusals()); }},
     });
     replay("static_string_capacity", driver);

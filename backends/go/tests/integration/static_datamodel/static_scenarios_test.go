@@ -1951,6 +1951,7 @@ func TestAStringIsHeldToItsBytes(t *testing.T) {
 		"title":    func() any { return policy.Title() },
 		"body":     func() any { return policy.Body() },
 		"copied":   func() any { return policy.Copied() },
+		"measured": func() any { return policy.Measured() },
 		"refusals": func() any { return policy.Refusals() },
 	}))
 }

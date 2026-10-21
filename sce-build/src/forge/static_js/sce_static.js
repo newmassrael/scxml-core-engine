@@ -285,6 +285,30 @@
     return value;
   }
 
+  /* The UTF-8 bytes a string is, which is what a string's bound counts and what
+     `len` of a string reads on every backend: a unit below U+0080 is one byte, below
+     U+0800 two, a surrogate pair four and any other unit three. */
+  function utf8Length(value) {
+    if (typeof value !== 'string') {
+      fail('expected a string, read ' + String(value));
+    }
+    var bytes = 0;
+    for (var i = 0; i < value.length; i++) {
+      var unit = value.charCodeAt(i);
+      if (unit < 0x80) {
+        bytes += 1;
+      } else if (unit < 0x800) {
+        bytes += 2;
+      } else if (unit >= 0xD800 && unit <= 0xDBFF && i + 1 < value.length && value.charCodeAt(i + 1) >= 0xDC00 && value.charCodeAt(i + 1) <= 0xDFFF) {
+        bytes += 4;
+        i++;
+      } else {
+        bytes += 3;
+      }
+    }
+    return bytes;
+  }
+
   return {
     I8: integer(true, 8),
     I16: integer(true, 16),
@@ -308,24 +332,9 @@
       }
       return list.concat([value]);
     },
+    utf8Length: utf8Length,
     bounded: function (value, capacity) {
-      if (typeof value !== 'string') {
-        fail('expected a string, read ' + String(value));
-      }
-      var bytes = 0;
-      for (var i = 0; i < value.length; i++) {
-        var unit = value.charCodeAt(i);
-        if (unit < 0x80) {
-          bytes += 1;
-        } else if (unit < 0x800) {
-          bytes += 2;
-        } else if (unit >= 0xD800 && unit <= 0xDBFF && i + 1 < value.length && value.charCodeAt(i + 1) >= 0xDC00 && value.charCodeAt(i + 1) <= 0xDFFF) {
-          bytes += 4;
-          i++;
-        } else {
-          bytes += 3;
-        }
-      }
+      var bytes = utf8Length(value);
       if (bytes > capacity) {
         fail('the string holds ' + String(bytes) + ' UTF-8 bytes, past its capacity of ' + String(capacity), 'capacity-exceeded');
       }

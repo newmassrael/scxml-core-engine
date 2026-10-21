@@ -1062,6 +1062,7 @@ STATIC_SCENARIO(static_payload_relay, payload_relay_states, payload_relay_variab
 // bound — by bytes, not characters. A published string is read as the text of its
 // buffer.
 VARIABLE_READER(static_string_capacity, copied)
+VARIABLE_READER(static_string_capacity, measured)
 VARIABLE_READER(static_string_capacity, refusals)
 
 static const char *static_string_capacity_text(void *sm, const char *name) {
@@ -1080,6 +1081,7 @@ static const name_value_t string_capacity_states[] = {
 };
 static const variable_t string_capacity_variables[] = {
     {"copied", static_string_capacity_read_copied},
+    {"measured", static_string_capacity_read_measured},
     {"refusals", static_string_capacity_read_refusals},
 };
 STATIC_SCENARIO(static_string_capacity, string_capacity_states, string_capacity_variables, static_string_capacity_text,

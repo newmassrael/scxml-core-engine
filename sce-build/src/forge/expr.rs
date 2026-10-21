@@ -6449,7 +6449,15 @@ fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             fails,
         } => {
             if is_len_builtin(callee, args) {
-                let size = format!("({}).size", emit_kotlin(&args[0], InferredType::Unknown)?);
+                let measured = emit_kotlin(&args[0], InferredType::Unknown)?;
+                // A string is measured in the UTF-8 bytes its bound counts: a Kotlin
+                // `String` has no `size`, and its `length` counts UTF-16 units. A list
+                // and a byte array by their `size`.
+                let size = if args[0].ty == InferredType::Str {
+                    format!("({measured}).encodeToByteArray().size")
+                } else {
+                    format!("({measured}).size")
+                };
                 // `Int` is Kotlin's length; one typed as an integer width
                 // (`TypeCtx::lengths_are_uint32`) is that width.
                 return Ok(match expr.ty {
@@ -8209,10 +8217,14 @@ fn python_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             fails,
         } => {
             if is_len_builtin(callee, args) {
-                return Ok(format!(
-                    "len({})",
-                    emit_python(&args[0], InferredType::Unknown)?
-                ));
+                let measured = emit_python(&args[0], InferredType::Unknown)?;
+                // A string is measured in the UTF-8 bytes its bound counts, which
+                // `len` of a `str` (code points) is not; a list and `bytes` by `len`.
+                return Ok(if args[0].ty == InferredType::Str {
+                    format!("len(({measured}).encode(\"utf-8\"))")
+                } else {
+                    format!("len({measured})")
+                });
             }
             if let Some(op) = real_to_int_builtin(callee, args) {
                 // ⚠ NOT the builtin `round`, which is banker's rounding:
@@ -8734,10 +8746,15 @@ fn emit_js(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError
             fails,
         } => {
             if is_len_builtin(callee, args) {
-                return Ok(format!(
-                    "{}.length",
-                    wrap_postfix(&args[0], emit_js(&args[0], InferredType::Unknown)?)
-                ));
+                let measured = emit_js(&args[0], InferredType::Unknown)?;
+                // A string is measured in the UTF-8 bytes its bound counts, which
+                // `length` (UTF-16 units) is not; a list and a byte string (one
+                // character to a byte) by their `length`.
+                return Ok(if args[0].ty == InferredType::Str {
+                    format!("{RUNTIME_GLOBAL}.utf8Length({measured})")
+                } else {
+                    format!("{}.length", wrap_postfix(&args[0], measured))
+                });
             }
             if let Some(op) = real_to_int_builtin(callee, args) {
                 // ⚠ NOT `Math.round`, which rounds half toward +∞: `Math.round(-0.5)`
@@ -8905,8 +8922,7 @@ fn emit_c(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError>
     if let ExprKind::Call { callee, args, .. } = &expr.kind {
         if is_len_builtin(callee, args) && matches!(expr.ty, InferredType::UntypedInt) {
             if let InferredType::Int { signed: true, bits } = expected {
-                let len = format!("({}).len", emit_c(&args[0], InferredType::Unknown)?);
-                return Ok(format!("(int{bits}_t){len}"));
+                return Ok(format!("(int{bits}_t){}", c_length(&args[0])?));
             }
         }
     }
@@ -8963,6 +8979,19 @@ fn c_checked_index(
     Ok(format!(
         "(sce_forge_checked_index_from_{from}(&sce_failure_, {idx}, {len}) ? {read} : {failed})"
     ))
+}
+
+/// What `len(arg)` reads in C: a string's UTF-8 bytes, which `strlen` counts over
+/// the NUL-terminated text every C string is read as (from `<string.h>`, which the
+/// lowering of a string comparison already needs), and the `len` member of a list's
+/// or a byte string's view.
+fn c_length(arg: &TypedExpr) -> Result<String, ExprError> {
+    let measured = emit_c(arg, InferredType::Unknown)?;
+    Ok(if arg.ty == InferredType::Str {
+        format!("strlen({measured})")
+    } else {
+        format!("({measured}).len")
+    })
 }
 
 fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
@@ -9179,7 +9208,7 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             fails,
         } => {
             if is_len_builtin(callee, args) {
-                let len = format!("({}).len", emit_c(&args[0], InferredType::Unknown)?);
+                let len = c_length(&args[0])?;
                 // A length typed as an integer width (`TypeCtx::lengths_are_uint32`)
                 // is that width: the cast is spelled here, where `size_t` meets it.
                 return Ok(match expr.ty {
@@ -11807,6 +11836,47 @@ mod tests {
     }
 
     /// The length of a list or a string is `.length`.
+    /// `len` of a string is the UTF-8 bytes it holds on every backend, the unit a
+    /// string's bound counts: Rust's `len`, C++'s `size` and Go's `len` count bytes
+    /// already, and Kotlin (whose `String` has no `size`, and whose `length` counts
+    /// UTF-16 units), Python (code points), C (a text) and the Interpreter (UTF-16
+    /// units) measure its encoding. Measured 2026-10-21: Kotlin wrote `(title).size`,
+    /// which does not compile on a `String`.
+    #[test]
+    fn the_length_of_a_string_is_its_utf8_bytes_on_every_backend() {
+        let mut ctx = TypeCtx::new();
+        ctx.insert_var("label", InferredType::Str);
+        for (target, expected) in [
+            (ExprTarget::Rust, "(label).len()"),
+            (ExprTarget::Cpp, "(label).size()"),
+            (ExprTarget::Go, "len(label)"),
+            (ExprTarget::Kotlin, "(label).encodeToByteArray().size"),
+            (ExprTarget::Python, "len((label).encode(\"utf-8\"))"),
+            (ExprTarget::C, "strlen(label)"),
+        ] {
+            assert_eq!(tp_with("len(label)", target, &ctx), expected, "{target:?}");
+        }
+        assert_eq!(
+            transpile_typed(
+                "len(label)",
+                ExprTarget::Js,
+                &js_ctx(),
+                &empty_renames(),
+                InferredType::Unknown,
+            )
+            .unwrap(),
+            "SceStatic.utf8Length(label)"
+        );
+        // A byte string keeps the member every backend measures it by.
+        let mut bytes = TypeCtx::new();
+        bytes.insert_var("frame", InferredType::Bytes);
+        assert_eq!(
+            tp_with("len(frame)", ExprTarget::Kotlin, &bytes),
+            "(frame).size"
+        );
+        assert_eq!(tp_with("len(frame)", ExprTarget::C, &bytes), "(frame).len");
+    }
+
     #[test]
     fn js_reads_a_length_as_the_length_property() {
         let mut ctx = js_ctx();

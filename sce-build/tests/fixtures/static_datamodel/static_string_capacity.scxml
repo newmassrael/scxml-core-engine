@@ -13,6 +13,10 @@
 
   `copy` assigns `body` to `title` and then counts itself in `copied`, so a copy
   that did not fit leaves both where they were.
+
+  `measure` writes `len(body)` to `measured`: the UTF-8 bytes `body` holds, the unit its
+  bound counts, on every backend (four for `éé`, five for `é€`), and not the
+  characters or UTF-16 units a language's own length of a string may count.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="idle" datamodel="sce-static" name="static_string_capacity">
@@ -20,6 +24,7 @@
     <data id="title" sce:type="string" sce:capacity="4" expr="'ab'" sce:direction="out"/>
     <data id="body" sce:type="string" sce:capacity="16" expr="'hello'" sce:direction="out"/>
     <data id="copied" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="measured" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
   </datamodel>
   <state id="idle">
@@ -44,6 +49,9 @@
     <transition event="copy" type="internal">
       <assign location="title" expr="body"/>
       <assign location="copied" expr="copied + 1"/>
+    </transition>
+    <transition event="measure" type="internal">
+      <assign location="measured" expr="len(body)"/>
     </transition>
     <transition event="error.execution" type="internal">
       <assign location="refusals" expr="refusals + 1"/>

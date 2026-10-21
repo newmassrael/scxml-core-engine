@@ -1,9 +1,12 @@
 {
   "machine": "static_string_capacity",
-  "about": "A string variable is held to the UTF-8 bytes its sce:capacity declares, on every backend. `copy` assigns `body` (sixteen) to `title` (four) and then counts itself: a copy that does not fit is skipped, raises error.execution and ends its block, so `title` and `copied` keep what they held. The bound is bytes, not characters: two characters of two bytes fit, and an `é` and a `€` (two and three bytes) do not. Expected values are derived from the document, not observed from a backend.",
+  "about": "A string variable is held to the UTF-8 bytes its sce:capacity declares, on every backend. `copy` assigns `body` (sixteen) to `title` (four) and then counts itself: a copy that does not fit is skipped, raises error.execution and ends its block, so `title` and `copied` keep what they held. The bound is bytes, not characters: two characters of two bytes fit, and an `é` and a `€` (two and three bytes) do not, and `len(body)` reads the same bytes into `measured`. Expected values are derived from the document, not observed from a backend.",
   "steps": [
     { "note": "the strings start at their declared values",
-      "expect": { "state": "idle", "variables": { "title": "ab", "body": "hello", "copied": 0, "refusals": 0 } } },
+      "expect": { "state": "idle", "variables": { "title": "ab", "body": "hello", "copied": 0, "refusals": 0, "measured": 0 } } },
+    { "note": "`len` of a string is its UTF-8 bytes: `hello` is five",
+      "event": "measure",
+      "expect": { "variables": { "measured": 5, "refusals": 0 } } },
 
     { "note": "`hello` is five bytes and `title` holds four: the copy is refused and its block ends before `copied` counts it",
       "event": "copy",
@@ -16,12 +19,18 @@
     { "note": "two characters of two bytes each are four bytes, and fit",
       "event": "body_exact",
       "expect": { "variables": { "body": "éé", "refusals": 1 } } },
+    { "note": "and `len` reads the four bytes, not the two characters",
+      "event": "measure",
+      "expect": { "variables": { "measured": 4, "refusals": 1 } } },
     { "event": "copy",
       "expect": { "variables": { "title": "éé", "body": "éé", "copied": 1, "refusals": 1 } } },
 
     { "note": "two characters, five bytes: a count of characters would let it pass, a count of bytes does not",
       "event": "body_wide",
       "expect": { "variables": { "body": "é€", "title": "éé", "refusals": 1 } } },
+    { "note": "an `é` and a `€` are five bytes, which is what `len` reads",
+      "event": "measure",
+      "expect": { "variables": { "measured": 5, "refusals": 1 } } },
     { "event": "copy",
       "expect": { "variables": { "title": "éé", "body": "é€", "copied": 1, "refusals": 2 } } },
 
