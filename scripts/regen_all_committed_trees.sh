@@ -19,7 +19,9 @@
 # generator's own code, an input document. Regenerate and expect no diff
 # beyond the files that edit actually changes: the §synth-6.2.6 header
 # carries only facts about each file's inputs, so nothing is re-stamped
-# that did not change. Running this script + `git add -A` produces a
+# that did not change. A generated file the generator no longer writes is
+# removed, and named at the end of the run, so the diff carries deletions as
+# well as edits. Running this script + `git add -A` produces a
 # single coherent commit across every tracked context in one shot, and
 # `scripts/gate regen-reproduces` is the check that it did.
 #
@@ -51,6 +53,27 @@ stage() {
 stage "Resolving sce-codegen (builds it when the binary is stale)"
 source "$REPO_ROOT/scripts/lib/sce_codegen.sh"
 CODEGEN="$(sce_codegen_require "$REPO_ROOT")"
+
+# Every tree below is REPLACED, not written over: its generated files are set
+# aside now, each stage has to write again what it still produces, and the
+# settle at the end removes -- and names -- each file no stage wrote again. A
+# file a stage wrote with the same bytes gets its old copy back, mtime and all.
+#
+# Writing over a tree removes nothing. Measured 2026-10-21: after the escaping
+# of synthesized invoke ids changed, this script wrote
+# `test192__sce_synth_invoke__0zinvokedzuchild_sm.rs` (and its Kotlin twin)
+# beside the `..._invokedChild_sm.rs` the generator no longer wrote, and both
+# old files stayed committed for days. The rules for which file is generated,
+# and the reason each tree is or is not in the set, are in
+# scripts/lib/sce_generated_tree.sh.
+#
+# A stage that fails puts every file back (the EXIT trap), since a run that
+# stopped half way says nothing about what the generator no longer writes.
+stage "Setting aside the generated files of every tree the stages write"
+source "$REPO_ROOT/scripts/lib/sce_generated_tree.sh"
+mapfile -t GENERATED_TREES < <(sce_generated_trees)
+trap sce_generated_tree_on_exit EXIT
+sce_generated_tree_stash "${GENERATED_TREES[@]}"
 
 stage "W3C committed trees"
 "$CODEGEN" generate-w3c -l rust
@@ -278,6 +301,11 @@ cargo fmt -p sce-rust-tests
 # is not refreshed by this stage, so it goes stale without failing anything.
 stage "Regenerating the forge conformance goldens"
 UPDATE_GOLDEN=1 cargo test -p sce-build --features cli --test forge_conformance --quiet
+
+# Last, after the format pass: a file is judged on the bytes it is committed
+# with, and rustfmt is part of those.
+stage "Settling every tree: what no stage wrote again is removed"
+sce_generated_tree_settle 0
 
 stage ""
 echo "All committed §6.2.6 trees regenerated in ${SECONDS}s."

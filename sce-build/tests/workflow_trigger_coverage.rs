@@ -351,6 +351,13 @@ const UNFILTERABLE_GATES: &[&str] = &[
     // the function's own suite filters on paths that do not name
     // `resources/`, so that commit would start nothing that judged it.
     "no_conformance_document_declares_the_transition_function",
+    // Asks `git ls-files` for every committed file of the trees a regeneration
+    // sets aside and holds each to being recognised as generated or written by
+    // hand, and holds those trees to the outputs bx.toml declares for the regen
+    // action. The file that breaks it is a new kind of generated file, in
+    // whichever tree a generator writes it into next, and neither the helper
+    // under `scripts/lib/` nor bx.toml is in any lane's filter.
+    "a_regeneration_removes_what_it_no_longer_writes",
     "workflow_trigger_coverage",
 ];
 

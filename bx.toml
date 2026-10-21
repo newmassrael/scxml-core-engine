@@ -315,6 +315,16 @@ verify = "ctest --test-dir build --output-on-failure; c=$?; node tests/w3c/stand
 # no narrower list is honest, and with it nothing is cached or isolated, which
 # suits a run nothing else reuses. The outputs are every tree a step writes; a
 # change outside them refuses the whole result.
+#
+# A REMOVAL is a change like a write. The script removes each generated file
+# no step writes again (scripts/lib/sce_generated_tree.sh), the far side's git
+# reports it deleted, and the bundle carries it with no content: applied here,
+# the file is deleted when it still holds what HEAD held. So every tree the
+# script sets aside has to be covered below, or a removal in it refuses the
+# whole result; `a_regeneration_removes_what_it_no_longer_writes` holds the two
+# lists together. The mesh example and jvmTest trees joined for that reason:
+# the mesh scripts had always rewritten them, and a change there would have
+# been refused.
 [actions.regen]
 run = 'cargo build --bin sce-codegen --features cli -p sce-build && scripts/regen_all_committed_trees.sh'
 inputs = ["**"]
@@ -323,8 +333,10 @@ outputs = [
     "backends/rust/tests/tests/**",
     "backends/rust/mesh/src/generated/*",
     "backends/rust/mesh/src/generated.rs",
+    "backends/rust/mesh/examples/generated/*",
     "backends/kotlin/tests/src/**",
     "backends/kotlin/mesh/src/commonMain/kotlin/generated/**",
+    "backends/kotlin/mesh/src/jvmTest/kotlin/com/sce/generated/**",
     "backends/go/tests/**",
     "backends/go/forge-runtime/round_trip/generated/**",
     "backends/python/tests/**",

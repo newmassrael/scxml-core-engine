@@ -153,6 +153,14 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # the lane holding it. This workflow declares no filter, so it runs on
 # exactly those pushes.
 #
+# `a_regeneration_removes_what_it_no_longer_writes` is here because what it
+# holds together lives in no workflow's `paths:`: the regeneration helper under
+# `scripts/lib/`, the outputs of `[actions.regen]` in bx.toml, and every
+# committed file of the generated trees, which it reads to prove each one is
+# recognised as generated or written by hand. The file whose kind the helper
+# does not know is a NEW kind, in a tree a filter over today's files would not
+# name.
+#
 # `ffi` is here so that SOMETHING in the Rust lanes compiles the C
 # surface. It is off by default and `clippy-check.yml` runs `--workspace
 # --all-targets` without `--all-features`, so without this no Rust lane
@@ -223,4 +231,5 @@ cargo test -p sce-build --features cli,ffi \
     --test script_engine_census \
     --test hybrid_stubs_are_tracked_as_generated \
     --test no_conformance_document_declares_the_transition_function \
+    --test a_regeneration_removes_what_it_no_longer_writes \
     || sce_gate_fail "tree-wide hygiene gates"
