@@ -359,6 +359,12 @@ pub mod transition_records;
 /// The transition table, which is also the trace table —
 /// Requirement-closure RFC ②.
 pub mod transition_table;
+/// The statements of a generated source that follow a statement which ended
+/// their list — what a compiler reports as unreachable code — read the same
+/// way for every language SCE emits. The crate compiles it only for its own
+/// tests, which hold every backend's statechart templates to writing none.
+#[cfg(test)]
+mod unreachable_statements;
 /// `<sce:unresolved>` placeholder
 /// detection — strict-mode build gate + NDJSON report. Drives
 /// `--strict-unresolved` on `generate` and `sce-codegen unresolved`.
