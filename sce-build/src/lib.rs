@@ -162,6 +162,11 @@ pub mod gui_structure;
 /// truth for the accepted set — the per-backend send templates read the
 /// decision rather than each re-spelling the list.
 pub mod host_processor_analyzer;
+/// The documents a set of documents is generated from — every document an
+/// `<sce:import>` reaches, the standard library's among them — each once, and
+/// the package directory each unit is generated into
+/// (`sce-codegen generate --with-imports`).
+pub mod import_closure;
 pub mod kotlin;
 /// The bounds a deployment chooses: `sce:limit` names a bound, and the number a
 /// build gives the name replaces the one the document wrote.

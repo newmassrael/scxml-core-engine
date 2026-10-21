@@ -40,7 +40,14 @@ impl ImportSource {
     /// read from the standard library this generator embeds, never from
     /// disk ([`crate::forge::stdlib`]).
     pub fn read(base_dir: &Path, import: &ForgeImport) -> Result<Self, ImportError> {
-        let path = crate::forge::stdlib::resolve(base_dir, &import.src);
+        Self::read_src(base_dir, &import.src)
+    }
+
+    /// [`Self::read`] for an import known by its `src` alone — what a reader
+    /// that walks a document's references without parsing it as a forge
+    /// document holds (`crate::import_closure`).
+    pub fn read_src(base_dir: &Path, src: &str) -> Result<Self, ImportError> {
+        let path = crate::forge::stdlib::resolve(base_dir, src);
         if crate::forge::stdlib::names_standard(&path) {
             return match crate::forge::stdlib::lookup(&path) {
                 Some(content) => Ok(Self {
@@ -48,7 +55,7 @@ impl ImportSource {
                     content: content.to_string(),
                 }),
                 None => Err(ImportError::FileNotFound {
-                    src: import.src.clone(),
+                    src: src.to_string(),
                     searched: format!(
                         "{} (the SCE standard library built into this sce-codegen)",
                         path.display()
@@ -60,13 +67,13 @@ impl ImportSource {
         // that is not there (`crate::confine`), whichever of the two reads it.
         if !crate::confine::exists(&path) {
             return Err(ImportError::FileNotFound {
-                src: import.src.clone(),
+                src: src.to_string(),
                 searched: path.display().to_string(),
             });
         }
         let content =
             crate::confine::read_to_string(&path).map_err(|source| ImportError::ReadError {
-                src: import.src.clone(),
+                src: src.to_string(),
                 source,
             })?;
         Ok(Self { path, content })

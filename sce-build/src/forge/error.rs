@@ -153,6 +153,12 @@ pub enum RelatedRole {
     /// A site that must come after the record's own in the document and
     /// does not — the field a flags carrier has to be declared before.
     MustFollow,
+    /// A site in another document that names the record's document — an
+    /// `<sce:import>`, or an entry of a hybrid `<invoke>`'s
+    /// `sce:candidates` — through which a run that generates a document
+    /// together with what it imports (`generate --with-imports`) reached it.
+    /// One entry per step, the document named on the command line first.
+    ReachedFrom,
 }
 
 impl RelatedRole {
@@ -162,6 +168,7 @@ impl RelatedRole {
         RelatedRole::ConflictingUse,
         RelatedRole::AlsoRefused,
         RelatedRole::MustFollow,
+        RelatedRole::ReachedFrom,
     ];
 }
 

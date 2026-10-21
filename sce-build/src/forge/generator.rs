@@ -583,7 +583,7 @@ pub(crate) fn forge_import_identity(
         // (`com.sce.generated.<snake>`); the wildcard import brings the
         // class (stateful) or free functions (stateless) into scope.
         Language::Kotlin => ImportIdentity {
-            include_stmt: format!("import com.sce.generated.{snake}.*"),
+            include_stmt: format!("import {}.*", kotlin_forge_package(&snake)),
             type_name: pascal.clone(),
             namespace: pascal.clone(),
             member_type: pascal,
@@ -616,6 +616,9 @@ pub(crate) fn forge_import_identity(
             // an author's locals, and a codec reaches its sibling through
             // the package's own name in a dozen places that are not names an
             // author chooses: it keeps the package's name.
+            // The path below the module is the package directory
+            // `forge_unit_dir` places the imported unit in: the document's
+            // snake-cased name.
             let (include_stmt, qualifier) = if is_stateful {
                 (format!("\t\"{prefix}/{snake}\""), snake.clone())
             } else {
@@ -659,6 +662,43 @@ pub(crate) fn forge_import_identity(
             namespace: snake.clone(),
             member_type: format!("{snake}_t"),
         },
+    }
+}
+
+/// The Kotlin package every forge document's unit is generated under, one
+/// package per document below it (`<this>.<snake>`), whatever
+/// `--kotlin-package-prefix` a statechart is given: an importer cannot know the
+/// prefix another run chose, so the package it names an import by is fixed.
+const KOTLIN_FORGE_PACKAGE_ROOT: &str = "com.sce.generated";
+
+/// The Kotlin package of the unit generated from the forge document whose
+/// snake-cased name is `snake` — what an importer's `import <package>.*` names.
+fn kotlin_forge_package(snake: &str) -> String {
+    format!("{KOTLIN_FORGE_PACKAGE_ROOT}.{snake}")
+}
+
+/// Where the unit generated from the forge document named `canonical` lives,
+/// as a directory below the root an importer's import line resolves against.
+///
+/// Read off the same names [`forge_import_identity`] writes the import line
+/// from, so the directory a document is placed in and the package its importers
+/// name cannot disagree: for Kotlin, the package `import com.sce.generated.<snake>.*`
+/// names, one directory per segment; for Go, the package directory
+/// `"<module>/<snake>"` names below the module; and for the four languages
+/// whose importers name a sibling of the same directory (Rust `use super::`,
+/// Python `from .`, C++ and C11 `#include "<snake>.h"`), the root itself.
+pub fn forge_unit_dir(canonical: &str, lang: crate::generator::Language) -> std::path::PathBuf {
+    use crate::generator::Language;
+    let snake = filters::to_snake_case(canonical.to_string());
+    match lang {
+        Language::Kotlin => {
+            let package = kotlin_forge_package(&snake);
+            package.split('.').collect()
+        }
+        Language::Go => std::path::PathBuf::from(snake),
+        Language::Cpp | Language::Rust | Language::Python | Language::C11 => {
+            std::path::PathBuf::new()
+        }
     }
 }
 

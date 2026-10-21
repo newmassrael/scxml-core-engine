@@ -2522,10 +2522,7 @@ impl TransitionFunctionTarget {
                 // one of its own inside the machine's output directory, named
                 // as the machine's package is (`to_snake_case`, which the
                 // machine template applies to the same name).
-                let package = format!(
-                    "{}_transition_function",
-                    filters::to_snake_case(model.name.clone())
-                );
+                let package = format!("{}_transition_function", go_machine_package(&model.name));
                 Self {
                     template,
                     file: format!("{package}/{input_stem}_transition_function.go"),
@@ -2537,11 +2534,8 @@ impl TransitionFunctionTarget {
                 file: format!("{input_stem}TransitionFunction.kt"),
                 names: minijinja::context! {
                     kotlin_package => format!(
-                        "{}.{}_transition_function",
-                        naming
-                            .kotlin_package_prefix
-                            .unwrap_or(KOTLIN_DEFAULT_PACKAGE_PREFIX),
-                        model.name.to_lowercase()
+                        "{}_transition_function",
+                        kotlin_machine_package(naming.kotlin_package_prefix, &model.name)
                     ),
                 },
             },
@@ -2557,6 +2551,46 @@ impl TransitionFunctionTarget {
 /// The package a generated Kotlin machine lives under when the run names no
 /// `--kotlin-package-prefix`: `<this>.<machine name>`.
 pub const KOTLIN_DEFAULT_PACKAGE_PREFIX: &str = "com.sce.generated";
+
+/// The Kotlin package of the machine named `name`, under `prefix` or
+/// [`KOTLIN_DEFAULT_PACKAGE_PREFIX`]: the name lower-cased, as the machine
+/// template writes it (`{{ model.name | lower }}`), and the package its
+/// transition function's own package is named beside.
+pub fn kotlin_machine_package(prefix: Option<&str>, name: &str) -> String {
+    format!(
+        "{}.{}",
+        prefix.unwrap_or(KOTLIN_DEFAULT_PACKAGE_PREFIX),
+        name.to_lowercase()
+    )
+}
+
+/// The Go package of the machine named `name`: the name snake-cased, as the
+/// machine template writes it (`{{ model.name | to_snake_case }}`).
+pub fn go_machine_package(name: &str) -> String {
+    filters::to_snake_case(name.to_string())
+}
+
+/// Where the machine named `name` is generated, as a directory below the root a
+/// tree of generated units shares: its package, one directory per segment, for
+/// the two languages whose packages are directories — Kotlin
+/// ([`kotlin_machine_package`]) and Go ([`go_machine_package`]) — and the root
+/// itself for the four that name their units by file or module beside one
+/// another. A child generated into its parent's package is placed by the
+/// parent's name.
+pub fn machine_unit_dir(
+    name: &str,
+    lang: Language,
+    kotlin_package_prefix: Option<&str>,
+) -> PathBuf {
+    match lang {
+        Language::Kotlin => {
+            let package = kotlin_machine_package(kotlin_package_prefix, name);
+            package.split('.').collect()
+        }
+        Language::Go => PathBuf::from(go_machine_package(name)),
+        Language::Cpp | Language::Rust | Language::Python | Language::C11 => PathBuf::new(),
+    }
+}
 
 /// The `<prefix>::` segment `--cpp-namespace-prefix` nests a machine's
 /// namespace under (`SCE::Generated::<prefix>::<name>`), empty when unset.

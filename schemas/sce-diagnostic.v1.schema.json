@@ -545,7 +545,7 @@
         "required": ["role", "location"],
         "additionalProperties": false,
         "properties": {
-          "role": { "type": "string", "enum": ["conflicting-use", "also-refused", "must-follow"] },
+          "role": { "type": "string", "enum": ["conflicting-use", "also-refused", "must-follow", "reached-from"] },
           "location": {
             "type": "object",
             "required": ["file"],
