@@ -331,18 +331,74 @@ fn every_backend_generates_the_record_of_an_optional_day() {
 
 // ── A statechart's call ──────────────────────────────────────────────────
 
-/// The fixture machine hands the algorithms a list of records whose day may be
-/// absent, an optional variable, `null` and a day of `int64`, and takes optional
-/// days back: every backend lowers it.
-#[test]
-fn every_backend_lowers_a_statechart_that_hands_an_algorithm_an_optional_value() {
-    let path = fixtures().join("static_state_algorithm_optional.scxml");
+/// `sce-codegen check -l <lang>` of `path` for each of the six generated backends,
+/// and `sce-codegen lower` of it for the Interpreter: the seven targets a scenario
+/// is replayed on. Each exits 0, or the test names the target and its refusal.
+fn every_target_lowers(path: &Path) {
     for (lang, args) in every_backend() {
         let mut checked = args.clone();
         checked[0] = "check";
-        let (ok, out, _) = run_on(&checked, &path);
-        assert!(ok, "{lang} lowers the machine:\n{out}");
+        let (ok, out, _) = run_on(&checked, path);
+        assert!(ok, "{lang} lowers {}:\n{out}", path.display());
     }
+    let (ok, out, _) = run_on(&["lower"], path);
+    assert!(
+        ok,
+        "the Interpreter's lowering lowers {}:\n{out}",
+        path.display()
+    );
+}
+
+/// The fixture machine of `static_state_algorithm_optional.json` hands the
+/// algorithms a list of records whose day may be absent, an optional variable,
+/// `null` and a day of `int64`, and takes optional days back: it is checked fit
+/// on all seven targets, or no regeneration generates it and no driver replays it.
+///
+/// ⚠ It was not (measured 2026-10-22, integ-6): `check -l rust` exited 7 with
+/// "`Earliest(goals)` has no Rust lowering: optional<int64> ... where int64 is
+/// expected". The assignment to an optional variable typed its value as the
+/// author wrote it, where the alias of an algorithm that takes a list names no
+/// function — only the call it is rewritten to does — so the optional day the
+/// call answers was taken for a present one and lowered into an `int64`.
+#[test]
+fn the_optional_scenario_machine_is_lowered_on_all_seven_targets() {
+    every_target_lowers(&fixtures().join("static_state_algorithm_optional.scxml"));
+}
+
+/// A call of an algorithm that takes a list is typed as the call it is lowered
+/// as wherever the lowering asks a value its type: the optional day it answers,
+/// assigned to an optional variable and logged.
+#[test]
+fn a_call_that_hands_over_a_list_is_typed_as_it_is_lowered() {
+    let dir = tempdir().expect("tempdir");
+    for name in ["schema_goal.scxml", "algorithm_goal_earliest.scxml"] {
+        std::fs::copy(fixtures().join(name), dir.path().join(name)).expect("copy a sibling");
+    }
+    let probe = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="earliest_probe">
+  <sce:import kind="event-schema" src="schema_goal.scxml" as="Goal"/>
+  <sce:import kind="algorithm" src="algorithm_goal_earliest.scxml" as="Earliest"/>
+  <datamodel>
+    <data id="goals" sce:type="list&lt;record:Goal&gt;" sce:capacity="4"/>
+    <data id="first" sce:type="optional&lt;int64&gt;" expr="null"/>
+  </datamodel>
+  <state id="idle">
+    <transition event="go" type="internal">
+      <assign location="first" expr="Earliest(goals)"/>
+      <log label="earliest" expr="Earliest(goals)"/>
+    </transition>
+  </state>
+</scxml>
+"#;
+    std::fs::write(dir.path().join("earliest_probe.scxml"), probe).expect("write the probe");
+    every_target_lowers(&dir.path().join("earliest_probe.scxml"));
+}
+
+/// The fixture machine's Rust adapter answers the algorithm's optional day.
+#[test]
+fn the_rust_adapter_answers_the_algorithms_optional_day() {
+    let path = fixtures().join("static_state_algorithm_optional.scxml");
     // Rust's adapter of the call that hands over the list takes the machine's
     // records and answers the algorithm's optional day as it is.
     let (ok, out, written) = run_on(&["generate", "-l", "rust"], &path);

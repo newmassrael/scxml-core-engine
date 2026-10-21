@@ -5486,6 +5486,21 @@ impl Rewrites<'_> {
         ))
     }
 
+    /// `text` as the lowering types it: each call of an algorithm that takes a
+    /// record or a list rewritten to the call it is lowered as
+    /// ([`Self::with_state_calls`]), which the scope's context types by the
+    /// algorithm's own signature ([`StaticScope::ctx`]). The callee's alias names
+    /// no function there, so typed as written such a call is of no type and a
+    /// value it answers that may be absent (docs/adr/0055) is taken for a present
+    /// one. `text` itself where it makes no such call, or where the rewrite refuses
+    /// it, which the lowering then reports.
+    fn as_lowered(&self, text: &str) -> String {
+        match self.rewrite_state_calls(text) {
+            Ok(rewrite) if !rewrite.calls.is_empty() => rewrite.text,
+            _ => text.to_string(),
+        }
+    }
+
     /// The calls of `text` that hand an algorithm a record or a list, found in the
     /// scope of the transition the walk is in ([`StaticScope::rewrite_state_calls`]).
     fn rewrite_state_calls(&self, text: &str) -> Result<StateRewrite, StateCallRefusal> {
@@ -10491,9 +10506,10 @@ fn lower_action(
             let value = lower(&action.expr, InferredType::Unknown)?;
             rewrites.note(&action.expr, action.spellings.get("expr"), &value.text);
             let label = action.label.clone();
-            // The value's own type, which a target that formats by it reads.
+            // The value's own type, which a target that formats by it reads, as
+            // the value is lowered.
             let ty = crate::forge::expr::judge_into(
-                &action.expr,
+                &rewrites.as_lowered(&action.expr),
                 ctx,
                 crate::forge::expr::Expected::Hint(InferredType::Unknown),
             )
@@ -10922,8 +10938,11 @@ fn lower_optional_assign(
             can_fail: false,
         }
     } else {
-        let written =
-            crate::forge::expr::infer_expr_type(&action.expr, ctx).unwrap_or(InferredType::Unknown);
+        // Typed as it is lowered: a call of an algorithm that takes a record or
+        // a list is its adapter's, which answers the optional value the algorithm
+        // returns.
+        let written = crate::forge::expr::infer_expr_type(&rewrites.as_lowered(&action.expr), ctx)
+            .unwrap_or(InferredType::Unknown);
         if written.is_optional() {
             // The judge admits an optional value of another width; no target
             // spells the narrowing of a present value inside one yet.
@@ -11090,8 +11109,9 @@ fn lower_wire_value(
             "{construct} `{written}` has no {lang} lowering: {why}"
         ))
     };
+    // Typed as it is lowered ([`Rewrites::as_lowered`]).
     let ty = crate::forge::expr::judge_into(
-        written,
+        &rewrites.as_lowered(written),
         ctx,
         crate::forge::expr::Expected::Hint(InferredType::Unknown),
     )
