@@ -6018,10 +6018,7 @@ const INTERPRETER: &str = "interpreter";
 /// an engine takes that engine's line off and replays the scenario in its driver;
 /// the test below fails for a line whose engine lowers the machine, and for a
 /// machine no engine lowers that does not name every engine here.
-const NOT_YET_LOWERED: &[(&str, &str, &str)] = &[
-    ("static_optional", "rust", OPTIONAL_NOT_LOWERED),
-    ("static_optional", "c11", OPTIONAL_NOT_LOWERED),
-];
+const NOT_YET_LOWERED: &[(&str, &str, &str)] = &[("static_optional", "c11", OPTIONAL_NOT_LOWERED)];
 
 /// Why the scenario of an optional value is not replayed on an engine yet.
 const OPTIONAL_NOT_LOWERED: &str =

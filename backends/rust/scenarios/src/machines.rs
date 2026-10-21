@@ -117,10 +117,20 @@ macro_rules! replay_row {
 ///
 /// What a machine sends its Mesh peers needs no mark: the replay records it for
 /// every machine, and a scenario's `sent` is held to what was recorded.
+///
+/// A row of the `observed` group is a machine a saved state cannot hold yet (one
+/// that holds an optional value, before docs/adr/0055 step 6): it has no
+/// `Persist`, and is read back through `crate::observed::<reader>`
+/// ([`crate::replay_observed`]).
 macro_rules! scenarios {
-    ($($name:literal => $module:ident::{$policy:ident, $persist:ident} $(@ $manual:ident)? $(+ $host:ident => $calls:ident)? $(~ $shost:ident => $scalls:ident)? $(& $builder:ident)?;)*) => {
+    (
+        $($name:literal => $module:ident::{$policy:ident, $persist:ident} $(@ $manual:ident)? $(+ $host:ident => $calls:ident)? $(~ $shost:ident => $scalls:ident)? $(& $builder:ident)?;)*
+        observed {
+            $($oname:literal => $omodule:ident::$opolicy:ident by $reader:ident;)*
+        }
+    ) => {
         /// The scenarios this crate can replay, by file name.
-        pub const NAMES: &[&str] = &[$($name),*];
+        pub const NAMES: &[&str] = &[$($name,)* $($oname,)*];
 
         /// The text of the scenario `name`, from the file it is committed in.
         pub fn scenario_text(name: &str) -> Option<&'static str> {
@@ -129,6 +139,12 @@ macro_rules! scenarios {
                     env!("CARGO_MANIFEST_DIR"),
                     "/../../../sce-build/tests/fixtures/static_datamodel/scenarios/",
                     $name,
+                    ".json"
+                ))),)*
+                $($oname => Some(include_str!(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/../../../sce-build/tests/fixtures/static_datamodel/scenarios/",
+                    $oname,
                     ".json"
                 ))),)*
                 _ => None,
@@ -167,6 +183,14 @@ macro_rules! scenarios {
                         $(, children book $builder)?
                     );
                 })*
+                $($oname => {
+                    use crate::integration::static_datamodel::$omodule::$opolicy;
+                    crate::replay_observed(
+                        Engine::new(policy!($opolicy)),
+                        crate::observed::$reader,
+                        scenario_text($oname).expect("the table names its own scenario"),
+                    );
+                })*
                 other => panic!("`{other}` is not a scenario of this table"),
             }
         }
@@ -178,10 +202,7 @@ macro_rules! scenarios {
 /// (`generate/unsupported-feature`), so there is no module a row could build it
 /// from. The step that lowers the construct on Rust generates the machine, takes
 /// the entry off and adds the row.
-pub const NOT_YET_LOWERED: &[(&str, &str)] = &[(
-    "static_optional",
-    "an optional value has no Rust lowering yet (docs/adr/0055, step 5)",
-)];
+pub const NOT_YET_LOWERED: &[(&str, &str)] = &[];
 
 scenarios! {
     "presence_peer_alice" => presence_peer_sm::{PresencePeerPolicy, PresencePeerPersist} @ Manual;
@@ -268,4 +289,7 @@ scenarios! {
     "todo_peer_alice" => todo_peer_sm::{TodoPeerPolicy, TodoPeerPersist};
     "todo_peer_bob" => todo_peer_sm::{TodoPeerPolicy, TodoPeerPersist};
     "todo_peer_server" => todo_peer_sm::{TodoPeerPolicy, TodoPeerPersist};
+    observed {
+        "static_optional" => static_optional_sm::StaticOptionalPolicy by static_optional;
+    }
 }
